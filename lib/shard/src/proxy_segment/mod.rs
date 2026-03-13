@@ -32,6 +32,7 @@ pub struct ProxySegment {
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
     deleted_points: DeletedPoints,
+    deleted_deferred_count: usize,
     wrapped_config: SegmentConfig,
 
     /// Version of the last change in this proxy, considering point deletes and payload index
@@ -63,6 +64,7 @@ impl ProxySegment {
             deleted_mask,
             changed_indexes: ProxyIndexChanges::default(),
             deleted_points: AHashMap::new(),
+            deleted_deferred_count: 0,
             wrapped_config,
             version,
         }

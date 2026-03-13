@@ -407,6 +407,22 @@ impl NonAppendableSegmentEntry for ProxySegment {
         wrapped_segment_count.saturating_sub(deleted_points_count)
     }
 
+    fn available_point_count_without_deferred(&self) -> usize {
+        let wrapped_segment_visible_count = self
+            .wrapped_segment
+            .get()
+            .read()
+            .available_point_count_without_deferred();
+
+        // Amount of visible points that are deleted in this proxy.
+        let deleted_visible = self
+            .deleted_points
+            .len()
+            .saturating_sub(self.deleted_deferred_count);
+
+        wrapped_segment_visible_count.saturating_sub(deleted_visible)
+    }
+
     fn deleted_point_count(&self) -> usize {
         self.wrapped_segment.get().read().deleted_point_count() + self.deleted_points.len()
     }
@@ -437,7 +453,10 @@ impl NonAppendableSegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
-        let deleted_point_count = self.deleted_points.len();
+        let deleted_point_count = self
+            .deleted_points
+            .len()
+            .saturating_sub(self.deleted_deferred_count);
 
         let (wrapped_segment_est, total_wrapped_size) = {
             let wrapped_segment = self.wrapped_segment.get();
@@ -511,7 +530,9 @@ impl NonAppendableSegmentEntry for ProxySegment {
             num_vectors,
             num_indexed_vectors,
             num_points: self.available_point_count_without_deferred(),
-            num_deferred_points: wrapped_info.num_deferred_points,
+            num_deferred_points: wrapped_info
+                .num_deferred_points
+                .saturating_sub(self.deleted_deferred_count),
             num_deleted_vectors: wrapped_info.num_deleted_vectors
                 + deleted_points_count * vector_name_count,
             vectors_size_bytes: wrapped_info.vectors_size_bytes, //  + write_info.vectors_size_bytes,
@@ -624,12 +645,21 @@ impl NonAppendableSegmentEntry for ProxySegment {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
+        let was_deferred_point;
 
         self.version = cmp::max(self.version, op_num);
 
         let point_offset = match &self.wrapped_segment {
             LockedSegment::Original(raw_segment) => {
-                let point_offset = raw_segment.read().get_internal_id(point_id);
+                let (point_offset, is_deferred) = {
+                    let read_segment = raw_segment.read();
+                    (
+                        read_segment.get_internal_id(point_id),
+                        read_segment.point_is_deferred(point_id),
+                    )
+                };
+                was_deferred_point = is_deferred;
+
                 if point_offset.is_some() {
                     let prev = self.deleted_points.insert(
                         point_id,
@@ -649,7 +679,16 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 point_offset
             }
             LockedSegment::Proxy(proxy) => {
-                if proxy.read().has_point(point_id) {
+                let (has_point, is_deferred) = {
+                    let read_proxy = proxy.read();
+                    (
+                        read_proxy.has_point(point_id),
+                        read_proxy.point_is_deferred(point_id),
+                    )
+                };
+                was_deferred_point = is_deferred;
+
+                if has_point {
                     let prev = self.deleted_points.insert(
                         point_id,
                         ProxyDeletedPoint {
@@ -670,6 +709,11 @@ impl NonAppendableSegmentEntry for ProxySegment {
         };
 
         self.set_deleted_offset(point_offset);
+
+        // Increase delete counter for deferred point.
+        if was_deleted && was_deferred_point {
+            self.deleted_deferred_count += 1;
+        }
 
         Ok(was_deleted)
     }
@@ -729,18 +773,10 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
         let mut ids = self.wrapped_segment.get().read().deferred_point_ids();
-        ids.retain(|point_id| !self.deleted_points.contains_key(point_id));
+        if self.deleted_deferred_count > 0 {
+            ids.retain(|point_id| !self.deleted_points.contains_key(point_id));
+        }
         ids
-    }
-
-    fn available_point_count_without_deferred(&self) -> usize {
-        let deleted_points_count = self.deleted_points.len();
-        let wrapped_segment_count = self
-            .wrapped_segment
-            .get()
-            .read()
-            .available_point_count_without_deferred();
-        wrapped_segment_count.saturating_sub(deleted_points_count)
     }
 }
 

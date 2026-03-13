@@ -896,8 +896,8 @@ fn create_deferred_segment(
         .unwrap();
 
     // Now we should have deferred points
+    assert_eq!(segment.has_deferred_points(), n_deferred > 0);
     if n_deferred > 0 {
-        assert!(segment.has_deferred_points());
         assert_eq!(segment.deferred_internal_id, Some(n_vectors as u32));
     }
 
@@ -1445,6 +1445,10 @@ fn test_deleted_deferred_point_count() {
                 segment.deferred_point_count(),
                 n_deferred.checked_sub(deleted_count).unwrap()
             );
+            assert_eq!(
+                segment.deferred_point_count(),
+                segment.calculate_deferred_point_count()
+            );
 
             // Do the operation twice to test that we don't double count the same point.
             segment
@@ -1456,11 +1460,20 @@ fn test_deleted_deferred_point_count() {
                 n_deferred.checked_sub(deleted_count).unwrap()
             );
 
+            assert_eq!(
+                segment.deferred_point_count(),
+                segment.calculate_deferred_point_count()
+            );
+
             assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
         }
 
         // We delete all deferred points in the segment.
         assert_eq!(segment.deferred_point_count(), 0);
+        assert_eq!(
+            segment.deferred_point_count(),
+            segment.calculate_deferred_point_count()
+        );
         assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
     }
 }

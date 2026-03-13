@@ -526,7 +526,9 @@ impl NonAppendableSegmentEntry for Segment {
             num_indexed_vectors,
             num_points,
             num_deferred_points,
-            num_deleted_vectors: self.deleted_point_count(),
+            num_deleted_vectors: self
+                .deleted_point_count()
+                .saturating_sub(self.deferred_deleted_count.unwrap_or_default()),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
             ram_usage_bytes: 0,  // ToDo: Implement
@@ -928,7 +930,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let Some(deferred_from) = self.deferred_internal_id else {
+        let Some(deferred_from) = self.deferred_internal_id_if_any() else {
             return vec![];
         };
         let id_tracker = self.id_tracker.borrow();
@@ -1127,9 +1129,8 @@ impl SegmentEntry for Segment {
     }
 
     fn has_deferred_points(&self) -> bool {
-        if let Some(deferred_from) = self.deferred_internal_id {
-            return self.is_appendable() && self.total_point_count() > deferred_from as usize;
-        };
-        false
+        self.deferred_internal_id.is_some_and(|deferred_from| {
+            self.is_appendable() && self.total_point_count() > deferred_from as usize
+        })
     }
 }

@@ -16,6 +16,7 @@ use crate::common::operation_error::{
 use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorInternal;
+use crate::entry::SegmentEntry;
 use crate::entry::entry_point::NonAppendableSegmentEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
@@ -321,7 +322,6 @@ impl Segment {
             // Don't count the deletion of the same point twice
             && !is_point_already_deleted
         {
-            println!("Deleting  deferred id: {internal_id}");
             debug_assert!(
                 self.deferred_deleted_count.is_some(),
                 "`segment.deferred_delete_count` should always be Some() if we have deferred points."
@@ -671,9 +671,15 @@ impl Segment {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }
 
+    /// Returns the segments `deferred_internal_id` if there is at least one deferred point in the segment.
+    pub(super) fn deferred_internal_id_if_any(&self) -> Option<PointOffsetType> {
+        self.deferred_internal_id
+            .filter(|_| self.has_deferred_points())
+    }
+
     /// Returns the amount of deferred points.
     pub fn deferred_point_count(&self) -> usize {
-        match self.deferred_internal_id {
+        match self.deferred_internal_id_if_any() {
             Some(internal_id) => {
                 let id_tracker = self.id_tracker.borrow();
                 let max_id = id_tracker.total_point_count();
@@ -688,7 +694,7 @@ impl Segment {
     /// Calculates the amount of deleted deferred points by iterating over all points in the ID tracker. Therefore this operation
     /// can be expensive and should only be run once at segment creation.
     pub(crate) fn calculate_deferred_point_count(&self) -> usize {
-        let Some(deferred_from) = self.deferred_internal_id else {
+        let Some(deferred_from) = self.deferred_internal_id_if_any() else {
             return 0;
         };
 
