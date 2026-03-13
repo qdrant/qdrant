@@ -1,5 +1,6 @@
+use std::path::Path;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use semver::Version;
 
@@ -30,6 +31,19 @@ pub const LOAD_TIMING_LOG_TARGET: &str = "qdrant::load_timing";
 /// Sub-component loads faster than this are suppressed to reduce noise.
 /// Matches the `{:.2}s` display format: anything below 5ms rounds to "0.00s".
 pub const LOAD_TIMING_MIN_DURATION: Duration = Duration::from_millis(5);
+
+/// Log a sub-component load time, suppressing entries faster than [`LOAD_TIMING_MIN_DURATION`].
+pub fn log_load_timing(path: &Path, component: &str, started: Instant) {
+    let elapsed = started.elapsed();
+    if elapsed >= LOAD_TIMING_MIN_DURATION {
+        log::debug!(
+            target: LOAD_TIMING_LOG_TARGET,
+            "{} - {component} loaded in {:.2}s",
+            path.display(),
+            elapsed.as_secs_f64(),
+        );
+    }
+}
 
 /// Max number of pooled elements to preserve in memory.
 /// Scaled according to the number of logical CPU cores to account for concurrent operations.
