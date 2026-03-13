@@ -14,7 +14,7 @@ use common::bitvec::BitVec;
 use common::universal_io::{
     ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalWrite,
 };
-use itertools::{Itertools, PeekingNext};
+use itertools::Itertools;
 
 /// Number of bits per `BitStore` element.
 const BITS_PER_ELEMENT: u32 = BitStore::BITS;
@@ -151,61 +151,60 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
     /// written via a single `write_batch` call.
     ///
     /// Assumes the indices for the `updates` iterator increase monotonically
-    pub fn set_ascending_bits_batch(&mut self, updates: impl IntoIterator<Item = (u64, bool)>) -> Result<()> {
-        let chunks = updates
-            .into_iter()
-            .chunk_by(|(bit_idx, _)| Self::element_idx(*bit_idx));
+    pub fn set_ascending_bits_batch(
+        &mut self,
+        updates: impl IntoIterator<Item = (u64, bool)>,
+    ) -> Result<()> {
+        // Group updates into runs of consecutive elements. A new run starts
+        // whenever the element index jumps by more than 1.
+        let mut prev_element: Option<u64> = None;
+        let mut run_start = 0u64;
 
-        // Coalesce consecutive element indices into contiguous runs,
-        // collecting per-element bit updates within each run.
-        let runs = (&chunks)
-            .into_iter()
-            // .map(|(element_idx, chunk)| (element_idx, chunk.collect::<Vec<_>>()))
-            .peekable()
-            .batching(|iter| {
-                let (start, first) = iter.next()?;
-                let mut run_updates: Vec<_> = first.collect();
+        let runs = updates.into_iter().chunk_by(move |(bit_idx, _)| {
+            let element_idx = Self::element_idx(*bit_idx);
+            if prev_element.is_none_or(|prev| element_idx > prev + 1) {
+                run_start = element_idx;
+            }
+            prev_element = Some(element_idx);
+            run_start
+        });
 
-                let mut end = start;
-                while let Some((_idx, updates)) =
-                    iter.peeking_next(|(next_idx, _)| *next_idx == end + 1)
-                {
-                    run_updates.extend(updates);
-                    end += 1;
+        // For each run: collect updates, single read, apply modifications,
+        // collect everything for a single write_batch at the end.
+        let writes: Vec<_> = runs
+            .into_iter()
+            .map(|(element_start, run_updates)| {
+                let run_updates: Vec<_> = run_updates.collect();
+
+                let last_element = Self::element_idx(run_updates.last().unwrap().0);
+                let num_elements = last_element - element_start + 1;
+
+                if element_start + num_elements > self.element_len {
+                    return Err(UniversalIoError::OutOfBounds {
+                        start: element_start,
+                        end: element_start + num_elements,
+                        elements: self.element_len as usize,
+                    });
                 }
 
-                let num_elements = end - start + 1;
-                Some((start, run_updates, num_elements))
-            });
+                let mut buf = self
+                    .storage
+                    .read::<false>(ElementsRange {
+                        start: element_start,
+                        length: num_elements,
+                    })?
+                    .into_owned();
+                let bitslice = BitSlice::from_slice_mut(&mut buf);
 
-        // For each run: single read, apply all bit modifications, single write.
-        let mut writes = Vec::new();
-        for (element_start, run_updates, num_elements) in runs {
-            if element_start + num_elements > self.element_len {
-                return Err(UniversalIoError::OutOfBounds {
-                    start: element_start,
-                    end: element_start + num_elements,
-                    elements: self.element_len as usize,
-                });
-            }
+                for (bit_idx, value) in run_updates {
+                    let bit_offset =
+                        bit_idx as usize - (element_start as usize * BITS_PER_ELEMENT as usize);
+                    bitslice.set(bit_offset, value);
+                }
 
-            let original = self.storage.read::<false>(ElementsRange {
-                start: element_start,
-                length: num_elements,
-            })?;
-            let mut buf = original.to_vec();
-            let bitslice = BitSlice::from_slice_mut(&mut buf);
-
-            for (bit_idx, value) in run_updates {
-                let bit_offset =
-                    bit_idx as usize - (element_start as usize * BITS_PER_ELEMENT as usize);
-                bitslice.set(bit_offset, value);
-            }
-
-            if *original != buf[..] {
-                writes.push((element_start, buf));
-            }
-        }
+                Ok((element_start, buf))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         self.storage
             .write_batch(writes.iter().map(|(start, vec)| (*start, vec.as_slice())))?;
@@ -532,7 +531,9 @@ mod tests {
         assert!(storage.set_ascending_bits_batch([(256, true)]).is_err());
 
         // --- Empty batch is a no-op ---
-        storage.set_ascending_bits_batch(std::iter::empty()).unwrap();
+        storage
+            .set_ascending_bits_batch(std::iter::empty())
+            .unwrap();
     }
 
     #[test]
