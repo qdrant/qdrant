@@ -710,11 +710,17 @@ fn create_segment(
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
         deferred_internal_id: None,
+        deferred_delete_count: None,
     };
 
     if segment.is_appendable() {
         segment.deferred_internal_id = deferred_internal_id;
+
+        if deferred_internal_id.is_some() {
+            segment.deferred_delete_count = Some(segment.calculate_deferred_point_count());
+        }
     }
+
     Ok(segment)
 }
 

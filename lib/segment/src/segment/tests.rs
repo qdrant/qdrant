@@ -1420,3 +1420,35 @@ fn assert_deferred_points_excluded<F, R, T>(
         }
     }
 }
+
+#[test]
+fn test_deleted_deferred_point_count() {
+    let hw_counter = HardwareCounterCell::new();
+
+    for n_deferred in [0, 1, 10, 300] {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+
+        assert_eq!(segment.deferred_point_count(), n_deferred);
+
+        if n_deferred == 0 {
+            continue;
+        }
+
+        for d in 0..n_deferred {
+            let delete_id = segment.deferred_internal_id.unwrap() + d as u32;
+            segment
+                .delete_point_internal(delete_id, &hw_counter)
+                .unwrap();
+
+            let deleted_count = d + 1;
+            assert_eq!(
+                segment.deferred_point_count(),
+                n_deferred.checked_sub(deleted_count).unwrap()
+            );
+        }
+
+        // we delete all deferred points in the segment.
+        assert_eq!(segment.deferred_point_count(), 0);
+    }
+}
