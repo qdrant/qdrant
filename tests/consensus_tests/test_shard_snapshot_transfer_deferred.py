@@ -201,7 +201,7 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
     # wait_collection_green handles waiting for optimization to complete.
     try:
         upsert_points(source_uri, start_id=total_points + 1, count=1, wait=True, timeout=5)
-    except Exception:
+    except requests.exceptions.ReadTimeout:
         pass
 
     # Wait for optimization to complete on both peers
