@@ -40,7 +40,7 @@ use crate::operations::{
 };
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::LocalShardTelemetry;
 
 /// Result of a single batch transfer, including timing breakdown.
@@ -80,7 +80,7 @@ impl PreparedTransferBatch {
             .update(
                 // Don't add clock tag, this transfers points out of regular order (SyncPoints)
                 OperationWithClockTag::from(self.operation),
-                WaitBehavior::from(self.wait),
+                WaitUntil::from(self.wait),
                 None,
                 HwMeasurementAcc::disposable(), // Internal operation
             )
@@ -174,7 +174,7 @@ impl ForwardProxyShard {
                             field_schema: Some(index_type.try_into()?),
                         }),
                     )),
-                    WaitBehavior::NoWait,
+                    WaitUntil::Wal,
                     None,
                     HwMeasurementAcc::disposable(), // Internal operation
                 )
@@ -475,7 +475,7 @@ impl ShardOperation for ForwardProxyShard {
     async fn update(
         &self,
         operation: OperationWithClockTag,
-        _wait: WaitBehavior,
+        _wait: WaitUntil,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -496,7 +496,7 @@ impl ShardOperation for ForwardProxyShard {
             .wrapped_shard
             .update(
                 operation.clone(),
-                WaitBehavior::Segment,
+                WaitUntil::Segment,
                 timeout,
                 hw_measurement_acc.clone(),
             )
@@ -582,7 +582,7 @@ impl ShardOperation for ForwardProxyShard {
 
         let remote_result = self
             .remote_shard
-            .update(operation, WaitBehavior::NoWait, None, hw_measurement_acc)
+            .update(operation, WaitUntil::Wal, None, hw_measurement_acc)
             .await
             .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
 

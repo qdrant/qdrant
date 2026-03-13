@@ -19,7 +19,7 @@ use crate::operations::point_ops::{
 };
 use crate::operations::types::{CollectionError, CoreSearchRequest};
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::tests::fixtures::create_collection_config_with_dim;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -57,7 +57,7 @@ async fn test_hw_metrics_cancellation() {
     shard
         .update(
             upsert_ops.into(),
-            WaitBehavior::Wait,
+            WaitUntil::Visible,
             None,
             HwMeasurementAcc::new(),
         )

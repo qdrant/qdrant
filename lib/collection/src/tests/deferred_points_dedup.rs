@@ -22,7 +22,7 @@ use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 
 const DIM: usize = 64;
 const NUM_POINTS: u64 = 200;
@@ -220,7 +220,7 @@ async fn test_deferred_points_dedup_after_optimization() {
     shard
         .update(
             upsert_op(random_points()),
-            WaitBehavior::Wait,
+            WaitUntil::Visible,
             None,
             hw_acc.clone(),
         )
@@ -237,7 +237,7 @@ async fn test_deferred_points_dedup_after_optimization() {
     shard
         .update(
             upsert_op(random_points()),
-            WaitBehavior::NoWait,
+            WaitUntil::Wal,
             None,
             hw_acc.clone(),
         )
@@ -266,7 +266,7 @@ async fn test_deferred_points_dedup_after_optimization() {
     shard
         .update(
             upsert_op(random_points()),
-            WaitBehavior::NoWait,
+            WaitUntil::Wal,
             None,
             hw_acc.clone(),
         )
@@ -329,7 +329,7 @@ async fn setup_shard_with_deferred_points() -> (LocalShard, TempDir) {
     shard
         .update(
             upsert_op(random_points()),
-            WaitBehavior::Wait,
+            WaitUntil::Visible,
             None,
             hw_acc.clone(),
         )
@@ -342,7 +342,7 @@ async fn setup_shard_with_deferred_points() -> (LocalShard, TempDir) {
     shard
         .update(
             upsert_op(random_points()),
-            WaitBehavior::NoWait,
+            WaitUntil::Wal,
             None,
             hw_acc.clone(),
         )
@@ -385,7 +385,7 @@ async fn test_delete_by_id_with_deferred_points() {
     shard
         .update(
             delete_by_ids_op(all_ids),
-            WaitBehavior::NoWait,
+            WaitUntil::Wal,
             None,
             hw_acc.clone(),
         )
@@ -421,7 +421,7 @@ async fn test_delete_by_filter_with_deferred_points() {
     shard
         .update(
             delete_by_filter_op(Filter::default()),
-            WaitBehavior::NoWait,
+            WaitUntil::Wal,
             None,
             hw_acc.clone(),
         )

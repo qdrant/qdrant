@@ -36,7 +36,7 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::LocalShardTelemetry;
 
 type ChangedPointsSet = Arc<RwLock<AHashSet<PointIdType>>>;
@@ -196,7 +196,7 @@ impl ShardOperation for ProxyShard {
     async fn update(
         &self,
         operation: OperationWithClockTag,
-        wait: WaitBehavior,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {

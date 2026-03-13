@@ -50,7 +50,7 @@ use crate::shards::dummy_shard::DummyShard;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_trait::WaitBehavior;
+use crate::shards::shard_trait::WaitUntil;
 
 //    │    Collection Created
 //    │
@@ -1106,7 +1106,7 @@ impl ShardReplicaSet {
         let result = self
             .update_local(
                 op.into(),
-                WaitBehavior::Wait,
+                WaitUntil::Visible,
                 None,
                 hw_measurement_acc,
                 force,

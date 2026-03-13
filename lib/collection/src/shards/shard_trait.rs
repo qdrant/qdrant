@@ -18,37 +18,48 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 
 /// Controls how an update operation waits for completion.
 ///
-/// This enum is internal and `Segment` must not cross the API boundary.
+/// Internal enum usually deferred from wait true/false as specified by a user request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WaitBehavior {
-    /// Wait for the operation to be fully applied, including deferred points optimization.
-    Wait,
-    /// Don't wait at all, return immediately after queuing.
-    NoWait,
-    /// Wait for the operation to land in a segment (via operation callback), but don't wait for
-    /// deferred points to be optimized. This variant is internal only and must not cross the API
-    /// boundary.
+pub enum WaitUntil {
+    /// Wait until the operation is written in WAL.
+    ///
+    /// Corresponds with wait=false, acknowledging immediately.
+    Wal,
+    /// Wait until the operation is written in a segment.
+    ///
+    /// This does not mean the operation will be visible. If deferred points are enabled it may
+    /// take some time for the change to appear.
     Segment,
+    /// Wait until the operation is visible in search results.
+    ///
+    /// Corresponds with wait=true, acknowledging only when the change is fully applied and visible.
+    Visible,
 }
 
-impl WaitBehavior {
+impl WaitUntil {
     /// Whether this behavior requires creating a callback to wait for the operation.
     pub fn needs_callback(&self) -> bool {
-        matches!(self, WaitBehavior::Wait | WaitBehavior::Segment)
+        match self {
+            WaitUntil::Segment | WaitUntil::Visible => true,
+            WaitUntil::Wal => false,
+        }
     }
 
     /// Whether this behavior requires waiting for deferred points to be optimized.
     pub fn wait_for_deferred(&self) -> bool {
-        matches!(self, WaitBehavior::Wait)
+        match self {
+            WaitUntil::Visible => true,
+            WaitUntil::Wal | WaitUntil::Segment => false,
+        }
     }
 }
 
-impl From<bool> for WaitBehavior {
+impl From<bool> for WaitUntil {
     fn from(wait: bool) -> Self {
         if wait {
-            WaitBehavior::Wait
+            WaitUntil::Visible
         } else {
-            WaitBehavior::NoWait
+            WaitUntil::Wal
         }
     }
 }
@@ -58,7 +69,7 @@ pub trait ShardOperation {
     async fn update(
         &self,
         operation: OperationWithClockTag,
-        wait: WaitBehavior,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult>;

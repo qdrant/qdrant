@@ -12,7 +12,7 @@ use collection::operations::universal_query::shard_query::{
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
-use collection::shards::shard_trait::{ShardOperation, WaitBehavior};
+use collection::shards::shard_trait::{ShardOperation, WaitUntil};
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
@@ -102,7 +102,7 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
     handle
         .block_on(shard.update(
             rnd_batch.into(),
-            WaitBehavior::Wait,
+            WaitUntil::Visible,
             None,
             HwMeasurementAcc::new(),
         ))

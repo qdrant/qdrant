@@ -71,7 +71,7 @@ use crate::shards::conversions::{
 };
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::RemoteShardTelemetry;
 
 /// Timeout for transferring and recovering a shard snapshot on a remote peer.
@@ -1028,7 +1028,7 @@ impl ShardOperation for RemoteShard {
     async fn update(
         &self,
         operation: OperationWithClockTag,
-        wait: WaitBehavior,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {

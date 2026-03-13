@@ -31,7 +31,7 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::update_handler::{OperationData, UpdateSignal};
 
 #[async_trait]
@@ -46,7 +46,7 @@ impl ShardOperation for LocalShard {
     async fn update(
         &self,
         mut operation: OperationWithClockTag,
-        wait: WaitBehavior,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
