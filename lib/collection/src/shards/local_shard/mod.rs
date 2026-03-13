@@ -31,7 +31,7 @@ use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::defaults::LOAD_TIMING_LOG_TARGET;
+use common::defaults::log_load_timing;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
@@ -523,12 +523,7 @@ impl LocalShard {
         // Apply outstanding operations from WAL
         local_shard.load_from_wal(collection_id).await?;
 
-        log::debug!(
-            target: LOAD_TIMING_LOG_TARGET,
-            "Shard {} - total loaded in {:.2}s",
-            shard_path.display(),
-            total_started.elapsed().as_secs_f64(),
-        );
+        log_load_timing(shard_path, "total", total_started);
 
         Ok(local_shard)
     }

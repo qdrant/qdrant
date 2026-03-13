@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::defaults::{LOAD_TIMING_LOG_TARGET, LOAD_TIMING_MIN_DURATION};
+use common::defaults::log_load_timing;
 use common::flags::FeatureFlags;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::is_alive_lock::IsAliveLock;
@@ -456,19 +456,6 @@ pub(crate) fn create_sparse_vector_storage(
     }
 }
 
-/// Log a sub-component load time, suppressing entries faster than 5 ms.
-fn log_load_timing(segment_path: &Path, component: &str, started: Instant) {
-    let elapsed = started.elapsed();
-    if elapsed >= LOAD_TIMING_MIN_DURATION {
-        log::debug!(
-            target: LOAD_TIMING_LOG_TARGET,
-            "Segment {} - {component} loaded in {:.2}s",
-            segment_path.display(),
-            elapsed.as_secs_f64(),
-        );
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn create_segment(
     initial_version: Option<SeqNumberType>,
@@ -900,12 +887,7 @@ pub fn load_segment(
         }
     }
 
-    log::debug!(
-        target: LOAD_TIMING_LOG_TARGET,
-        "Segment {} - total loaded in {:.2}s",
-        path.display(),
-        total_started.elapsed().as_secs_f64(),
-    );
+    log_load_timing(path, "total", total_started);
 
     Ok(segment)
 }

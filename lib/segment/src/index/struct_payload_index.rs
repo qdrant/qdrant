@@ -7,7 +7,7 @@ use std::time::Instant;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
-use common::defaults::{LOAD_TIMING_LOG_TARGET, LOAD_TIMING_MIN_DURATION};
+use common::defaults::log_load_timing;
 use common::either_variant::EitherVariant;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
@@ -161,15 +161,7 @@ impl StructPayloadIndex {
             let started = Instant::now();
             let (field_index, dirty) =
                 self.load_from_db(field, payload_schema, create_if_missing)?;
-            let elapsed = started.elapsed();
-            if elapsed >= LOAD_TIMING_MIN_DURATION {
-                log::debug!(
-                    target: LOAD_TIMING_LOG_TARGET,
-                    "Payload index `{field}` loaded in {:.2}s ({})",
-                    elapsed.as_secs_f64(),
-                    self.path.display(),
-                );
-            }
+            log_load_timing(&self.path, &format!("field `{field}`"), started);
             field_indexes.insert(field.clone(), field_index);
             is_dirty |= dirty;
         }
