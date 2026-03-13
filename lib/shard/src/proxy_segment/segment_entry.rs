@@ -507,7 +507,11 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
         let vector_name_count =
             self.config().vector_data.len() + self.config().sparse_vector_data.len();
-        let deleted_points_count = self.deleted_points.len();
+
+        let deleted_points_count = self
+            .deleted_points
+            .len()
+            .saturating_sub(self.deleted_deferred_count);
 
         // This is a best estimate
         let num_vectors = wrapped_info
