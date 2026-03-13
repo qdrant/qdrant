@@ -180,6 +180,7 @@ impl ShardOperation for LocalShard {
             cost
         })?;
         let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
 
         let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
         let order_by = order_by.clone().map(OrderBy::from);
@@ -216,7 +217,13 @@ impl ShardOperation for LocalShard {
         };
 
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request);
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(result)
     }
 
@@ -287,6 +294,7 @@ impl ShardOperation for LocalShard {
             cost
         })?;
         let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let total_count = if request.exact {
             let timeout = self.timeout_or_default_search_timeout(timeout);
             let all_points = tokio::time::timeout(
@@ -308,7 +316,13 @@ impl ShardOperation for LocalShard {
                 .exp
         };
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request);
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(CountResult { count: total_count })
     }
 
@@ -328,6 +342,7 @@ impl ShardOperation for LocalShard {
         let timeout = self.timeout_or_default_search_timeout(timeout);
 
         let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let records_map = tokio::time::timeout(
             timeout,
             SegmentsSearcher::retrieve(
@@ -351,7 +366,13 @@ impl ShardOperation for LocalShard {
             .collect();
 
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request);
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
 
         Ok(ordered_records)
     }
@@ -377,6 +398,7 @@ impl ShardOperation for LocalShard {
                 .sum()
         })?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let result = self
             .do_planned_query(
                 planned_query,
@@ -387,7 +409,15 @@ impl ShardOperation for LocalShard {
             .await;
 
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || requests.remove_details());
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || {
+            requests.remove_details()
+        });
 
         result
     }
@@ -411,6 +441,7 @@ impl ShardOperation for LocalShard {
 
         let start_time = Instant::now();
         let timeout = self.timeout_or_default_search_timeout(timeout);
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let hits = if request.exact {
             self.exact_facet(
                 request.clone(),
@@ -429,7 +460,13 @@ impl ShardOperation for LocalShard {
             .await?
         };
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request);
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(FacetResponse { hits })
     }
 

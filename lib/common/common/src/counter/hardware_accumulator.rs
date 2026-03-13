@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::hardware_counter::HardwareCounterCell;
 use super::hardware_data::HardwareData;
+use crate::cpu_utilization::CpuUtilization;
 
 /// Data structure, that routes hardware measurement counters to specific location.
 /// Shared drain MUST NOT create its own counters, but only hold a reference to the existing one,
@@ -91,6 +92,7 @@ pub struct HwMeasurementAcc {
     metrics_drain: Arc<HwSharedDrain>,
     /// If this is set to true, the accumulator will not accumulate any values.
     disposable: bool,
+    cpu_utilization: CpuUtilization,
 }
 
 impl HwMeasurementAcc {
@@ -100,6 +102,7 @@ impl HwMeasurementAcc {
             request_drain: Arc::new(HwSharedDrain::default()),
             metrics_drain: Arc::new(HwSharedDrain::default()),
             disposable: false,
+            cpu_utilization: CpuUtilization::new(),
         }
     }
 
@@ -112,6 +115,7 @@ impl HwMeasurementAcc {
             request_drain: Arc::new(HwSharedDrain::default()),
             metrics_drain: Arc::new(HwSharedDrain::default()),
             disposable: true,
+            cpu_utilization: CpuUtilization::new(),
         }
     }
 
@@ -134,7 +138,12 @@ impl HwMeasurementAcc {
             request_drain: Arc::new(HwSharedDrain::default()),
             metrics_drain,
             disposable: false,
+            cpu_utilization: CpuUtilization::new(),
         }
+    }
+
+    pub fn cpu_utilization(&self) -> CpuUtilization {
+        self.cpu_utilization.clone()
     }
 
     pub fn accumulate<T: Into<HardwareData>>(&self, src: T) {
@@ -215,6 +224,7 @@ impl Clone for HwMeasurementAcc {
             request_drain: self.request_drain.clone(),
             metrics_drain: self.metrics_drain.clone(),
             disposable: self.disposable,
+            cpu_utilization: self.cpu_utilization.clone(),
         }
     }
 }
