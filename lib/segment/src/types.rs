@@ -13,6 +13,7 @@ use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
 use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
+use dashmap::mapref::one::Ref as DashMapRef;
 use ecow::EcoString;
 use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
@@ -2034,6 +2035,7 @@ impl From<Map<String, Value>> for Payload {
 #[derive(Clone, Debug)]
 pub enum OwnedPayloadRef<'a> {
     Ref(&'a Map<String, Value>),
+    DashMapRef(Rc<DashMapRef<'a, u32, Payload>>),
     Owned(Rc<Map<String, Value>>),
 }
 
@@ -2043,6 +2045,7 @@ impl Deref for OwnedPayloadRef<'_> {
     fn deref(&self) -> &Self::Target {
         match self {
             OwnedPayloadRef::Ref(reference) => reference,
+            OwnedPayloadRef::DashMapRef(dashmap_ref) => &dashmap_ref.deref().0,
             OwnedPayloadRef::Owned(owned) => owned.deref(),
         }
     }
@@ -2052,6 +2055,7 @@ impl AsRef<Map<String, Value>> for OwnedPayloadRef<'_> {
     fn as_ref(&self) -> &Map<String, Value> {
         match self {
             OwnedPayloadRef::Ref(reference) => reference,
+            OwnedPayloadRef::DashMapRef(dashmap_ref) => &dashmap_ref.deref().0,
             OwnedPayloadRef::Owned(owned) => owned.deref(),
         }
     }
@@ -2072,6 +2076,12 @@ impl From<Map<String, Value>> for OwnedPayloadRef<'_> {
 impl<'a> From<&'a Payload> for OwnedPayloadRef<'a> {
     fn from(payload: &'a Payload) -> Self {
         OwnedPayloadRef::Ref(&payload.0)
+    }
+}
+
+impl<'a> From<DashMapRef<'a, u32, Payload>> for OwnedPayloadRef<'a> {
+    fn from(payload: DashMapRef<'a, u32, Payload>) -> Self {
+        OwnedPayloadRef::DashMapRef(Rc::new(payload))
     }
 }
 

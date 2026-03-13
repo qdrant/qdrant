@@ -43,6 +43,7 @@ pprof = { workspace = true }
 
 [dependencies]
 bytemuck = { workspace = true }
+dashmap = { workspace = true }
 data-encoding = { workspace = true }
 delegate = { workspace = true }
 fs-err = { workspace = true }

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use dashmap::DashMap;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -15,13 +15,13 @@ use crate::types::Payload;
 /// Persists all changes to disk using `store`, but only uses this storage during the initial load
 #[derive(Debug)]
 pub struct SimplePayloadStorage {
-    pub(crate) payload: AHashMap<PointOffsetType, Payload>,
+    pub(crate) payload: DashMap<PointOffsetType, Payload>,
     pub(crate) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl SimplePayloadStorage {
     pub fn open(database: Arc<RwLock<DB>>) -> OperationResult<Self> {
-        let mut payload_map: AHashMap<PointOffsetType, Payload> = Default::default();
+        let payload_map: DashMap<PointOffsetType, Payload> = Default::default();
 
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             database,
@@ -55,7 +55,7 @@ impl SimplePayloadStorage {
         match self.payload.get(&point_id) {
             None => self.db_wrapper.remove(point_id_serialized),
             Some(payload) => {
-                let payload_serialized = serde_cbor::to_vec(payload).unwrap();
+                let payload_serialized = serde_cbor::to_vec(&*payload).unwrap();
                 hw_counter
                     .payload_io_write_counter()
                     .incr_delta(payload_serialized.len());
@@ -64,7 +64,10 @@ impl SimplePayloadStorage {
         }
     }
 
-    pub fn payload_ptr(&self, point_id: PointOffsetType) -> Option<&Payload> {
+    pub fn payload_ptr(
+        &self,
+        point_id: PointOffsetType,
+    ) -> Option<dashmap::mapref::one::Ref<'_, u32, Payload>> {
         self.payload.get(&point_id)
     }
 

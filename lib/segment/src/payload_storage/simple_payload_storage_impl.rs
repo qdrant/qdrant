@@ -30,7 +30,7 @@ impl PayloadStorage for SimplePayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
-            Some(point_payload) => point_payload.merge(payload),
+            Some(mut point_payload) => point_payload.merge(payload),
             None => {
                 self.payload.insert(point_id, payload.to_owned());
             }
@@ -49,7 +49,7 @@ impl PayloadStorage for SimplePayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
-            Some(point_payload) => point_payload.merge_by_key(payload, key),
+            Some(mut point_payload) => point_payload.merge_by_key(payload, key),
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
@@ -85,7 +85,7 @@ impl PayloadStorage for SimplePayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
-            Some(payload) => {
+            Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
                     self.update_storage(point_id, hw_counter)?;
@@ -97,18 +97,18 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn clear(
-        &mut self,
+        &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
         self.update_storage(point_id, hw_counter)?;
-        Ok(res)
+        Ok(res.map(|(_key, payload)| payload))
     }
 
     #[cfg(test)]
     fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
-        self.payload = ahash::AHashMap::new();
+        self.payload = Default::default();
         self.db_wrapper.recreate_column_family()
     }
 
@@ -120,8 +120,8 @@ impl PayloadStorage for SimplePayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        for (key, val) in self.payload.iter() {
-            let do_continue = callback(*key, val)?;
+        for entry in self.payload.iter() {
+            let do_continue = callback(*entry.key(), entry.value())?;
             if !do_continue {
                 return Ok(());
             }

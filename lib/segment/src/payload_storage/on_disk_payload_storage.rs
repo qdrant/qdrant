@@ -169,7 +169,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
     }
 
     fn clear(
-        &mut self,
+        &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {

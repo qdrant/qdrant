@@ -58,7 +58,7 @@ pub trait PayloadStorage {
 
     /// Clear all payload of the point
     fn clear(
-        &mut self,
+        &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>>;

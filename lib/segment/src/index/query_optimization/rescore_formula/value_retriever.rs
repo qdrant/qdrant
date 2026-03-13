@@ -233,7 +233,7 @@ mod tests {
 
     pub fn fixture_payload_provider() -> PayloadProvider {
         // Create an in-memory payload storage and populate it with some payload maps containing numbers and geo points.
-        let mut in_memory_storage = InMemoryPayloadStorage::default();
+        let in_memory_storage = InMemoryPayloadStorage::default();
 
         // For point id 0: a payload with a numeric value.
         let payload0: Payload = from_value(json!({

@@ -7022,6 +7022,7 @@ dependencies = [
  "clap",
  "common",
  "criterion",
+ "dashmap",
  "data-encoding",
  "dataset",
  "delegate",

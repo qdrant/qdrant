@@ -304,7 +304,7 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Returns None if the point_offset, page, or value was not found.
     /// Returns the deleted value otherwise.
-    pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
+    pub fn delete_value(&self, point_offset: PointOffset) -> Result<Option<V>> {
         let Some(pointer) = self.tracker.write().unset(point_offset)? else {
             return Ok(None);
         };

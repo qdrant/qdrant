@@ -924,7 +924,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+    let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     let flusher = storage.flusher();

@@ -193,7 +193,7 @@ impl PayloadStorage for MmapPayloadStorage {
     }
 
     fn clear(
-        &mut self,
+        &self,
         point_id: PointOffsetType,
         _: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {

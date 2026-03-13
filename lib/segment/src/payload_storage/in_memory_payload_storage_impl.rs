@@ -29,7 +29,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         _hw_counter: &HardwareCounterCell, // No measurement needed for in memory payload
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
-            Some(point_payload) => point_payload.merge(payload),
+            Some(mut point_payload) => point_payload.merge(payload),
             None => {
                 self.payload.insert(point_id, payload.to_owned());
             }
@@ -45,7 +45,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
-            Some(point_payload) => point_payload.merge_by_key(payload, key),
+            Some(mut point_payload) => point_payload.merge_by_key(payload, key),
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
@@ -82,7 +82,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
     ) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
-            Some(payload) => {
+            Some(mut payload) => {
                 let res = payload.remove(key);
                 Ok(res)
             }
@@ -91,17 +91,17 @@ impl PayloadStorage for InMemoryPayloadStorage {
     }
 
     fn clear(
-        &mut self,
+        &self,
         point_id: PointOffsetType,
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
     ) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
-        Ok(res)
+        Ok(res.map(|(_key, value)| value))
     }
 
     #[cfg(test)]
     fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
-        self.payload = ahash::AHashMap::new();
+        self.payload = Default::default();
         Ok(())
     }
 
@@ -113,8 +113,8 @@ impl PayloadStorage for InMemoryPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        for (key, val) in self.payload.iter() {
-            let do_continue = callback(*key, val)?;
+        for entry in self.payload.iter() {
+            let do_continue = callback(*entry.key(), entry.value())?;
             if !do_continue {
                 return Ok(());
             }
@@ -128,10 +128,10 @@ impl PayloadStorage for InMemoryPayloadStorage {
 
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         let mut estimated_size = 0;
-        for (_p_id, val) in self.payload.iter() {
+        for payload_entry in self.payload.iter() {
             // account for point_id
             estimated_size += size_of::<PointOffsetType>();
-            for (key, val) in val.0.iter() {
+            for (key, val) in payload_entry.value().0.iter() {
                 // account for key and value
                 estimated_size += key.len() + serde_json::to_string(val).unwrap().len()
             }
