@@ -197,6 +197,7 @@ impl UpdateWorkers {
         optimize_sender: &Sender<OptimizerSignal>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
     ) -> CollectionResult<()> {
+        let mut attempt = 0u32;
         loop {
             let locked_segments = segments.clone();
             let has_deferred_points =
@@ -222,6 +223,13 @@ impl UpdateWorkers {
 
             // Wait for the optimizer to check conditions or complete an optimization.
             log::debug!("waiting for optimization to allow updates");
+
+            // Throttle after first attempt to avoid a busy spin loop that floods debug logs.
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            attempt = attempt.saturating_add(1);
+
             if let Err(err) = optimization_finished_receiver.changed().await {
                 // This can be if optimization is cancelled, we don't need to wait anymore.
                 log::debug!("Optimization thread terminated with an error: {err}");
