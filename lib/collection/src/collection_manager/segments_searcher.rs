@@ -707,7 +707,7 @@ fn execute_batch_search(
         return Err(CollectionError::timeout(timeout, "batch search"));
     };
 
-    let segment_points = read_segment.available_point_count_without_deferred_estimated();
+    let segment_points = read_segment.available_point_count_without_deferred();
     let segment_config = read_segment.config();
 
     let top = if use_sampling {

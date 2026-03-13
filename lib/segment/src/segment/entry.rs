@@ -415,7 +415,7 @@ impl NonAppendableSegmentEntry for Segment {
     ) -> OperationResult<CardinalityEstimation> {
         Ok(match filter {
             None => {
-                let available = self.available_point_count_without_deferred_estimated();
+                let available = self.available_point_count_without_deferred();
                 CardinalityEstimation {
                     primary_clauses: vec![],
                     min: available,
@@ -428,7 +428,7 @@ impl NonAppendableSegmentEntry for Segment {
                 let cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
                 let total_points = self.id_tracker.borrow().available_point_count();
-                let available_points = self.available_point_count_without_deferred_estimated();
+                let available_points = self.available_point_count_without_deferred();
                 adjust_for_deferred_points(cardinality, available_points, total_points)
             }
         })
@@ -507,8 +507,8 @@ impl NonAppendableSegmentEntry for Segment {
             0
         };
 
-        let num_points = self.available_point_count_without_deferred_estimated();
-        let num_deferred_points = self.deferred_point_count_estimated();
+        let num_points = self.available_point_count_without_deferred();
+        let num_deferred_points = self.deferred_point_count();
 
         let vectors_size_bytes = total_average_vectors_size_bytes * self.available_point_count();
 
@@ -526,7 +526,9 @@ impl NonAppendableSegmentEntry for Segment {
             num_indexed_vectors,
             num_points,
             num_deferred_points,
-            num_deleted_vectors: self.deleted_point_count(),
+            num_deleted_vectors: self
+                .deleted_point_count()
+                .saturating_sub(self.deferred_deleted_count.unwrap_or_default()),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
             ram_usage_bytes: 0,  // ToDo: Implement
@@ -893,8 +895,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) {
-        query_context
-            .add_available_point_count(self.available_point_count_without_deferred_estimated());
+        query_context.add_available_point_count(self.available_point_count_without_deferred());
         let hw_acc = query_context.hardware_usage_accumulator();
         let hw_counter = hw_acc.get_counter_cell();
 
@@ -930,7 +931,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let Some(deferred_from) = self.deferred_internal_id else {
+        let Some(deferred_from) = self.deferred_internal_id_if_any() else {
             return vec![];
         };
         let id_tracker = self.id_tracker.borrow();
@@ -941,11 +942,17 @@ impl NonAppendableSegmentEntry for Segment {
             .collect()
     }
 
-    fn available_point_count_without_deferred_estimated(&self) -> usize {
+    fn available_point_count_without_deferred(&self) -> usize {
         self.id_tracker
             .borrow()
             .available_point_count()
-            .saturating_sub(self.deferred_point_count_estimated())
+            .saturating_sub(self.deferred_point_count())
+    }
+
+    fn has_deferred_points(&self) -> bool {
+        self.deferred_internal_id.is_some_and(|deferred_from| {
+            self.is_appendable() && self.total_point_count() > deferred_from as usize
+        })
     }
 }
 
