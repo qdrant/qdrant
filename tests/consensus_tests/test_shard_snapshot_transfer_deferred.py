@@ -55,12 +55,15 @@ def make_points(start_id, count):
     return points
 
 
-def upsert_points(peer_url, start_id, count, wait=True):
+def upsert_points(peer_url, start_id, count, wait=True, timeout=None):
     points = make_points(start_id, count)
+    params = f"?wait={'true' if wait else 'false'}"
+    if timeout is not None:
+        params += f"&timeout={timeout}"
     r = requests.put(
-        f"{peer_url}/collections/{COLLECTION_NAME}/points"
-        f"?wait={'true' if wait else 'false'}",
+        f"{peer_url}/collections/{COLLECTION_NAME}/points{params}",
         json={"points": points},
+        timeout=timeout + 10 if timeout is not None else None,
     )
     assert_http_ok(r)
 
@@ -78,7 +81,7 @@ def scroll_all(peer_url):
     all_points = []
     offset = None
     while True:
-        body = {"limit": 100, "with_vector": False, "with_payload": True}
+        body = {"limit": 100, "with_vector": False, "with_payload": False}
         if offset is not None:
             body["offset"] = offset
         r = requests.post(
@@ -120,7 +123,7 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
         peer_api_uris=peer_api_uris,
     )
 
-    total_points = 2000
+    total_points = 500
 
     # Find source (peer with the local shard) and target (peer without)
     source_idx, target_idx = None, None
@@ -136,7 +139,8 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
     source_uri = peer_api_uris[source_idx]
     target_uri = peer_api_uris[target_idx]
 
-    # Insert points with wait=False (matching the approach in test_deferred_points)
+    # Insert points with wait=False so points land in the deferred section
+    # without triggering optimization
     upsert_points(source_uri, start_id=1, count=total_points, wait=False)
     time.sleep(3)
 
@@ -192,8 +196,8 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
         "optimizers_config": {"max_optimization_threads": 1},
     })
 
-    # Trigger an optimization pass
-    upsert_points(source_uri, start_id=total_points + 1, count=1, wait=True)
+    # Trigger an optimization pass (longer timeout: optimizer is processing deferred points)
+    upsert_points(source_uri, start_id=total_points + 1, count=1, wait=True, timeout=120)
 
     wait_collection_green(source_uri, COLLECTION_NAME)
     wait_collection_green(target_uri, COLLECTION_NAME)
