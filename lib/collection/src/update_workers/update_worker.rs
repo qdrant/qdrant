@@ -204,7 +204,7 @@ impl UpdateWorkers {
                     let segments = locked_segments.read();
                     segments.iter().any(|(_, segment)| {
                         let segment_guard = segment.get().read();
-                        segment_guard.has_deferred_points()
+                        segment_guard.deferred_points_count() > 0
                     })
                 }))
                 .await

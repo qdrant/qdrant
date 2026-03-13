@@ -62,7 +62,7 @@ impl IndexingOptimizer {
             .memmap_threshold_kb
             .saturating_mul(BYTES_IN_KB);
 
-        let has_deferred_points = segment.has_deferred_points();
+        let has_deferred_points = segment.deferred_points_count() > 0;
 
         for (vector_name, vector_cfg) in &self.segment_optimizer_config.dense_vector {
             if let Some(vector_data) = segment_data_config.vector_data.get(vector_name) {
