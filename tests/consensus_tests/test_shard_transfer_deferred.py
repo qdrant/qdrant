@@ -2,6 +2,7 @@ import pathlib
 import random
 import time
 
+import pytest
 import requests
 
 from .assertions import assert_http_ok
@@ -103,13 +104,14 @@ def update_collection_config(peer_url, config):
     assert_http_ok(r)
 
 
-def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path):
-    """Snapshot shard transfer must include deferred points.
+@pytest.mark.parametrize("transfer_method", ["snapshot", "stream_records"])
+def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfer_method: str):
+    """Shard transfer must include deferred points regardless of method.
 
     Deferred points live in an appendable segment but have an internal offset
     beyond the indexing threshold, making them invisible to reads until the
-    segment is optimized.  A snapshot-based shard transfer must capture these
-    deferred points so they appear on the target node after optimization.
+    segment is optimized.  A shard transfer must capture these deferred points
+    so they appear on the target node after optimization.
     """
     assert_project_root()
 
@@ -151,7 +153,6 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
         f"got {visible_count}/{total_points}"
     )
 
-    # Replicate the shard to the target peer using the snapshot method
     src_info = get_collection_cluster_info(source_uri, COLLECTION_NAME)
     dst_info = get_collection_cluster_info(target_uri, COLLECTION_NAME)
 
@@ -166,7 +167,7 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
                 "shard_id": shard_id,
                 "from_peer_id": from_peer_id,
                 "to_peer_id": to_peer_id,
-                "method": "snapshot",
+                "method": transfer_method,
             }
         },
     )
@@ -181,12 +182,15 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
         f"Target should have 1 local shard, got {len(dst_info_after['local_shards'])}"
     )
 
-    # Before optimization the target should see the same visible (non-deferred) count
+    # Before optimization the target should see at least the same visible points.
+    # For snapshot the count is identical (byte-for-byte segment copy); for
+    # stream_records the target gets fresh segments so more points may be
+    # immediately visible, but never fewer.
     target_visible = scroll_all(target_uri)
     target_visible_count = len(target_visible)
-    assert target_visible_count == visible_count, (
+    assert target_visible_count >= visible_count, (
         f"Before optimization, target visible count ({target_visible_count}) "
-        f"should match source ({visible_count})"
+        f"should be >= source visible count ({visible_count})"
     )
 
     # Enable optimizers to resolve deferred points
