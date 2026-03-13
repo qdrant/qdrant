@@ -391,7 +391,7 @@ pub fn delete_points_by_filter(
                 // Include also deferred points.
                 DeferredBehavior::IncludeAll,
             );
-            has_deferred |= segment.has_deferred_points();
+            has_deferred |= segment.deferred_points_count() > 0;
             (segment_id, point_ids.into_iter().collect())
         })
         .collect::<OperationResult<_>>()?;
@@ -429,7 +429,7 @@ pub fn delete_points_by_filter(
         for (_segment_id, segment) in segments.iter() {
             let segment = segment.get().read();
             // Only need to check segments that have deferred points.
-            if !segment.has_deferred_points() {
+            if segment.deferred_points_count() == 0 {
                 continue;
             }
             for (point_id, max_version) in &max_versions {
