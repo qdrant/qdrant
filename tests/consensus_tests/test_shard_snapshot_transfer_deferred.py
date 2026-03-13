@@ -55,15 +55,13 @@ def make_points(start_id, count):
     return points
 
 
-def upsert_points(peer_url, start_id, count, wait=True, timeout=None):
+def upsert_points(peer_url, start_id, count, wait=True, client_timeout=None):
     points = make_points(start_id, count)
     params = f"?wait={'true' if wait else 'false'}"
-    if timeout is not None:
-        params += f"&timeout={timeout}"
     r = requests.put(
         f"{peer_url}/collections/{COLLECTION_NAME}/points{params}",
         json={"points": points},
-        timeout=timeout + 10 if timeout is not None else None,
+        timeout=client_timeout,
     )
     assert_http_ok(r)
 
@@ -200,7 +198,7 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
     # Use a short client timeout — we don't need the response, just the server-side effect.
     # wait_collection_green handles waiting for optimization to complete.
     try:
-        upsert_points(source_uri, start_id=total_points + 1, count=1, wait=True, timeout=5)
+        upsert_points(source_uri, start_id=total_points + 1, count=1, wait=True, client_timeout=5)
     except requests.exceptions.ReadTimeout:
         pass
 
