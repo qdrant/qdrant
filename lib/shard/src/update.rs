@@ -22,7 +22,7 @@ use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointOperations, PointStructPersisted, UpdateMode,
 };
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
-use crate::segment_holder::SegmentHolder;
+use crate::segment_holder::{SegmentHolder, SegmentId};
 
 pub fn process_point_operation(
     segments: &SegmentHolder,
@@ -364,10 +364,6 @@ pub fn delete_points(
         }
     }
 
-    if total_deleted_points == 0 {
-        segments.bump_max_segment_version_overwrite(op_num);
-    }
-
     Ok(total_deleted_points)
 }
 
@@ -381,21 +377,61 @@ pub fn delete_points_by_filter(
     let mut total_deleted = 0;
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
-    let mut points_to_delete: AHashMap<_, _> = segments
+    let mut points_to_delete: AHashMap<SegmentId, AHashMap<_, _>> = segments
         .iter()
         .map(|(segment_id, segment)| {
-            let points = segment.get().read().read_filtered(
+            let segment = segment.get().read();
+            let point_ids = segment.read_filtered(
                 None,
                 None,
                 Some(filter),
                 &is_stopped,
                 hw_counter,
-                // Delete also deferred points.
+                // Include also deferred points.
                 DeferredBehavior::IncludeAll,
-            )?;
-            Ok((segment_id, points))
+            );
+            let points: AHashMap<_, _> = if segment.deferred_points_count() > 0 {
+                point_ids
+                    .iter()
+                    .copied()
+                    .map(|point_id| {
+                        let version = segment.point_version(point_id);
+                        let is_deferred = segment.point_is_deferred(point_id);
+                        (point_id, (version, is_deferred))
+                    })
+                    .collect()
+            } else {
+                point_ids
+                    .iter()
+                    .copied()
+                    .map(|point_id| (point_id, (None, false)))
+                    .collect()
+            };
+            (segment_id, points)
         })
         .collect::<OperationResult<_>>()?;
+
+    // Filter deferred points.
+    // If the latest version of a point is deferred,
+    // we need to skip deletion for all copies of this point in optimized segments,
+    // otherwise we will end up with dangling copies of the point.
+    //
+    // For each point, find its maximum version across all segments. If that version
+    // is deferred, the point must not be deleted.
+    let mut deferred_skip_set: AHashMap<PointIdType, (Option<u64>, bool)> = AHashMap::new();
+    for segment_points in points_to_delete.values() {
+        for (&point_id, &(version, is_deferred)) in segment_points {
+            deferred_skip_set
+                .entry(point_id)
+                .and_modify(|existing| {
+                    if version > existing.0 {
+                        *existing = (version, is_deferred);
+                    }
+                })
+                .or_insert((version, is_deferred));
+        }
+    }
+    deferred_skip_set.retain(|_, (_, is_deferred)| *is_deferred);
 
     segments.apply_segments_batched(|s, segment_id| {
         let Some(curr_points) = points_to_delete.get_mut(&segment_id) else {
@@ -406,7 +442,11 @@ pub fn delete_points_by_filter(
         }
 
         let mut deleted_in_batch = 0;
-        while let Some(point_id) = curr_points.pop() {
+        for (&point_id, _) in curr_points.iter() {
+            if deferred_skip_set.get(&point_id).is_some() {
+                continue;
+            }
+
             if s.delete_point(op_num, point_id, hw_counter)? {
                 total_deleted += 1;
                 deleted_in_batch += 1;
