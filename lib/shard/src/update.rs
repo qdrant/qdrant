@@ -22,7 +22,7 @@ use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointOperations, PointStructPersisted, UpdateMode,
 };
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
-use crate::segment_holder::{SegmentHolder, SegmentId};
+use crate::segment_holder::SegmentHolder;
 
 pub fn process_point_operation(
     segments: &SegmentHolder,
@@ -378,7 +378,7 @@ pub fn delete_points_by_filter(
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     let mut has_deferred = false;
-    let points_to_delete: AHashMap<SegmentId, AHashSet<_>> = segments
+    let mut points_to_delete: AHashMap<_, _> = segments
         .iter()
         .map(|(segment_id, segment)| {
             let segment = segment.get().read();
@@ -392,15 +392,9 @@ pub fn delete_points_by_filter(
                 DeferredBehavior::IncludeAll,
             );
             has_deferred |= segment.deferred_points_count() > 0;
-            (segment_id, point_ids.into_iter().collect())
+            (segment_id, point_ids)
         })
         .collect::<OperationResult<_>>()?;
-
-    // Collect all unique point IDs matched by the filter across all segments.
-    let mut all_points_to_delete: AHashSet<PointIdType> = points_to_delete
-        .values()
-        .flat_map(|points| points.iter().copied())
-        .collect();
 
     // Deferred points corner case.
     // If the latest version of a point is deferred and does not match the filter,
@@ -426,6 +420,7 @@ pub fn delete_points_by_filter(
         // Check the corner case: if there is a deferred version of a point which has a newer
         // version but doesn't match the filter, we should not delete the point from any segment.
         // The old filtered copies will be cleaned up during optimization deduplication.
+        let mut points_to_keep: AHashSet<PointIdType> = AHashSet::new();
         for (_segment_id, segment) in segments.iter() {
             let segment = segment.get().read();
             // Only need to check segments that have deferred points.
@@ -445,27 +440,41 @@ pub fn delete_points_by_filter(
                 // - deferred
                 // - does not match the filter
                 if version > *max_version && is_deferred {
-                    // Remove this point from deletion across ALL segments.
-                    all_points_to_delete.remove(point_id);
+                    points_to_keep.insert(*point_id);
                 }
+            }
+        }
+
+        // Remove points that should be kept from all segment deletion lists.
+        if !points_to_keep.is_empty() {
+            for point_ids in points_to_delete.values_mut() {
+                point_ids.retain(|id| !points_to_keep.contains(id));
             }
         }
     }
 
-    // Delete matched points from ALL segments (not just where the filter matched),
-    // similar to how delete_points() works.
-    let all_points_vec: Vec<_> = all_points_to_delete.into_iter().collect();
-    for batch in all_points_vec.chunks(DELETION_BATCH_SIZE) {
-        for (_segment_id, segment) in segments.iter() {
-            let segment_arc = segment.get();
-            let mut write_segment = segment_arc.write();
-            for &point_id in batch {
-                if write_segment.delete_point(op_num, point_id, hw_counter)? {
-                    total_deleted += 1;
-                }
+    segments.apply_segments_batched(|s, segment_id| {
+        let Some(curr_points) = points_to_delete.get_mut(&segment_id) else {
+            return Ok(false);
+        };
+        if curr_points.is_empty() {
+            return Ok(false);
+        }
+
+        let mut deleted_in_batch = 0;
+        while let Some(point_id) = curr_points.pop() {
+            if s.delete_point(op_num, point_id, hw_counter)? {
+                total_deleted += 1;
+                deleted_in_batch += 1;
+            }
+
+            if deleted_in_batch >= DELETION_BATCH_SIZE {
+                break;
             }
         }
-    }
+
+        Ok(true)
+    })?;
 
     if total_deleted == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
