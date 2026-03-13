@@ -819,7 +819,7 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
-    fn has_deferred_points(&self) -> bool {
-        self.wrapped_segment.get().read().has_deferred_points()
+    fn deferred_points_count(&self) -> usize {
+        self.wrapped_segment.get().read().deferred_points_count()
     }
 }

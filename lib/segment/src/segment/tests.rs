@@ -807,7 +807,7 @@ fn create_deferred_segment(
 
     // Initially, no deferred points (empty segment)
 
-    assert!(!segment.has_deferred_points());
+    assert_eq!(segment.deferred_points_count(), 0);
     for i in 0..n_vectors {
         assert!(
             !segment.point_is_deferred(PointIdType::from(i as u64)),
@@ -897,7 +897,7 @@ fn create_deferred_segment(
 
     // Now we should have deferred points
     if n_deferred > 0 {
-        assert!(segment.has_deferred_points());
+        assert_eq!(segment.deferred_points_count(), n_deferred);
         assert_eq!(segment.deferred_internal_id, Some(n_vectors as u32));
     }
 
@@ -991,7 +991,7 @@ fn test_dense_deferred_points() {
 
     // Deferred points should still be the same after reopening
     assert!(
-        segment.has_deferred_points(),
+        segment.deferred_points_count() > 0,
         "Segment should still have deferred points after reopening"
     );
     assert_eq!(
