@@ -1,5 +1,10 @@
-use bitvec::vec::BitVec;
-use common::types::PointOffsetType;
+use bitvec::order::{BitOrder, Lsb0};
+use bitvec::store::BitStore;
+
+use crate::types::PointOffsetType;
+
+pub type BitVec = bitvec::vec::BitVec<u64, Lsb0>;
+pub type BitSlice = bitvec::slice::BitSlice<u64, Lsb0>;
 
 /// Set deleted state in given bitvec.
 ///
@@ -19,4 +24,17 @@ pub fn bitvec_set_deleted(bitvec: &mut BitVec, point_id: PointOffsetType, delete
         unsafe { bitvec.set_unchecked(point_id as usize, true) };
     }
     false
+}
+
+pub trait BitSliceExt {
+    /// Get a single bit from the slice.
+    /// A convenience wrapper around [`BitSlice::get`].
+    fn get_bit(&self, index: usize) -> Option<bool>;
+}
+
+impl<T: BitStore, O: BitOrder> BitSliceExt for bitvec::slice::BitSlice<T, O> {
+    #[inline]
+    fn get_bit(&self, index: usize) -> Option<bool> {
+        self.get(index).as_deref().copied()
+    }
 }

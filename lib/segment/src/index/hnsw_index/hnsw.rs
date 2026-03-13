@@ -5,13 +5,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-use bitvec::prelude::BitSlice;
-use bitvec::vec::BitVec;
+use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
-use common::ext::BitSliceExt as _;
 use common::flags::FeatureFlags;
 use common::fs::clear_disk_cache;
 use common::progress_tracker::ProgressTracker;

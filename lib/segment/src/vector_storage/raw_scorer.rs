@@ -1,8 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::BitSlice;
+use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::ext::BitSliceExt as _;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 

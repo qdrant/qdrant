@@ -1,16 +1,20 @@
-use std::borrow::Cow;
 use std::io::Write;
-use std::mem::{self, MaybeUninit, size_of};
+use std::mem::{self, MaybeUninit, size_of, transmute};
 use std::path::Path;
+use std::sync::Arc;
 
-use common::bitvec::{BitSlice, BitSliceExt as _};
-use common::maybe_uninit::maybe_uninit_fill_from;
-use common::mmap;
-use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
+use common::bitvec::BitSlice;
+use common::disk_cache::{CacheController, CachedFile};
+use common::bitvec::BitSliceExt as _;
+use common::maybe_uninit::maybe_uninit_fill_from_with_drop;
+use common::mmap::chunked::get_cached;
+use common::mmap::{
+    self, Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable, MmapBitSlice, MmapChunkView,
+    MmapFlusher,
+};
 use common::types::PointOffsetType;
-use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{ElementsRange, OpenOptions as UniversalOpenOptions, UniversalRead};
 use fs_err::{File, OpenOptions};
+use memmap2::Mmap;
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
@@ -28,17 +32,23 @@ const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
 const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
-/// Immutable storage for dense vectors.
+/// Mem-mapped file for dense vectors
 #[derive(Debug)]
-pub struct ImmutableDenseVectors<
-    T: PrimitiveVectorElement,
-    S: UniversalRead<u8> = MmapUniversal<u8>,
-> {
+pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
     pub dim: usize,
     pub num_vectors: usize,
-    /// Byte-addressable vector data storage, providing read access via [`UniversalRead<u8>`].
-    storage: S,
-    /// Context for io_uring-based async IO
+    /// Main vector data mmap for read/write
+    ///
+    /// Has an exact size to fit a header and `num_vectors` of vectors.
+    /// Best suited for random reads.
+    mmap: Arc<Mmap>,
+    /// Read-only mmap best suited for sequential reads
+    ///
+    /// `None` on platforms that do not support multiple memory maps to the same file.
+    /// Use [`mmap_seq`] utility function to access this mmap if available.
+    _mmap_seq: Option<Arc<Mmap>>,
+    cached: Option<CachedFile>,
+    /// Context for io_uring-base async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     uring_reader: Option<Mutex<UringReader<T>>>,
     /// Memory mapped deletion flags
@@ -47,33 +57,35 @@ pub struct ImmutableDenseVectors<
     pub deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S> {
+impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
         with_async_io: bool,
+        madvise: AdviceSetting,
         populate: bool,
     ) -> OperationResult<Self> {
-        // Allocate/open vectors file
+        // Allocate/open vectors mmap
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
+        let mmap = mmap::open_read_mmap(vectors_path, madvise, populate)
+            .describe("Open mmap for reading")?;
 
-        let file_len = fs_err::metadata(vectors_path)?.len() as usize;
-        let num_vectors = file_len.saturating_sub(HEADER_SIZE) / dim / size_of::<T>();
-
-        let options = UniversalOpenOptions {
-            need_sequential: true,
-            disk_parallel: None,
-            populate: Some(populate),
-            advice: None,
+        // Only open second mmap for sequential reads if supported
+        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+            let mmap_seq = mmap::open_read_mmap(
+                vectors_path,
+                AdviceSetting::Advice(Advice::Sequential),
+                populate,
+            )
+            .describe("Open mmap for sequential reading")?;
+            Some(Arc::new(mmap_seq))
+        } else {
+            None
         };
-        let storage = UniversalRead::<u8>::open(vectors_path, options).map_err(|e| {
-            crate::common::operation_error::OperationError::service_error(format!(
-                "Failed to open vector mmap at {}: {e}",
-                vectors_path.display()
-            ))
-        })?;
+
+        let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<T>();
 
         // Allocate/open deleted mmap
         let deleted_mmap_size = deleted_mmap_size(num_vectors);
@@ -101,10 +113,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
             None
         };
 
-        Ok(ImmutableDenseVectors {
+        let cached = CacheController::global()
+            .map(|controller| controller.open_file(&vectors_path))
+            .transpose()?;
+
+        Ok(MmapDenseVectors {
             dim,
             num_vectors,
-            storage,
+            mmap: mmap.into(),
+            _mmap_seq: mmap_seq,
+            cached,
             uring_reader: uring_reader.map(Mutex::new),
             deleted,
             deleted_count,
@@ -119,13 +137,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         self.deleted.flusher()
     }
 
-    /// Returns the byte offset within the file at which the vector for `key` begins.
-    ///
-    /// File layout:
-    /// ```text
-    /// [HEADER_SIZE] [vector_0] [vector_1] ... [vector_N-1]
-    /// ```
-    /// Each vector occupies `dim * size_of::<T>()` bytes.
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
         let vector_data_length = self.dim * size_of::<T>();
         let offset = (key as usize) * vector_data_length + HEADER_SIZE;
@@ -135,41 +146,45 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         Some(offset)
     }
 
-    /// Size in bytes of a single vector.
     pub fn raw_size(&self) -> usize {
         self.dim * size_of::<T>()
     }
 
-    /// Read one vector's worth of bytes from storage at `byte_offset` and reinterpret
-    /// the byte slice as `&[T]`.
-    fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
-        let range = ElementsRange {
-            start: byte_offset as u64,
-            length: self.raw_size() as u64,
-        };
-
-        let cow: Cow<'_, [u8]> = if P::IS_SEQUENTIAL {
-            self.storage.read::<true>(range)
-        } else {
-            self.storage.read::<false>(range)
-        }
-        .expect("vector read from storage failed");
-
-        match cow {
-            Cow::Borrowed(byte_slice) => Cow::Borrowed(bytemuck::cast_slice(byte_slice)),
-            Cow::Owned(byte_vec) => Cow::Owned(bytemuck::cast_vec(byte_vec)),
-        }
+    /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
+    #[inline]
+    fn mmap_seq(&self) -> Arc<Mmap> {
+        #[expect(clippy::used_underscore_binding)]
+        self._mmap_seq.clone().unwrap_or_else(|| self.mmap.clone())
     }
 
-    /// Returns vector data by key
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+    fn raw_vector_offset<P: AccessPattern>(&self, offset: usize) -> &[T] {
+        let mmap = if P::IS_SEQUENTIAL {
+            &self.mmap_seq()
+        } else {
+            &self.mmap
+        };
+        let byte_slice = &mmap[offset..(offset + self.raw_size())];
+        let arr: &[T] = unsafe { transmute(byte_slice) };
+        &arr[0..self.dim]
+    }
+
+    /// Returns reference to vector data by key
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> MmapChunkView<'_, T> {
         self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
-    /// Returns an optional vector data by key
-    pub fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Cow<'_, [T]>> {
-        self.data_offset(key)
-            .map(|offset| self.raw_vector_offset::<P>(offset))
+    /// Returns an optional reference to vector data by key
+    pub fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<MmapChunkView<'_, T>> {
+        let offset = self.data_offset(key)?;
+        if let Some(cached) = &self.cached {
+            let range = offset..(offset + self.raw_size());
+            Some(get_cached(cached, range))
+        } else {
+            Some(MmapChunkView::Slice(self.raw_vector_offset::<P>(offset)))
+        }
     }
 
     pub fn for_each_in_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
@@ -177,16 +192,18 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
 
         // The `f` is most likely a scorer function.
         // Fetching all vectors first then scoring them is more cache friendly
-        // than fetching and scoring in a single loop.
-
+        // then fetching and scoring in a single loop.
         let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
         let vectors = if is_read_with_prefetch_efficient(keys) {
             let iter = keys.iter().map(|key| self.get_vector::<Sequential>(*key));
-            maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+            // maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+            maybe_uninit_fill_from_with_drop(&mut vectors_buffer, iter)
         } else {
             let iter = keys.iter().map(|key| self.get_vector::<Random>(*key));
-            maybe_uninit_fill_from(&mut vectors_buffer, iter).0
-        };
+            // maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+            maybe_uninit_fill_from_with_drop(&mut vectors_buffer, iter)
+        }
+        .0;
 
         for (i, vec) in vectors.iter().enumerate() {
             f(i, vec);
@@ -255,13 +272,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     }
 
     pub fn populate(&self) {
-        if let Err(err) = self.storage.populate() {
-            log::error!("Failed to populate vector storage: {err}");
+        #[expect(clippy::used_underscore_binding)]
+        if let Some(mmap_seq) = &self._mmap_seq {
+            mmap_seq.populate();
         }
     }
 }
 
-/// Ensure the given mmap file exists and is the given size.
+/// Ensure the given mmap file exists and is the given size
 ///
 /// # Arguments
 /// * `path`: path of the file.

@@ -5,8 +5,8 @@ use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
-use bitvec::prelude::BitVec;
-use common::ext::BitSliceExt;
+use bitvec::vec::BitVec;
+use common::bitvec::BitSliceExt;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, atomic_save_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};

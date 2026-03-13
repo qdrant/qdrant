@@ -3,7 +3,6 @@ mod async_io;
 mod async_io_mock;
 #[cfg(target_os = "linux")]
 pub mod async_raw_scorer;
-mod bitvec;
 mod chunked_vectors;
 pub mod common;
 pub mod dense;

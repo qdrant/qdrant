@@ -10,7 +10,7 @@ use std::path::Path;
 
 use bitvec::mem::BitRegister;
 use bitvec::order::Lsb0;
-use bitvec::vec::BitVec;
+use common::bitvec::BitVec;
 use common::universal_io::{
     ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalWrite,
 };

@@ -2,10 +2,8 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitSlice;
-use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use common::ext::BitSliceExt as _;
+use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;

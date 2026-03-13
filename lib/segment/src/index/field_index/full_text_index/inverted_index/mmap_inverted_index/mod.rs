@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use bitvec::vec::BitVec;
+use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::mmap::{self, AdviceSetting, MmapSlice, create_and_ensure_length};

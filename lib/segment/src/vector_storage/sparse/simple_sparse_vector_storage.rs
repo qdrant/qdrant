@@ -2,9 +2,8 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::{BitSlice, BitVec};
+use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -18,7 +17,6 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{
     AccessPattern, Random, SparseVectorStorage, VectorStorage, VectorStorageEnum,

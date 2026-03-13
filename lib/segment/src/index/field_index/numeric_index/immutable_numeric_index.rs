@@ -4,8 +4,7 @@ use std::path::PathBuf;
 #[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
-use bitvec::vec::BitVec;
-use common::ext::BitSliceExt as _;
+use common::bitvec::{BitSliceExt as _, BitVec};
 use common::types::PointOffsetType;
 use gridstore::Blob;
 #[cfg(feature = "rocksdb")]
