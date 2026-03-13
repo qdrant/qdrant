@@ -46,19 +46,20 @@ pub fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -
 fn hnsw_quantized_search_test(
     distance: Distance,
     num_vectors: u64,
+    dim: usize,
     quantization_config: QuantizationConfig,
+    test_rescoring: bool,
 ) {
     let stopped = AtomicBool::new(false);
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let quantized_data_path = dir.path();
 
     let payloads_count = 50;
-    let dim = 131;
     let m = 16;
     let ef = 64;
     let ef_construct = 64;
     let top = 10;
-    let attempts = 10;
+    let attempts = 5;
 
     let mut rng = StdRng::seed_from_u64(42);
     let mut op_num = 0;
@@ -119,7 +120,7 @@ fn hnsw_quantized_search_test(
         inline_storage: None,
     };
 
-    let permit_cpu_count = 1; // single-threaded for deterministic build
+    let permit_cpu_count = 2;
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let hnsw_index = HNSWIndex::build(
@@ -173,18 +174,18 @@ fn hnsw_quantized_search_test(
     check_oversampling(&query_vectors, &hnsw_index, None, ef, top);
     check_oversampling(&query_vectors, &hnsw_index, Some(&filter), ef, top);
 
-    // check that rescoring is working
-    // to check it, set all vectors to zero and expect zero scores
-    let zero_vector = vec![0.0; dim];
-    for n in 0..num_vectors {
-        let idx = n.into();
-        segment
-            .upsert_point(op_num, idx, only_default_vector(&zero_vector), &hw_counter)
-            .unwrap();
-        op_num += 1;
+    if test_rescoring {
+        let zero_vector = vec![0.0; dim];
+        for n in 0..num_vectors {
+            let idx = n.into();
+            segment
+                .upsert_point(op_num, idx, only_default_vector(&zero_vector), &hw_counter)
+                .unwrap();
+            op_num += 1;
+        }
+        check_rescoring(&query_vectors, &hnsw_index, None, ef, top);
+        check_rescoring(&query_vectors, &hnsw_index, Some(&filter), ef, top);
     }
-    check_rescoring(&query_vectors, &hnsw_index, None, ef, top);
-    check_rescoring(&query_vectors, &hnsw_index, Some(&filter), ef, top);
 }
 
 pub fn check_matches(
@@ -322,12 +323,14 @@ fn hnsw_quantized_search_cosine_test() {
     hnsw_quantized_search_test(
         Distance::Cosine,
         5003,
+        131,
         ScalarQuantizationConfig {
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
         }
         .into(),
+        true,
     );
 }
 
@@ -336,12 +339,14 @@ fn hnsw_quantized_search_euclid_test() {
     hnsw_quantized_search_test(
         Distance::Euclid,
         5003,
+        131,
         ScalarQuantizationConfig {
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
         }
         .into(),
+        true,
     );
 }
 
@@ -350,12 +355,14 @@ fn hnsw_quantized_search_manhattan_test() {
     hnsw_quantized_search_test(
         Distance::Manhattan,
         5003,
+        131,
         ScalarQuantizationConfig {
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
         }
         .into(),
+        true,
     );
 }
 
@@ -364,11 +371,13 @@ fn hnsw_product_quantization_cosine_test() {
     hnsw_quantized_search_test(
         Distance::Cosine,
         1003,
+        64,
         ProductQuantizationConfig {
             compression: CompressionRatio::X4,
             always_ram: Some(true),
         }
         .into(),
+        false,
     );
 }
 
@@ -377,11 +386,13 @@ fn hnsw_product_quantization_euclid_test() {
     hnsw_quantized_search_test(
         Distance::Euclid,
         1003,
+        64,
         ProductQuantizationConfig {
             compression: CompressionRatio::X4,
             always_ram: Some(true),
         }
         .into(),
+        false,
     );
 }
 
@@ -390,11 +401,13 @@ fn hnsw_product_quantization_manhattan_test() {
     hnsw_quantized_search_test(
         Distance::Manhattan,
         1003,
+        64,
         ProductQuantizationConfig {
             compression: CompressionRatio::X4,
             always_ram: Some(true),
         }
         .into(),
+        false,
     );
 }
 

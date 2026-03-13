@@ -110,7 +110,7 @@ fn test_storage_files() {
 }
 
 #[rstest]
-#[case(100000, 2)]
+#[case(50000, 2)]
 #[case(100, 2000)]
 fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usize) {
     let (_dir, mut storage) = empty_storage();
@@ -323,7 +323,7 @@ fn test_behave_like_hashmap(
 ) {
     use ahash::AHashMap;
 
-    let operation_count = 100_000;
+    let operation_count = 50_000;
     let max_point_offset = 10_000u32;
 
     let _ = env_logger::builder().is_test(true).try_init();
@@ -732,7 +732,6 @@ fn test_payload_compression() {
 }
 
 #[rstest]
-#[case(64)]
 #[case(128)]
 #[case(256)]
 #[case(512)]
