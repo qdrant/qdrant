@@ -1119,12 +1119,12 @@ impl SegmentEntry for Segment {
     }
 
     fn deferred_points_count(&self) -> usize {
-        if let Some(deferred_from) = self.deferred_internal_id {
-            if self.is_appendable() {
-                return self
-                    .total_point_count()
-                    .saturating_sub(deferred_from as usize);
-            }
+        if let Some(deferred_from) = self.deferred_internal_id
+            && self.is_appendable()
+        {
+            return self
+                .total_point_count()
+                .saturating_sub(deferred_from as usize);
         }
         0
     }
