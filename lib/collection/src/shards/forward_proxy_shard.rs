@@ -40,7 +40,7 @@ use crate::operations::{
 };
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
 use crate::shards::telemetry::LocalShardTelemetry;
 
 /// Result of a single batch transfer, including timing breakdown.
@@ -80,7 +80,7 @@ impl PreparedTransferBatch {
             .update(
                 // Don't add clock tag, this transfers points out of regular order (SyncPoints)
                 OperationWithClockTag::from(self.operation),
-                self.wait,
+                WaitBehavior::from(self.wait),
                 None,
                 HwMeasurementAcc::disposable(), // Internal operation
             )
@@ -174,7 +174,7 @@ impl ForwardProxyShard {
                             field_schema: Some(index_type.try_into()?),
                         }),
                     )),
-                    false,
+                    WaitBehavior::NoWait,
                     None,
                     HwMeasurementAcc::disposable(), // Internal operation
                 )
@@ -475,7 +475,7 @@ impl ShardOperation for ForwardProxyShard {
     async fn update(
         &self,
         operation: OperationWithClockTag,
-        _wait: bool,
+        _wait: WaitBehavior,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -490,9 +490,16 @@ impl ShardOperation for ForwardProxyShard {
 
         // We always have to wait for the result of the update, cause after we release the lock,
         // the transfer needs to have access to the latest version of points.
+        // Use `Segment` to wait for the operation to land in a segment without waiting for deferred
+        // points to be optimized.
         let mut result = self
             .wrapped_shard
-            .update(operation.clone(), true, timeout, hw_measurement_acc.clone())
+            .update(
+                operation.clone(),
+                WaitBehavior::Segment,
+                timeout,
+                hw_measurement_acc.clone(),
+            )
             .await?;
 
         let points_matching_filter_before = {
@@ -575,7 +582,7 @@ impl ShardOperation for ForwardProxyShard {
 
         let remote_result = self
             .remote_shard
-            .update(operation, false, None, hw_measurement_acc)
+            .update(operation, WaitBehavior::NoWait, None, hw_measurement_acc)
             .await
             .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
 

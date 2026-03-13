@@ -31,7 +31,7 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
 use crate::update_handler::{OperationData, UpdateSignal};
 
 #[async_trait]
@@ -46,13 +46,13 @@ impl ShardOperation for LocalShard {
     async fn update(
         &self,
         mut operation: OperationWithClockTag,
-        wait: bool,
+        wait: WaitBehavior,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
-        let (callback_sender, callback_receiver) = if wait {
+        let (callback_sender, callback_receiver) = if wait.needs_callback() {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
         } else {
@@ -104,6 +104,7 @@ impl ShardOperation for LocalShard {
                 op_num: operation_id,
                 operation,
                 sender: callback_sender,
+                wait_for_deferred: wait.wait_for_deferred(),
                 hw_measurements: hw_measurement_acc.clone(),
             }));
 

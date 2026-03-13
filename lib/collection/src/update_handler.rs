@@ -41,6 +41,9 @@ pub struct OperationData {
     pub operation: Option<Box<CollectionUpdateOperations>>,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
+    /// Whether to wait for deferred points to be optimized before sending feedback.
+    /// Only relevant when `sender` is `Some`.
+    pub wait_for_deferred: bool,
     /// Hardware measurement for the operation
     pub hw_measurements: HwMeasurementAcc,
 }

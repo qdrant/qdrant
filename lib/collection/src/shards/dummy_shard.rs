@@ -23,7 +23,7 @@ use crate::operations::types::{
     PointRequestInternal, ShardStatus, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
 use crate::shards::telemetry::LocalShardTelemetry;
 
 #[derive(Clone, Debug)]
@@ -95,7 +95,7 @@ impl ShardOperation for DummyShard {
     async fn update(
         &self,
         op: OperationWithClockTag,
-        _: bool,
+        _: WaitBehavior,
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {

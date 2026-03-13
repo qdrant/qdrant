@@ -16,7 +16,7 @@ use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClock
 use crate::shards::replica_set::clock_set::ClockGuard;
 use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use crate::shards::shard::{PeerId, Shard};
-use crate::shards::shard_trait::ShardOperation as _;
+use crate::shards::shard_trait::{ShardOperation as _, WaitBehavior};
 
 /// Maximum number of attempts for applying an update with a new clock.
 ///
@@ -38,7 +38,7 @@ impl ShardReplicaSet {
     pub async fn update_local(
         &self,
         operation: OperationWithClockTag,
-        wait: bool,
+        wait: WaitBehavior,
         timeout: Option<Duration>,
         mut hw_measurement: HwMeasurementAcc,
         force: bool,
@@ -94,7 +94,7 @@ impl ShardReplicaSet {
             ReplicaState::Listener => {
                 local
                     .get()
-                    .update(operation, false, None, hw_measurement)
+                    .update(operation, WaitBehavior::NoWait, None, hw_measurement)
                     .await
             }
 
@@ -170,7 +170,7 @@ impl ShardReplicaSet {
 
             self.update(
                 operation,
-                wait,
+                WaitBehavior::from(wait),
                 timeout,
                 update_only_existing,
                 hw_measurement_acc,
@@ -238,7 +238,7 @@ impl ShardReplicaSet {
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
-        wait: bool,
+        wait: WaitBehavior,
         timeout: Option<Duration>,
         update_only_existing: bool,
         hw_measurement_acc: HwMeasurementAcc,
@@ -309,7 +309,7 @@ impl ShardReplicaSet {
     async fn update_impl(
         &self,
         operation: CollectionUpdateOperations,
-        wait: bool,
+        wait: WaitBehavior,
         timeout: Option<Duration>,
         clock: &mut clock_set::ClockGuard,
         update_only_existing: bool,
@@ -351,7 +351,7 @@ impl ShardReplicaSet {
             && self.is_peer_updatable(this_peer_id)
         {
             let local_wait = if self.peer_state(this_peer_id) == Some(ReplicaState::Listener) {
-                false
+                WaitBehavior::NoWait
             } else {
                 wait
             };
@@ -505,7 +505,7 @@ impl ShardReplicaSet {
                 );
 
                 // Wait for replica failures to be accepted, otherwise return consistency error
-                if wait && wait_for_deactivation {
+                if wait.needs_callback() && wait_for_deactivation {
                     // ToDo: allow timeout configuration in API
                     let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
 

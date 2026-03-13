@@ -16,7 +16,7 @@ use crate::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
 use crate::tests::fixtures::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -52,7 +52,7 @@ async fn test_shard_query_rrf_rescoring() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(upsert_ops.into(), true, None, HwMeasurementAcc::new())
+        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
         .await
         .unwrap();
 
@@ -257,7 +257,7 @@ async fn test_shard_query_vector_rescoring() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(upsert_ops.into(), true, None, HwMeasurementAcc::new())
+        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
         .await
         .unwrap();
 
@@ -395,7 +395,7 @@ async fn test_shard_query_payload_vector() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(upsert_ops.into(), true, None, HwMeasurementAcc::new())
+        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
         .await
         .unwrap();
 

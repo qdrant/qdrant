@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::PointRequestInternal;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
 use crate::tests::fixtures::*;
 use crate::update_workers::applied_seq::{APPLIED_SEQ_SAVE_INTERVAL, AppliedSeqHandler};
 
@@ -58,7 +58,7 @@ async fn test_delete_from_indexed_payload() {
     let hw_acc = HwMeasurementAcc::new();
 
     shard
-        .update(upsert_ops.into(), true, None, hw_acc.clone())
+        .update(upsert_ops.into(), WaitBehavior::Wait, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -73,13 +73,13 @@ async fn test_delete_from_indexed_payload() {
         })
         .unwrap();
     shard
-        .update(index_op.into(), true, None, hw_acc.clone())
+        .update(index_op.into(), WaitBehavior::Wait, None, hw_acc.clone())
         .await
         .unwrap();
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(delete_point_op.into(), true, None, hw_acc.clone())
+        .update(delete_point_op.into(), WaitBehavior::Wait, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -114,7 +114,7 @@ async fn test_delete_from_indexed_payload() {
     eprintln!("dropping point 5");
     let delete_point_op = delete_point_operation(5);
     shard
-        .update(delete_point_op.into(), true, None, hw_acc.clone())
+        .update(delete_point_op.into(), WaitBehavior::Wait, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -186,7 +186,7 @@ async fn test_partial_flush_recovery() {
     let hw_acc = HwMeasurementAcc::new();
 
     shard
-        .update(upsert_ops.into(), true, None, hw_acc.clone())
+        .update(upsert_ops.into(), WaitBehavior::Wait, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -202,7 +202,7 @@ async fn test_partial_flush_recovery() {
         .unwrap();
 
     shard
-        .update(index_op.into(), true, None, hw_acc.clone())
+        .update(index_op.into(), WaitBehavior::Wait, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -212,7 +212,7 @@ async fn test_partial_flush_recovery() {
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(delete_point_op.into(), true, None, hw_acc.clone())
+        .update(delete_point_op.into(), WaitBehavior::Wait, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -310,7 +310,7 @@ async fn test_truncate_unapplied_wal() {
         ));
 
         // Use wait=false so updates queue up faster than they're processed
-        update_futures.push(shard.update(op.into(), false, None, hw_acc.clone()));
+        update_futures.push(shard.update(op.into(), WaitBehavior::NoWait, None, hw_acc.clone()));
     }
 
     // Send all updates as fast as possible
@@ -390,7 +390,7 @@ async fn test_truncate_unapplied_wal() {
 
     // Use wait=true to ensure the update is fully applied
     let update_result = shard
-        .update(op.into(), true, None, hw_acc.clone())
+        .update(op.into(), WaitBehavior::Wait, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -463,7 +463,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), true, None, hw_acc.clone())
+            .update(op.into(), WaitBehavior::Wait, None, hw_acc.clone())
             .await
             .unwrap();
     }
@@ -618,7 +618,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), true, None, hw_acc.clone())
+            .update(op.into(), WaitBehavior::Wait, None, hw_acc.clone())
             .await
             .unwrap();
     }

@@ -16,6 +16,7 @@ use shard::query::query_enum::QueryEnum;
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
+use crate::shards::shard_trait::WaitBehavior;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
@@ -138,7 +139,7 @@ async fn fixture() -> Collection {
             ])),
         ));
         shard
-            .update_local(op, true, None, HwMeasurementAcc::new(), false)
+            .update_local(op, WaitBehavior::Wait, None, HwMeasurementAcc::new(), false)
             .await
             .expect("failed to insert points");
     }

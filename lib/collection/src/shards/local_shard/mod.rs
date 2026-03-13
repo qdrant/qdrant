@@ -865,6 +865,7 @@ impl LocalShard {
                         op_num,
                         operation: None,
                         sender: None,
+                        wait_for_deferred: false,
                         hw_measurements: hw_measurements.clone(),
                     }))
                     .await?;

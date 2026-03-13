@@ -43,6 +43,7 @@ use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
+use crate::shards::shard_trait::WaitBehavior;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
@@ -1103,7 +1104,7 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(op.into(), true, None, hw_measurement_acc, force)
+            .update_local(op.into(), WaitBehavior::Wait, None, hw_measurement_acc, force)
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(

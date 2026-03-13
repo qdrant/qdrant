@@ -16,6 +16,7 @@ use super::Collection;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
+use crate::shards::shard_trait::WaitBehavior;
 use crate::shards::shard_holder::{SharedShardHolder, WeakShardHolder};
 use crate::telemetry::{
     ShardCleanStatusFailedTelemetry, ShardCleanStatusProgressTelemetry, ShardCleanStatusTelemetry,
@@ -337,7 +338,7 @@ async fn clean_task(
         if let Err(err) = shard
             .update_local(
                 delete_operation,
-                last_batch,
+                WaitBehavior::from(last_batch),
                 None,
                 HwMeasurementAcc::disposable(),
                 false,

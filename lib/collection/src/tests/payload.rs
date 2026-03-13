@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 use crate::collection::payload_index_schema::{self, PayloadIndexSchema};
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitBehavior};
 use crate::tests::fixtures::{create_collection_config, upsert_operation};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -53,7 +53,7 @@ async fn test_payload_missing_index_check() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(upsert_ops.into(), true, None, HwMeasurementAcc::new())
+        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
         .await
         .unwrap();
 
@@ -167,7 +167,7 @@ async fn create_index(
         }),
     );
     shard
-        .update(create_index.into(), true, None, HwMeasurementAcc::new())
+        .update(create_index.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
         .await
         .unwrap();
 }
