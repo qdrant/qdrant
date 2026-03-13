@@ -180,16 +180,22 @@ pub struct ShardTransferRestart {
 
 impl fmt::Debug for ShardTransferRestart {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Match ShardTransfer's Debug layout so log parsers can use the same pattern
-        f.debug_struct("ShardTransfer")
-            .field("shard_id", &self.shard_id)
-            .field("to_shard_id", &self.to_shard_id)
-            .field("from", &self.from)
-            .field("to", &self.to)
-            .field("sync", &false)
-            .field("method", &Some(self.method))
-            .field("filter", &None::<()>)
-            .finish()
+        // Delegate to ShardTransfer's Debug so log lines use the same format
+        ShardTransfer::from(self).fmt(f)
+    }
+}
+
+impl From<&ShardTransferRestart> for ShardTransfer {
+    fn from(restart: &ShardTransferRestart) -> Self {
+        Self {
+            shard_id: restart.shard_id,
+            to_shard_id: restart.to_shard_id,
+            from: restart.from,
+            to: restart.to,
+            sync: false,
+            method: Some(restart.method),
+            filter: None,
+        }
     }
 }
 
