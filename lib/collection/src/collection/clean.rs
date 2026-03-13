@@ -16,8 +16,8 @@ use super::Collection;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
-use crate::shards::shard_trait::WaitBehavior;
 use crate::shards::shard_holder::{SharedShardHolder, WeakShardHolder};
+use crate::shards::shard_trait::WaitBehavior;
 use crate::telemetry::{
     ShardCleanStatusFailedTelemetry, ShardCleanStatusProgressTelemetry, ShardCleanStatusTelemetry,
 };

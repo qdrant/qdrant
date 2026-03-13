@@ -53,7 +53,12 @@ async fn test_payload_missing_index_check() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
+        .update(
+            upsert_ops.into(),
+            WaitBehavior::Wait,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 
@@ -167,7 +172,12 @@ async fn create_index(
         }),
     );
     shard
-        .update(create_index.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
+        .update(
+            create_index.into(),
+            WaitBehavior::Wait,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 }

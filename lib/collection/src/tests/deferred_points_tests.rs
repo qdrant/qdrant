@@ -116,7 +116,9 @@ async fn test_deferred_points_wait_true() {
 
     for i in 1..=NUM_POINTS {
         let op = make_upsert_op(i);
-        let result = shard.update(op.into(), WaitBehavior::Wait, None, hw_acc.clone()).await;
+        let result = shard
+            .update(op.into(), WaitBehavior::Wait, None, hw_acc.clone())
+            .await;
         assert!(
             result.is_ok(),
             "Upsert with wait=true should succeed for point {i}"
@@ -156,7 +158,9 @@ async fn test_deferred_points_wait_false() {
     // Push all points with wait=false — returns immediately without waiting for application
     for i in 1..=NUM_POINTS {
         let op = make_upsert_op(i);
-        let result = shard.update(op.into(), WaitBehavior::NoWait, None, hw_acc.clone()).await;
+        let result = shard
+            .update(op.into(), WaitBehavior::NoWait, None, hw_acc.clone())
+            .await;
         assert!(
             result.is_ok(),
             "Upsert with wait=false should succeed for point {i}"

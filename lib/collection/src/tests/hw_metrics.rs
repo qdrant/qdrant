@@ -55,7 +55,12 @@ async fn test_hw_metrics_cancellation() {
 
     let upsert_ops = make_random_points_upsert_op(10_000);
     shard
-        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
+        .update(
+            upsert_ops.into(),
+            WaitBehavior::Wait,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 

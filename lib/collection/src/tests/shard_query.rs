@@ -52,7 +52,12 @@ async fn test_shard_query_rrf_rescoring() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
+        .update(
+            upsert_ops.into(),
+            WaitBehavior::Wait,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 
@@ -257,7 +262,12 @@ async fn test_shard_query_vector_rescoring() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
+        .update(
+            upsert_ops.into(),
+            WaitBehavior::Wait,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 
@@ -395,7 +405,12 @@ async fn test_shard_query_payload_vector() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(upsert_ops.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new())
+        .update(
+            upsert_ops.into(),
+            WaitBehavior::Wait,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 

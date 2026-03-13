@@ -218,7 +218,12 @@ async fn test_deferred_points_dedup_after_optimization() {
 
     // Step 1: Insert initial batch of points (wait=true to ensure they are persisted)
     shard
-        .update(upsert_op(random_points()), WaitBehavior::Wait, None, hw_acc.clone())
+        .update(
+            upsert_op(random_points()),
+            WaitBehavior::Wait,
+            None,
+            hw_acc.clone(),
+        )
         .await
         .unwrap();
 
@@ -230,7 +235,12 @@ async fn test_deferred_points_dedup_after_optimization() {
     // resolved (with prevent_unoptimized=true, wait=true would wait for optimization).
     // Then use plunge_async to ensure the update is actually applied before checking.
     shard
-        .update(upsert_op(random_points()), WaitBehavior::NoWait, None, hw_acc.clone())
+        .update(
+            upsert_op(random_points()),
+            WaitBehavior::NoWait,
+            None,
+            hw_acc.clone(),
+        )
         .await
         .unwrap();
 
@@ -254,7 +264,12 @@ async fn test_deferred_points_dedup_after_optimization() {
     // Step 3: Overwrite again — this creates another round of CoW on top of the
     // previous deferred points, stressing the deduplication logic further.
     shard
-        .update(upsert_op(random_points()), WaitBehavior::NoWait, None, hw_acc.clone())
+        .update(
+            upsert_op(random_points()),
+            WaitBehavior::NoWait,
+            None,
+            hw_acc.clone(),
+        )
         .await
         .unwrap();
 
@@ -312,7 +327,12 @@ async fn setup_shard_with_deferred_points() -> (LocalShard, TempDir) {
 
     // Insert initial points and wait for optimization so they are non-deferred in optimized segment
     shard
-        .update(upsert_op(random_points()), WaitBehavior::Wait, None, hw_acc.clone())
+        .update(
+            upsert_op(random_points()),
+            WaitBehavior::Wait,
+            None,
+            hw_acc.clone(),
+        )
         .await
         .unwrap();
     wait_optimization(&shard, timeout).await;
@@ -320,7 +340,12 @@ async fn setup_shard_with_deferred_points() -> (LocalShard, TempDir) {
     // Overwrite all points — creates newer deferred copies in appendable segment
     // while old non-deferred copies remain in the optimized segment
     shard
-        .update(upsert_op(random_points()), WaitBehavior::NoWait, None, hw_acc.clone())
+        .update(
+            upsert_op(random_points()),
+            WaitBehavior::NoWait,
+            None,
+            hw_acc.clone(),
+        )
         .await
         .unwrap();
     shard.plunge_async().await.unwrap().await.unwrap();
@@ -358,7 +383,12 @@ async fn test_delete_by_id_with_deferred_points() {
     // Delete all points by ID
     let all_ids: Vec<PointIdType> = (0..NUM_POINTS).map(|i| i.into()).collect();
     shard
-        .update(delete_by_ids_op(all_ids), WaitBehavior::NoWait, None, hw_acc.clone())
+        .update(
+            delete_by_ids_op(all_ids),
+            WaitBehavior::NoWait,
+            None,
+            hw_acc.clone(),
+        )
         .await
         .unwrap();
     shard.plunge_async().await.unwrap().await.unwrap();

@@ -59,7 +59,12 @@ async fn test_fix_payload_indices() {
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(delete_point_op.into(), WaitBehavior::Wait, None, hw_acc.clone())
+        .update(
+            delete_point_op.into(),
+            WaitBehavior::Wait,
+            None,
+            hw_acc.clone(),
+        )
         .await
         .unwrap();
 

@@ -100,7 +100,12 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
     let rnd_batch = create_rnd_batch();
 
     handle
-        .block_on(shard.update(rnd_batch.into(), WaitBehavior::Wait, None, HwMeasurementAcc::new()))
+        .block_on(shard.update(
+            rnd_batch.into(),
+            WaitBehavior::Wait,
+            None,
+            HwMeasurementAcc::new(),
+        ))
         .unwrap();
 
     (storage_dir, shard, runtime)
