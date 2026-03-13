@@ -50,6 +50,7 @@ use crate::shards::dummy_shard::DummyShard;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_trait::WaitUntil;
 
 //    │    Collection Created
 //    │
@@ -1103,7 +1104,13 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(op.into(), true, None, hw_measurement_acc, force)
+            .update_local(
+                op.into(),
+                WaitUntil::Visible,
+                None,
+                hw_measurement_acc,
+                force,
+            )
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(

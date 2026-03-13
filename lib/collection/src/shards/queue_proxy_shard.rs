@@ -36,7 +36,7 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::LocalShardTelemetry;
 
 /// Number of operations in batch when syncing
@@ -295,7 +295,7 @@ impl ShardOperation for QueueProxyShard {
     async fn update(
         &self,
         operation: OperationWithClockTag,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -648,7 +648,7 @@ impl ShardOperation for Inner {
     async fn update(
         &self,
         operation: OperationWithClockTag,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {

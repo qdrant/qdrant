@@ -9,7 +9,7 @@ use collection::operations::point_ops::{
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
-use collection::shards::shard_trait::ShardOperation;
+use collection::shards::shard_trait::{ShardOperation, WaitUntil};
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
@@ -118,7 +118,12 @@ fn batch_search_bench(c: &mut Criterion) {
     let rnd_batch = create_rnd_batch();
 
     handle
-        .block_on(shard.update(rnd_batch.into(), true, None, HwMeasurementAcc::new()))
+        .block_on(shard.update(
+            rnd_batch.into(),
+            WaitUntil::Visible,
+            None,
+            HwMeasurementAcc::new(),
+        ))
         .unwrap();
 
     let mut group = c.benchmark_group("batch-search-bench");
