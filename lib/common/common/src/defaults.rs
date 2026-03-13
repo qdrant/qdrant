@@ -26,6 +26,11 @@ pub const CONSENSUS_META_OP_WAIT: Duration = Duration::from_secs(10);
 /// Enable via log config, e.g. `log_level: "INFO,qdrant::load_timing=debug"`.
 pub const LOAD_TIMING_LOG_TARGET: &str = "qdrant::load_timing";
 
+/// Minimum duration for a load-timing entry to be logged.
+/// Sub-component loads faster than this are suppressed to reduce noise.
+/// Matches the `{:.2}s` display format: anything below 5ms rounds to "0.00s".
+pub const LOAD_TIMING_MIN_DURATION: Duration = Duration::from_millis(5);
+
 /// Max number of pooled elements to preserve in memory.
 /// Scaled according to the number of logical CPU cores to account for concurrent operations.
 pub static POOL_KEEP_LIMIT: LazyLock<usize> = LazyLock::new(|| cpu::get_num_cpus().clamp(16, 128));
