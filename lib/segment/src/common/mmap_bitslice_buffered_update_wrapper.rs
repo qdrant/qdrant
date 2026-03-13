@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use itertools::Itertools;
 use parking_lot::RwLock;
 
 use crate::common::Flusher;
@@ -103,8 +104,13 @@ impl MmapBitSliceBufferedUpdateWrapper {
             };
 
             let mut storage_write = bitslice.write();
-            storage_write
-                .set_ascending_bits_batch(updates.iter().map(|(idx, val)| (*idx as u64, *val)))?;
+
+            storage_write.set_ascending_bits_batch(
+                updates
+                    .iter()
+                    .map(|(idx, value)| (*idx as u64, *value))
+                    .sorted_unstable_by_key(|(idx, _)| *idx),
+            )?;
             storage_write.flusher()()?;
 
             // Keep the guard till here to prevent concurrent drop/flushes
