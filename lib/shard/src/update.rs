@@ -435,7 +435,7 @@ pub fn delete_points_by_filter(
                 let version = segment.point_version(*point_id);
                 let is_deferred = segment.point_is_deferred(*point_id);
 
-                // Deferred point is:
+                // Point is:
                 // - newer than any filtered copy
                 // - deferred
                 // - does not match the filter
@@ -452,6 +452,17 @@ pub fn delete_points_by_filter(
             }
         }
     }
+
+    // Collect all unique point IDs to delete, then expand to ALL segments
+    // (not just where the filter matched), similar to how delete_points() works.
+    let all_points: AHashSet<PointIdType> = points_to_delete
+        .into_values()
+        .flat_map(|points| points.into_iter())
+        .collect();
+    let mut points_to_delete: AHashMap<_, _> = segments
+        .iter()
+        .map(|(segment_id, _)| (segment_id, all_points.iter().copied().collect::<Vec<_>>()))
+        .collect();
 
     segments.apply_segments_batched(|s, segment_id| {
         let Some(curr_points) = points_to_delete.get_mut(&segment_id) else {
