@@ -488,7 +488,7 @@ impl ShardOperation for ForwardProxyShard {
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
 
-        // We always have to wait for the operation to be written to segments, cause after we
+        // We always have to wait for the operation to be written to segments, because after we
         // release the lock, the transfer needs to have access to the latest version of points.
         // Note that we wait on `Segment` and not on `Visible`, because with the latter we'd also
         // wait on deferred points to be fully optimized which is not necessary for transfers.

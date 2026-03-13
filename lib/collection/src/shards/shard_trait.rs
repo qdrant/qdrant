@@ -18,7 +18,7 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 
 /// Controls how an update operation waits for completion.
 ///
-/// Internal enum usually deferred from wait true/false as specified by a user request.
+/// Internal enum derived from `wait=true/false` as specified by a user request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WaitUntil {
     /// Wait until the operation is written in WAL.
