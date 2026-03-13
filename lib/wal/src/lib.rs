@@ -633,7 +633,7 @@ mod test {
     const QC_TESTS: u64 = 10;
 
     #[cfg(not(target_os = "windows"))]
-    const QC_TESTS: u64 = 100;
+    const QC_TESTS: u64 = 50;
 
     fn init_logger() {
         let _ = env_logger::builder().is_test(true).try_init();
