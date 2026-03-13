@@ -309,16 +309,22 @@ impl Segment {
             .borrow_mut()
             .clear_payload(internal_id, hw_counter)?;
 
-        self.id_tracker.borrow_mut().drop_internal(internal_id)?;
+        let mut id_tracker = self.id_tracker.borrow_mut();
+
+        let is_point_already_deleted = id_tracker.is_deleted_point(internal_id);
+
+        id_tracker.drop_internal(internal_id)?;
 
         // Increase counter for deleted points.
         if let Some(deferred_point) = self.deferred_internal_id
             && internal_id >= deferred_point
+            // Don't count the deletion of the same point twice
+            && !is_point_already_deleted
         {
             println!("Deleting  deferred id: {internal_id}");
             debug_assert!(
                 self.deferred_delete_count.is_some(),
-                "`segment.deferred_delete_count` should always be Some() if we have deleted points."
+                "`segment.deferred_delete_count` should always be Some() if we have deferred points."
             );
             *self.deferred_delete_count.get_or_insert(0) += 1;
         }

@@ -1441,14 +1441,24 @@ fn test_deleted_deferred_point_count() {
                 .delete_point_internal(delete_id, &hw_counter)
                 .unwrap();
 
-            let deleted_count = d + 1;
+            let deleted_count = d + 1; // The first index is 0 but this point is deleted, so count must be 1.
+            assert_eq!(
+                segment.deferred_point_count(),
+                n_deferred.checked_sub(deleted_count).unwrap()
+            );
+
+            // Do the operation twice to test that we don't double count the same point.
+            segment
+                .delete_point_internal(delete_id, &hw_counter)
+                .unwrap();
+
             assert_eq!(
                 segment.deferred_point_count(),
                 n_deferred.checked_sub(deleted_count).unwrap()
             );
         }
 
-        // we delete all deferred points in the segment.
+        // We delete all deferred points in the segment.
         assert_eq!(segment.deferred_point_count(), 0);
     }
 }
