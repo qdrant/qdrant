@@ -149,7 +149,9 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
     /// `u64` element are coalesced into a single read-modify-write, and
     /// consecutive modified elements are grouped into contiguous runs
     /// written via a single `write_batch` call.
-    pub fn set_bits_batch(&mut self, updates: impl IntoIterator<Item = (u64, bool)>) -> Result<()> {
+    ///
+    /// Assumes the indices for the `updates` iterator increase monotonically
+    pub fn set_ascending_bits_batch(&mut self, updates: impl IntoIterator<Item = (u64, bool)>) -> Result<()> {
         let chunks = updates
             .into_iter()
             .chunk_by(|(bit_idx, _)| Self::element_idx(*bit_idx));
@@ -450,7 +452,7 @@ mod tests {
 
         // --- Single element (element 0) ---
         storage
-            .set_bits_batch([(0, true), (3, true), (7, true), (8, true), (15, true)])
+            .set_ascending_bits_batch([(0, true), (3, true), (7, true), (8, true), (15, true)])
             .unwrap();
 
         assert_eq!(storage.get_bit(0).unwrap(), Some(true));
@@ -463,7 +465,7 @@ mod tests {
         // --- Consecutive elements (elements 1 and 2) coalesced into one run ---
         // Element 1: bits 64..128, Element 2: bits 128..192
         storage
-            .set_bits_batch([
+            .set_ascending_bits_batch([
                 (64, true),  // element 1, bit 0
                 (65, true),  // element 1, bit 1
                 (127, true), // element 1, last bit
@@ -483,7 +485,7 @@ mod tests {
         // --- Non-consecutive elements (elements 0 and 2, gap at 1) ---
         // Two separate runs in a single batch call.
         storage
-            .set_bits_batch([
+            .set_ascending_bits_batch([
                 (1, true),   // element 0
                 (191, true), // element 2
             ])
@@ -496,7 +498,7 @@ mod tests {
 
         // --- Clearing bits across elements ---
         storage
-            .set_bits_batch([
+            .set_ascending_bits_batch([
                 (0, false),   // element 0
                 (64, false),  // element 1
                 (128, false), // element 2
@@ -513,7 +515,7 @@ mod tests {
 
         // --- All four elements in one consecutive run ---
         storage
-            .set_bits_batch([
+            .set_ascending_bits_batch([
                 (0, false),   // element 0
                 (64, false),  // element 1
                 (128, false), // element 2
@@ -527,10 +529,10 @@ mod tests {
         assert_eq!(storage.get_bit(255).unwrap(), Some(true));
 
         // --- Out of bounds ---
-        assert!(storage.set_bits_batch([(256, true)]).is_err());
+        assert!(storage.set_ascending_bits_batch([(256, true)]).is_err());
 
         // --- Empty batch is a no-op ---
-        storage.set_bits_batch(std::iter::empty()).unwrap();
+        storage.set_ascending_bits_batch(std::iter::empty()).unwrap();
     }
 
     #[test]

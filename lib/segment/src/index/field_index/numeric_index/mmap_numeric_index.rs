@@ -143,7 +143,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
             )?;
 
             let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
-            deleted.set_bits_batch(
+            deleted.set_ascending_bits_batch(
                 in_memory_index
                     .point_to_values
                     .iter()

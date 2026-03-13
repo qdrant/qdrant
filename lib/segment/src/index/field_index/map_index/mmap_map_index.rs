@@ -134,7 +134,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             )?;
 
             let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
-            deleted.set_bits_batch(
+            deleted.set_ascending_bits_batch(
                 point_to_values
                     .iter()
                     .enumerate()

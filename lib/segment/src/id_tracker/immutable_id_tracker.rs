@@ -303,7 +303,7 @@ impl ImmutableIdTracker {
         // Set bits for deleted points from the mappings,
         deleted_storage.write_bitslice(mappings.deleted())?;
         // plus any trailing points beyond mappings.deleted().len() are also marked deleted.
-        deleted_storage.set_bits_batch(
+        deleted_storage.set_ascending_bits_batch(
             (mappings.deleted().len()..mappings.total_point_count()).map(|i| (i as u64, true)),
         )?;
 
