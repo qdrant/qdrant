@@ -488,10 +488,10 @@ impl ShardOperation for ForwardProxyShard {
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
 
-        // We always have to wait for the result of the update, cause after we release the lock,
-        // the transfer needs to have access to the latest version of points.
-        // Use `Segment` to wait for the operation to land in a segment without waiting for deferred
-        // points to be optimized.
+        // We always have to wait for the operation to be written to segments, cause after we
+        // release the lock, the transfer needs to have access to the latest version of points.
+        // Note that we wait on `Segment` and not on `Visible`, because with the latter we'd also
+        // wait on deferred points to be fully optimized which is not necessary for transfers.
         let mut result = self
             .wrapped_shard
             .update(
