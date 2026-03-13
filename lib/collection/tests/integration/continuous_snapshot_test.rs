@@ -238,7 +238,7 @@ async fn test_continuous_snapshot() {
         })
     };
 
-    let timeout = sleep(Duration::from_secs(20));
+    let timeout = sleep(Duration::from_secs(10));
     tokio::pin!(timeout);
 
     tokio::select! {
