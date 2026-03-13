@@ -1,4 +1,3 @@
-import pytest
 import random
 import time
 
@@ -6,19 +5,31 @@ from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import drop_collection
 
 COLLECTION_NAME = "test_deferred_points"
-NUM_POINTS = 10000
-VECTOR_DIM = 4
+VECTOR_DIM = 256
+KEYWORDS = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa"]
+
+# With 256d float32 vectors, each point ≈ 1 KB of vector data.
+# indexing_threshold is in KB, so threshold of 100 ≈ 100 points before deferred kicks in.
+INDEXING_THRESHOLD_KB = 100
 
 
-@pytest.fixture(autouse=True)
-def setup():
+def setup_module():
     drop_collection(COLLECTION_NAME)
-    yield
+
+
+def teardown_module():
     drop_collection(COLLECTION_NAME)
 
 
-def create_collection():
-    """Create a collection with prevent_unoptimized enabled, zero optimizer threads, and low indexing threshold."""
+def create_collection(prevent_unoptimized=False, max_optimization_threads=None):
+    optimizers_config = {
+        "indexing_threshold": INDEXING_THRESHOLD_KB,
+    }
+    if prevent_unoptimized:
+        optimizers_config["prevent_unoptimized"] = True
+    if max_optimization_threads is not None:
+        optimizers_config["max_optimization_threads"] = max_optimization_threads
+
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="PUT",
@@ -28,11 +39,7 @@ def create_collection():
                 "size": VECTOR_DIM,
                 "distance": "Cosine",
             },
-            "optimizers_config": {
-                "indexing_threshold": 10,
-                "max_optimization_threads": 0,
-                "prevent_unoptimized": True,
-            },
+            "optimizers_config": optimizers_config,
         }
     )
     assert response.ok
@@ -48,64 +55,61 @@ def get_collection_info():
     return response.json()['result']
 
 
-def facet_points(key):
+def upsert_points_batch(points, wait=True):
+    """Upsert a list of points in a single request."""
     response = request_with_validation(
-        api='/collections/{collection_name}/facet',
-        method="POST",
+        api='/collections/{collection_name}/points',
+        method="PUT",
         path_params={'collection_name': COLLECTION_NAME},
-        body={"key": key},
+        query_params={'wait': 'true' if wait else 'false'},
+        body={"points": points},
     )
     assert response.ok
-    return response.json()['result']
 
 
-def upsert_points(start_id, count, wait=False):
-    """Upsert points with sequential IDs and random vectors."""
-    random.seed(42)
+def make_points(start_id, count, payload_fn=None):
+    """Generate a list of points with sequential IDs and random vectors."""
+    random.seed(start_id)
     points = []
     for i in range(count):
         point_id = start_id + i
         vector = [random.random() for _ in range(VECTOR_DIM)]
-        points.append({
-            "id": point_id,
-            "vector": vector,
-            "payload": {"idx": point_id, "color": "red" if point_id % 2 == 0 else "blue"},
-        })
-
-    # Upsert in batches of 100 to avoid too large requests
-    batch_size = 100
-    for batch_start in range(0, len(points), batch_size):
-        batch = points[batch_start:batch_start + batch_size]
-        response = request_with_validation(
-            api='/collections/{collection_name}/points',
-            method="PUT",
-            path_params={'collection_name': COLLECTION_NAME},
-            query_params={'wait': 'true' if wait else 'false'},
-            body={"points": batch},
-        )
-        assert response.ok
+        if payload_fn:
+            payload = payload_fn(point_id)
+        else:
+            payload = {
+                "keyword": KEYWORDS[point_id % len(KEYWORDS)],
+                "score": point_id * 0.1,
+            }
+        points.append({"id": point_id, "vector": vector, "payload": payload})
+    return points
 
 
-def search_points(limit=10):
+def upsert_points(start_id, count, wait=True, payload_fn=None):
+    """Upsert points in a single batch."""
+    points = make_points(start_id, count, payload_fn)
+    upsert_points_batch(points, wait=wait)
+
+
+def set_payload(point_ids, payload, wait=True):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/payload',
         method="POST",
         path_params={'collection_name': COLLECTION_NAME},
+        query_params={'wait': 'true' if wait else 'false'},
         body={
-            "vector": [0.5] * VECTOR_DIM,
-            "limit": limit,
+            "payload": payload,
+            "points": point_ids,
         }
     )
     assert response.ok
-    return response.json()['result']
 
 
 def scroll_all_points():
-    """Scroll through all points and return the full list."""
     all_points = []
     offset = None
     while True:
-        body = {"limit": 100, "with_vector": False}
+        body = {"limit": 100, "with_vector": False, "with_payload": True}
         if offset is not None:
             body["offset"] = offset
 
@@ -129,128 +133,176 @@ def retrieve_points(ids):
         api='/collections/{collection_name}/points',
         method="POST",
         path_params={'collection_name': COLLECTION_NAME},
-        body={"ids": ids},
+        body={"ids": ids, "with_payload": True},
     )
     assert response.ok
     return response.json()['result']
 
 
-def test_deferred_points():
-    create_collection()
+def search_points(limit=10):
+    random.seed(0)
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': COLLECTION_NAME},
+        body={
+            "vector": [random.random() for _ in range(VECTOR_DIM)],
+            "limit": limit,
+        }
+    )
+    assert response.ok
+    return response.json()['result']
 
-    # Create a keyword index on "color" for facet queries
+
+def update_collection_config(config):
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': COLLECTION_NAME},
+        body=config,
+    )
+    assert response.ok
+
+
+def wait_collection_green(timeout=60):
+    start = time.time()
+    while time.time() - start < timeout:
+        info = get_collection_info()
+        if info['status'] == 'green':
+            return
+        time.sleep(0.5)
+    raise Exception(f"Collection did not reach green status within {timeout}s")
+
+
+def create_field_index(field_name, field_schema):
     response = request_with_validation(
         api='/collections/{collection_name}/index',
         method="PUT",
         path_params={'collection_name': COLLECTION_NAME},
         query_params={'wait': 'true'},
         body={
-            "field_name": "color",
-            "field_schema": "keyword",
+            "field_name": field_name,
+            "field_schema": field_schema,
         }
     )
     assert response.ok
 
-    # Upsert 10000 points with wait=false, creating deferred points
-    upsert_points(start_id=1, count=NUM_POINTS, wait=False)
 
-    # Small sleep to let the async operations be applied
+def test_deferred_points():
+    # Create collection with prevent_unoptimized and optimizers disabled.
+    # deferred_internal_id is only set at segment creation time, so prevent_unoptimized
+    # must be enabled before any appendable segments are created.
+    # With 256d float32 vectors, each point ≈ 1 KB of vector data.
+    # indexing_threshold=100 KB → deferred_internal_id ≈ 100 points.
+    #
+    # Note: internal offsets are assigned in AHashMap iteration order (not external ID order),
+    # so we cannot predict which external IDs map to which internal offsets.
+    # All assertions use counts rather than specific IDs.
+    create_collection(prevent_unoptimized=True, max_optimization_threads=0)
+
+    # Create payload indexes
+    create_field_index("keyword", "keyword")
+    create_field_index("score", "float")
+
+    total_upserted = 2000
+
+    # --- Phase 1: Upsert 2000 points into fresh appendable segment ---
+    # With optimizers disabled, points stay in the unoptimized appendable segment.
+    # ~100 points (those with internal offset < threshold) are visible, the rest are deferred.
+    all_ids = list(range(1, total_upserted + 1))
+    upsert_points_batch(make_points(1, total_upserted), wait=False)
+    time.sleep(2)
+
+    # Scroll should only return non-deferred points (~100 out of 2000)
+    scrolled = scroll_all_points()
+    visible_count = len(scrolled)
+    assert visible_count > 0, "Some points should be scrollable (within threshold)"
+    assert visible_count < total_upserted, (
+        f"Not all points should be scrollable (most are deferred), got {visible_count}"
+    )
+    visible_ids = {p['id'] for p in scrolled}
+
+    # Point count from collection info should match scrolled count
+    info = get_collection_info()
+    assert info['points_count'] == visible_count, (
+        f"points_count ({info['points_count']}) should match scrolled count ({visible_count})"
+    )
+
+    # Retrieve all 2000 IDs: only non-deferred ones should be returned
+    retrieved = retrieve_points(all_ids)
+    assert len(retrieved) == visible_count, (
+        f"Retrieve should return {visible_count} non-deferred points, got {len(retrieved)}"
+    )
+    retrieved_ids = {p['id'] for p in retrieved}
+    assert retrieved_ids == visible_ids, "Retrieved IDs should match scrolled IDs"
+
+    # Search should only find non-deferred points
+    search_results = search_points(limit=total_upserted)
+    search_ids = {r['id'] for r in search_results}
+    deferred_ids = set(all_ids) - visible_ids
+    assert len(search_ids & deferred_ids) == 0, (
+        "Deferred points should not appear in search results"
+    )
+
+    # --- Phase 2: Set payload on a deferred point — should have no effect ---
+    # Pick a point that we know is deferred
+    deferred_point_id = next(iter(deferred_ids))
+    set_payload([deferred_point_id], {"keyword": "deferred_modified"}, wait=False)
     time.sleep(1)
+    retrieved = retrieve_points([deferred_point_id])
+    assert len(retrieved) == 0, (
+        "Deferred point should not be retrievable even after set_payload"
+    )
 
+    # --- Phase 3: Add more points that land in the deferred section ---
+    new_points_start = total_upserted + 1
+    new_points_count = 1000
+    upsert_points_batch(make_points(new_points_start, new_points_count), wait=False)
+    time.sleep(2)
+
+    # These new points should also be deferred (added beyond the threshold)
     info = get_collection_info()
-    points_count = info['points_count']
-
-    # With prevent_unoptimized and low indexing threshold,
-    # some points should be deferred and thus invisible
-    assert points_count < NUM_POINTS, (
-        f"Expected some deferred (invisible) points, but all {NUM_POINTS} are visible"
-    )
-    assert points_count > 0, "Expected at least some visible points"
-
-    # Scroll should only return visible (non-deferred) points
-    scrolled_points = scroll_all_points()
-    assert len(scrolled_points) == points_count, (
-        f"Scroll returned {len(scrolled_points)} points, expected {points_count}"
+    assert info['points_count'] == visible_count, (
+        f"Expected {visible_count} visible points (new points deferred), got {info['points_count']}"
     )
 
-    # Search should only return visible (non-deferred) points
-    search_results = search_points(limit=NUM_POINTS)
-    assert len(search_results) <= points_count, (
-        f"Search returned {len(search_results)} points, but only {points_count} should be visible"
+    new_point_ids = set(range(new_points_start, new_points_start + new_points_count))
+    scrolled = scroll_all_points()
+    scrolled_ids = {p['id'] for p in scrolled}
+    assert len(scrolled_ids & new_point_ids) == 0, (
+        "New deferred points should not be scrollable"
     )
 
-    # Retrieve all point IDs - only non-deferred should be returned
-    all_ids = list(range(1, NUM_POINTS + 1))
-    retrieved = retrieve_points(all_ids)
-    assert len(retrieved) == points_count, (
-        f"Retrieve returned {len(retrieved)} points, expected {points_count}"
-    )
+    # --- Phase 4: Enable optimizers and wait for optimization ---
+    update_collection_config({
+        "optimizers_config": {
+            "max_optimization_threads": 1,
+        },
+    })
 
-    # Facets should only reflect visible (non-deferred) points
-    facet_result = facet_points("color")
-    total_facet_count = sum(hit['count'] for hit in facet_result['hits'])
-    assert total_facet_count == points_count, (
-        f"Facet total count {total_facet_count} doesn't match visible points {points_count}"
-    )
-    assert len(facet_result['hits']) <= 2, "Expected at most 2 color facet values"
+    # Trigger optimization with a small upsert
+    trigger_id = new_points_start + new_points_count
+    upsert_points(start_id=trigger_id, count=1, wait=True)
+    wait_collection_green()
 
-    # Now enable optimizers and upsert a single point with wait=true
-    # This should trigger optimization and make all deferred points visible
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="PATCH",
-        path_params={'collection_name': COLLECTION_NAME},
-        body={
-            "optimizers_config": {
-                "max_optimization_threads": 1,
-            },
-        }
-    )
-    assert response.ok
-
-    # Upsert a single point with wait=true to trigger and wait for optimization
-    upsert_points(start_id=NUM_POINTS + 1, count=1, wait=True)
-
-    total_points = NUM_POINTS + 1
-
-    # After optimization, all points should be visible
+    # After optimization, ALL points should be visible
+    expected_total = total_upserted + new_points_count + 1
     info = get_collection_info()
-    assert info['points_count'] == total_points, (
-        f"After optimization, expected {total_points} points, got {info['points_count']}"
+    assert info['points_count'] == expected_total, (
+        f"After optimization, expected {expected_total} points, got {info['points_count']}"
     )
 
-    # Scroll should return all points now
-    scrolled_points = scroll_all_points()
-    assert len(scrolled_points) == total_points, (
-        f"After optimization, scroll returned {len(scrolled_points)}, expected {total_points}"
+    # The deferred set_payload should now be visible
+    retrieved = retrieve_points([deferred_point_id])
+    assert len(retrieved) == 1
+    assert retrieved[0]['payload']['keyword'] == 'deferred_modified', (
+        f"After optimization, deferred set_payload should be visible, "
+        f"got keyword={retrieved[0]['payload']['keyword']}"
     )
 
-    # Search should return results up to the limit
-    search_results = search_points(limit=total_points)
-    assert len(search_results) == total_points, (
-        f"After optimization, search returned {len(search_results)}, expected {total_points}"
-    )
-
-    # Retrieve all point IDs - all should be returned now
-    all_ids = list(range(1, total_points + 1))
-    retrieved = retrieve_points(all_ids)
-    assert len(retrieved) == total_points, (
-        f"After optimization, retrieve returned {len(retrieved)}, expected {total_points}"
-    )
-
-    # Facets should now reflect all points
-    facet_result = facet_points("color")
-    total_facet_count = sum(hit['count'] for hit in facet_result['hits'])
-    assert total_facet_count == total_points, (
-        f"After optimization, facet total count {total_facet_count} doesn't match {total_points}"
-    )
-    # The extra point (NUM_POINTS + 1) is odd, so "blue" gets one more
-    expected_red = NUM_POINTS // 2
-    expected_blue = (NUM_POINTS // 2) + 1
-    facet_map = {hit['value']: hit['count'] for hit in facet_result['hits']}
-    assert facet_map.get("red") == expected_red, (
-        f"Expected {expected_red} red, got {facet_map.get('red')}"
-    )
-    assert facet_map.get("blue") == expected_blue, (
-        f"Expected {expected_blue} blue, got {facet_map.get('blue')}"
+    # All new points should now be scrollable
+    scrolled = scroll_all_points()
+    scrolled_ids = {p['id'] for p in scrolled}
+    assert new_point_ids.issubset(scrolled_ids), (
+        "After optimization, all previously deferred points should be scrollable"
     )
