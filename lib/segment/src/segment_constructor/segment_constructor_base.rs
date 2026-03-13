@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::defaults::LOAD_TIMING_LOG_TARGET;
+use common::defaults::{LOAD_TIMING_LOG_TARGET, LOAD_TIMING_MIN_DURATION};
 use common::flags::FeatureFlags;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::is_alive_lock::IsAliveLock;
@@ -456,6 +456,19 @@ pub(crate) fn create_sparse_vector_storage(
     }
 }
 
+/// Log a sub-component load time, suppressing entries faster than 5 ms.
+fn log_load_timing(segment_path: &Path, component: &str, started: Instant) {
+    let elapsed = started.elapsed();
+    if elapsed >= LOAD_TIMING_MIN_DURATION {
+        log::debug!(
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - {component} loaded in {:.2}s",
+            segment_path.display(),
+            elapsed.as_secs_f64(),
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn create_segment(
     initial_version: Option<SeqNumberType>,
@@ -477,12 +490,7 @@ fn create_segment(
         segment_path,
         config,
     )?);
-    log::debug!(
-        target: LOAD_TIMING_LOG_TARGET,
-        "Segment {} - payload_storage loaded in {:.2}s",
-        segment_path.display(),
-        started.elapsed().as_secs_f64(),
-    );
+    log_load_timing(segment_path, "payload_storage", started);
 
     let appendable_flag = config.is_appendable();
 
@@ -495,12 +503,7 @@ fn create_segment(
         #[cfg(feature = "rocksdb")]
         &mut db_builder,
     )?;
-    log::debug!(
-        target: LOAD_TIMING_LOG_TARGET,
-        "Segment {} - id_tracker loaded in {:.2}s",
-        segment_path.display(),
-        started.elapsed().as_secs_f64(),
-    );
+    log_load_timing(segment_path, "id_tracker", started);
 
     let mut vector_storages = HashMap::new();
 
@@ -518,12 +521,10 @@ fn create_segment(
             #[cfg(feature = "rocksdb")]
             vector_name,
         )?);
-        log::debug!(
-            target: LOAD_TIMING_LOG_TARGET,
-            "Segment {} - vector_storage dense '{}' loaded in {:.2}s",
-            segment_path.display(),
-            vector_name,
-            started.elapsed().as_secs_f64(),
+        log_load_timing(
+            segment_path,
+            &format!("vector_storage dense '{vector_name}'"),
+            started,
         );
 
         vector_storages.insert(vector_name.to_owned(), vector_storage);
@@ -543,12 +544,10 @@ fn create_segment(
             #[cfg(feature = "rocksdb")]
             stopped,
         )?);
-        log::debug!(
-            target: LOAD_TIMING_LOG_TARGET,
-            "Segment {} - vector_storage sparse '{}' loaded in {:.2}s",
-            segment_path.display(),
-            vector_name,
-            started.elapsed().as_secs_f64(),
+        log_load_timing(
+            segment_path,
+            &format!("vector_storage sparse '{vector_name}'"),
+            started,
         );
 
         vector_storages.insert(vector_name.to_owned(), vector_storage);
@@ -564,12 +563,7 @@ fn create_segment(
         appendable_flag,
         create,
     )?);
-    log::debug!(
-        target: LOAD_TIMING_LOG_TARGET,
-        "Segment {} - payload_index loaded in {:.2}s",
-        segment_path.display(),
-        started.elapsed().as_secs_f64(),
-    );
+    log_load_timing(segment_path, "payload_index", started);
 
     let mut vector_data = HashMap::new();
     for (vector_name, vector_config) in &config.vector_data {
@@ -601,12 +595,10 @@ fn create_segment(
                 None
             },
         );
-        log::debug!(
-            target: LOAD_TIMING_LOG_TARGET,
-            "Segment {} - quantized_vectors '{}' loaded in {:.2}s",
-            segment_path.display(),
-            vector_name,
-            started.elapsed().as_secs_f64(),
+        log_load_timing(
+            segment_path,
+            &format!("quantized_vectors '{vector_name}'"),
+            started,
         );
 
         let started = Instant::now();
@@ -620,12 +612,10 @@ fn create_segment(
                 quantized_vectors: quantized_vectors.clone(),
             },
         )?);
-        log::debug!(
-            target: LOAD_TIMING_LOG_TARGET,
-            "Segment {} - vector_index dense '{}' loaded in {:.2}s",
-            segment_path.display(),
-            vector_name,
-            started.elapsed().as_secs_f64(),
+        log_load_timing(
+            segment_path,
+            &format!("vector_index dense '{vector_name}'"),
+            started,
         );
 
         check_process_stopped(stopped)?;
@@ -665,12 +655,10 @@ fn create_segment(
             stopped,
             tick_progress: || (),
         })?);
-        log::debug!(
-            target: LOAD_TIMING_LOG_TARGET,
-            "Segment {} - vector_index sparse '{}' loaded in {:.2}s",
-            segment_path.display(),
-            vector_name,
-            started.elapsed().as_secs_f64(),
+        log_load_timing(
+            segment_path,
+            &format!("vector_index sparse '{vector_name}'"),
+            started,
         );
 
         check_process_stopped(stopped)?;
@@ -886,12 +874,7 @@ pub fn load_segment(
     let started = Instant::now();
     #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
     let mut segment_state = Segment::load_state(path)?;
-    log::debug!(
-        target: LOAD_TIMING_LOG_TARGET,
-        "Segment {} - load_state in {:.2}s",
-        path.display(),
-        started.elapsed().as_secs_f64(),
-    );
+    log_load_timing(path, "load_state", started);
 
     #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
     let mut segment = create_segment(
