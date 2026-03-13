@@ -184,6 +184,7 @@ impl SegmentsSearcher {
         let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
         let search_optimized_threshold_kb = indexing_threshold_kb.max(full_scan_threshold_kb);
 
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let query_context = init_query_context(
             &batch_request.searches,
             search_optimized_threshold_kb,
@@ -200,7 +201,8 @@ impl SegmentsSearcher {
         let is_stopped = is_stopped_guard.get_is_stopped().clone();
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
         let task = AbortOnDropHandle::new(search_runtime_handle.spawn_blocking(move || {
-            fill_query_context(query_context, segments, timeout, &is_stopped)
+            cpu_utilization
+                .measure(|| fill_query_context(query_context, segments, timeout, &is_stopped))
         }))
         .await??;
         Ok(task)
@@ -251,17 +253,22 @@ impl SegmentsSearcher {
                     let timeout = timeout.saturating_sub(start.elapsed());
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
+                        let cpu_utilization = query_context_arc_segment
+                            .hardware_usage_accumulator()
+                            .cpu_utilization();
                         move || {
-                            let segment_query_context =
-                                query_context_arc_segment.get_segment_query_context();
+                            cpu_utilization.measure(|| {
+                                let segment_query_context =
+                                    query_context_arc_segment.get_segment_query_context();
 
-                            search_in_segment(
-                                segment,
-                                batch_request,
-                                use_sampling,
-                                &segment_query_context,
-                                timeout,
-                            )
+                                search_in_segment(
+                                    segment,
+                                    batch_request,
+                                    use_sampling,
+                                    &segment_query_context,
+                                    timeout,
+                                )
+                            })
                         }
                     });
 
@@ -313,17 +320,22 @@ impl SegmentsSearcher {
                     });
                     // update timeout
                     let timeout = timeout.saturating_sub(start.elapsed());
+                    let cpu_utilization = query_context_arc_segment
+                        .hardware_usage_accumulator()
+                        .cpu_utilization();
                     let handle = runtime_handle.spawn_blocking(move || {
-                        let segment_query_context =
-                            query_context_arc_segment.get_segment_query_context();
+                        cpu_utilization.measure(|| {
+                            let segment_query_context =
+                                query_context_arc_segment.get_segment_query_context();
 
-                        search_in_segment(
-                            segment,
-                            partial_batch_request,
-                            false,
-                            &segment_query_context,
-                            timeout,
-                        )
+                            search_in_segment(
+                                segment,
+                                partial_batch_request,
+                                false,
+                                &segment_query_context,
+                                timeout,
+                            )
+                        })
                     });
 
                     // We MUST wrap the search handle in AbortOnDropHandle to ensure that we skip
@@ -434,20 +446,28 @@ impl SegmentsSearcher {
             };
 
             let hw_counter = hw_measurement_acc.get_counter_cell();
-            let all_points: BTreeSet<_> = segments
-                .into_iter()
-                .flat_map(|segment| {
-                    segment.get().read().read_filtered(
-                        None,
-                        None,
-                        filter.as_ref(),
-                        &is_stopped,
-                        &hw_counter,
-                        deferred_behavior,
-                    )
-                })
-                .collect();
-            Ok(all_points)
+
+            let work = || {
+                let all_points: BTreeSet<_> = segments
+                    .into_iter()
+                    .flat_map(|segment| {
+                        segment.get().read().read_filtered(
+                            None,
+                            None,
+                            filter.as_ref(),
+                            &is_stopped,
+                            &hw_counter,
+                            deferred_behavior,
+                        )
+                    })
+                    .collect();
+                Ok(all_points)
+            };
+
+            match hw_counter.cpu_utilization() {
+                Some(cpu_util) => cpu_util.measure(work),
+                None => work(),
+            }
         });
         AbortOnDropHandle::new(points).await?
     }
@@ -481,11 +501,14 @@ impl SegmentsSearcher {
                     let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();
                         let hw_counter = hw_measurement_acc.get_counter_cell();
+                        let cpu_utilization = hw_measurement_acc.cpu_utilization();
                         move || {
-                            segment
-                                .get()
-                                .read()
-                                .rescore_with_formula(arc_ctx, &hw_counter)
+                            cpu_utilization.measure(|| {
+                                segment
+                                    .get()
+                                    .read()
+                                    .rescore_with_formula(arc_ctx, &hw_counter)
+                            })
                         }
                     });
                     AbortOnDropHandle::new(handle)
