@@ -323,10 +323,10 @@ impl Segment {
         {
             println!("Deleting  deferred id: {internal_id}");
             debug_assert!(
-                self.deferred_delete_count.is_some(),
+                self.deferred_deleted_count.is_some(),
                 "`segment.deferred_delete_count` should always be Some() if we have deferred points."
             );
-            *self.deferred_delete_count.get_or_insert(0) += 1;
+            *self.deferred_deleted_count.get_or_insert(0) += 1;
         }
 
         // Before, we propagated point deletions to also delete its vectors. This turns
@@ -671,21 +671,6 @@ impl Segment {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }
 
-    /// Returns the (estimated) amount of deferred points.
-    ///
-    /// This value is an estimation because it does not account for deferred points
-    /// that have been deleted before becoming visible.
-    pub fn deferred_point_count_estimated(&self) -> usize {
-        match self.deferred_internal_id {
-            Some(internal_id) => {
-                let id_tracker = self.id_tracker.borrow();
-                let max_id = id_tracker.total_point_count();
-                max_id.saturating_sub(internal_id as usize)
-            }
-            None => 0,
-        }
-    }
-
     /// Returns the amount of deferred points.
     pub fn deferred_point_count(&self) -> usize {
         match self.deferred_internal_id {
@@ -693,7 +678,7 @@ impl Segment {
                 let id_tracker = self.id_tracker.borrow();
                 let max_id = id_tracker.total_point_count();
                 max_id.saturating_sub(
-                    internal_id as usize + self.deferred_delete_count.unwrap_or_default(),
+                    internal_id as usize + self.deferred_deleted_count.unwrap_or_default(),
                 )
             }
             None => 0,
@@ -713,14 +698,6 @@ impl Segment {
             .skip_while(|&internal_id| internal_id < deferred_from)
             .filter_map(|internal_id| self.id_tracker.borrow().external_id(internal_id))
             .count()
-    }
-
-    /// Returns the amount of points that are not deferred.
-    pub fn non_deferred_point_count_estimated(&self) -> usize {
-        self.id_tracker
-            .borrow()
-            .available_point_count()
-            .saturating_sub(self.deferred_point_count_estimated())
     }
 }
 

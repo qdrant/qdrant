@@ -97,7 +97,9 @@ pub struct Segment {
     /// Points with internal id >= this value are hidden from reads.
     /// Available for appendable segments only.
     pub(crate) deferred_internal_id: Option<PointOffsetType>,
-    pub(crate) deferred_delete_count: Option<usize>,
+    /// Amount of deleted deferred points. Must kept track of properly to be able
+    /// to calculate the amount of available deferred and visible points.
+    pub(crate) deferred_deleted_count: Option<usize>,
 }
 
 pub struct VectorData {

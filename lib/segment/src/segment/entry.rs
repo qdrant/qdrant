@@ -415,7 +415,7 @@ impl NonAppendableSegmentEntry for Segment {
     ) -> CardinalityEstimation {
         match filter {
             None => {
-                let available = self.available_point_count_without_deferred_estimated();
+                let available = self.available_point_count_without_deferred();
                 CardinalityEstimation {
                     primary_clauses: vec![],
                     min: available,
@@ -428,7 +428,7 @@ impl NonAppendableSegmentEntry for Segment {
                 let cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
                 let total_points = self.id_tracker.borrow().available_point_count();
-                let available_points = self.available_point_count_without_deferred_estimated();
+                let available_points = self.available_point_count_without_deferred();
                 adjust_for_deferred_points(cardinality, available_points, total_points)
             }
         }
@@ -507,8 +507,8 @@ impl NonAppendableSegmentEntry for Segment {
             0
         };
 
-        let num_points = self.available_point_count_without_deferred_estimated();
-        let num_deferred_points = self.deferred_point_count_estimated();
+        let num_points = self.available_point_count_without_deferred();
+        let num_deferred_points = self.deferred_point_count();
 
         let vectors_size_bytes = total_average_vectors_size_bytes * self.available_point_count();
 
@@ -892,8 +892,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) {
-        query_context
-            .add_available_point_count(self.available_point_count_without_deferred_estimated());
+        query_context.add_available_point_count(self.available_point_count_without_deferred());
         let hw_acc = query_context.hardware_usage_accumulator();
         let hw_counter = hw_acc.get_counter_cell();
 
@@ -940,11 +939,11 @@ impl NonAppendableSegmentEntry for Segment {
             .collect()
     }
 
-    fn available_point_count_without_deferred_estimated(&self) -> usize {
+    fn available_point_count_without_deferred(&self) -> usize {
         self.id_tracker
             .borrow()
             .available_point_count()
-            .saturating_sub(self.deferred_point_count_estimated())
+            .saturating_sub(self.deferred_point_count())
     }
 }
 

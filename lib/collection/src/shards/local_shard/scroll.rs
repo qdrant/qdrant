@@ -386,7 +386,7 @@ impl LocalShard {
                     let read_segment = get_segment.read();
 
                     (
-                        read_segment.available_point_count_without_deferred_estimated(),
+                        read_segment.available_point_count_without_deferred(),
                         read_segment.read_random_filtered(
                             limit,
                             filter.as_ref(),

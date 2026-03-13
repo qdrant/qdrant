@@ -941,11 +941,8 @@ fn create_deferred_segment(
     );
 
     // Test deferred point count estimation.
-    assert_eq!(segment.deferred_point_count_estimated(), n_deferred);
-    assert_eq!(
-        segment.available_point_count_without_deferred_estimated(),
-        n_vectors
-    );
+    assert_eq!(segment.deferred_point_count(), n_deferred);
+    assert_eq!(segment.available_point_count_without_deferred(), n_vectors);
 
     segment
 }
@@ -1435,6 +1432,8 @@ fn test_deleted_deferred_point_count() {
             continue;
         }
 
+        assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
+
         for d in 0..n_deferred {
             let delete_id = segment.deferred_internal_id.unwrap() + d as u32;
             segment
@@ -1456,9 +1455,12 @@ fn test_deleted_deferred_point_count() {
                 segment.deferred_point_count(),
                 n_deferred.checked_sub(deleted_count).unwrap()
             );
+
+            assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
         }
 
         // We delete all deferred points in the segment.
         assert_eq!(segment.deferred_point_count(), 0);
+        assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
     }
 }

@@ -444,7 +444,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             let wrapped_segment_guard = wrapped_segment.read();
             (
                 wrapped_segment_guard.estimate_point_count(filter, hw_counter),
-                wrapped_segment_guard.available_point_count_without_deferred_estimated(),
+                wrapped_segment_guard.available_point_count_without_deferred(),
             )
         };
 
@@ -510,7 +510,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             segment_type: SegmentType::Special,
             num_vectors,
             num_indexed_vectors,
-            num_points: self.available_point_count_without_deferred_estimated(),
+            num_points: self.available_point_count_without_deferred(),
             num_deferred_points: wrapped_info.num_deferred_points,
             num_deleted_vectors: wrapped_info.num_deleted_vectors
                 + deleted_points_count * vector_name_count,
@@ -733,13 +733,13 @@ impl NonAppendableSegmentEntry for ProxySegment {
         ids
     }
 
-    fn available_point_count_without_deferred_estimated(&self) -> usize {
+    fn available_point_count_without_deferred(&self) -> usize {
         let deleted_points_count = self.deleted_points.len();
         let wrapped_segment_count = self
             .wrapped_segment
             .get()
             .read()
-            .available_point_count_without_deferred_estimated();
+            .available_point_count_without_deferred();
         wrapped_segment_count.saturating_sub(deleted_points_count)
     }
 }
