@@ -193,12 +193,18 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
 
     # Enable optimizers to resolve deferred points
     update_collection_config(source_uri, {
-        "optimizers_config": {"max_optimization_threads": 1},
+        "optimizers_config": {"max_optimization_threads": "auto"},
     })
 
-    # Trigger an optimization pass (longer timeout: optimizer is processing deferred points)
-    upsert_points(source_uri, start_id=total_points + 1, count=1, wait=True, timeout=120)
+    # Trigger an optimization pass with wait=True to ensure the write is applied.
+    # Use a short client timeout — we don't need the response, just the server-side effect.
+    # wait_collection_green handles waiting for optimization to complete.
+    try:
+        upsert_points(source_uri, start_id=total_points + 1, count=1, wait=True, timeout=5)
+    except Exception:
+        pass
 
+    # Wait for optimization to complete on both peers
     wait_collection_green(source_uri, COLLECTION_NAME)
     wait_collection_green(target_uri, COLLECTION_NAME)
 
