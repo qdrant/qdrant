@@ -12824,6 +12824,13 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/VectorDataInfo"
             }
+          },
+          "deferred_internal_id": {
+            "description": "Internal ID from which points are deferred (hidden from reads). Only set for appendable segments.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },

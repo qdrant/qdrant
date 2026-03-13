@@ -12,7 +12,7 @@ use std::sync::Arc;
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
 use common::stable_hash::StableHash;
-use common::types::ScoreType;
+use common::types::{PointOffsetType, ScoreType};
 use ecow::EcoString;
 use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
@@ -484,6 +484,11 @@ pub struct SegmentInfo {
     pub is_appendable: bool,
     pub index_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     pub vector_data: HashMap<String, VectorDataInfo>,
+    /// Internal ID from which points are deferred (hidden from reads).
+    /// Only set for appendable segments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub deferred_internal_id: Option<PointOffsetType>,
 }
 
 #[derive(Debug, Default)]
