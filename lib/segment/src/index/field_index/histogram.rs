@@ -130,7 +130,9 @@ impl Numericable for u128 {
     }
 
     fn from_i64(x: i64) -> Self {
-        x as u128
+        // Clamp negative values to 0 to avoid wrapping into large u128 values,
+        // which would produce incorrect results for UUID range queries.
+        x.try_into().unwrap_or(0)
     }
 
     fn from_u128(x: u128) -> Self {

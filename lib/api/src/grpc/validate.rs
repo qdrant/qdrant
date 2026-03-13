@@ -272,11 +272,22 @@ impl Validate for grpc::FieldCondition {
             return Err(errors);
         }
 
-        if range.is_some() && integer_range.is_some() {
+        let range_variants_set = [
+            range.is_some(),
+            integer_range.is_some(),
+            datetime_range.is_some(),
+        ]
+        .into_iter()
+        .filter(|is_set| *is_set)
+        .count();
+
+        if range_variants_set > 1 {
             let mut errors = ValidationErrors::new();
             errors.add(
-                "integer_range",
-                ValidationError::new("Fields `range` and `integer_range` are mutually exclusive"),
+                "range",
+                ValidationError::new(
+                    "Fields `range`, `integer_range`, and `datetime_range` are mutually exclusive",
+                ),
             );
             return Err(errors);
         }
