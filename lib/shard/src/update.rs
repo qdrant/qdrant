@@ -377,6 +377,7 @@ pub fn delete_points_by_filter(
     let mut total_deleted = 0;
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
+    let mut has_deferred = false;
     let points_to_delete: AHashMap<SegmentId, AHashSet<_>> = segments
         .iter()
         .map(|(segment_id, segment)| {
@@ -390,6 +391,7 @@ pub fn delete_points_by_filter(
                 // Include also deferred points.
                 DeferredBehavior::IncludeAll,
             );
+            has_deferred |= segment.has_deferred_points();
             (segment_id, point_ids.into_iter().collect())
         })
         .collect::<OperationResult<_>>()?;
@@ -403,9 +405,6 @@ pub fn delete_points_by_filter(
     // Deferred points corner case.
     // If the latest version of a point is deferred and does not match the filter,
     // we need to skip deletion for all copies and let deduplication during optimization delete old points.
-    let has_deferred = segments
-        .iter()
-        .any(|(_, segment)| segment.get().read().has_deferred_points());
     if has_deferred {
         // Find the maximum version for each point across segments where the filter matched.
         let mut max_versions: AHashMap<PointIdType, Option<SeqNumberType>> = Default::default();
