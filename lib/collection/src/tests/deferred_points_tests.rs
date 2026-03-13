@@ -16,7 +16,7 @@ use tokio::sync::RwLock;
 
 use crate::operations::types::PointRequestInternal;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::tests::fixtures::*;
 
 /// Create a collection config with `prevent_unoptimized` and a very small indexing threshold
@@ -116,7 +116,9 @@ async fn test_deferred_points_wait_true() {
 
     for i in 1..=NUM_POINTS {
         let op = make_upsert_op(i);
-        let result = shard.update(op.into(), true, None, hw_acc.clone()).await;
+        let result = shard
+            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .await;
         assert!(
             result.is_ok(),
             "Upsert with wait=true should succeed for point {i}"
@@ -156,7 +158,9 @@ async fn test_deferred_points_wait_false() {
     // Push all points with wait=false — returns immediately without waiting for application
     for i in 1..=NUM_POINTS {
         let op = make_upsert_op(i);
-        let result = shard.update(op.into(), false, None, hw_acc.clone()).await;
+        let result = shard
+            .update(op.into(), WaitUntil::Wal, None, hw_acc.clone())
+            .await;
         assert!(
             result.is_ok(),
             "Upsert with wait=false should succeed for point {i}"

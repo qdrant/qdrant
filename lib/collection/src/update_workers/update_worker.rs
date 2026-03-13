@@ -70,6 +70,7 @@ impl UpdateWorkers {
                     op_num,
                     operation,
                     sender,
+                    wait_for_deferred,
                     hw_measurements,
                 }) => {
                     let collection_name_clone = collection_name.clone();
@@ -147,7 +148,7 @@ impl UpdateWorkers {
                         log::error!("Can't update last applied_seq {err}")
                     }
 
-                    if wait && prevent_unoptimized {
+                    if wait_for_deferred && prevent_unoptimized {
                         let wait_result = Self::wait_for_deferred_points_ready(
                             &segments,
                             &optimize_sender,

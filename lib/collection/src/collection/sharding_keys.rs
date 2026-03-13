@@ -12,6 +12,7 @@ use crate::operations::{
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId, ShardsPlacement};
+use crate::shards::shard_trait::WaitUntil;
 
 impl Collection {
     pub async fn create_replica_set(
@@ -127,7 +128,7 @@ impl Collection {
                 replica_set
                     .update_local(
                         OperationWithClockTag::from(create_index_op),
-                        true,
+                        WaitUntil::Visible,
                         None,
                         hw_counter.clone(),
                         false,

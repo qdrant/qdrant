@@ -20,6 +20,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
+use crate::shards::shard_trait::WaitUntil;
 
 impl Collection {
     /// Apply collection update operation to all local shards.
@@ -55,7 +56,7 @@ impl Collection {
                         // so it's *impossible* to assign any single clock tag to this operation.
                         shard.update_local(
                             OperationWithClockTag::from(operation.clone()),
-                            wait,
+                            WaitUntil::from(wait),
                             None,
                             hw_measurement_acc.clone(),
                             false,
@@ -106,7 +107,7 @@ impl Collection {
             };
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, wait, timeout, hw_measurement_acc.clone(), false).await,
+                WriteOrdering::Weak => shard.update_local(operation, WaitUntil::from(wait), timeout, hw_measurement_acc.clone(), false).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(
