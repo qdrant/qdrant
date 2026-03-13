@@ -276,7 +276,7 @@ def test_deferred_points():
     # --- Phase 4: Enable optimizers and wait for optimization ---
     update_collection_config({
         "optimizers_config": {
-            "max_optimization_threads": 1,
+            "max_optimization_threads": "auto",
         },
     })
 
