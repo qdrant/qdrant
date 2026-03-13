@@ -134,27 +134,40 @@ pub(super) async fn transfer_stream_records(
     let mut offset = None;
 
     loop {
-        let shard_holder = shard_holder.read().await;
+        // Read batch under shard holder lock
+        let prepared_batch = {
+            let shard_holder = shard_holder.read().await;
 
-        let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-            // Forward proxy gone?!
-            // That would be a programming error.
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} is not found"
-            )));
+            let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+                // Forward proxy gone?!
+                // That would be a programming error.
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} is not found"
+                )));
+            };
+
+            replica_set
+                .read_transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
+                .await?
+
+            // Shard holder lock is dropped here, but the forward proxy update lock is still
+            // held inside the prepared batch, preventing concurrent updates between reading
+            // and sending.
         };
-
-        let result = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
-            .await?;
-
-        offset = result.next_page_offset;
-        progress.lock().add(result.count);
 
         #[cfg(feature = "staging")]
         if let Some(delay) = staging_delay {
             tokio::time::sleep(delay).await;
         }
+
+        // Send batch to remote shard without holding the shard holder lock.
+        // This is important because sending can take a very long time (especially the last
+        // batch which waits for the remote to fully process). Holding the shard holder lock
+        // during this time would block all other operations on the collection.
+        let result = prepared_batch.send(&remote_shard).await?;
+
+        offset = result.next_page_offset;
+        progress.lock().add(result.count);
 
         // If this is the last batch, finalize
         if offset.is_none() {

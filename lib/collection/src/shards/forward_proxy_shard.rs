@@ -20,7 +20,7 @@ use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use super::shard::ShardId;
 use super::update_tracker::UpdateTracker;
@@ -53,6 +53,49 @@ pub struct TransferBatchResult {
     pub send_duration: Duration,
 }
 
+/// A transfer batch that has been read from local storage but not yet sent to the remote shard.
+///
+/// Holds the forward proxy's update lock to prevent concurrent updates between reading and sending
+/// the batch. The lock is released when this struct is dropped.
+///
+/// Use [`PreparedTransferBatch::send`] to send the batch to a remote shard.
+pub struct PreparedTransferBatch {
+    pub operation: CollectionUpdateOperations,
+    pub next_page_offset: Option<PointIdType>,
+    pub count: usize,
+    pub read_duration: Duration,
+    /// Whether to wait for the remote to process the batch.
+    pub wait: bool,
+    /// Holds the update lock to prevent concurrent updates during the transfer.
+    _update_lock: OwnedMutexGuard<()>,
+}
+
+impl PreparedTransferBatch {
+    /// Send this batch to the given remote shard.
+    ///
+    /// The update lock is released after sending completes.
+    pub async fn send(self, remote_shard: &RemoteShard) -> CollectionResult<TransferBatchResult> {
+        let send_start = Instant::now();
+        remote_shard
+            .update(
+                // Don't add clock tag, this transfers points out of regular order (SyncPoints)
+                OperationWithClockTag::from(self.operation),
+                self.wait,
+                None,
+                HwMeasurementAcc::disposable(), // Internal operation
+            )
+            .await?;
+        let send_duration = send_start.elapsed();
+
+        Ok(TransferBatchResult {
+            next_page_offset: self.next_page_offset,
+            count: self.count,
+            read_duration: self.read_duration,
+            send_duration,
+        })
+    }
+}
+
 /// ForwardProxyShard
 ///
 /// ForwardProxyShard is a wrapper type for a LocalShard.
@@ -67,7 +110,7 @@ pub struct ForwardProxyShard {
     filter: Option<Box<Filter>>,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
-    update_lock: Mutex<()>,
+    update_lock: Arc<Mutex<()>>,
 }
 
 impl ForwardProxyShard {
@@ -109,7 +152,7 @@ impl ForwardProxyShard {
             remote_shard,
             resharding_hash_ring,
             filter: filter.map(Box::new),
-            update_lock: Mutex::new(()),
+            update_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -140,24 +183,28 @@ impl ForwardProxyShard {
         Ok(())
     }
 
-    /// Move batch of points to the remote shard
+    /// Read a batch of points to transfer, without sending it yet.
     ///
-    /// Returns new point offset and actual number of transferred points. The new point offset can
-    /// be used to start the next batch from.
+    /// Returns a [`PreparedTransferBatch`] holding the batch data and the update lock. The lock
+    /// prevents concurrent updates between reading and sending. Use
+    /// [`PreparedTransferBatch::send`] to send the batch to a remote shard.
+    ///
+    /// This allows the caller to release other locks (e.g. the shard holder lock) before sending,
+    /// which avoids holding the shard holder lock during the potentially slow network transfer.
     ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn transfer_batch(
+    pub async fn read_transfer_batch(
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
         runtime_handle: &Handle,
-    ) -> CollectionResult<TransferBatchResult> {
+    ) -> CollectionResult<PreparedTransferBatch> {
         debug_assert!(batch_size > 0);
-        let _update_lock = self.update_lock.lock().await;
+        let update_lock = self.update_lock.clone().lock_owned().await;
 
         let read_start = Instant::now();
         let (points, next_page_offset) = match hashring_filter {
@@ -176,10 +223,6 @@ impl ForwardProxyShard {
         let wait = next_page_offset.is_none();
         let count = points.len();
 
-        // Use sync API to leverage potentially existing points
-        // Normally use SyncPoints, to completely replace everything in the target shard
-        // For resharding we need to merge points from multiple transfers, requiring a different operation
-        // Same when there is a filter, as we are only transferring a subset of points
         let point_operation = if !merge_points {
             PointOperations::SyncPoints(PointSyncOperation {
                 from_id: offset,
@@ -189,25 +232,15 @@ impl ForwardProxyShard {
         } else {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
         };
-        let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
+        let operation = CollectionUpdateOperations::PointOperation(point_operation);
 
-        let send_start = Instant::now();
-        self.remote_shard
-            .update(
-                // Don't add clock tag, this transfers points out of regular order (SyncPoints)
-                OperationWithClockTag::from(insert_points_operation),
-                wait,
-                None,
-                HwMeasurementAcc::disposable(), // Internal operation
-            )
-            .await?;
-        let send_duration = send_start.elapsed();
-
-        Ok(TransferBatchResult {
+        Ok(PreparedTransferBatch {
+            operation,
             next_page_offset,
             count,
             read_duration,
-            send_duration,
+            wait,
+            _update_lock: update_lock,
         })
     }
 
