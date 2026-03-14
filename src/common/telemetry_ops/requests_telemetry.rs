@@ -15,6 +15,7 @@ pub type HttpStatusCode = u16;
 
 pub type GrpcStatusCode = i32;
 
+/// Telemetry data for the Web API (REST).
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
@@ -28,10 +29,12 @@ pub struct GrpcTelemetry {
     pub responses: HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>,
 }
 
+/// Collector for Actix telemetry data across multiple workers.
 pub struct ActixTelemetryCollector {
     pub workers: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
 }
 
+/// Collector for Actix telemetry data for a single worker.
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
@@ -58,6 +61,7 @@ impl ActixTelemetryCollector {
         worker
     }
 
+    /// Get the aggregated telemetry data for all Actix workers.
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
         let mut result = WebApiTelemetry::default();
         for web_data in &self.workers {
@@ -115,6 +119,7 @@ impl TonicWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
+    /// Record a response for a method.
     pub fn add_response(
         &mut self,
         method: String,
@@ -130,6 +135,7 @@ impl ActixWorkerTelemetryCollector {
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
     }
 
+    /// Record a response for a specific collection.
     pub fn add_response_by_collection(
         &mut self,
         method: String,
@@ -254,11 +260,17 @@ impl Anonymize for WebApiTelemetry {
             .responses_by_collection
             .iter()
             .map(|(method_key, collections_map)| {
-                let anon_collections_map = collections_map
-                    .iter()
+                let mut collection_names: Vec<_> = collections_map.keys().collect();
+                collection_names.sort();
+
+                let anon_collections_map = collection_names
+                    .into_iter()
                     .enumerate()
-                    .map(|(idx, (_collection_name, status_map))| {
-                        (format!("collection_{idx}"), status_map.clone())
+                    .map(|(idx, collection_name)| {
+                        (
+                            format!("collection_{idx}"),
+                            collections_map.get(collection_name).unwrap().clone(),
+                        )
                     })
                     .collect();
 

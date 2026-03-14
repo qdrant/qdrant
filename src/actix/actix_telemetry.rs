@@ -19,6 +19,10 @@ pub struct ActixTelemetryTransform {
     telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
 }
 
+/// Extract collection name from the request path.
+///
+/// Returns `Some(collection_name)` if the path matches `/collections/{collection_name}/...`,
+/// otherwise returns `None`.
 fn extract_collection_from_path(path: &str) -> Option<&str> {
     let mut it = path.split('/');
     match (it.next(), it.next(), it.next()) {
@@ -83,17 +87,13 @@ where
             let response = future.await?;
             let status = response.response().status().as_u16();
 
-            telemetry_data
-                .lock()
-                .add_response(request_key.clone(), status, instant);
+            {
+                let mut guard = telemetry_data.lock();
+                guard.add_response(request_key.clone(), status, instant);
 
-            if let Some(collection) = collection {
-                telemetry_data.lock().add_response_by_collection(
-                    request_key,
-                    collection,
-                    status,
-                    instant,
-                );
+                if let Some(collection) = collection {
+                    guard.add_response_by_collection(request_key, collection, status, instant);
+                }
             }
 
             Ok(response)
