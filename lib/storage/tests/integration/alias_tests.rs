@@ -21,7 +21,7 @@ use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::Builder;
 use tokio::runtime::Runtime;
 
-const FULL_ACCESS: Auth = Auth::new(Access::full("For test"), None, None, AuthType::Internal, None);
+const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
 
 #[test]
 fn test_alias_operation() {

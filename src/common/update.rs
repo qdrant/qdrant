@@ -950,7 +950,7 @@ pub async fn do_create_index_internal(
         internal_params,
         params,
         None,
-        Auth::new(Access::full("Internal API"), None, None, AuthType::Internal, None),
+        Auth::new_internal(Access::full("Internal API")),
         hw_measurement_acc,
     )
     .await
@@ -1017,7 +1017,7 @@ pub async fn do_delete_index_internal(
         internal_params,
         params,
         None,
-        Auth::new(Access::full("Internal API"), None, None, AuthType::Internal, None),
+        Auth::new_internal(Access::full("Internal API")),
         hw_measurement_acc,
     )
     .await

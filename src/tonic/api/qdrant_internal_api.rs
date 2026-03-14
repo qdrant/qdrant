@@ -97,13 +97,7 @@ impl QdrantInternal for QdrantInternalService {
         let timing = Instant::now();
         let timeout = Duration::from_secs(timeout);
 
-        let auth = Auth::new(
-            Access::full("internal service"),
-            None,
-            None,
-            AuthType::Internal,
-            None,
-        );
+        let auth = Auth::new_internal(Access::full("internal service"));
 
         let telemetry_collector = self.telemetry_collector.lock().await;
         let telemetry_data = telemetry_collector

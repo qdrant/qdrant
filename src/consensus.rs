@@ -1576,7 +1576,7 @@ mod tests {
                         )
                         .unwrap(),
                     ),
-                    Auth::new(Access::full("For test"), None, None, AuthType::Internal, None),
+                    Auth::new_internal(Access::full("For test")),
                     None,
                 ),
             )

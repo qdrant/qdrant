@@ -216,13 +216,7 @@ impl AuthKeys {
                 None,
                 None, // no timeout
                 ShardSelectorInternal::All,
-                Auth::new(
-                    Access::full("JWT stateful validation"),
-                    None,
-                    None,
-                    AuthType::Internal,
-                    None,
-                ),
+                Auth::new_internal(Access::full("JWT stateful validation")),
                 HwMeasurementAcc::disposable(),
             )
             .await
