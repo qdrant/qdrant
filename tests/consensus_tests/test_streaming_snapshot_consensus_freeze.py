@@ -117,7 +117,7 @@ def trigger_write_lock(peer_uri, result):
 
 
 def start_slow_downloads(peer_uri, shard_id, stop_event, n=2):
-    """Start n slow snapshot downloads, wait until streaming. Returns (results, threads)."""
+    """Start n slow snapshot downloads, wait until streaming with actual bytes. Returns (results, threads)."""
     results = [{} for _ in range(n)]
     threads = []
     for i in range(n):
@@ -127,10 +127,16 @@ def start_slow_downloads(peer_uri, shard_id, stop_event, n=2):
         threads.append(t)
         t.start()
 
-    deadline = time.time() + 15
+    # Wait until each download is truly streaming (bytes flowing), not just headers received.
+    # This closes the race condition where phase="streaming" is set on HTTP header receipt
+    # but result["bytes"] is only populated after the first body chunk arrives.
+    deadline = time.time() + 30
     for r in results:
         while time.time() < deadline:
-            if r.get("phase") in ("streaming", "done", "error", "stopped"):
+            phase = r.get("phase")
+            if phase in ("done", "error", "stopped"):
+                break
+            if phase == "streaming" and r.get("bytes", 0) > 0:
                 break
             time.sleep(0.2)
 
@@ -208,3 +214,4 @@ def test_streaming_snapshot_freezes_collection_via_consensus(tmp_path: pathlib.P
     # Assertions
     assert not frozen, f"Deadlock detected: {len(frozen)} ops frozen: {list(frozen.keys())}"
     print(f"{len(frozen)} operations frozen by consensus deadlock")
+      
