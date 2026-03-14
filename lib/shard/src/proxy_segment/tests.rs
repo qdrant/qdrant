@@ -7,7 +7,7 @@ use fs_err::File;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
-use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry as _, SnapshotEntry as _};
+use segment::entry::{SearchSegmentEntry as _, SegmentEntry as _, SnapshotEntry as _};
 use segment::types::{FieldCondition, PayloadSchemaType};
 use tempfile::Builder;
 
@@ -68,7 +68,7 @@ fn test_search_batch_equivalence_single() {
     let mut proxy_segment = ProxySegment::new(original_segment);
 
     proxy_segment
-        .delete_point(102, 1.into(), &hw_counter)
+        .delete_point_mut(102, 1.into(), &hw_counter)
         .unwrap();
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
@@ -255,7 +255,7 @@ fn test_read_filter() {
     let hw_counter = HardwareCounterCell::new();
 
     proxy_segment
-        .delete_point(100, 2.into(), &hw_counter)
+        .delete_point_mut(100, 2.into(), &hw_counter)
         .unwrap();
 
     let proxy_res = proxy_segment
@@ -297,7 +297,9 @@ fn test_read_range() {
 
     let hw_cell = HardwareCounterCell::new();
 
-    proxy_segment.delete_point(100, 2.into(), &hw_cell).unwrap();
+    proxy_segment
+        .delete_point_mut(100, 2.into(), &hw_cell)
+        .unwrap();
 
     let proxy_res = proxy_segment.read_range(None, Some(10.into()));
 
@@ -386,7 +388,9 @@ fn test_take_snapshot() {
 
     let proxy_segment2 = ProxySegment::new(original_segment_2);
 
-    proxy_segment.delete_point(102, 1.into(), &hw_cell).unwrap();
+    proxy_segment
+        .delete_point_mut(102, 1.into(), &hw_cell)
+        .unwrap();
 
     let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
     eprintln!("Snapshot into {:?}", snapshot_file.path());
@@ -432,14 +436,16 @@ fn test_point_vector_count() {
 
     // Delete nonexistent point, counts should remain the same
     proxy_segment
-        .delete_point(101, 99999.into(), &hw_cell)
+        .delete_point_mut(101, 99999.into(), &hw_cell)
         .unwrap();
     let segment_info = proxy_segment.info();
     assert_eq!(segment_info.num_points, 5);
     assert_eq!(segment_info.num_vectors, 5);
 
     // Delete point 1, counts should decrease by 1
-    proxy_segment.delete_point(102, 4.into(), &hw_cell).unwrap();
+    proxy_segment
+        .delete_point_mut(102, 4.into(), &hw_cell)
+        .unwrap();
     let segment_info = proxy_segment.info();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 4);
@@ -493,13 +499,17 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 4);
 
     // Delete nonexistent point, counts should remain the same
-    proxy_segment.delete_point(104, 1.into(), &hw_cell).unwrap();
+    proxy_segment
+        .delete_point_mut(104, 1.into(), &hw_cell)
+        .unwrap();
     let segment_info = proxy_segment.info();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 4);
 
     // Delete point 4, counts should decrease by 1
-    proxy_segment.delete_point(105, 4.into(), &hw_cell).unwrap();
+    proxy_segment
+        .delete_point_mut(105, 4.into(), &hw_cell)
+        .unwrap();
     let segment_info = proxy_segment.info();
     assert_eq!(segment_info.num_points, 1);
     assert_eq!(segment_info.num_vectors, 2);
@@ -519,7 +529,7 @@ fn test_proxy_segment_flush() {
     let flushed_version_1 = proxy_segment.flush(false).unwrap();
 
     proxy_segment
-        .delete_point(100, 2.into(), &HardwareCounterCell::new())
+        .delete_point_mut(100, 2.into(), &HardwareCounterCell::new())
         .unwrap();
 
     let flushed_version_2 = proxy_segment.flush(false).unwrap();

@@ -20,7 +20,7 @@ use segment::data_types::index::{
     KeywordIndexType, TextIndexParams, TextIndexType,
 };
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{SearchSegmentEntry, SegmentEntry};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::fixtures::payload_fixtures::{
     FLICKING_KEY, FLT_KEY, GEO_KEY, INT_KEY, INT_KEY_2, INT_KEY_3, LAT_RANGE, LON_RANGE, STR_KEY,
@@ -224,13 +224,13 @@ impl TestSegments {
             opnum += 1;
             let idx_to_remove = rng.random_range(0..num_points);
             plain_segment
-                .delete_point(opnum, idx_to_remove.into(), &hw_counter)
+                .delete_point_mut(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
             struct_segment
-                .delete_point(opnum, idx_to_remove.into(), &hw_counter)
+                .delete_point_mut(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
             mmap_segment
-                .delete_point(opnum, idx_to_remove.into(), &hw_counter)
+                .delete_point_mut(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
         }
 
@@ -475,10 +475,10 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         opnum += 1;
         let idx_to_remove = rng.random_range(0..num_points);
         plain_segment
-            .delete_point(opnum, idx_to_remove.into(), &hw_counter)
+            .delete_point_mut(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
         struct_segment
-            .delete_point(opnum, idx_to_remove.into(), &hw_counter)
+            .delete_point_mut(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
     }
 

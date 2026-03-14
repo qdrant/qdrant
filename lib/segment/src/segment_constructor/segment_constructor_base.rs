@@ -31,7 +31,7 @@ use uuid::Uuid;
 use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
-use crate::entry::NonAppendableSegmentEntry;
+use crate::entry::SearchSegmentEntry;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 #[cfg(feature = "rocksdb")]

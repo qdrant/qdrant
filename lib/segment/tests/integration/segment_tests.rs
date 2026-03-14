@@ -11,7 +11,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, VectorRef, VectorStructInternal, only_default_vector,
 };
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{SearchSegmentEntry, SegmentEntry};
 use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
@@ -200,8 +200,8 @@ fn ordered_deletion_test() {
 
     let path = {
         let mut segment = build_segment_1(dir.path());
-        segment.delete_point(6, 5.into(), &hw_counter).unwrap();
-        segment.delete_point(6, 4.into(), &hw_counter).unwrap();
+        segment.delete_point_mut(6, 5.into(), &hw_counter).unwrap();
+        segment.delete_point_mut(6, 4.into(), &hw_counter).unwrap();
         segment.flush(false).unwrap();
         segment.segment_path.clone()
     };

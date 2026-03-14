@@ -27,7 +27,7 @@ use fs_err as fs;
 pub use info::ShardInfo;
 use parking_lot::Mutex;
 pub use reexports::*;
-use segment::entry::NonAppendableSegmentEntry as _;
+use segment::entry::SearchSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH};
 use shard::operations::CollectionUpdateOperations;

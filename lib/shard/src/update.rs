@@ -357,7 +357,7 @@ pub fn delete_points(
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
             for &id in batch {
-                if write_segment.delete_point(op_num, id, hw_counter)? {
+                if write_segment.delete_point_mut(op_num, id, hw_counter)? {
                     total_deleted_points += 1;
                 }
             }
@@ -455,7 +455,7 @@ pub fn delete_points_by_filter(
 
         let mut deleted_in_batch = 0;
         while let Some(point_id) = curr_points.pop() {
-            if s.delete_point(op_num, point_id, hw_counter)? {
+            if s.delete_point_mut(op_num, point_id, hw_counter)? {
                 total_deleted += 1;
                 deleted_in_batch += 1;
             }

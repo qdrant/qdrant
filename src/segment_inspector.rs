@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use clap::Parser;
 use common::counter::hardware_counter::HardwareCounterCell;
-use segment::entry::entry_point::NonAppendableSegmentEntry;
+use segment::entry::entry_point::SearchSegmentEntry;
 use segment::segment_constructor::load_segment;
 use segment::types::PointIdType;
 use uuid::Uuid;

@@ -4,7 +4,7 @@ use std::time::Duration;
 use parking_lot::RwLockReadGuard;
 use segment::common::check_stopped;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::NonAppendableSegmentEntry;
+use segment::entry::SearchSegmentEntry;
 use segment::types::PointIdType;
 
 use crate::locked_segment::LockedSegment;
@@ -22,7 +22,7 @@ impl SegmentHolder {
     where
         F: FnMut(
             &[PointIdType],
-            &RwLockReadGuard<dyn NonAppendableSegmentEntry>,
+            &RwLockReadGuard<dyn SearchSegmentEntry>,
         ) -> OperationResult<usize>,
     {
         let mut read_points = 0;
@@ -71,7 +71,7 @@ impl SegmentHolder {
     where
         F: FnMut(
             &[PointIdType],
-            &RwLockReadGuard<dyn NonAppendableSegmentEntry>,
+            &RwLockReadGuard<dyn SearchSegmentEntry>,
         ) -> OperationResult<usize>,
     {
         let segments: Vec<_> = {
@@ -96,7 +96,7 @@ impl SegmentHolder {
     where
         F: FnMut(
             &[PointIdType],
-            &RwLockReadGuard<dyn NonAppendableSegmentEntry>,
+            &RwLockReadGuard<dyn SearchSegmentEntry>,
         ) -> OperationResult<usize>,
     {
         let segments = self.segments_for_retrieval();

@@ -15,7 +15,7 @@ mod tests {
     use itertools::Itertools;
     use rand::rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-    use segment::entry::entry_point::NonAppendableSegmentEntry;
+    use segment::entry::entry_point::SearchSegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::json_path::JsonPath;
     use segment::payload_json;

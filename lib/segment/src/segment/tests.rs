@@ -26,7 +26,7 @@ use crate::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, VectorRef, only_default_vector,
 };
 use crate::entry::SnapshotEntry as _;
-use crate::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry as _};
+use crate::entry::entry_point::{SearchSegmentEntry as _, SegmentEntry as _};
 use crate::id_tracker::IdTracker;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::JsonPath;
@@ -65,7 +65,9 @@ fn test_search_batch_equivalence_single() {
     segment
         .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
         .unwrap();
-    segment.delete_point(102, 1.into(), &hw_counter).unwrap();
+    segment
+        .delete_point_mut(102, 1.into(), &hw_counter)
+        .unwrap();
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
     let search_result = segment
@@ -411,13 +413,17 @@ fn test_point_vector_count() {
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete nonexistent point, counts should remain the same
-    segment.delete_point(102, 1.into(), &hw_counter).unwrap();
+    segment
+        .delete_point_mut(102, 1.into(), &hw_counter)
+        .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete point 4, counts should decrease by 1
-    segment.delete_point(103, 4.into(), &hw_counter).unwrap();
+    segment
+        .delete_point_mut(103, 4.into(), &hw_counter)
+        .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 1);
     assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
@@ -485,13 +491,17 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete nonexistent point, counts should remain the same
-    segment.delete_point(104, 1.into(), &hw_counter).unwrap();
+    segment
+        .delete_point_mut(104, 1.into(), &hw_counter)
+        .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete point 4, counts should decrease by 1
-    segment.delete_point(105, 4.into(), &hw_counter).unwrap();
+    segment
+        .delete_point_mut(105, 4.into(), &hw_counter)
+        .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time

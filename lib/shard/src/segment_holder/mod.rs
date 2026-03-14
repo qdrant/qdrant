@@ -25,7 +25,7 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{SearchSegmentEntry, SegmentEntry};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
@@ -345,10 +345,7 @@ impl SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(
-        ids: &[PointIdType],
-        segment: &dyn NonAppendableSegmentEntry,
-    ) -> Vec<PointIdType> {
+    fn segment_points(ids: &[PointIdType], segment: &dyn SearchSegmentEntry) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
             .filter(|id| segment.has_point(*id))
@@ -460,9 +457,7 @@ impl SegmentHolder {
 
     pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
     where
-        F: FnMut(
-            &RwLockReadGuard<dyn NonAppendableSegmentEntry + 'static>,
-        ) -> OperationResult<bool>,
+        F: FnMut(&RwLockReadGuard<dyn SearchSegmentEntry + 'static>) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
@@ -475,7 +470,7 @@ impl SegmentHolder {
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
     where
         F: FnMut(
-            &mut RwLockUpgradableReadGuard<dyn NonAppendableSegmentEntry + 'static>,
+            &mut RwLockUpgradableReadGuard<dyn SearchSegmentEntry + 'static>,
         ) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
@@ -566,7 +561,7 @@ impl SegmentHolder {
 
             for point_id in points {
                 if let Some(version) = write_segment.point_version(point_id) {
-                    write_segment.delete_point(version, point_id, hw_counter)?;
+                    write_segment.delete_point_mut(version, point_id, hw_counter)?;
                 }
             }
         }
@@ -588,8 +583,8 @@ impl SegmentHolder {
     /// Try to acquire read lock over the given segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     fn aloha_lock_segment_read(
-        segment: &'_ RwLock<dyn NonAppendableSegmentEntry>,
-    ) -> RwLockReadGuard<'_, dyn NonAppendableSegmentEntry> {
+        segment: &'_ RwLock<dyn SearchSegmentEntry>,
+    ) -> RwLockReadGuard<'_, dyn SearchSegmentEntry> {
         let mut interval = Duration::from_nanos(100);
         loop {
             if let Some(guard) = segment.try_read_for(interval) {
@@ -718,7 +713,7 @@ impl SegmentHolder {
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
                         if !appendable_write_segment.point_is_deferred(point_id) {
-                            write_segment.delete_point(op_num, point_id, hw_counter)?;
+                            write_segment.delete_point_mut(op_num, point_id, hw_counter)?;
                         }
 
                         Ok(true)
@@ -916,7 +911,7 @@ impl SegmentHolder {
                     for &point_id in &points {
                         if let Some(point_version) = write_segment.point_version(point_id) {
                             removed_points += 1;
-                            write_segment.delete_point(point_version, point_id, &disposable_hw_counter)?; // Internal operation
+                            write_segment.delete_point_mut(point_version, point_id, &disposable_hw_counter)?; // Internal operation
                         }
                     }
 

@@ -11,7 +11,7 @@ mod tests {
 
     use itertools::Itertools;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-    use segment::entry::NonAppendableSegmentEntry;
+    use segment::entry::SearchSegmentEntry;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{
         CompressionRatio, HnswConfig, HnswGlobalConfig, Indexes, ProductQuantization,

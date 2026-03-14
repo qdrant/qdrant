@@ -27,11 +27,11 @@ use crate::types::{
     VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
-/// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
+/// Define all operations on segment that do not require mutable access.
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait NonAppendableSegmentEntry: SnapshotEntry {
+pub trait SearchSegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
@@ -327,13 +327,6 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         self.apply_field_index(op_num, key.to_owned(), schema, indexes)
     }
 
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
     /// Get indexed fields
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
@@ -364,11 +357,33 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
     fn has_deferred_points(&self) -> bool;
 }
 
+/// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
+///
+/// Assume all operations are idempotent - which means that no matter how many times an operation
+/// is executed - the storage state will be the same.
+pub trait NonAppendableSegmentEntry: SearchSegmentEntry {
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+}
+
 /// Define mutable operations which can be performed with Segment or Segment-like entity.
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait SegmentEntry: NonAppendableSegmentEntry {
+///
+/// This is not a superset of `NonAppendableSegmentEntry` as its operations will differ in mutability.
+pub trait SegmentEntry: SearchSegmentEntry {
+    fn delete_point_mut(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,

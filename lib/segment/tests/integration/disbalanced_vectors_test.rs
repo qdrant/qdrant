@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{SearchSegmentEntry, SegmentEntry};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,
@@ -71,7 +71,7 @@ fn test_rebuild_with_removed_vectors() {
         }
         if i % 2 == 0 {
             segment2
-                .delete_point(2, (NUM_VECTORS_1 + i).into(), &hw_counter)
+                .delete_point_mut(2, (NUM_VECTORS_1 + i).into(), &hw_counter)
                 .unwrap();
         }
     }
