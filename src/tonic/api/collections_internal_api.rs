@@ -10,7 +10,7 @@ use api::grpc::qdrant::{
 };
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::{Access, AccessRequirements, Auth, AuthType, CollectionPass};
+use storage::rbac::{Access, AccessRequirements, Auth, CollectionPass};
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;

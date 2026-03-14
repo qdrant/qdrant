@@ -26,7 +26,7 @@ use segment::json_path::JsonPath;
 use segment::types::Filter;
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
-use storage::rbac::{Access, Auth, AuthType};
+use storage::rbac::{Access, Auth};
 use tonic::{Request, Response, Status};
 
 use super::query_common::*;

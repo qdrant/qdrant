@@ -9,7 +9,7 @@ use api::grpc::{
 };
 use common::types::{DetailsLevel, TelemetryDetail};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
-use storage::rbac::{Access, Auth, AuthType};
+use storage::rbac::{Access, Auth};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 

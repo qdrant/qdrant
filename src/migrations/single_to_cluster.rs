@@ -12,7 +12,7 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::shard_distribution::ShardDistributionProposal;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequirements, Auth, AuthType};
+use storage::rbac::{Access, AccessRequirements, Auth};
 
 /// Processes the existing collections, which were created outside the consensus:
 /// - during the migration from single to cluster
