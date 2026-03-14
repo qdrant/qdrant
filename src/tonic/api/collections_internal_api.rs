@@ -17,7 +17,7 @@ use super::validate_and_log;
 use crate::tonic::api::collections_common::get;
 
 fn full_internal_auth() -> Auth {
-    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal)
+    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal, None)
 }
 
 fn full_access_pass(collection_name: &str) -> Result<CollectionPass<'_>, Status> {

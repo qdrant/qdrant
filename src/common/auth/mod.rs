@@ -67,7 +67,12 @@ impl Display for AuthError {
 
 /// Log a denied authentication attempt to the audit log when audit is enabled.
 /// Used by both REST (actix) and gRPC (tonic) auth middlewares.
-pub fn log_denied_auth(method: &str, remote: Option<String>, error: &AuthError) {
+pub fn log_denied_auth(
+    method: &str,
+    remote: Option<String>,
+    tracing_id: Option<String>,
+    error: &AuthError,
+) {
     if is_audit_enabled() {
         audit_log(AuditEvent {
             timestamp: Utc::now(),
@@ -76,6 +81,7 @@ pub fn log_denied_auth(method: &str, remote: Option<String>, error: &AuthError) 
             subject: None,
             remote,
             collection: None,
+            tracing_id,
             result: "denied",
             error: Some(error.to_string()),
         });
@@ -215,6 +221,7 @@ impl AuthKeys {
                     None,
                     None,
                     AuthType::Internal,
+                    None,
                 ),
                 HwMeasurementAcc::disposable(),
             )

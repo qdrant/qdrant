@@ -39,7 +39,7 @@ use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 
 fn full_internal_auth() -> Auth {
-    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal)
+    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal, None)
 }
 
 /// This API is intended for P2P communication within a distributed deployment.

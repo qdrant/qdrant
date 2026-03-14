@@ -25,7 +25,7 @@ pub async fn handle_existing_collections(
     collections: Vec<String>,
 ) {
     let full_access = Access::full("Migration from single to cluster");
-    let full_auth = Auth::new(full_access.clone(), None, None, AuthType::Internal);
+    let full_auth = Auth::new(full_access.clone(), None, None, AuthType::Internal, None);
     let multipass = full_auth
         .check_global_access(AccessRequirements::new().manage(), "migration")
         .expect("Full access should have manage rights");

@@ -102,6 +102,7 @@ impl QdrantInternal for QdrantInternalService {
             None,
             None,
             AuthType::Internal,
+            None,
         );
 
         let telemetry_collector = self.telemetry_collector.lock().await;

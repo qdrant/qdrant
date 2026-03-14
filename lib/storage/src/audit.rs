@@ -10,6 +10,23 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 use crate::rbac::AuthType;
 
+/// Maximum length for a tracing ID extracted from request headers.
+pub const MAX_TRACING_ID_LEN: usize = 256;
+
+/// Request headers checked (in priority order) to extract a tracing ID.
+pub const TRACING_ID_HEADERS: &[&str] = &["x-request-id", "x-tracing-id", "traceparent"];
+
+/// Extract a tracing ID from request headers, checking [`TRACING_ID_HEADERS`]
+/// in priority order.  The value is truncated to [`MAX_TRACING_ID_LEN`] bytes.
+pub fn extract_tracing_id(get_header: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let value = TRACING_ID_HEADERS.iter().find_map(|h| get_header(h))?;
+    if value.len() > MAX_TRACING_ID_LEN {
+        Some(value[..MAX_TRACING_ID_LEN].to_string())
+    } else {
+        Some(value)
+    }
+}
+
 /// Global audit logger singleton.
 static AUDIT_LOGGER: OnceLock<AuditLogger> = OnceLock::new();
 
@@ -86,6 +103,9 @@ pub struct AuditEvent {
     /// Collection name, if the check was collection‑scoped.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collection: Option<String>,
+    /// Tracing ID extracted from request headers, if present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tracing_id: Option<String>,
     /// `"ok"` when the access check passed, `"denied"` otherwise.
     pub result: &'static str,
     /// Error message when the access check failed.
