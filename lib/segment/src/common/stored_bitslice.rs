@@ -441,98 +441,80 @@ mod tests {
 
     #[test]
     fn test_set_bits_batch() {
-        // 4 u64 elements = 256 bits
-        let f = create_temp_file(&[0x00; 32]);
+        const NUM_BITS: u64 = 8192; // 128 u64 elements
+        let f = create_temp_file(&[0x00; (NUM_BITS / 8) as usize]);
 
         let mut storage: MmapBitSlice =
             StoredBitSlice::open(f.path(), OpenOptions::default()).unwrap();
-        assert_eq!(storage.element_len(), 4);
+        assert_eq!(storage.bit_len(), NUM_BITS);
 
-        // --- Single element (element 0) ---
+        /// Verify every bit in storage matches the predicate.
+        fn assert_bits(storage: &MmapBitSlice, expected: impl Fn(u64) -> bool) {
+            let bs = storage.read_all().unwrap();
+            for i in 0..storage.bit_len() {
+                assert_eq!(bs[i as usize], expected(i), "mismatch at bit {i}",);
+            }
+        }
+
+        // Set all odd bits across all elements
         storage
-            .set_ascending_bits_batch([(0, true), (3, true), (7, true), (8, true), (15, true)])
+            .set_ascending_bits_batch((0..NUM_BITS).filter(|i| i % 2 == 1).map(|i| (i, true)))
             .unwrap();
+        assert_bits(&storage, |i| i % 2 == 1);
+        assert_eq!(storage.count_ones().unwrap(), (NUM_BITS / 2) as usize);
 
-        assert_eq!(storage.get_bit(0).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(1).unwrap(), Some(false));
-        assert_eq!(storage.get_bit(3).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(7).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(8).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(15).unwrap(), Some(true));
-
-        // --- Consecutive elements (elements 1 and 2) coalesced into one run ---
-        // Element 1: bits 64..128, Element 2: bits 128..192
+        // Set all even bits, now everything is set
         storage
-            .set_ascending_bits_batch([
-                (64, true),  // element 1, bit 0
-                (65, true),  // element 1, bit 1
-                (127, true), // element 1, last bit
-                (128, true), // element 2, first bit
-                (190, true), // element 2, bit 62
-            ])
+            .set_ascending_bits_batch((0..NUM_BITS).filter(|i| i % 2 == 0).map(|i| (i, true)))
             .unwrap();
+        assert_bits(&storage, |_| true);
+        assert_eq!(storage.count_ones().unwrap(), NUM_BITS as usize);
 
-        assert_eq!(storage.get_bit(64).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(65).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(66).unwrap(), Some(false));
-        assert_eq!(storage.get_bit(127).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(128).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(129).unwrap(), Some(false));
-        assert_eq!(storage.get_bit(190).unwrap(), Some(true));
-
-        // --- Non-consecutive elements (elements 0 and 2, gap at 1) ---
-        // Two separate runs in a single batch call.
+        // Clear every 3rd bit
         storage
-            .set_ascending_bits_batch([
-                (1, true),   // element 0
-                (191, true), // element 2
-            ])
+            .set_ascending_bits_batch((0..NUM_BITS).filter(|i| i % 3 == 0).map(|i| (i, false)))
             .unwrap();
+        assert_bits(&storage, |i| i % 3 != 0);
 
-        assert_eq!(storage.get_bit(1).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(191).unwrap(), Some(true));
-        // Previously set bits should still be there
-        assert_eq!(storage.get_bit(64).unwrap(), Some(true));
-
-        // --- Clearing bits across elements ---
+        // Sparse update: only element boundaries and last bits of each element
         storage
-            .set_ascending_bits_batch([
-                (0, false),   // element 0
-                (64, false),  // element 1
-                (128, false), // element 2
-            ])
+            .set_ascending_bits_batch(
+                (0..NUM_BITS)
+                    .filter(|i| i % 64 == 0 || i % 64 == 63)
+                    .map(|i| (i, true)),
+            )
             .unwrap();
+        assert_bits(&storage, |i| i % 3 != 0 || i % 64 == 0 || i % 64 == 63);
 
-        assert_eq!(storage.get_bit(0).unwrap(), Some(false));
-        assert_eq!(storage.get_bit(64).unwrap(), Some(false));
-        assert_eq!(storage.get_bit(128).unwrap(), Some(false));
-        // Other bits remain untouched
-        assert_eq!(storage.get_bit(3).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(65).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(190).unwrap(), Some(true));
-
-        // --- All four elements in one consecutive run ---
+        // Clear everything
         storage
-            .set_ascending_bits_batch([
-                (0, false),   // element 0
-                (64, false),  // element 1
-                (128, false), // element 2
-                (192, true),  // element 3
-                (255, true),  // element 3, last bit
-            ])
+            .set_ascending_bits_batch((0..NUM_BITS).map(|i| (i, false)))
             .unwrap();
+        assert_bits(&storage, |_| false);
+        assert_eq!(storage.count_ones().unwrap(), 0);
 
-        assert_eq!(storage.get_bit(0).unwrap(), Some(false));
-        assert_eq!(storage.get_bit(192).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(255).unwrap(), Some(true));
+        // Non-consecutive runs: set bits in elements 0, 3, 7, 15 (gaps between)
+        storage
+            .set_ascending_bits_batch(
+                [0, 3, 7, 111]
+                    .into_iter()
+                    .flat_map(|el: u64| (el * 64..el * 64 + 64).map(|i| (i, true))),
+            )
+            .unwrap();
+        assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 15));
 
-        // --- Out of bounds ---
-        assert!(storage.set_ascending_bits_batch([(256, true)]).is_err());
+        // Out of bounds
+        assert!(
+            storage
+                .set_ascending_bits_batch([(NUM_BITS, true)])
+                .is_err()
+        );
 
-        // --- Empty batch is a no-op ---
+        // Empty batch is a no-op
         storage
             .set_ascending_bits_batch(std::iter::empty())
             .unwrap();
+        assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 15));
     }
 
     #[test]
