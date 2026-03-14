@@ -69,6 +69,9 @@ where
                         (Some(""), Some("collections"), Some(_), Some(rest)) => {
                             format!("/collections/{{name}}/{rest}")
                         }
+                        (Some(""), Some("collections"), Some(_), None) => {
+                            "/collections/{name}".to_string()
+                        }
                         _ => path.to_string(),
                     }
                 } else {
