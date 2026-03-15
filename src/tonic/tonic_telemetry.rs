@@ -10,6 +10,18 @@ use crate::common::telemetry_ops::requests_telemetry::{
     TonicTelemetryCollector, TonicWorkerTelemetryCollector,
 };
 
+/// Extract collection name from gRPC method path
+/// Handles paths like: /qdrant.Points/Upsert
+/// For gRPC, collection name is typically in the request message, not the path
+/// We extract it from the URI path pattern if available
+fn extract_collection_name_from_grpc_path(path: &str) -> Option<String> {
+    // gRPC paths are in format: /qdrant.Service/Method
+    // Collection name is not in the path, it would need to be extracted from request body
+    // For now, return None as collection extraction from gRPC requires request parsing
+    // This is a placeholder - actual implementation would need to parse the request
+    None
+}
+
 /// Based on https://grpc.io/docs/guides/status-codes/
 /// Default gRPC status code for all responses (0 = OK)
 const DEFAULT_SUCCESS_GRPC_STATUS_CODE: i32 = 0;
@@ -49,6 +61,12 @@ where
 
     fn call(&mut self, request: Request) -> Self::Future {
         let method_name = request.uri().path().to_string();
+        // Note: Extracting collection name from gRPC requests requires parsing the request body
+        // which is not easily accessible at this middleware layer.
+        // For now, we pass None - a more complete implementation would require
+        // intercepting the actual request message to extract collection name.
+        let collection_name = extract_collection_name_from_grpc_path(&method_name);
+        
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
@@ -72,7 +90,7 @@ where
 
             telemetry_data
                 .lock()
-                .add_response(method_name, instant, status_code);
+                .add_response(method_name, instant, status_code, collection_name);
             Ok(response)
         })
     }

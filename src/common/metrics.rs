@@ -644,6 +644,7 @@ impl MetricsProvider for RequestsTelemetry {
 
 impl MetricsProvider for WebApiTelemetry {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        // Build global metrics (without collection label)
         let mut builder = OperationDurationMetricsBuilder::default();
         for (endpoint, responses) in &self.responses {
             let Some((method, endpoint)) = endpoint.split_once(' ') else {
@@ -666,11 +667,39 @@ impl MetricsProvider for WebApiTelemetry {
             }
         }
         builder.build(prefix, "rest", metrics);
+
+        // Build per-collection metrics (with collection label)
+        let mut collection_builder = OperationDurationMetricsBuilder::default();
+        for (collection, methods) in &self.collection_responses {
+            for (endpoint, responses) in methods {
+                let Some((method, endpoint)) = endpoint.split_once(' ') else {
+                    continue;
+                };
+                // Endpoint must be whitelisted
+                if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                    continue;
+                }
+                for (status, stats) in responses {
+                    collection_builder.add(
+                        stats,
+                        &[
+                            ("method", method),
+                            ("endpoint", endpoint),
+                            ("status", &status.to_string()),
+                            ("collection", collection),
+                        ],
+                        *status == REST_TIMINGS_FOR_STATUS,
+                    );
+                }
+            }
+        }
+        collection_builder.build(prefix, "rest_collection", metrics);
     }
 }
 
 impl MetricsProvider for GrpcTelemetry {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        // Build global metrics (without collection label)
         let mut builder = OperationDurationMetricsBuilder::default();
         for (endpoint, responses) in &self.responses {
             // Endpoint must be whitelisted
@@ -692,6 +721,32 @@ impl MetricsProvider for GrpcTelemetry {
             }
         }
         builder.build(prefix, "grpc", metrics);
+
+        // Build per-collection metrics (with collection label)
+        let mut collection_builder = OperationDurationMetricsBuilder::default();
+        for (collection, methods) in &self.collection_responses {
+            for (endpoint, responses) in methods {
+                // Endpoint must be whitelisted
+                if GRPC_ENDPOINT_WHITELIST
+                    .binary_search(&endpoint.as_str())
+                    .is_err()
+                {
+                    continue;
+                }
+                for (status, stats) in responses {
+                    collection_builder.add(
+                        stats,
+                        &[
+                            ("endpoint", endpoint.as_str()),
+                            ("status", &status.to_string()),
+                            ("collection", collection),
+                        ],
+                        true,
+                    );
+                }
+            }
+        }
+        collection_builder.build(prefix, "grpc_collection", metrics);
     }
 }
 

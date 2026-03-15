@@ -10,6 +10,26 @@ use crate::common::telemetry_ops::requests_telemetry::{
     ActixTelemetryCollector, ActixWorkerTelemetryCollector,
 };
 
+/// Extract collection name from request path
+/// Handles paths like: /collections/my-collection/points/search
+/// Returns Some("my-collection") or None if no collection found
+fn extract_collection_name(path: &str) -> Option<String> {
+    // Split path and look for "collections" segment
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    
+    for (i, segment) in segments.iter().enumerate() {
+        if *segment == "collections" && i + 1 < segments.len() {
+            let collection_name = segments[i + 1];
+            // Validate it's not a placeholder like "{name}"
+            if !collection_name.starts_with('{') && !collection_name.ends_with('}') {
+                return Some(collection_name.to_string());
+            }
+        }
+    }
+    
+    None
+}
+
 pub struct ActixTelemetryService<S> {
     service: S,
     telemetry_data: Arc<Mutex<ActixWorkerTelemetryCollector>>,
@@ -40,6 +60,11 @@ where
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
         let request_key = format!("{} {}", request.method(), match_pattern);
+        
+        // Extract collection name from URL path
+        // URLs like: /collections/{name}/points/search
+        let collection_name = extract_collection_name(request.path());
+        
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
@@ -48,10 +73,11 @@ where
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
-                .add_response(request_key, status, instant);
+                .add_response(request_key, status, instant, collection_name);
             Ok(response)
         })
     }
+}
 }
 
 impl ActixTelemetryTransform {

@@ -18,11 +18,17 @@ pub type GrpcStatusCode = i32;
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    /// Per-collection response metrics: collection_name -> endpoint -> status -> stats
+    pub collection_responses:
+        HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
     pub responses: HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>,
+    /// Per-collection response metrics: collection_name -> endpoint -> status -> stats
+    pub collection_responses:
+        HashMap<String, HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>>,
 }
 
 pub struct ActixTelemetryCollector {
@@ -32,6 +38,9 @@ pub struct ActixTelemetryCollector {
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    /// Per-collection metrics: collection_name -> endpoint -> status -> aggregator
+    collection_methods:
+        HashMap<String, HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>>,
 }
 
 pub struct TonicTelemetryCollector {
@@ -41,6 +50,9 @@ pub struct TonicTelemetryCollector {
 #[derive(Default)]
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    /// Per-collection metrics: collection_name -> endpoint -> status -> aggregator
+    collection_methods:
+        HashMap<String, HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>>,
 }
 
 impl ActixTelemetryCollector {
@@ -83,14 +95,29 @@ impl TonicWorkerTelemetryCollector {
         method: String,
         instant: std::time::Instant,
         status_code: GrpcStatusCode,
+        collection_name: Option<String>,
     ) {
+        // Record global metrics
         let aggregator = self
             .methods
-            .entry(method)
+            .entry(method.clone())
             .or_default()
             .entry(status_code)
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+
+        // Record per-collection metrics if collection name is provided
+        if let Some(collection) = collection_name {
+            let coll_aggregator = self
+                .collection_methods
+                .entry(collection)
+                .or_default()
+                .entry(method)
+                .or_default()
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(coll_aggregator, instant);
+        }
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> GrpcTelemetry {
@@ -102,7 +129,26 @@ impl TonicWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        GrpcTelemetry { responses }
+
+        // Collect per-collection metrics
+        let mut collection_responses = HashMap::new();
+        for (collection, methods) in &self.collection_methods {
+            let mut collection_methods_map = HashMap::new();
+            for (method, status_codes) in methods {
+                let mut status_codes_map = HashMap::new();
+                for (status_code, aggregator) in status_codes {
+                    status_codes_map
+                        .insert(*status_code, aggregator.lock().get_statistics(detail));
+                }
+                collection_methods_map.insert(method.clone(), status_codes_map);
+            }
+            collection_responses.insert(collection.clone(), collection_methods_map);
+        }
+
+        GrpcTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
 
@@ -112,14 +158,29 @@ impl ActixWorkerTelemetryCollector {
         method: String,
         status_code: HttpStatusCode,
         instant: std::time::Instant,
+        collection_name: Option<String>,
     ) {
+        // Record global metrics
         let aggregator = self
             .methods
-            .entry(method)
+            .entry(method.clone())
             .or_default()
             .entry(status_code)
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+
+        // Record per-collection metrics if collection name is provided
+        if let Some(collection) = collection_name {
+            let coll_aggregator = self
+                .collection_methods
+                .entry(collection)
+                .or_default()
+                .entry(method)
+                .or_default()
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(coll_aggregator, instant);
+        }
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
@@ -131,7 +192,26 @@ impl ActixWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        WebApiTelemetry { responses }
+
+        // Collect per-collection metrics
+        let mut collection_responses = HashMap::new();
+        for (collection, methods) in &self.collection_methods {
+            let mut collection_methods_map = HashMap::new();
+            for (method, status_codes) in methods {
+                let mut status_codes_map = HashMap::new();
+                for (status_code, aggregator) in status_codes {
+                    status_codes_map
+                        .insert(*status_code, aggregator.lock().get_statistics(detail));
+                }
+                collection_methods_map.insert(method.clone(), status_codes_map);
+            }
+            collection_responses.insert(collection.clone(), collection_methods_map);
+        }
+
+        WebApiTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
 
@@ -144,6 +224,18 @@ impl GrpcTelemetry {
                 *status_entry = status_entry.clone() + statistics.clone();
             }
         }
+
+        // Merge per-collection metrics
+        for (collection, methods) in &other.collection_responses {
+            let collection_entry = self.collection_responses.entry(collection.clone()).or_default();
+            for (method, status_codes) in methods {
+                let method_entry = collection_entry.entry(method.clone()).or_default();
+                for (status_code, statistics) in status_codes {
+                    let status_entry = method_entry.entry(*status_code).or_default();
+                    *status_entry = status_entry.clone() + statistics.clone();
+                }
+            }
+        }
     }
 }
 
@@ -154,6 +246,18 @@ impl WebApiTelemetry {
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
+            }
+        }
+
+        // Merge per-collection metrics
+        for (collection, methods) in &other.collection_responses {
+            let collection_entry = self.collection_responses.entry(collection.clone()).or_default();
+            for (method, status_codes) in methods {
+                let method_entry = collection_entry.entry(method.clone()).or_default();
+                for (status_code, statistics) in status_codes {
+                    let status_entry = method_entry.entry(*status_code).or_default();
+                    *status_entry = status_entry.clone() + statistics.clone();
+                }
             }
         }
     }
@@ -194,7 +298,24 @@ impl Anonymize for WebApiTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        WebApiTelemetry { responses }
+        let collection_responses = self
+            .collection_responses
+            .iter()
+            .map(|(collection, methods)| {
+                let anonymized_methods = methods
+                    .iter()
+                    .map(|(method, status_codes)| {
+                        (method.clone(), anonymize_collection_values(status_codes))
+                    })
+                    .collect();
+                (collection.clone(), anonymized_methods)
+            })
+            .collect();
+
+        WebApiTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
 
@@ -206,6 +327,23 @@ impl Anonymize for GrpcTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        GrpcTelemetry { responses }
+        let collection_responses = self
+            .collection_responses
+            .iter()
+            .map(|(collection, methods)| {
+                let anonymized_methods = methods
+                    .iter()
+                    .map(|(method, status_codes)| {
+                        (method.clone(), anonymize_collection_values(status_codes))
+                    })
+                    .collect();
+                (collection.clone(), anonymized_methods)
+            })
+            .collect();
+
+        GrpcTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
