@@ -1,10 +1,13 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
+#[cfg(not(target_arch = "wasm32"))]
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use fs_err::File;
 use semver::Version;
 
+#[cfg(target_arch = "wasm32")]
+use crate::fs::atomic::{AllowOverwrite, AtomicFile};
 use crate::fs::{FileOperationResult, FileStorageError};
 
 pub const VERSION_FILE: &str = "version.info";
@@ -45,9 +48,19 @@ pub trait StorageVersion {
         let version_file = dir_path.join(VERSION_FILE);
         let af = AtomicFile::new(&version_file, AllowOverwrite);
         let current_version = Self::current_raw();
-        af.write(|f| f.write_all(current_version.as_bytes()))
-            .map_err(|err| {
-                FileStorageError::generic(format!("Can't write {version_file:?}, error: {err}"))
-            })
+        af.write(|f: &mut std::fs::File| -> std::io::Result<()> {
+            f.write_all(current_version.as_bytes())?;
+            Ok(())
+        })
+        .map_err(|err| match err {
+            #[cfg(not(target_arch = "wasm32"))]
+            atomicwrites::Error::Internal(err) => FileStorageError::from(err),
+            #[cfg(not(target_arch = "wasm32"))]
+            atomicwrites::Error::User(err) => FileStorageError::from(err),
+            #[cfg(target_arch = "wasm32")]
+            crate::fs::atomic::Error::Internal(err) => FileStorageError::from(err),
+            #[cfg(target_arch = "wasm32")]
+            crate::fs::atomic::Error::User(err) => FileStorageError::from(err),
+        })
     }
 }

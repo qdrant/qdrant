@@ -4,11 +4,10 @@ use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap::{
-    AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
+    AdviceSetting, MmapBitSlice, MmapMut, MmapSlice, create_and_ensure_length, open_write_mmap,
 };
 use common::types::PointOffsetType;
 use fs_err as fs;
-use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;

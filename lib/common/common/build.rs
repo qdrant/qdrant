@@ -10,7 +10,7 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(posix_fadvise_supported)");
     if matches!(
         std::env::var("CARGO_CFG_TARGET_OS").unwrap().as_str(),
-        "linux" | "freebsd" | "android" | "fuchsia" | "emscripten" | "wasi"
+        "linux" | "freebsd" | "android" | "fuchsia" | "emscripten"
     ) || matches!(
         std::env::var("CARGO_CFG_TARGET_ENV").unwrap().as_str(),
         "uclibc"

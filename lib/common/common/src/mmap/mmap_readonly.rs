@@ -25,10 +25,16 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::{fmt, mem, slice};
 
+#[cfg(not(target_arch = "wasm32"))]
 use memmap2::Mmap;
 
 use super::advice::Madviseable;
+#[cfg(not(target_arch = "wasm32"))]
 use super::mmap_rw::Error;
+#[cfg(target_arch = "wasm32")]
+use super::mmap_rw_wasm::Error;
+#[cfg(target_arch = "wasm32")]
+use super::mmap_rw_wasm::Mmap;
 
 /// Result for mmap errors.
 type Result<T> = std::result::Result<T, Error>;

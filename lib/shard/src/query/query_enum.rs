@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 use api::grpc;
 use segment::data_types::vectors::*;
 use segment::types::{VectorName, VectorNameBuf};
@@ -145,6 +146,7 @@ impl From<QueryEnum> for QueryVector {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<QueryEnum> for grpc::QueryEnum {
     fn from(value: QueryEnum) -> Self {
         match value {
@@ -198,6 +200,7 @@ impl From<QueryEnum> for grpc::QueryEnum {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl QueryEnum {
     pub fn from_grpc_raw_query(
         raw_query: grpc::RawQuery,
@@ -290,6 +293,7 @@ impl QueryEnum {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<QueryEnum> for grpc::RawQuery {
     fn from(query: QueryEnum) -> Self {
         use grpc::raw_query::Variant;

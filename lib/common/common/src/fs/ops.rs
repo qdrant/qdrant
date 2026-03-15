@@ -2,10 +2,14 @@ use std::io::{self, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::result;
 
+#[cfg(not(target_arch = "wasm32"))]
 use atomicwrites::{AtomicFile, OverwriteBehavior};
 use fs_err::File;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+
+#[cfg(target_arch = "wasm32")]
+use crate::fs::atomic::{AtomicFile, OverwriteBehavior};
 
 #[allow(
     clippy::disallowed_types,
@@ -24,8 +28,14 @@ where
         Ok(())
     })
     .map_err(|e| match e {
+        #[cfg(not(target_arch = "wasm32"))]
         atomicwrites::Error::Internal(err) => E::from(err),
+        #[cfg(not(target_arch = "wasm32"))]
         atomicwrites::Error::User(err) => err,
+        #[cfg(target_arch = "wasm32")]
+        crate::fs::atomic::Error::Internal(err) => E::from(err),
+        #[cfg(target_arch = "wasm32")]
+        crate::fs::atomic::Error::User(err) => err,
     })
 }
 
@@ -75,6 +85,7 @@ impl Error {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<E> From<atomicwrites::Error<E>> for Error
 where
     Self: From<E>,
@@ -83,6 +94,19 @@ where
         match err {
             atomicwrites::Error::Internal(err) => err.into(),
             atomicwrites::Error::User(err) => err.into(),
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl<E> From<crate::fs::atomic::Error<E>> for Error
+where
+    Self: From<E>,
+{
+    fn from(err: crate::fs::atomic::Error<E>) -> Self {
+        match err {
+            crate::fs::atomic::Error::Internal(err) => err.into(),
+            crate::fs::atomic::Error::User(err) => err.into(),
         }
     }
 }

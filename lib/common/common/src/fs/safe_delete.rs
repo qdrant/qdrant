@@ -24,6 +24,7 @@ use std::io;
 use std::path::Path;
 
 use fs_err as fs;
+#[cfg(not(target_arch = "wasm32"))]
 use fs_err::tokio as tokio_fs;
 use tempfile::TempDir;
 
@@ -89,6 +90,7 @@ pub fn sync_parent_dir(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// See [`sync_parent_dir()`].
 pub async fn sync_parent_dir_async(path: &Path) -> io::Result<()> {
     let (parent, _file_name) = split(path).ok_or_else(|| err_invalid_path(path))?;

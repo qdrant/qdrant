@@ -53,6 +53,10 @@ count-min-sketch = "0.1.8"
 
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["full"] }
+fs-err = { workspace = true, features = ["tokio"] }
 futures = { workspace = true }
 atomicwrites = { workspace = true}
 log = { workspace = true }

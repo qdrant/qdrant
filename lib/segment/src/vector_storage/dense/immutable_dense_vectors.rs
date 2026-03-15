@@ -85,7 +85,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
 
         // Advise kernel that we'll need this page soon so the kernel can prepare
         #[cfg(unix)]
-        if let Err(err) = deleted_mmap.advise(memmap2::Advice::WillNeed) {
+        if let Err(err) = deleted_mmap.madvise(common::mmap::Advice::WillNeed) {
             log::error!("Failed to advise MADV_WILLNEED for deleted flags: {err}");
         }
 

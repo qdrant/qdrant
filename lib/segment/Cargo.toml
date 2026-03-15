@@ -67,7 +67,7 @@ serde-untagged = "0.1.9"
 ordered-float = { workspace = true }
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
-atomicwrites = { workspace = true }
+# atomicwrites = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
@@ -103,7 +103,7 @@ charabia = { version = "0.9.7", default-features = false, features = [
     "greek",
     "hebrew",
     "thai",
-    "chinese-segmentation",
+    # "chinese-segmentation", # disable this as it pulls zstd which fails to compile on wasm
     "chinese-normalization",
 ] }
 
@@ -121,6 +121,8 @@ macro_rules_attribute = "0.2.2"
 nom = "8.0.0"
 half = { workspace = true }
 roaring = { version = "0.11.3" }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+atomicwrites = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.5"

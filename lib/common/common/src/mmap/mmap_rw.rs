@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::{fmt, mem, slice};
 
 use bitvec::slice::BitSlice;
-use memmap2::MmapMut;
+pub use memmap2::{Mmap, MmapMut, MmapOptions};
 
 use super::advice::{Advice, AdviceSetting, Madviseable};
 use super::ops;

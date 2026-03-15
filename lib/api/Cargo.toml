@@ -16,14 +16,11 @@ tracing = ["dep:tracing", "segment/tracing"]
 
 [dependencies]
 ahash = { workspace = true }
-tonic = { workspace = true }
 prost = { workspace = true }
-prost-wkt-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true }
-tokio = { workspace = true }
 rand = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
@@ -35,6 +32,11 @@ ordered-float = { workspace = true }
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tonic = { workspace = true }
+prost-wkt-types = { workspace = true }
+tokio = { workspace = true }
 
 tracing = { workspace = true, optional = true }
 

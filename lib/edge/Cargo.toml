@@ -19,6 +19,7 @@ wal = { path = "../wal" }
 
 ahash = { workspace = true }
 fs-err = { workspace = true }
+serde = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 ordered-float = { workspace = true }

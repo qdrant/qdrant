@@ -47,7 +47,11 @@ mockito = { workspace = true }
 tempfile = { workspace = true }
 rusty-hook = "^0.11.2"
 nix = { workspace = true, features = ["process"] }
-fs-err = { workspace = true, features = ["debug", "debug_tokio", "tokio"] } # for nicer error messages
+fs-err = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["full"] }
+fs-err = { workspace = true, features = ["debug", "debug_tokio", "tokio"] }
 
 
 [dependencies]
@@ -225,7 +229,7 @@ ecow = { version = "0.2.6", features = ["serde"] }
 env_logger = "0.11"
 fnv = "1.0"
 fs4 = "0.13.1"
-fs-err = { version = "3.2.2", features = ["tokio"] }
+fs-err = { version = "3.2.2" }
 fs_extra = "1.3.0"
 futures = "0.3.32"
 futures-util = "0.3.31"
@@ -291,7 +295,7 @@ tap = "1.0.1"
 tar = "0.4.41"
 tempfile = "3.25.0"
 tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
-tokio = { version = "1.49.0", features = ["full"] }
+tokio = { version = "1.49.0", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
 tokio-util = { version = "0.7", features = ["io", "io-util", "rt"] }
 tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
@@ -349,6 +353,7 @@ members = [
     "lib/edge",
     "lib/edge/python",
     "lib/edge/python/codegen",
+    "lib/edge/wasm",
     "lib/gridstore",
     "lib/macros",
     "lib/posting_list",
@@ -361,8 +366,9 @@ members = [
 ]
 
 [profile.release]
-lto = "fat"
+lto = false
 codegen-units = 1
+strip = false
 
 # Inherit from release, because we are not rebuilding often,
 # and we don't want the huge binary sizes from debug builds.

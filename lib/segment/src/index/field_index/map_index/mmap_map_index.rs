@@ -9,12 +9,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap;
-use common::mmap::{AdviceSetting, MmapBitSlice, create_and_ensure_length};
+use common::mmap::{AdviceSetting, MmapBitSlice, MmapMut, create_and_ensure_length};
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use itertools::Itertools;
-use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use super::{IdIter, MapIndexKey};

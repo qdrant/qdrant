@@ -3,11 +3,10 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::{Madviseable, MmapFlusher, advice};
+use common::mmap::{Madviseable, Mmap, MmapFlusher, MmapMut, advice};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use fs_err::OpenOptions;
-use memmap2::{Mmap, MmapMut};
 
 #[derive(Debug)]
 pub struct QuantizedMmapStorage {

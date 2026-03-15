@@ -171,6 +171,7 @@ impl ClockTag {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<api::grpc::qdrant::ClockTag> for ClockTag {
     fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
         let api::grpc::qdrant::ClockTag {
@@ -190,6 +191,7 @@ impl From<api::grpc::qdrant::ClockTag> for ClockTag {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<ClockTag> for api::grpc::qdrant::ClockTag {
     fn from(tag: ClockTag) -> Self {
         let ClockTag {

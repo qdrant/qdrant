@@ -9,7 +9,7 @@ use std::{fmt, mem, ptr, thread};
 use byteorder::{ByteOrder, LittleEndian};
 use fs_err as fs;
 use fs_err::OpenOptions;
-#[cfg(not(unix))]
+#[cfg(all(not(unix), not(target_arch = "wasm32")))]
 use fs4::fs_std::FileExt;
 use log::{debug, error, log_enabled, trace};
 
@@ -160,13 +160,16 @@ impl Segment {
                 .open(&tmp_file_path)?;
 
             // fs4 provides some cross-platform bindings which help for Windows.
-            #[cfg(not(unix))]
+            #[cfg(all(not(unix), not(target_arch = "wasm32")))]
             file.file().allocate(capacity as u64)?;
             // For all unix systems WAL can just use ftruncate directly
-            #[cfg(unix)]
+            #[cfg(all(unix, not(target_arch = "wasm32")))]
             {
                 rustix::fs::ftruncate(&file, capacity as u64)?;
             }
+            // On WASM/WASI use set_len
+            #[cfg(target_arch = "wasm32")]
+            file.file().set_len(capacity as u64)?;
 
             let mut mmap = MmapViewSync::from_file(&file, 0, capacity)?;
             {
@@ -503,13 +506,16 @@ impl Segment {
                 .create(false)
                 .open(&self.path)?;
             // fs4 provides some cross-platform bindings which help for Windows.
-            #[cfg(not(unix))]
+            #[cfg(all(not(unix), not(target_arch = "wasm32")))]
             file.file().allocate(required_capacity as u64)?;
             // For all unix systems WAL can just use ftruncate directly
-            #[cfg(unix)]
+            #[cfg(all(unix, not(target_arch = "wasm32")))]
             {
                 rustix::fs::ftruncate(&file, required_capacity as u64)?;
             }
+            // On WASM/WASI use set_len
+            #[cfg(target_arch = "wasm32")]
+            file.file().set_len(required_capacity as u64)?;
 
             let mut mmap = MmapViewSync::from_file(&file, 0, required_capacity)?;
             mem::swap(&mut mmap, &mut self.mmap);

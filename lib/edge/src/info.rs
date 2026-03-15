@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use segment::types::{PayloadIndexInfo, PayloadKeyType};
+use serde::Serialize;
 
 use super::EdgeShard;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ShardInfo {
     /// Number of segments in shard.
     /// Each segment has independent vector as payload indexes

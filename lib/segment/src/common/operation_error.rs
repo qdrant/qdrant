@@ -4,8 +4,11 @@ use std::io::{Error as IoError, ErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
 use atomicwrites::Error as AtomicIoError;
 use common::fs::FileStorageError;
+#[cfg(target_arch = "wasm32")]
+use common::fs::atomic::Error as AtomicIoError;
 use common::mmap::Error as MmapError;
 use common::universal_io::UniversalIoError;
 use gridstore::error::GridstoreError;

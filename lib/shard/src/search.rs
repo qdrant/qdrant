@@ -42,6 +42,7 @@ impl CoreSearchRequest {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<SearchRequestInternal> for CoreSearchRequest {
     fn from(request: SearchRequestInternal) -> Self {
         let SearchRequestInternal {
@@ -67,6 +68,7 @@ impl From<SearchRequestInternal> for CoreSearchRequest {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
     type Error = tonic::Status;
 
@@ -148,6 +150,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn try_context_pair_from_grpc(
     pair: api::grpc::qdrant::ContextPair,
 ) -> Result<ContextPair<VectorInternal>, tonic::Status> {
@@ -163,6 +166,7 @@ fn try_context_pair_from_grpc(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
     type Error = tonic::Status;
 

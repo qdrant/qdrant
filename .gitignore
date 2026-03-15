@@ -20,3 +20,4 @@ venv
 .venv
 .env
 .python-version
+/lib/edge/wasm/node_modules/

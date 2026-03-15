@@ -50,15 +50,26 @@ pub enum Advice {
 
     /// See [`memmap2::Advice::Sequential`].
     Sequential,
+
+    /// See [`memmap2::Advice::WillNeed`].
+    WillNeed,
+
+    /// See [`memmap2::Advice::PopulateRead`].
+    PopulateRead,
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_arch = "wasm32")))]
 impl From<Advice> for memmap2::Advice {
     fn from(advice: Advice) -> Self {
         match advice {
             Advice::Normal => memmap2::Advice::Normal,
             Advice::Random => memmap2::Advice::Random,
             Advice::Sequential => memmap2::Advice::Sequential,
+            Advice::WillNeed => memmap2::Advice::WillNeed,
+            #[cfg(target_os = "linux")]
+            Advice::PopulateRead => memmap2::Advice::PopulateRead,
+            #[cfg(not(target_os = "linux"))]
+            Advice::PopulateRead => memmap2::Advice::Normal,
         }
     }
 }
@@ -180,7 +191,7 @@ fn populate_simple(slice: &[u8]) {
 /// region in a single I/O operation. (if possible)
 ///
 /// Note: if the region fits within a single page, this function is a no-op.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_arch = "wasm32")))]
 pub fn will_need_multiple_pages(region: &[u8]) {
     let Some(page_mask) = *PAGE_SIZE_MASK else {
         return;
@@ -208,15 +219,16 @@ pub fn will_need_multiple_pages(region: &[u8]) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(all(unix, not(target_arch = "wasm32"))))]
 pub fn will_need_multiple_pages(_region: &[u8]) {}
 
 /// Page size mask. Typically 0xfff for 4KiB pages.
 #[cfg(unix)]
+#[cfg(all(unix, not(target_arch = "wasm32")))]
 static PAGE_SIZE_MASK: std::sync::LazyLock<Option<usize>> =
     std::sync::LazyLock::new(|| get_page_mask().inspect_err(|err| log::warn!("{err}")).ok());
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_arch = "wasm32")))]
 fn get_page_mask() -> Result<usize, String> {
     let page_size = nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)
         .map_err(|err| format!("Failed to get page size: {err}"))?

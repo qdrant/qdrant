@@ -17,7 +17,6 @@ testing = []
 
 [dependencies]
 ahash = { workspace = true }
-atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
@@ -58,8 +57,12 @@ self_cell = { workspace = true }
 serde_json = { workspace = true }
 tango-bench = "0.7.2"
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+atomicwrites = { workspace = true }
 thread-priority = "3.0.0"
+fs-err = { workspace = true, features = ["tokio"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
 
 [[bench]]
 name = "bitpacking"

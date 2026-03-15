@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qdrant WASM Demo</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .step {
+            margin-bottom: 30px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 20px;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            overflow-x: auto;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+
+        .output {
+            margin-top: 10px;
+            background: #fafafa;
+            padding: 10px;
+            border: 1px solid #eee;
+            white-space: pre-wrap;
+            display: none;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .output.visible {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Qdrant WASM</h1>
+    <p>Data persists in <a
+            href="https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system"
+            target="_blank">OPFS</a>.
+    </p>
+
+    <div class="step">
+        <h3>1. Initialize</h3>
+        <pre>import { QdrantWasm } from './qdrant-wasm.js';
+const qdrant = new QdrantWasm();
+await qdrant.initialize(); // This downloads + caches the Qdrant WASM binary (~18MB). Takes a second or so.
+</pre>
+        <button id="btn-init">Run</button>
+        <div id="out-init" class="output"></div>
+    </div>
+
+    <div class="step">
+        <h3>2. Prepare Shard</h3>
+        <pre>await qdrant.prepareShard(); // The config is hardcoded for the demo</pre>
+        <button id="btn-create" disabled>Run</button>
+        <div id="out-create" class="output"></div>
+    </div>
+
+    <div class="step">
+        <h3>3. Upsert a Point</h3>
+        <pre>await qdrant.upsert(1, [0.18, 0.36, 0.54, 0.73], { label: "alpha", value: 1 });</pre>
+        <button id="btn-upsert" disabled>Run</button>
+        <div id="out-upsert" class="output"></div>
+    </div>
+
+    <div class="step">
+        <h3>4. Retrieve by ID</h3>
+        <pre>const points = await qdrant.retrieve([1]);</pre>
+        <button id="btn-retrieve" disabled>Run</button>
+        <div id="out-retrieve" class="output"></div>
+    </div>
+
+    <div class="step">
+        <h3>5. Search</h3>
+        <pre>const results = await qdrant.query([0.18, 0.36, 0.54, 0.73], 3);</pre>
+        <button id="btn-search" disabled>Run</button>
+        <div id="out-search" class="output"></div>
+    </div>
+
+    <div class="step">
+        <h3>6. Count Points</h3>
+        <pre>const count = await qdrant.count();</pre>
+        <button id="btn-count" disabled>Run</button>
+        <div id="out-count" class="output"></div>
+    </div>
+
+    <div class="step">
+        <h3>7. Scroll</h3>
+        <pre>const page = await qdrant.scroll({ limit: 5 });</pre>
+        <button id="btn-scroll" disabled>Run</button>
+        <div id="out-scroll" class="output"></div>
+    </div>
+
+    <div class="step">
+        <h3>Cleanup</h3>
+        <button id="btn-clear">Reset OPFS & Reload</button>
+    </div>
+
+    <script type="module">
+        import { QdrantWasm } from './qdrant-wasm.js';
+        const qdrant = new QdrantWasm();
+
+        const ui = {
+            init: { btn: document.getElementById('btn-init'), out: document.getElementById('out-init') },
+            create: { btn: document.getElementById('btn-create'), out: document.getElementById('out-create') },
+            upsert: { btn: document.getElementById('btn-upsert'), out: document.getElementById('out-upsert') },
+            retrieve: { btn: document.getElementById('btn-retrieve'), out: document.getElementById('out-retrieve') },
+            search: { btn: document.getElementById('btn-search'), out: document.getElementById('out-search') },
+            count: { btn: document.getElementById('btn-count'), out: document.getElementById('out-count') },
+            scroll: { btn: document.getElementById('btn-scroll'), out: document.getElementById('out-scroll') }
+        };
+
+        function show(el, text) {
+            el.textContent = text;
+            el.classList.add('visible');
+        }
+
+        ui.init.btn.onclick = async () => {
+            try {
+                show(ui.init.out, "Fetching...");
+                await qdrant.initialize();
+                show(ui.init.out, "Qdrant WASM initialized.");
+                ui.init.btn.disabled = true;
+                ui.create.btn.disabled = false;
+            } catch (e) { show(ui.init.out, "Error: " + e.message); }
+        };
+
+        ui.create.btn.onclick = async () => {
+            const res = await qdrant.prepareShard();
+            show(ui.create.out, "Shard: " + res);
+            ui.upsert.btn.disabled = false;
+            ui.retrieve.btn.disabled = false;
+            ui.search.btn.disabled = false;
+            ui.count.btn.disabled = false;
+            ui.scroll.btn.disabled = false;
+        };
+
+        ui.upsert.btn.onclick = async () => {
+            await qdrant.upsert(1, [0.18, 0.36, 0.54, 0.73], { label: "alpha", value: 1 });
+            show(ui.upsert.out, "Point 1 upserted.");
+        };
+
+        ui.retrieve.btn.onclick = async () => {
+            const res = await qdrant.retrieve([1], true, true);
+            show(ui.retrieve.out, JSON.stringify(res, null, 2));
+        };
+
+        ui.search.btn.onclick = async () => {
+            const res = await qdrant.query([0.18, 0.36, 0.54, 0.73], 3);
+            show(ui.search.out, JSON.stringify(res, null, 2));
+        };
+
+        ui.count.btn.onclick = async () => {
+            const res = await qdrant.count();
+            show(ui.count.out, "Total points: " + res);
+        };
+
+        ui.scroll.btn.onclick = async () => {
+            const res = await qdrant.scroll({ limit: 5, withPayload: true });
+            show(ui.scroll.out, JSON.stringify(res, null, 2));
+        };
+
+        document.getElementById('btn-clear').onclick = async () => {
+            if (confirm("Clear local storage?")) {
+                const root = await navigator.storage.getDirectory();
+                for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
+                location.reload();
+            }
+        };
+    </script>
+</body>
+
+</html>

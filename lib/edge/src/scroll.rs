@@ -34,7 +34,12 @@ impl EdgeShard {
         let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
         let with_payload = with_payload.unwrap_or(ScrollRequestInternal::default_with_payload());
 
-        match order_by.map(OrderBy::from) {
+        #[cfg(not(target_arch = "wasm32"))]
+        let order_by = order_by.map(OrderBy::from);
+        #[cfg(target_arch = "wasm32")]
+        let order_by: Option<OrderBy> = None;
+
+        match order_by {
             None => {
                 let limit_plus_one = limit.saturating_add(1);
                 let mut records = self.scroll_by_id(

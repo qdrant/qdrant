@@ -8,6 +8,7 @@ use std::path::Path;
 use std::str;
 
 use fs_err::File;
+#[cfg(not(target_arch = "wasm32"))]
 use memmap2::Mmap;
 use ph::fmph::Function;
 #[cfg(any(test, feature = "testing"))]
@@ -16,6 +17,8 @@ use rand::RngExt;
 use rand::rngs::StdRng;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+#[cfg(target_arch = "wasm32")]
+use crate::mmap::Mmap;
 use crate::mmap::{AdviceSetting, Madviseable, open_read_mmap};
 use crate::zeros::WriteZerosExt as _;
 

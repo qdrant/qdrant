@@ -6,12 +6,11 @@ use bitvec::prelude::BitSlice;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::fs::clear_disk_cache;
 use common::mmap::{
-    AdviceSetting, Madviseable as _, MmapBitSlice, MmapType, advice, create_and_ensure_length,
-    open_write_mmap,
+    AdviceSetting, Madviseable as _, MmapBitSlice, MmapMut, MmapType, advice,
+    create_and_ensure_length, open_write_mmap,
 };
 use common::types::PointOffsetType;
 use fs_err as fs;
-use memmap2::MmapMut;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -31,6 +30,9 @@ fn status_file(directory: &Path) -> PathBuf {
 }
 
 #[repr(C)]
+#[derive(
+    Debug, Default, Clone, Copy, zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout,
+)]
 struct DynamicMmapStatus {
     /// Amount of flags (bits)
     len: usize,
@@ -136,7 +138,7 @@ impl DynamicMmapFlags {
             flags_mmap.populate();
         } else {
             #[cfg(unix)]
-            if let Err(err) = flags_mmap.advise(memmap2::Advice::WillNeed) {
+            if let Err(err) = flags_mmap.madvise(common::mmap::Advice::WillNeed) {
                 log::error!("Failed to advise MADV_WILLNEED for deleted flags: {err}");
             }
         }

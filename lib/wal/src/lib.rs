@@ -8,6 +8,7 @@ use std::{fmt, mem, ops, result, thread};
 
 use fs_err as fs;
 use fs_err::File;
+#[cfg(not(target_arch = "wasm32"))]
 use fs4::fs_std::FileExt;
 use log::{debug, info, trace};
 pub use segment::{Entry, Segment};
@@ -153,6 +154,7 @@ impl Wal {
             dir
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
         if !dir.file().try_lock_exclusive()? {
             return Err(fs4::lock_contended_error());
         }

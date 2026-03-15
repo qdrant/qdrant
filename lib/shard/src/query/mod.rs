@@ -9,7 +9,9 @@ pub mod query_context;
 #[cfg(test)]
 mod tests;
 
-use api::{grpc, rest};
+#[cfg(not(target_arch = "wasm32"))]
+use api::grpc;
+use api::rest;
 use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -226,6 +228,7 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<rest::schema::SearchRequestInternal> for ShardQueryRequest {
     fn from(value: rest::schema::SearchRequestInternal) -> Self {
         let rest::schema::SearchRequestInternal {
@@ -255,6 +258,7 @@ impl From<rest::schema::SearchRequestInternal> for ShardQueryRequest {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
     type Error = tonic::Status;
 
@@ -298,6 +302,7 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<ShardQueryRequest> for grpc::QueryShardPoints {
     fn from(value: ShardQueryRequest) -> Self {
         let ShardQueryRequest {
@@ -332,6 +337,7 @@ impl From<ShardQueryRequest> for grpc::QueryShardPoints {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<ShardPrefetch> for grpc::query_shard_points::Prefetch {
     fn from(value: ShardPrefetch) -> Self {
         let ShardPrefetch {
@@ -356,6 +362,7 @@ impl From<ShardPrefetch> for grpc::query_shard_points::Prefetch {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
     type Error = tonic::Status;
 
@@ -410,6 +417,7 @@ impl From<rest::Rrf> for FusionInternal {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<grpc::Fusion> for FusionInternal {
     fn from(fusion: grpc::Fusion) -> Self {
         match fusion {
@@ -422,6 +430,7 @@ impl From<grpc::Fusion> for FusionInternal {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<grpc::Rrf> for FusionInternal {
     type Error = tonic::Status;
 
@@ -439,6 +448,7 @@ impl TryFrom<grpc::Rrf> for FusionInternal {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<i32> for FusionInternal {
     type Error = tonic::Status;
 
@@ -451,6 +461,7 @@ impl TryFrom<i32> for FusionInternal {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<FusionInternal> for grpc::Query {
     fn from(fusion: FusionInternal) -> Self {
         use grpc::query::Variant as QueryVariant;
@@ -476,6 +487,7 @@ impl From<FusionInternal> for grpc::Query {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<FusionInternal> for grpc::query_shard_points::Query {
     fn from(fusion: FusionInternal) -> Self {
         use grpc::query_shard_points::Query;
@@ -510,6 +522,7 @@ impl From<rest::Sample> for SampleInternal {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<grpc::Sample> for SampleInternal {
     fn from(value: grpc::Sample) -> Self {
         match value {
@@ -518,6 +531,7 @@ impl From<grpc::Sample> for SampleInternal {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<i32> for SampleInternal {
     type Error = tonic::Status;
 
@@ -530,6 +544,7 @@ impl TryFrom<i32> for SampleInternal {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<SampleInternal> for grpc::Sample {
     fn from(value: SampleInternal) -> Self {
         match value {
@@ -538,6 +553,7 @@ impl From<SampleInternal> for grpc::Sample {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl ScoringQuery {
     fn try_from_grpc_query(
         query: grpc::query_shard_points::Query,
@@ -588,6 +604,7 @@ impl ScoringQuery {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<ScoringQuery> for grpc::query_shard_points::Query {
     fn from(value: ScoringQuery) -> Self {
         use grpc::query_shard_points::query::Score;

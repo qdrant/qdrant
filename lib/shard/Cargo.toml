@@ -38,14 +38,15 @@ serde_cbor = { workspace = true }
 smallvec = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tonic = { workspace = true }
 uuid = { workspace = true }
 validator = { workspace = true }
 serde_json = { workspace = true }
 fs-err = { workspace = true }
-fs4 = { workspace = true }
 tempfile = { workspace = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tonic = { workspace = true }
+fs4 = { workspace = true }
 
 [dev-dependencies]
 segment = { path = "../segment", default-features = false, features = ["testing"] }

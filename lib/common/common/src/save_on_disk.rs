@@ -3,12 +3,18 @@ use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+#[cfg(not(target_arch = "wasm32"))]
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
-use fs_err::{File, tokio as tokio_fs};
+use fs_err::File;
+#[cfg(not(target_arch = "wasm32"))]
+use fs_err::tokio as tokio_fs;
 use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
 
+#[cfg(target_arch = "wasm32")]
+use crate::fs::atomic::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use crate::tar_ext;
 
 /// Functions as a smart pointer which gives a write guard and saves data on disk
@@ -24,7 +30,13 @@ pub struct SaveOnDisk<T> {
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Failed to save structure on disk with error: {0}")]
-    AtomicWrite(#[from] AtomicWriteError<serde_json::Error>),
+    #[cfg(not(target_arch = "wasm32"))]
+    AtomicWrite(#[from] atomicwrites::Error<serde_json::Error>),
+
+    #[error("Failed to save structure on disk with error: {0}")]
+    #[cfg(target_arch = "wasm32")]
+    AtomicWriteWasm(#[from] crate::fs::atomic::Error<serde_json::Error>),
+
     #[error("Failed to perform io operation: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Failed to (de)serialize from/to json: {0}")]
@@ -135,11 +147,13 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
 
     fn save_data_to(path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {
         let path: PathBuf = path.into();
-        AtomicFile::new(path, AllowOverwrite).write(|file| {
-            let mut writer = BufWriter::new(file);
-            serde_json::to_writer(&mut writer, data)?;
-            writer.flush().map_err(serde_json::Error::io)
-        })?;
+        AtomicFile::new(path, AllowOverwrite).write(
+            |file: &mut std::fs::File| -> serde_json::Result<()> {
+                let mut writer = BufWriter::new(file);
+                serde_json::to_writer(&mut writer, data)?;
+                writer.flush().map_err(serde_json::Error::io)
+            },
+        )?;
         Ok(())
     }
 
@@ -161,6 +175,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn delete(self) -> std::io::Result<()> {
         tokio_fs::remove_file(self.path).await
     }

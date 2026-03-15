@@ -1,6 +1,6 @@
 mod count;
 mod facet;
-mod info;
+pub mod info;
 mod query;
 mod retrieve;
 mod scroll;

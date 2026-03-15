@@ -37,6 +37,9 @@ fn main() {
         builder.file("cpp/neon.c");
         builder.flag("-O3");
     }
+    if target_arch == "wasm32" {
+        return;
+    }
 
     builder.compile("simd_utils");
 }

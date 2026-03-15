@@ -5,9 +5,12 @@ use std::{io, mem, ptr};
 
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
+#[cfg(not(target_arch = "wasm32"))]
 use memmap2::{Mmap, MmapMut};
 
 use super::advice::{AdviceSetting, Madviseable, madvise};
+#[cfg(target_arch = "wasm32")]
+use super::mmap_rw_wasm::{Mmap, MmapMut};
 
 pub const TEMP_FILE_EXTENSION: &str = "tmp";
 

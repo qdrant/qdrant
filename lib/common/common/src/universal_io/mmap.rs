@@ -154,6 +154,7 @@ where
             })?;
 
         target.copy_from_slice(data);
+
         Ok(())
     }
 

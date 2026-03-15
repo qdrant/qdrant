@@ -9,7 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{
-    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapType, create_and_ensure_length,
+    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapMut, MmapType, create_and_ensure_length,
     open_write_mmap,
 };
 use common::universal_io::mmap::MmapUniversal;
@@ -17,7 +17,6 @@ use common::universal_io::{
     ElementsRange, OpenOptions, UniversalIoError, UniversalWrite, read_json_via,
 };
 use fs_err as fs;
-use memmap2::MmapMut;
 use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +33,9 @@ const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap"; // TODO: rename for other storages?
 
 #[repr(C)]
+#[derive(
+    Debug, Default, Clone, Copy, zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout,
+)]
 pub struct Status {
     pub len: usize,
 }

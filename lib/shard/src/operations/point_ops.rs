@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
 
+#[cfg(not(target_arch = "wasm32"))]
 use api::conversions::json::payload_to_proto;
 use api::rest::{
     DenseVector, MultiDenseVector, ShardKeySelector, VectorOutput, VectorStructOutput,
@@ -23,6 +24,7 @@ use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use sparse::common::types::{DimId, DimWeight};
 use strum::{EnumDiscriminants, EnumIter};
+#[cfg(not(target_arch = "wasm32"))]
 use tonic::Status;
 use validator::{Validate, ValidationErrors};
 
@@ -278,6 +280,7 @@ pub struct BatchPersisted {
     pub payloads: Option<Vec<Option<Payload>>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
     type Error = Status;
 
@@ -457,6 +460,7 @@ impl TryFrom<api::rest::schema::Record> for PointStructPersisted {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<PointStructPersisted> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 

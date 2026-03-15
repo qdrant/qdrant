@@ -3,7 +3,7 @@ use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::thread;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))]
 use fs_err::File;
 use log::warn;
 
@@ -36,7 +36,7 @@ fn create_segments(
     segment_capacity: usize,
 ) -> std::io::Result<Vec<OpenSegment>> {
     // Directory being a file only applies to Linux
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))]
     let dir = File::open(&path)?;
 
     let mut segments = Vec::with_capacity(count);
@@ -51,7 +51,7 @@ fn create_segments(
         segments.push(segment);
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))]
     dir.sync_all()?;
 
     Ok(segments)
@@ -113,12 +113,23 @@ impl SegmentCreatorV2 {
             let start_id = self.current_id;
             let segment_capacity = self.segment_capacity;
 
-            self.thread = Some(
-                thread::Builder::new()
-                    .name("wal-segment-creator".to_string())
-                    .spawn(move || create_segments(dir, start_id, count, segment_capacity))
-                    .unwrap(),
-            );
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                self.thread = Some(
+                    thread::Builder::new()
+                        .name("wal-segment-creator".to_string())
+                        .spawn(move || create_segments(dir, start_id, count, segment_capacity))
+                        .unwrap(),
+                );
+            }
+
+            // WASI doesn't support threads — create segments synchronously
+            #[cfg(target_arch = "wasm32")]
+            {
+                let segments = create_segments(dir, start_id, count, segment_capacity).unwrap();
+                self.current_id += segments.len() as u64;
+                self.pending_segments.extend(segments);
+            }
         }
     }
 

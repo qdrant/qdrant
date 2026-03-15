@@ -3,7 +3,10 @@ use std::fmt;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::Arc;
 
+#[cfg(target_arch = "wasm32")]
+use common::mmap::{MmapMut, MmapOptions};
 use fs_err::File;
+#[cfg(not(target_arch = "wasm32"))]
 use memmap2::{MmapMut, MmapOptions};
 
 /// ported from https://github.com/danburkert/memmap-rs in version 0.5.2
@@ -21,7 +24,7 @@ pub struct MmapViewSync {
 impl MmapViewSync {
     #[cfg_attr(not(target_os = "linux"), expect(clippy::unused_self))]
     pub fn close(&self) {
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
         unsafe {
             let mmap = &mut *self.inner.get();
             if let Err(err) = mmap.unchecked_advise(memmap2::UncheckedAdvice::DontNeed) {
