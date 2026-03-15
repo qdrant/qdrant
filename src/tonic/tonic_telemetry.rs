@@ -14,7 +14,7 @@ use crate::common::telemetry_ops::requests_telemetry::{
 /// Handles paths like: /qdrant.Points/Upsert
 /// For gRPC, collection name is typically in the request message, not the path
 /// We extract it from the URI path pattern if available
-fn extract_collection_name_from_grpc_path(path: &str) -> Option<String> {
+fn extract_collection_name_from_grpc_path(_path: &str) -> Option<String> {
     // gRPC paths are in format: /qdrant.Service/Method
     // Collection name is not in the path, it would need to be extracted from request body
     // For now, return None as collection extraction from gRPC requires request parsing
@@ -66,7 +66,7 @@ where
         // For now, we pass None - a more complete implementation would require
         // intercepting the actual request message to extract collection name.
         let collection_name = extract_collection_name_from_grpc_path(&method_name);
-        
+
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {

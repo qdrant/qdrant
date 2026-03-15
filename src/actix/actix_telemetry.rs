@@ -16,7 +16,7 @@ use crate::common::telemetry_ops::requests_telemetry::{
 fn extract_collection_name(path: &str) -> Option<String> {
     // Split path and look for "collections" segment
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    
+
     for (i, segment) in segments.iter().enumerate() {
         if *segment == "collections" && i + 1 < segments.len() {
             let collection_name = segments[i + 1];
@@ -26,7 +26,7 @@ fn extract_collection_name(path: &str) -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 
@@ -60,11 +60,11 @@ where
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
         let request_key = format!("{} {}", request.method(), match_pattern);
-        
+
         // Extract collection name from URL path
         // URLs like: /collections/{name}/points/search
         let collection_name = extract_collection_name(request.path());
-        
+
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
@@ -77,7 +77,6 @@ where
             Ok(response)
         })
     }
-}
 }
 
 impl ActixTelemetryTransform {

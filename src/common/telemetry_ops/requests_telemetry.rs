@@ -39,8 +39,10 @@ pub struct ActixTelemetryCollector {
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     /// Per-collection metrics: collection_name -> endpoint -> status -> aggregator
-    collection_methods:
-        HashMap<String, HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>>,
+    collection_methods: HashMap<
+        String,
+        HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    >,
 }
 
 pub struct TonicTelemetryCollector {
@@ -51,8 +53,10 @@ pub struct TonicTelemetryCollector {
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     /// Per-collection metrics: collection_name -> endpoint -> status -> aggregator
-    collection_methods:
-        HashMap<String, HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>>,
+    collection_methods: HashMap<
+        String,
+        HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    >,
 }
 
 impl ActixTelemetryCollector {
@@ -137,8 +141,7 @@ impl TonicWorkerTelemetryCollector {
             for (method, status_codes) in methods {
                 let mut status_codes_map = HashMap::new();
                 for (status_code, aggregator) in status_codes {
-                    status_codes_map
-                        .insert(*status_code, aggregator.lock().get_statistics(detail));
+                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
                 }
                 collection_methods_map.insert(method.clone(), status_codes_map);
             }
@@ -200,8 +203,7 @@ impl ActixWorkerTelemetryCollector {
             for (method, status_codes) in methods {
                 let mut status_codes_map = HashMap::new();
                 for (status_code, aggregator) in status_codes {
-                    status_codes_map
-                        .insert(*status_code, aggregator.lock().get_statistics(detail));
+                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
                 }
                 collection_methods_map.insert(method.clone(), status_codes_map);
             }
@@ -227,7 +229,10 @@ impl GrpcTelemetry {
 
         // Merge per-collection metrics
         for (collection, methods) in &other.collection_responses {
-            let collection_entry = self.collection_responses.entry(collection.clone()).or_default();
+            let collection_entry = self
+                .collection_responses
+                .entry(collection.clone())
+                .or_default();
             for (method, status_codes) in methods {
                 let method_entry = collection_entry.entry(method.clone()).or_default();
                 for (status_code, statistics) in status_codes {
@@ -251,7 +256,10 @@ impl WebApiTelemetry {
 
         // Merge per-collection metrics
         for (collection, methods) in &other.collection_responses {
-            let collection_entry = self.collection_responses.entry(collection.clone()).or_default();
+            let collection_entry = self
+                .collection_responses
+                .entry(collection.clone())
+                .or_default();
             for (method, status_codes) in methods {
                 let method_entry = collection_entry.entry(method.clone()).or_default();
                 for (status_code, statistics) in status_codes {
