@@ -500,6 +500,10 @@ impl InMemoryGeoMapIndex {
                 hash_ids.remove(&idx);
                 hash_ids.is_empty()
             } else {
+                debug_assert!(
+                    false,
+                    "Geo index error: no points for hash {removed_geo_hash} was found",
+                );
                 log::warn!("Geo index error: no points for hash {removed_geo_hash} was found");
                 false
             };

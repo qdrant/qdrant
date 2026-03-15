@@ -1677,6 +1677,125 @@ mod tests {
         assert_eq!(point_offsets, vec![2]);
     }
 
+    /// Removing a point with duplicate geo values in a multi-value geo field
+    /// must not produce spurious "no points for hash X was found" warnings.
+    ///
+    /// The bug: `points_map` stores (hash → set of point IDs), so duplicate
+    /// geo values for the same point are collapsed into one set entry.
+    /// But `point_to_values` stores all values including duplicates.
+    /// During `remove_point`, the loop iterates over each value individually.
+    /// When two values share the same geohash, the first iteration removes the
+    /// `points_map` entry, and the second iteration can't find it — triggering
+    /// a spurious warning.
+    #[rstest]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
+    #[case(IndexType::MutableGridstore)]
+    fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
+        let (mut builder, _temp_dir, _db) = create_builder(index_type);
+        let hw_counter = HardwareCounterCell::new();
+
+        // Point 0: multi-value geo payload with duplicate coordinates.
+        // Both values produce the same max-precision geohash.
+        let duplicate_geo = json!([
+            {"lon": BERLIN.lon, "lat": BERLIN.lat},
+            {"lon": BERLIN.lon, "lat": BERLIN.lat}
+        ]);
+        builder
+            .add_point(0, &[&duplicate_geo], &hw_counter)
+            .unwrap();
+
+        // Point 1: single geo value (control, no duplicates)
+        let single_geo = json!({"lon": NYC.lon, "lat": NYC.lat});
+        builder.add_point(1, &[&single_geo], &hw_counter).unwrap();
+
+        let mut index = builder.finalize().unwrap();
+
+        assert_eq!(index.points_count(), 2);
+        assert_eq!(index.points_values_count(), 3); // 2 duplicates + 1 single
+
+        // Removing the point with duplicate geo values must not trigger the
+        // debug_assert / log::warn about missing points_map entries.
+        index.remove_point(0).unwrap();
+
+        assert_eq!(index.points_count(), 1);
+        assert_eq!(index.points_values_count(), 1);
+
+        // The remaining point should still be searchable
+        let geo_radius = GeoRadius {
+            center: NYC,
+            radius: OrderedFloat(100.0),
+        };
+        let field_condition = condition_for_geo_radius("test", geo_radius);
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+        let results = index
+            .filter(&field_condition, &hw_counter)
+            .unwrap()
+            .collect_vec();
+        assert_eq!(results, vec![1]);
+
+        // Remove the remaining point — index should be fully empty
+        index.remove_point(1).unwrap();
+
+        assert_eq!(index.points_count(), 0);
+        assert_eq!(index.points_values_count(), 0);
+    }
+
+    /// Simulate the user's scenario: frequently adding and removing points
+    /// with geo payloads. This exercises repeated add/remove cycles on the
+    /// mutable geo index to check for index corruption.
+    #[rstest]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
+    #[case(IndexType::MutableGridstore)]
+    fn test_frequent_add_remove_geo_points(#[case] index_type: IndexType) {
+        let (mut builder, _temp_dir, _db) = create_builder(index_type);
+        let hw_counter = HardwareCounterCell::new();
+
+        // Start with a single point
+        let berlin_geo = json!({"lon": BERLIN.lon, "lat": BERLIN.lat});
+        builder.add_point(0, &[&berlin_geo], &hw_counter).unwrap();
+
+        let mut index = builder.finalize().unwrap();
+        assert_eq!(index.points_count(), 1);
+
+        // Simulate repeated add/remove cycles
+        for i in 1u32..20 {
+            // Add a new point
+            let geo = json!({"lon": NYC.lon, "lat": NYC.lat});
+            index.add_point(i, &[&geo], &hw_counter).unwrap();
+            assert_eq!(index.points_count(), 2);
+
+            // Remove it right away
+            index.remove_point(i).unwrap();
+            assert_eq!(index.points_count(), 1);
+        }
+
+        // Update the remaining point's geo value (remove + add for same id)
+        let tokyo_geo = json!({"lon": TOKYO.lon, "lat": TOKYO.lat});
+        index.add_point(0, &[&tokyo_geo], &hw_counter).unwrap();
+        assert_eq!(index.points_count(), 1);
+        assert_eq!(index.points_values_count(), 1);
+
+        // Verify updated point is searchable at new location
+        let geo_radius = GeoRadius {
+            center: TOKYO,
+            radius: OrderedFloat(100.0),
+        };
+        let field_condition = condition_for_geo_radius("test", geo_radius);
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+        let results = index
+            .filter(&field_condition, &hw_counter)
+            .unwrap()
+            .collect_vec();
+        assert_eq!(results, vec![0]);
+
+        // Clean up
+        index.remove_point(0).unwrap();
+        assert_eq!(index.points_count(), 0);
+        assert_eq!(index.points_values_count(), 0);
+    }
+
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::Mmap, IndexType::RamMmap], false))]
     #[cfg_attr(feature = "rocksdb", case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::RamMmap], true))]
