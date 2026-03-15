@@ -60,10 +60,10 @@ pub struct UniversalHashMap<
 }
 
 impl<
-        K: Key + ?Sized,
-        V: Sized + Copy + FromBytes + Immutable + IntoBytes + KnownLayout,
-        R: UniversalRead<u8>,
-    > UniversalHashMap<K, V, R>
+    K: Key + ?Sized,
+    V: Sized + Copy + FromBytes + Immutable + IntoBytes + KnownLayout,
+    R: UniversalRead<u8>,
+> UniversalHashMap<K, V, R>
 {
     const VALUES_LEN_SIZE: usize = size_of::<ValuesLen>();
     const VALUE_SIZE: usize = size_of::<V>();
@@ -171,7 +171,7 @@ impl<
             .reader
             .read::<false>(ElementsRange {
                 start: values_start,
-                length: values_len as u64 * Self::VALUE_SIZE as u64,
+                length: u64::from(values_len) * Self::VALUE_SIZE as u64,
             })
             .map_err(io_err)?;
 
@@ -265,11 +265,10 @@ impl<
             };
 
             let key_size_with_padding = Self::key_size_with_padding(key);
-            let values_len = Self::parse_values_len(
-                entry.get(key_size_with_padding..).ok_or_else(|| {
+            let values_len =
+                Self::parse_values_len(entry.get(key_size_with_padding..).ok_or_else(|| {
                     io::Error::new(io::ErrorKind::InvalidData, "Entry too short for values_len")
-                })?,
-            )?;
+                })?)?;
 
             let values_from = key_size_with_padding + Self::values_len_size_with_padding();
             let values_to = values_from + values_len as usize * Self::VALUE_SIZE;
@@ -284,9 +283,102 @@ impl<
         Ok(())
     }
 
-    /// Iterate over all keys.
+    /// Iterate over all keys without reading the values.
+    ///
+    /// Reads bucket offsets in one bulk IO, then uses `read_batch` to fetch only the
+    /// key-header portion of each entry (sorted by file offset for sequential access).
+    /// Values data is never touched.
+    ///
+    /// For variable-length keys (e.g. `str`) a capped initial read is used; entries
+    /// whose keys are longer than the cap are retried with the full entry size.
     pub fn for_each_key(&self, mut f: impl FnMut(&K)) -> io::Result<()> {
-        self.for_each_entry(|key, _values| f(key))
+        let bucket_count = self.header.buckets_count as usize;
+        if bucket_count == 0 {
+            return Ok(());
+        }
+
+        // 1. Read all bucket offsets at once.
+        let buckets_bytes = self
+            .reader
+            .read::<true>(ElementsRange {
+                start: self.header.buckets_pos,
+                length: (bucket_count * size_of::<BucketOffset>()) as u64,
+            })
+            .map_err(io_err)?;
+
+        // Parse offsets and sort by file position for sequential IO.
+        let file_len = self.reader.len().map_err(io_err)?;
+        let entries_region_len = file_len - self.entries_start;
+
+        let mut sorted_offsets: Vec<u64> = (0..bucket_count)
+            .map(|i| {
+                let start = i * size_of::<BucketOffset>();
+                let (offset, _) = BucketOffset::read_from_prefix(&buckets_bytes[start..])
+                    .expect("bucket offset out of range");
+                offset
+            })
+            .collect();
+        sorted_offsets.sort_unstable();
+
+        // 2. Build capped read ranges — read just enough for the key header.
+        //
+        // For fixed-size keys the cap is exact. For variable-length keys (str) we
+        // use KEY_READ_CAP bytes; any entry whose key is longer will be retried.
+        const KEY_READ_CAP: u64 = 512;
+
+        let ranges = sorted_offsets.iter().enumerate().map(|(i, &offset)| {
+            let next_entry = sorted_offsets
+                .get(i + 1)
+                .copied()
+                .unwrap_or(entries_region_len);
+            let available = next_entry - offset;
+            ElementsRange {
+                start: self.entries_start + offset,
+                length: available.min(KEY_READ_CAP),
+            }
+        });
+
+        // 3. Batch-read the key headers (sequential order).
+        let mut retry_indices: Vec<usize> = Vec::new();
+
+        self.reader
+            .read_batch::<true>(ranges, |idx, data| {
+                match K::from_bytes(data) {
+                    Some(key) => f(key),
+                    None => retry_indices.push(idx),
+                }
+                Ok(())
+            })
+            .map_err(io_err)?;
+
+        // 4. Retry any truncated keys with the full entry size.
+        if !retry_indices.is_empty() {
+            let retry_ranges = retry_indices.iter().map(|&idx| {
+                let offset = sorted_offsets[idx];
+                let next_entry = sorted_offsets
+                    .get(idx + 1)
+                    .copied()
+                    .unwrap_or(entries_region_len);
+                ElementsRange {
+                    start: self.entries_start + offset,
+                    length: next_entry - offset,
+                }
+            });
+
+            self.reader
+                .read_batch::<false>(retry_ranges, |_idx, data| {
+                    if let Some(key) = K::from_bytes(data) {
+                        f(key);
+                    } else {
+                        debug_assert!(false, "Failed to read key even with full entry size");
+                        log::error!("Failed to read key even with full entry size");
+                    }
+                    Ok(())
+                })
+                .map_err(io_err)?;
+        }
+
+        Ok(())
     }
 
     // ── Cache management ────────────────────────────────────────────────
@@ -327,9 +419,8 @@ impl<
     }
 
     fn parse_values_len(bytes: &[u8]) -> io::Result<u32> {
-        let (len, _) = ValuesLen::read_from_prefix(bytes).map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, "Can't read values_len")
-        })?;
+        let (len, _) = ValuesLen::read_from_prefix(bytes)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Can't read values_len"))?;
         Ok(len)
     }
 
@@ -347,7 +438,7 @@ impl<
 
     /// Copy bytes into a `Vec<V>` one element at a time (alignment-safe).
     fn copy_values_from_bytes(bytes: &[u8]) -> io::Result<Vec<V>> {
-        if Self::VALUE_SIZE == 0 || bytes.len() % Self::VALUE_SIZE != 0 {
+        if Self::VALUE_SIZE == 0 || !bytes.len().is_multiple_of(Self::VALUE_SIZE) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
@@ -371,6 +462,6 @@ impl<
 fn io_err(e: crate::universal_io::UniversalIoError) -> io::Error {
     match e {
         crate::universal_io::UniversalIoError::Io(e) => e,
-        other => io::Error::new(io::ErrorKind::Other, other),
+        other => io::Error::other(other),
     }
 }
