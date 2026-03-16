@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 
 use fs_err as fs;
 use rand::rngs::StdRng;
@@ -202,5 +203,58 @@ fn test_cached_slice_vectors_random_access() {
             &vectors[a..b],
             "Sub-range mismatch at [{a}..{b}]",
         );
+    }
+}
+
+/// Same bug under concurrent access: multiple threads exhaust the pool faster.
+///
+/// With a small cache (blocks < CACHE_CAPACITY_SAFETY_MARGIN), the cache
+/// never evicts, so concurrent threads each consume blocks from the pool
+/// with no blocks being returned. The pool empties quickly.
+#[test]
+fn test_no_more_blocks_concurrent_exhaustion() {
+    let dir = tempfile::Builder::new()
+        .prefix("no_blocks_concurrent")
+        .tempdir()
+        .unwrap();
+
+    let num_cache_blocks: u64 = 16;
+    let blocks_per_file = 8;
+    let num_files = 8;
+
+    let cacher = CacheController::new(
+        &dir.path().join("cache.bin"),
+        BLOCK_SIZE as u64 * num_cache_blocks,
+    )
+    .unwrap();
+
+    let fds: Vec<_> = (0..num_files)
+        .map(|i| {
+            let path = dir.path().join(format!("cold.{i}"));
+            create_test_file(&path, &format!("cold.{i}"), blocks_per_file);
+            Arc::new(cacher.open_file(&path).unwrap())
+        })
+        .collect();
+
+    // Total unique blocks = 8 * 8 = 64, far exceeding the 16 cache blocks.
+    // With no evictions (due to capacity underflow), the pool drains after
+    // 16 unique misses.
+    let barrier = Arc::new(std::sync::Barrier::new(num_files));
+
+    let handles: Vec<_> = (0..num_files)
+        .map(|t| {
+            let fd = Arc::clone(&fds[t]);
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                for block in 0..blocks_per_file {
+                    fd.get_range(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE);
+                }
+            })
+        })
+        .collect();
+
+    for handle in handles {
+        handle.join().unwrap();
     }
 }
