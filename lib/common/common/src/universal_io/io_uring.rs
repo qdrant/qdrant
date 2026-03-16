@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::hash_map;
-use std::io::{self, Read as _};
+use std::io::{self, Read as _, Seek as _};
 use std::mem::{self, MaybeUninit, size_of};
 use std::os::fd::AsRawFd as _;
 use std::sync::Arc;
@@ -175,9 +175,11 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn populate(&self) -> Result<()> {
         let mut file = self.file.as_ref();
-        let mut buffer = vec![0u8; 1024 * 1024];
+        file.seek(io::SeekFrom::Start(0))?;
 
+        let mut buffer = vec![0u8; 1024 * 1024];
         while file.read(&mut buffer)? > 0 {}
+
         Ok(())
     }
 
