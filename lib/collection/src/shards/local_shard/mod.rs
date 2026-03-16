@@ -973,7 +973,7 @@ impl LocalShard {
 
     // Perform an operation using the shards segments.
     // This doesn't lock the SegmentHolder during the operation.
-    fn do_with_segments<'a, R, F>(&'a self, mut f: F) -> AbortOnDropHandle<R>
+    fn do_with_segments<R, F>(&self, mut f: F) -> AbortOnDropHandle<R>
     where
         R: Send + 'static,
         F: FnMut(&[LockedSegment]) -> R + Send + 'static,
