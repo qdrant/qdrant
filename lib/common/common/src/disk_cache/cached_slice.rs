@@ -1,6 +1,7 @@
 #![allow(dead_code)] // for now
 
 use std::borrow::Cow;
+use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::Range;
@@ -51,7 +52,7 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
     /// reference into the mmap. Otherwise, it will allocate a `Vec<T>` and copy
     /// block data into it. Allocating as `Vec<T>` (rather than `Vec<u8>`)
     /// guarantees correct alignment for any `T`.
-    pub fn get_range(&self, range: Range<usize>) -> Cow<'_, [T]> {
+    pub fn get_range(&self, range: Range<usize>) -> io::Result<Cow<'_, [T]>> {
         let t_size = mem::size_of::<T>();
         debug_assert!(t_size != 0, "cannot use zero-sized type");
 
@@ -62,12 +63,9 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
         // TODO(perf): if blocks are consecutive in the big cache file, we can still return without allocating.
         if blocks_iter.len() == 1 {
             let req = blocks_iter.next().expect("We just checked len() == 1");
-            let slice = self
-                .controller
-                .get_from_cache(req)
-                .expect("TODO: Reading or writing error");
+            let slice = self.controller.get_from_cache(req)?;
 
-            return match slice {
+            let cow = match slice {
                 Cow::Borrowed(bytes) => Cow::Borrowed(bytemuck::cast_slice(bytes)),
                 Cow::Owned(vec_u8) => {
                     let mut vec_t = vec![T::zeroed(); vec_u8.len() / t_size];
@@ -75,6 +73,8 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
                     Cow::Owned(vec_t)
                 }
             };
+
+            return Ok(cow);
         }
 
         // Multi-block: allocate Vec<T> directly for correct alignment.
@@ -82,30 +82,24 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
         let result_bytes = bytemuck::cast_slice_mut::<T, u8>(&mut result);
         let mut copied = 0;
         for req in blocks_iter {
-            let slice = self
-                .controller
-                .get_from_cache(req)
-                .expect("TODO: Reading or writing error");
+            let slice = self.controller.get_from_cache(req)?;
             let end = copied + slice.len();
             result_bytes[copied..end].copy_from_slice(&slice);
             copied = end;
         }
-        Cow::Owned(result)
+        Ok(Cow::Owned(result))
     }
 
     #[cfg(test)]
-    pub fn get(&self, idx: usize) -> Cow<'_, T> {
-        let slice = self.get_range(idx..idx + 1);
-        match slice {
+    pub fn get(&self, idx: usize) -> io::Result<Cow<'_, T>> {
+        let slice = self.get_range(idx..idx + 1)?;
+
+        let cow = match slice {
             Cow::Borrowed(slice) => Cow::Borrowed(&slice[0]),
             Cow::Owned(mut vec) => Cow::Owned(vec.pop().unwrap()),
-        }
-    }
+        };
 
-    #[cfg(test)]
-    pub fn iter(&self) -> impl Iterator<Item = Cow<'_, T>> + '_ {
-        let total_len = self.len();
-        (0..total_len).map(|idx| self.get(idx))
+        Ok(cow)
     }
 
     #[expect(clippy::len_without_is_empty)] // Doesn't make sense to cache 0-length files

@@ -61,7 +61,7 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
 
         let range = elem_start..elem_start + elem_length;
 
-        Ok(self.get_range(range))
+        Ok(self.get_range(range)?)
     }
 
     fn read_batch<const SEQUENTIAL: bool>(

@@ -20,27 +20,27 @@ fn test_cacher() {
 
     eprintln!(
         "data0: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 3))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 3).unwrap())
     );
 
     eprintln!(
         "data0a: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14).unwrap())
     );
 
     eprintln!(
         "data1: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 - 1))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 - 1).unwrap())
     );
 
     eprintln!(
         "data2: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4).unwrap())
     );
 
     eprintln!(
         "data3: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 + 1))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 + 1).unwrap())
     );
 }
 
@@ -121,7 +121,8 @@ fn test_cached_slice_vectors_sequential() {
     assert_eq!(cached_slice.len(), TOTAL_FLOATS);
 
     // Sequential iteration: compare every element.
-    for (idx, cached_val) in cached_slice.iter().enumerate() {
+    for idx in 0..TOTAL_FLOATS {
+        let cached_val = cached_slice.get(idx).unwrap();
         assert_eq!(
             *cached_val,
             vectors[idx],
@@ -135,7 +136,7 @@ fn test_cached_slice_vectors_sequential() {
     for vec_idx in 0..NUM_VECTORS {
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
-        let cached_vec = cached_slice.get_range(start..end);
+        let cached_vec = cached_slice.get_range(start..end).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
             &vectors[start..end],
@@ -166,7 +167,7 @@ fn test_cached_slice_vectors_random_access() {
     // Random single-element access.
     for _ in 0..5000 {
         let idx = rng.random_range(0..TOTAL_FLOATS);
-        let cached_val = cached_slice.get(idx);
+        let cached_val = cached_slice.get(idx).unwrap();
         assert_eq!(
             *cached_val, vectors[idx],
             "Random access mismatch at flat index {idx}",
@@ -178,7 +179,7 @@ fn test_cached_slice_vectors_random_access() {
         let vec_idx = rng.random_range(0..NUM_VECTORS);
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
-        let cached_vec = cached_slice.get_range(start..end);
+        let cached_vec = cached_slice.get_range(start..end).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
             &vectors[start..end],
@@ -194,7 +195,7 @@ fn test_cached_slice_vectors_random_access() {
             continue;
         }
         let b = a + rng.random_range(1..=max_len);
-        let cached_range = cached_slice.get_range(a..b);
+        let cached_range = cached_slice.get_range(a..b).unwrap();
         assert_eq!(
             cached_range.as_ref(),
             &vectors[a..b],
@@ -243,7 +244,7 @@ fn test_no_more_blocks_concurrent_exhaustion() {
             std::thread::spawn(move || {
                 barrier.wait();
                 for block in 0..blocks_per_file {
-                    fd.get_range(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE);
+                    fd.get_range(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE).unwrap();
                 }
             })
         })
