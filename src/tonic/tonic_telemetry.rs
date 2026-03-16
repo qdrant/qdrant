@@ -9,6 +9,7 @@ use tower_layer::Layer;
 use crate::common::telemetry_ops::requests_telemetry::{
     TonicTelemetryCollector, TonicWorkerTelemetryCollector,
 };
+use crate::common::telemetry_ops::telemetry_context::CollectionName;
 
 /// Based on https://grpc.io/docs/guides/status-codes/
 /// Default gRPC status code for all responses (0 = OK)
@@ -27,11 +28,13 @@ type Response = tonic::codegen::http::Response<BoxBody>;
 pub struct TonicTelemetryService<T> {
     service: T,
     telemetry_data: Arc<parking_lot::Mutex<TonicWorkerTelemetryCollector>>,
+    enable_per_collection: bool,
 }
 
 #[derive(Clone)]
 pub struct TonicTelemetryLayer {
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+    enable_per_collection: bool,
 }
 
 impl<S> Service<Request> for TonicTelemetryService<S>
@@ -51,6 +54,7 @@ where
         let method_name = request.uri().path().to_string();
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
+        let enable_per_collection = self.enable_per_collection;
         Box::pin(async move {
             let instant = std::time::Instant::now();
             let response = future.await?;
@@ -70,9 +74,18 @@ where
                     }
                 });
 
+            let collection_name = if enable_per_collection {
+                response
+                    .extensions()
+                    .get::<CollectionName>()
+                    .map(|cn| cn.0.clone())
+            } else {
+                None
+            };
+
             telemetry_data
                 .lock()
-                .add_response(method_name, instant, status_code);
+                .add_response(method_name, instant, status_code, collection_name);
             Ok(response)
         })
     }
@@ -81,9 +94,11 @@ where
 impl TonicTelemetryLayer {
     pub fn new(
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+        enable_per_collection: bool,
     ) -> TonicTelemetryLayer {
         Self {
             telemetry_collector,
+            enable_per_collection,
         }
     }
 }
@@ -98,6 +113,7 @@ impl<S> Layer<S> for TonicTelemetryLayer {
                 .telemetry_collector
                 .lock()
                 .create_grpc_telemetry_collector(),
+            enable_per_collection: self.enable_per_collection,
         }
     }
 }

@@ -87,6 +87,11 @@ pub struct ServiceConfig {
     #[serde(default)]
     #[validate(custom(function = validate_metrics_prefix))]
     pub metrics_prefix: Option<String>,
+
+    /// If true, per-collection request metrics are emitted instead of global ones.
+    /// Warning: can increase metrics output significantly with many collections.
+    #[serde(default)]
+    pub record_per_collection: Option<bool>,
 }
 
 impl ServiceConfig {

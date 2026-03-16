@@ -13,10 +13,12 @@ use crate::common::telemetry_ops::requests_telemetry::{
 pub struct ActixTelemetryService<S> {
     service: S,
     telemetry_data: Arc<Mutex<ActixWorkerTelemetryCollector>>,
+    enable_per_collection: bool,
 }
 
 pub struct ActixTelemetryTransform {
     telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
+    enable_per_collection: bool,
 }
 
 /// Actix telemetry service. It hooks every request and looks into response status code.
@@ -40,24 +42,40 @@ where
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
         let request_key = format!("{} {}", request.method(), match_pattern);
+        let enable_per_collection = self.enable_per_collection;
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
             let instant = std::time::Instant::now();
             let response = future.await?;
             let status = response.response().status().as_u16();
+
+            let collection_name = if enable_per_collection {
+                response
+                    .request()
+                    .match_info()
+                    .get("name")
+                    .map(|s| s.to_string())
+            } else {
+                None
+            };
+
             telemetry_data
                 .lock()
-                .add_response(request_key, status, instant);
+                .add_response(request_key, status, instant, collection_name);
             Ok(response)
         })
     }
 }
 
 impl ActixTelemetryTransform {
-    pub fn new(telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>) -> Self {
+    pub fn new(
+        telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
+        enable_per_collection: bool,
+    ) -> Self {
         Self {
             telemetry_collector,
+            enable_per_collection,
         }
     }
 }
@@ -85,6 +103,7 @@ where
                 .telemetry_collector
                 .lock()
                 .create_web_worker_telemetry(),
+            enable_per_collection: self.enable_per_collection,
         }))
     }
 }

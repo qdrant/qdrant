@@ -149,6 +149,7 @@ pub fn init(
             .layer(logging::LoggingMiddlewareLayer::new())
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
+                settings.service.record_per_collection.unwrap_or(false),
             ))
             .option_layer({
                 AuthKeys::try_create(
@@ -228,6 +229,8 @@ pub fn init_internal(
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
             let qdrant_service = QdrantService::default();
+            let enable_per_collection =
+                settings.service.record_per_collection.unwrap_or(false);
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
             let qdrant_internal_service =
@@ -262,6 +265,7 @@ pub fn init_internal(
                 .layer(logging::LoggingMiddlewareLayer::new())
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     tonic_telemetry_collector,
+                    enable_per_collection,
                 ))
                 .into_inner();
 
