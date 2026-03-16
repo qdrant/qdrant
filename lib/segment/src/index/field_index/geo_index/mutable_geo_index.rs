@@ -8,8 +8,8 @@ use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
-use gridstore::config::StorageOptions;
 use gridstore::Gridstore;
+use gridstore::config::StorageOptions;
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
@@ -17,13 +17,13 @@ use rocksdb::DB;
 
 #[cfg(feature = "rocksdb")]
 use super::GeoMapIndex;
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::common::Flusher;
-use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
+use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::payload_config::StorageType;
 use crate::types::{GeoPoint, RawGeoPoint};
 
