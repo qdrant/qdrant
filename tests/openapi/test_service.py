@@ -26,6 +26,39 @@ def test_metrics():
     assert 'collections_total ' in response.text
 
 
+def test_metrics_default_no_per_collection(collection_name):
+    """By default (record_per_collection off), request metrics must NOT have a collection label."""
+    # Make a request that hits a whitelisted endpoint so metrics are populated
+    request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={"limit": 1},
+    )
+
+    response = request_with_validation(
+        api='/metrics',
+        method="GET",
+    )
+    assert response.ok
+
+    # REST request metrics should exist (global mode)
+    assert 'rest_responses_total' in response.text
+
+    # Existing collection-level metrics should use "id" label, not "collection"
+    assert f'collection_points{{id="{collection_name}"}}' in response.text \
+        or f'id="{collection_name}"' in response.text
+
+    # Per-collection request metrics (collection= label on rest_/grpc_ metrics) should NOT appear
+    for line in response.text.splitlines():
+        if line.startswith('#'):
+            continue
+        if 'rest_responses_' in line or 'grpc_responses_' in line:
+            assert 'collection=' not in line, (
+                f"Per-collection label found in default mode: {line}"
+            )
+
+
 def test_telemetry():
     response = request_with_validation(
         api='/telemetry',
@@ -42,6 +75,12 @@ def test_telemetry():
     assert endpoint['200']['count'] > 0
 
     assert 'avg_duration_micros' in endpoint['200']
+
+    # By default, per_collection_responses should be absent (empty maps are skipped)
+    assert 'per_collection_responses' not in result['requests']['rest'], \
+        "per_collection_responses should not appear when record_per_collection is off"
+    assert 'per_collection_responses' not in result['requests']['grpc'], \
+        "per_collection_responses should not appear when record_per_collection is off"
 
 
 @pytest.mark.parametrize("level", [0, 1, 2, 3, 10])
