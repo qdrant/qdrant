@@ -28,6 +28,7 @@ fn full_reporter_auth() -> Auth {
         None,
         None,
         AuthType::Internal,
+        None,
     )
 }
 

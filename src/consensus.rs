@@ -1452,7 +1452,7 @@ mod tests {
     use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
-    use storage::rbac::{Access, Auth, AuthType};
+    use storage::rbac::{Access, Auth};
     use tempfile::Builder;
 
     use super::Consensus;
@@ -1576,7 +1576,7 @@ mod tests {
                         )
                         .unwrap(),
                     ),
-                    Auth::new(Access::full("For test"), None, None, AuthType::Internal),
+                    Auth::new_internal(Access::full("For test")),
                     None,
                 ),
             )

@@ -16,6 +16,7 @@ pub struct Auth {
     subject: Option<String>,
     remote: Option<String>,
     auth_type: AuthType,
+    tracing_id: Option<String>,
 }
 
 impl Auth {
@@ -24,12 +25,14 @@ impl Auth {
         subject: Option<String>,
         remote: Option<String>,
         auth_type: AuthType,
+        tracing_id: Option<String>,
     ) -> Self {
         Self {
             access,
             subject,
             remote,
             auth_type,
+            tracing_id,
         }
     }
 
@@ -39,6 +42,7 @@ impl Auth {
             subject: None,
             remote: None,
             auth_type: AuthType::Internal,
+            tracing_id: None,
         }
     }
 
@@ -115,6 +119,7 @@ impl Auth {
             subject: self.subject.clone(),
             remote: self.remote.clone(),
             collection: collection.map(String::from),
+            tracing_id: self.tracing_id.clone(),
             result: status,
             error,
         });

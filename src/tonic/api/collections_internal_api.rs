@@ -10,14 +10,14 @@ use api::grpc::qdrant::{
 };
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::{Access, AccessRequirements, Auth, AuthType, CollectionPass};
+use storage::rbac::{Access, AccessRequirements, Auth, CollectionPass};
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
 use crate::tonic::api::collections_common::get;
 
 fn full_internal_auth() -> Auth {
-    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal)
+    Auth::new_internal(Access::full("Internal API"))
 }
 
 fn full_access_pass(collection_name: &str) -> Result<CollectionPass<'_>, Status> {
