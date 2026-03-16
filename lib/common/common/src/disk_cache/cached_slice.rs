@@ -55,8 +55,12 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
         let t_size = mem::size_of::<T>();
         debug_assert!(t_size != 0, "cannot use zero-sized type");
 
-        let byte_range = range.start * t_size..range.end * t_size;
         let total_elements = range.end - range.start;
+        if total_elements == 0 {
+            return Ok(Cow::Borrowed(&[]));
+        }
+
+        let byte_range = range.start * t_size..range.end * t_size;
         let mut blocks_iter = self.blocks_for(byte_range);
 
         // TODO(perf): if blocks are consecutive in the big cache file, we can still return without allocating.
@@ -110,6 +114,7 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
     fn blocks_for(&self, bytes_range: Range<usize>) -> impl ExactSizeIterator<Item = BlockRequest> {
         debug_assert!(bytes_range.start <= bytes_range.end);
         debug_assert!(bytes_range.end <= self.len_bytes);
+        debug_assert!(!bytes_range.is_empty(), "empty range would underflow");
 
         blocks_for_range_in_file(self.file_id, bytes_range)
     }
@@ -126,10 +131,13 @@ fn blocks_for_range_in_file(
     let last_block = (bytes_range.end - 1) / BLOCK_SIZE;
     let trailing_offset = bytes_range.end - (last_block * BLOCK_SIZE);
 
+    // Not a RangeInclusive (..=) because it doesn't implement ExactSizeIterator
     (first_block..last_block + 1).map(move |block_offset| {
         let block_id = BlockId {
             file_id,
-            offset: BlockOffset(block_offset as u32),
+            offset: BlockOffset(
+                u32::try_from(block_offset).expect("file too large for block cache (>70 TiB)"),
+            ),
         };
 
         let range_start = if block_offset == first_block {

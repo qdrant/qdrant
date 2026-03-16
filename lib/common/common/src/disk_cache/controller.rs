@@ -70,8 +70,14 @@ impl CacheController {
 
         let cache_mmap = MmapRaw::map_raw(&cache_file)?;
 
+        let size_blocks_u32: u32 = size_blocks.try_into().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("cache size too large: {size_blocks} blocks exceeds u32::MAX"),
+            )
+        })?;
         let unused_blocks = Arc::new(Mutex::new(
-            (0..size_blocks as u32).rev().map(BlockOffset).collect(),
+            (0..size_blocks_u32).rev().map(BlockOffset).collect(),
         ));
 
         let blocks_lifecycle = BlocksLifecycle::new(unused_blocks.clone());
@@ -113,10 +119,14 @@ impl CacheController {
         opts.custom_flags(nix::libc::O_DIRECT);
         let f = opts.open(path)?;
         #[cfg(target_os = "macos")]
-        unsafe {
+        {
             // TODO: add this to `nix` crate
             use std::os::fd::AsRawFd;
-            nix::libc::fcntl(f.as_raw_fd(), nix::libc::F_NOCACHE, 1);
+            // SAFETY: valid fd and known fcntl command
+            let ret = unsafe { nix::libc::fcntl(f.as_raw_fd(), nix::libc::F_NOCACHE, 1) };
+            if ret == -1 {
+                return Err(io::Error::last_os_error());
+            }
         }
 
         let len = f.metadata()?.len() as usize;
@@ -174,7 +184,13 @@ impl CacheController {
                 if range.len() == BLOCK_SIZE {
                     file.read_exact_at(&mut buf, key.offset.bytes() as u64)?;
                 } else {
-                    file.read_at(&mut buf, key.offset.bytes() as u64)?;
+                    let bytes_read = file.read_at(&mut buf, key.offset.bytes() as u64)?;
+                    if bytes_read < range.end {
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "short read from cold storage",
+                        ));
+                    }
                 }
 
                 // 2. Write to hot storage.

@@ -82,10 +82,12 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
     }
 
     fn populate(&self) -> crate::universal_io::Result<()> {
-        todo!("make sure the disk cache has this file")
+        // TODO: read all content of this file to make sure it is in the cache file.
+        Ok(())
     }
 
     fn clear_ram_cache(&self) -> crate::universal_io::Result<()> {
-        todo!("WONTNEED for the range of this file")
+        // TODO: issue fadvise DONTNEED on the cache file's backing mmap region.
+        Ok(())
     }
 }
