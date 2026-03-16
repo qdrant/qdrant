@@ -1,3 +1,4 @@
+pub mod error;
 mod file_ops;
 #[cfg(target_os = "linux")]
 pub mod io_uring;
@@ -6,10 +7,11 @@ pub mod mmap;
 pub mod read;
 pub mod write;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::de::DeserializeOwned;
 
+pub use self::error::UniversalIoError;
 pub use self::file_ops::UniversalReadFileOps;
 pub use self::read::UniversalRead;
 pub use self::write::UniversalWrite;
@@ -50,31 +52,6 @@ pub struct ElementsRange {
 pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
-
-#[derive(thiserror::Error, Debug)]
-pub enum UniversalIoError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Mmap(#[from] crate::mmap::Error),
-    #[error("Data range {start}..{end} is out of bounds (data size: {data_length} elements)")]
-    OutOfBounds {
-        start: u64,
-        end: u64,
-        data_length: usize,
-    },
-    #[error(transparent)]
-    SerdeJson(#[from] serde_json::Error),
-    /// Path does not exist or is not accessible; backends may use this instead of
-    /// `Io(NotFound)` so callers can match without relying on a specific io::ErrorKind.
-    #[error("Not found: {path:?}")]
-    NotFound { path: PathBuf },
-    /// Source id is not valid for this multi-source storage.
-    #[error("Invalid source id {file_index} (num sources: {num_files})")]
-    InvalidFileIndex { file_index: usize, num_files: usize },
-    #[error("IoUring not supported: {0}")]
-    IoUringNotSupported(String),
-}
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
 ///
