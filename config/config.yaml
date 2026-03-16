@@ -309,10 +309,14 @@ service:
   # Prefix for the names of metrics in the /metrics API.
   # metrics_prefix: qdrant_
 
-  # Record per-collection metrics.
-  # If enabled, metrics will be grouped by collection name.
-  # Warning: this might significantly increase the amount of metrics.
-  # record_per_collection: true
+  #
+  # Enable per-collection request metrics.
+  # When enabled, REST/gRPC request metrics include a `collection` label
+  # and global (non-collection) request metrics are not emitted.
+  # Warning: this may significantly increase metrics output with many collections.
+  # record_per_collection: false
+  # Maximum distinct collections tracked in per-collection metrics (default: 256).
+  # max_per_collection_metrics: 256
 
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode

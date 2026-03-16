@@ -88,10 +88,16 @@ pub struct ServiceConfig {
     #[validate(custom(function = validate_metrics_prefix))]
     pub metrics_prefix: Option<String>,
 
-    /// If true, enable per-collection metrics.
-    /// This can be expensive if you have many collections.
+    /// If true, per-collection request metrics are emitted instead of global ones.
+    /// Warning: can increase metrics output significantly with many collections.
     #[serde(default)]
     pub record_per_collection: Option<bool>,
+
+    /// Maximum number of distinct collections tracked in per-collection request metrics.
+    /// When reached, new collections are silently ignored until an existing one is evicted.
+    /// Only relevant when `record_per_collection` is true. Default: 256.
+    #[serde(default)]
+    pub max_per_collection_metrics: Option<usize>,
 }
 
 impl ServiceConfig {

@@ -68,6 +68,12 @@ impl TelemetryCollector {
     }
 
     pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>, id: Uuid) -> Self {
+        let max_per_collection = if settings.service.record_per_collection.unwrap_or(false) {
+            Some(settings.service.max_per_collection_metrics.unwrap_or(256))
+        } else {
+            None
+        };
+
         Self {
             process_id: id,
             settings,
@@ -75,9 +81,11 @@ impl TelemetryCollector {
             app_telemetry_collector: AppBuildTelemetryCollector::new(),
             actix_telemetry_collector: Arc::new(Mutex::new(ActixTelemetryCollector {
                 workers: Vec::new(),
+                max_per_collection,
             })),
             tonic_telemetry_collector: Arc::new(Mutex::new(TonicTelemetryCollector {
                 workers: Vec::new(),
+                max_per_collection,
             })),
         }
     }

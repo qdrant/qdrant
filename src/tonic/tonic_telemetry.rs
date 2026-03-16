@@ -2,11 +2,12 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
+use tonic::body::BoxBody;
 use tower::Service;
 use tower_layer::Layer;
 
 use crate::common::telemetry_ops::requests_telemetry::{
-    TonicTelemetryCollector, TonicWorkerTelemetryCollector,
+    CollectionName, TonicTelemetryCollector, TonicWorkerTelemetryCollector,
 };
 
 /// Based on https://grpc.io/docs/guides/status-codes/
@@ -20,6 +21,7 @@ const DEFAULT_FAILURE_GRPC_STATUS_CODE: i32 = 2;
 const GRPC_STATUS_HEADER: &str = "grpc-status";
 
 type Request = tonic::codegen::http::Request<tonic::transport::Body>;
+type Response = tonic::codegen::http::Response<BoxBody>;
 
 #[derive(Clone)]
 pub struct TonicTelemetryService<T> {
@@ -34,15 +36,14 @@ pub struct TonicTelemetryLayer {
     enable_per_collection: bool,
 }
 
-impl<S, B> Service<Request> for TonicTelemetryService<S>
+impl<S> Service<Request> for TonicTelemetryService<S>
 where
-    S: Service<Request, Response = tonic::codegen::http::Response<B>>,
+    S: Service<Request, Response = Response>,
     S::Future: Send + 'static,
-    B: 'static,
 {
-    type Response = tonic::codegen::http::Response<B>;
+    type Response = S::Response;
     type Error = S::Error;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Future = BoxFuture<'static, Result<S::Response, S::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx)
@@ -51,9 +52,8 @@ where
     fn call(&mut self, request: Request) -> Self::Future {
         let method_name = request.uri().path().to_string();
         let future = self.service.call(request);
-        let enable_per_collection = self.enable_per_collection;
         let telemetry_data = self.telemetry_data.clone();
-
+        let enable_per_collection = self.enable_per_collection;
         Box::pin(async move {
             let instant = std::time::Instant::now();
             let response = future.await?;
@@ -76,8 +76,8 @@ where
             let collection_name = if enable_per_collection {
                 response
                     .extensions()
-                    .get::<crate::common::telemetry_ops::telemetry_context::CollectionName>()
-                    .map(|c| c.0.clone())
+                    .get::<CollectionName>()
+                    .map(|cn| cn.0.clone())
             } else {
                 None
             };

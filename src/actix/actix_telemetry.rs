@@ -38,27 +38,28 @@ where
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
+        let match_pattern = request
+            .match_pattern()
+            .unwrap_or_else(|| "unknown".to_owned());
+        let request_key = format!("{} {}", request.method(), match_pattern);
+        let enable_per_collection = self.enable_per_collection;
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
-        let enable_per_collection = self.enable_per_collection;
-
         Box::pin(async move {
             let instant = std::time::Instant::now();
             let response = future.await?;
-
-            let request = response.request();
-            let match_pattern = request
-                .match_pattern()
-                .unwrap_or_else(|| "unknown".to_owned());
-            let request_key = format!("{} {}", request.method(), match_pattern);
+            let status = response.response().status().as_u16();
 
             let collection_name = if enable_per_collection {
-                request.match_info().get("name").map(|s| s.to_string())
+                response
+                    .request()
+                    .match_info()
+                    .get("name")
+                    .map(|s| s.to_string())
             } else {
                 None
             };
 
-            let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
                 .add_response(request_key, status, instant, collection_name);
