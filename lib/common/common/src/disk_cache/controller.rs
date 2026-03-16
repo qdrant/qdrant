@@ -11,7 +11,7 @@ use fs_err::os::unix::fs::FileExt;
 #[cfg(target_os = "linux")]
 use fs_err::os::unix::fs::OpenOptionsExt;
 use memmap2::MmapRaw;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Condvar, Mutex, RwLock};
 use quick_cache::UnitWeighter;
 use quick_cache::sync::GuardResult;
 
@@ -19,9 +19,7 @@ use super::cached_file::CachedFile;
 use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, FileId};
 use crate::fs::clear_disk_cache;
 
-/// Number to subtract to the cache capacity, so that we always make sure to
-/// have an empty block to write.
-const CACHE_CAPACITY_SAFETY_MARGIN: u64 = 1; // FIXME
+const UNUSED_BLOCKS_MARGIN: u64 = 16;
 
 /// Caching layer stub.
 ///
@@ -79,17 +77,15 @@ impl CacheController {
 
         let blocks_lifecycle = BlocksLifecycle::new(unused_blocks.clone());
 
-        let cache_capacity = size_blocks - CACHE_CAPACITY_SAFETY_MARGIN;
+        // Reserve some margin so that we don't frequently need to wait for a block to be evicted
+        // during insertion of a new one. `UNUSED_BLOCKS_MARGIN` means (more or less) that this amount
+        // of threads can have an available block if they all want to insert at the same time
+        let cache_capacity = size_blocks.saturating_sub(UNUSED_BLOCKS_MARGIN);
 
         let cache = quick_cache::sync::Cache::with_options(
             quick_cache::OptionsBuilder::new()
                 .weight_capacity(cache_capacity)
                 .estimated_items_capacity(cache_capacity as usize)
-                // TODO(luis): Depending on this number we can increase/decrease CACHE_CAPACITY_SAFETY_MARGIN.
-                //       The default number is num_detected_cores * 4.
-                //       We need to optimize unused_offsets so that it can also leverage sharding, otherwise it
-                //       might become a source of contention.
-                // .shards(1)
                 .build()
                 .unwrap(),
             UnitWeighter,
@@ -233,40 +229,37 @@ impl CacheController {
 #[derive(Clone, Debug)]
 pub(super) struct BlocksLifecycle {
     unused_blocks: Arc<Mutex<Vec<BlockOffset>>>,
+    blocks_available: Arc<Condvar>,
 }
 
 impl BlocksLifecycle {
     fn new(unused_blocks: Arc<Mutex<Vec<BlockOffset>>>) -> Self {
-        Self { unused_blocks }
+        Self {
+            unused_blocks,
+            blocks_available: Arc::new(Condvar::new()),
+        }
     }
 
     fn pop_unused_block(&self) -> BlockOffset {
-        // TODO: perhaps wait if unused offsets are empty?
-        self.unused_blocks
-            .lock()
-            .pop()
-            .expect("There is always at least one unused block")
+        let mut pool = self.unused_blocks.lock();
+        loop {
+            if let Some(offset) = pool.pop() {
+                return offset;
+            }
+            self.blocks_available.wait(&mut pool);
+        }
     }
 }
 
 impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
-    type RequestState = Option<(BlockId, BlockOffset)>;
+    type RequestState = Vec<(BlockId, BlockOffset)>;
 
     fn begin_request(&self) -> Self::RequestState {
-        None
+        Vec::new()
     }
 
     fn on_evict(&self, state: &mut Self::RequestState, key: BlockId, val: BlockOffset) {
-        // putting the evicted value in the state allows for quick_cache to hold its locks
-        // for less time. And allows to defer the handling for later.
-        //
-        // TODO(luis): We might want to put it back at this moment, so that we ensure there is always
-        //         at least one unused block. Downside is larger critical section within the quick_cache locks.
-        //      Although, even if we put it back here, quick_cache is sharded internally, so
-        //        we would need a CACHE_CAPACITY_SAFETY_MARGIN of at least the number of shards to be sure.
-        if state.is_none() {
-            *state = Some((key, val));
-        }
+        state.push((key, val));
     }
 
     fn is_pinned(&self, _key: &BlockId, _val: &BlockOffset) -> bool {
@@ -284,10 +277,14 @@ impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
     }
 
     fn end_request(&self, state: Self::RequestState) {
-        // Insert evicted block back to unused pool.
-        match state {
-            None => (),
-            Some((_, off)) => self.unused_blocks.lock().push(off),
+        if state.is_empty() {
+            return;
         }
+        // Return all evicted blocks to the unused pool and wake waiting threads.
+        let mut pool = self.unused_blocks.lock();
+        for (_, offset) in state {
+            pool.push(offset);
+        }
+        self.blocks_available.notify_all();
     }
 }
