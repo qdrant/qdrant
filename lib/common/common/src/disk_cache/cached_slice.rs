@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::{io, mem};
 
+use super::controller::CacheRead;
 use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, FileId};
 
 /// Typed view over a cached file, simulating a `&[T]` backed by the block cache.
@@ -66,29 +67,32 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
         // TODO(perf): if blocks are consecutive in the big cache file, we can still return without allocating.
         if blocks_iter.len() == 1 {
             let req = blocks_iter.next().expect("We just checked len() == 1");
-            let slice = self.controller.get_from_cache(req)?;
+            let result = self.controller.get_from_cache(req, |bytes| {
+                let mut vec_t = vec![T::zeroed(); bytes.len() / t_size];
+                bytemuck::cast_slice_mut::<T, u8>(&mut vec_t).copy_from_slice(bytes);
+                vec_t
+            })?;
 
-            let cow = match slice {
-                Cow::Borrowed(bytes) => Cow::Borrowed(bytemuck::cast_slice(bytes)),
-                Cow::Owned(vec_u8) => {
-                    let mut vec_t = vec![T::zeroed(); vec_u8.len() / t_size];
-                    bytemuck::cast_slice_mut::<T, u8>(&mut vec_t).copy_from_slice(&vec_u8);
-                    Cow::Owned(vec_t)
-                }
-            };
-
-            return Ok(cow);
+            return Ok(match result {
+                CacheRead::Hit(bytes) => Cow::Borrowed(bytemuck::cast_slice(bytes)),
+                CacheRead::Miss(vec_t) => Cow::Owned(vec_t),
+            });
         }
 
         // Multi-block: allocate Vec<T> directly for correct alignment.
         let mut result = vec![T::zeroed(); total_elements];
         let result_bytes = bytemuck::cast_slice_mut::<T, u8>(&mut result);
         let mut copied = 0;
-        for req in blocks_iter {
-            let slice = self.controller.get_from_cache(req)?;
+        let mut copy_block = |slice: &[u8]| {
             let end = copied + slice.len();
-            result_bytes[copied..end].copy_from_slice(&slice);
+            result_bytes[copied..end].copy_from_slice(slice);
             copied = end;
+        };
+        for req in blocks_iter {
+            let read = self.controller.get_from_cache(req, &mut copy_block)?;
+            if let CacheRead::Hit(slice) = read {
+                copy_block(slice);
+            }
         }
         Ok(Cow::Owned(result))
     }

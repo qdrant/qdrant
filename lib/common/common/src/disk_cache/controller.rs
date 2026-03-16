@@ -1,5 +1,3 @@
-
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
@@ -150,7 +148,16 @@ impl CacheController {
         Ok((file_id, len))
     }
 
-    pub(super) fn get_from_cache(&self, req: BlockRequest) -> io::Result<Cow<'_, [u8]>> {
+    /// Fetch a block from cache, or read it from cold storage on miss.
+    ///
+    /// On hit, returns a borrowed slice from the mmap. On miss, calls
+    /// `on_miss` with the raw `&[u8]` so the caller can produce an owned
+    /// value with the right type/alignment, avoiding a redundant copy.
+    pub(super) fn get_from_cache<O>(
+        &self,
+        req: BlockRequest,
+        on_miss: impl FnOnce(&[u8]) -> O,
+    ) -> io::Result<CacheRead<'_, O>> {
         let BlockRequest { key, range } = req;
 
         match self.cache.get_value_or_guard(&key, None) {
@@ -167,7 +174,7 @@ impl CacheController {
                         range.len(),
                     )
                 };
-                Ok(Cow::Borrowed(slice))
+                Ok(CacheRead::Hit(slice))
             }
             // Cache miss.
             GuardResult::Guard(guard) => {
@@ -213,11 +220,19 @@ impl CacheController {
                 // FIXME: unwrap panics when `key` deleted while guard is still alive.
                 guard.insert(allocated_offset).unwrap();
 
-                Ok(Cow::Owned(buf[range].to_vec()))
+                Ok(CacheRead::Miss(on_miss(&buf[range])))
             }
             GuardResult::Timeout => unreachable!("We didn't set a timeout"),
         }
     }
+}
+
+/// Result of a cache lookup.
+pub(super) enum CacheRead<'a, O> {
+    /// Cache hit: zero-copy borrow from the mmap.
+    Hit(&'a [u8]),
+    /// Cache miss: caller-produced owned value from the `on_miss` closure.
+    Miss(O),
 }
 
 /// Global cache controller. Will be used in production.
