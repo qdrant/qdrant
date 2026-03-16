@@ -242,20 +242,35 @@ impl BlocksLifecycle {
             if let Some(offset) = pool.pop() {
                 return offset;
             }
-            self.blocks_available.wait(&mut pool);
+            let timed_out = self
+                .blocks_available
+                .wait_for(&mut pool, std::time::Duration::from_secs(10))
+                .timed_out();
+            if timed_out {
+                log::warn!(
+                    "Disk cache: waiting for a free block for over 10s ({} blocks in pool)",
+                    pool.len(),
+                );
+            }
         }
     }
 }
 
 impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
-    type RequestState = Vec<(BlockId, BlockOffset)>;
+    // With `UnitWeighter` every item weighs 1, so inserting one item
+    // evicts at most one item. `Option` is sufficient.
+    type RequestState = Option<BlockOffset>;
 
     fn begin_request(&self) -> Self::RequestState {
-        Vec::new()
+        None
     }
 
-    fn on_evict(&self, state: &mut Self::RequestState, key: BlockId, val: BlockOffset) {
-        state.push((key, val));
+    fn on_evict(&self, state: &mut Self::RequestState, _key: BlockId, val: BlockOffset) {
+        debug_assert!(
+            state.is_none(),
+            "multiple evictions per request with UnitWeighter"
+        );
+        *state = Some(val);
     }
 
     fn is_pinned(&self, _key: &BlockId, _val: &BlockOffset) -> bool {
@@ -273,14 +288,10 @@ impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
     }
 
     fn end_request(&self, state: Self::RequestState) {
-        if state.is_empty() {
-            return;
-        }
-        // Return all evicted blocks to the unused pool and wake waiting threads.
-        let mut pool = self.unused_blocks.lock();
-        for (_, offset) in state {
+        if let Some(offset) = state {
+            let mut pool = self.unused_blocks.lock();
             pool.push(offset);
+            self.blocks_available.notify_one();
         }
-        self.blocks_available.notify_all();
     }
 }

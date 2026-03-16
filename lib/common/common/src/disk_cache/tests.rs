@@ -25,7 +25,10 @@ fn test_cacher() {
 
     eprintln!(
         "data0a: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14).unwrap())
+        fancy_decode(
+            &fd.get_range(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14)
+                .unwrap()
+        )
     );
 
     eprintln!(
@@ -121,11 +124,11 @@ fn test_cached_slice_vectors_sequential() {
     assert_eq!(cached_slice.len(), TOTAL_FLOATS);
 
     // Sequential iteration: compare every element.
-    for idx in 0..TOTAL_FLOATS {
+    for (idx, vector) in vectors.iter().enumerate().take(TOTAL_FLOATS) {
         let cached_val = cached_slice.get(idx).unwrap();
         assert_eq!(
-            *cached_val,
-            vectors[idx],
+            cached_val.as_ref(),
+            vector,
             "Mismatch at flat index {idx} (vector {}, dim {})",
             idx / VECTOR_DIM,
             idx % VECTOR_DIM,
@@ -244,7 +247,8 @@ fn test_no_more_blocks_concurrent_exhaustion() {
             std::thread::spawn(move || {
                 barrier.wait();
                 for block in 0..blocks_per_file {
-                    fd.get_range(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE).unwrap();
+                    fd.get_range(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE)
+                        .unwrap();
                 }
             })
         })

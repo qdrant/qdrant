@@ -1,11 +1,10 @@
 #![allow(dead_code)] // for now
 
 use std::borrow::Cow;
-use std::io;
 use std::marker::PhantomData;
-use std::mem;
 use std::ops::Range;
 use std::sync::Arc;
+use std::{io, mem};
 
 use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, FileId};
 
