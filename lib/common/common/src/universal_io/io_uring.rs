@@ -148,7 +148,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                     let file = files.get(file_index).ok_or({
                         UniversalIoError::InvalidFileIndex {
                             file_index,
-                            num_files: files.len(),
+                            files: files.len(),
                         }
                     })?;
 
@@ -265,7 +265,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                     let file = files.get(file_index).ok_or({
                         UniversalIoError::InvalidFileIndex {
                             file_index,
-                            num_files: files.len(),
+                            files: files.len(),
                         }
                     })?;
 
@@ -307,7 +307,8 @@ where
     IO_URING.with(|io_uring| {
         let io_uring = io_uring
             .as_ref()
-            .map_err(|err| UniversalIoError::IoUringNotSupported(err.to_string()))?;
+            .map_err(io_error_clone)
+            .map_err(UniversalIoError::IoUringNotSupported)?;
 
         let mut io_uring = io_uring.borrow_mut();
         let rt = IoUringRuntime::new(&mut io_uring);
@@ -579,6 +580,10 @@ impl<T> IoUringResponse<T> {
             _ => panic!(),
         }
     }
+}
+
+fn io_error_clone(err: &io::Error) -> io::Error {
+    io::Error::new(err.kind(), err.to_string())
 }
 
 fn io_error_context(err: io::Error, context: impl Into<String>) -> io::Error {

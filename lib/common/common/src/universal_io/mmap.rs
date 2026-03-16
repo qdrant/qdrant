@@ -178,7 +178,7 @@ where
             .ok_or(UniversalIoError::OutOfBounds {
                 start: start as u64,
                 end: end as u64,
-                data_length: data_slice.len(),
+                elements: data_slice.len(),
             })?;
 
         Ok(Cow::Borrowed(data_range))
@@ -201,7 +201,7 @@ where
                 .ok_or(UniversalIoError::OutOfBounds {
                     start: start as u64,
                     end: end as u64,
-                    data_length,
+                    elements: data_length,
                 })?;
 
             callback(idx, data_range)?;
@@ -242,15 +242,16 @@ where
     fn write(&mut self, offset: ElementOffset, data: &[T]) -> Result<()> {
         let mmap_slice: &mut [T] = &mut self.mmap;
         let data_length = mmap_slice.len();
+
         let start = offset as usize;
         let end = start + data.len();
 
         let target = mmap_slice
             .get_mut(start..end)
             .ok_or(UniversalIoError::OutOfBounds {
-                start: offset,
-                end: offset + data.len() as u64,
-                data_length,
+                start: start as u64,
+                end: end as u64,
+                elements: data_length,
             })?;
 
         target.copy_from_slice(data);

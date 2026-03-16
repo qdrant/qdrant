@@ -62,7 +62,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
                 .get(file_index)
                 .ok_or(UniversalIoError::InvalidFileIndex {
                     file_index,
-                    num_files: files.len(),
+                    files: files.len(),
                 })?;
 
             let data = file.read::<SEQUENTIAL>(range)?;
