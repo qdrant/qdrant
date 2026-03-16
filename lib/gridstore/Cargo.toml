@@ -24,7 +24,7 @@ smallvec = { workspace = true }
 parking_lot = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-lz4_flex = { version = "0.12.0", default-features = false }
+lz4_flex = { version = "0.12.1", default-features = false }
 log = { workspace = true }
 rand = { workspace = true }
 bitvec = { workspace = true }
