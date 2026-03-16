@@ -36,10 +36,7 @@ pub struct TonicTelemetryLayer {
 
 impl<S, B> Service<Request> for TonicTelemetryService<S>
 where
-    S: Service<
-            Request,
-            Response = tonic::codegen::http::Response<B>,
-        >,
+    S: Service<Request, Response = tonic::codegen::http::Response<B>>,
     S::Future: Send + 'static,
     B: 'static,
 {
