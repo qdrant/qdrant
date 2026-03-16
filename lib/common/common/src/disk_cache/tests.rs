@@ -96,8 +96,7 @@ fn generate_vectors(seed: u64) -> Vec<f32> {
 
 /// Write a flat slice of f32s to a binary file (little-endian, which is native on x86/ARM).
 fn write_vectors_to_file(path: &Path, data: &[f32]) {
-    let bytes: &[u8] =
-        unsafe { std::slice::from_raw_parts(data.as_ptr().cast::<u8>(), data.len() * 4) };
+    let bytes: &[u8] = bytemuck::cast_slice(data);
     fs::write(path, bytes).unwrap();
 }
 

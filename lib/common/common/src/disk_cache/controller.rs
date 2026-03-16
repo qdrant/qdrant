@@ -1,4 +1,3 @@
-#![allow(dead_code)] // for now
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -31,12 +30,12 @@ const UNUSED_BLOCKS_MARGIN: u64 = 16;
 #[derive(Debug)]
 pub struct CacheController {
     /// Mapping from the assigned file id, to its file descriptor
-    pub(super) files: RwLock<HashMap<FileId, fs::File>>,
+    files: RwLock<HashMap<FileId, fs::File>>,
 
     /// Used to assign file ids on new files.
-    pub(super) file_id_counter: Mutex<FileId>,
+    file_id_counter: Mutex<FileId>,
 
-    pub(super) cache: quick_cache::sync::Cache<
+    cache: quick_cache::sync::Cache<
         BlockId,
         BlockOffset,
         UnitWeighter,
@@ -47,10 +46,10 @@ pub struct CacheController {
     /// Tracks the unused blocks in the cache file.
     ///
     /// It is hooked up to the `cache` so it can free up blocks on eviction.
-    pub(super) blocks_lifecycle: BlocksLifecycle,
+    blocks_lifecycle: BlocksLifecycle,
 
     /// Cache file, aka hot storage. (mmap)
-    pub(super) cache_mmap: memmap2::MmapRaw,
+    cache_mmap: memmap2::MmapRaw,
 }
 
 impl CacheController {
@@ -185,7 +184,7 @@ impl CacheController {
                     file.read_exact_at(&mut buf, key.offset.bytes() as u64)?;
                 } else {
                     let bytes_read = file.read_at(&mut buf, key.offset.bytes() as u64)?;
-                    if bytes_read < range.end {
+                    if bytes_read < range.len() {
                         return Err(io::Error::new(
                             io::ErrorKind::UnexpectedEof,
                             "short read from cold storage",
