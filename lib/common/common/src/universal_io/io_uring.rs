@@ -169,7 +169,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn len(&self) -> Result<u64> {
         let byte_len = self.file.metadata()?.len();
+
         let items_len = byte_len / size_of::<T>() as u64;
+        debug_assert_eq!(byte_len % size_of::<T>() as u64, 0);
+
         Ok(items_len)
     }
 
