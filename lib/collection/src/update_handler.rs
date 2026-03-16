@@ -221,7 +221,8 @@ impl UpdateHandler {
         let collection_name = self.collection_name.clone();
         let applied_seq_handler = self.applied_seq_handler.clone();
 
-        // Create a new cancellation token for this worker
+        // Cancel the old update worker and create a new cancellation token
+        self.update_worker_cancel.cancel();
         self.update_worker_cancel = CancellationToken::new();
         let cancel = self.update_worker_cancel.clone();
 

@@ -171,7 +171,6 @@ impl UpdateWorkers {
             let limit = max_handles.saturating_sub(optimization_handles.lock().await.len());
             if limit == 0 {
                 log::trace!("Skipping optimization check, we reached optimization thread limit");
-                let _ = optimization_finished_sender.send(());
                 continue;
             }
 
@@ -254,9 +253,6 @@ impl UpdateWorkers {
             },
             Some(limit),
         );
-        if new_handles.is_empty() {
-            let _ = optimization_finished_sender.send(());
-        }
         let mut handles = optimization_handles.lock().await;
         handles.append(&mut new_handles);
     }
