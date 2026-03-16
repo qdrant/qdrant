@@ -507,9 +507,6 @@ impl NonAppendableSegmentEntry for Segment {
             0
         };
 
-        let num_points = self.available_point_count_without_deferred();
-        let num_deferred_points = self.deferred_point_count();
-
         let vectors_size_bytes = total_average_vectors_size_bytes * self.available_point_count();
 
         // Unwrap and default to 0 here because the RocksDB storage is the only faillible one, and we will remove it eventually.
@@ -524,11 +521,10 @@ impl NonAppendableSegmentEntry for Segment {
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,
-            num_points,
-            num_deferred_points,
-            num_deleted_vectors: self
-                .deleted_point_count()
-                .saturating_sub(self.deferred_deleted_count.unwrap_or_default()),
+            num_points: self.available_point_count(),
+            num_deferred_points: self.deferred_point_count(),
+            num_deleted_deferred_points: self.deferred_deleted_count.unwrap_or_default(),
+            num_deleted_vectors: self.deleted_point_count(),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
             ram_usage_bytes: 0,  // ToDo: Implement

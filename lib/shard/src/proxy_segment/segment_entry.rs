@@ -508,10 +508,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         let vector_name_count =
             self.config().vector_data.len() + self.config().sparse_vector_data.len();
 
-        let deleted_points_count = self
-            .deleted_points
-            .len()
-            .saturating_sub(self.deleted_deferred_count);
+        let deleted_points_count = self.deleted_points.len();
 
         // This is a best estimate
         let num_vectors = wrapped_info
@@ -533,10 +530,13 @@ impl NonAppendableSegmentEntry for ProxySegment {
             segment_type: SegmentType::Special,
             num_vectors,
             num_indexed_vectors,
-            num_points: self.available_point_count_without_deferred(),
+            num_points: self.available_point_count(),
             num_deferred_points: wrapped_info
                 .num_deferred_points
                 .saturating_sub(self.deleted_deferred_count),
+            num_deleted_deferred_points: wrapped_info
+                .num_deleted_deferred_points
+                .saturating_add(self.deleted_deferred_count),
             num_deleted_vectors: wrapped_info.num_deleted_vectors
                 + deleted_points_count * vector_name_count,
             vectors_size_bytes: wrapped_info.vectors_size_bytes, //  + write_info.vectors_size_bytes,
