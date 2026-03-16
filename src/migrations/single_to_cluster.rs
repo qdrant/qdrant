@@ -12,7 +12,7 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::shard_distribution::ShardDistributionProposal;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequirements, Auth, AuthType};
+use storage::rbac::{Access, AccessRequirements, Auth};
 
 /// Processes the existing collections, which were created outside the consensus:
 /// - during the migration from single to cluster
@@ -25,7 +25,7 @@ pub async fn handle_existing_collections(
     collections: Vec<String>,
 ) {
     let full_access = Access::full("Migration from single to cluster");
-    let full_auth = Auth::new(full_access.clone(), None, None, AuthType::Internal);
+    let full_auth = Auth::new_internal(full_access.clone());
     let multipass = full_auth
         .check_global_access(AccessRequirements::new().manage(), "migration")
         .expect("Full access should have manage rights");

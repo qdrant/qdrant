@@ -26,7 +26,7 @@ use segment::json_path::JsonPath;
 use segment::types::Filter;
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
-use storage::rbac::{Access, Auth, AuthType};
+use storage::rbac::{Access, Auth};
 use tonic::{Request, Response, Status};
 
 use super::query_common::*;
@@ -39,7 +39,7 @@ use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 
 fn full_internal_auth() -> Auth {
-    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal)
+    Auth::new_internal(Access::full("Internal API"))
 }
 
 /// This API is intended for P2P communication within a distributed deployment.
