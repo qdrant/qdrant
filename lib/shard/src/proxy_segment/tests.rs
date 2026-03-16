@@ -577,7 +577,7 @@ fn test_proxy_deferred() {
     assert_eq!(proxy_segment.available_point_count_without_deferred(), 3);
 
     proxy_segment
-        .delete_point(7, 5.into(), &hw_counter)
+        .delete_point_mut(7, 5.into(), &hw_counter)
         .unwrap();
 
     assert_eq!(
@@ -595,7 +595,7 @@ fn test_proxy_deferred() {
 
     // Touch normal points
     proxy_segment
-        .delete_point(6, 1.into(), &hw_counter)
+        .delete_point_mut(6, 1.into(), &hw_counter)
         .unwrap();
 
     // Now we must see a difference in estimation.
