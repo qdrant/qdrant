@@ -6,7 +6,7 @@ pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<P
     let dir = prefix_path.parent().unwrap_or(Path::new("."));
     let file_prefix = prefix_path
         .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
+        .map(|str| str.to_string_lossy().into_owned())
         .unwrap_or_default();
 
     let mut results = Vec::new();

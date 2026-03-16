@@ -1,8 +1,8 @@
 pub mod error;
-mod file_ops;
+pub mod file_ops;
 #[cfg(target_os = "linux")]
 pub mod io_uring;
-mod local_file_ops;
+pub mod local_file_ops;
 pub mod mmap;
 pub mod read;
 pub mod write;
@@ -16,8 +16,6 @@ pub use self::file_ops::UniversalReadFileOps;
 pub use self::read::UniversalRead;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
-
-pub type FileIndex = usize;
 
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
@@ -42,13 +40,16 @@ impl Default for OpenOptions {
     }
 }
 
-pub type ElementOffset = u64;
-
 #[derive(Copy, Clone, Debug)]
 pub struct ElementsRange {
     pub start: ElementOffset,
     pub length: u64,
 }
+
+pub type ElementOffset = u64;
+
+pub type FileIndex = usize;
+
 pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
