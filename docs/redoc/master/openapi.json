@@ -12750,6 +12750,7 @@
           "index_schema",
           "is_appendable",
           "num_deferred_points",
+          "num_deleted_deferred_points",
           "num_deleted_vectors",
           "num_indexed_vectors",
           "num_points",
@@ -12780,6 +12781,11 @@
             "minimum": 0
           },
           "num_deferred_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_deleted_deferred_points": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
