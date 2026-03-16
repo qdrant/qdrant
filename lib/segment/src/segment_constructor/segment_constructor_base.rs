@@ -692,7 +692,7 @@ fn create_segment(
         segment.deferred_internal_id = deferred_internal_id;
 
         if deferred_internal_id.is_some() {
-            segment.deferred_deleted_count = Some(segment.calculate_deferred_point_count());
+            segment.deferred_deleted_count = Some(segment.calculate_deleted_deferred_point_count());
         }
     }
 

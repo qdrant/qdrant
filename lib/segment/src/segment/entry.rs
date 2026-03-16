@@ -183,7 +183,7 @@ impl NonAppendableSegmentEntry for Segment {
         // Filter out deferred points. This is done in two stages to prevent cloning `point_ids` and iterating more that needed
         // but still satisfy rusts ownership constraints.
         let behavior_allows_filtering = !deferred_behavior.include_all_points();
-        let filter_deferred = self.deferred_points_count() > 0 && behavior_allows_filtering;
+        let filter_deferred = self.has_deferred_points() && behavior_allows_filtering;
         let filtered_point_ids = filter_deferred.then(|| {
             point_ids
                 .iter()

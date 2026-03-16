@@ -232,6 +232,7 @@ impl ProxySegment {
                     OperationResult::Ok(())
                 })?;
                 self.deleted_points.clear();
+                self.deleted_deferred_count = 0;
 
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.

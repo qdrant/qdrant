@@ -197,7 +197,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
 
-    /// Returns the amount of points that are not deferred.
+    /// Similar to `available_point_count()` but excludes all deferred points.
     fn available_point_count_without_deferred(&self) -> usize;
 
     /// Size of all available vectors in storage
@@ -351,6 +351,10 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
     /// Returns external IDs of all deferred points in the segment
     fn deferred_point_ids(&self) -> Vec<PointIdType>;
 
+    /// Returns `true` if there is at least one point that is hidden (deferred).
+    /// Non-appendable segments always return `false` as they can't have deferred points.
+    ///
+    /// Note: the deferred point can be deleted and this function would still return `true`.
     fn has_deferred_points(&self) -> bool;
 }
 
