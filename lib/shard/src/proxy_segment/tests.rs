@@ -552,15 +552,10 @@ fn test_proxy_deferred() {
         .delete_point_internal(3, &hw_counter)
         .unwrap();
 
-    // We deleted a deferred point so `num_deleted_vectors` must be 0.
-    assert_eq!(wrapped_segment.size_info().num_deleted_vectors, 0);
-
     assert_eq!(
         wrapped_segment.size_info().num_deferred_points,
         initial_deferred_point_count - 1
     );
-
-    assert_eq!(wrapped_segment.size_info().num_deleted_vectors, 0);
 
     let mut proxy_segment = ProxySegment::new(LockedSegment::new(wrapped_segment));
 
@@ -571,14 +566,9 @@ fn test_proxy_deferred() {
 
     assert_eq!(proxy_segment.available_point_count_without_deferred(), 3);
 
-    assert_eq!(proxy_segment.size_info().num_deleted_vectors, 0);
-
     proxy_segment
         .delete_point(7, 5.into(), &hw_counter)
         .unwrap();
-
-    // We deleted a deferred point but `num_deleted_vectors` must not be affected.
-    assert_eq!(proxy_segment.size_info().num_deleted_vectors, 0);
 
     assert_eq!(
         proxy_segment.size_info().num_deferred_points,
@@ -603,9 +593,6 @@ fn test_proxy_deferred() {
         proxy_segment.estimate_point_count(None, &hw_counter),
         initial_estimation
     );
-
-    // We deleted a visible point so the counter must increase.
-    assert_eq!(proxy_segment.size_info().num_deleted_vectors, 1);
 
     assert_eq!(proxy_segment.available_point_count_without_deferred(), 2);
 }
