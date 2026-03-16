@@ -1358,10 +1358,13 @@ mod tests {
 
         let mut responses = HashMap::new();
         let mut status_map = HashMap::new();
-        status_map.insert(200u16, OperationDurationStatistics {
-            count: 10,
-            ..Default::default()
-        });
+        status_map.insert(
+            200u16,
+            OperationDurationStatistics {
+                count: 10,
+                ..Default::default()
+            },
+        );
         responses.insert(
             "POST /collections/{name}/points/search".to_string(),
             status_map,
@@ -1392,10 +1395,13 @@ mod tests {
         // Global responses present but per_collection too
         let mut responses = HashMap::new();
         let mut status_map = HashMap::new();
-        status_map.insert(200u16, OperationDurationStatistics {
-            count: 10,
-            ..Default::default()
-        });
+        status_map.insert(
+            200u16,
+            OperationDurationStatistics {
+                count: 10,
+                ..Default::default()
+            },
+        );
         responses.insert(
             "POST /collections/{name}/points/search".to_string(),
             status_map,
@@ -1404,10 +1410,13 @@ mod tests {
         let mut per_collection = HashMap::new();
         let mut methods = HashMap::new();
         let mut col_status_map = HashMap::new();
-        col_status_map.insert(200u16, OperationDurationStatistics {
-            count: 5,
-            ..Default::default()
-        });
+        col_status_map.insert(
+            200u16,
+            OperationDurationStatistics {
+                count: 5,
+                ..Default::default()
+            },
+        );
         methods.insert(
             "POST /collections/{name}/points/search".to_string(),
             col_status_map,
@@ -1443,10 +1452,13 @@ mod tests {
         let mut per_collection = HashMap::new();
         let mut methods = HashMap::new();
         let mut status_map = HashMap::new();
-        status_map.insert(0i32, OperationDurationStatistics {
-            count: 7,
-            ..Default::default()
-        });
+        status_map.insert(
+            0i32,
+            OperationDurationStatistics {
+                count: 7,
+                ..Default::default()
+            },
+        );
         methods.insert("/qdrant.Points/Search".to_string(), status_map);
         per_collection.insert("test_col".to_string(), methods);
 
@@ -1477,10 +1489,13 @@ mod tests {
         let mut per_collection = HashMap::new();
         let mut methods = HashMap::new();
         let mut status_map = HashMap::new();
-        status_map.insert(200u16, OperationDurationStatistics {
-            count: 3,
-            ..Default::default()
-        });
+        status_map.insert(
+            200u16,
+            OperationDurationStatistics {
+                count: 3,
+                ..Default::default()
+            },
+        );
         // This endpoint is NOT in the whitelist
         methods.insert("GET /collections".to_string(), status_map);
         per_collection.insert("col".to_string(), methods);

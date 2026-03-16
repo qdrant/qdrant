@@ -137,8 +137,7 @@ impl TonicWorkerTelemetryCollector {
             for (method, status_codes) in methods {
                 let mut status_codes_map = HashMap::new();
                 for (status_code, aggregator) in status_codes {
-                    status_codes_map
-                        .insert(*status_code, aggregator.lock().get_statistics(detail));
+                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
                 }
                 methods_map.insert(method.clone(), status_codes_map);
             }
@@ -197,8 +196,7 @@ impl ActixWorkerTelemetryCollector {
             for (method, status_codes) in methods {
                 let mut status_codes_map = HashMap::new();
                 for (status_code, aggregator) in status_codes {
-                    status_codes_map
-                        .insert(*status_code, aggregator.lock().get_statistics(detail));
+                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
                 }
                 methods_map.insert(method.clone(), status_codes_map);
             }
@@ -396,8 +394,14 @@ mod tests {
 
         // Per-collection: col_a=2, col_b=1
         assert_eq!(telemetry.per_collection_responses.len(), 2);
-        assert_eq!(telemetry.per_collection_responses["col_a"][method][&200].count, 2);
-        assert_eq!(telemetry.per_collection_responses["col_b"][method][&200].count, 1);
+        assert_eq!(
+            telemetry.per_collection_responses["col_a"][method][&200].count,
+            2
+        );
+        assert_eq!(
+            telemetry.per_collection_responses["col_b"][method][&200].count,
+            1
+        );
     }
 
     #[test]
@@ -414,7 +418,11 @@ mod tests {
 
         assert_eq!(telemetry.responses.len(), 1);
         assert_eq!(telemetry.per_collection_responses.len(), 1);
-        assert!(telemetry.per_collection_responses.contains_key("my_collection"));
+        assert!(
+            telemetry
+                .per_collection_responses
+                .contains_key("my_collection")
+        );
     }
 
     #[test]
@@ -438,8 +446,14 @@ mod tests {
         assert_eq!(merged.responses[method][&200].count, 3);
 
         // Per-collection: col_a=2 (merged from two workers), col_b=1
-        assert_eq!(merged.per_collection_responses["col_a"][method][&200].count, 2);
-        assert_eq!(merged.per_collection_responses["col_b"][method][&200].count, 1);
+        assert_eq!(
+            merged.per_collection_responses["col_a"][method][&200].count,
+            2
+        );
+        assert_eq!(
+            merged.per_collection_responses["col_b"][method][&200].count,
+            1
+        );
     }
 
     #[test]
@@ -449,12 +463,25 @@ mod tests {
         let w2 = collector.create_web_worker_telemetry();
         let method = "POST /collections/{name}/points/search";
 
-        w1.lock().add_response(method.into(), 200, std::time::Instant::now(), Some("col_a".into()));
-        w2.lock().add_response(method.into(), 200, std::time::Instant::now(), Some("col_a".into()));
+        w1.lock().add_response(
+            method.into(),
+            200,
+            std::time::Instant::now(),
+            Some("col_a".into()),
+        );
+        w2.lock().add_response(
+            method.into(),
+            200,
+            std::time::Instant::now(),
+            Some("col_a".into()),
+        );
 
         let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
         assert_eq!(telemetry.responses[method][&200].count, 2);
-        assert_eq!(telemetry.per_collection_responses["col_a"][method][&200].count, 2);
+        assert_eq!(
+            telemetry.per_collection_responses["col_a"][method][&200].count,
+            2
+        );
     }
 
     #[test]
