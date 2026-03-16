@@ -70,9 +70,12 @@ def get_point_count_excluding_deferred():
     collections = response.json()['result']['collections']['collections']
 
     num_points = 0
+    had_collection = False
     for collection in collections:
         if collection['id'] != COLLECTION_NAME:
             continue
+
+        had_collection = True
 
         for shard in collection['shards']:
             if 'local' not in shard:
@@ -81,6 +84,8 @@ def get_point_count_excluding_deferred():
             for segment in shard['local']['segments']:
                 info = segment['info']
                 num_points += int(info['num_points']) - int(info['num_deferred_points'])
+
+    assert had_collection, "Collection not found in telemetry!"
 
     return num_points
 
