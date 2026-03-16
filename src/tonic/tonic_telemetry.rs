@@ -9,7 +9,7 @@ use tower_layer::Layer;
 use crate::common::telemetry_ops::requests_telemetry::{
     TonicTelemetryCollector, TonicWorkerTelemetryCollector,
 };
-use crate::common::telemetry_ops::telemetry_context::CollectionName;
+use crate::common::telemetry_ops::requests_telemetry::CollectionName;
 
 /// Based on https://grpc.io/docs/guides/status-codes/
 /// Default gRPC status code for all responses (0 = OK)

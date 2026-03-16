@@ -11,6 +11,10 @@ use segment::common::operation_time_statistics::{
 use serde::Serialize;
 use storage::rbac::{AccessRequirements, Auth};
 
+/// Wrapper for passing collection name through gRPC response extensions.
+#[derive(Clone, Debug)]
+pub struct CollectionName(pub String);
+
 pub type HttpStatusCode = u16;
 
 pub type GrpcStatusCode = i32;

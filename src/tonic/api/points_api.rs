@@ -28,7 +28,7 @@ use super::validate;
 use crate::common::inference::api_keys::extract_inference_auth;
 use crate::common::inference::params::InferenceParams;
 use crate::common::strict_mode::*;
-use crate::common::telemetry_ops::telemetry_context::CollectionName;
+use crate::common::telemetry_ops::requests_telemetry::CollectionName;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 use crate::tonic::auth::extract_auth;
