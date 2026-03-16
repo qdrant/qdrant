@@ -873,8 +873,4 @@ impl SegmentEntry for ProxySegment {
             "Clear payload is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
-
-    fn deferred_points_count(&self) -> usize {
-        self.wrapped_segment.get().read().deferred_points_count()
-    }
 }

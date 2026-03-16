@@ -417,6 +417,4 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
-
-    fn deferred_points_count(&self) -> usize;
 }
