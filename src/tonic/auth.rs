@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::task::{Context, Poll};
-
 use futures::future::BoxFuture;
 use storage::audit::{audit_trust_forwarded_headers, extract_tracing_id};
 use storage::rbac::Access;
@@ -155,7 +154,12 @@ pub fn extract_auth<R>(req: &mut tonic::Request<R>) -> Auth {
             None,
             None,
             AuthType::None,
-            None,
+            extract_tracing_id(|h| {
+                req.metadata()
+                    .get(h)
+                    .and_then(|val| val.to_str().ok())
+                    .map(str::to_string)
+            }),
         )
     })
 }

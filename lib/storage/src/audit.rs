@@ -21,7 +21,7 @@ pub const TRACING_ID_HEADERS: &[&str] = &["x-request-id", "x-tracing-id", "trace
 pub fn extract_tracing_id(get_header: impl Fn(&str) -> Option<String>) -> Option<String> {
     let value = TRACING_ID_HEADERS.iter().find_map(|h| get_header(h))?;
     if value.len() > MAX_TRACING_ID_LEN {
-        Some(value[..MAX_TRACING_ID_LEN].to_string())
+        Some(value.chars().take(MAX_TRACING_ID_LEN).collect())
     } else {
         Some(value)
     }
