@@ -583,7 +583,7 @@ impl From<UpdateQueueInfo> for api::grpc::qdrant::UpdateQueueInfo {
 
         Self {
             length: length as u64,
-            deferred_points: deferred_points as u64,
+            deferred_points: deferred_points.map(|i| i as u64),
         }
     }
 }
@@ -596,7 +596,7 @@ impl From<api::grpc::qdrant::UpdateQueueInfo> for UpdateQueueInfo {
         } = value;
         Self {
             length: length as usize,
-            deferred_points: deferred_points as usize,
+            deferred_points: deferred_points.map(|i| i as usize),
         }
     }
 }

@@ -145,7 +145,8 @@ pub struct ShardUpdateQueueInfo {
 
     /// Number of points that are deferred (i.e hidden from search as they're not yet optimized).
     #[anonymize(false)]
-    pub deferred_points: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred_points: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema, Default, Anonymize)]
@@ -156,7 +157,8 @@ pub struct UpdateQueueInfo {
 
     /// Number of points that are deferred (i.e hidden from search as they're not yet optimized).
     #[anonymize(false)]
-    pub deferred_points: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred_points: Option<usize>,
 }
 
 // Version of the collection config we can present to the user

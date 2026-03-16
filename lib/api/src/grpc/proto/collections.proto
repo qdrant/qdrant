@@ -753,7 +753,7 @@ message UpdateQueueInfo {
   uint64 length = 1;
 
   // Number of points that are deferred (i.e hidden from search as they're not yet optimized).
-  uint64 deferred_points = 2;
+  optional uint64 deferred_points = 2;
 }
 
 message CollectionInfo {

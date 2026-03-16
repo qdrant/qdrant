@@ -1008,10 +1008,19 @@ impl LocalShard {
             log::warn!("Failed to get deferred ponit counts: {err:?}");
         }
 
+        let prevent_unoptimized = self
+            .collection_config
+            .read()
+            .await
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or(false);
+
         ShardUpdateQueueInfo {
             length: self.update_queue_length(),
             op_num: self.applied_seq_handler.op_num().map(|s| s as usize),
-            deferred_points: deferred_point_count.unwrap_or_default(),
+            deferred_points: prevent_unoptimized
+                .then_some(deferred_point_count.unwrap_or_default()),
         }
     }
 
