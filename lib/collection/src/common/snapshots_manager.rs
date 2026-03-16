@@ -281,18 +281,34 @@ impl SnapshotStorageLocalFS {
         // So we copy to the final location with a temporary name and then rename atomically.
         let target_path_tmp = TempPath::from_path(target_path.with_extension("tmp"));
 
-        // compute and store the file's checksum before the final snapshot file is saved
-        // to avoid making snapshot available without checksum
+        // Compute checksum and write to a temporary file first.
+        // This ensures we don't leave orphaned checksum files if snapshot persistence fails.
         let checksum_path = get_checksum_path(target_path);
         let checksum = hash_file(source_path).await?;
-        let checksum_file = TempPath::from_path(&checksum_path);
-        let mut file = tokio_fs::File::create(checksum_path.as_path()).await?;
+        let checksum_tmp = TempPath::from_path(checksum_path.with_extension("tmp"));
+        let mut file = tokio_fs::File::create(checksum_tmp.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
         move_file(&source_path, &target_path_tmp).await?;
-        target_path_tmp.persist(target_path).map_err(|e| e.error)?;
 
-        checksum_file.keep()?;
+        // Persist both files atomically: if either fails, rollback any already-persisted files.
+        // This prevents partial snapshot states where one file exists without the other.
+        let persist_result = target_path_tmp.persist(target_path).map_err(|e| e.error);
+        if let Err(err) = persist_result {
+            // Snapshot persistence failed, cleanup the temporary checksum file.
+            // The TempPath destructor would handle this, but we explicitly drop for clarity.
+            drop(checksum_tmp);
+            return Err(err.into());
+        }
+
+        // Snapshot persisted successfully, now persist the checksum.
+        // If this fails, we must rollback the snapshot to maintain consistency.
+        if let Err(err) = checksum_tmp.persist(&checksum_path) {
+            // Checksum persistence failed, rollback the already-persisted snapshot.
+            let _ = tokio_fs::remove_file(target_path).await;
+            return Err(err.error.into());
+        }
+
         get_snapshot_description(target_path).await
     }
 
