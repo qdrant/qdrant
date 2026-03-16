@@ -536,7 +536,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
     .unwrap();
 
     // Check update queue info after load.
-    let post_load_info = shard.local_update_queue_info();
+    let post_load_info = shard.local_update_queue_info().await;
     eprintln!("Post-load update queue info: {post_load_info:?}");
 
     // The applied_seq should be the value we set
@@ -558,7 +558,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
     let start = std::time::Instant::now();
     let poll_interval = std::time::Duration::from_millis(10);
 
-    while shard.local_update_queue_info().length > 0 {
+    while shard.local_update_queue_info().await.length > 0 {
         assert!(
             start.elapsed() <= timeout,
             "Timeout waiting for update queue to empty"
@@ -698,7 +698,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
     let start = std::time::Instant::now();
     let poll_interval = std::time::Duration::from_millis(10);
 
-    while shard.local_update_queue_info().length > 0 {
+    while shard.local_update_queue_info().await.length > 0 {
         assert!(
             start.elapsed() <= timeout,
             "Timeout waiting for update queue to empty"

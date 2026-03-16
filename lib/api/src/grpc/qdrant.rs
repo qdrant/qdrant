@@ -1620,6 +1620,9 @@ pub struct UpdateQueueInfo {
     /// Number of elements in the queue
     #[prost(uint64, tag = "1")]
     pub length: u64,
+    /// Number of points that are deferred (i.e hidden from search as they're not yet optimized).
+    #[prost(uint64, tag = "2")]
+    pub deferred_points: u64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

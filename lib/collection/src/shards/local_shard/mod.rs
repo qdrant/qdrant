@@ -971,10 +971,47 @@ impl LocalShard {
         .await
     }
 
-    pub fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
+    // Perform an operation using the shards segments.
+    // This doesn't lock the SegmentHolder during the operation.
+    fn do_with_segments<'a, R, F>(&'a self, mut f: F) -> AbortOnDropHandle<R>
+    where
+        R: Send + 'static,
+        F: FnMut(&[LockedSegment]) -> R + Send + 'static,
+    {
+        let segments = self.segments.clone();
+
+        let handle = tokio::task::spawn_blocking(move || {
+            // Collect the segments first so we don't lock the segment holder during the operation `f`.
+            let segments = segments
+                .read()
+                .iter()
+                .map(|i| i.1.clone())
+                .collect::<Vec<_>>();
+
+            f(&segments)
+        });
+
+        AbortOnDropHandle::new(handle)
+    }
+
+    pub async fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
+        let deferred_point_count = self
+            .do_with_segments(|segments| {
+                segments
+                    .iter()
+                    .map(|segment| segment.get().read().deferred_point_count())
+                    .sum::<usize>()
+            })
+            .await;
+
+        if let Err(err) = &deferred_point_count {
+            log::warn!("Failed to get deferred ponit counts: {err:?}");
+        }
+
         ShardUpdateQueueInfo {
             length: self.update_queue_length(),
             op_num: self.applied_seq_handler.op_num().map(|s| s as usize),
+            deferred_points: deferred_point_count.unwrap_or_default(),
         }
     }
 
@@ -1040,37 +1077,30 @@ impl LocalShard {
     pub async fn local_shard_info(&self) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
 
-        let segments = self.segments.clone();
-        let segment_info = tokio::task::spawn_blocking(move || {
-            // Collect the segments first so we don't lock the segment holder during the operations.
-            let segments = segments
-                .read()
-                .iter()
-                .map(|i| i.1.clone())
-                .collect::<Vec<_>>();
+        let segment_info = self
+            .do_with_segments(|segments| {
+                let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
+                let mut indexed_vectors_count = 0;
+                let mut points_count = 0;
+                let mut segments_count = 0;
 
-            let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
-            let mut indexed_vectors_count = 0;
-            let mut points_count = 0;
-            let mut segments_count = 0;
+                for segment in segments {
+                    segments_count += 1;
 
-            for segment in segments {
-                segments_count += 1;
+                    let segment_info = segment.get().read().info();
 
-                let segment_info = segment.get().read().info();
-
-                indexed_vectors_count += segment_info.num_indexed_vectors;
-                points_count += segment_info.num_points;
-                for (key, val) in segment_info.index_schema {
-                    schema
-                        .entry(key)
-                        .and_modify(|entry| entry.points += val.points)
-                        .or_insert(val);
+                    indexed_vectors_count += segment_info.num_indexed_vectors;
+                    points_count += segment_info.num_points;
+                    for (key, val) in segment_info.index_schema {
+                        schema
+                            .entry(key)
+                            .and_modify(|entry| entry.points += val.points)
+                            .or_insert(val);
+                    }
                 }
-            }
-            (schema, indexed_vectors_count, points_count, segments_count)
-        });
-        let segment_info = AbortOnDropHandle::new(segment_info).await;
+                (schema, indexed_vectors_count, points_count, segments_count)
+            })
+            .await;
 
         if let Err(err) = &segment_info {
             log::error!("Failed to get local shard info: {err}");
@@ -1081,7 +1111,7 @@ impl LocalShard {
 
         let (status, optimizer_status) = self.local_shard_status().await;
 
-        let update_queue = self.local_update_queue_info();
+        let update_queue = self.local_update_queue_info().await;
 
         ShardInfoInternal {
             status,

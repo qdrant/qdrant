@@ -1,14 +1,14 @@
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, TelemetryDetail};
-use segment::common::Flusher;
 use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
+use segment::common::Flusher;
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
@@ -531,9 +531,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             num_vectors,
             num_indexed_vectors,
             num_points: self.available_point_count(),
-            num_deferred_points: wrapped_info.num_deferred_points.map(|num_deferred_points| {
-                num_deferred_points.saturating_sub(self.deleted_deferred_count)
-            }),
+            num_deferred_points: Some(self.deferred_point_count()),
             num_deleted_deferred_points: wrapped_info.num_deleted_deferred_points.map(
                 |num_deleted_deferred_points| {
                     num_deleted_deferred_points.saturating_add(self.deleted_deferred_count)
@@ -788,6 +786,14 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
     fn has_deferred_points(&self) -> bool {
         self.wrapped_segment.get().read().has_deferred_points()
+    }
+
+    fn deferred_point_count(&self) -> usize {
+        self.wrapped_segment
+            .get()
+            .read()
+            .deferred_point_count()
+            .saturating_sub(self.deleted_deferred_count)
     }
 }
 

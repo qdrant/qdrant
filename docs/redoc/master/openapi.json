@@ -8424,11 +8424,18 @@
       "UpdateQueueInfo": {
         "type": "object",
         "required": [
+          "deferred_points",
           "length"
         ],
         "properties": {
           "length": {
             "description": "Number of elements in the queue",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "deferred_points": {
+            "description": "Number of points that are deferred (i.e hidden from search as they're not yet optimized).",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -13463,6 +13470,7 @@
       "ShardUpdateQueueInfo": {
         "type": "object",
         "required": [
+          "deferred_points",
           "length"
         ],
         "properties": {
@@ -13478,6 +13486,12 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "deferred_points": {
+            "description": "Number of points that are deferred (i.e hidden from search as they're not yet optimized).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       },
