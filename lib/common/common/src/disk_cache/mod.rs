@@ -7,6 +7,7 @@ mod tests;
 use std::ops::Range;
 
 pub use cached_file::CachedFile;
+pub use cached_slice::CachedSlice;
 pub use controller::CacheController;
 
 /// We cache data in blocks of this size.

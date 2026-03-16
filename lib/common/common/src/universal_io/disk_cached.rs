@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use fs_err as fs;
 
-use crate::disk_cache::{self, CachedFile};
+use crate::disk_cache::{self, CachedSlice};
 use crate::universal_io::{
     OpenOptions, Result, UniversalIoError, UniversalRead, UniversalReadFileOps, local_file_ops,
 };
@@ -18,7 +18,7 @@ pub fn with_global<U>(f: impl FnOnce(&Arc<disk_cache::CacheController>) -> Resul
     f(global)
 }
 
-impl UniversalReadFileOps for CachedFile {
+impl<T> UniversalReadFileOps for CachedSlice<T> {
     fn list_files(
         prefix_path: &std::path::Path,
     ) -> crate::universal_io::Result<Vec<std::path::PathBuf>> {
@@ -30,7 +30,7 @@ impl UniversalReadFileOps for CachedFile {
     }
 }
 
-impl<T: bytemuck::Pod> UniversalRead<T> for CachedFile {
+impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
     fn open(path: impl AsRef<std::path::Path>, options: OpenOptions) -> Result<Self>
     where
         Self: Sized,
@@ -51,34 +51,21 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedFile {
 
         let file = controller.open_file(path.as_ref())?;
 
-        Ok(file)
+        Ok(CachedSlice::new(file))
     }
 
     fn read<const SEQUENTIAL: bool>(
         &self,
         range: crate::universal_io::ElementsRange,
     ) -> Result<Cow<'_, [T]>> {
-        let t_size = std::mem::size_of::<T>();
-
         let elem_start = usize::try_from(range.start).expect("range.start is within usize");
         let elem_length = usize::try_from(range.length).expect("range.length is within usize");
 
-        let start = elem_start * t_size;
-        let end = start + elem_length * t_size;
-        let byte_range = start..end;
+        let range = elem_start..elem_start + elem_length;
 
-        let data = self.get_range(byte_range);
+        let data = self.get_range(range)?;
 
-        match data {
-            Cow::Borrowed(bytes) => {
-                let slice = bytemuck::try_cast_slice(bytes)?;
-                Ok(Cow::Borrowed(slice))
-            }
-            Cow::Owned(vec_u8) => {
-                let vec_t = bytemuck::try_cast_vec(vec_u8).map_err(|(err, _vec)| err)?;
-                Ok(Cow::Owned(vec_t))
-            }
-        }
+        Ok(data)
     }
 
     fn read_batch<const SEQUENTIAL: bool>(

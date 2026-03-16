@@ -136,7 +136,7 @@ fn test_cached_slice_vectors_sequential() {
     for vec_idx in 0..NUM_VECTORS {
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
-        let cached_vec = cached_slice.get_range(start..end);
+        let cached_vec = cached_slice.get_range(start..end).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
             &vectors[start..end],
@@ -168,7 +168,7 @@ fn test_cached_slice_vectors_random_access() {
     // Random single-element access.
     for _ in 0..5000 {
         let idx = rng.random_range(0..TOTAL_FLOATS);
-        let cached_val = cached_slice.get(idx);
+        let cached_val = cached_slice.get(idx).unwrap();
         assert_eq!(
             *cached_val, vectors[idx],
             "Random access mismatch at flat index {idx}",
@@ -180,7 +180,7 @@ fn test_cached_slice_vectors_random_access() {
         let vec_idx = rng.random_range(0..NUM_VECTORS);
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
-        let cached_vec = cached_slice.get_range(start..end);
+        let cached_vec = cached_slice.get_range(start..end).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
             &vectors[start..end],
@@ -196,7 +196,7 @@ fn test_cached_slice_vectors_random_access() {
             continue;
         }
         let b = a + rng.random_range(1..=max_len);
-        let cached_range = cached_slice.get_range(a..b);
+        let cached_range = cached_slice.get_range(a..b).unwrap();
         assert_eq!(
             cached_range.as_ref(),
             &vectors[a..b],

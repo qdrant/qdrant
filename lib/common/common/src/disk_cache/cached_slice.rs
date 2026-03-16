@@ -5,6 +5,8 @@ use std::marker::PhantomData;
 use std::mem;
 use std::ops::Range;
 
+use bytemuck::PodCastError;
+
 use super::CachedFile;
 
 /// Abstraction to simulate a [T], but it is backed by cache.
@@ -25,35 +27,44 @@ where
         }
     }
 
-    pub fn get(&self, idx: usize) -> Cow<'_, T> {
-        let slice = self.get_range(idx..idx + 1);
-        match slice {
-            Cow::Borrowed(slice) => Cow::Borrowed(&slice[0]),
-            Cow::Owned(mut vec) => Cow::Owned(vec.pop().unwrap()),
-        }
-    }
-
-    pub fn get_range(&self, range: Range<usize>) -> Cow<'_, [T]> {
+    pub fn get_range(&self, range: Range<usize>) -> Result<Cow<'_, [T]>, PodCastError> {
         let t_size = mem::size_of::<T>();
         assert!(t_size != 0, "cannot transmute zero-sized type");
 
         let byte_range = range.start * t_size..range.end * t_size;
         let data = self.cached_file.get_range(byte_range);
 
-        match data {
+        let cow = match data {
             Cow::Borrowed(bytes) => {
-                let slice = bytemuck::cast_slice(bytes);
+                let slice = bytemuck::try_cast_slice(bytes)?;
                 Cow::Borrowed(slice)
             }
-            Cow::Owned(vec_u8) => Cow::Owned(bytemuck::cast_vec(vec_u8)),
-        }
+            Cow::Owned(vec_u8) => {
+                let vec = bytemuck::try_cast_vec(vec_u8).map_err(|(err, _)| err)?;
+                Cow::Owned(vec)
+            }
+        };
+
+        Ok(cow)
     }
 
+    #[cfg(test)]
+    pub fn get(&self, idx: usize) -> Result<Cow<'_, T>, PodCastError> {
+        let slice = self.get_range(idx..idx + 1)?;
+        let cow = match slice {
+            Cow::Borrowed(slice) => Cow::Borrowed(&slice[0]),
+            Cow::Owned(mut vec) => Cow::Owned(vec.pop().unwrap()),
+        };
+        Ok(cow)
+    }
+
+    #[cfg(test)]
     pub fn iter(&self) -> impl Iterator<Item = Cow<'_, T>> + '_ {
         let total_len = self.len();
-        (0..total_len).map(|idx| self.get(idx))
+        (0..total_len).map(|idx| self.get(idx).unwrap())
     }
 
+    #[expect(clippy::len_without_is_empty)] // Doesn't make sense to cache 0-length files
     pub fn len(&self) -> usize {
         self.cached_file.len() / mem::size_of::<T>()
     }
