@@ -3,13 +3,34 @@ use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
 use segment::types::{PointIdType, ScoredPoint};
 
-use crate::operations::types::PointGroup;
+use crate::operations::types::{CollectionError, PointGroup};
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
 
 #[derive(PartialEq, Debug)]
 pub(super) enum AggregatorError {
     BadKeyType,
     KeyNotFound,
+    GroupsLimitExceeded { groups: usize, max: usize },
+    GroupSizeLimitExceeded { group_size: usize, max: usize },
+}
+
+impl From<AggregatorError> for CollectionError {
+    fn from(err: AggregatorError) -> Self {
+        match err {
+            AggregatorError::BadKeyType => CollectionError::bad_input(
+                "Group by key must be a string or integer".to_string(),
+            ),
+            AggregatorError::KeyNotFound => CollectionError::bad_input(
+                "Group by key not found in point payload".to_string(),
+            ),
+            AggregatorError::GroupsLimitExceeded { groups, max } => CollectionError::bad_input(
+                format!("Groups limit exceeded: {} > {}. Reduce the 'limit' parameter.", groups, max),
+            ),
+            AggregatorError::GroupSizeLimitExceeded { group_size, max } => CollectionError::bad_input(
+                format!("Group size limit exceeded: {} > {}. Reduce the 'group_size' parameter.", group_size, max),
+            ),
+        }
+    }
 }
 #[derive(Debug, Clone)]
 pub(super) struct Group {

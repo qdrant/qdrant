@@ -325,7 +325,7 @@ pub async fn group_by(
         request.group_size,
         request.group_by.clone(),
         score_ordering,
-    );
+    )?;
 
     // Try to complete amount of groups
     let mut needs_filling = true;

@@ -11,6 +11,14 @@ use serde_json::Value;
 
 use super::types::{AggregatorError, Group};
 
+/// Maximum number of groups allowed to prevent hash table capacity overflow.
+/// This limit ensures that hash table pre-allocation does not exceed hashbrown's capacity limits.
+const MAX_GROUPS: usize = 10_000;
+
+/// Maximum group size allowed to prevent hash table capacity overflow.
+/// This limit ensures that hash table pre-allocation does not exceed hashbrown's capacity limits.
+const MAX_GROUP_SIZE: usize = 10_000;
+
 type Hits = AHashMap<PointIdType, ScoredPoint>;
 pub(super) struct GroupsAggregator {
     groups: AHashMap<GroupId, Hits>,
@@ -29,8 +37,16 @@ impl GroupsAggregator {
         group_size: usize,
         grouped_by: JsonPath,
         order: Option<Order>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, AggregatorError> {
+        // Validate limits to prevent hash table capacity overflow
+        if groups > MAX_GROUPS {
+            return Err(AggregatorError::GroupsLimitExceeded { groups, max: MAX_GROUPS });
+        }
+        if group_size > MAX_GROUP_SIZE {
+            return Err(AggregatorError::GroupSizeLimitExceeded { group_size, max: MAX_GROUP_SIZE });
+        }
+
+        Ok(Self {
             groups: AHashMap::with_capacity(groups),
             max_group_size: group_size,
             grouped_by,
@@ -39,7 +55,7 @@ impl GroupsAggregator {
             group_best_scores: AHashMap::with_capacity(groups),
             all_ids: AHashSet::with_capacity(groups * group_size),
             order,
-        }
+        })
     }
 
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
@@ -116,6 +132,13 @@ impl GroupsAggregator {
             match self.add_point(point) {
                 Ok(()) | Err(AggregatorError::KeyNotFound | AggregatorError::BadKeyType) => {
                     // ignore points that don't have the group_by field
+                }
+                Err(
+                    AggregatorError::GroupsLimitExceeded { .. }
+                    | AggregatorError::GroupSizeLimitExceeded { .. },
+                ) => {
+                    // These errors are only returned during construction, not during add_point
+                    unreachable!("Limit exceeded errors should not occur during add_point")
                 }
             }
         }
@@ -238,7 +261,7 @@ mod unit_tests {
         ];
 
         let mut aggregator =
-            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter));
+            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter)).unwrap();
         for point in &scored_points {
             aggregator.add_point(point).unwrap();
         }
@@ -285,7 +308,7 @@ mod unit_tests {
     #[test]
     fn it_adds_single_points() {
         let mut aggregator =
-            GroupsAggregator::new(4, 3, "docId".parse().unwrap(), Some(Order::LargeBetter));
+            GroupsAggregator::new(4, 3, "docId".parse().unwrap(), Some(Order::LargeBetter)).unwrap();
 
         // cases
         #[rustfmt::skip]
@@ -389,7 +412,7 @@ mod unit_tests {
     #[test]
     fn test_aggregate_less_groups() {
         let mut aggregator =
-            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter));
+            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter)).unwrap();
 
         // cases
         [
@@ -452,5 +475,56 @@ mod unit_tests {
             let group_id_score: Vec<_> = group.hits.into_iter().map(|x| (x.id, x.score)).collect();
             assert_eq!(expected_id_score, group_id_score);
         }
+    }
+
+    #[test]
+    fn test_groups_limit_exceeded() {
+        // Test that creating an aggregator with too many groups fails
+        let result = GroupsAggregator::new(
+            MAX_GROUPS + 1,
+            10,
+            "docId".parse().unwrap(),
+            Some(Order::LargeBetter),
+        );
+        assert!(
+            matches!(
+                result,
+                Err(AggregatorError::GroupsLimitExceeded { groups: _, max: _ })
+            ),
+            "Expected GroupsLimitExceeded error"
+        );
+    }
+
+    #[test]
+    fn test_group_size_limit_exceeded() {
+        // Test that creating an aggregator with too large group size fails
+        let result = GroupsAggregator::new(
+            10,
+            MAX_GROUP_SIZE + 1,
+            "docId".parse().unwrap(),
+            Some(Order::LargeBetter),
+        );
+        assert!(
+            matches!(
+                result,
+                Err(AggregatorError::GroupSizeLimitExceeded { group_size: _, max: _ })
+            ),
+            "Expected GroupSizeLimitExceeded error"
+        );
+    }
+
+    #[test]
+    fn test_max_limits_accepted() {
+        // Test that the maximum allowed values work correctly
+        let result = GroupsAggregator::new(
+            MAX_GROUPS,
+            MAX_GROUP_SIZE,
+            "docId".parse().unwrap(),
+            Some(Order::LargeBetter),
+        );
+        assert!(
+            result.is_ok(),
+            "Maximum allowed limits should be accepted"
+        );
     }
 }
