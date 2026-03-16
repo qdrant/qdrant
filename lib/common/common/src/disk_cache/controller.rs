@@ -15,7 +15,6 @@ use parking_lot::{Condvar, Mutex, RwLock};
 use quick_cache::UnitWeighter;
 use quick_cache::sync::GuardResult;
 
-use super::cached_file::CachedFile;
 use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, FileId};
 use crate::fs::clear_disk_cache;
 
@@ -102,8 +101,9 @@ impl CacheController {
         }))
     }
 
-    /// Opens a new file and returns its descriptor.
-    pub fn open_file(self: &Arc<Self>, path: &Path) -> io::Result<CachedFile> {
+    /// Opens a new file, registers it with the cache, and returns its
+    /// internal id and byte length.
+    pub(super) fn open_file(&self, path: &Path) -> io::Result<(FileId, usize)> {
         // FIXME: clear_disk_cache is no-op on macos
         clear_disk_cache(path)?;
 
@@ -138,11 +138,7 @@ impl CacheController {
         };
 
         self.files.write().insert(file_id, f);
-        Ok(CachedFile {
-            file_id,
-            len,
-            controller: Arc::clone(self),
-        })
+        Ok((file_id, len))
     }
 
     pub(super) fn get_from_cache(&self, req: BlockRequest) -> io::Result<Cow<'_, [u8]>> {

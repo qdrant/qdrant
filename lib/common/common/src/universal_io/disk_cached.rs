@@ -49,9 +49,7 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
             advice: _,
         } = options;
 
-        let file = controller.open_file(path.as_ref())?;
-
-        Ok(CachedSlice::new(file))
+        Ok(CachedSlice::open(controller, path.as_ref())?)
     }
 
     fn read<const SEQUENTIAL: bool>(

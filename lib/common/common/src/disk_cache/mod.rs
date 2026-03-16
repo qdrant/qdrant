@@ -1,4 +1,3 @@
-mod cached_file;
 mod cached_slice;
 mod controller;
 #[cfg(test)]
@@ -6,7 +5,6 @@ mod tests;
 
 use std::ops::Range;
 
-pub use cached_file::CachedFile;
 pub use cached_slice::CachedSlice;
 pub use controller::CacheController;
 

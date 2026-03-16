@@ -6,8 +6,7 @@ use fs_err as fs;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
-use super::{BLOCK_SIZE, CacheController};
-use crate::disk_cache::cached_slice::CachedSlice;
+use super::{BLOCK_SIZE, CacheController, CachedSlice};
 
 #[test]
 fn test_cacher() {
@@ -17,31 +16,31 @@ fn test_cacher() {
 
     create_test_file(&dir.path().join("cold.0"), "cold.0", 10);
 
-    let fd = cacher.open_file(&dir.path().join("cold.0")).unwrap();
+    let fd = CachedSlice::<u8>::open(&cacher, &dir.path().join("cold.0")).unwrap();
 
     eprintln!(
         "data0: {}",
-        fancy_decode(&fd.get_range::<u8>(BLOCK_SIZE * 3..BLOCK_SIZE * 3))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 3))
     );
 
     eprintln!(
         "data0a: {}",
-        fancy_decode(&fd.get_range::<u8>(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14))
     );
 
     eprintln!(
         "data1: {}",
-        fancy_decode(&fd.get_range::<u8>(BLOCK_SIZE * 3..BLOCK_SIZE * 4 - 1))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 - 1))
     );
 
     eprintln!(
         "data2: {}",
-        fancy_decode(&fd.get_range::<u8>(BLOCK_SIZE * 3..BLOCK_SIZE * 4))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4))
     );
 
     eprintln!(
         "data3: {}",
-        fancy_decode(&fd.get_range::<u8>(BLOCK_SIZE * 3..BLOCK_SIZE * 4 + 1))
+        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 + 1))
     );
 }
 
@@ -111,13 +110,12 @@ fn test_cached_slice_vectors_sequential() {
     write_vectors_to_file(&vectors_path, &vectors);
 
     // Use a cache smaller than the file to exercise eviction.
-    // File size = 2000 * 512 * 4 = 4,096,000 bytes = 1000 blocks.
+    // File size = 2000 * 500 * 4 = 4,000,000 bytes ≈ 244 blocks.
     // Cache = 128 blocks forces many evictions.
     let cacher =
         CacheController::new(&dir.path().join("cache.bin"), BLOCK_SIZE as u64 * 128).unwrap();
 
-    let cached_file = cacher.open_file(&vectors_path).unwrap();
-    let cached_slice: CachedSlice<f32> = CachedSlice::new(cached_file);
+    let cached_slice = CachedSlice::<f32>::open(&cacher, &vectors_path).unwrap();
 
     // Verify total length matches.
     assert_eq!(cached_slice.len(), TOTAL_FLOATS);
@@ -161,8 +159,7 @@ fn test_cached_slice_vectors_random_access() {
     let cacher =
         CacheController::new(&dir.path().join("cache.bin"), BLOCK_SIZE as u64 * 64).unwrap();
 
-    let cached_file = cacher.open_file(&vectors_path).unwrap();
-    let cached_slice: CachedSlice<f32> = CachedSlice::new(cached_file);
+    let cached_slice = CachedSlice::<f32>::open(&cacher, &vectors_path).unwrap();
 
     let mut rng = StdRng::seed_from_u64(123);
 
@@ -176,7 +173,7 @@ fn test_cached_slice_vectors_random_access() {
         );
     }
 
-    // Random vector access (full 512-dim vectors at random positions).
+    // Random vector access (full 500-dim vectors at random positions).
     for _ in 0..1000 {
         let vec_idx = rng.random_range(0..NUM_VECTORS);
         let start = vec_idx * VECTOR_DIM;
@@ -206,9 +203,9 @@ fn test_cached_slice_vectors_random_access() {
     }
 }
 
-/// Same bug under concurrent access: multiple threads exhaust the pool faster.
+/// Concurrent access test: multiple threads exhaust the pool faster.
 ///
-/// With a small cache (blocks < CACHE_CAPACITY_SAFETY_MARGIN), the cache
+/// With a small cache (blocks < UNUSED_BLOCKS_MARGIN), the cache
 /// never evicts, so concurrent threads each consume blocks from the pool
 /// with no blocks being returned. The pool empties quickly.
 #[test]
@@ -232,13 +229,11 @@ fn test_no_more_blocks_concurrent_exhaustion() {
         .map(|i| {
             let path = dir.path().join(format!("cold.{i}"));
             create_test_file(&path, &format!("cold.{i}"), blocks_per_file);
-            Arc::new(cacher.open_file(&path).unwrap())
+            Arc::new(CachedSlice::<u8>::open(&cacher, &path).unwrap())
         })
         .collect();
 
     // Total unique blocks = 8 * 8 = 64, far exceeding the 16 cache blocks.
-    // With no evictions (due to capacity underflow), the pool drains after
-    // 16 unique misses.
     let barrier = Arc::new(std::sync::Barrier::new(num_files));
 
     let handles: Vec<_> = (0..num_files)
@@ -248,7 +243,7 @@ fn test_no_more_blocks_concurrent_exhaustion() {
             std::thread::spawn(move || {
                 barrier.wait();
                 for block in 0..blocks_per_file {
-                    fd.get_range::<u8>(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE);
+                    fd.get_range(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE);
                 }
             })
         })
