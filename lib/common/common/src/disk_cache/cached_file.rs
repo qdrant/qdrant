@@ -1,6 +1,7 @@
 #![allow(dead_code)] // for now
 
 use std::borrow::Cow;
+use std::mem;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -33,28 +34,44 @@ impl CachedFile {
         blocks_for_range_in_file(self.file_id, bytes_range)
     }
 
-    /// Get a Cow reference to the range of bytes within the file.
+    /// Get a Cow reference to a range of elements within the file.
     ///
-    /// If the range is contained in a single block, it will return a borrowed reference to the block.
-    /// Otherwise, it will allocate a Vec with `capacity == len`.
-    pub fn get_range(&self, range: Range<usize>) -> Cow<'_, [u8]> {
-        let total_len = range.end - range.start;
-        let mut blocks_iter = self.blocks_for(range);
+    /// The `range` is in **elements of T**, not bytes. For `T = u8` this is
+    /// equivalent to a byte range.
+    ///
+    /// If the range is contained in a single block, it will return a borrowed
+    /// reference into the mmap. Otherwise, it will allocate a `Vec<T>` and copy
+    /// block data into it. Allocating as `Vec<T>` (rather than `Vec<u8>`)
+    /// guarantees correct alignment for any `T`.
+    pub fn get_range<T: bytemuck::Pod>(&self, range: Range<usize>) -> Cow<'_, [T]> {
+        let t_size = mem::size_of::<T>();
+        debug_assert!(t_size != 0, "cannot use zero-sized type");
+
+        let byte_range = range.start * t_size..range.end * t_size;
+        let total_elements = range.end - range.start;
+        let mut blocks_iter = self.blocks_for(byte_range);
 
         // TODO(perf): if blocks are consecutive in the big cache file, we can still return without allocating.
         if blocks_iter.len() == 1 {
-            // single value case, just return the reference
             let req = blocks_iter.next().expect("We just checked len() == 1");
             let slice = self
                 .controller
                 .get_from_cache(req)
                 .expect("TODO: Reading or writing error");
 
-            return slice;
+            return match slice {
+                Cow::Borrowed(bytes) => Cow::Borrowed(bytemuck::cast_slice(bytes)),
+                Cow::Owned(vec_u8) => {
+                    let mut vec_t = vec![T::zeroed(); vec_u8.len() / t_size];
+                    bytemuck::cast_slice_mut::<T, u8>(&mut vec_t).copy_from_slice(&vec_u8);
+                    Cow::Owned(vec_t)
+                }
+            };
         }
 
-        // multi-block case: allocate exactly `total_len` bytes
-        let mut result = vec![0; total_len];
+        // Multi-block: allocate Vec<T> directly for correct alignment.
+        let mut result = vec![T::zeroed(); total_elements];
+        let result_bytes = bytemuck::cast_slice_mut::<T, u8>(&mut result);
         let mut copied = 0;
         for req in blocks_iter {
             let slice = self
@@ -62,7 +79,7 @@ impl CachedFile {
                 .get_from_cache(req)
                 .expect("TODO: Reading or writing error");
             let end = copied + slice.len();
-            result[copied..end].copy_from_slice(&slice);
+            result_bytes[copied..end].copy_from_slice(&slice);
             copied = end;
         }
         Cow::Owned(result)
