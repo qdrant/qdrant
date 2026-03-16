@@ -10,15 +10,8 @@ pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<P
         .unwrap_or_default();
 
     let mut results = Vec::new();
-    let entries = fs_err::read_dir(dir).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            UniversalIoError::NotFound {
-                path: dir.to_path_buf(),
-            }
-        } else {
-            UniversalIoError::from(e)
-        }
-    })?;
+    let entries =
+        fs_err::read_dir(dir).map_err(|err| UniversalIoError::extract_not_found(err, dir))?;
 
     for entry in entries {
         let entry = entry?;

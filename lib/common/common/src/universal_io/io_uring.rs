@@ -75,7 +75,8 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
             .read(true)
             .write(true)
             .create(false)
-            .open(path.as_ref())?; // TODO: Return `UniversalIoError::NotFound`?
+            .open(path.as_ref())
+            .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
 
         let file = Self {
             file: Arc::new(file),

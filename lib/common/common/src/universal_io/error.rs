@@ -29,6 +29,15 @@ pub enum UniversalIoError {
     InvalidFileIndex { file_index: usize, files: usize },
 }
 
+impl UniversalIoError {
+    pub fn extract_not_found(err: io::Error, path: impl Into<PathBuf>) -> Self {
+        match err.kind() {
+            io::ErrorKind::NotFound => Self::NotFound { path: path.into() },
+            _ => Self::Io(err),
+        }
+    }
+}
+
 impl From<serde_json::Error> for UniversalIoError {
     fn from(err: serde_json::Error) -> Self {
         Self::from(io::Error::from(err))
