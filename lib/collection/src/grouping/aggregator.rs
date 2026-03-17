@@ -2,6 +2,10 @@ use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 
 use ahash::{AHashMap, AHashSet};
+
+/// Cap allocation sizes to prevent hash table capacity overflow when user-supplied
+/// limit/group_size are very large (e.g. u64::MAX). See issue #8406.
+const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
 use itertools::Itertools;
 use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
@@ -30,14 +34,18 @@ impl GroupsAggregator {
         grouped_by: JsonPath,
         order: Option<Order>,
     ) -> Self {
+        let groups_cap = groups.min(LARGEST_REASONABLE_ALLOCATION_SIZE);
+        let all_ids_cap = groups
+            .saturating_mul(group_size)
+            .min(LARGEST_REASONABLE_ALLOCATION_SIZE);
         Self {
-            groups: AHashMap::with_capacity(groups),
+            groups: AHashMap::with_capacity(groups_cap),
             max_group_size: group_size,
             grouped_by,
             max_groups: groups,
-            full_groups: AHashSet::with_capacity(groups),
-            group_best_scores: AHashMap::with_capacity(groups),
-            all_ids: AHashSet::with_capacity(groups * group_size),
+            full_groups: AHashSet::with_capacity(groups_cap),
+            group_best_scores: AHashMap::with_capacity(groups_cap),
+            all_ids: AHashSet::with_capacity(all_ids_cap),
             order,
         }
     }
@@ -71,7 +79,11 @@ impl GroupsAggregator {
             let group = self
                 .groups
                 .entry(group_key.clone())
-                .or_insert_with(|| AHashMap::with_capacity(self.max_group_size));
+                .or_insert_with(|| {
+                    AHashMap::with_capacity(
+                        self.max_group_size.min(LARGEST_REASONABLE_ALLOCATION_SIZE),
+                    )
+                });
 
             let entry = group.entry(point.id);
 
@@ -227,6 +239,18 @@ mod unit_tests {
             shard_key: None,
             order_value: None,
         }
+    }
+
+    /// Regression test for #8406: large limit/group_size must not cause hash table
+    /// capacity overflow panic. GroupsAggregator caps allocation sizes internally.
+    #[test]
+    fn test_large_groups_and_group_size_do_not_panic() {
+        let _ = GroupsAggregator::new(
+            usize::MAX,
+            usize::MAX,
+            "docId".parse().unwrap(),
+            Some(Order::LargeBetter),
+        );
     }
 
     #[test]
