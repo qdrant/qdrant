@@ -168,7 +168,7 @@ impl UpdateWorkers {
                         .await;
                         // Waiting for deferred points should never error out as it would mark the shard as dead
                         if let Err(wait_result) = wait_result {
-                            log::warn!("Failed to await for optimizers: {wait_result}");
+                            log::warn!("Failed to await for deferred points: {wait_result}");
                             UpdateStatus::WaitTimeout // ToDo: Consider special status
                         } else {
                             UpdateStatus::Completed
