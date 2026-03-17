@@ -10,6 +10,8 @@ use crate::operations::universal_query::shard_query::ShardQueryRequest;
 pub(super) enum AggregatorError {
     BadKeyType,
     KeyNotFound,
+    GroupsLimitExceeded { limit: usize },
+    GroupSizeLimitExceeded { limit: usize },
 }
 #[derive(Debug, Clone)]
 pub(super) struct Group {

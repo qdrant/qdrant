@@ -152,7 +152,8 @@ impl QueryGroupRequest {
         let mut request = self.source.clone();
 
         // Adjust limit to fetch enough points to fill groups
-        request.limit = self.groups * self.group_size;
+        // Use saturating multiplication to prevent overflow (limits are validated in GroupsAggregator::new)
+        request.limit = self.groups.saturating_mul(self.group_size);
         request.prefetches.iter_mut().for_each(|prefetch| {
             increase_limit_for_group(prefetch, self.group_size);
         });
@@ -325,7 +326,18 @@ pub async fn group_by(
         request.group_size,
         request.group_by.clone(),
         score_ordering,
-    );
+    )
+    .map_err(|e| match e {
+        AggregatorError::GroupsLimitExceeded { limit } => CollectionError::bad_request(format!(
+            "Groups limit exceeded: maximum allowed is {}",
+            limit
+        )),
+        AggregatorError::GroupSizeLimitExceeded { limit } => CollectionError::bad_request(format!(
+            "Group size limit exceeded: maximum allowed is {}",
+            limit
+        )),
+        _ => CollectionError::bad_request("Invalid group request".to_string()),
+    })?;
 
     // Try to complete amount of groups
     let mut needs_filling = true;
@@ -544,7 +556,7 @@ fn values_to_any_variants(values: &[Value]) -> Vec<AnyVariants> {
 }
 
 fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {
-    shard_prefetch.limit *= group_size;
+    shard_prefetch.limit = shard_prefetch.limit.saturating_mul(group_size);
     shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
         increase_limit_for_group(prefetch, group_size);
     });

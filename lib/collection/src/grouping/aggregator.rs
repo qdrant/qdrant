@@ -23,23 +23,39 @@ pub(super) struct GroupsAggregator {
     order: Option<Order>,
 }
 
+/// Maximum number of groups allowed to prevent memory overflow
+pub const MAX_GROUPS: usize = 1_000_000;
+/// Maximum group size allowed to prevent memory overflow
+pub const MAX_GROUP_SIZE: usize = 1_000_000;
+
 impl GroupsAggregator {
     pub(super) fn new(
         groups: usize,
         group_size: usize,
         grouped_by: JsonPath,
         order: Option<Order>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, AggregatorError> {
+        // Validate limits to prevent memory overflow
+        if groups > MAX_GROUPS {
+            return Err(AggregatorError::GroupsLimitExceeded { limit: MAX_GROUPS });
+        }
+        if group_size > MAX_GROUP_SIZE {
+            return Err(AggregatorError::GroupSizeLimitExceeded { limit: MAX_GROUP_SIZE });
+        }
+
+        // Use saturating multiplication to prevent overflow
+        let all_ids_capacity = groups.saturating_mul(group_size);
+
+        Ok(Self {
             groups: AHashMap::with_capacity(groups),
             max_group_size: group_size,
             grouped_by,
             max_groups: groups,
             full_groups: AHashSet::with_capacity(groups),
             group_best_scores: AHashMap::with_capacity(groups),
-            all_ids: AHashSet::with_capacity(groups * group_size),
+            all_ids: AHashSet::with_capacity(all_ids_capacity.min(MAX_GROUPS * MAX_GROUP_SIZE)),
             order,
-        }
+        })
     }
 
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
@@ -238,7 +254,7 @@ mod unit_tests {
         ];
 
         let mut aggregator =
-            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter));
+            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter)).unwrap();
         for point in &scored_points {
             aggregator.add_point(point).unwrap();
         }
@@ -285,7 +301,7 @@ mod unit_tests {
     #[test]
     fn it_adds_single_points() {
         let mut aggregator =
-            GroupsAggregator::new(4, 3, "docId".parse().unwrap(), Some(Order::LargeBetter));
+            GroupsAggregator::new(4, 3, "docId".parse().unwrap(), Some(Order::LargeBetter)).unwrap();
 
         // cases
         #[rustfmt::skip]
@@ -389,7 +405,7 @@ mod unit_tests {
     #[test]
     fn test_aggregate_less_groups() {
         let mut aggregator =
-            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter));
+            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter)).unwrap();
 
         // cases
         [
