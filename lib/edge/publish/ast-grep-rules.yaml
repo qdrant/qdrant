@@ -40,6 +40,17 @@ rule:
         - precedes: { kind: type_identifier, stopBy: end }
         - precedes: { kind: use_list,        stopBy: end }
 fix: crate::$MOD
+---
+id: inner-deps-global
+language: rust
+rule:
+  pattern: ::$MOD
+  kind: scoped_identifier
+  has:
+    kind: identifier
+    regex: ^(%DEPS%)$
+    stopBy: end
+fix: crate::$MOD
 
 # Remove `Anonymize` derives.
 # Before: `#[derive(Debug, Anonymize)]`

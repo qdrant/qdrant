@@ -15,12 +15,12 @@ use super::optimizers::EdgeOptimizersConfig;
 use super::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
 /// File name for the persisted edge shard config.
-pub const EDGE_CONFIG_FILE: &str = "edge_config.json";
+pub(crate) const EDGE_CONFIG_FILE: &str = "edge_config.json";
 
 /// Full configuration for an edge shard.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct EdgeShardConfig {
+pub struct EdgeConfig {
     /// If true, payload is stored on disk (mmap); otherwise in RAM. Same as `CollectionParams::on_disk_payload`.
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
@@ -45,7 +45,7 @@ fn default_on_disk_payload() -> bool {
     true
 }
 
-impl Default for EdgeShardConfig {
+impl Default for EdgeConfig {
     fn default() -> Self {
         Self {
             on_disk_payload: default_on_disk_payload(),
@@ -58,7 +58,7 @@ impl Default for EdgeShardConfig {
     }
 }
 
-impl EdgeShardConfig {
+impl EdgeConfig {
     /// Build from existing segment config. Fills all parameters that can be inferred.
     pub fn from_segment_config(segment: &SegmentConfig) -> Self {
         let SegmentConfig {

@@ -2201,6 +2201,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shard",
+ "sparse",
  "tempfile",
  "uuid",
  "wal",
