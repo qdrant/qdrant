@@ -13,8 +13,7 @@ mod tests {
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
-    use segment::entry::SegmentEntry as _;
-    use segment::entry::entry_point::SearchSegmentEntry as _;
+    use segment::entry::{SearchSegmentEntry as _, SegmentEntry as _};
     use segment::id_tracker::IdTracker;
     use segment::index::VectorIndex;
     use segment::payload_json;
