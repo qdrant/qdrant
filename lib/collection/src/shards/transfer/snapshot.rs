@@ -219,14 +219,14 @@ pub(super) async fn transfer_snapshot(
         let snapshot_temp_path = shard_holder_read
             .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
             .await
-            .map(TempPath::from_path)
             .map_err(|err| {
                 CollectionError::service_error(format!(
                     "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
                 ))
             })?;
+        let snapshot_temp_path = TempPath::try_from_path(snapshot_temp_path)?;
         let snapshot_checksum_temp_path =
-            TempPath::from_path(get_checksum_path(&snapshot_temp_path));
+            TempPath::try_from_path(get_checksum_path(&snapshot_temp_path))?;
         snapshot_temp_paths.push(snapshot_temp_path);
         snapshot_temp_paths.push(snapshot_checksum_temp_path);
 
