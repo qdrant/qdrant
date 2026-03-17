@@ -149,7 +149,6 @@ pub fn init(
             .layer(logging::LoggingMiddlewareLayer::new())
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
-                settings.service.record_per_collection.unwrap_or(false),
             ))
             .option_layer({
                 AuthKeys::try_create(
@@ -264,7 +263,6 @@ pub fn init_internal(
                 .layer(logging::LoggingMiddlewareLayer::new())
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     tonic_telemetry_collector,
-                    record_per_collection,
                 ))
                 .into_inner();
 

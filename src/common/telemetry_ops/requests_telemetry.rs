@@ -42,8 +42,6 @@ pub struct GrpcTelemetry {
 
 pub struct ActixTelemetryCollector {
     pub workers: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
-    /// Cardinality limit for per-collection metrics. `None` = unlimited.
-    pub max_per_collection: Option<usize>,
 }
 
 #[derive(Default)]
@@ -51,14 +49,10 @@ pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     /// collection_name -> method -> status_code -> aggregator
     per_collection_methods: PerCollectionAggregators<HttpStatusCode>,
-    /// Cardinality limit inherited from collector.
-    max_per_collection: Option<usize>,
 }
 
 pub struct TonicTelemetryCollector {
     pub workers: Vec<Arc<Mutex<TonicWorkerTelemetryCollector>>>,
-    /// Cardinality limit for per-collection metrics. `None` = unlimited.
-    pub max_per_collection: Option<usize>,
 }
 
 #[derive(Default)]
@@ -66,16 +60,11 @@ pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     /// collection_name -> method -> status_code -> aggregator
     per_collection_methods: PerCollectionAggregators<GrpcStatusCode>,
-    /// Cardinality limit inherited from collector.
-    max_per_collection: Option<usize>,
 }
 
 impl ActixTelemetryCollector {
     pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<ActixWorkerTelemetryCollector>> {
-        let worker = Arc::new(Mutex::new(ActixWorkerTelemetryCollector {
-            max_per_collection: self.max_per_collection,
-            ..Default::default()
-        }));
+        let worker = Arc::new(Mutex::new(ActixWorkerTelemetryCollector::default()));
         self.workers.push(worker.clone());
         worker
     }
@@ -92,10 +81,7 @@ impl ActixTelemetryCollector {
 
 impl TonicTelemetryCollector {
     pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<TonicWorkerTelemetryCollector>> {
-        let worker = Arc::new(Mutex::new(TonicWorkerTelemetryCollector {
-            max_per_collection: self.max_per_collection,
-            ..Default::default()
-        }));
+        let worker = Arc::new(Mutex::new(TonicWorkerTelemetryCollector::default()));
         self.workers.push(worker.clone());
         worker
     }
@@ -127,13 +113,6 @@ impl TonicWorkerTelemetryCollector {
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
 
         if let Some(collection) = collection_name {
-            // Enforce cardinality limit: skip new collections over the cap
-            if let Some(max) = self.max_per_collection
-                && self.per_collection_methods.len() >= max
-                && !self.per_collection_methods.contains_key(&collection)
-            {
-                return;
-            }
             let aggregator = self
                 .per_collection_methods
                 .entry(collection)
@@ -156,18 +135,24 @@ impl TonicWorkerTelemetryCollector {
             responses.insert(method.clone(), status_codes_map);
         }
 
-        let mut per_collection_responses = HashMap::new();
-        for (collection, methods) in &self.per_collection_methods {
-            let mut methods_map = HashMap::new();
-            for (method, status_codes) in methods {
-                let mut status_codes_map = HashMap::new();
-                for (status_code, aggregator) in status_codes {
-                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+        let per_collection_responses = if detail.per_collection {
+            let mut per_collection_responses = HashMap::new();
+            for (collection, methods) in &self.per_collection_methods {
+                let mut methods_map = HashMap::new();
+                for (method, status_codes) in methods {
+                    let mut status_codes_map = HashMap::new();
+                    for (status_code, aggregator) in status_codes {
+                        status_codes_map
+                            .insert(*status_code, aggregator.lock().get_statistics(detail));
+                    }
+                    methods_map.insert(method.clone(), status_codes_map);
                 }
-                methods_map.insert(method.clone(), status_codes_map);
+                per_collection_responses.insert(collection.clone(), methods_map);
             }
-            per_collection_responses.insert(collection.clone(), methods_map);
-        }
+            per_collection_responses
+        } else {
+            HashMap::new()
+        };
 
         GrpcTelemetry {
             responses,
@@ -193,13 +178,6 @@ impl ActixWorkerTelemetryCollector {
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
 
         if let Some(collection) = collection_name {
-            // Enforce cardinality limit: skip new collections over the cap
-            if let Some(max) = self.max_per_collection
-                && self.per_collection_methods.len() >= max
-                && !self.per_collection_methods.contains_key(&collection)
-            {
-                return;
-            }
             let aggregator = self
                 .per_collection_methods
                 .entry(collection)
@@ -222,18 +200,24 @@ impl ActixWorkerTelemetryCollector {
             responses.insert(method.clone(), status_codes_map);
         }
 
-        let mut per_collection_responses = HashMap::new();
-        for (collection, methods) in &self.per_collection_methods {
-            let mut methods_map = HashMap::new();
-            for (method, status_codes) in methods {
-                let mut status_codes_map = HashMap::new();
-                for (status_code, aggregator) in status_codes {
-                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+        let per_collection_responses = if detail.per_collection {
+            let mut per_collection_responses = HashMap::new();
+            for (collection, methods) in &self.per_collection_methods {
+                let mut methods_map = HashMap::new();
+                for (method, status_codes) in methods {
+                    let mut status_codes_map = HashMap::new();
+                    for (status_code, aggregator) in status_codes {
+                        status_codes_map
+                            .insert(*status_code, aggregator.lock().get_statistics(detail));
+                    }
+                    methods_map.insert(method.clone(), status_codes_map);
                 }
-                methods_map.insert(method.clone(), status_codes_map);
+                per_collection_responses.insert(collection.clone(), methods_map);
             }
-            per_collection_responses.insert(collection.clone(), methods_map);
-        }
+            per_collection_responses
+        } else {
+            HashMap::new()
+        };
 
         WebApiTelemetry {
             responses,
@@ -353,10 +337,18 @@ impl Anonymize for GrpcTelemetry {
 
 #[cfg(test)]
 mod tests {
-    use common::types::TelemetryDetail;
+    use common::types::{DetailsLevel, TelemetryDetail};
     use segment::common::anonymize::Anonymize;
 
     use super::*;
+
+    fn detail_with_per_collection() -> TelemetryDetail {
+        TelemetryDetail {
+            level: DetailsLevel::Level0,
+            histograms: false,
+            per_collection: true,
+        }
+    }
 
     // Helper: actix add_response signature is (method, status_code, instant, collection)
     fn actix_add(
@@ -378,7 +370,7 @@ mod tests {
         let mut worker = ActixWorkerTelemetryCollector::default();
         actix_add(&mut worker, "GET /collections/{name}/points", 200, None);
 
-        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
+        let telemetry = worker.get_telemetry_data(detail_with_per_collection());
         assert_eq!(telemetry.responses.len(), 1);
         assert!(telemetry.per_collection_responses.is_empty());
     }
@@ -393,7 +385,7 @@ mod tests {
             Some("my_collection"),
         );
 
-        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
+        let telemetry = worker.get_telemetry_data(detail_with_per_collection());
 
         // Global should still be populated
         assert_eq!(telemetry.responses.len(), 1);
@@ -410,6 +402,22 @@ mod tests {
     }
 
     #[test]
+    fn test_actix_per_collection_hidden_by_default() {
+        let mut worker = ActixWorkerTelemetryCollector::default();
+        actix_add(
+            &mut worker,
+            "POST /collections/{name}/points/search",
+            200,
+            Some("my_collection"),
+        );
+
+        // Default detail has per_collection=false, so per_collection_responses should be empty
+        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
+        assert_eq!(telemetry.responses.len(), 1);
+        assert!(telemetry.per_collection_responses.is_empty());
+    }
+
+    #[test]
     fn test_actix_multiple_collections() {
         let mut worker = ActixWorkerTelemetryCollector::default();
         let method = "POST /collections/{name}/points/search";
@@ -418,7 +426,7 @@ mod tests {
         actix_add(&mut worker, method, 200, Some("col_b"));
         actix_add(&mut worker, method, 200, Some("col_a"));
 
-        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
+        let telemetry = worker.get_telemetry_data(detail_with_per_collection());
 
         // Global: 3 total requests
         let global_stats = &telemetry.responses[method][&200];
@@ -446,7 +454,7 @@ mod tests {
             Some("my_collection".into()),
         );
 
-        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
+        let telemetry = worker.get_telemetry_data(detail_with_per_collection());
 
         assert_eq!(telemetry.responses.len(), 1);
         assert_eq!(telemetry.per_collection_responses.len(), 1);
@@ -467,8 +475,9 @@ mod tests {
         actix_add(&mut worker2, method, 200, Some("col_a"));
         actix_add(&mut worker2, method, 200, Some("col_b"));
 
-        let t1 = worker1.get_telemetry_data(TelemetryDetail::default());
-        let t2 = worker2.get_telemetry_data(TelemetryDetail::default());
+        let detail = detail_with_per_collection();
+        let t1 = worker1.get_telemetry_data(detail);
+        let t2 = worker2.get_telemetry_data(detail);
 
         let mut merged = WebApiTelemetry::default();
         merged.merge(&t1);
@@ -492,7 +501,6 @@ mod tests {
     fn test_collector_merges_workers() {
         let mut collector = ActixTelemetryCollector {
             workers: vec![],
-            max_per_collection: None,
         };
         let w1 = collector.create_web_worker_telemetry();
         let w2 = collector.create_web_worker_telemetry();
@@ -511,7 +519,7 @@ mod tests {
             Some("col_a".into()),
         );
 
-        let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
+        let telemetry = collector.get_telemetry_data(detail_with_per_collection());
         assert_eq!(telemetry.responses[method][&200].count, 2);
         assert_eq!(
             telemetry.per_collection_responses["col_a"][method][&200].count,
@@ -529,7 +537,7 @@ mod tests {
             Some("secret_collection"),
         );
 
-        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
+        let telemetry = worker.get_telemetry_data(detail_with_per_collection());
         assert!(!telemetry.per_collection_responses.is_empty());
 
         let anonymized = telemetry.anonymize();
@@ -539,76 +547,15 @@ mod tests {
     }
 
     #[test]
-    fn test_cardinality_limit_actix() {
-        let mut worker = ActixWorkerTelemetryCollector {
-            max_per_collection: Some(2),
-            ..Default::default()
-        };
-        let method = "POST /collections/{name}/points/search";
-
-        actix_add(&mut worker, method, 200, Some("col_a"));
-        actix_add(&mut worker, method, 200, Some("col_b"));
-        // col_c exceeds the limit of 2, should be silently ignored
-        actix_add(&mut worker, method, 200, Some("col_c"));
-        // col_a is already tracked, should still be recorded
-        actix_add(&mut worker, method, 200, Some("col_a"));
-
-        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
-
-        // Global: all 4 requests recorded
-        assert_eq!(telemetry.responses[method][&200].count, 4);
-
-        // Per-collection: only col_a (2) and col_b (1); col_c dropped
-        assert_eq!(telemetry.per_collection_responses.len(), 2);
-        assert_eq!(
-            telemetry.per_collection_responses["col_a"][method][&200].count,
-            2
-        );
-        assert_eq!(
-            telemetry.per_collection_responses["col_b"][method][&200].count,
-            1
-        );
-        assert!(!telemetry.per_collection_responses.contains_key("col_c"));
-    }
-
-    #[test]
-    fn test_cardinality_limit_tonic() {
-        let mut worker = TonicWorkerTelemetryCollector {
-            max_per_collection: Some(1),
-            ..Default::default()
-        };
-
-        worker.add_response(
-            "/qdrant.Points/Search".into(),
-            std::time::Instant::now(),
-            0,
-            Some("col_a".into()),
-        );
-        worker.add_response(
-            "/qdrant.Points/Search".into(),
-            std::time::Instant::now(),
-            0,
-            Some("col_b".into()),
-        );
-
-        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
-
-        // Only col_a tracked; col_b over limit
-        assert_eq!(telemetry.per_collection_responses.len(), 1);
-        assert!(telemetry.per_collection_responses.contains_key("col_a"));
-        assert!(!telemetry.per_collection_responses.contains_key("col_b"));
-    }
-
-    #[test]
-    fn test_no_limit_when_none() {
-        let mut worker = ActixWorkerTelemetryCollector::default(); // max_per_collection = None
+    fn test_all_collections_tracked() {
+        let mut worker = ActixWorkerTelemetryCollector::default();
         let method = "POST /collections/{name}/points/search";
 
         for i in 0..500 {
             actix_add(&mut worker, method, 200, Some(&format!("col_{i}")));
         }
 
-        let telemetry = worker.get_telemetry_data(TelemetryDetail::default());
+        let telemetry = worker.get_telemetry_data(detail_with_per_collection());
         assert_eq!(telemetry.per_collection_responses.len(), 500);
     }
 }

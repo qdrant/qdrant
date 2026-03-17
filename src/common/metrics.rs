@@ -644,12 +644,9 @@ impl MetricsProvider for RequestsTelemetry {
 
 impl MetricsProvider for WebApiTelemetry {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
-        // Mode decision: when `per_collection_responses` is populated, we render
-        // per-collection metrics with a `collection` label and skip global ones.
-        // This is safe because all whitelisted REST endpoints contain `{name}`,
-        // so any whitelisted request with `record_per_collection` enabled will
-        // produce a collection entry.  At startup (no requests yet) both maps
-        // are empty and nothing is emitted — which matches the current behavior.
+        // Mode decision: when `per_collection_responses` is populated (i.e. per_collection
+        // was requested via query parameter), we render per-collection metrics with a
+        // `collection` label and skip global ones.
         if self.per_collection_responses.is_empty() {
             // Global mode: render global metrics as before
             let mut builder = OperationDurationMetricsBuilder::default();

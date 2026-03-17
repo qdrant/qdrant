@@ -27,7 +27,7 @@ def test_metrics():
 
 
 def test_metrics_default_no_per_collection(collection_name):
-    """By default (record_per_collection off), request metrics must NOT have a collection label."""
+    """By default (per_collection not requested), request metrics must NOT have a collection label."""
     # Make a request that hits a whitelisted endpoint so metrics are populated
     request_with_validation(
         api='/collections/{collection_name}/points/scroll',
@@ -59,6 +59,35 @@ def test_metrics_default_no_per_collection(collection_name):
             )
 
 
+def test_metrics_with_per_collection(collection_name):
+    """When per_collection=true is requested, request metrics must have a collection label."""
+    # Make a request that hits a whitelisted endpoint so metrics are populated
+    request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={"limit": 1},
+    )
+
+    response = request_with_validation(
+        api='/metrics',
+        method="GET",
+        query_params={'per_collection': 'true'},
+    )
+    assert response.ok
+
+    # Per-collection mode: collection label should appear
+    found_per_collection = False
+    for line in response.text.splitlines():
+        if line.startswith('#'):
+            continue
+        if 'rest_responses_' in line and f'collection="{collection_name}"' in line:
+            found_per_collection = True
+            break
+
+    assert found_per_collection, "Per-collection label not found when per_collection=true"
+
+
 def test_telemetry():
     response = request_with_validation(
         api='/telemetry',
@@ -76,11 +105,11 @@ def test_telemetry():
 
     assert 'avg_duration_micros' in endpoint['200']
 
-    # By default, per_collection_responses should be absent (empty maps are skipped)
+    # By default, per_collection_responses should be absent (per_collection not requested)
     assert 'per_collection_responses' not in result['requests']['rest'], \
-        "per_collection_responses should not appear when record_per_collection is off"
+        "per_collection_responses should not appear when per_collection is not requested"
     assert 'per_collection_responses' not in result['requests']['grpc'], \
-        "per_collection_responses should not appear when record_per_collection is off"
+        "per_collection_responses should not appear when per_collection is not requested"
 
 
 @pytest.mark.parametrize("level", [0, 1, 2, 3, 10])

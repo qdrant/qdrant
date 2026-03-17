@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# This test checks that Qdrant exposes per-collection metrics when enabled.
-# Prerequisite: Qdrant must be running with `QDRANT_SERVICE__RECORD_PER_COLLECTION=true`.
+# This test checks that Qdrant exposes per-collection metrics when requested via query parameter.
 
 set -e
 
@@ -49,9 +48,9 @@ curl -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points/search" \
     }'
 
 
-# 4. Fetch metrics and verify
-echo "Fetching metrics..."
-METRICS=$(curl -s --fail "http://$QDRANT_HOST/metrics")
+# 4. Fetch metrics with per_collection=true and verify
+echo "Fetching per-collection metrics..."
+METRICS=$(curl -s --fail "http://$QDRANT_HOST/metrics?per_collection=true")
 
 echo "Verifying per-collection metrics..."
 
@@ -63,17 +62,16 @@ else
   exit 1
 fi
 
-# Check for existence of collection label in collection_points
-# Note: collection_points uses 'collection' label now (updated in metrics.rs)
-if echo "$METRICS" | grep -q "collection_points{.*collection=\"$COLLECTION_NAME\".*}"; then
-  echo "Found per-collection collection_points"
-else
-  echo "Failed to find per-collection collection_points"
-  # Fallback check if it still uses 'id' (debugging)
-  if echo "$METRICS" | grep -q "collection_points{.*id=\"$COLLECTION_NAME\".*}"; then
-     echo "Found collection_points with 'id' label instead of 'collection'"
-  fi
+# 5. Fetch default metrics (no per_collection) and verify global mode
+echo "Fetching default metrics..."
+DEFAULT_METRICS=$(curl -s --fail "http://$QDRANT_HOST/metrics")
+
+# In default mode, rest_responses should NOT have collection label
+if echo "$DEFAULT_METRICS" | grep -q 'rest_responses_total{.*collection='; then
+  echo "ERROR: Found per-collection label in default mode"
   exit 1
+else
+  echo "Default mode correctly shows global metrics (no collection label)"
 fi
 
 echo "All per-collection metrics verification passed!"
@@ -81,4 +79,3 @@ echo "All per-collection metrics verification passed!"
 # Cleanup
 echo "Cleaning up..."
 curl -X DELETE "http://$QDRANT_HOST/collections/$COLLECTION_NAME" -s
-

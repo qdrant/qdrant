@@ -33,6 +33,7 @@ use crate::tracing;
 pub struct TelemetryParam {
     pub anonymize: Option<bool>,
     pub details_level: Option<usize>,
+    pub per_collection: Option<bool>,
     #[validate(range(min = 1))]
     pub timeout: Option<u64>,
 }
@@ -58,6 +59,7 @@ fn telemetry(
         let detail = TelemetryDetail {
             level: details_level,
             histograms: false,
+            per_collection: params.per_collection.unwrap_or(false),
         };
         let telemetry_data = telemetry_collector
             .lock()
@@ -76,6 +78,7 @@ fn telemetry(
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct MetricsParam {
     pub anonymize: Option<bool>,
+    pub per_collection: Option<bool>,
     #[validate(range(min = 1))]
     pub timeout: Option<u64>,
 }
@@ -101,6 +104,7 @@ async fn metrics(
     }
 
     let anonymize = params.anonymize.unwrap_or(false);
+    let per_collection = params.per_collection.unwrap_or(false);
     let telemetry_data = telemetry_collector
         .lock()
         .await
@@ -109,6 +113,7 @@ async fn metrics(
             TelemetryDetail {
                 level: DetailsLevel::Level4,
                 histograms: true,
+                per_collection,
             },
             None,
             params.timeout(),

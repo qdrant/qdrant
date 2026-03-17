@@ -14,6 +14,7 @@ use super::telemetry::TelemetryCollector;
 const DETAIL: TelemetryDetail = TelemetryDetail {
     level: DetailsLevel::Level2,
     histograms: false,
+    per_collection: false,
 };
 const REPORTING_INTERVAL: Duration = Duration::from_secs(60 * 60); // One hour
 

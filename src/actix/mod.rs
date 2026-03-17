@@ -129,7 +129,6 @@ pub fn init(
                 )
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
                     actix_telemetry_collector.clone(),
-                    settings.service.record_per_collection.unwrap_or(false),
                 ))
                 .app_data(dispatcher_data.clone())
                 .app_data(telemetry_collector_data.clone())
