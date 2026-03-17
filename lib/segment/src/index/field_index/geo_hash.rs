@@ -31,7 +31,19 @@ use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 /// Meaning     s[0]  s[1]  s[2]  s[3]  s[4]  s[5]  s[6]  s[7]  s[8]  s[9]  s[10] s[11]  length
 /// ```
 #[repr(C)]
-#[derive(Default, Clone, Copy, Debug, PartialEq, Hash, Ord, PartialOrd, Eq)]
+#[derive(
+    Default,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Hash,
+    Ord,
+    PartialOrd,
+    Eq,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 pub struct GeoHash {
     packed: u64,
 }
