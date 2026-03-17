@@ -227,7 +227,7 @@ impl ImmutableGeoMapIndex {
                 .into_iter()
                 .map(|geo_point| encode_max_precision(geo_point.lon.0, geo_point.lat.0).unwrap())
                 .collect();
-            for removed_geo_hash in &removed_geo_hashes {
+            for &removed_geo_hash in &removed_geo_hashes {
                 index.decrement_hash_value_counts(removed_geo_hash);
             }
             index.decrement_hash_point_counts(&removed_geo_hashes);
@@ -328,22 +328,22 @@ impl ImmutableGeoMapIndex {
             .unwrap_or_default()
     }
 
-    pub fn points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)> {
+    pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
         self.counts_per_hash
             .iter()
-            .map(|counts| (&counts.hash, counts.points as usize))
+            .map(|counts| (counts.hash, counts.points as usize))
     }
 
-    pub fn points_of_hash(&self, hash: &GeoHash) -> usize {
-        if let Ok(index) = self.counts_per_hash.binary_search_by(|x| x.hash.cmp(hash)) {
+    pub fn points_of_hash(&self, hash: GeoHash) -> usize {
+        if let Ok(index) = self.counts_per_hash.binary_search_by(|x| x.hash.cmp(&hash)) {
             self.counts_per_hash[index].points as usize
         } else {
             0
         }
     }
 
-    pub fn values_of_hash(&self, hash: &GeoHash) -> usize {
-        if let Ok(index) = self.counts_per_hash.binary_search_by(|x| x.hash.cmp(hash)) {
+    pub fn values_of_hash(&self, hash: GeoHash) -> usize {
+        if let Ok(index) = self.counts_per_hash.binary_search_by(|x| x.hash.cmp(&hash)) {
             self.counts_per_hash[index].values as usize
         } else {
             0
@@ -385,7 +385,7 @@ impl ImmutableGeoMapIndex {
                 log::warn!("Geo index error: no points for hash {removed_geo_hash} were found");
             };
 
-            self.decrement_hash_value_counts(&removed_geo_hash);
+            self.decrement_hash_value_counts(removed_geo_hash);
         }
 
         self.decrement_hash_point_counts(&removed_geo_hashes);
@@ -405,7 +405,7 @@ impl ImmutableGeoMapIndex {
             .flat_map(|(_, points)| points.iter().copied())
     }
 
-    fn decrement_hash_value_counts(&mut self, geo_hash: &GeoHash) {
+    fn decrement_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
             if let Ok(index) = self

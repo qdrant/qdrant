@@ -303,7 +303,7 @@ impl MmapGeoMapIndex {
             .map(|counts| (counts.hash, counts.points as usize))
     }
 
-    pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+    pub fn points_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         hw_counter
@@ -317,7 +317,7 @@ impl MmapGeoMapIndex {
         if let Ok(index) = self
             .storage
             .counts_per_hash
-            .binary_search_by(|x| x.hash.cmp(hash))
+            .binary_search_by(|x| x.hash.cmp(&hash))
         {
             self.storage.counts_per_hash[index].points as usize
         } else {
@@ -325,7 +325,7 @@ impl MmapGeoMapIndex {
         }
     }
 
-    pub fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+    pub fn values_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         hw_counter
@@ -339,7 +339,7 @@ impl MmapGeoMapIndex {
         if let Ok(index) = self
             .storage
             .counts_per_hash
-            .binary_search_by(|x| x.hash.cmp(hash))
+            .binary_search_by(|x| x.hash.cmp(&hash))
         {
             self.storage.counts_per_hash[index].values as usize
         } else {

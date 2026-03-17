@@ -152,7 +152,7 @@ impl GeoMapIndex {
         }
     }
 
-    fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+    fn points_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.points_of_hash(hash),
             GeoMapIndex::Immutable(index) => index.points_of_hash(hash),
@@ -160,7 +160,7 @@ impl GeoMapIndex {
         }
     }
 
-    fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+    fn values_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.values_of_hash(hash),
             GeoMapIndex::Immutable(index) => index.values_of_hash(hash),
@@ -279,12 +279,12 @@ impl GeoMapIndex {
             return CardinalityEstimation::exact(0);
         };
 
-        let total_points = self.points_of_hash(&common_hash, hw_counter);
-        let total_values = self.values_of_hash(&common_hash, hw_counter);
+        let total_points = self.points_of_hash(common_hash, hw_counter);
+        let total_values = self.values_of_hash(common_hash, hw_counter);
 
         let (sum, maximum_per_hash) = values
             .iter()
-            .map(|region| self.points_of_hash(region, hw_counter))
+            .map(|&region| self.points_of_hash(region, hw_counter))
             .fold((0, 0), |(sum, maximum), count| {
                 (sum + count, max(maximum, count))
             });
@@ -362,12 +362,10 @@ impl GeoMapIndex {
         let mut large_regions = match self {
             GeoMapIndex::Mutable(index) => index
                 .points_per_hash()
-                .map(|(&hash, size)| (hash, size))
                 .filter(filter_condition)
                 .collect_vec(),
             GeoMapIndex::Immutable(index) => index
                 .points_per_hash()
-                .map(|(&hash, size)| (hash, size))
                 .filter(filter_condition)
                 .collect_vec(),
             GeoMapIndex::Mmap(index) => index
@@ -1234,7 +1232,7 @@ mod tests {
     fn test_payload_blocks(#[case] index_type: IndexType) {
         let (field_index, _, _) = build_random_index(1000, 5, index_type);
         let hw_counter = HardwareCounterCell::new();
-        let top_level_points = field_index.points_of_hash(&Default::default(), &hw_counter);
+        let top_level_points = field_index.points_of_hash(Default::default(), &hw_counter);
         assert_eq!(top_level_points, 1_000);
         let block_hashes = field_index.large_hashes(100).collect_vec();
         assert!(!block_hashes.is_empty());
@@ -1730,7 +1728,7 @@ mod tests {
                 index.max_values_per_point(),
             );
             let hw_counter = HardwareCounterCell::disposable();
-            for hash in &hashes {
+            for &hash in &hashes {
                 assert_eq!(
                     indices[0].points_of_hash(hash, &hw_counter),
                     index.points_of_hash(hash, &hw_counter),
