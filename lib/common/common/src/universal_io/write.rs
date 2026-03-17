@@ -19,14 +19,14 @@ pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
     where
         Self: Sized,
     {
-        let num_files = files.len();
+        let files_len = files.len();
 
         for (file_index, offset, data) in writes {
             let file = files
                 .get_mut(file_index)
                 .ok_or(UniversalIoError::InvalidFileIndex {
                     file_index,
-                    num_files,
+                    files: files_len,
                 })?;
 
             file.write(offset, data)?;
