@@ -159,7 +159,7 @@ impl Shard {
                     .await?,
             )),
             Shard::Dummy(dummy_shard) => {
-                return Err(dummy_shard.dummy_error());
+                return Err(dummy_shard.dummy_error("get_snapshot_creator"));
             }
         };
 
@@ -413,7 +413,7 @@ impl Shard {
                 None => return Ok(Vec::new()),
             },
 
-            Shard::Dummy(dummy) => return Err(dummy.dummy_error()),
+            Shard::Dummy(dummy) => return Err(dummy.dummy_error("get_wal_entries")),
         };
 
         Ok(local.get_wal_entries(count).await)
