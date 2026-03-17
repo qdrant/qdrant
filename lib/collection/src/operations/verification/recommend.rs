@@ -27,7 +27,9 @@ impl StrictModeVerification for RecommendRequestInternal {
 
 impl StrictModeVerification for RecommendGroupsRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.group_request.limit as usize * self.group_request.group_size as usize)
+        // Use checked_mul to prevent overflow with large limit/group_size values
+        (self.group_request.limit as usize)
+            .checked_mul(self.group_request.group_size as usize)
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {

@@ -260,7 +260,8 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
     }
 
     fn query_limit(&self) -> Option<usize> {
-        Some(self.limit * self.group_size)
+        // Use checked_mul to prevent overflow with large limit/group_size values
+        self.limit.checked_mul(self.group_size)
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {

@@ -30,14 +30,24 @@ impl GroupsAggregator {
         grouped_by: JsonPath,
         order: Option<Order>,
     ) -> Self {
+        // Cap individual capacities to prevent overflow and excessive allocation
+        const MAX_CAPACITY: usize = 10_000_000;
+        let groups_capacity = groups.min(MAX_CAPACITY);
+        
+        // Prevent overflow when calculating capacity for all_ids
+        let all_ids_capacity = groups
+            .checked_mul(group_size)
+            .map(|capacity| capacity.min(MAX_CAPACITY))
+            .unwrap_or(MAX_CAPACITY);
+
         Self {
-            groups: AHashMap::with_capacity(groups),
+            groups: AHashMap::with_capacity(groups_capacity),
             max_group_size: group_size,
             grouped_by,
             max_groups: groups,
-            full_groups: AHashSet::with_capacity(groups),
-            group_best_scores: AHashMap::with_capacity(groups),
-            all_ids: AHashSet::with_capacity(groups * group_size),
+            full_groups: AHashSet::with_capacity(groups_capacity),
+            group_best_scores: AHashMap::with_capacity(groups_capacity),
+            all_ids: AHashSet::with_capacity(all_ids_capacity),
             order,
         }
     }
@@ -452,5 +462,22 @@ mod unit_tests {
             let group_id_score: Vec<_> = group.hits.into_iter().map(|x| (x.id, x.score)).collect();
             assert_eq!(expected_id_score, group_id_score);
         }
+    }
+
+    #[test]
+    fn test_large_capacity_does_not_panic() {
+        // Test that creating an aggregator with very large values doesn't panic
+        // due to overflow in capacity calculation. This verifies the fix for
+        // https://github.com/qdrant/qdrant/issues/8406
+        let aggregator = GroupsAggregator::new(
+            usize::MAX,
+            usize::MAX,
+            "docId".parse().unwrap(),
+            Some(Order::LargeBetter),
+        );
+
+        // The aggregator should be created successfully with capped capacity
+        assert_eq!(aggregator.max_groups, usize::MAX);
+        assert_eq!(aggregator.max_group_size, usize::MAX);
     }
 }

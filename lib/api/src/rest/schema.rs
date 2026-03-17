@@ -1134,11 +1134,11 @@ pub struct BaseGroupRequest {
     pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 10000))]
     pub group_size: u32,
 
     /// Maximum amount of groups to return
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 100000))]
     pub limit: u32,
 
     /// Look for points in another collection using the group ids
@@ -1221,11 +1221,11 @@ pub struct QueryBaseGroupRequest {
     pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group. Default is 3.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 10000))]
     pub group_size: Option<usize>,
 
     /// Maximum amount of groups to return. Default is 10.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 100000))]
     pub limit: Option<usize>,
 
     /// Look for points in another collection using the group ids
