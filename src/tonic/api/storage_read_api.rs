@@ -159,14 +159,14 @@ fn validate_range(range: ElementsRange, data_length: u64) -> common::universal_i
         .ok_or(UniversalIoError::OutOfBounds {
             start: range.start,
             end: u64::MAX,
-            data_length: usize::try_from(data_length).unwrap_or(usize::MAX),
+            elements: usize::try_from(data_length).unwrap_or(usize::MAX),
         })?;
 
     if end > data_length {
         return Err(UniversalIoError::OutOfBounds {
             start: range.start,
             end,
-            data_length: usize::try_from(data_length).unwrap_or(usize::MAX),
+            elements: usize::try_from(data_length).unwrap_or(usize::MAX),
         });
     }
 
@@ -187,22 +187,21 @@ fn io_error_to_status(e: UniversalIoError) -> Status {
         UniversalIoError::OutOfBounds {
             start,
             end,
-            data_length,
+            elements,
         } => Status::out_of_range(format!(
-            "Range {start}..{end} out of bounds (size: {data_length})"
+            "Range {start}..{end} out of bounds (size: {elements})"
         )),
-        UniversalIoError::SerdeJson(e) => Status::internal(format!("Serialization error: {e}")),
         UniversalIoError::NotFound { path } => {
             Status::not_found(format!("File not found: {}", path.display()))
         }
         UniversalIoError::InvalidFileIndex {
             file_index,
-            num_files,
+            files,
         } => Status::internal(format!(
-            "Invalid file index: {file_index} (num_files: {num_files})"
+            "Invalid file index: {file_index} (num_files: {files})"
         )),
-        UniversalIoError::IoUringNotSupported(msg) => {
-            Status::internal(format!("IoUring not supported: {msg}"))
+        UniversalIoError::IoUringNotSupported(e) => {
+            Status::internal(format!("IoUring not supported: {e}"))
         }
     }
 }
