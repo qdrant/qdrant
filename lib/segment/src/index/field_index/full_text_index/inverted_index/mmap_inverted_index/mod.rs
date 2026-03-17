@@ -96,7 +96,7 @@ impl MmapInvertedIndex {
                 deleted_flags_count
                     .div_ceil(u8::BITS as usize)
                     .next_multiple_of(size_of::<u64>()),
-            );
+            )?;
 
             let mut deleted_storage =
                 MmapBitSlice::open(&deleted_points_path, OpenOptions::default())?;

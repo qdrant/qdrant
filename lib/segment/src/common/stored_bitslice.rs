@@ -69,6 +69,8 @@ impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
     }
 
     /// Derive the element position that contains this bit
+    ///
+    /// Example: bit_idx = 70 -> result 1 (70 / 64 = 1)
     #[inline(always)]
     fn element_idx(bit_idx: u64) -> u64 {
         // Bitvec's way of calculating the element idx.
@@ -77,8 +79,9 @@ impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
         bit_idx >> <BitStore as BitRegister>::INDX
     }
 
-    /// Assuming the element index is known, this returns the offset within this
-    /// element for the target bit.
+    /// This returns the offset within the target element to retrieve the target bit.
+    ///
+    /// Example: bit_idx = 70 -> result 6 (70 % 64 = 6)
     #[inline(always)]
     fn bit_within_element(bit_idx: u64) -> u8 {
         // Bitvec's way of calculating the bit within element
@@ -171,43 +174,37 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
 
         // For each run: collect updates, single read, apply modifications,
         // collect everything for a single write_batch at the end.
-        let writes: Vec<_> = runs
-            .into_iter()
-            .map(|(element_start, run_updates)| {
-                let run_updates: Vec<_> = run_updates.collect();
+        for (element_start, run_updates) in &runs {
+            let run_updates: Vec<_> = run_updates.collect();
 
-                let last_element = Self::element_idx(run_updates.last().unwrap().0);
-                let num_elements = last_element - element_start + 1;
+            let last_element = Self::element_idx(run_updates.last().unwrap().0);
+            let num_elements = last_element - element_start + 1;
+            if element_start + num_elements > self.element_len {
+                return Err(UniversalIoError::OutOfBounds {
+                    start: element_start,
+                    end: element_start + num_elements,
+                    elements: self.element_len as usize,
+                });
+            }
 
-                if element_start + num_elements > self.element_len {
-                    return Err(UniversalIoError::OutOfBounds {
-                        start: element_start,
-                        end: element_start + num_elements,
-                        elements: self.element_len as usize,
-                    });
-                }
+            let mut buf = self
+                .storage
+                .read::<false>(ElementsRange {
+                    start: element_start,
+                    length: num_elements,
+                })?
+                .into_owned();
+            let bitslice = BitSlice::from_slice_mut(&mut buf);
 
-                let mut buf = self
-                    .storage
-                    .read::<false>(ElementsRange {
-                        start: element_start,
-                        length: num_elements,
-                    })?
-                    .into_owned();
-                let bitslice = BitSlice::from_slice_mut(&mut buf);
+            for (bit_idx, value) in run_updates {
+                let bit_offset =
+                    bit_idx as usize - (element_start as usize * BITS_PER_ELEMENT as usize);
+                bitslice.set(bit_offset, value);
+            }
 
-                for (bit_idx, value) in run_updates {
-                    let bit_offset =
-                        bit_idx as usize - (element_start as usize * BITS_PER_ELEMENT as usize);
-                    bitslice.set(bit_offset, value);
-                }
-
-                Ok((element_start, buf))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        self.storage
-            .write_batch(writes.iter().map(|(start, vec)| (*start, vec.as_slice())))?;
+            // expect batching on flush
+            self.storage.write(element_start, &buf)?;
+        }
 
         Ok(())
     }
@@ -215,6 +212,8 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
     /// Write a bitslice into the storage starting from bit 0.
     ///
     /// `source.len()` must not exceed the storage's bit length.
+    /// If length of source is less than self's bit length,
+    /// only the prefix of the storage will be modified
     pub fn write_bitslice<T2, O2>(&mut self, source: &bitvec::slice::BitSlice<T2, O2>) -> Result<()>
     where
         T2: bitvec::store::BitStore,
