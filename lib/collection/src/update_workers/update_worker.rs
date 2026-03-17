@@ -242,9 +242,12 @@ impl UpdateWorkers {
                 }
                 result = optimization_finished_receiver.changed() => {
                     if let Err(err) = result {
-                        // This can be if optimization is cancelled, we don't need to wait anymore.
-                        log::debug!("Optimization thread terminated with an error: {err}");
-                        return Ok(());
+                        // The optimization notifier was closed, meaning the optimization
+                        // worker has stopped. Deferred points can never be resolved.
+                        log::warn!("Optimization notifier closed while waiting for deferred points: {err}");
+                        return Err(CollectionError::service_error(format!(
+                            "Optimization worker stopped while waiting for deferred points: {err}"
+                        )));
                     }
                 }
             }
