@@ -12,20 +12,21 @@ use tokio_util::task::AbortOnDropHandle;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::operations::generalizer::Generalizer;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateStatus};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::CollectionId;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
 use crate::update_workers::applied_seq::AppliedSeqHandler;
+use crate::update_workers::internal_update_result::InternalUpdateResult;
 use crate::wal_delta::LockedWal;
 
 /// Sends the operation result through the feedback channel if present.
 /// Logs a debug message if the receiver is no longer waiting.
 fn send_feedback(
-    sender: Option<oneshot::Sender<CollectionResult<usize>>>,
-    result: CollectionResult<usize>,
+    sender: Option<oneshot::Sender<CollectionResult<InternalUpdateResult>>>,
+    result: CollectionResult<InternalUpdateResult>,
     op_num: SeqNumberType,
 ) {
     if let Some(feedback) = sender {
@@ -144,11 +145,20 @@ impl UpdateWorkers {
                         Err(err) => Err(CollectionError::from(err)),
                     };
 
+                    // Early return if operation failed
+                    let res = match res {
+                        Ok(res) => res,
+                        Err(update_err) => {
+                            send_feedback(sender, Err(update_err), op_num);
+                            continue;
+                        }
+                    };
+
                     if let Err(err) = applied_seq_handler.update(op_num) {
                         log::error!("Can't update last applied_seq {err}")
                     }
 
-                    if wait_for_deferred && prevent_unoptimized {
+                    let status = if wait_for_deferred && prevent_unoptimized {
                         let wait_result = Self::wait_for_deferred_points_ready(
                             &segments,
                             &optimize_sender,
@@ -156,13 +166,19 @@ impl UpdateWorkers {
                             &cancel,
                         )
                         .await;
-                        if let Err(err) = wait_result {
-                            send_feedback(sender, Err(err), op_num);
-                            continue;
+                        if let Err(wait_result) = wait_result {
+                            log::warn!("Failed to await for optimizers: {wait_result}");
+                            UpdateStatus::WaitTimeout // ToDo: Consider special status
+                        } else {
+                            UpdateStatus::Completed
                         }
-                    }
+                    } else {
+                        UpdateStatus::Completed
+                    };
 
-                    send_feedback(sender, res, op_num);
+                    let internal_update_result = InternalUpdateResult { op_num, status };
+
+                    send_feedback(sender, Ok(internal_update_result), op_num);
                 }
                 UpdateSignal::Nop => optimize_sender
                     .send(OptimizerSignal::Nop)
