@@ -209,11 +209,16 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
     # cancelling the old worker's deferred wait loop. Retry wait=true until the
     # new worker (with optimizers enabled) handles the request.
     for attempt in range(10):
-        r = requests.put(
-            f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
-            json={"points": make_points(total_points + 1, 1)},
-            timeout=30,
-        )
+        try:
+            r = requests.put(
+                f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+                json={"points": make_points(total_points + 1, 1)},
+                timeout=30,
+            )
+        except requests.exceptions.ReadTimeout:
+            # Server still processing, retry — the write is durably applied regardless
+            time.sleep(1)
+            continue
         if r.status_code == 200:
             break
         # 408 = update applied but timed out waiting for deferred visibility (old worker cancelled), retry
