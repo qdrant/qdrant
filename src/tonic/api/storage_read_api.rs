@@ -201,6 +201,9 @@ fn io_error_to_status(e: UniversalIoError) -> Status {
         } => Status::internal(format!(
             "Invalid file index: {file_index} (num_files: {num_files})"
         )),
+        UniversalIoError::IoUringNotSupported(msg) => {
+            Status::internal(format!("IoUring not supported: {msg}"))
+        }
     }
 }
 
