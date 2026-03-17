@@ -35,15 +35,8 @@ pub trait MmapAccess<T>: AsRef<[T]> + std::fmt::Debug {
 // MmapMut-backed slice
 impl<T: Copy + 'static> MmapAccess<T> for MmapSlice<T> {
     fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self> {
-        let mmap = open_write_mmap(path, advice, populate).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                UniversalIoError::NotFound {
-                    path: path.to_path_buf(),
-                }
-            } else {
-                e.into()
-            }
-        })?;
+        let mmap = open_write_mmap(path, advice, populate)
+            .map_err(|err| UniversalIoError::extract_not_found(err, path))?;
         Ok(unsafe { MmapSlice::try_from(mmap) }?)
     }
 
@@ -55,15 +48,8 @@ impl<T: Copy + 'static> MmapAccess<T> for MmapSlice<T> {
 // Mmap (read only) backed slice
 impl<T: Copy + 'static> MmapAccess<T> for MmapSliceReadOnly<T> {
     fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self> {
-        let mmap = open_read_mmap(path, advice, populate).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                UniversalIoError::NotFound {
-                    path: path.to_path_buf(),
-                }
-            } else {
-                e.into()
-            }
-        })?;
+        let mmap = open_read_mmap(path, advice, populate)
+            .map_err(|err| UniversalIoError::extract_not_found(err, path))?;
         Ok(unsafe { MmapSliceReadOnly::try_from(mmap) }?)
     }
 
@@ -178,7 +164,7 @@ where
             .ok_or(UniversalIoError::OutOfBounds {
                 start: start as u64,
                 end: end as u64,
-                data_length: data_slice.len(),
+                elements: data_slice.len(),
             })?;
 
         Ok(Cow::Borrowed(data_range))
@@ -201,7 +187,7 @@ where
                 .ok_or(UniversalIoError::OutOfBounds {
                     start: start as u64,
                     end: end as u64,
-                    data_length,
+                    elements: data_length,
                 })?;
 
             callback(idx, data_range)?;
@@ -242,15 +228,16 @@ where
     fn write(&mut self, offset: ElementOffset, data: &[T]) -> Result<()> {
         let mmap_slice: &mut [T] = &mut self.mmap;
         let data_length = mmap_slice.len();
+
         let start = offset as usize;
         let end = start + data.len();
 
         let target = mmap_slice
             .get_mut(start..end)
             .ok_or(UniversalIoError::OutOfBounds {
-                start: offset,
-                end: offset + data.len() as u64,
-                data_length,
+                start: start as u64,
+                end: end as u64,
+                elements: data_length,
             })?;
 
         target.copy_from_slice(data);

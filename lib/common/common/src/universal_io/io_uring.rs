@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::hash_map;
-use std::io::{self, Read as _};
-use std::mem::{self, MaybeUninit, size_of};
+use std::io::{self, Read as _, Seek as _};
+use std::mem::{self, MaybeUninit};
 use std::os::fd::AsRawFd as _;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use ::io_uring::types::Fd;
@@ -20,10 +21,17 @@ thread_local! {
 const IO_URING_QUEUE_LENGTH: u32 = 16;
 
 fn init_io_uring() -> io::Result<IoUring> {
-    let io_uring = IoUring::new(IO_URING_QUEUE_LENGTH)?;
+    let io_uring = IoUring::new(IO_URING_QUEUE_LENGTH)
+        .map_err(|err| io_error_context(err, "failed to setup io_uring"))?;
 
     let mut probe = Probe::new();
-    io_uring.submitter().register_probe(&mut probe)?;
+
+    io_uring
+        .submitter()
+        .register_probe(&mut probe)
+        .map_err(|err| {
+            io_error_context(err, "failed to probe io_uring for supported operations")
+        })?;
 
     if probe.is_supported(opcode::Read::CODE) && probe.is_supported(opcode::Write::CODE) {
         Ok(io_uring)
@@ -46,11 +54,11 @@ impl IoUringFile {
 }
 
 impl UniversalReadFileOps for IoUringFile {
-    fn list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<PathBuf>> {
+    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(path: &Path) -> crate::universal_io::Result<bool> {
+    fn exists(path: &Path) -> Result<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
 }
@@ -61,14 +69,14 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         Self: Sized,
     {
         // Check that `io_uring` was successfully initialized
-        with_uring_runtime::<'_, u8, _, _>(|_| ())
-            .map_err(|e| UniversalIoError::IoUringNotSupported(e.to_string()))?;
+        with_uring_runtime::<u8, _, _>(|_| ())?;
 
         let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(false)
-            .open(path.as_ref())?;
+            .open(path.as_ref())
+            .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
 
         let file = Self {
             file: Arc::new(file),
@@ -138,8 +146,11 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                         return Ok(None);
                     };
 
-                    let file = files.get(file_index).ok_or_else(|| {
-                        io::Error::other(format!("invalid file index {file_index}"))
+                    let file = files.get(file_index).ok_or({
+                        UniversalIoError::InvalidFileIndex {
+                            file_index,
+                            files: files.len(),
+                        }
                     })?;
 
                     file_indices.push(file_index);
@@ -169,15 +180,20 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn len(&self) -> Result<u64> {
         let byte_len = self.file.metadata()?.len();
+
         let items_len = byte_len / size_of::<T>() as u64;
+        debug_assert_eq!(byte_len % size_of::<T>() as u64, 0);
+
         Ok(items_len)
     }
 
     fn populate(&self) -> Result<()> {
         let mut file = self.file.as_ref();
-        let mut buffer = vec![0u8; 1024 * 1024];
+        file.seek(io::SeekFrom::Start(0))?;
 
+        let mut buffer = vec![0u8; 1024 * 1024];
         while file.read(&mut buffer)? > 0 {}
+
         Ok(())
     }
 
@@ -247,8 +263,11 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                         return Ok(None);
                     };
 
-                    let file = files.get(file_index).ok_or_else(|| {
-                        io::Error::other(format!("invalid file index {file_index}"))
+                    let file = files.get(file_index).ok_or({
+                        UniversalIoError::InvalidFileIndex {
+                            file_index,
+                            files: files.len(),
+                        }
                     })?;
 
                     let byte_offset = element_to_byte_offset::<T>(offset);
@@ -282,19 +301,15 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
 ///
 /// The io_uring borrow lifetime is handled via HRTB (`for<'uring>`), keeping it
 /// independent from the caller's data lifetime.
-fn with_uring_runtime<'data, T: 'data, Out, F>(with_uring: F) -> io::Result<Out>
+fn with_uring_runtime<'data, T: 'data, Out, F>(with_uring: F) -> Result<Out>
 where
     F: for<'uring> FnOnce(IoUringRuntime<'uring, 'data, T>) -> Out,
 {
     IO_URING.with(|io_uring| {
-        let io_uring = match io_uring {
-            Ok(io_uring) => io_uring,
-            Err(err) => {
-                return Err(io::Error::other(format!(
-                    "failed to initialize io_uring: {err}"
-                )));
-            }
-        };
+        let io_uring = io_uring
+            .as_ref()
+            .map_err(io_error_clone)
+            .map_err(UniversalIoError::IoUringNotSupported)?;
 
         let mut io_uring = io_uring.borrow_mut();
         let rt = IoUringRuntime::new(&mut io_uring);
@@ -329,9 +344,9 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
         Ok(())
     }
 
-    pub fn enqueue<F>(&mut self, mut entries: F) -> io::Result<()>
+    pub fn enqueue<F>(&mut self, mut entries: F) -> Result<()>
     where
-        F: FnMut(&mut IoUringState<'data, T>) -> io::Result<Option<squeue::Entry>>,
+        F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
     {
         let mut sqe = self.io_uring.submission();
 
@@ -351,7 +366,11 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
     }
 
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
-        self.in_progress += self.io_uring.submit_and_wait(want)?;
+        self.in_progress += self
+            .io_uring
+            .submit_and_wait(want)
+            .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
+
         Ok(())
     }
 
@@ -365,9 +384,10 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
             if result < 0 {
                 self.state.abort(id);
 
-                return Err(io::Error::other(format!(
-                    "io_uring operation {id} failed ({result})"
-                )));
+                return Err(io_error_context(
+                    io::Error::from_raw_os_error(-result),
+                    format!("io_uring operation {id} failed"),
+                ));
             }
 
             let length = result as _;
@@ -421,14 +441,15 @@ impl<'data, T> IoUringState<'data, T> {
 
         let mut items: Vec<MaybeUninit<T>> = Vec::with_capacity(length as _);
         items.resize_with(length as _, || MaybeUninit::uninit());
+
         let items = self.init(id, IoUringRequest::Read(items))?.expect_read();
 
         let bytes_ptr = items.as_mut_ptr().cast();
-        let byte_offset = offset as usize * size_of::<T>();
-        let byte_length = length as usize * size_of::<T>();
+        let byte_offset = offset * size_of::<T>() as u64;
+        let byte_length = length * size_of::<T>() as u64;
         let byte_length = u32::try_from(byte_length).expect("read buffer length fit within u32");
         let entry = opcode::Read::new(fd, bytes_ptr, byte_length)
-            .offset(byte_offset as _)
+            .offset(byte_offset)
             .build()
             .user_data(id);
 
@@ -558,6 +579,30 @@ impl<T> IoUringResponse<T> {
         match self {
             Self::Write => (),
             _ => panic!(),
+        }
+    }
+}
+
+fn io_error_clone(err: &io::Error) -> io::Error {
+    io::Error::new(err.kind(), err.to_string())
+}
+
+fn io_error_context(err: io::Error, context: impl Into<String>) -> io::Error {
+    io::Error::new(err.kind(), IoErrorContext::new(err, context))
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{context}: {error}")]
+struct IoErrorContext {
+    context: String,
+    error: io::Error,
+}
+
+impl IoErrorContext {
+    fn new(error: io::Error, context: impl Into<String>) -> Self {
+        Self {
+            context: context.into(),
+            error,
         }
     }
 }

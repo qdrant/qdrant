@@ -167,15 +167,13 @@ impl From<MmapError> for OperationError {
 impl From<UniversalIoError> for OperationError {
     fn from(err: UniversalIoError) -> Self {
         match err {
-            UniversalIoError::Io(io_err) => OperationError::from(io_err),
-            UniversalIoError::Mmap(error) => OperationError::from(error),
-            UniversalIoError::OutOfBounds { .. } => OperationError::service_error(err.to_string()),
-            UniversalIoError::SerdeJson(e) => OperationError::from(e),
-            UniversalIoError::NotFound { path } => {
-                OperationError::service_error(format!("Not found: {}", path.display()))
-            }
-            UniversalIoError::InvalidFileIndex { .. }
-            | UniversalIoError::IoUringNotSupported(_) => {
+            UniversalIoError::Io(err) => OperationError::from(err),
+            UniversalIoError::Mmap(err) => OperationError::from(err),
+
+            UniversalIoError::IoUringNotSupported(_)
+            | UniversalIoError::NotFound { .. }
+            | UniversalIoError::OutOfBounds { .. }
+            | UniversalIoError::InvalidFileIndex { .. } => {
                 OperationError::service_error(err.to_string())
             }
         }
