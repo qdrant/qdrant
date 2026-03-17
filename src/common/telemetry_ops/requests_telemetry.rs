@@ -499,9 +499,7 @@ mod tests {
 
     #[test]
     fn test_collector_merges_workers() {
-        let mut collector = ActixTelemetryCollector {
-            workers: vec![],
-        };
+        let mut collector = ActixTelemetryCollector { workers: vec![] };
         let w1 = collector.create_web_worker_telemetry();
         let w2 = collector.create_web_worker_telemetry();
         let method = "POST /collections/{name}/points/search";
