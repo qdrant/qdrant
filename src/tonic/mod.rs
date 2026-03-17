@@ -227,15 +227,13 @@ pub fn init_internal(
     runtime
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
+            let record_per_collection = settings.service.record_per_collection.unwrap_or(false);
 
             let qdrant_service = QdrantService::default();
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
-            let qdrant_internal_service = QdrantInternalService::new(
-                telemetry_collector,
-                settings.clone(),
-                consensus_state.clone(),
-            );
+            let qdrant_internal_service =
+                QdrantInternalService::new(telemetry_collector, settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let shard_snapshots_service = ShardSnapshotsService::new(toc.clone(), http_client);
             let raft_service =
@@ -266,7 +264,7 @@ pub fn init_internal(
                 .layer(logging::LoggingMiddlewareLayer::new())
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     tonic_telemetry_collector,
-                    settings.service.record_per_collection.unwrap_or(false),
+                    record_per_collection,
                 ))
                 .into_inner();
 
