@@ -2,6 +2,7 @@ pub mod error;
 pub mod file_ops;
 #[cfg(target_os = "linux")]
 pub mod io_uring;
+mod iterator;
 pub mod local_file_ops;
 pub mod mmap;
 pub mod read;
@@ -17,9 +18,11 @@ pub use self::error::UniversalIoError;
 pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::*;
+pub use self::iterator::{UniversalIteratorResult, UniversalIteratorUnwrap, UniversalSlice};
 pub use self::mmap::*;
 pub use self::read::UniversalRead;
 pub use self::write::UniversalWrite;
+use crate::generic_consts::{CompletionOrder, Random};
 use crate::mmap::{Advice, AdviceSetting};
 
 #[derive(Copy, Clone, Debug)]
@@ -57,9 +60,46 @@ pub type ByteOffset = u64;
 
 pub type FileIndex = usize;
 
+impl ReadRange {
+    fn iter_chunks(&self, max_size: u64) -> impl Iterator<Item = ReadRange> {
+        let Self {
+            byte_offset,
+            length,
+        } = *self;
+        (0..length.div_ceil(max_size)).map(move |i| {
+            let offset = i * max_size;
+            ReadRange {
+                byte_offset: byte_offset + offset,
+                length: max_size.min(length - offset),
+            }
+        })
+    }
+}
 pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
+
+/// Read a single element at `index` via a one-element batch read,
+/// passing it to the closure `f`.
+pub fn read_one<T: Copy + 'static, R>(
+    storage: &impl UniversalRead<T>,
+    index: usize,
+    f: impl FnOnce(&T) -> R,
+) -> Result<R> {
+    let mut f = Some(f);
+    let mut result = None;
+    storage.read_batch::<Random, CompletionOrder, UniversalIoError>(
+        [ReadRange {
+            byte_offset: index as u64,
+            length: 1,
+        }],
+        |_, data| {
+            result = Some((f.take().unwrap())(&data[0]));
+            Ok(())
+        },
+    )?;
+    Ok(result.unwrap())
+}
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
 ///

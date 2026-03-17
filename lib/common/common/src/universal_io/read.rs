@@ -67,4 +67,16 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
 
         Ok(())
     }
+
+    fn slice(&self) -> Result<UniversalSlice<'_, T, Self>> {
+        let len = self.len()?;
+        Ok(UniversalSlice {
+            source: self,
+            range: ReadRange {
+                byte_offset: 0,
+                length: len,
+            },
+            _phantom: std::marker::PhantomData,
+        })
+    }
 }

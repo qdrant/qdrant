@@ -86,6 +86,11 @@ where
     T: Copy + 'static,
     M: MmapAccess<T>,
 {
+    /// TODO(uio): Remove this. It's an temporary escape hatch while migrating to uio.
+    pub fn todo_slice(&self) -> &[T] {
+        self.mmap.as_ref()
+    }
+
     fn as_seq_slice(&self) -> &[T] {
         self.mmap_seq
             .as_ref()

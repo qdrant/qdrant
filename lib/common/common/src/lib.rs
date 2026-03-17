@@ -1,3 +1,4 @@
+pub mod binary_search;
 pub mod bitpacking;
 pub mod bitpacking_links;
 pub mod bitpacking_ordered;
@@ -13,6 +14,7 @@ pub mod delta_pack;
 pub mod disk;
 pub mod either_variant;
 pub mod ext;
+pub mod fallible_iterator_ext;
 pub mod fixed_length_priority_queue;
 pub mod flags;
 pub mod fs;

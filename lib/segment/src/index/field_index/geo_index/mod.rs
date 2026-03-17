@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use fallible_iterator::{FallibleIterator, IteratorExt as _};
 use itertools::Itertools;
 use mutable_geo_index::InMemoryGeoMapIndex;
@@ -19,6 +20,7 @@ use rocksdb::DB;
 use serde_json::Value;
 #[cfg(feature = "rocksdb")]
 use smallvec::SmallVec;
+use tap::Pipe;
 
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mmap_geo_index::MmapGeoMapIndex;
@@ -162,7 +164,7 @@ impl GeoMapIndex {
         Ok(match self {
             GeoMapIndex::Mutable(index) => index.points_of_hash(hash),
             GeoMapIndex::Immutable(index) => index.points_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.points_of_hash(hash, hw_counter),
+            GeoMapIndex::Mmap(index) => index.points_of_hash(hash, hw_counter)?,
         })
     }
 
@@ -175,7 +177,7 @@ impl GeoMapIndex {
         Ok(match self {
             GeoMapIndex::Mutable(index) => index.values_of_hash(hash),
             GeoMapIndex::Immutable(index) => index.values_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.values_of_hash(hash, hw_counter),
+            GeoMapIndex::Mmap(index) => index.values_of_hash(hash, hw_counter)?,
         })
     }
 
@@ -362,17 +364,21 @@ impl GeoMapIndex {
                     .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
                     .unique(),
             )),
-            GeoMapIndex::Mmap(index) => Ok(Box::new(
-                values
+            GeoMapIndex::Mmap(index) => {
+                let iters: OperationResult<Vec<_>> = values
                     .into_iter()
-                    .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
-                    .unique(),
-            )),
+                    .map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
+                    .collect();
+                Ok(Box::new(iters?.into_iter().flatten().unique()))
+            }
         }
     }
 
     /// Get iterator over smallest geo-hash regions larger than `threshold` points
-    fn large_hashes(&self, threshold: usize) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
+    fn large_hashes(
+        &self,
+        threshold: usize,
+    ) -> OperationResult<impl Iterator<Item = (GeoHash, usize)> + '_> {
         let filter_condition =
             |(hash, size): &(GeoHash, usize)| *size > threshold && !hash.is_empty();
         let mut large_regions = match self {
@@ -385,9 +391,15 @@ impl GeoMapIndex {
                 .filter(filter_condition)
                 .collect_vec(),
             GeoMapIndex::Mmap(index) => index
-                .points_per_hash()
-                .filter(filter_condition)
-                .collect_vec(),
+                .storage
+                .counts_per_hash
+                .slice()
+                .unwrap()
+                .filter_map_collect(|counts| {
+                    let item = (counts.hash, counts.points as usize);
+                    filter_condition(&item).then_some(item)
+                })
+                .unwrap(),
         };
 
         // smallest regions first
@@ -404,7 +416,7 @@ impl GeoMapIndex {
             }
         }
 
-        edge_region.into_iter()
+        Ok(edge_region.into_iter())
     }
 
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
@@ -829,19 +841,21 @@ impl PayloadFieldIndex for GeoMapIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
-        Box::new(
-            self.large_hashes(threshold)
-                .map(move |(geo_hash, size)| {
-                    Ok(PayloadBlockCondition {
-                        condition: FieldCondition::new_geo_bounding_box(
-                            key.clone(),
-                            geo_hash_to_box(geo_hash),
-                        ),
-                        cardinality: size,
-                    })
-                })
-                .transpose_into_fallible(),
-        )
+        match self.large_hashes(threshold) {
+            Ok(large_hashes) => large_hashes,
+            Err(e) => return Box::new(fallible_iterator::repeat_err(e)),
+        }
+        .map(move |(geo_hash, size)| {
+            Ok(PayloadBlockCondition {
+                condition: FieldCondition::new_geo_bounding_box(
+                    key.clone(),
+                    geo_hash_to_box(geo_hash),
+                ),
+                cardinality: size,
+            })
+        })
+        .transpose_into_fallible()
+        .pipe(Box::new)
     }
 }
 
@@ -1801,8 +1815,8 @@ mod tests {
             let hw_counter = HardwareCounterCell::disposable();
             for &hash in &hashes {
                 assert_eq!(
-                    indices[0].points_of_hash(hash, &hw_counter).unwrap(),
-                    index.points_of_hash(hash, &hw_counter).unwrap(),
+                    indices[0].points_of_hash(hash, &hw_counter),
+                    index.points_of_hash(hash, &hw_counter),
                 );
                 assert_eq!(
                     indices[0].values_of_hash(hash, &hw_counter),

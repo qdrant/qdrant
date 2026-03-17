@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use ahash::AHashSet;
 use common::types::PointOffsetType;
+use common::universal_io::{ReadRange, UniversalRead};
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
@@ -141,34 +142,37 @@ impl ImmutableGeoMapIndex {
         let counts_per_hash = index
             .storage
             .counts_per_hash
+            .read_whole()?
             .iter()
             .copied()
             .map(Counts::from)
             .collect();
 
         // Get points per geo hash and filter deleted points
+        let points_map_ids_slice = index.storage.points_map_ids.slice()?;
         let points_map = index
             .storage
             .points_map
+            .read_whole()?
             .iter()
             .copied()
-            .map(|item| {
+            .map(|item| -> OperationResult<_> {
                 let super::mmap_geo_index::PointKeyValue {
                     hash,
                     ids_start,
                     ids_end,
                 } = item;
-                (
-                    hash,
-                    index.storage.points_map_ids[ids_start as usize..ids_end as usize]
-                        .iter()
-                        .copied()
-                        // Filter deleted points
-                        .filter(|id| !index.storage.deleted.get(*id as usize).unwrap_or_default())
-                        .collect(),
-                )
+                let ids = points_map_ids_slice
+                    .range(ReadRange {
+                        byte_offset: ids_start as u64,
+                        length: (ids_end - ids_start) as u64,
+                    })?
+                    .filter_map_collect(|id| {
+                        (!index.storage.deleted.get(id as usize).unwrap_or_default()).then_some(id)
+                    })?;
+                Ok((hash, ids))
             })
-            .collect();
+            .collect::<OperationResult<Vec<_>>>()?;
 
         // Get point values and filter deleted points
         // Track deleted points to adjust point and value counts after loading
