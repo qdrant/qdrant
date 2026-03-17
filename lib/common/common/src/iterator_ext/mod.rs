@@ -10,7 +10,10 @@ use crate::iterator_ext::stoppable_iter::StoppableIter;
 pub(super) mod on_final_count;
 
 mod check_stopped;
+mod fallible;
 pub mod stoppable_iter;
+
+pub use fallible::{FallibleIteratorExt, TransposeResultIter};
 
 pub trait IteratorExt: Iterator {
     /// Periodically check if the iteration should be stopped.
