@@ -17,9 +17,10 @@ use futures::Stream;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status, async_trait};
 
+use common::universal_io::OpenOptions;
+
 use crate::tonic::api::storage_read_api::helpers::{
-    convert_open_options, dispatch_read, dispatch_read_batch, dispatch_read_multi,
-    io_error_to_status, validate_range,
+    dispatch_read, dispatch_read_batch, dispatch_read_multi, io_error_to_status, validate_range,
 };
 use crate::tonic::api::validate;
 use crate::tonic::auth::extract_auth;
@@ -112,11 +113,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let FileLengthRequest {
             collection_name,
             path,
-            open_options,
         } = request.into_inner();
         let path = self.resolve_path(&auth, &collection_name, &path)?;
 
-        let open_options = convert_open_options(open_options);
+        let open_options = OpenOptions::default();
         let length = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             storage.len().map_err(io_error_to_status)
@@ -139,11 +139,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             path,
             offset,
             length,
-            open_options,
         } = request.into_inner();
 
         let path = self.resolve_path(&auth, &collection_name, &path)?;
-        let open_options = convert_open_options(open_options);
+        let open_options = OpenOptions::default();
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
@@ -177,11 +176,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             path,
             offset,
             length,
-            open_options,
         } = request.into_inner();
 
         let path = self.resolve_path(&auth, &collection_name, &path)?;
-        let open_options = convert_open_options(open_options);
+        let open_options = OpenOptions::default();
         let sequential = open_options.need_sequential;
         let range = ElementsRange::new(offset, length);
         let (storage, range) = tokio::task::spawn_blocking(move || {
@@ -237,10 +235,9 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let ReadWholeRequest {
             collection_name,
             path,
-            open_options,
         } = request.into_inner();
         let path = self.resolve_path(&auth, &collection_name, &path)?;
-        let open_options = convert_open_options(open_options);
+        let open_options = OpenOptions::default();
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
@@ -264,11 +261,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             collection_name,
             path,
             ranges,
-            open_options,
         } = request.into_inner();
         let path = self.resolve_path(&auth, &collection_name, &path)?;
 
-        let open_options = convert_open_options(open_options);
+        let open_options = OpenOptions::default();
         let ranges = ranges
             .iter()
             .map(|r| ElementsRange::new(r.offset, r.length))
@@ -307,9 +303,8 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let ReadMultiRequest {
             collection_name,
             reads,
-            open_options,
         } = request.into_inner();
-        let open_options = convert_open_options(open_options);
+        let open_options = OpenOptions::default();
 
         // Resolve all paths and deduplicate into a file index.
         let mut path_to_index = HashMap::<PathBuf, FileIndex>::new();

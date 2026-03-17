@@ -15911,24 +15911,6 @@ pub mod shard_snapshots_server {
         const NAME: &'static str = "qdrant.ShardSnapshots";
     }
 }
-/// Maps to common::universal_io::OpenOptions — controls how a file is opened.
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StorageOpenOptions {
-    /// Prefer sequential access pattern (maps to need_sequential).
-    #[prost(bool, tag = "1")]
-    pub need_sequential: bool,
-    /// Max parallel disk I/O requests. If not set, uses backend default.
-    #[prost(uint32, optional, tag = "2")]
-    pub disk_parallel: ::core::option::Option<u32>,
-    /// Populate RAM cache on open, if supported by the backend.
-    #[prost(bool, optional, tag = "3")]
-    pub populate: ::core::option::Option<bool>,
-    /// Mmap advice setting. If not set, uses the global default.
-    #[prost(enumeration = "MmapAdvice", optional, tag = "4")]
-    pub advice: ::core::option::Option<i32>,
-}
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -15988,8 +15970,6 @@ pub struct FileLengthRequest {
     #[prost(string, tag = "2")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
-    pub open_options: ::core::option::Option<StorageOpenOptions>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -16016,8 +15996,6 @@ pub struct ReadBytesRequest {
     pub offset: u64,
     #[prost(uint64, tag = "4")]
     pub length: u64,
-    #[prost(message, optional, tag = "5")]
-    pub open_options: ::core::option::Option<StorageOpenOptions>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -16044,8 +16022,6 @@ pub struct ReadBytesStreamRequest {
     pub offset: u64,
     #[prost(uint64, tag = "4")]
     pub length: u64,
-    #[prost(message, optional, tag = "5")]
-    pub open_options: ::core::option::Option<StorageOpenOptions>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -16068,8 +16044,6 @@ pub struct ReadWholeRequest {
     #[prost(string, tag = "2")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
-    pub open_options: ::core::option::Option<StorageOpenOptions>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -16105,8 +16079,6 @@ pub struct ReadBatchRequest {
     #[prost(message, repeated, tag = "3")]
     #[validate(length(min = 1))]
     pub ranges: ::prost::alloc::vec::Vec<ReadBatchRange>,
-    #[prost(message, optional, tag = "4")]
-    pub open_options: ::core::option::Option<StorageOpenOptions>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -16143,8 +16115,6 @@ pub struct ReadMultiRequest {
     #[prost(message, repeated, tag = "2")]
     #[validate(length(min = 1), nested)]
     pub reads: ::prost::alloc::vec::Vec<ReadMultiEntry>,
-    #[prost(message, optional, tag = "3")]
-    pub open_options: ::core::option::Option<StorageOpenOptions>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -16152,38 +16122,6 @@ pub struct ReadMultiRequest {
 pub struct ReadMultiResponse {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-}
-/// Maps to common::mmap::Advice — controls mmap access pattern hint.
-/// If not set in StorageOpenOptions, the global default is used.
-#[derive(serde::Serialize)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum MmapAdvice {
-    Normal = 0,
-    Random = 1,
-    Sequential = 2,
-}
-impl MmapAdvice {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            MmapAdvice::Normal => "MmapAdviceNormal",
-            MmapAdvice::Random => "MmapAdviceRandom",
-            MmapAdvice::Sequential => "MmapAdviceSequential",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "MmapAdviceNormal" => Some(Self::Normal),
-            "MmapAdviceRandom" => Some(Self::Random),
-            "MmapAdviceSequential" => Some(Self::Sequential),
-            _ => None,
-        }
-    }
 }
 /// Generated client implementations.
 pub mod storage_read_client {

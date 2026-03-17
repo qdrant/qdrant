@@ -2,12 +2,8 @@ use std::marker::PhantomData;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use api::grpc::qdrant::{MmapAdvice, StorageOpenOptions};
 use collection::operations::verification::new_unchecked_verification_pass;
-use common::mmap::AdviceSetting;
-use common::universal_io::{
-    ElementsRange, FileIndex, OpenOptions, UniversalIoError, UniversalRead,
-};
+use common::universal_io::{ElementsRange, FileIndex, UniversalIoError, UniversalRead};
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
 use tonic::Status;
@@ -185,27 +181,6 @@ pub fn io_error_to_status(e: UniversalIoError) -> Status {
         UniversalIoError::IoUringNotSupported(e) => {
             Status::internal(format!("IoUring not supported: {e}"))
         }
-    }
-}
-
-/// Convert proto `StorageOpenOptions` to Rust `OpenOptions`.
-pub fn convert_open_options(proto: Option<StorageOpenOptions>) -> OpenOptions {
-    let Some(opts) = proto else {
-        return OpenOptions::default();
-    };
-    OpenOptions {
-        need_sequential: opts.need_sequential,
-        disk_parallel: opts.disk_parallel.and_then(|v| usize::try_from(v).ok()),
-        populate: opts.populate,
-        advice: opts.advice.and_then(|v| {
-            MmapAdvice::try_from(v).ok().map(|a| {
-                AdviceSetting::Advice(match a {
-                    MmapAdvice::Normal => common::mmap::Advice::Normal,
-                    MmapAdvice::Random => common::mmap::Advice::Random,
-                    MmapAdvice::Sequential => common::mmap::Advice::Sequential,
-                })
-            })
-        }),
     }
 }
 

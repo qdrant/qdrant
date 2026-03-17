@@ -261,7 +261,7 @@ async fn file_length_returns_file_size() {
         .file_length(Request::new(FileLengthRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "length/data.bin".to_string(),
-            open_options: None,
+
         }))
         .await
         .unwrap()
@@ -280,7 +280,7 @@ async fn file_length_not_found_returns_error() {
         .file_length(Request::new(FileLengthRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "nonexistent/file.bin".to_string(),
-            open_options: None,
+
         }))
         .await
         .unwrap_err();
@@ -301,7 +301,7 @@ async fn read_bytes_returns_requested_range() {
             path: "bytes/data.bin".to_string(),
             offset: 3,
             length: 4,
-            open_options: None,
+
         }))
         .await
         .unwrap()
@@ -323,7 +323,7 @@ async fn read_bytes_out_of_bounds_returns_error() {
             path: "oob/data.bin".to_string(),
             offset: 0,
             length: 9999,
-            open_options: None,
+
         }))
         .await
         .unwrap_err();
@@ -348,7 +348,7 @@ async fn read_bytes_stream_splits_large_reads_into_chunks() {
             path: "stream/data.bin".to_string(),
             offset: 0,
             length: total_len as u64,
-            open_options: None,
+
         }))
         .await
         .unwrap()
@@ -385,7 +385,7 @@ async fn read_bytes_stream_returns_empty_stream_for_zero_length() {
             path: "stream/zero.bin".to_string(),
             offset: 0,
             length: 0,
-            open_options: None,
+
         }))
         .await
         .unwrap()
@@ -406,7 +406,7 @@ async fn read_bytes_stream_zero_length_checks_file_exists() {
             path: "stream/missing.bin".to_string(),
             offset: 0,
             length: 0,
-            open_options: None,
+
         }))
         .await
     else {
@@ -430,7 +430,7 @@ async fn read_bytes_stream_out_of_bounds_returns_error() {
             path: "stream/clamp.bin".to_string(),
             offset: 0,
             length: 999999,
-            open_options: None,
+
         }))
         .await
     else {
@@ -452,7 +452,7 @@ async fn read_whole_returns_entire_file() {
         .read_whole(Request::new(ReadWholeRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "whole/data.bin".to_string(),
-            open_options: None,
+
         }))
         .await
         .unwrap()
@@ -486,7 +486,7 @@ async fn read_batch_returns_each_requested_slice() {
                     length: 1,
                 },
             ],
-            open_options: None,
+
         }))
         .await
         .unwrap()
@@ -526,7 +526,7 @@ async fn read_multi_reads_ranges_in_request_order() {
                     length: 2,
                 },
             ],
-            open_options: None,
+
         }))
         .await
         .unwrap()
@@ -552,7 +552,7 @@ async fn read_multi_rejects_empty_entry_path() {
                 offset: 0,
                 length: 1,
             }],
-            open_options: None,
+
         }))
         .await
         .unwrap_err();
