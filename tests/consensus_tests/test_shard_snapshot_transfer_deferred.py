@@ -207,7 +207,7 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
 
     # The config change propagates through Raft and restarts the update workers,
     # cancelling the old worker's deferred wait loop. Retry wait=true until the
-    # new worker (with optimizers enabled) handles the request.
+    # new worker (with optimizers enabled) handles the request with "completed" status.
     for attempt in range(10):
         try:
             r = requests.put(
@@ -216,18 +216,16 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
                 timeout=30,
             )
         except requests.exceptions.ReadTimeout:
-            # Server still processing, retry — the write is durably applied regardless
+            # Server still processing, retry — the update is durably applied regardless
             time.sleep(1)
             continue
-        if r.status_code == 200:
+        assert_http_ok(r)
+        result_status = r.json().get("result", {}).get("status")
+        if result_status == "completed":
             break
-        # 408 = update applied but timed out waiting for deferred visibility (old worker cancelled), retry
-        assert r.status_code == 408, (
-            f"Unexpected status {r.status_code} on attempt {attempt}: {r.text}"
-        )
-        error_message = r.json().get("status", {}).get("error", "")
-        assert "timed out waiting for deferred points" in error_message, (
-            f"Unexpected error message: {error_message}"
+        # "wait_timeout" = update applied but deferred visibility not confirmed (old worker cancelled)
+        assert result_status == "wait_timeout", (
+            f"Unexpected result status '{result_status}' on attempt {attempt}: {r.text}"
         )
         time.sleep(1)
     else:

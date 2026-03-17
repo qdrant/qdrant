@@ -146,7 +146,7 @@ impl UpdateWorkers {
                     };
 
                     // Early return if operation failed
-                    let res = match res {
+                    let _res = match res {
                         Ok(res) => res,
                         Err(update_err) => {
                             send_feedback(sender, Err(update_err), op_num);
@@ -166,6 +166,7 @@ impl UpdateWorkers {
                             &cancel,
                         )
                         .await;
+                        // Waiting for deferred points should never error out as it would mark the shard as dead
                         if let Err(wait_result) = wait_result {
                             log::warn!("Failed to await for optimizers: {wait_result}");
                             UpdateStatus::WaitTimeout // ToDo: Consider special status
@@ -251,19 +252,17 @@ impl UpdateWorkers {
             tokio::select! {
                 biased;
                 _ = cancel.cancelled() => {
-                    log::debug!("wait_for_deferred_points_ready cancelled");
-                    return Err(CollectionError::Timeout {
-                        description: "Update applied but timed out waiting for deferred points to become visible".to_string(),
-                    });
+                    log::debug!("wait_for_deferred_points_ready: update worker cancelled");
+                    return Err(CollectionError::cancelled(
+                        "Deferred points wait interrupted: update worker restarted"
+                    ));
                 }
                 result = optimization_finished_receiver.changed() => {
                     if let Err(err) = result {
-                        // The optimization notifier was closed, meaning the optimization
-                        // worker has stopped. Deferred points can never be resolved.
-                        log::warn!("Optimization notifier closed while waiting for deferred points: {err}");
-                        return Err(CollectionError::service_error(format!(
-                            "Optimization worker stopped while waiting for deferred points: {err}"
-                        )));
+                        log::warn!("wait_for_deferred_points_ready: optimization notifier closed: {err}");
+                        return Err(CollectionError::cancelled(
+                            "Deferred points wait interrupted: optimization worker stopped"
+                        ));
                     }
                 }
             }
