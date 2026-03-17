@@ -148,7 +148,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::config::vectors::EdgeVectorParams;
-    use crate::{EdgeShard, EdgeShardConfig};
+    use crate::{EdgeConfig, EdgeShard};
 
     const VECTOR_NAME: &str = "edge-test-vector";
 
@@ -702,8 +702,8 @@ mod tests {
         }
     }
 
-    fn test_config() -> EdgeShardConfig {
-        EdgeShardConfig {
+    fn test_config() -> EdgeConfig {
+        EdgeConfig {
             on_disk_payload: false,
             vectors: HashMap::from([(
                 VECTOR_NAME.to_string(),

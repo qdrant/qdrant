@@ -1,6 +1,6 @@
 //! Python wrapper for edge optimizer config (optional in EdgeConfig).
 
-use edge::config::optimizers::EdgeOptimizersConfig;
+use edge::EdgeOptimizersConfig;
 use pyo3::prelude::*;
 
 use crate::repr::*;
