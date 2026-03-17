@@ -184,6 +184,7 @@ fn sparse_index_discover_test() {
         path: index_dir.path(),
         stopped: &stopped,
         tick_progress: || (),
+        deferred_internal_id: None,
     })
     .unwrap();
 
@@ -301,6 +302,7 @@ fn sparse_index_hardware_measurement_test() {
         path: index_dir.path(),
         stopped: &stopped,
         tick_progress: || (),
+        deferred_internal_id: None,
     })
     .unwrap();
 

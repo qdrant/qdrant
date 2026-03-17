@@ -53,6 +53,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
     scores_memory_pool: ScoresMemoryPool,
+    deferred_internal_id: Option<PointOffsetType>,
 }
 
 /// Getters for internals, used for testing.
@@ -87,6 +88,7 @@ pub struct SparseVectorIndexOpenArgs<'a, F: FnMut()> {
     pub path: &'a Path,
     pub stopped: &'a AtomicBool,
     pub tick_progress: F,
+    pub deferred_internal_id: Option<PointOffsetType>,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -100,6 +102,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             path,
             stopped,
             tick_progress,
+            deferred_internal_id,
         } = args;
 
         let config_path = SparseIndexConfig::get_config_path(path);
@@ -162,6 +165,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             searches_telemetry,
             indices_tracker,
             scores_memory_pool,
+            deferred_internal_id,
         })
     }
 
@@ -398,7 +402,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             memory_handle,
             &is_stopped,
             &hw_counter,
-            vector_query_context.deferred_internal_id(),
         );
         let search_result = search_context.plain_search(&ids);
         Ok(search_result)
@@ -442,7 +445,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             memory_handle,
             &is_stopped,
             &hw_counter,
-            vector_query_context.deferred_internal_id(),
         );
 
         match filter {
@@ -685,19 +687,26 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         let old_vector: Option<SparseVector> =
             old_vector.map(SparseVector::try_from).transpose()?;
 
-        // do not upsert empty vectors into the index
-        if !vector.is_empty() {
+        let point_is_deferred = self
+            .deferred_internal_id
+            .map_or(false, |deferred| id >= deferred);
+
+        // do not upsert empty or deferred vectors into the index
+        if !vector.is_empty() && !point_is_deferred {
             self.indices_tracker.register_indices(&vector);
             let vector = self.indices_tracker.remap_vector(vector);
             let old_vector = old_vector.map(|v| self.indices_tracker.remap_vector(v));
             self.inverted_index.upsert(id, vector, old_vector);
-        } else if let Some(old_vector) = old_vector {
+        } else if let Some(old_vector) = old_vector
+            && vector.is_empty()
+        {
             // Make sure empty vectors do not interfere with the index
             if !old_vector.is_empty() {
                 let old_vector = self.indices_tracker.remap_vector(old_vector);
                 self.inverted_index.remove(id, old_vector);
             }
         }
+
         Ok(())
     }
 }

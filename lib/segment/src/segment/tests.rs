@@ -1078,6 +1078,7 @@ fn test_deferred_point_read_operations() {
         },
         |i| i.id,
         true,
+        false,
     );
 
     // Read filtered (count API)
@@ -1097,6 +1098,7 @@ fn test_deferred_point_read_operations() {
         },
         |i| *i,
         true,
+        false,
     );
 
     // Read filtered ordered (scroll)
@@ -1120,6 +1122,7 @@ fn test_deferred_point_read_operations() {
         },
         |i| i.1,
         true,
+        false,
     );
 
     // Read random filtered (random scroll)
@@ -1132,6 +1135,7 @@ fn test_deferred_point_read_operations() {
         },
         |i| *i,
         true,
+        false,
     );
 
     // Retrieve API
@@ -1157,6 +1161,7 @@ fn test_deferred_point_read_operations() {
                 .collect::<Vec<_>>()
         },
         |i| *i,
+        false,
         false,
     );
 }
@@ -1210,6 +1215,7 @@ fn test_deferred_point_sparse() {
                 },
                 |i| i.id,
                 true,
+                true,
             );
 
             // Search feedback
@@ -1234,6 +1240,7 @@ fn test_deferred_point_sparse() {
                         .unwrap()
                 },
                 |i| i.id,
+                true,
                 true,
             );
         }
@@ -1332,6 +1339,7 @@ fn assert_deferred_points_excluded<F, R, T>(
     operation: F,
     to_external_id: R,
     test_with_filter: bool,
+    need_rebuilt_segment: bool,
 ) where
     F: Fn(&Segment, Option<&Filter>) -> Vec<T>,
     R: Fn(&T) -> ExtendedPointId,
@@ -1416,7 +1424,21 @@ fn assert_deferred_points_excluded<F, R, T>(
             }
 
             // Disable deferred points and search again.
-            segment.deferred_point_status = None;
+            if need_rebuilt_segment {
+                // Don't run this on windows because this test is already extremely slow (~100s).
+                // Recreating the segment here would double that time.
+                if cfg!(target_os = "windows") {
+                    drop(segment);
+                    dir.close().unwrap();
+                    continue;
+                }
+
+                let dir = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
+                segment = create_deferred_segment(&dir, 5, N_POINTS + n_deferred, 0);
+            } else {
+                segment.deferred_point_status = None;
+            }
+
             let search_res_normal = operation(&segment, filter_set.filter.as_ref());
             assert_eq!(
                 search_res_normal.len(),
