@@ -37,7 +37,7 @@ pub struct GeoHash(u64);
 ///
 /// Unlike [`GeoHash`], it might contain invalid bit patterns, e.g. `length > GeoHash::MAX_LENGTH`,
 /// or non-zeroed unused bits in characters.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct GeoHashRaw(pub u64);
 

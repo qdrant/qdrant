@@ -1,12 +1,16 @@
 use std::borrow::Cow;
+use std::iter::once;
 use std::path::{Path, PathBuf};
 
+use bitvec::vec::BitVec;
+use common::binary_search::binary_search_by;
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
+use common::generic_consts::{Random, Sequential};
+use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions};
+use common::universal_io::{MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalRead};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -27,7 +31,7 @@ const POINTS_MAP_IDS: &str = "points_map_ids.bin";
 const STATS_PATH: &str = "mmap_field_index_stats.json";
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct Counts {
     pub hash: GeoHashRaw,
     pub points: u32,
@@ -35,11 +39,28 @@ pub(super) struct Counts {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct PointKeyValue {
     pub hash: GeoHashRaw,
     pub ids_start: u32,
     pub ids_end: u32,
+}
+
+/// An alias to set of traits required by `MmapGeoMapIndex`.
+#[expect(private_bounds)]
+pub trait MmapGeoMapIndexStorage:
+    UniversalRead<u8>
+    + UniversalRead<Counts>
+    + UniversalRead<PointKeyValue>
+    + UniversalRead<PointOffsetType>
+{
+}
+impl<T> MmapGeoMapIndexStorage for T where
+    T: UniversalRead<u8>
+        + UniversalRead<Counts>
+        + UniversalRead<PointKeyValue>
+        + UniversalRead<PointOffsetType>
+{
 }
 
 ///
@@ -56,26 +77,26 @@ pub(super) struct PointKeyValue {
 ///  └─────────────────────────────────────────────────────────┘
 ///   points_map_ids
 ///
-pub struct MmapGeoMapIndex {
+pub struct MmapGeoMapIndex<S: MmapGeoMapIndexStorage> {
     path: PathBuf,
-    pub(super) storage: Storage,
+    pub(super) storage: Storage<S>,
     pub(super) deleted_count: usize,
     points_values_count: usize,
     max_values_per_point: usize,
     is_on_disk: bool,
 }
 
-pub(super) struct Storage {
+pub(super) struct Storage<S: MmapGeoMapIndexStorage> {
     /// Stores GeoHash, points count and values count.
     /// Sorted by geohash, so we binary search the region.
-    pub(super) counts_per_hash: MmapSlice<Counts>,
+    pub(super) counts_per_hash: TypedStorage<S, Counts>,
     /// Stores GeoHash and associated range of offsets in the points_map_ids.
     /// Sorted by geohash, so we binary search the region.
-    pub(super) points_map: MmapSlice<PointKeyValue>,
+    pub(super) points_map: TypedStorage<S, PointKeyValue>,
     /// A storage of associations between geo-hashes and point ids. (See the diagram above)
-    pub(super) points_map_ids: MmapSlice<PointOffsetType>,
+    pub(super) points_map_ids: TypedStorage<S, PointOffsetType>,
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
-    pub(super) point_to_values: StoredPointToValues<GeoPoint, MmapFile>,
+    pub(super) point_to_values: StoredPointToValues<GeoPoint, S>,
     /// Deleted flags for each PointOffsetType
     pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
 }
@@ -86,7 +107,7 @@ struct MmapGeoMapIndexStat {
     max_values_per_point: usize,
 }
 
-impl MmapGeoMapIndex {
+impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
     pub fn build(
         dynamic_index: InMemoryGeoMapIndex,
         path: &Path,
@@ -217,27 +238,19 @@ impl MmapGeoMapIndex {
 
         let populate = !is_on_disk;
         let stats: MmapGeoMapIndexStat = read_json(&stats_path)?;
-        let counts_per_hash = unsafe {
-            MmapSlice::try_from(open_write_mmap(
-                &counts_per_hash_path,
-                AdviceSetting::Global,
-                populate,
-            )?)?
+
+        let open_options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            disk_parallel: None,
+            populate: Some(populate),
+            advice: None,
+            prevent_caching: None,
         };
-        let points_map = unsafe {
-            MmapSlice::try_from(open_write_mmap(
-                &points_map_path,
-                AdviceSetting::Global,
-                populate,
-            )?)?
-        };
-        let points_map_ids = unsafe {
-            MmapSlice::try_from(open_write_mmap(
-                &points_map_ids_path,
-                AdviceSetting::Global,
-                populate,
-            )?)?
-        };
+
+        let counts_per_hash = UniversalRead::open(&counts_per_hash_path, open_options)?;
+        let points_map = UniversalRead::open(&points_map_path, open_options)?;
+        let points_map_ids = UniversalRead::open(&points_map_ids_path, open_options)?;
         let point_to_values = StoredPointToValues::open(path, true)?;
 
         let deleted = MmapBitSlice::open(
@@ -303,43 +316,68 @@ impl MmapGeoMapIndex {
             .unwrap_or(0)
     }
 
-    pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
-        self.storage
+    pub(super) fn points_per_hash(
+        &self,
+    ) -> OperationResult<impl Iterator<Item = OperationResult<(GeoHash, usize)>> + '_> {
+        Ok(self
+            .storage
             .counts_per_hash
-            .iter()
-            .map(|counts| (counts.hash.normalize(), counts.points as usize))
+            .read_iter_autobatched(once(ReadRange {
+                byte_offset: 0,
+                length: self.storage.counts_per_hash.len()?,
+            }))?
+            .map(|c| match c {
+                Ok(c) => Ok((c.hash.normalize(), c.points as usize)),
+                Err(e) => Err(OperationError::from(e)),
+            }))
     }
 
-    pub fn points_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
-        let (points, _) = self.counts_of_hash(hash, hw_counter);
-        points
+    pub fn points_of_hash(
+        &self,
+        hash: GeoHash,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        let (points, _) = self.counts_of_hash(hash, hw_counter)?;
+        Ok(points)
     }
 
-    pub fn values_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
-        let (_, values) = self.counts_of_hash(hash, hw_counter);
-        values
+    pub fn values_of_hash(
+        &self,
+        hash: GeoHash,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        let (_, values) = self.counts_of_hash(hash, hw_counter)?;
+        Ok(values)
     }
 
-    fn counts_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> (usize, usize) {
+    fn counts_of_hash(
+        &self,
+        hash: GeoHash,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<(usize, usize)> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
+        let len = self.storage.counts_per_hash.len()? as usize;
 
         hw_counter
             .payload_index_io_read_counter()
             // Simulate binary search complexity as IO read estimation
-            .incr_delta(
-                (self.storage.counts_per_hash.len() as f32).log2().ceil() as usize
-                    * size_of::<Counts>(),
-            );
+            .incr_delta((len as f32).log2().ceil() as usize * size_of::<Counts>());
 
-        if let Ok(index) = self
-            .storage
-            .counts_per_hash
-            .binary_search_by(|x| x.hash.normalize().cmp(&hash))
-        {
-            let counts = self.storage.counts_per_hash[index];
-            (counts.points as usize, counts.values as usize)
+        let read_one = |idx| -> OperationResult<Counts> {
+            let range = ReadRange::one((idx * size_of::<Counts>()) as u64);
+            let value = self.storage.counts_per_hash.read::<Random>(range)?;
+            Ok(value[0])
+        };
+
+        let found = binary_search_by(0..len, |idx| {
+            read_one(idx).map(|c| c.hash.normalize().cmp(&hash))
+        })?;
+
+        if let Ok(index) = found {
+            let counts = read_one(index)?;
+            Ok((counts.points as usize, counts.values as usize))
         } else {
-            (0, 0)
+            Ok((0, 0))
         }
     }
 
@@ -392,33 +430,113 @@ impl MmapGeoMapIndex {
         }
     }
 
-    /// Returns an iterator over all point IDs which have the `geohash` prefix.
+    /// Returns an iterator over all point IDs which have the geohash prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    pub fn stored_sub_regions<'a>(
-        &'a self,
-        geohash: GeoHash,
-    ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        let start_index = self
+    pub(super) fn stored_sub_regions(
+        &self,
+        geohash_prefix: GeoHash,
+    ) -> OperationResult<impl Iterator<Item = OperationResult<PointOffsetType>> + '_> {
+        let len = self.storage.points_map.len()?;
+
+        // The `points_map` file is sorted by heohash. That means, we need to
+        // find this range `start..end`, where
+        // - `start` is the first entry which geohash is >= geohash_prefix.
+        // - `end` is the first entry past the start which geohash is not within
+        //    the geohash_prefix.
+        // 0                             start      end                    EOF
+        // ├───────────────────────────────┼─────────┼──────────────────────┤
+        // │<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<│.........│>>>>>>>>>>>>>>>>>>>>>>│
+        // │ entries < geohash_prefix      │ result  │ entries past the end │
+        // └───────────────────────────────┴─────────┴──────────────────────┘
+
+        // Step 1: binary search to find the index of the `start` entry.
+        let start_idx = binary_search_by(0..len, |idx| {
+            let range = ReadRange::one(idx * size_of::<PointKeyValue>() as u64);
+            let value = self.storage.points_map.read::<Random>(range)?;
+            OperationResult::Ok(value[0].hash.normalize().cmp(&geohash_prefix))
+        })?
+        .unwrap_or_else(|index| index);
+
+        // Step 2: Read entries in chunks starting from `start` until we stumble
+        // into a chunk with an `end` entry.
+        //
+        //     start                                 end
+        // ─────┬┴──────┬───────┬───────┬───────┬─────┴─┬───────┬───────┬───────
+        // …<<<<│.......│.......│.......│.......│.....>>│>>>>>>>│>>>>>>>│>>>>>>…
+        // ─────┴── 0 ──┴── 1 ──┴── 2 ──┴── 3 ──┴── 4 ──┴── 5 ──┴── 6 ──┴── 7 ──
+        //
+        // The problem is that UniversalRead iterator gives us chunks in an
+        // arbitrary order, and we don't know where `end` is.
+        // Suppose chunks arrived in this order:
+        //
+        // ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐
+        // │.......│ │>>>>>>>│ │.......│ │.....>>│ │.......│ │.......│ │>>>>>>>│
+        // └── 0 ──┘ └── 6 ──┘ └── 1 ──┘ └── 4 ──┘ └── 3 ──┘ └── 2 ──┘ └── 5 ──┘
+        //              (a)                 (b)                 (c)
+        //
+        // (a) When we see chunk 6, we know that it's past the end, but we still
+        //     need to wait for chunks 0..5 to be completed.
+        // (b) Similar, but now we know we need to wait for chunks 0..3.
+        // (c) Only at this point we received all "good" chunks, so we can stop
+        //     here.
+        //
+        // TODO: make this step lazy/merge into the next step.
+        let chunks = self.storage.points_map.read_iter::<Sequential, _>(
+            ReadRange {
+                byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
+                length: len - start_idx,
+            }
+            .iter_autochunks::<PointKeyValue>()
+            .enumerate(),
+        )?;
+        let mut point_map_ranges: Vec<ReadRange> = Vec::with_capacity(128);
+        let mut end_chunk = None;
+        let mut received_chunks = BitVec::<usize>::EMPTY;
+
+        for chunk_result in chunks {
+            let (chunk, entries) = chunk_result?;
+            if end_chunk.is_some_and(|end_chunk| chunk > end_chunk) {
+                continue;
+            }
+
+            // Mark chunk as received.
+            if chunk >= received_chunks.len() {
+                received_chunks.resize(chunk + 1, false);
+            }
+            received_chunks.set(chunk, true);
+
+            for &entry in entries.iter() {
+                if entry.hash.normalize().starts_with(geohash_prefix) {
+                    point_map_ranges.push(ReadRange {
+                        byte_offset: u64::from(entry.ids_start)
+                            * size_of::<PointOffsetType>() as u64,
+                        length: u64::from(entry.ids_end.saturating_sub(entry.ids_start)),
+                    });
+                } else {
+                    end_chunk = Some(end_chunk.map_or(chunk, |end_chunk| end_chunk.min(chunk)));
+                    break;
+                }
+            }
+
+            if let Some(end_chunk) = end_chunk
+                && received_chunks[..end_chunk].all()
+            {
+                break;
+            }
+        }
+
+        // Step 3: read ranges from `point_map_ranges`.
+        Ok(self
             .storage
-            .points_map
-            .binary_search_by(|point_key_value| point_key_value.hash.normalize().cmp(&geohash))
-            .unwrap_or_else(|index| index);
-        self.storage.points_map[start_index..]
-            .iter()
-            .take_while(move |point_key_value| {
-                point_key_value.hash.normalize().starts_with(geohash)
-            })
-            .filter_map(|point_key_value| {
-                Some(
-                    self.storage
-                        .points_map_ids
-                        .get(point_key_value.ids_start as usize..point_key_value.ids_end as usize)?
-                        .iter()
-                        .copied()
-                        .filter(|idx| !self.storage.deleted.get(*idx as usize).unwrap_or(true)),
-                )
-            })
-            .flatten()
+            .points_map_ids
+            .read_iter_autobatched(point_map_ranges)?
+            .filter_map(|res| match res {
+                Ok(point_id) if !self.storage.deleted.get(point_id as usize).unwrap_or(true) => {
+                    Some(Ok(point_id))
+                }
+                Ok(_) => None,
+                Err(e) => Some(Err(OperationError::from(e))),
+            }))
     }
 
     pub fn points_count(&self) -> usize {
