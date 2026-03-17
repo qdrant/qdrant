@@ -99,5 +99,37 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
             })
     }
 
+    /// Similar to [`UniversalRead::read_batch`], but automatically splits
+    /// ranges into chunks. Calls callback per single item.
+    fn read_batch_autochunks(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+        mut callback: impl FnMut(T),
+    ) -> Result<()> {
+        self.read_batch::<Sequential>(
+            ranges.into_iter().flat_map(|r| r.iter_autochunks::<T>().0),
+            |_, chunk| {
+                for &item in chunk {
+                    callback(item);
+                }
+                Ok(())
+            },
+        )
+    }
+
+    /// Read the entire file and call callback for each item with its index.
+    fn for_each(&self, mut callback: impl FnMut(u64, T)) -> Result<()> {
+        let (iter, chunk_len) = ReadRange {
+            byte_offset: 0,
+            length: self.len()?,
+        }
+        .iter_autochunks::<T>();
+        self.read_batch::<Sequential>(iter, |chunk_idx, chunk| {
+            for (item_idx, &item) in chunk.iter().enumerate() {
+                callback(chunk_idx as u64 * chunk_len + item_idx as u64, item);
+            }
+            Ok(())
+        })
+    }
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }

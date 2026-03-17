@@ -2,7 +2,9 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use ahash::AHashSet;
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, ReadRange, UniversalRead};
 
 use super::mmap_geo_index::MmapGeoMapIndex;
 use crate::common::Flusher;
@@ -47,43 +49,43 @@ pub struct ImmutableGeoMapIndex {
 }
 
 enum Storage {
-    Mmap(Box<MmapGeoMapIndex>),
+    Mmap(Box<MmapGeoMapIndex<MmapFile>>),
 }
 
 impl ImmutableGeoMapIndex {
     /// Open and load immutable geo index from mmap storage
-    pub fn open_mmap(index: MmapGeoMapIndex) -> OperationResult<Self> {
+    pub fn open_mmap(index: MmapGeoMapIndex<MmapFile>) -> OperationResult<Self> {
         let counts_per_hash = index
             .storage
             .counts_per_hash
+            .read_whole()?
             .iter()
             .copied()
             .map(Counts::from)
             .collect();
 
         // Get points per geo hash and filter deleted points
-        let points_map = index
-            .storage
-            .points_map
+        let points_map_old = index.storage.points_map.read_whole()?;
+        let mut points_map = points_map_old
             .iter()
-            .copied()
-            .map(|item| {
-                let super::mmap_geo_index::PointKeyValue {
-                    hash,
-                    ids_start,
-                    ids_end,
-                } = item;
-                (
-                    hash,
-                    index.storage.points_map_ids[ids_start as usize..ids_end as usize]
-                        .iter()
-                        .copied()
-                        // Filter deleted points
-                        .filter(|id| !index.storage.deleted.get(*id as usize).unwrap_or_default())
-                        .collect(),
-                )
-            })
-            .collect();
+            .map(|item| (item.hash, AHashSet::default()))
+            .collect::<Vec<_>>();
+        index.storage.points_map_ids.read_batch::<Random>(
+            points_map_old.iter().map(|item| ReadRange {
+                byte_offset: u64::from(item.ids_start) * size_of::<PointOffsetType>() as u64,
+                length: u64::from(item.ids_end - item.ids_start),
+            }),
+            |i, ids| {
+                points_map[i].1 = ids
+                    .iter()
+                    .copied()
+                    // Filter deleted points
+                    .filter(|id| !index.storage.deleted.get(*id as usize).unwrap_or_default())
+                    .collect();
+                Ok(())
+            },
+        )?;
+        drop(points_map_old);
 
         // Get point values and filter deleted points
         // Track deleted points to adjust point and value counts after loading
