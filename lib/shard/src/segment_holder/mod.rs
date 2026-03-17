@@ -255,6 +255,11 @@ impl SegmentHolder {
             .cloned()
     }
 
+    /// Iterates appendable segments only.
+    pub fn iter_appendable(&self) -> impl Iterator<Item = LockedSegment> {
+        self.appendable_segments.values().cloned()
+    }
+
     /// Get two separate lists for non-appendable and appendable locked segments
     pub fn split_segments(&self) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
         (

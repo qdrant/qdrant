@@ -973,7 +973,10 @@ impl LocalShard {
 
     // Perform an operation using the shards segments.
     // This doesn't lock the SegmentHolder during the operation.
-    fn do_with_segments<R, F>(&self, mut f: F) -> AbortOnDropHandle<R>
+    // The function also allows to specify which type of segments to iterate over.
+    // `appendable_only` iterates over both non-appendable and appendable segments if `false`
+    // and over appendable segments only if `true`.
+    fn do_with_segments<R, F>(&self, mut f: F, appendable_only: bool) -> AbortOnDropHandle<R>
     where
         R: Send + 'static,
         F: FnMut(&[LockedSegment]) -> R + Send + 'static,
@@ -982,11 +985,15 @@ impl LocalShard {
 
         let handle = tokio::task::spawn_blocking(move || {
             // Collect the segments first so we don't lock the segment holder during the operation `f`.
-            let segments = segments
-                .read()
-                .iter()
-                .map(|i| i.1.clone())
-                .collect::<Vec<_>>();
+            let segments = if appendable_only {
+                segments.read().iter_appendable().collect::<Vec<_>>()
+            } else {
+                segments
+                    .read()
+                    .iter()
+                    .map(|i| i.1.clone())
+                    .collect::<Vec<_>>()
+            };
 
             f(&segments)
         });
@@ -996,12 +1003,15 @@ impl LocalShard {
 
     pub async fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
         let deferred_point_count = self
-            .do_with_segments(|segments| {
-                segments
-                    .iter()
-                    .map(|segment| segment.get().read().deferred_point_count())
-                    .sum::<usize>()
-            })
+            .do_with_segments(
+                |segments| {
+                    segments
+                        .iter()
+                        .map(|segment| segment.get().read().deferred_point_count())
+                        .sum::<usize>()
+                },
+                true,
+            )
             .await;
 
         if let Err(err) = &deferred_point_count {
@@ -1087,28 +1097,31 @@ impl LocalShard {
         let collection_config = self.collection_config.read().await.clone();
 
         let segment_info = self
-            .do_with_segments(|segments| {
-                let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
-                let mut indexed_vectors_count = 0;
-                let mut points_count = 0;
-                let mut segments_count = 0;
+            .do_with_segments(
+                |segments| {
+                    let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
+                    let mut indexed_vectors_count = 0;
+                    let mut points_count = 0;
+                    let mut segments_count = 0;
 
-                for segment in segments {
-                    segments_count += 1;
+                    for segment in segments {
+                        segments_count += 1;
 
-                    let segment_info = segment.get().read().info();
+                        let segment_info = segment.get().read().info();
 
-                    indexed_vectors_count += segment_info.num_indexed_vectors;
-                    points_count += segment_info.num_points;
-                    for (key, val) in segment_info.index_schema {
-                        schema
-                            .entry(key)
-                            .and_modify(|entry| entry.points += val.points)
-                            .or_insert(val);
+                        indexed_vectors_count += segment_info.num_indexed_vectors;
+                        points_count += segment_info.num_points;
+                        for (key, val) in segment_info.index_schema {
+                            schema
+                                .entry(key)
+                                .and_modify(|entry| entry.points += val.points)
+                                .or_insert(val);
+                        }
                     }
-                }
-                (schema, indexed_vectors_count, points_count, segments_count)
-            })
+                    (schema, indexed_vectors_count, points_count, segments_count)
+                },
+                false,
+            )
             .await;
 
         if let Err(err) = &segment_info {
