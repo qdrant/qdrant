@@ -1002,22 +1002,6 @@ impl LocalShard {
     }
 
     pub async fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
-        let deferred_point_count = self
-            .do_with_segments(
-                |segments| {
-                    segments
-                        .iter()
-                        .map(|segment| segment.get().read().deferred_point_count())
-                        .sum::<usize>()
-                },
-                true,
-            )
-            .await;
-
-        if let Err(err) = &deferred_point_count {
-            log::warn!("Failed to get deferred ponit counts: {err:?}");
-        }
-
         let prevent_unoptimized = self
             .collection_config
             .read()
@@ -1026,11 +1010,32 @@ impl LocalShard {
             .prevent_unoptimized
             .unwrap_or(false);
 
+        let deferred_point_count = if prevent_unoptimized {
+            let deferred_point_count = self
+                .do_with_segments(
+                    |segments| {
+                        segments
+                            .iter()
+                            .map(|segment| segment.get().read().deferred_point_count())
+                            .sum::<usize>()
+                    },
+                    true,
+                )
+                .await;
+
+            if let Err(err) = &deferred_point_count {
+                log::warn!("Failed to get deferred ponit counts: {err:?}");
+            }
+
+            deferred_point_count.ok()
+        } else {
+            None
+        };
+
         ShardUpdateQueueInfo {
             length: self.update_queue_length(),
             op_num: self.applied_seq_handler.op_num().map(|s| s as usize),
-            deferred_points: prevent_unoptimized
-                .then_some(deferred_point_count.unwrap_or_default()),
+            deferred_points: deferred_point_count,
         }
     }
 
