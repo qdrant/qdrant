@@ -222,6 +222,7 @@ data-encoding = "2.10.0"
 delegate = "0.13.5"
 ecow = { version = "0.2.6", features = ["serde"] }
 env_logger = "0.11"
+fallible-iterator = "0.3.0"
 fnv = "1.0"
 fs4 = "0.13.1"
 fs-err = { version = "3.2.2", features = ["tokio"] }

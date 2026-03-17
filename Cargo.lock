@@ -1483,6 +1483,7 @@ dependencies = [
  "common",
  "criterion",
  "delegate",
+ "fallible-iterator",
  "fs-err",
  "fs_extra",
  "io-uring",
