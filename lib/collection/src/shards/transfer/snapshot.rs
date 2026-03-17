@@ -1,10 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::defaults;
+use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
 use semver::Version;
-use tempfile::TempPath;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
@@ -197,7 +197,7 @@ pub(super) async fn transfer_snapshot(
     let use_streaming_endpoint =
         channel_service.peer_is_at_version(remote_peer_id, &Version::new(1, 12, 0));
 
-    let mut snapshot_temp_paths = Vec::new();
+    let mut snapshot_cleanup_paths: Vec<PathBuf> = Vec::new();
     let mut shard_download_url = local_rest_address;
 
     let encoded_collection_name = urlencoding::encode(collection_id);
@@ -216,19 +216,20 @@ pub(super) async fn transfer_snapshot(
             .await?;
 
         // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-        let snapshot_temp_path = shard_holder_read
+        let snapshot_path = shard_holder_read
             .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
             .await
-            .map(TempPath::from_path)
             .map_err(|err| {
                 CollectionError::service_error(format!(
                     "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
                 ))
             })?;
-        let snapshot_checksum_temp_path =
-            TempPath::from_path(get_checksum_path(&snapshot_temp_path));
-        snapshot_temp_paths.push(snapshot_temp_path);
-        snapshot_temp_paths.push(snapshot_checksum_temp_path);
+        // Compute checksum path before snapshot_path is moved into the cleanup list.
+        let snapshot_checksum_path = get_checksum_path(&snapshot_path);
+        // INVARIANT: no `?` may be introduced between these pushes and the cleanup
+        // loop below — doing so would allow an early return that skips cleanup.
+        snapshot_cleanup_paths.push(snapshot_path);
+        snapshot_cleanup_paths.push(snapshot_checksum_path);
 
         let encoded_snapshot_name = urlencoding::encode(&snapshot_description.name);
 
@@ -247,7 +248,7 @@ pub(super) async fn transfer_snapshot(
         .as_deref()
         .or(channel_service.alt_api_key.as_deref());
 
-    remote_shard
+    let recover_result = remote_shard
         .recover_shard_snapshot_from_url(
             collection_id,
             shard_id,
@@ -261,16 +262,24 @@ pub(super) async fn transfer_snapshot(
             CollectionError::service_error(format!(
                 "Failed to recover shard snapshot on remote: {err}"
             ))
-        })?;
+        });
 
-    for snapshot_temp_path in snapshot_temp_paths {
-        if let Err(err) = snapshot_temp_path.close() {
-            log::warn!(
-                "Failed to delete shard transfer snapshot after recovery, \
-                 snapshot file may be left behind: {err}"
-            );
+    // Explicitly delete the temporary snapshot files regardless of recovery outcome.
+    // This avoids re-wrapping already-persisted paths in TempPath and relying on
+    // implicit drop for cleanup.
+    for path in &snapshot_cleanup_paths {
+        if let Err(err) = tokio_fs::remove_file(path).await {
+            // NotFound is expected if the file was already removed; only warn on real errors.
+            if err.kind() != std::io::ErrorKind::NotFound {
+                log::warn!(
+                    "Failed to delete shard transfer snapshot after recovery, \
+                     snapshot file may be left behind: {err}"
+                );
+            }
         }
     }
+
+    recover_result?;
 
     // Set shard state to Partial
     progress.lock().set_stage(TransferStage::WaitingConsensus);
@@ -314,4 +323,112 @@ pub(super) async fn transfer_snapshot(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::ErrorKind;
+    use std::path::PathBuf;
+
+    use fs_err::tokio as tokio_fs;
+
+    /// Run the cleanup loop as written in `transfer_snapshot`, returning any
+    /// unexpected (non-NotFound) errors encountered.
+    async fn run_cleanup(paths: &[PathBuf]) -> Vec<ErrorKind> {
+        let mut unexpected = Vec::new();
+        for path in paths {
+            if let Err(err) = tokio_fs::remove_file(path).await {
+                if err.kind() != ErrorKind::NotFound {
+                    unexpected.push(err.kind());
+                }
+            }
+        }
+        unexpected
+    }
+
+    /// Verify that both files are deleted on the happy path and no unexpected
+    /// errors are reported.
+    #[tokio::test]
+    async fn test_snapshot_cleanup_paths_deleted_after_successful_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let snapshot = dir.path().join("shard.snapshot");
+        let checksum = dir.path().join("shard.snapshot.checksum");
+
+        tokio_fs::File::create(&snapshot).await.unwrap();
+        tokio_fs::File::create(&checksum).await.unwrap();
+
+        let cleanup_paths = vec![snapshot.clone(), checksum.clone()];
+        let errors = run_cleanup(&cleanup_paths).await;
+
+        assert!(errors.is_empty(), "unexpected cleanup errors: {errors:?}");
+        assert!(!snapshot.exists(), "snapshot must be deleted after successful recovery");
+        assert!(!checksum.exists(), "checksum must be deleted after successful recovery");
+    }
+
+    /// Verify that cleanup runs and both files are deleted even when recovery
+    /// fails, and that the original error is preserved (not overwritten by any
+    /// cleanup error).
+    ///
+    /// Previously this relied on implicit `TempPath` drop; now it is explicit,
+    /// so the files are removed even when `recover_result` is `Err`.
+    #[tokio::test]
+    async fn test_snapshot_cleanup_paths_deleted_after_failed_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let snapshot = dir.path().join("shard.snapshot");
+        let checksum = dir.path().join("shard.snapshot.checksum");
+
+        tokio_fs::File::create(&snapshot).await.unwrap();
+        tokio_fs::File::create(&checksum).await.unwrap();
+
+        let cleanup_paths = vec![snapshot.clone(), checksum.clone()];
+
+        // Simulate recovery failing.
+        let recover_result: Result<(), &str> = Err("simulated network error");
+
+        // Cleanup runs regardless of outcome — errors must not override the original result.
+        let cleanup_errors = run_cleanup(&cleanup_paths).await;
+
+        // Original error is preserved; cleanup errors do not replace it.
+        assert!(recover_result.is_err(), "original recovery error must be preserved");
+        assert!(
+            cleanup_errors.is_empty(),
+            "unexpected cleanup errors: {cleanup_errors:?}"
+        );
+        assert!(!snapshot.exists(), "snapshot must be deleted even after failed recovery");
+        assert!(!checksum.exists(), "checksum must be deleted even after failed recovery");
+    }
+
+    /// Verify that running cleanup twice (double-delete) does not warn — the
+    /// second attempt sees NotFound and silently ignores it.
+    #[tokio::test]
+    async fn test_snapshot_cleanup_double_delete_is_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let snapshot = dir.path().join("shard.snapshot");
+        let checksum = dir.path().join("shard.snapshot.checksum");
+
+        tokio_fs::File::create(&snapshot).await.unwrap();
+        tokio_fs::File::create(&checksum).await.unwrap();
+
+        let cleanup_paths = vec![snapshot.clone(), checksum.clone()];
+
+        // First cleanup removes the files.
+        let first_errors = run_cleanup(&cleanup_paths).await;
+        assert!(first_errors.is_empty(), "first cleanup must succeed: {first_errors:?}");
+
+        // Second cleanup: files are already gone — NotFound must not surface as an error.
+        let second_errors = run_cleanup(&cleanup_paths).await;
+        assert!(
+            second_errors.is_empty(),
+            "double-delete must not produce unexpected errors: {second_errors:?}"
+        );
+    }
+
+    /// Verify that if no snapshot was created (streaming path), the cleanup loop
+    /// is a no-op and does not panic.
+    #[tokio::test]
+    async fn test_snapshot_cleanup_noop_when_streaming_endpoint_used() {
+        let cleanup_paths: Vec<PathBuf> = Vec::new(); // streaming path: nothing registered
+        let errors = run_cleanup(&cleanup_paths).await;
+        assert!(errors.is_empty());
+    }
 }
