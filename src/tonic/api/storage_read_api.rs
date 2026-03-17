@@ -194,10 +194,7 @@ fn io_error_to_status(e: UniversalIoError) -> Status {
         UniversalIoError::NotFound { path } => {
             Status::not_found(format!("File not found: {}", path.display()))
         }
-        UniversalIoError::InvalidFileIndex {
-            file_index,
-            files,
-        } => Status::internal(format!(
+        UniversalIoError::InvalidFileIndex { file_index, files } => Status::internal(format!(
             "Invalid file index: {file_index} (num_files: {files})"
         )),
         UniversalIoError::IoUringNotSupported(e) => {
