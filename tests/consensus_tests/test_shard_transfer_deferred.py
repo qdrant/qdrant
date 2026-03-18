@@ -267,102 +267,140 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
 
 
 def test_shard_wal_delta_transfer_includes_deferred_points(tmp_path: pathlib.Path):
-    """WAL delta transfer must include deferred points.
+    """WAL delta transfer must include deferred points in the diff.
 
-    Unlike snapshot/stream_records which do initial replication, wal_delta
-    requires both peers to already have the shard (replication_factor=2).
-    It transfers only the WAL diff. This test verifies that deferred points
-    introduced after the initial sync are correctly propagated via wal_delta.
+    wal_delta requires both peers to already have the shard. This test:
+    1. Creates a collection with replication_factor=1 (only peer0 has shard)
+    2. Inserts a small initial batch (within threshold, no deferred points)
+    3. Replicates to peer1 via snapshot (both in sync)
+    4. Inserts more points on peer0 that become deferred (beyond threshold)
+    5. Uses wal_delta to sync the diff — the delta contains deferred points
+    6. Verifies both peers see all points after optimization
     """
     assert_project_root()
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
-    # Create collection with replication_factor=2 so both peers have the shard
-    r = requests.put(
-        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}?timeout=10",
-        json={
-            "vectors": {"size": VECTOR_DIM, "distance": "Cosine"},
-            "shard_number": N_SHARDS,
-            "replication_factor": 2,
-            "optimizers_config": {
-                "indexing_threshold": INDEXING_THRESHOLD_KB,
-                "prevent_unoptimized": True,
-                "max_optimization_threads": 0,
-            },
-        },
-    )
-    assert_http_ok(r)
-
+    create_deferred_collection(peer_api_uris[0])
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
         peer_api_uris=peer_api_uris,
     )
 
-    total_points = 500
     peer0_uri = peer_api_uris[0]
     peer1_uri = peer_api_uris[1]
 
-    # Insert initial points with wait=false to create deferred points on peer0.
-    # With replication_factor=2, both peers receive the write, but we'll
-    # add more points later on one peer and sync via wal_delta.
-    upsert_points(peer0_uri, start_id=1, count=total_points, wait=False)
-    time.sleep(3)
+    # Insert a small initial batch within the indexing threshold (no deferred points)
+    initial_points = 50
+    upsert_points(peer0_uri, start_id=1, count=initial_points, wait=False)
+    time.sleep(2)
 
-    # Verify deferred points exist
+    # Verify all initial points are visible (within threshold, none deferred)
     visible = scroll_all(peer0_uri)
-    visible_count = len(visible)
-    assert visible_count > 0, "Some points should be visible"
-    assert visible_count < total_points, (
-        f"Not all points should be visible (most are deferred), "
-        f"got {visible_count}/{total_points}"
+    assert len(visible) == initial_points, (
+        f"All initial points should be visible, got {len(visible)}/{initial_points}"
     )
 
-    # Enable optimizers before wal_delta transfer (same reason as stream_records:
-    # internal writes use wait=true which would hang with disabled optimizers)
-    update_collection_config(peer0_uri, {
-        "optimizers_config": {"max_optimization_threads": "auto"},
-    })
+    # Find source and target peers
+    source_idx, target_idx = None, None
+    for i, uri in enumerate(peer_api_uris):
+        info = get_collection_cluster_info(uri, COLLECTION_NAME)
+        if len(info["local_shards"]) > 0:
+            source_idx = i
+        else:
+            target_idx = i
+    assert source_idx is not None, "No peer has a local shard"
+    assert target_idx is not None, "All peers already have local shards"
 
-    # Get cluster info for the wal_delta transfer
-    cluster_info_0 = get_collection_cluster_info(peer0_uri, COLLECTION_NAME)
-    cluster_info_1 = get_collection_cluster_info(peer1_uri, COLLECTION_NAME)
-    shard_id = cluster_info_0["local_shards"][0]["shard_id"]
+    source_uri = peer_api_uris[source_idx]
+    target_uri = peer_api_uris[target_idx]
 
-    # Trigger wal_delta transfer from peer0 to peer1
+    src_info = get_collection_cluster_info(source_uri, COLLECTION_NAME)
+    dst_info = get_collection_cluster_info(target_uri, COLLECTION_NAME)
+    from_peer_id = src_info["peer_id"]
+    to_peer_id = dst_info["peer_id"]
+    shard_id = src_info["local_shards"][0]["shard_id"]
+
+    # Initial replication via snapshot so both peers have the shard
     r = requests.post(
-        f"{peer0_uri}/collections/{COLLECTION_NAME}/cluster",
+        f"{source_uri}/collections/{COLLECTION_NAME}/cluster",
         json={
             "replicate_shard": {
                 "shard_id": shard_id,
-                "from_peer_id": cluster_info_0["peer_id"],
-                "to_peer_id": cluster_info_1["peer_id"],
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "snapshot",
+            }
+        },
+    )
+    assert_http_ok(r)
+    wait_for_collection_shard_transfers_count(source_uri, COLLECTION_NAME, 0)
+
+    # Both peers now have the shard with the initial points.
+    # Insert more points that push beyond the indexing threshold, creating deferred points.
+    deferred_points = 500
+    upsert_points(source_uri, start_id=initial_points + 1, count=deferred_points, wait=False)
+    time.sleep(3)
+
+    # Verify deferred points exist on source
+    source_visible = scroll_all(source_uri)
+    total_inserted = initial_points + deferred_points
+    assert len(source_visible) < total_inserted, (
+        f"Not all points should be visible (some are deferred), "
+        f"got {len(source_visible)}/{total_inserted}"
+    )
+
+    # Enable optimizers before wal_delta transfer (internal writes use wait=true
+    # which would hang with disabled optimizers)
+    update_collection_config(source_uri, {
+        "optimizers_config": {"max_optimization_threads": "auto"},
+    })
+
+    # Use wal_delta to sync the deferred points from source to target
+    r = requests.post(
+        f"{source_uri}/collections/{COLLECTION_NAME}/cluster",
+        json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
                 "method": "wal_delta",
             }
         },
     )
     assert_http_ok(r)
-
-    wait_for_collection_shard_transfers_count(peer0_uri, COLLECTION_NAME, 0)
+    wait_for_collection_shard_transfers_count(source_uri, COLLECTION_NAME, 0)
 
     # Trigger optimization with wait=true
-    trigger_upsert_wait_true(peer0_uri, total_points)
+    trigger_upsert_wait_true(source_uri, total_inserted)
 
     # Wait for optimization to complete on both peers
-    wait_collection_green(peer0_uri, COLLECTION_NAME)
-    wait_collection_green(peer1_uri, COLLECTION_NAME)
+    wait_collection_green(source_uri, COLLECTION_NAME)
+    wait_collection_green(target_uri, COLLECTION_NAME)
 
     # After optimization ALL points must be visible on both peers
-    expected_total = total_points + 1
+    expected_total = total_inserted + 1  # +1 from trigger upsert
 
-    count_0 = exact_count(peer0_uri)
-    count_1 = exact_count(peer1_uri)
+    source_count = exact_count(source_uri)
+    target_count = exact_count(target_uri)
 
-    assert count_0 == expected_total, (
-        f"Peer 0 should have {expected_total} points, got {count_0}"
+    assert source_count == expected_total, (
+        f"Source should have {expected_total} points, got {source_count}"
     )
-    assert count_1 == expected_total, (
-        f"Peer 1 should have {expected_total} points, got {count_1}"
+    assert target_count == expected_total, (
+        f"Target should have {expected_total} points, got {target_count}"
+    )
+
+    # Cross-check: both peers have identical point sets
+    source_all = scroll_all(source_uri)
+    target_all = scroll_all(target_uri)
+
+    source_ids = {p["id"] for p in source_all}
+    target_ids = {p["id"] for p in target_all}
+
+    assert len(source_ids) == expected_total
+    assert source_ids == target_ids, (
+        "Both peers should have identical point sets after optimization"
     )
 
     # Cross-check: both peers have identical point sets
