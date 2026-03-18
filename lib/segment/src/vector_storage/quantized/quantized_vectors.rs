@@ -538,6 +538,33 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             VectorStorageEnum::DenseAppendableMemmap(v) => Self::create_impl(
                 v.as_ref(),
                 quantization_config,

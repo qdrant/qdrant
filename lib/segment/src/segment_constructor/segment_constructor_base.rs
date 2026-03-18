@@ -109,6 +109,8 @@ fn open_mmap_vector_storage(
     madvise: AdviceSetting,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
+    // TODO: Open *io_uring* vector storage, if supported/enabled
+
     let storage_element_type = vector_config.datatype.unwrap_or_default();
     if let Some(multi_vec_config) = &vector_config.multivector_config {
         // there are no mmap multi vector storages, appendable only
@@ -217,7 +219,10 @@ pub(crate) fn open_vector_storage(
                 )
             }
         }
+
         // Mmap on disk, not appendable
+        //
+        // TODO: Open *io_uring* vector storage, if supported/enabled!?
         VectorStorageType::Mmap => open_mmap_vector_storage(
             vector_storage_path,
             vector_config,
@@ -230,6 +235,7 @@ pub(crate) fn open_vector_storage(
             AdviceSetting::from(Advice::Normal),
             true,
         ),
+
         // Chunked mmap on disk, appendable
         VectorStorageType::ChunkedMmap => open_chunked_mmap_vector_storage(
             vector_storage_path,

@@ -73,6 +73,8 @@ pub fn open_memmap_vector_storage(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
+    // TODO: Open *io_uring* vector storage, if supported/enabled!?
+
     let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
         path,
         dim,
@@ -89,6 +91,8 @@ pub fn open_memmap_vector_storage_byte(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
+    // TODO: Open *io_uring* vector storage, if supported/enabled!?
+
     let storage = open_memmap_vector_storage_with_async_io_impl(
         path,
         dim,
@@ -105,6 +109,8 @@ pub fn open_memmap_vector_storage_half(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
+    // TODO: Open *io_uring* vector storage, if supported/enabled!?
+
     let storage = open_memmap_vector_storage_with_async_io_impl(
         path,
         dim,

@@ -90,6 +90,13 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
 
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUring(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUringByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUringHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
