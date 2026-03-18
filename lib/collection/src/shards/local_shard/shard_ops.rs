@@ -33,6 +33,7 @@ use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::update_handler::{OperationData, UpdateSignal};
+use crate::update_workers::internal_update_result::InternalUpdateResult;
 
 #[async_trait]
 impl ShardOperation for LocalShard {
@@ -125,18 +126,25 @@ impl ShardOperation for LocalShard {
             (Some(receiver), Some(timeout)) => {
                 match tokio::time::timeout(timeout, receiver).await {
                     Ok(res) => {
-                        res??;
+                        let InternalUpdateResult { op_num, status } = res??;
+                        debug_assert_eq!(
+                            op_num, operation_id,
+                            "Operation ID from WAL should match the one received from update worker"
+                        );
                         Ok(UpdateResult {
-                            operation_id: Some(operation_id),
-                            status: UpdateStatus::Completed,
+                            operation_id: Some(op_num),
+                            status,
                             clock_tag: operation.clock_tag,
                         })
                     }
-                    Err(_) => Ok(UpdateResult {
-                        operation_id: Some(operation_id),
-                        status: UpdateStatus::WaitTimeout,
-                        clock_tag: operation.clock_tag,
-                    }),
+                    Err(elapsed) => {
+                        let _elapsed: Elapsed = elapsed;
+                        Ok(UpdateResult {
+                            operation_id: Some(operation_id),
+                            status: UpdateStatus::WaitTimeout,
+                            clock_tag: operation.clock_tag,
+                        })
+                    }
                 }
             }
             // Don't wait at all
