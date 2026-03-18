@@ -44,7 +44,7 @@ if os.path.exists(recovered_path):
 
 EdgeShard.unpack_snapshot(snapshot_path, recovered_path)
 
-shard = EdgeShard(recovered_path, None)
+shard = EdgeShard.load(recovered_path)
 
 points = shard.retrieve(point_ids=[1, 2, 3], with_vector=False, with_payload=True)
 

@@ -59,7 +59,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         })
     }
 
-    /// Initialize new data, even if it already exists on disk at the given path.
+    /// Initialize and write new data, even if it already exists on disk at the given path.
     ///
     /// If data already exists on disk, it will be immediately overwritten.
     pub fn new(path: impl Into<PathBuf>, data: T) -> Result<Self, Error> {
@@ -70,9 +70,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             path: path.into(),
         };
 
-        if data.path.exists() {
-            data.save()?;
-        }
+        data.save()?;
 
         Ok(data)
     }
