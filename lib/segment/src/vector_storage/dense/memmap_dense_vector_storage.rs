@@ -10,6 +10,8 @@ use common::fs::clear_disk_cache;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
+#[cfg(target_os = "linux")]
+use common::universal_io::IoUringFile;
 use common::universal_io::UniversalRead;
 use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
@@ -21,6 +23,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
+#[cfg(target_os = "linux")]
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
@@ -73,14 +76,18 @@ pub fn open_memmap_vector_storage(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    // TODO: Open *io_uring* vector storage, if supported/enabled!?
+    #[cfg(target_os = "linux")]
+    if get_async_scorer() {
+        match open_uring_vector_storage(path, dim, distance, populate) {
+            Ok(storage) => return Ok(VectorStorageEnum::DenseUring(storage)),
+            Err(err) => {
+                log::error!("failed to open io_uring based vector storage: {err}");
+            }
+        }
+    }
 
     let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
-        path,
-        dim,
-        distance,
-        get_async_scorer(),
-        populate,
+        path, dim, distance, false, populate,
     )?;
     Ok(VectorStorageEnum::DenseMemmap(storage))
 }
@@ -91,15 +98,18 @@ pub fn open_memmap_vector_storage_byte(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    // TODO: Open *io_uring* vector storage, if supported/enabled!?
+    #[cfg(target_os = "linux")]
+    if get_async_scorer() {
+        match open_uring_vector_storage(path, dim, distance, populate) {
+            Ok(storage) => return Ok(VectorStorageEnum::DenseUringByte(storage)),
+            Err(err) => {
+                log::error!("failed to open io_uring based vector storage: {err}");
+            }
+        }
+    }
 
-    let storage = open_memmap_vector_storage_with_async_io_impl(
-        path,
-        dim,
-        distance,
-        get_async_scorer(),
-        populate,
-    )?;
+    let storage =
+        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, false, populate)?;
     Ok(VectorStorageEnum::DenseMemmapByte(storage))
 }
 
@@ -109,15 +119,18 @@ pub fn open_memmap_vector_storage_half(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    // TODO: Open *io_uring* vector storage, if supported/enabled!?
+    #[cfg(target_os = "linux")]
+    if get_async_scorer() {
+        match open_uring_vector_storage(path, dim, distance, populate) {
+            Ok(storage) => return Ok(VectorStorageEnum::DenseUringHalf(storage)),
+            Err(err) => {
+                log::error!("failed to open io_uring based vector storage: {err}");
+            }
+        }
+    }
 
-    let storage = open_memmap_vector_storage_with_async_io_impl(
-        path,
-        dim,
-        distance,
-        get_async_scorer(),
-        populate,
-    )?;
+    let storage =
+        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, false, populate)?;
     Ok(VectorStorageEnum::DenseMemmapHalf(storage))
 }
 
@@ -151,6 +164,28 @@ fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
     let deleted_path = path.join(DELETED_PATH);
     let mmap_store =
         ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, with_async_io, populate)?;
+
+    Ok(Box::new(MemmapDenseVectorStorage {
+        vectors_path,
+        deleted_path,
+        vectors: Some(mmap_store),
+        distance,
+    }))
+}
+
+#[cfg(target_os = "linux")]
+fn open_uring_vector_storage<T: PrimitiveVectorElement>(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    populate: bool,
+) -> OperationResult<Box<MemmapDenseVectorStorage<T, IoUringFile>>> {
+    fs::create_dir_all(path)?;
+
+    let vectors_path = path.join(VECTORS_PATH);
+    let deleted_path = path.join(DELETED_PATH);
+    let mmap_store =
+        ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, true, populate)?;
 
     Ok(Box::new(MemmapDenseVectorStorage {
         vectors_path,
