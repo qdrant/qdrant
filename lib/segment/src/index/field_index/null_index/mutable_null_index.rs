@@ -358,7 +358,7 @@ impl PayloadFieldIndex for MutableNullIndex {
         &self,
         _threshold: usize,
         _key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         // No payload blocks
         Box::new(std::iter::empty())
     }

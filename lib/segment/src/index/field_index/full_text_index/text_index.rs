@@ -180,7 +180,7 @@ impl FullTextIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         match self {
             Self::Mutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
             Self::Immutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
@@ -634,7 +634,7 @@ impl PayloadFieldIndex for FullTextIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         self.payload_blocks(threshold, key)
     }
 }
