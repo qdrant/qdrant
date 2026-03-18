@@ -1,25 +1,47 @@
 [package]
 name = "api"
-version = "0.10.5"
-edition = "2021"
+version = "1.17.1-dev"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2024"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lints]
+workspace = true
+
+[features]
+tracing = ["dep:tracing", "segment/tracing"]
 
 [dependencies]
-tonic = "0.7.2"
-prost = "0.10.1"
-prost-types = "0.10.1"
-serde = { version = "~1.0", features = ["derive"] }
-serde_json = "~1.0"
-schemars = { version = "0.8.11", features = ["uuid1", "preserve_order"] }
-uuid = { version = "1.2", features = ["v4", "serde"] }
-tower = "0.4.13"
-tokio = "1.21.2"
-rand = "0.8.5"
-chrono = { version = "~0.4", features = ["serde"] }
-thiserror = "1.0"
+ahash = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-wkt-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+validator = { workspace = true }
+itertools = { workspace = true }
+ordered-float = { workspace = true }
 
-segment = {path = "../segment"}
+common = { path = "../common/common" }
+segment = { path = "../segment", default-features = false }
+sparse = { path = "../sparse" }
+
+tracing = { workspace = true, optional = true }
 
 [build-dependencies]
-tonic-build = { version = "0.7.2", features = ["prost"] }
+tonic-build = { workspace = true }
+prost-build = { workspace = true }
+common = { path = "../common/common" }
+
+[dev-dependencies]
+tokio = { workspace = true }

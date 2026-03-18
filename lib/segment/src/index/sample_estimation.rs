@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 
-use crate::types::PointOffsetType;
+use common::types::PointOffsetType;
 
 const MAX_ESTIMATED_POINTS: usize = 1000;
 
@@ -43,7 +43,7 @@ pub fn sample_check_cardinality(
     let mut exp = 0;
     let mut interval;
     for idx in sample_points.take(MAX_ESTIMATED_POINTS) {
-        matched_points += checker(idx) as usize;
+        matched_points += usize::from(checker(idx));
         total_checked += 1;
 
         let estimation =
@@ -66,7 +66,7 @@ pub fn sample_check_cardinality(
 #[cfg(test)]
 mod tests {
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
 
     use super::*;
 
@@ -79,14 +79,13 @@ mod tests {
         let mut delta = 100_000;
         let mut positive = 0;
         for i in 1..=101 {
-            positive += rng.gen_bool(true_p) as usize;
+            positive += usize::from(rng.random_bool(true_p));
             if i % 20 == 1 {
                 let interval = confidence_agresti_coull_interval(i, positive, total);
                 assert!(interval.1 < delta);
                 delta = interval.1;
                 eprintln!(
-                    "confidence_agresti_coull_interval({}, {}, {}) = {:#?}",
-                    i, positive, total, interval
+                    "confidence_agresti_coull_interval({i}, {positive}, {total}) = {interval:#?}"
                 );
             }
         }

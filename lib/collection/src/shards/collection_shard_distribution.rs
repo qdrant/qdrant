@@ -1,23 +1,25 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+
+use ahash::AHashMap;
 
 use crate::collection_state::ShardInfo;
 use crate::shards::shard::{PeerId, ShardId};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CollectionShardDistribution {
-    pub shards: HashMap<ShardId, HashSet<PeerId>>,
+    pub shards: AHashMap<ShardId, HashSet<PeerId>>,
 }
 
 impl CollectionShardDistribution {
     pub fn all_local(shard_number: Option<u32>, this_peer_id: PeerId) -> Self {
         Self {
             shards: (0..shard_number.unwrap_or(1))
-                .map(|shard_id| (shard_id, vec![this_peer_id].into_iter().collect()))
+                .map(|shard_id| (shard_id, HashSet::from([this_peer_id])))
                 .collect(),
         }
     }
 
-    pub fn from_shards_info(shards_info: HashMap<ShardId, ShardInfo>) -> Self {
+    pub fn from_shards_info(shards_info: AHashMap<ShardId, ShardInfo>) -> Self {
         Self {
             shards: shards_info
                 .into_iter()

@@ -1,128 +1,37 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use rand::prelude::StdRng;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use rand::SeedableRng;
+use rand::prelude::StdRng;
 
-use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
+use super::payload_fixtures::BOOL_KEY;
 use crate::fixtures::payload_fixtures::{
-    generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY,
+    FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY, generate_diverse_payload,
 };
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
+use crate::index::PayloadIndex;
 use crate::index::plain_payload_index::PlainPayloadIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::PayloadIndex;
+use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
-use crate::payload_storage::PayloadStorage;
-use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberType};
+use crate::types::{PayloadSchemaType, PointIdType};
 
-/// Warn: Use for tests only
-///
-/// This struct mimics the interface of `PointsIterator` and `IdTracker` only for basic cases
-pub struct FixtureIdTracker {
-    ids: Vec<PointOffsetType>,
-}
-
-impl FixtureIdTracker {
-    pub fn new(num_points: usize) -> Self {
-        Self {
-            ids: (0..num_points).map(|x| x as PointOffsetType).collect(),
-        }
+/// Creates a simple `IdTrackerEnum` for testing with sequential point IDs (0..num_points).
+pub fn create_id_tracker_fixture(num_points: usize) -> IdTrackerEnum {
+    let mut id_tracker = InMemoryIdTracker::new();
+    for i in 0..num_points {
+        let external_id = PointIdType::NumId(i as u64);
+        let internal_id = i as PointOffsetType;
+        id_tracker.set_link(external_id, internal_id).unwrap();
+        id_tracker.set_internal_version(internal_id, 0).unwrap();
     }
-}
-
-impl IdTracker for FixtureIdTracker {
-    fn version(&self, _external_id: PointIdType) -> Option<SeqNumberType> {
-        Some(0)
-    }
-
-    fn set_version(
-        &mut self,
-        _external_id: PointIdType,
-        _version: SeqNumberType,
-    ) -> OperationResult<()> {
-        Ok(())
-    }
-
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        Some(match external_id {
-            PointIdType::NumId(id) => id as PointOffsetType,
-            PointIdType::Uuid(_) => unreachable!(),
-        })
-    }
-
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        Some(PointIdType::NumId(internal_id as u64))
-    }
-
-    fn set_link(
-        &mut self,
-        _external_id: PointIdType,
-        _internal_id: PointOffsetType,
-    ) -> OperationResult<()> {
-        Ok(())
-    }
-
-    fn drop(&mut self, _external_id: PointIdType) -> OperationResult<()> {
-        Ok(())
-    }
-
-    fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        Box::new(
-            self.ids
-                .iter()
-                .copied()
-                .map(|id| PointIdType::NumId(id as u64)),
-        )
-    }
-
-    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.ids.iter().copied())
-    }
-
-    fn iter_from(
-        &self,
-        external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let start = match external_id {
-            None => 0,
-            Some(id) => match id {
-                PointIdType::NumId(num) => num,
-                PointIdType::Uuid(_) => unreachable!(),
-            },
-        } as PointOffsetType;
-
-        Box::new(
-            self.ids
-                .iter()
-                .copied()
-                .skip_while(move |x| *x < start)
-                .map(|x| (PointIdType::NumId(x as u64), x)),
-        )
-    }
-
-    fn points_count(&self) -> usize {
-        self.ids.len()
-    }
-
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.ids.iter().copied())
-    }
-
-    fn max_id(&self) -> PointOffsetType {
-        self.ids.last().copied().unwrap()
-    }
-
-    fn mapping_flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
-    }
-
-    fn versions_flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
-    }
+    IdTrackerEnum::InMemoryIdTracker(id_tracker)
 }
 
 /// Creates in-memory payload storage and fills it with random points
@@ -135,14 +44,16 @@ impl IdTracker for FixtureIdTracker {
 ///
 /// Payload storage fixture
 ///
-fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryPayloadStorage {
+pub fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryPayloadStorage {
     let mut payload_storage = InMemoryPayloadStorage::default();
     let mut rng = StdRng::seed_from_u64(seed);
+
+    let hw_counter = HardwareCounterCell::new();
 
     for id in 0..num_points {
         let payload = generate_diverse_payload(&mut rng);
         payload_storage
-            .assign(id as PointOffsetType, &payload)
+            .set(id as PointOffsetType, &payload, &hw_counter)
             .unwrap();
     }
 
@@ -162,11 +73,12 @@ fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryPaylo
 ///
 pub fn create_plain_payload_index(path: &Path, num_points: usize, seed: u64) -> PlainPayloadIndex {
     let payload_storage = create_payload_storage_fixture(num_points, seed);
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(num_points)));
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         Arc::new(AtomicRefCell::new(payload_storage.into())),
         id_tracker.clone(),
+        HashMap::new(),
     ));
 
     PlainPayloadIndex::open(condition_checker, id_tracker, path).unwrap()
@@ -192,25 +104,61 @@ pub fn create_struct_payload_index(
     let payload_storage = Arc::new(AtomicRefCell::new(
         create_payload_storage_fixture(num_points, seed).into(),
     ));
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(num_points)));
 
-    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path).unwrap();
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        std::collections::HashMap::new(),
+        path,
+        true,
+        true,
+    )
+    .unwrap();
 
-    index
-        .set_indexed(STR_KEY, PayloadSchemaType::Keyword.into())
-        .unwrap();
-    index
-        .set_indexed(INT_KEY, PayloadSchemaType::Integer.into())
-        .unwrap();
-    index
-        .set_indexed(FLT_KEY, PayloadSchemaType::Float.into())
-        .unwrap();
-    index
-        .set_indexed(GEO_KEY, PayloadSchemaType::Geo.into())
-        .unwrap();
+    let hw_counter = HardwareCounterCell::new();
 
     index
-        .set_indexed(TEXT_KEY, PayloadSchemaType::Text.into())
+        .set_indexed(
+            &STR_KEY.parse().unwrap(),
+            PayloadSchemaType::Keyword,
+            &hw_counter,
+        )
+        .unwrap();
+    index
+        .set_indexed(
+            &INT_KEY.parse().unwrap(),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
+        .unwrap();
+    index
+        .set_indexed(
+            &FLT_KEY.parse().unwrap(),
+            PayloadSchemaType::Float,
+            &hw_counter,
+        )
+        .unwrap();
+    index
+        .set_indexed(
+            &GEO_KEY.parse().unwrap(),
+            PayloadSchemaType::Geo,
+            &hw_counter,
+        )
+        .unwrap();
+    index
+        .set_indexed(
+            &TEXT_KEY.parse().unwrap(),
+            PayloadSchemaType::Text,
+            &hw_counter,
+        )
+        .unwrap();
+    index
+        .set_indexed(
+            &BOOL_KEY.parse().unwrap(),
+            PayloadSchemaType::Bool,
+            &hw_counter,
+        )
         .unwrap();
 
     index

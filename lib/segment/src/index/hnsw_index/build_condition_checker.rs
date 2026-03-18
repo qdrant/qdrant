@@ -1,13 +1,14 @@
-use crate::index::visited_pool::VisitedList;
+use common::types::PointOffsetType;
+
+use crate::index::visited_pool::VisitedListHandle;
 use crate::payload_storage::FilterContext;
-use crate::types::PointOffsetType;
 
 pub struct BuildConditionChecker<'a> {
-    pub filter_list: &'a VisitedList,
+    pub filter_list: &'a VisitedListHandle<'a>,
     pub current_point: PointOffsetType,
 }
 
-impl<'a> FilterContext for BuildConditionChecker<'a> {
+impl FilterContext for BuildConditionChecker<'_> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         if point_id == self.current_point {
             return false; // Do not match current point while inserting it (second time)

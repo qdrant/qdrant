@@ -1,0 +1,57 @@
+#ifndef VECTOR_STORAGE_HEADER
+#define VECTOR_STORAGE_HEADER
+
+#include "vector_storage_dense.comp"
+
+#ifdef MULTIVECTORS
+
+struct MultivectorOffset {
+    uint offset;
+    uint count;
+};
+
+layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = MULTIVECTOR_OFFSETS_BINDING) \
+readonly buffer MultivectorOffsets { \
+    MultivectorOffset data[]; \
+} multivector_offsets;
+
+uint target_id;
+
+void set_target(uint point_id) {
+    target_id = point_id;
+}
+
+float similarity(uint point_id) {
+    MultivectorOffset offset_a = multivector_offsets.data[target_id];
+    MultivectorOffset offset_b = multivector_offsets.data[point_id];
+
+    float sum = 0.0;
+    for (uint a = 0; a < offset_a.count; a++) {
+        set_target_dense(offset_a.offset + a);
+        float max_sim = negative_infinity;
+
+        for (uint b = 0; b < offset_b.count; b++) {
+            float sim = similarity_dense(offset_b.offset + b);
+            if (sim > max_sim) {
+                max_sim = sim;
+            }
+        }
+
+        // sum of max similarity
+        sum += max_sim;
+    }
+    return sum;
+}
+
+#else
+
+void set_target(uint point_id) {
+    set_target_dense(point_id);
+}
+
+float similarity(uint point_id) {
+    return similarity_dense(point_id);
+}
+
+#endif
+#endif

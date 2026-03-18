@@ -1,5 +1,6 @@
 ### All Submissions:
 
+* [ ] Contributions should target the `dev` branch. Did you create your branch from `dev`?
 * [ ] Have you followed the guidelines in our Contributing document?
 * [ ] Have you checked to ensure there aren't other open [Pull Requests](../../../pulls) for the same update/change?
 
@@ -8,8 +9,8 @@
 ### New Feature Submissions:
 
 1. [ ] Does your submission pass tests?
-2. [ ] Have you lint your code locally using ``cargo fmt`` command prior to submission?
-3. [ ] Have you checked your code using ```cargo clippy``` command?
+2. [ ] Have you formatted your code locally using `cargo +nightly fmt --all` command prior to submission?
+3. [ ] Have you checked your code using `cargo clippy --workspace --all-features` command?
 
 ### Changes to Core Features:
 

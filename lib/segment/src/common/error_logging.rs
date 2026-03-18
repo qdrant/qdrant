@@ -7,7 +7,7 @@ pub trait LogError {
 impl<T, E> LogError for Result<T, E> {
     fn describe(self, msg: &str) -> Self {
         if self.is_err() {
-            debug!("Error while: {}", msg);
+            debug!("Error while: {msg}");
         }
         self
     }

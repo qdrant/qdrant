@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+# See lib/edge/publish/examples/src/bin/fusion-query.rs for the equivalent Rust example.
+
+from qdrant_edge import *
+from common import *
+
+
+shard = load_new_shard()
+fill_dummy_data(shard)
+
+search_filter = Filter(
+    must=[
+        FieldCondition(
+            key="color",
+            match=MatchValue(value="red"),
+        )
+    ]
+)
+
+# Basic RRF fusion (equal weights)
+print("=== Basic RRF Fusion ===")
+result = shard.query(QueryRequest(
+    prefetches = [
+        Prefetch(
+            prefetches=[],
+            query=Query.Nearest([6.0, 9.0, 4.0, 2.0]),
+            limit=5,
+            params=None,
+            filter=None,
+            score_threshold=None,
+        ),
+        Prefetch(
+            prefetches=[],
+            query=Query.Nearest([1.0, -3.0, 2.0, 8.0]),
+            limit=5,
+            params=None,
+            filter=search_filter,
+            score_threshold=None,
+        )
+    ],
+    query = Fusion.Rrf(k=2),
+    filter = None,
+    score_threshold = None,
+    limit = 10,
+    offset = 0,
+    params = None,
+    with_vector = True,
+    with_payload = True,
+))
+
+for point in result:
+    print(point)
+
+# Weighted RRF fusion - first prefetch has 3x weight
+print("\n=== Weighted RRF Fusion (3:1) ===")
+result = shard.query(QueryRequest(
+    prefetches = [
+        Prefetch(
+            prefetches=[],
+            query=Query.Nearest([6.0, 9.0, 4.0, 2.0]),
+            limit=5,
+            params=None,
+            filter=None,
+            score_threshold=None,
+        ),
+        Prefetch(
+            prefetches=[],
+            query=Query.Nearest([1.0, -3.0, 2.0, 8.0]),
+            limit=5,
+            params=None,
+            filter=search_filter,
+            score_threshold=None,
+        )
+    ],
+    query = Fusion.Rrf(k=2, weights=[3.0, 1.0]),  # First prefetch has 3x weight
+    filter = None,
+    score_threshold = None,
+    limit = 10,
+    offset = 0,
+    params = None,
+    with_vector = True,
+    with_payload = True,
+))
+
+for point in result:
+    print(point)

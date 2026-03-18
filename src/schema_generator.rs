@@ -1,30 +1,46 @@
-use api::grpc::models::CollectionsResponse;
+#![allow(dead_code)]
+
+use api::rest::models::{CollectionsResponse, ShardKeysResponse, Usage, VersionInfo};
+use api::rest::schema::PointInsertOperations;
+use api::rest::{
+    FacetRequest, FacetResponse, QueryGroupsRequest, QueryRequest, QueryRequestBatch,
+    QueryResponse, Record, ScoredPoint, SearchMatrixOffsetsResponse, SearchMatrixPairsResponse,
+    SearchMatrixRequest, UpdateVectors,
+};
 use collection::operations::cluster_ops::ClusterOperations;
+use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
-use collection::operations::snapshot_ops::SnapshotDescription;
+use collection::operations::point_ops::{PointsSelector, WriteOrdering};
+use collection::operations::snapshot_ops::{
+    ShardSnapshotRecover, SnapshotDescription, SnapshotRecover,
+};
 use collection::operations::types::{
-    CollectionClusterInfo, CollectionInfo, CountRequest, CountResult, PointRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
+    AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
+    CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
+    GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest,
+    RecommendRequestBatch, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
     SearchRequestBatch, UpdateResult,
 };
-use schemars::{schema_for, JsonSchema};
-use segment::types::ScoredPoint;
-use serde::{Deserialize, Serialize};
+use collection::operations::vector_ops::DeleteVectors;
+use schemars::JsonSchema;
+use schemars::r#gen::SchemaSettings;
+use serde::Serialize;
+use shard::operations::optimization::OptimizationsResponse;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
 use storage::types::ClusterStatus;
 
-use crate::common::helpers::LocksOption;
-use crate::common::points::CreateFieldIndex;
 use crate::common::telemetry::TelemetryData;
+use crate::common::telemetry_ops::distributed_telemetry::DistributedTelemetryData;
+use crate::common::update::{CreateFieldIndex, UpdateOperations};
 
 mod actix;
 mod common;
 mod settings;
+mod tracing;
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Serialize, JsonSchema)]
 struct AllDefinitions {
     a1: CollectionsResponse,
     a2: CollectionInfo,
@@ -55,13 +71,44 @@ struct AllDefinitions {
     ar: ClusterOperations,
     at: SearchRequestBatch,
     au: RecommendRequestBatch,
-    av: LocksOption,
+    aw: SnapshotRecover,
+    ax: CollectionsAliasesResponse,
+    ay: AliasDescription,
+    az: WriteOrdering,
+    b1: ReadConsistency,
+    b2: UpdateVectors,
+    b3: DeleteVectors,
+    b4: PointGroup,
+    b5: SearchGroupsRequest,
+    b6: RecommendGroupsRequest,
+    b7: GroupsResult,
+    b8: UpdateOperations,
+    b9: ShardSnapshotRecover,
+    ba: DiscoverRequest,
+    bb: DiscoverRequestBatch,
+    bc: VersionInfo,
+    bd: CollectionExistence,
+    be: QueryRequest,
+    bf: QueryRequestBatch,
+    bg: QueryResponse,
+    bh: QueryGroupsRequest,
+    bi: SearchMatrixRequest,
+    bj: SearchMatrixOffsetsResponse,
+    bk: SearchMatrixPairsResponse,
+    bl: FacetRequest,
+    bm: FacetResponse,
+    bn: Usage,
+    bo: ShardKeysResponse,
+    bp: OptimizationsResponse,
+    bq: DistributedTelemetryData,
 }
 
 fn save_schema<T: JsonSchema>() {
-    let schema = schema_for!(T);
+    let settings = SchemaSettings::draft07();
+    let generator = settings.into_generator();
+    let schema = generator.into_root_schema_for::<T>();
     let schema_str = serde_json::to_string_pretty(&schema).unwrap();
-    println!("{}", schema_str)
+    println!("{schema_str}")
 }
 
 fn main() {

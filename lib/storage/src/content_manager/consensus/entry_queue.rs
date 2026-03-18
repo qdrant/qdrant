@@ -25,11 +25,8 @@ impl EntryApplyProgressQueue {
     }
 
     pub fn applied(&mut self) {
-        match &mut self.0 {
-            Some((current_index, _)) => {
-                *current_index += 1;
-            }
-            None => (),
+        if let Some((current_index, _)) = &mut self.0 {
+            *current_index += 1;
         }
     }
 

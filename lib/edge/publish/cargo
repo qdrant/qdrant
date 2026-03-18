@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Convenience wrapper for `cargo` for `qdrant-edge` workspace."""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+# Problem: this directory is a separate Cargo workspace. Means that by default
+# it will have its own `target` directory, effectively building the same
+# dependencies twice.
+#
+# Solution: go one level up and ask Cargo which `target` directory it uses.
+# (it will also respect `build.target-dir` in user's Cargo config, if set)
+meta = json.loads(
+    subprocess.check_output(
+        ["cargo", "metadata", "--offline", "--format-version=1", "--no-deps"],
+        text=True,
+        cwd=SCRIPT_DIR.parent,
+    )
+)
+
+os.chdir(SCRIPT_DIR)
+
+env = os.environ.copy()
+env["CARGO_TARGET_DIR"] = meta["target_directory"]
+
+print(f"Using CARGO_TARGET_DIR={env['CARGO_TARGET_DIR']}", file=sys.stderr)
+os.execvpe("cargo", ["cargo"] + sys.argv[1:], env)

@@ -1,16 +1,17 @@
+#[cfg(not(target_os = "windows"))]
 mod prof;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
+use segment::payload_json;
 use segment::types::Payload;
-use serde_json::json;
 
 fn serde_formats_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("serde-formats-group");
 
     let payloads = (0..1000)
         .map(|x| {
-            let payload: Payload = json!({"val":format!("val_{}", x),}).into();
+            let payload = payload_json! {"val": format!("val_{x}")};
             payload
         })
         .collect_vec();
@@ -62,7 +63,7 @@ fn serde_formats_bench(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
+    config = Criterion::default();
     targets = serde_formats_bench
 }
 

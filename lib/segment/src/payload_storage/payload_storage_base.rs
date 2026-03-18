@@ -1,39 +1,97 @@
+use std::path::PathBuf;
+
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
-use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
+use crate::common::operation_error::OperationResult;
+use crate::json_path::JsonPath;
+use crate::types::{Filter, Payload};
 
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {
-    /// Assign same payload to each given point
-    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        self.drop(point_id)?;
-        self.assign(point_id, payload)?;
-        Ok(())
-    }
+    /// Overwrite payload for point_id. If payload already exists, replace it
+    fn overwrite(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
-    /// Assign payload to a concrete point with a concrete payload value
-    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
+    /// Set payload for point_id. If payload already exists, merge it with existing
+    fn set(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
-    /// Get payload for point
-    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
+    /// Set payload to a point_id by key. If payload already exists, merge it with existing
+    fn set_by_key(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
-    /// Delete payload by key
+    fn get(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    /// Delete payload by point_id and key
     fn delete(
         &mut self,
         point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>>;
+        key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Value>>;
 
-    /// Drop all payload of the point
-    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
+    /// Clear all payload of the point
+    fn clear(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>>;
 
-    /// Completely drop payload. Pufff!
-    fn wipe(&mut self) -> OperationResult<()>;
+    /// Completely delete payload storage, without keeping allocated memory. Pufff!
+    #[cfg(test)]
+    fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
+
+    /// Iterate over all stored payload and apply the provided callback.
+    /// Stop iteration if callback returns false or error.
+    ///
+    /// Required for building payload index.
+    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
+
+    /// Return all files that are used by storage to include in snapshots.
+    /// RocksDB storages are captured outside of this trait.
+    fn files(&self) -> Vec<PathBuf>;
+
+    /// Returns a list of files, that are immutable, to exclude from partial snapshots.
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
+    /// Return storage size in bytes
+    fn get_storage_size_bytes(&self) -> OperationResult<usize>;
+
+    /// Whether this storage is on-disk or in-memory.
+    fn is_on_disk(&self) -> bool;
 }
 
 pub trait ConditionChecker {

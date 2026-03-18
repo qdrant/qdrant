@@ -1,46 +1,52 @@
-#![allow(deprecated)]
-
-mod prof;
-
-use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 
-use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
-use collection::operations::types::{SearchRequest, SearchRequestBatch};
+use api::rest::SearchRequestInternal;
+use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::CollectionUpdateOperations;
+use collection::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+};
+use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
-use collection::shards::shard_trait::ShardOperation;
-use criterion::{criterion_group, criterion_main, Criterion};
-use rand::thread_rng;
-use segment::data_types::vectors::only_default_vector;
+use collection::shards::shard_trait::{ShardOperation, WaitUntil};
+use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::save_on_disk::SaveOnDisk;
+use criterion::{Criterion, criterion_group, criterion_main};
+use ordered_float::OrderedFloat;
+use rand::rng;
+use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Condition, Distance, FieldCondition, Filter, Payload, Range};
 use serde_json::Map;
+use shard::search::CoreSearchRequestBatch;
 use tempfile::Builder;
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
+#[cfg(not(target_os = "windows"))]
+mod prof;
+
 fn create_rnd_batch() -> CollectionUpdateOperations {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let num_points = 2000;
     let dim = 100;
-    let mut points = Vec::new();
+    let mut points = Vec::with_capacity(num_points);
     for i in 0..num_points {
         let mut payload_map = Map::new();
         payload_map.insert("a".to_string(), (i % 5).into());
         let vector = random_vector(&mut rng, dim);
         let vectors = only_default_vector(&vector);
-        let point = PointStruct {
-            id: i.into(),
-            vector: vectors.into(),
+        let point = PointStructPersisted {
+            id: (i as u64).into(),
+            vector: VectorStructInternal::from(vectors).into(),
             payload: Some(Payload(payload_map)),
         };
         points.push(point);
     }
     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperations::PointsList(points),
+        PointInsertOperationsInternal::PointsList(points),
     ))
 }
 
@@ -55,36 +61,44 @@ fn batch_search_bench(c: &mut Criterion) {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
+        wal_retain_closed: 1,
     };
 
     let collection_params = CollectionParams {
-        vectors: VectorParams {
-            size: NonZeroU64::new(100).unwrap(),
-            distance: Distance::Dot,
-        }
-        .into(),
-        shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
-        replication_factor: NonZeroU32::new(1).unwrap(),
-        on_disk_payload: false,
+        vectors: VectorParamsBuilder::new(100, Distance::Dot).build().into(),
+        ..CollectionParams::empty()
     };
 
-    let collection_config = CollectionConfig {
+    let collection_config = CollectionConfigInternal {
         params: collection_params,
         optimizer_config: OptimizersConfig {
             deleted_threshold: 0.9,
             vacuum_min_vector_number: 1000,
             default_segment_number: 2,
             max_segment_size: Some(100_000),
+            #[expect(deprecated)]
             memmap_threshold: Some(100_000),
-            indexing_threshold: 50_000,
+            indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: 2,
+            max_optimization_threads: Some(2),
+            prevent_unoptimized: None,
         },
         wal_config,
         hnsw_config: Default::default(),
+        quantization_config: Default::default(),
+        strict_mode_config: Default::default(),
+        uuid: None,
+        metadata: None,
     };
 
+    let optimizers_config = collection_config.optimizer_config.clone();
+
     let shared_config = Arc::new(RwLock::new(collection_config));
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
 
     let shard = handle
         .block_on(LocalShard::build_local(
@@ -92,28 +106,41 @@ fn batch_search_bench(c: &mut Criterion) {
             "test_collection".to_string(),
             storage_dir.path(),
             shared_config,
+            Default::default(),
+            payload_index_schema,
+            handle.clone(),
+            handle.clone(),
+            ResourceBudget::default(),
+            optimizers_config,
         ))
         .unwrap();
 
     let rnd_batch = create_rnd_batch();
 
-    handle.block_on(shard.update(rnd_batch, true)).unwrap();
+    handle
+        .block_on(shard.update(
+            rnd_batch.into(),
+            WaitUntil::Visible,
+            None,
+            HwMeasurementAcc::new(),
+        ))
+        .unwrap();
 
     let mut group = c.benchmark_group("batch-search-bench");
 
     let filters = vec![
         None,
         Some(Filter::new_must(Condition::Field(
-            FieldCondition::new_match("a".to_string(), 3.into()),
+            FieldCondition::new_match("a".parse().unwrap(), 3.into()),
         ))),
         Some(Filter::new_must(Condition::Field(
             FieldCondition::new_range(
-                "a".to_string(),
+                "a".parse().unwrap(),
                 Range {
                     lt: None,
-                    gt: Some(-1.),
+                    gt: Some(OrderedFloat(-1.)),
                     gte: None,
-                    lte: Some(100.0),
+                    lte: Some(OrderedFloat(100.0)),
                 },
             ),
         ))),
@@ -125,25 +152,28 @@ fn batch_search_bench(c: &mut Criterion) {
         group.bench_function(format!("search-{fid}"), |b| {
             b.iter(|| {
                 runtime.block_on(async {
-                    let mut rng = thread_rng();
+                    let mut rng = rng();
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
-                        let search_query = SearchRequest {
+                        let search_query = SearchRequestInternal {
                             vector: query.into(),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,
-                            offset: 0,
+                            offset: None,
                             with_payload: None,
                             with_vector: None,
                             score_threshold: None,
                         };
+                        let hw_acc = HwMeasurementAcc::new();
                         let result = shard
-                            .search(
-                                Arc::new(SearchRequestBatch {
-                                    searches: vec![search_query],
+                            .core_search(
+                                Arc::new(CoreSearchRequestBatch {
+                                    searches: vec![search_query.into()],
                                 }),
                                 search_runtime_handle,
+                                None,
+                                hw_acc,
                             )
                             .await
                             .unwrap();
@@ -156,26 +186,27 @@ fn batch_search_bench(c: &mut Criterion) {
         group.bench_function(format!("search-batch-{fid}"), |b| {
             b.iter(|| {
                 runtime.block_on(async {
-                    let mut rng = thread_rng();
-                    let mut searches = Vec::new();
+                    let mut rng = rng();
+                    let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
-                        let search_query = SearchRequest {
+                        let search_query = SearchRequestInternal {
                             vector: query.into(),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,
-                            offset: 0,
+                            offset: None,
                             with_payload: None,
                             with_vector: None,
                             score_threshold: None,
                         };
-                        searches.push(search_query);
+                        searches.push(search_query.into());
                     }
 
-                    let search_query = SearchRequestBatch { searches };
+                    let hw_acc = HwMeasurementAcc::new();
+                    let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .search(Arc::new(search_query), search_runtime_handle)
+                        .core_search(Arc::new(search_query), search_runtime_handle, None, hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -185,6 +216,10 @@ fn batch_search_bench(c: &mut Criterion) {
     }
 
     group.finish();
+
+    search_runtime.block_on(async {
+        shard.stop_gracefully().await;
+    });
 }
 
 criterion_group! {

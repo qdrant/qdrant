@@ -3,9 +3,9 @@ pub mod holders;
 pub mod optimizers;
 pub mod segments_searcher;
 
-mod segments_updater;
+pub mod probabilistic_search_sampling;
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) mod fixtures;
 
 #[cfg(test)]

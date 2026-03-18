@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use collection::shards::CollectionId;
-use segment::common::file_operations::{atomic_save_json, read_json};
+use common::fs::{atomic_save_json, read_json};
+use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
 use crate::content_manager::errors::StorageError;
@@ -43,18 +42,16 @@ impl AliasPersistence {
     fn init_file(dir_path: &Path) -> Result<PathBuf, StorageError> {
         let data_path = Self::get_config_path(dir_path);
         if !data_path.exists() {
-            let mut file = fs::File::create(&data_path)?;
-            let empty_json = "{}";
-            file.write_all(empty_json.as_bytes())?;
+            atomic_save_json(&data_path, &AliasMapping::default())?;
         }
         Ok(data_path)
     }
 
-    pub fn open(dir_path: PathBuf) -> Result<Self, StorageError> {
+    pub fn open(dir_path: &Path) -> Result<Self, StorageError> {
         if !dir_path.exists() {
-            fs::create_dir_all(&dir_path)?;
+            fs::create_dir_all(dir_path)?;
         }
-        let data_path = Self::init_file(&dir_path)?;
+        let data_path = Self::init_file(dir_path)?;
         let alias_mapping = AliasMapping::load(&data_path)?;
         Ok(AliasPersistence {
             data_path,
@@ -73,9 +70,26 @@ impl AliasPersistence {
     }
 
     pub fn remove(&mut self, alias: &str) -> Result<Option<String>, StorageError> {
-        let res = self.alias_mapping.0.remove(alias);
-        self.alias_mapping.save(&self.data_path)?;
-        Ok(res)
+        let output = self.alias_mapping.0.remove(alias);
+
+        if output.is_some() {
+            self.alias_mapping.save(&self.data_path)?;
+        }
+
+        Ok(output)
+    }
+
+    /// Removes all aliases for a given collection.
+    pub fn remove_collection(&mut self, collection_name: &str) -> Result<(), StorageError> {
+        let prev_len = self.alias_mapping.0.len();
+
+        self.alias_mapping.0.retain(|_, v| v != collection_name);
+
+        if prev_len != self.alias_mapping.0.len() {
+            self.alias_mapping.save(&self.data_path)?;
+        }
+
+        Ok(())
     }
 
     pub fn rename_alias(
@@ -85,7 +99,7 @@ impl AliasPersistence {
     ) -> Result<(), StorageError> {
         match self.get(old_alias_name) {
             None => Err(StorageError::NotFound {
-                description: format!("Alias {} does not exists!", old_alias_name),
+                description: format!("Alias {old_alias_name} does not exists!"),
             }),
             Some(collection_name) => {
                 self.alias_mapping.0.remove(old_alias_name);
@@ -115,5 +129,9 @@ impl AliasPersistence {
         self.alias_mapping = alias_mapping;
         self.alias_mapping.save(&self.data_path)?;
         Ok(())
+    }
+
+    pub fn check_alias_exists(&self, alias: &str) -> bool {
+        self.alias_mapping.0.contains_key(alias)
     }
 }

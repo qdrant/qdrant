@@ -1,20 +1,23 @@
+use std::collections::HashMap;
+use std::{borrow, iter, mem, slice};
+
 use tinyvec::TinyVec;
 
 pub const CAPACITY: usize = 3;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct TinyMap<K, V>
 where
-    K: Clone + Default,
-    V: Clone + Default,
+    K: Default,
+    V: Default,
 {
     list: TinyVec<[(K, V); CAPACITY]>,
 }
 
 impl<K, V> TinyMap<K, V>
 where
-    K: Clone + PartialEq + Default,
-    V: Clone + PartialEq + Default,
+    K: Default,
+    V: Default,
 {
     pub fn new() -> Self {
         Self {
@@ -26,53 +29,6 @@ where
         self.list.push((key, value));
     }
 
-    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        let found = self.list.iter_mut().find(|(k, _)| k == &key);
-        match found {
-            Some((_, v)) => {
-                let old = std::mem::replace(v, value);
-                Some(old)
-            }
-            None => {
-                self.list.push((key, value));
-                None
-            }
-        }
-    }
-
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
-    where
-        K: std::borrow::Borrow<Q>,
-        Q: Eq,
-    {
-        self.list
-            .iter()
-            .find(|(k, _)| k.borrow() == key)
-            .map(|(_, v)| v)
-    }
-
-    pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut V>
-    where
-        K: std::borrow::Borrow<Q>,
-        Q: Eq,
-    {
-        self.list
-            .iter_mut()
-            .find(|(k, _)| k.borrow() == key)
-            .map(|(_, v)| v)
-    }
-
-    pub fn remove(&mut self, key: &K) -> Option<V> {
-        let found = self.list.iter().position(|(k, _)| k == key);
-        match found {
-            Some(i) => {
-                let (_, v) = self.list.remove(i);
-                Some(v)
-            }
-            None => None,
-        }
-    }
-
     pub fn len(&self) -> usize {
         self.list.len()
     }
@@ -81,11 +37,11 @@ where
         self.list.is_empty()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, (K, V)> {
+    pub fn iter(&self) -> slice::Iter<'_, (K, V)> {
         self.list.iter()
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, (K, V)> {
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, (K, V)> {
         self.list.iter_mut()
     }
 
@@ -104,30 +60,103 @@ where
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.list.iter_mut().map(|(_, v)| v)
     }
+}
 
-    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+impl<K, V> TinyMap<K, V>
+where
+    K: Default + Eq,
+    V: Default,
+{
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let found = self.list.iter_mut().find(|(k, _)| k == &key);
+        match found {
+            Some((_, v)) => {
+                let old = mem::replace(v, value);
+                Some(old)
+            }
+            None => {
+                self.list.push((key, value));
+                None
+            }
+        }
+    }
+
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
-        K: std::borrow::Borrow<Q>,
-        Q: Eq,
+        K: borrow::Borrow<Q>,
+        Q: Eq + ?Sized,
+    {
+        self.list
+            .iter()
+            .find(|(k, _)| k.borrow() == key)
+            .map(|(_, v)| v)
+    }
+
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+    where
+        K: borrow::Borrow<Q>,
+        Q: Eq + ?Sized,
+    {
+        self.list
+            .iter_mut()
+            .find(|(k, _)| k.borrow() == key)
+            .map(|(_, v)| v)
+    }
+
+    /// Returns the (mutable) value assigned to `key`, if such an entry exists.
+    /// Otherwise the default value for `V` is inserted and returned as mutable reference.
+    ///
+    /// This method automatically clones `key` if required. Therefore Q must implement `ToOwned<Owned = K>`.
+    pub fn get_or_insert_default<Q>(&mut self, key: &Q) -> &mut V
+    where
+        V: Sized,
+        K: borrow::Borrow<Q>,
+        Q: Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        // Try to locate an existing entry for the key.
+        let existing_position = self.list.iter().position(|(k, _)| k.borrow() == key);
+
+        // Insert default value if not existing and get the new index.
+        let index = match existing_position {
+            Some(existing_pos) => existing_pos,
+            None => {
+                let new_index = self.list.len();
+                self.list.push((key.to_owned(), V::default()));
+                new_index
+            }
+        };
+
+        &mut self.list[index].1
+    }
+
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: borrow::Borrow<Q>,
+        Q: Eq + ?Sized,
+    {
+        let found = self.list.iter().position(|(k, _)| k.borrow() == key);
+        match found {
+            Some(i) => {
+                let (_, v) = self.list.remove(i);
+                Some(v)
+            }
+            None => None,
+        }
+    }
+
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: borrow::Borrow<Q>,
+        Q: Eq + ?Sized,
     {
         self.list.iter().any(|(k, _)| k.borrow() == key)
     }
 }
 
-impl<K, V> Default for TinyMap<K, V>
-where
-    K: Clone + PartialEq + Default,
-    V: Clone + PartialEq + Default,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<K, V> PartialEq for TinyMap<K, V>
 where
-    K: Clone + PartialEq + Eq + Default,
-    V: Clone + PartialEq + Default,
+    K: Default + Eq,
+    V: Default + PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         if self.len() != other.len() {
@@ -146,8 +175,8 @@ where
 
 impl<K, V> IntoIterator for TinyMap<K, V>
 where
-    K: Clone + Default,
-    V: Clone + Default,
+    K: Default,
+    V: Default,
 {
     type Item = (K, V);
 
@@ -158,14 +187,25 @@ where
     }
 }
 
-impl<K, V> std::iter::FromIterator<(K, V)> for TinyMap<K, V>
+impl<K, V> From<TinyMap<K, V>> for HashMap<K, V>
 where
-    K: Clone + Default,
-    V: Clone + Default,
+    K: Default + std::hash::Hash + Eq,
+    V: Default,
+{
+    #[inline]
+    fn from(value: TinyMap<K, V>) -> Self {
+        value.into_iter().collect()
+    }
+}
+
+impl<K, V> FromIterator<(K, V)> for TinyMap<K, V>
+where
+    K: Default,
+    V: Default,
 {
     fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         Self {
-            list: std::iter::FromIterator::from_iter(iter),
+            list: iter::FromIterator::from_iter(iter),
         }
     }
 }
@@ -209,7 +249,7 @@ mod tests {
         map.clear();
         map.insert(key.clone(), value.clone());
         assert_eq!(map.get_mut(&key), Some(&mut value));
-        *map.get_mut(&key).unwrap() = value3.clone();
+        map.get_mut(&key).unwrap().clone_from(&value3);
         assert_eq!(map.get(&key), Some(&value3));
 
         // Test iter
@@ -219,5 +259,42 @@ mod tests {
         let mut iter = map.iter();
         assert_eq!(iter.next(), Some(&(key2, value2)));
         assert_eq!(iter.next(), Some(&(key3, value3)));
+    }
+
+    #[test]
+    fn test_tiny_map_get_or_insert() {
+        let mut map: TinyMap<String, usize> = TinyMap::new();
+
+        map.insert("a".to_string(), 1);
+        map.insert("b".to_string(), 2);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("a"), 1);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("b"), 2);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("c"), 0);
+        assert_eq!(map.len(), 3);
+
+        let mut map: TinyMap<usize, usize> = TinyMap::new();
+        map.insert(1, 1);
+        map.insert(2, 4);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&1), 1);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&2), 4);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&3), 0);
+        assert_eq!(map.len(), 3);
+
+        *map.get_or_insert_default(&3) = 6;
+        assert_eq!(map.len(), 3); // This call should not add an additional item.
+
+        assert_eq!(map.get(&3), Some(&6));
     }
 }

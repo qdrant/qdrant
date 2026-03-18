@@ -1,0 +1,504 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
+use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::order_by::OrderBy;
+use segment::types::{
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+};
+use shard::count::CountRequestInternal;
+use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
+use shard::search::CoreSearchRequestBatch;
+use tokio::runtime::Handle;
+use tokio::sync::oneshot;
+use tokio::time::Instant;
+use tokio::time::error::Elapsed;
+
+use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::operations::OperationWithClockTag;
+use crate::operations::generalizer::Generalizer;
+use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CountResult, PointRequestInternal,
+    UpdateResult, UpdateStatus,
+};
+use crate::operations::universal_query::planned_query::PlannedQuery;
+use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
+use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
+use crate::profiling::interface::log_request_to_collector;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
+use crate::update_handler::{OperationData, UpdateSignal};
+
+#[async_trait]
+impl ShardOperation for LocalShard {
+    /// Imply interior mutability.
+    /// Performs update operation on this collection asynchronously.
+    /// Explicitly waits for result to be updated.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn update(
+        &self,
+        mut operation: OperationWithClockTag,
+        wait: WaitUntil,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<UpdateResult> {
+        // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
+        // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+        let (callback_sender, callback_receiver) = if wait.needs_callback() {
+            let (tx, rx) = oneshot::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
+        if self
+            .disk_usage_watcher
+            .is_disk_full()
+            .await?
+            .unwrap_or(false)
+        {
+            return Err(CollectionError::service_error(
+                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
+            ));
+        }
+
+        let operation_id = {
+            let _update_lock = self.update_lock.read().await;
+            let pending_operations_count = self.update_queue_length();
+
+            let update_sender = self.update_sender.load();
+            let channel_permit = update_sender.reserve().await?;
+
+            // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
+            //
+            // TODO: Refactor `lock_and_write`, so this is less terrible? :/
+            let (operation_id, _wal_lock) = match self.wal.lock_and_write(&mut operation).await {
+                Ok(id_and_lock) => id_and_lock,
+
+                Err(shard::wal::WalError::ClockRejected) => {
+                    // Propagate clock rejection to operation sender
+                    return Ok(UpdateResult {
+                        operation_id: None,
+                        status: UpdateStatus::ClockRejected,
+                        clock_tag: operation.clock_tag,
+                    });
+                }
+
+                Err(err) => return Err(err.into()),
+            };
+
+            // If there are too many pending operations, don't keep operation data in RAM.
+            // Instead, read operation data from the WAL when processing the operation.
+            let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
+            let operation = keep_operation_in_ram.then_some(Box::new(operation.operation));
+
+            channel_permit.send(UpdateSignal::Operation(OperationData {
+                op_num: operation_id,
+                operation,
+                sender: callback_sender,
+                wait_for_deferred: wait.wait_for_deferred(),
+                hw_measurements: hw_measurement_acc.clone(),
+            }));
+
+            operation_id
+        };
+
+        match (callback_receiver, timeout) {
+            // Wait indefinitely
+            (Some(receiver), None) => {
+                let _ = receiver.await??;
+                Ok(UpdateResult {
+                    operation_id: Some(operation_id),
+                    status: UpdateStatus::Completed,
+                    clock_tag: operation.clock_tag,
+                })
+            }
+            // Wait for timeout
+            (Some(receiver), Some(timeout)) => {
+                match tokio::time::timeout(timeout, receiver).await {
+                    Ok(res) => {
+                        res??;
+                        Ok(UpdateResult {
+                            operation_id: Some(operation_id),
+                            status: UpdateStatus::Completed,
+                            clock_tag: operation.clock_tag,
+                        })
+                    }
+                    Err(_) => Ok(UpdateResult {
+                        operation_id: Some(operation_id),
+                        status: UpdateStatus::WaitTimeout,
+                        clock_tag: operation.clock_tag,
+                    }),
+                }
+            }
+            // Don't wait at all
+            (None, _) => Ok(UpdateResult {
+                operation_id: Some(operation_id),
+                status: UpdateStatus::Acknowledged,
+                clock_tag: operation.clock_tag,
+            }),
+        }
+    }
+
+    /// This call is rate limited by the read rate limiter.
+    async fn scroll_by(
+        &self,
+        request: Arc<ScrollRequestInternal>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        let ScrollRequestInternal {
+            offset,
+            limit,
+            filter,
+            with_payload,
+            with_vector,
+            order_by,
+        } = request.as_ref();
+
+        let default_with_payload = ScrollRequestInternal::default_with_payload();
+
+        // Validate user did not try to use an id offset with order_by
+        if order_by.is_some() && offset.is_some() {
+            return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
+        };
+
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter(&hw_measurement_acc, "scroll_by", || {
+            let mut cost = BASE_COST;
+            if let Some(filter) = &filter {
+                cost += filter_rate_cost(filter);
+            }
+            cost
+        })?;
+        let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+
+        let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
+        let order_by = order_by.clone().map(OrderBy::from);
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+        let result = match order_by {
+            None => {
+                self.internal_scroll_by_id(
+                    *offset,
+                    limit,
+                    with_payload.as_ref().unwrap_or(&default_with_payload),
+                    with_vector,
+                    filter.as_ref(),
+                    search_runtime_handle,
+                    timeout,
+                    hw_measurement_acc,
+                    DeferredBehavior::Exclude,
+                )
+                .await?
+            }
+            Some(order_by) => {
+                self.internal_scroll_by_field(
+                    limit,
+                    with_payload.as_ref().unwrap_or(&default_with_payload),
+                    with_vector,
+                    filter.as_ref(),
+                    search_runtime_handle,
+                    &order_by,
+                    timeout,
+                    hw_measurement_acc,
+                    DeferredBehavior::Exclude,
+                )
+                .await?
+            }
+        };
+
+        let elapsed = start_time.elapsed();
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+        Ok(result)
+    }
+
+    async fn local_scroll_by_id(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+        self.internal_scroll_by_id(
+            offset,
+            limit,
+            with_payload_interface,
+            with_vector,
+            filter,
+            search_runtime_handle,
+            timeout,
+            hw_measurement_acc,
+            deferred_behavior,
+        )
+        .await
+    }
+
+    /// Collect overview information about the shard
+    async fn info(&self) -> CollectionResult<CollectionInfo> {
+        Ok(CollectionInfo::from(self.local_shard_info().await))
+    }
+
+    /// This call is rate limited by the read rate limiter.
+    async fn core_search(
+        &self,
+        request: Arc<CoreSearchRequestBatch>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter(&hw_measurement_acc, "core_search", || {
+            request.searches.iter().map(|s| s.search_rate_cost()).sum()
+        })?;
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+        self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .await
+    }
+
+    /// This call is rate limited by the read rate limiter.
+    async fn count(
+        &self,
+        request: Arc<CountRequestInternal>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<CountResult> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter(&hw_measurement_acc, "count", || {
+            let mut cost = BASE_COST;
+            if let Some(filter) = &request.filter {
+                cost += filter_rate_cost(filter);
+            }
+            cost
+        })?;
+        let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let total_count = if request.exact {
+            let timeout = self.timeout_or_default_search_timeout(timeout);
+            let all_points = tokio::time::timeout(
+                timeout,
+                self.read_filtered(
+                    request.filter.as_ref(),
+                    search_runtime_handle,
+                    hw_measurement_acc,
+                    Some(timeout),
+                    deferred_behavior,
+                ),
+            )
+            .await
+            .map_err(|_: Elapsed| CollectionError::timeout(timeout, "count"))??;
+            all_points.len()
+        } else {
+            self.estimate_cardinality(request.filter.as_ref(), &hw_measurement_acc)
+                .await?
+                .exp
+        };
+        let elapsed = start_time.elapsed();
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+        Ok(CountResult { count: total_count })
+    }
+
+    /// This call is rate limited by the read rate limiter.
+    async fn retrieve(
+        &self,
+        request: Arc<PointRequestInternal>,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+
+        let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve(
+                self.segments.clone(),
+                &request.ids,
+                with_payload,
+                with_vector,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+                deferred_behavior,
+            ),
+        )
+        .await
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout, "retrieve"))??;
+
+        let ordered_records = request
+            .ids
+            .iter()
+            .filter_map(|point| records_map.get(point).cloned())
+            .collect();
+
+        let elapsed = start_time.elapsed();
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+
+        Ok(ordered_records)
+    }
+
+    /// This call is rate limited by the read rate limiter.
+    async fn query_batch(
+        &self,
+        requests: Arc<Vec<ShardQueryRequest>>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        let start_time = Instant::now();
+        let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
+
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter(&hw_measurement_acc, "query_batch", || {
+            planned_query
+                .searches
+                .iter()
+                .map(|s| s.search_rate_cost())
+                .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
+                .sum()
+        })?;
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let result = self
+            .do_planned_query(
+                planned_query,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await;
+
+        let elapsed = start_time.elapsed();
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || {
+            requests.remove_details()
+        });
+
+        result
+    }
+
+    /// This call is rate limited by the read rate limiter.
+    async fn facet(
+        &self,
+        request: Arc<FacetParams>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<FacetResponse> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter(&hw_measurement_acc, "facet", || {
+            let mut cost = BASE_COST;
+            if let Some(filter) = &request.filter {
+                cost += filter_rate_cost(filter);
+            }
+            cost
+        })?;
+
+        let start_time = Instant::now();
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let hits = if request.exact {
+            self.exact_facet(
+                request.clone(),
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await?
+        } else {
+            self.approx_facet(
+                request.clone(),
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await?
+        };
+        let elapsed = start_time.elapsed();
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+        Ok(FacetResponse { hits })
+    }
+
+    /// Finishes ongoing update tasks
+    async fn stop_gracefully(mut self) {
+        {
+            // Send stop signals to workers
+            let mut update_handler = self.update_handler.lock().await;
+            update_handler.stop_flush_worker();
+            update_handler.stop_update_worker();
+        }
+
+        match self.wait_update_workers_stop().await {
+            Ok(pending_receiver) => {
+                if let Some(receiver) = pending_receiver {
+                    // Log number of pending operations that were not processed
+                    let pending_count = receiver.len();
+                    if pending_count > 0 {
+                        log::debug!(
+                            "Shard stopped with {pending_count} pending update operations in channel"
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                log::warn!("Update workers failed with: {err}");
+            }
+        }
+
+        self.is_gracefully_stopped = true;
+
+        drop(self);
+    }
+}

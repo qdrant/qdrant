@@ -1,0 +1,94 @@
+use std::path::Path;
+use std::time::Duration;
+
+use common::types::PointOffsetType;
+use fs_err as fs;
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
+use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
+use segment::fixtures::index_fixtures::TestRawScorerProducer;
+use segment::index::hnsw_index::HnswM;
+use segment::index::hnsw_index::graph_layers::GraphLayers;
+use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use segment::index::hnsw_index::graph_links::GraphLinksFormatParam;
+use segment::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
+use segment::spaces::metric::Metric;
+
+/// Generate vectors and HNSW graph to be used in benchmarks.
+///
+/// Graph layers are cached on disk to avoid wait times across repeated
+/// benchmark runs.
+/// Vectors values are not saved on disk, but generated deterministically using
+/// the same seed.
+pub fn make_cached_graph<METRIC>(
+    num_vectors: usize,
+    dim: usize,
+    m: usize,
+    ef_construct: usize,
+    use_heuristic: bool,
+) -> (TestRawScorerProducer, GraphLayers)
+where
+    METRIC: Metric<f32> + Sync + Send,
+{
+    use indicatif::{ParallelProgressIterator as _, ProgressStyle};
+
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(env!("CARGO_PKG_NAME"))
+        .join(env!("CARGO_CRATE_NAME"))
+        .join(format!(
+            "{num_vectors}-{dim}-{m}-{ef_construct}-{use_heuristic}-{:?}",
+            METRIC::distance(),
+        ));
+
+    // Note: make sure that vector generation is deterministic.
+    let vector_holder = TestRawScorerProducer::new(
+        dim,
+        METRIC::distance(),
+        num_vectors,
+        false,
+        &mut StdRng::seed_from_u64(42),
+    );
+
+    let graph_layers_path = GraphLayers::get_path(&path);
+    let graph_layers = if graph_layers_path.exists() {
+        let updated_ago = updated_ago(&graph_layers_path).unwrap_or_else(|_| "???".to_string());
+        eprintln!("Loading cached links (built {updated_ago} ago) from {graph_layers_path:?}.");
+        eprintln!("Delete the directory above if code related to HNSW graph building is changed");
+        GraphLayers::load(&path, false, false).unwrap()
+    } else {
+        let mut graph_layers_builder =
+            GraphLayersBuilder::new(num_vectors, HnswM::new2(m), ef_construct, 10, use_heuristic);
+
+        let mut rng = StdRng::seed_from_u64(42);
+        for idx in 0..num_vectors {
+            let level = graph_layers_builder.get_random_layer(&mut rng);
+            graph_layers_builder.set_levels(idx as PointOffsetType, level);
+        }
+
+        let add_point = |idx| {
+            let scorer = vector_holder.internal_scorer(idx as PointOffsetType);
+            graph_layers_builder.link_new_point(idx as PointOffsetType, scorer);
+        };
+
+        (0..SINGLE_THREADED_HNSW_BUILD_THRESHOLD.min(num_vectors)).for_each(add_point);
+        (SINGLE_THREADED_HNSW_BUILD_THRESHOLD..num_vectors)
+            .into_par_iter()
+            .progress_with_style(
+                ProgressStyle::with_template("{percent:>3}% Buildng HNSW {wide_bar}").unwrap(),
+            )
+            .for_each(add_point);
+
+        fs::create_dir_all(&path).unwrap();
+        graph_layers_builder
+            .into_graph_layers(&path, GraphLinksFormatParam::Plain, false)
+            .unwrap()
+    };
+
+    (vector_holder, graph_layers)
+}
+
+fn updated_ago(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let elapsed = fs::metadata(path)?.modified()?.elapsed()?;
+    let secs_rounded = elapsed.as_secs().next_multiple_of(60);
+    Ok(humantime::format_duration(Duration::from_secs(secs_rounded)).to_string())
+}

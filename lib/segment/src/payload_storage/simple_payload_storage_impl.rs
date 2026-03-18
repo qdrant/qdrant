@@ -1,15 +1,34 @@
-use std::collections::HashMap;
+use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
-use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+use crate::common::operation_error::OperationResult;
+use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
-use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
+use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+use crate::types::{Payload, PayloadKeyTypeRef};
 
 impl PayloadStorage for SimplePayloadStorage {
-    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn overwrite(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.payload.insert(point_id, payload.to_owned());
+        self.update_storage(point_id, hw_counter)?;
+        Ok(())
+    }
+
+    fn set(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge(payload),
             None => {
@@ -17,73 +36,173 @@ impl PayloadStorage for SimplePayloadStorage {
             }
         }
 
-        self.update_storage(&point_id)?;
+        self.update_storage(point_id, hw_counter)?;
 
         Ok(())
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
+    fn set_by_key(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self.payload.get_mut(&point_id) {
+            Some(point_payload) => point_payload.merge_by_key(payload, key),
+            None => {
+                let mut dest_payload = Payload::default();
+                dest_payload.merge_by_key(payload, key);
+                self.payload.insert(point_id, dest_payload);
+            }
+        }
+
+        self.update_storage(point_id, hw_counter)?;
+
+        Ok(())
+    }
+
+    fn get(&self, point_id: PointOffsetType, _: &HardwareCounterCell) -> OperationResult<Payload> {
         match self.payload.get(&point_id) {
             Some(payload) => Ok(payload.to_owned()),
             None => Ok(Default::default()),
         }
     }
 
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        // No sequential access optimizations for simple payload storage.
+        self.get(point_id, hw_counter)
+    }
+
     fn delete(
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>> {
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
             Some(payload) => {
                 let res = payload.remove(key);
-                if res.is_some() {
-                    self.update_storage(&point_id)?;
+                if !res.is_empty() {
+                    self.update_storage(point_id, hw_counter)?;
                 }
                 Ok(res)
             }
-            None => Ok(None),
+            None => Ok(vec![]),
         }
     }
 
-    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
-        self.update_storage(&point_id)?;
+        self.update_storage(point_id, hw_counter)?;
         Ok(res)
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
-        self.payload = HashMap::new();
+    #[cfg(test)]
+    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+        self.payload = ahash::AHashMap::new();
         self.db_wrapper.recreate_column_family()
     }
 
     fn flusher(&self) -> Flusher {
         self.db_wrapper.flusher()
     }
+
+    fn iter<F>(&self, mut callback: F, _hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
+    {
+        for (key, val) in self.payload.iter() {
+            let do_continue = callback(*key, val)?;
+            if !do_continue {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+        self.db_wrapper.get_storage_size_bytes()
+    }
+
+    fn is_on_disk(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 
     #[test]
     fn test_wipe() {
         let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
-        storage.assign(100, &payload).unwrap();
-        storage.wipe().unwrap();
-        storage.assign(100, &payload).unwrap();
-        storage.wipe().unwrap();
-        storage.assign(100, &payload).unwrap();
-        assert!(!storage.payload(100).unwrap().is_empty());
-        storage.wipe().unwrap();
-        assert_eq!(storage.payload(100).unwrap(), Default::default());
+        storage.set(100, &payload, &hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
+        storage.set(100, &payload, &hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
+        storage.set(100, &payload, &hw_counter).unwrap();
+        assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
+        storage.clear_all(&hw_counter).unwrap();
+        assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
+    }
+
+    #[test]
+    fn test_set_by_key_consistency() {
+        let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
+
+        let expected_payload: Payload =
+            serde_json::from_str(r#"{"name": {"name": "Dohn Joe"}}"#).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+
+        {
+            let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+            let mut storage = SimplePayloadStorage::open(db).unwrap();
+
+            let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
+            storage.set(100, &payload, &hw_counter).unwrap();
+
+            let new_payload: Payload = serde_json::from_str(r#"{"name": "Dohn Joe"}"#).unwrap();
+
+            storage
+                .set_by_key(
+                    100,
+                    &new_payload,
+                    &JsonPath::from_str("name").unwrap(),
+                    &hw_counter,
+                )
+                .unwrap();
+
+            // Here it's `expected_payload`
+            assert_eq!(storage.get(100, &hw_counter).unwrap(), expected_payload);
+        }
+
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = SimplePayloadStorage::open(db).unwrap();
+        assert_eq!(storage.get(100, &hw_counter).unwrap(), expected_payload); // Here must be `expected_payload` as well
     }
 
     #[test]
@@ -110,12 +229,13 @@ mod tests {
             }
         }"#;
 
+        let hw_counter = HardwareCounterCell::new();
         let payload: Payload = serde_json::from_str(data).unwrap();
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
         let mut storage = SimplePayloadStorage::open(db).unwrap();
-        storage.assign(100, &payload).unwrap();
-        let pload = storage.payload(100).unwrap();
+        storage.set(100, &payload, &hw_counter).unwrap();
+        let pload = storage.get(100, &hw_counter).unwrap();
         assert_eq!(pload, payload);
     }
 }

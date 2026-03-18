@@ -1,29 +1,34 @@
-use std::sync::mpsc::SyncSender;
-use std::sync::Mutex;
-
 use api::grpc::qdrant::raft_server::Raft;
 use api::grpc::qdrant::{
     AddPeerToKnownMessage, AllPeers, Peer, PeerId, RaftMessage as RaftMessageBytes, Uri as UriStr,
 };
 use itertools::Itertools;
 use raft::eraftpb::Message as RaftMessage;
+use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::ConsensusOperations;
-use storage::content_manager::consensus_state::ConsensusStateRef;
+use tokio::sync::mpsc::Sender;
 use tonic::transport::Uri;
-use tonic::{async_trait, Request, Response, Status};
+use tonic::{Request, Response, Status, async_trait};
 
+use super::validate;
 use crate::consensus;
 
 pub struct RaftService {
-    message_sender: Mutex<SyncSender<consensus::Message>>,
+    message_sender: Sender<consensus::Message>,
     consensus_state: ConsensusStateRef,
+    use_tls: bool,
 }
 
 impl RaftService {
-    pub fn new(sender: SyncSender<consensus::Message>, consensus_state: ConsensusStateRef) -> Self {
+    pub fn new(
+        sender: Sender<consensus::Message>,
+        consensus_state: ConsensusStateRef,
+        use_tls: bool,
+    ) -> Self {
         Self {
-            message_sender: Mutex::new(sender),
+            message_sender: sender,
             consensus_state,
+            use_tls,
         }
     }
 }
@@ -31,14 +36,14 @@ impl RaftService {
 #[async_trait]
 impl Raft for RaftService {
     async fn send(&self, mut request: Request<RaftMessageBytes>) -> Result<Response<()>, Status> {
-        let message = <RaftMessage as prost::Message>::decode(&request.get_mut().message[..])
-            .map_err(|err| {
-                Status::invalid_argument(format!("Failed to parse raft message: {err}"))
-            })?;
+        let message =
+            <RaftMessage as prost_for_raft::Message>::decode(&request.get_mut().message[..])
+                .map_err(|err| {
+                    Status::invalid_argument(format!("Failed to parse raft message: {err}"))
+                })?;
         self.message_sender
-            .lock()
-            .map_err(|_| Status::internal("Can't capture the Raft message sender lock"))?
             .send(consensus::Message::FromPeer(Box::new(message)))
+            .await
             .map_err(|_| Status::internal("Can't send Raft message over channel"))?;
         Ok(Response::new(()))
     }
@@ -60,6 +65,7 @@ impl Raft for RaftService {
         &self,
         request: tonic::Request<AddPeerToKnownMessage>,
     ) -> Result<tonic::Response<AllPeers>, tonic::Status> {
+        validate(request.get_ref())?;
         let peer = request.get_ref();
         let uri_string = if let Some(uri) = &peer.uri {
             uri.clone()
@@ -73,7 +79,11 @@ impl Raft for RaftService {
             let port = peer
                 .port
                 .ok_or_else(|| Status::invalid_argument("URI or port should be supplied"))?;
-            format!("http://{ip}:{port}")
+            if self.use_tls {
+                format!("https://{ip}:{port}")
+            } else {
+                format!("http://{ip}:{port}")
+            }
         };
         let uri: Uri = uri_string
             .parse()
@@ -88,18 +98,35 @@ impl Raft for RaftService {
                     uri: uri.to_string(),
                 },
                 None,
-                true,
             )
             .await
             .map_err(|err| Status::internal(format!("Failed to add peer: {err}")))?;
-        let addresses = self.consensus_state.peer_address_by_id();
+
+        let mut addresses = self.consensus_state.peer_address_by_id();
+
         // Make sure that the new peer is now present in the known addresses
         if !addresses.values().contains(&uri) {
             return Err(Status::internal(format!(
                 "Failed to add peer after consensus: {uri}"
             )));
         }
+
         let first_peer_id = self.consensus_state.first_voter();
+
+        // If `first_peer_id` is not present in the list of peers, it means it was removed from
+        // cluster at some point.
+        //
+        // Before Qdrant version 1.11.6 origin peer was not committed to consensus, so if it was
+        // removed from cluster, any node added to the cluster after this would not recognize it as
+        // being part of the cluster in the past and will end up with a broken consensus state.
+        //
+        // To prevent this, we add `first_peer_id` (with a fake URI) to the list of peers.
+        //
+        // `add_peer_to_known` is used to add new peers to the cluster, and so `first_peer_id` (and
+        // its fake URI) would be removed from new peer's state shortly, while it will be synchronizing
+        // and applying past Raft log.
+        addresses.entry(first_peer_id).or_default();
+
         Ok(Response::new(AllPeers {
             all_peers: addresses
                 .into_iter()

@@ -1,195 +1,179 @@
-use std::collections::HashSet;
+use std::borrow::Cow;
+use std::path::PathBuf;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
+use ahash::AHashSet;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
+#[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use super::immutable_text_index::ImmutableFullTextIndex;
+use super::inverted_index::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
+use super::mmap_text_index::{FullTextMmapIndexBuilder, MmapFullTextIndex};
+use super::mutable_text_index::MutableFullTextIndex;
+use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
-use crate::data_types::text_index::TextIndexParams;
-use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::inverted_index::{
-    Document, InvertedIndex, ParsedQuery,
-};
-use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
+use crate::common::operation_error::{OperationError, OperationResult};
+#[cfg(feature = "rocksdb")]
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
+#[cfg(feature = "rocksdb")]
+use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, ValueIndexer,
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+    ValueIndexer,
 };
+use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, PayloadKeyType, PointOffsetType};
+use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, PayloadKeyType};
 
-pub struct FullTextIndex {
-    inverted_index: InvertedIndex,
-    db_wrapper: DatabaseColumnWrapper,
-    config: TextIndexParams,
+pub enum FullTextIndex {
+    Mutable(MutableFullTextIndex),
+    Immutable(ImmutableFullTextIndex),
+    Mmap(Box<MmapFullTextIndex>),
 }
 
 impl FullTextIndex {
-    fn store_key(id: &PointOffsetType) -> Vec<u8> {
-        bincode::serialize(&id).unwrap()
+    #[cfg(feature = "rocksdb")]
+    pub fn new_rocksdb(
+        db: Arc<RwLock<DB>>,
+        config: TextIndexParams,
+        field: &str,
+        is_appendable: bool,
+        create_if_missing: bool,
+    ) -> OperationResult<Option<Self>> {
+        let store_cf_name = Self::storage_cf_name(field);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            &store_cf_name,
+        ));
+        let index = if is_appendable {
+            MutableFullTextIndex::open_rocksdb(db_wrapper, config, create_if_missing)?
+                .map(Self::Mutable)
+        } else {
+            ImmutableFullTextIndex::open_rocksdb(db_wrapper, config)?.map(Self::Immutable)
+        };
+        Ok(index)
     }
 
-    fn restore_key(data: &[u8]) -> PointOffsetType {
-        bincode::deserialize(data).unwrap()
+    pub fn new_mmap(
+        path: PathBuf,
+        config: TextIndexParams,
+        is_on_disk: bool,
+    ) -> OperationResult<Option<Self>> {
+        let Some(mmap_index) = MmapFullTextIndex::open(path, config, is_on_disk)? else {
+            return Ok(None);
+        };
+        let index = if is_on_disk {
+            // Use on mmap directly
+            Some(Self::Mmap(Box::new(mmap_index)))
+        } else {
+            // Load into RAM, use mmap as backing storage
+            Some(Self::Immutable(ImmutableFullTextIndex::open_mmap(
+                mmap_index,
+            )))
+        };
+        Ok(index)
     }
 
-    fn serialize_document(document: &Document) -> OperationResult<Vec<u8>> {
-        serde_cbor::to_vec(document).map_err(|e| {
-            OperationError::service_error(&format!("Failed to serialize document: {}", e))
-        })
+    pub fn new_gridstore(
+        dir: PathBuf,
+        config: TextIndexParams,
+        create_if_missing: bool,
+    ) -> OperationResult<Option<Self>> {
+        let index = MutableFullTextIndex::open_gridstore(dir, config, create_if_missing)?;
+        Ok(index.map(Self::Mutable))
     }
 
-    fn deserialize_document(data: &[u8]) -> OperationResult<Document> {
-        serde_cbor::from_slice(data).map_err(|e| {
-            OperationError::service_error(&format!("Failed to deserialize document: {}", e))
-        })
+    pub fn init(&mut self) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.init(),
+            Self::Immutable(_) => {
+                debug_assert!(false, "Immutable index should be initialized before use");
+                Ok(())
+            }
+            Self::Mmap(_) => {
+                debug_assert!(false, "Mmap index should be initialized before use");
+                Ok(())
+            }
+        }
     }
 
+    #[cfg(feature = "rocksdb")]
+    pub fn builder_rocksdb(
+        db: Arc<RwLock<DB>>,
+        config: TextIndexParams,
+        field: &str,
+        keep_appendable: bool,
+    ) -> OperationResult<FullTextIndexRocksDbBuilder> {
+        FullTextIndexRocksDbBuilder::new(db, config, field, keep_appendable)
+    }
+
+    pub fn builder_mmap(
+        path: PathBuf,
+        config: TextIndexParams,
+        is_on_disk: bool,
+    ) -> FullTextMmapIndexBuilder {
+        FullTextMmapIndexBuilder::new(path, config, is_on_disk)
+    }
+
+    pub fn builder_gridstore(
+        dir: PathBuf,
+        config: TextIndexParams,
+    ) -> FullTextGridstoreIndexBuilder {
+        FullTextGridstoreIndexBuilder::new(dir, config)
+    }
+
+    #[cfg(feature = "rocksdb")]
     fn storage_cf_name(field: &str) -> String {
         format!("{field}_fts")
     }
 
-    pub fn new(db: Arc<RwLock<DB>>, config: TextIndexParams, field: &str) -> Self {
-        let store_cf_name = Self::storage_cf_name(field);
-        let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
-        FullTextIndex {
-            inverted_index: InvertedIndex::new(),
-            db_wrapper,
-            config,
+    pub(super) fn points_count(&self) -> usize {
+        match self {
+            Self::Mutable(index) => index.inverted_index.points_count(),
+            Self::Immutable(index) => index.inverted_index.points_count(),
+            Self::Mmap(index) => index.inverted_index.points_count(),
         }
     }
 
-    pub fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
-        match self.inverted_index.point_to_docs.get(idx as usize) {
-            Some(Some(doc)) => Some(doc),
-            _ => None,
-        }
-    }
-
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {
-            field_name: None,
-            points_values_count: self.inverted_index.points_count,
-            points_count: self.inverted_index.points_count,
-            histogram_bucket_size: None,
-        }
-    }
-
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
-    }
-
-    pub fn parse_query(&self, text: &str) -> ParsedQuery {
-        let mut tokens = vec![];
-        Tokenizer::tokenize_query(text, &self.config, |token| {
-            tokens.push(token.to_owned());
-        });
-        ParsedQuery {
-            tokens: tokens.into_iter().collect(),
-        }
-    }
-}
-
-impl ValueIndexer<String> for FullTextIndex {
-    fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
-        if values.is_empty() {
-            return Ok(());
-        }
-
-        let mut tokens: HashSet<String> = HashSet::new();
-
-        for value in values {
-            Tokenizer::tokenize_doc(&value, &self.config, |token| {
-                tokens.insert(token.to_owned());
-            });
-        }
-
-        let document = Document {
-            tokens: tokens.into_iter().collect(),
-        };
-
-        self.inverted_index.index_document(idx, document);
-
-        let db_idx = Self::store_key(&idx);
-        let db_document = Self::serialize_document(
-            self.inverted_index.point_to_docs[idx as usize]
-                .as_ref()
-                .unwrap(),
-        )?;
-
-        self.db_wrapper.put(&db_idx, &db_document)?;
-
-        Ok(())
-    }
-
-    fn get_value(&self, value: &Value) -> Option<String> {
-        if let Value::String(keyword) = value {
-            return Some(keyword.to_owned());
-        }
-        None
-    }
-
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        let removed_doc = self.inverted_index.remove_document(id);
-
-        if removed_doc.is_none() {
-            return Ok(());
-        }
-
-        let db_doc_id = Self::store_key(&id);
-        self.db_wrapper.remove(&db_doc_id)?;
-
-        Ok(())
-    }
-}
-
-impl PayloadFieldIndex for FullTextIndex {
-    fn indexed_points(&self) -> usize {
-        self.inverted_index.points_count
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper.has_column_family()? {
-            return Ok(false);
-        };
-
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
-            let idx = Self::restore_key(&key);
-            let document = Self::deserialize_document(&value)?;
-            self.inverted_index.index_document(idx, document);
-        }
-        Ok(true)
-    }
-
-    fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.remove_column_family()
-    }
-
-    fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
-    }
-
-    fn filter(
+    pub(super) fn get_token(
         &self,
-        condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text);
-            return Some(self.inverted_index.filter(&parsed_query));
+        token: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<TokenId> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.get_token_id(token, hw_counter),
+            Self::Immutable(index) => index.inverted_index.get_token_id(token, hw_counter),
+            Self::Mmap(index) => index.inverted_index.get_token_id(token, hw_counter),
         }
-        None
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text);
-            return Some(
-                self.inverted_index
-                    .estimate_cardinality(&parsed_query, condition),
-            );
+    pub(super) fn filter_query<'a>(
+        &'a self,
+        query: ParsedQuery,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.filter(query, hw_counter),
+            Self::Immutable(index) => index.inverted_index.filter(query, hw_counter),
+            Self::Mmap(index) => index.inverted_index.filter(query, hw_counter),
         }
-        None
+    }
+
+    fn get_tokenizer(&self) -> &Tokenizer {
+        match self {
+            Self::Mutable(index) => &index.tokenizer,
+            Self::Immutable(index) => &index.tokenizer,
+            Self::Mmap(index) => &index.tokenizer,
+        }
     }
 
     fn payload_blocks(
@@ -197,125 +181,553 @@ impl PayloadFieldIndex for FullTextIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        self.inverted_index.payload_blocks(threshold, key)
+        match self {
+            Self::Mutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+            Self::Immutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+            Self::Mmap(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+        }
     }
 
-    fn count_indexed_points(&self) -> usize {
-        self.inverted_index.points_count
+    pub(super) fn estimate_query_cardinality(
+        &self,
+        query: &ParsedQuery,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
+        match self {
+            Self::Mutable(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+            Self::Immutable(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+            Self::Mmap(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+        }
+    }
+
+    pub fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Mmap(index) => index.inverted_index.check_match(query, point_id),
+        }
+    }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        match self {
+            Self::Mutable(index) => index.inverted_index.values_count(point_id),
+            Self::Immutable(index) => index.inverted_index.values_count(point_id),
+            Self::Mmap(index) => index.inverted_index.values_count(point_id),
+        }
+    }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.values_is_empty(point_id),
+            Self::Immutable(index) => index.inverted_index.values_is_empty(point_id),
+            Self::Mmap(index) => index.inverted_index.values_is_empty(point_id),
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub(super) fn store_key(id: PointOffsetType) -> Vec<u8> {
+        bincode::serialize(&id).unwrap()
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub(super) fn restore_key(data: &[u8]) -> PointOffsetType {
+        bincode::deserialize(data).unwrap()
+    }
+
+    pub(super) fn serialize_document(tokens: Vec<Cow<str>>) -> OperationResult<Vec<u8>> {
+        #[derive(Serialize)]
+        struct StoredDocument<'a> {
+            tokens: Vec<Cow<'a, str>>,
+        }
+        let doc = StoredDocument { tokens };
+        serde_cbor::to_vec(&doc).map_err(|e| {
+            OperationError::service_error(format!("Failed to serialize document: {e}"))
+        })
+    }
+
+    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<Vec<String>> {
+        #[derive(Deserialize)]
+        struct StoredDocument {
+            tokens: Vec<String>,
+        }
+        serde_cbor::from_slice::<StoredDocument>(data)
+            .map_err(|e| {
+                OperationError::service_error(format!("Failed to deserialize document: {e}"))
+            })
+            .map(|doc| doc.tokens)
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            index_type: match self {
+                FullTextIndex::Mutable(_) => "mutable_full_text",
+                FullTextIndex::Immutable(_) => "immutable_full_text",
+                FullTextIndex::Mmap(_) => "mmap_full_text",
+            },
+            points_values_count: self.points_count(),
+            points_count: self.points_count(),
+            histogram_bucket_size: None,
+        }
+    }
+
+    /// Tries to parse a phrase query. If there are any unseen tokens, returns `None`
+    ///
+    /// Preserves token order
+    pub fn parse_phrase_query(
+        &self,
+        phrase: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ParsedQuery> {
+        let document = self.parse_document(phrase, hw_counter)?;
+        Some(ParsedQuery::Phrase(document))
+    }
+
+    /// Tries to parse a query. If there are any unseen tokens, returns `None`
+    ///
+    /// Tokens are made unique
+    pub fn parse_text_query(
+        &self,
+        text: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ParsedQuery> {
+        let mut tokens = AHashSet::new();
+        self.get_tokenizer().tokenize_query(text, |token| {
+            tokens.insert(self.get_token(token.as_ref(), hw_counter));
+        });
+        let tokens = tokens.into_iter().collect::<Option<TokenSet>>()?;
+        Some(ParsedQuery::AllTokens(tokens))
+    }
+
+    pub fn parse_text_any_query(
+        &self,
+        text: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ParsedQuery> {
+        let mut tokens = AHashSet::new();
+        self.get_tokenizer().tokenize_query(text, |token| {
+            if let Some(token_id) = self.get_token(token.as_ref(), hw_counter) {
+                tokens.insert(token_id);
+            }
+        });
+        let tokens = tokens.into_iter().collect::<TokenSet>();
+        Some(ParsedQuery::AnyTokens(tokens))
+    }
+
+    pub fn parse_tokenset(&self, text: &str, hw_counter: &HardwareCounterCell) -> TokenSet {
+        let mut tokenset = AHashSet::new();
+        self.get_tokenizer().tokenize_doc(text, |token| {
+            if let Some(token_id) = self.get_token(token.as_ref(), hw_counter) {
+                tokenset.insert(token_id);
+            }
+        });
+        TokenSet::from(tokenset)
+    }
+
+    /// Parse document
+    ///
+    /// If there are any unseen tokens, returns `None`
+    pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> Option<Document> {
+        let mut document_tokens = Vec::new();
+        let mut unknow_token = false;
+        self.get_tokenizer().tokenize_doc(text, |token| {
+            if let Some(token_id) = self.get_token(token.as_ref(), hw_counter) {
+                document_tokens.push(token_id);
+            } else {
+                unknow_token = true
+            }
+        });
+        // Bail out if the text contains unknown token
+        if unknow_token {
+            None
+        } else {
+            Some(Document::new(document_tokens))
+        }
+    }
+
+    #[cfg(test)]
+    pub fn query<'a>(
+        &'a self,
+        query: &'a str,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let Some(parsed_query) = self.parse_text_query(query, hw_counter) else {
+            return Box::new(std::iter::empty());
+        };
+        self.filter_query(parsed_query, hw_counter)
+    }
+
+    /// Checks the text directly against the payload value
+    pub fn check_payload_match<const IS_PHRASE: bool>(
+        &self,
+        payload_value: &serde_json::Value,
+        text: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        let query_opt = if IS_PHRASE {
+            self.parse_phrase_query(text, hw_counter)
+        } else {
+            self.parse_text_query(text, hw_counter)
+        };
+
+        let Some(query) = query_opt else {
+            return false;
+        };
+
+        FullTextIndex::get_values(payload_value)
+            .iter()
+            .any(|value| match &query {
+                ParsedQuery::AllTokens(query) => {
+                    let tokenset = self.parse_tokenset(value, hw_counter);
+                    tokenset.has_subset(query)
+                }
+                ParsedQuery::Phrase(query) => {
+                    let document = self.parse_document(value, hw_counter);
+                    document.map(|doc| doc.has_phrase(query)).unwrap_or(false)
+                }
+                ParsedQuery::AnyTokens(query) => {
+                    let tokenset = self.parse_tokenset(value, hw_counter);
+                    tokenset.has_any(query)
+                }
+            })
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            FullTextIndex::Mutable(_) => false,
+            FullTextIndex::Immutable(_) => false,
+            FullTextIndex::Mmap(index) => index.is_on_disk(),
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            FullTextIndex::Mutable(index) => index.is_rocksdb(),
+            FullTextIndex::Immutable(index) => index.is_rocksdb(),
+            FullTextIndex::Mmap(_) => false,
+        }
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            FullTextIndex::Mutable(_) => {}   // Not a mmap
+            FullTextIndex::Immutable(_) => {} // Not a mmap
+            FullTextIndex::Mmap(index) => index.populate()?,
+        }
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            // Only clears backing mmap storage if used, not in-memory representation
+            FullTextIndex::Mutable(index) => index.clear_cache(),
+            // Only clears backing mmap storage if used, not in-memory representation
+            FullTextIndex::Immutable(index) => index.clear_cache(),
+            FullTextIndex::Mmap(index) => index.clear_cache(),
+        }
+    }
+
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        match self {
+            FullTextIndex::Mutable(_) => IndexMutability::Mutable,
+            FullTextIndex::Immutable(_) => IndexMutability::Immutable,
+            FullTextIndex::Mmap(_) => IndexMutability::Immutable,
+        }
+    }
+
+    pub fn get_storage_type(&self) -> StorageType {
+        match self {
+            FullTextIndex::Mutable(index) => index.storage_type(),
+            FullTextIndex::Immutable(index) => index.storage_type(),
+            FullTextIndex::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
+        }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use tempfile::Builder;
+#[cfg(feature = "rocksdb")]
+pub struct FullTextIndexRocksDbBuilder {
+    mutable_index: MutableFullTextIndex,
+    keep_appendable: bool,
+}
 
-    use super::*;
-    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-    use crate::data_types::text_index::{TextIndexType, TokenizerType};
-    use crate::types::MatchText;
+#[cfg(feature = "rocksdb")]
+impl FullTextIndexRocksDbBuilder {
+    pub fn new(
+        db: Arc<RwLock<DB>>,
+        config: TextIndexParams,
+        field: &str,
+        keep_appendable: bool,
+    ) -> OperationResult<Self> {
+        let store_cf_name = FullTextIndex::storage_cf_name(field);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            &store_cf_name,
+        ));
+        let mutable_index = MutableFullTextIndex::open_rocksdb(db_wrapper, config, true)?
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Failed to create and open mutable full text index for field: {field}"
+                ))
+            })?;
+        Ok(FullTextIndexRocksDbBuilder {
+            mutable_index,
+            keep_appendable,
+        })
+    }
+}
 
-    fn filter_request(text: &str) -> FieldCondition {
-        FieldCondition {
-            key: "text".to_owned(),
-            r#match: Some(Match::Text(MatchText {
-                text: text.to_owned(),
-            })),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-            values_count: None,
+#[cfg(feature = "rocksdb")]
+impl FieldIndexBuilderTrait for FullTextIndexRocksDbBuilder {
+    type FieldIndexType = FullTextIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        self.mutable_index.init()
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.mutable_index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        if self.keep_appendable {
+            return Ok(FullTextIndex::Mutable(self.mutable_index));
+        }
+
+        Ok(FullTextIndex::Immutable(
+            ImmutableFullTextIndex::from_rocksdb_mutable(self.mutable_index),
+        ))
+    }
+}
+
+impl ValueIndexer for FullTextIndex {
+    type ValueType = String;
+
+    fn add_many(
+        &mut self,
+        idx: PointOffsetType,
+        values: Vec<String>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.add_many(idx, values, hw_counter),
+            Self::Immutable(_) => Err(OperationError::service_error(
+                "Cannot add values to immutable text index",
+            )),
+            Self::Mmap(_) => Err(OperationError::service_error(
+                "Cannot add values to mmap text index",
+            )),
         }
     }
 
-    #[test]
-    fn test_full_text_indexing() {
-        let payloads: Vec<_> = vec![
-            serde_json::json!("The celebration had a long way to go and even in the silent depths of Multivac's underground chambers, it hung in the air."),
-            serde_json::json!("If nothing else, there was the mere fact of isolation and silence."),
-            serde_json::json!([
-                "For the first time in a decade, technicians were not scurrying about the vitals of the giant computer, ",
-                "the soft lights did not wink out their erratic patterns, the flow of information in and out had halted."
-            ]),
-            serde_json::json!("It would not be halted long, of course, for the needs of peace would be pressing."),
-            serde_json::json!("Yet now, for a day, perhaps for a week, even Multivac might celebrate the great time, and rest."),
-        ];
+    fn get_value(value: &Value) -> Option<String> {
+        value.as_str().map(ToOwned::to_owned)
+    }
 
-        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
-        let config = TextIndexParams {
-            r#type: TextIndexType::Text,
-            tokenizer: TokenizerType::Word,
-            min_token_len: None,
-            max_token_len: None,
-            lowercase: None,
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        match self {
+            FullTextIndex::Mutable(index) => index.remove_point(id),
+            FullTextIndex::Immutable(index) => index.remove_point(id),
+            FullTextIndex::Mmap(index) => {
+                index.remove_point(id);
+                Ok(())
+            }
+        }
+    }
+}
+
+impl PayloadFieldIndex for FullTextIndex {
+    fn count_indexed_points(&self) -> usize {
+        self.points_count()
+    }
+
+    fn wipe(self) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.wipe(),
+            Self::Immutable(index) => index.wipe(),
+            Self::Mmap(index) => index.wipe(),
+        }
+    }
+
+    fn flusher(&self) -> Flusher {
+        match self {
+            Self::Mutable(index) => index.flusher(),
+            Self::Immutable(index) => index.flusher(),
+            Self::Mmap(index) => index.flusher(),
+        }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Mutable(index) => index.files(),
+            Self::Immutable(index) => index.files(),
+            Self::Mmap(index) => index.files(),
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Mutable(_) => vec![],
+            Self::Immutable(index) => index.immutable_files(),
+            Self::Mmap(index) => index.immutable_files(),
+        }
+    }
+
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        let parsed_query_opt = match &condition.r#match {
+            Some(Match::Text(MatchText { text })) => self.parse_text_query(text, hw_counter),
+            Some(Match::Phrase(MatchPhrase { phrase })) => {
+                self.parse_phrase_query(phrase, hw_counter)
+            }
+            _ => return Ok(None),
         };
 
-        {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let Some(parsed_query) = parsed_query_opt else {
+            return Ok(Some(Box::new(std::iter::empty())));
+        };
 
-            let mut index = FullTextIndex::new(db, config.clone(), "text");
+        Ok(Some(self.filter_query(parsed_query, hw_counter)))
+    }
 
-            index.recreate().unwrap();
-
-            for (idx, payload) in payloads.iter().enumerate() {
-                index.add_point(idx as PointOffsetType, payload).unwrap();
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        let parsed_query_opt = match &condition.r#match {
+            Some(Match::Text(MatchText { text })) => self.parse_text_query(text, hw_counter),
+            Some(Match::Phrase(MatchPhrase { phrase })) => {
+                self.parse_phrase_query(phrase, hw_counter)
             }
+            _ => return Ok(None),
+        };
 
-            assert_eq!(index.count_indexed_points(), payloads.len());
+        let Some(parsed_query) = parsed_query_opt else {
+            return Ok(Some(CardinalityEstimation::exact(0)));
+        };
 
-            let filter_condition = filter_request("multivac");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![0, 4]);
+        Ok(Some(self.estimate_query_cardinality(
+            &parsed_query,
+            condition,
+            hw_counter,
+        )))
+    }
 
-            let filter_condition = filter_request("giant computer");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![2]);
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> OperationResult<Box<dyn Iterator<Item = PayloadBlockCondition> + '_>> {
+        Ok(self.payload_blocks(threshold, key))
+    }
+}
 
-            let filter_condition = filter_request("the great time");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![4]);
+pub struct FullTextGridstoreIndexBuilder {
+    dir: PathBuf,
+    config: TextIndexParams,
+    index: Option<FullTextIndex>,
+}
 
-            index.remove_point(2).unwrap();
-            index.remove_point(3).unwrap();
-
-            let filter_condition = filter_request("giant computer");
-            assert!(index.filter(&filter_condition).unwrap().next().is_none());
-
-            assert_eq!(index.count_indexed_points(), payloads.len() - 2);
-
-            index
-                .add_point(
-                    3,
-                    &serde_json::json!([
-                "The last question was asked for the first time, half in jest, on May 21, 2061,",
-                "at a time when humanity first stepped into the light."
-            ]),
-                )
-                .unwrap();
-
-            index.add_point(4, &serde_json::json!(
-                "The question came about as a result of a five dollar bet over highballs, and it happened this way: "
-            )).unwrap();
-
-            assert_eq!(index.count_indexed_points(), payloads.len() - 1);
-
-            index.flusher()().unwrap();
+impl FullTextGridstoreIndexBuilder {
+    pub fn new(dir: PathBuf, config: TextIndexParams) -> Self {
+        Self {
+            dir,
+            config,
+            index: None,
         }
+    }
+}
 
-        {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
-            let mut index = FullTextIndex::new(db, config, "text");
-            let loaded = index.load().unwrap();
-            assert!(loaded);
+impl ValueIndexer for FullTextGridstoreIndexBuilder {
+    type ValueType = String;
 
-            assert_eq!(index.count_indexed_points(), 4);
+    fn get_value(value: &Value) -> Option<String> {
+        FullTextIndex::get_value(value)
+    }
 
-            let filter_condition = filter_request("multivac");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![0]);
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let values: Vec<Value> = values.into_iter().map(Value::String).collect();
+        let values: Vec<&Value> = values.iter().collect();
+        FieldIndexBuilderTrait::add_point(self, id, &values, hw_counter)
+    }
 
-            let filter_condition = filter_request("the");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![0, 1, 3, 4]);
-        }
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.remove_point(id)
+    }
+}
+
+impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
+    type FieldIndexType = FullTextIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index.replace(
+            FullTextIndex::new_gridstore(self.dir.clone(), self.config.clone(), true)?.ok_or_else(
+                || {
+                    OperationError::service_error(
+                        "Failed to create and open mutable full text index on gridstore",
+                    )
+                },
+            )?,
+        );
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized to finalize",
+            ));
+        };
+        index.flusher()()?;
+        Ok(index)
     }
 }

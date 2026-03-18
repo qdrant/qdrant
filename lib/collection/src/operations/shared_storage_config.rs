@@ -1,0 +1,110 @@
+use std::default;
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+use std::time::Duration;
+
+use common::load_concurrency::LoadConcurrencyConfig;
+use segment::types::HnswGlobalConfig;
+
+use crate::common::snapshots_manager::SnapshotsConfig;
+use crate::operations::types::NodeType;
+use crate::shards::transfer::ShardTransferMethod;
+
+/// Default timeout for search requests.
+/// In cluster mode, this should be aligned with collection timeout.
+const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
+const DEFAULT_UPDATE_QUEUE_SIZE: usize = 1_000_000;
+const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = DEFAULT_UPDATE_QUEUE_SIZE;
+/// Maximum number of operations which are stored in RAM in update worker queue.
+/// If there are more pending operations, operation data
+/// will be read from WAL when processing the operation.
+pub const DEFAULT_UPDATE_QUEUE_RAM_BUFFER: usize = 500;
+pub const DEFAULT_IO_SHARD_TRANSFER_LIMIT: Option<usize> = Some(1);
+pub const DEFAULT_SNAPSHOTS_PATH: &str = "./snapshots";
+
+/// Storage configuration shared between all collections.
+/// Represents a per-node configuration, which might be changes with restart.
+/// Vales of this struct are not persisted.
+#[derive(Clone, Debug)]
+pub struct SharedStorageConfig {
+    pub update_queue_size: usize,
+    pub node_type: NodeType,
+    pub handle_collection_load_errors: bool,
+    pub recovery_mode: Option<String>,
+    pub search_timeout: Duration,
+    pub update_concurrency: Option<NonZeroUsize>,
+    pub is_distributed: bool,
+    pub default_shard_transfer_method: Option<ShardTransferMethod>,
+    pub incoming_shard_transfers_limit: Option<usize>,
+    pub outgoing_shard_transfers_limit: Option<usize>,
+    pub snapshots_path: PathBuf,
+    pub snapshots_config: SnapshotsConfig,
+    pub hnsw_global_config: HnswGlobalConfig,
+    pub load_concurrency_config: LoadConcurrencyConfig,
+    pub search_thread_count: usize,
+}
+
+impl Default for SharedStorageConfig {
+    fn default() -> Self {
+        Self {
+            update_queue_size: DEFAULT_UPDATE_QUEUE_SIZE,
+            node_type: Default::default(),
+            handle_collection_load_errors: false,
+            recovery_mode: None,
+            search_timeout: DEFAULT_SEARCH_TIMEOUT,
+            update_concurrency: None,
+            is_distributed: false,
+            default_shard_transfer_method: None,
+            incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+            outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+            snapshots_path: PathBuf::from(DEFAULT_SNAPSHOTS_PATH),
+            snapshots_config: default::Default::default(),
+            hnsw_global_config: HnswGlobalConfig::default(),
+            load_concurrency_config: LoadConcurrencyConfig::default(),
+            search_thread_count: common::defaults::search_thread_count(common::cpu::get_num_cpus()),
+        }
+    }
+}
+
+impl SharedStorageConfig {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        update_queue_size: Option<usize>,
+        node_type: NodeType,
+        handle_collection_load_errors: bool,
+        recovery_mode: Option<String>,
+        search_timeout: Option<Duration>,
+        update_concurrency: Option<NonZeroUsize>,
+        is_distributed: bool,
+        default_shard_transfer_method: Option<ShardTransferMethod>,
+        incoming_shard_transfers_limit: Option<usize>,
+        outgoing_shard_transfers_limit: Option<usize>,
+        snapshots_path: PathBuf,
+        snapshots_config: SnapshotsConfig,
+        hnsw_global_config: HnswGlobalConfig,
+        load_concurrency_config: LoadConcurrencyConfig,
+        search_thread_count: usize,
+    ) -> Self {
+        let update_queue_size = update_queue_size.unwrap_or(match node_type {
+            NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
+            NodeType::Listener => DEFAULT_UPDATE_QUEUE_SIZE_LISTENER,
+        });
+        Self {
+            update_queue_size,
+            node_type,
+            handle_collection_load_errors,
+            recovery_mode,
+            search_timeout: search_timeout.unwrap_or(DEFAULT_SEARCH_TIMEOUT),
+            update_concurrency,
+            is_distributed,
+            default_shard_transfer_method,
+            incoming_shard_transfers_limit,
+            outgoing_shard_transfers_limit,
+            snapshots_path,
+            snapshots_config,
+            hnsw_global_config,
+            load_concurrency_config,
+            search_thread_count,
+        }
+    }
+}

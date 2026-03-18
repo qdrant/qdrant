@@ -5,6 +5,7 @@ const FLOAT_POS: u8 = 0x03;
 
 const F64_KEY_LEN: usize = 13;
 const I64_KEY_LEN: usize = 12;
+const U128_KEY_LEN: usize = 20;
 
 /// Encode a f64 into `buf`
 ///
@@ -18,7 +19,7 @@ const I64_KEY_LEN: usize = 12;
 /// A single-byte prefix tag is appended to the front of the encoding slice to ensures that
 /// NaNs are always sorted first.
 ///
-/// This approach was inspired by https://github.com/cockroachdb/cockroach/blob/master/pkg/util/encoding/float.go
+/// This approach was inspired by <https://github.com/cockroachdb/cockroach/blob/master/pkg/util/encoding/float.go>
 ///
 ///
 /// #f64 encoding format
@@ -35,13 +36,13 @@ const I64_KEY_LEN: usize = 12;
 pub fn encode_f64_ascending(val: f64, buf: &mut Vec<u8>) {
     if val.is_nan() {
         buf.push(FLOAT_NAN);
-        buf.extend(&[0_u8; std::mem::size_of::<f64>()]);
+        buf.extend([0_u8; std::mem::size_of::<f64>()]);
         return;
     }
 
     if val == 0f64 {
         buf.push(FLOAT_ZERO);
-        buf.extend(&[0_u8; std::mem::size_of::<f64>()]);
+        buf.extend([0_u8; std::mem::size_of::<f64>()]);
         return;
     }
 
@@ -152,6 +153,39 @@ pub fn decode_i64_key_ascending(buf: &[u8]) -> (u32, i64) {
                 .unwrap(),
         ),
         decode_i64_ascending(buf),
+    )
+}
+
+/// Encodes a u128 key so that it sort in ascending order.
+///
+/// The key is compound by the numeric value of the key plus a u32 representing
+/// the payload offset within the payload store.
+///
+/// # int key encoding format
+///
+///```text
+///
+/// 0                     16            20
+/// ┌─────────────────────┬──────────────┐
+/// │       key_val       │ point_offset │
+/// │    (big-endian)     │ (big-endian) │
+/// └─────────────────────┴──────────────┘
+///```
+pub fn encode_u128_key_ascending(key_val: u128, point_offset: u32) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(U128_KEY_LEN);
+    buf.extend(key_val.to_be_bytes());
+    buf.extend(point_offset.to_be_bytes());
+    buf
+}
+
+pub fn decode_u128_key_ascending(buf: &[u8]) -> (u32, u128) {
+    (
+        u32::from_be_bytes(
+            (&buf[U128_KEY_LEN - std::mem::size_of::<u32>()..])
+                .try_into()
+                .unwrap(),
+        ),
+        u128::from_be_bytes(buf[0..16].try_into().expect("cannot decode u128")),
     )
 }
 
