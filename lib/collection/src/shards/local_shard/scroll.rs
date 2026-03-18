@@ -302,17 +302,16 @@ impl LocalShard {
         .await
         .map_err(|_| CollectionError::timeout(timeout, "scroll_by_field"))??;
 
-        let all_reads = all_reads.into_iter().collect::<Result<Vec<_>, _>>()?;
-
-        let (values, point_ids): (Vec<_>, Vec<_>) = all_reads
-            .into_iter()
-            .kmerge_by(|a, b| match order_by.direction() {
-                Direction::Asc => a <= b,
-                Direction::Desc => a >= b,
-            })
-            .dedup()
-            .take(limit)
-            .unzip();
+        let (values, point_ids): (Vec<_>, Vec<_>) =
+            itertools::process_results(all_reads.into_iter(), |iter| {
+                iter.kmerge_by(|a, b| match order_by.direction() {
+                    Direction::Asc => a <= b,
+                    Direction::Desc => a >= b,
+                })
+                .dedup()
+                .take(limit)
+                .unzip()
+            })?;
 
         let with_payload = WithPayload::from(with_payload_interface);
 
