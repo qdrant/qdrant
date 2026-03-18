@@ -18,14 +18,9 @@ use crate::fs::clear_disk_cache;
 
 const UNUSED_BLOCKS_MARGIN: u64 = 16;
 
-/// Caching layer stub.
+/// Caching layer for files in a slow disk, to be mapped into a file in a fast disk.
 ///
-/// Once we implement it, it would be used to read static files from slow
-/// network-attached disks while caching recently accessed file pages on fast
-/// local SSD.
-///
-/// But for now the current implementation is a stub that provides rough
-/// public interface, but none of desired performance characteristics.
+/// It only supports immutable files, so it does not handle dirty pages or manual eviction.
 #[derive(Debug)]
 pub struct CacheController {
     /// Mapping from the assigned file id, to its file descriptor
