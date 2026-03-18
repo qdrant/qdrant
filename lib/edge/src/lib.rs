@@ -52,7 +52,7 @@ impl EdgeShard {
     ///
     /// Fails if the shard already exists (i.e. the segments directory contains any segment).
     /// Configuration is required and is persisted to `edge_config.json`.
-    pub fn new(path: &Path, config: EdgeShardConfig) -> OperationResult<Self> {
+    pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
                 "cannot create edge shard: path already contains segment data",
@@ -85,7 +85,7 @@ impl EdgeShard {
     ///   check compatibility, then persist so future loads have it.
     ///
     /// Fails if no segments exist and no config can be loaded or inferred.
-    pub fn load(path: &Path, config: Option<EdgeShardConfig>) -> OperationResult<Self> {
+    pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
         let (wal, segments_path) = ensure_dirs_and_open_wal(path)?;
 
         let mut config = resolve_initial_config(path, config)?;
@@ -242,11 +242,11 @@ fn ensure_dirs_and_open_wal(
 
 fn resolve_initial_config(
     path: &Path,
-    config: Option<EdgeShardConfig>,
-) -> OperationResult<Option<EdgeShardConfig>> {
+    config: Option<EdgeConfig>,
+) -> OperationResult<Option<EdgeConfig>> {
     Ok(match config {
         Some(c) => Some(c),
-        None => match EdgeShardConfig::load(path) {
+        None => match EdgeConfig::load(path) {
             Some(Ok(c)) => Some(c),
             Some(Err(e)) => return Err(e),
             None => None,
@@ -257,7 +257,7 @@ fn resolve_initial_config(
 fn load_segments(
     _path: &Path,
     segments_path: &Path,
-    config: &mut Option<EdgeShardConfig>,
+    config: &mut Option<EdgeConfig>,
 ) -> OperationResult<SegmentHolder> {
     let segments_dir = fs::read_dir(segments_path).map_err(|err| {
         OperationError::service_error(format!("failed to read segments directory: {err}"))
@@ -315,7 +315,7 @@ fn load_segments(
                 ))
             )?;
         } else {
-            *config = Some(EdgeShardConfig::from_segment_config(segment_cfg));
+            *config = Some(EdgeConfig::from_segment_config(segment_cfg));
         }
 
         segment.check_consistency_and_repair().map_err(|err| {
@@ -335,7 +335,7 @@ fn ensure_appendable_segment(
     segments: &mut SegmentHolder,
     path: &Path,
     segments_path: &Path,
-    config: &EdgeShardConfig,
+    config: &EdgeConfig,
 ) -> OperationResult<()> {
     if segments.has_appendable_segment() {
         return Ok(());
