@@ -68,34 +68,16 @@ pub fn new_raw_scorer<'a>(
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileHalf(vs) => raw_scorer_impl(query, vs, hc),
 
-        VectorStorageEnum::DenseMemmap(vs) => {
-            if vs.has_async_reader() {
-                #[cfg(target_os = "linux")]
-                {
-                    let scorer_result = super::async_raw_scorer::new(query.clone(), vs, hc.fork());
-                    match scorer_result {
-                        Ok(raw_scorer) => return Ok(raw_scorer),
-                        Err(err) => log::error!("failed to initialize async raw scorer: {err}"),
-                    };
-                }
-
-                #[cfg(not(target_os = "linux"))]
-                log::warn!("async raw scorer is only supported on Linux");
-            }
-
-            raw_scorer_impl(query, vs.as_ref(), hc)
-        }
-
-        // TODO(byte_storage): Implement async raw scorer for DenseMemmapByte and DenseMemmapHalf
+        VectorStorageEnum::DenseMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
 
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseUring(vs) => super::async_raw_scorer::new(query, vs, hc),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUringByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseUringByte(vs) => super::async_raw_scorer::new(query, vs, hc),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUringHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseUringHalf(vs) => super::async_raw_scorer::new(query, vs, hc),
 
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
