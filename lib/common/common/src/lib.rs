@@ -16,7 +16,6 @@ pub mod ext;
 pub mod fixed_length_priority_queue;
 pub mod flags;
 pub mod fs;
-pub mod guards;
 pub mod is_alive_lock;
 pub mod iterator_ext;
 pub mod load_concurrency;
