@@ -689,7 +689,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
 
         let point_is_deferred = self
             .deferred_internal_id
-            .map_or(false, |deferred| id >= deferred);
+            .is_some_and(|deferred| id >= deferred);
 
         // do not upsert empty or deferred vectors into the index
         if !vector.is_empty() && !point_is_deferred {
