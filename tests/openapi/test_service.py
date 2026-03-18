@@ -100,7 +100,7 @@ def test_telemetry():
 
     assert result['collections']['number_of_collections'] >= 1
 
-    endpoint = result['requests']['rest']['responses']['PUT /collections/{name}/points']
+    endpoint = result['requests']['rest']['responses']['PUT /collections/{collection_name}/points']
     assert endpoint['200']['count'] > 0
 
     assert 'avg_duration_micros' in endpoint['200']
@@ -126,7 +126,7 @@ def test_telemetry_detail(level: int):
 
     assert result['collections']['number_of_collections'] >= 1
 
-    endpoint = result['requests']['rest']['responses']['PUT /collections/{name}/points']
+    endpoint = result['requests']['rest']['responses']['PUT /collections/{collection_name}/points']
     assert endpoint['200']['count'] > 0
 
     if level == 0:

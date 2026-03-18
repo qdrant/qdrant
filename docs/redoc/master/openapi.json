@@ -322,6 +322,15 @@
             }
           },
           {
+            "name": "per_collection",
+            "in": "query",
+            "description": "If true, include per-collection request statistics in the response",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "timeout",
             "in": "query",
             "description": "Timeout for this request",
@@ -406,6 +415,15 @@
             "name": "anonymize",
             "in": "query",
             "description": "If true, anonymize result",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "per_collection",
+            "in": "query",
+            "description": "If true, include per-collection request metrics with a collection label instead of global request metrics",
             "required": false,
             "schema": {
               "type": "boolean"
