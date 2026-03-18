@@ -35,9 +35,6 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
-    /// Get current persistent version of the segment
-    fn persistent_version(&self) -> SeqNumberType;
-
     fn is_proxy(&self) -> bool;
 
     /// Get version of specified point
@@ -235,26 +232,6 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// the appendable state of the wrapped segment.
     fn is_appendable(&self) -> bool;
 
-    /// Returns a function, which when called, will flush all pending changes to disk.
-    /// If there are currently no changes to flush, returns None.
-    /// If `force` is true, will return a flusher even if there are no changes to flush.
-    fn flusher(&self, force: bool) -> Option<Flusher>;
-
-    /// Immediately flush all changes to disk and return persisted version.
-    /// Blocks the current thread.
-    fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
-        if let Some(flusher) = self.flusher(force) {
-            flusher()?;
-        }
-        Ok(self.persistent_version())
-    }
-
-    /// Removes all persisted data and forces to destroy segment
-    fn drop_data(self) -> OperationResult<()>;
-
-    /// Path to data, owned by segment
-    fn data_path(&self) -> PathBuf;
-
     /// Delete field index, if exists
     fn delete_field_index(
         &mut self,
@@ -357,11 +334,36 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     fn has_deferred_points(&self) -> bool;
 }
 
+pub trait StorageSegmentEntry: ReadSegmentEntry {
+    /// Get current persistent version of the segment
+    fn persistent_version(&self) -> SeqNumberType;
+
+    /// Returns a function, which when called, will flush all pending changes to disk.
+    /// If there are currently no changes to flush, returns None.
+    /// If `force` is true, will return a flusher even if there are no changes to flush.
+    fn flusher(&self, force: bool) -> Option<Flusher>;
+
+    /// Immediately flush all changes to disk and return persisted version.
+    /// Blocks the current thread.
+    fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
+        if let Some(flusher) = self.flusher(force) {
+            flusher()?;
+        }
+        Ok(self.persistent_version())
+    }
+
+    /// Removes all persisted data and forces to destroy segment
+    fn drop_data(self) -> OperationResult<()>;
+
+    /// Path to data, owned by segment
+    fn data_path(&self) -> PathBuf;
+}
+
 /// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait NonAppendableSegmentEntry: ReadSegmentEntry {
+pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
     fn delete_point(
         &mut self,
         op_num: SeqNumberType,
@@ -376,7 +378,7 @@ pub trait NonAppendableSegmentEntry: ReadSegmentEntry {
 /// is executed - the storage state will be the same.
 ///
 /// This is not a superset of `NonAppendableSegmentEntry` as its operations will differ in mutability.
-pub trait SegmentEntry: ReadSegmentEntry {
+pub trait SegmentEntry: StorageSegmentEntry {
     fn delete_point_mut(
         &mut self,
         op_num: SeqNumberType,

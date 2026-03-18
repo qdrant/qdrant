@@ -25,7 +25,7 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{ReadSegmentEntry, SegmentEntry};
+use segment::entry::{ReadSegmentEntry, SegmentEntry, StorageSegmentEntry};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
@@ -583,8 +583,8 @@ impl SegmentHolder {
     /// Try to acquire read lock over the given segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     fn aloha_lock_segment_read(
-        segment: &'_ RwLock<dyn ReadSegmentEntry>,
-    ) -> RwLockReadGuard<'_, dyn ReadSegmentEntry> {
+        segment: &'_ RwLock<dyn StorageSegmentEntry>,
+    ) -> RwLockReadGuard<'_, dyn StorageSegmentEntry> {
         let mut interval = Duration::from_nanos(100);
         loop {
             if let Some(guard) = segment.try_read_for(interval) {

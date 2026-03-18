@@ -16,6 +16,7 @@ use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
+use segment::entry::StorageSegmentEntry;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
@@ -29,10 +30,6 @@ use crate::locked_segment::LockedSegment;
 impl ReadSegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(self.wrapped_segment.get().read().version(), self.version)
-    }
-
-    fn persistent_version(&self) -> SeqNumberType {
-        self.wrapped_segment.get().read().persistent_version()
     }
 
     fn is_proxy(&self) -> bool {
@@ -559,20 +556,6 @@ impl ReadSegmentEntry for ProxySegment {
         false
     }
 
-    fn flusher(&self, force: bool) -> Option<Flusher> {
-        let wrapped_segment = self.wrapped_segment.get();
-        let wrapped_segment_guard = wrapped_segment.read();
-        wrapped_segment_guard.flusher(force)
-    }
-
-    fn drop_data(self) -> OperationResult<()> {
-        self.wrapped_segment.drop_data()
-    }
-
-    fn data_path(&self) -> PathBuf {
-        self.wrapped_segment.get().read().data_path()
-    }
-
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
@@ -715,6 +698,26 @@ impl ReadSegmentEntry for ProxySegment {
             .read()
             .deferred_point_count()
             .saturating_sub(self.deleted_deferred_count)
+    }
+}
+
+impl StorageSegmentEntry for ProxySegment {
+    fn persistent_version(&self) -> SeqNumberType {
+        self.wrapped_segment.get().read().persistent_version()
+    }
+
+    fn flusher(&self, force: bool) -> Option<Flusher> {
+        let wrapped_segment = self.wrapped_segment.get();
+        let wrapped_segment_guard = wrapped_segment.read();
+        wrapped_segment_guard.flusher(force)
+    }
+
+    fn drop_data(self) -> OperationResult<()> {
+        self.wrapped_segment.drop_data()
+    }
+
+    fn data_path(&self) -> PathBuf {
+        self.wrapped_segment.get().read().data_path()
     }
 }
 

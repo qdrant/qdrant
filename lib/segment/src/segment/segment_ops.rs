@@ -18,6 +18,7 @@ use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorInternal;
 use crate::entry::ReadSegmentEntry;
+use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::{
