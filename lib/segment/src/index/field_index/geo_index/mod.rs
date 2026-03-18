@@ -371,10 +371,7 @@ impl GeoMapIndex {
     }
 
     /// Get iterator over smallest geo-hash regions larger than `threshold` points
-    fn large_hashes(
-        &self,
-        threshold: usize,
-    ) -> impl Iterator<Item = OperationResult<(GeoHash, usize)>> + '_ {
+    fn large_hashes(&self, threshold: usize) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
         let filter_condition =
             |(hash, size): &(GeoHash, usize)| *size > threshold && !hash.is_empty();
         let mut large_regions = match self {
@@ -406,7 +403,7 @@ impl GeoMapIndex {
             }
         }
 
-        edge_region.into_iter().map(Ok)
+        edge_region.into_iter()
     }
 
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
@@ -830,10 +827,10 @@ impl PayloadFieldIndex for GeoMapIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
             self.large_hashes(threshold)
-                .map_ok(move |(geo_hash, size)| PayloadBlockCondition {
+                .map(move |(geo_hash, size)| PayloadBlockCondition {
                     condition: FieldCondition::new_geo_bounding_box(
                         key.clone(),
                         geo_hash_to_box(geo_hash),
@@ -1277,10 +1274,7 @@ mod tests {
             .points_of_hash(Default::default(), &hw_counter)
             .unwrap();
         assert_eq!(top_level_points, 1_000);
-        let block_hashes = field_index
-            .large_hashes(100)
-            .map(Result::unwrap)
-            .collect_vec();
+        let block_hashes = field_index.large_hashes(100).collect_vec();
         assert!(!block_hashes.is_empty());
         for (geohash, size) in block_hashes {
             assert_eq!(geohash.len(), 1);
@@ -1290,7 +1284,6 @@ mod tests {
 
         let blocks = field_index
             .payload_blocks(100, JsonPath::new("test"))
-            .map(Result::unwrap)
             .collect_vec();
         blocks.iter().for_each(|block| {
             let hw_acc = HwMeasurementAcc::new();
@@ -1814,12 +1807,10 @@ mod tests {
             assert_eq!(
                 indices[0]
                     .large_hashes(20)
-                    .map(Result::unwrap)
                     .map(|(hash, _)| hash)
                     .collect::<BTreeSet<_>>(),
                 index
                     .large_hashes(20)
-                    .map(Result::unwrap)
                     .map(|(hash, _)| hash)
                     .collect::<BTreeSet<_>>(),
             );

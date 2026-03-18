@@ -867,7 +867,7 @@ impl PayloadFieldIndex for MapIndex<str> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
             self.iter_values()
                 .map(|value| {
@@ -881,8 +881,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
                     cardinality: count,
-                })
-                .map(Ok),
+                }),
         )
     }
 }
@@ -1066,7 +1065,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
             self.iter_values()
                 .map(move |value| {
@@ -1083,8 +1082,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         Uuid::from_u128(*value).to_string().into(),
                     ),
                     cardinality: count,
-                })
-                .map(Ok),
+                }),
         )
     }
 }
@@ -1218,7 +1216,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
             self.iter_values()
                 .map(move |value| {
@@ -1232,8 +1230,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), (*value).into()),
                     cardinality: count,
-                })
-                .map(Ok),
+                }),
         )
     }
 }
@@ -1521,7 +1518,7 @@ mod tests {
         let index = builder.finalize().unwrap();
 
         for block in index.payload_blocks(50, PayloadKeyType::new("test_uuid")) {
-            black_box(block.unwrap());
+            black_box(block);
         }
     }
 
