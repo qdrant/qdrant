@@ -1,53 +1,103 @@
 [package]
 name = "collection"
 version = "0.4.2"
-authors = ["Qdrant Team <info@qdrant.tech>"]
-edition = "2021"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2024"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lints]
+workspace = true
+
+[features]
+testing = []
+tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
+data-consistency-check = []
+rocksdb = ["segment/rocksdb"]
+staging = ["shard/staging"]
 
 [dev-dependencies]
-tempfile = "3.3.0"
-criterion = "0.4"
-pprof = { version = "0.10", features = ["flamegraph", "prost-codec"] }
+criterion = { workspace = true }
+fs-err = { workspace = true, features = ["debug"] }
+proptest = { workspace = true }
+rstest = { workspace = true }
+tar = { workspace = true }
+approx = "0.5.1"
+collection = { path = ".", features = ["testing"] }
+common = { path = "../common/common", features = ["testing"] }
+segment = { path = "../segment", default-features = false, features = ["testing"] }
+shard = { path = "../shard", default-features = false, features = ["testing"] }
+
+
+[target.'cfg(not(target_os = "windows"))'.dev-dependencies]
+pprof = { workspace = true }
 
 [dependencies]
+bytemuck = { workspace = true }
+fs-err = { workspace = true }
+parking_lot = { workspace = true }
+ahash = { workspace = true }
+rand = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = { workspace = true }
+ordered-float = { workspace = true }
+hashring = "0.3.6"
+tinyvec = { workspace = true }
+siphasher = "1.0.2"
+smallvec = { workspace = true }
+count-min-sketch = "0.1.8"
 
-parking_lot = "0.12"
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+atomicwrites = { workspace = true}
+log = { workspace = true }
+env_logger = { workspace = true }
+async-trait = { workspace = true }
+arc-swap = "1.8.2"
+tonic = { workspace = true }
+uuid = { workspace = true }
+url = { workspace = true }
+validator = { workspace = true }
+http = { workspace = true }
+actix-web-validator = { workspace = true }
+actix-web = { workspace = true }
+actix-files = { workspace = true }
 
-rand = "0.8.5"
-thiserror = "1.0"
-serde = { version = "~1.0", features = ["derive"] }
-serde_json = { version = "~1.0", features = ["std"] }
-serde_cbor = "0.11.2"
-rmp-serde = "~1.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "0dd3943113ff7ec2fbc5428bb77ba206c8492fa9" }
-ordered-float = "3.3"
-hashring = "0.3.0"
+common = { path = "../common/common" }
+cancel = { path = "../common/cancel" }
+issues = { path = "../common/issues" }
+segment = { path = "../segment", default-features = false }
+shard = { path = "../shard", default-features = false, features = ["api"] }
+sparse = { path = "../sparse" }
+api = { path = "../api" }
+wal = { path = "../wal" }
 
-tokio = {version = "~1.21", features = ["full"]}
-futures = "0.3.25"
-atomicwrites = "0.3.1"
-log = "0.4"
-env_logger = "0.9.1"
-merge = "0.1.0"
-async-trait = "0.1.58"
-arc-swap = "1.5.1"
-tonic = "0.7.2"
-tower = "0.4.13"
-uuid = { version = "1.2", features = ["v4", "serde"] }
+itertools = { workspace = true }
+indicatif = { workspace = true }
+chrono = { workspace = true }
+schemars = { workspace = true }
+fs_extra = { workspace = true }
+semver = { workspace = true }
+tempfile = { workspace = true }
+sha2 = { workspace = true }
+bytes = { workspace = true }
+fnv = { workspace = true }
+indexmap = { workspace = true }
+ringbuffer = "0.16.0"
+strum = { workspace = true }
+urlencoding = { workspace = true }
 
-segment = {path = "../segment"}
-api = {path = "../api"}
+tracing = { workspace = true, optional = true }
+fs4 = { workspace = true }
 
-itertools = "0.10"
-indicatif = "0.17.1"
-chrono = { version = "~0.4", features = ["serde"] }
-schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono"] }
-num_cpus = "1.13.1"
-tar = "0.4.38"
-fs_extra = "1.2.0"
-semver = "1.0.14"
+# AWS S3 support
+object_store = { version = "0.13.1", features = ["aws"] }
+
 
 [[bench]]
 name = "hash_ring_bench"
@@ -55,4 +105,8 @@ harness = false
 
 [[bench]]
 name = "batch_search_bench"
+harness = false
+
+[[bench]]
+name = "batch_query_bench"
 harness = false

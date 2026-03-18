@@ -1,0 +1,32 @@
+#ifndef VECTOR_STORAGE_F32_HEADER
+#define VECTOR_STORAGE_F32_HEADER
+
+#define VECTOR_STORAGE_ELEMENT_TYPE vec4
+#define VECTOR_STORAGE_SCORE_TYPE float
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) subgroupAdd(RESULT)
+
+#ifdef COSINE_DISTANCE
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot(a, b)
+#endif
+
+#ifdef DOT_DISTANCE
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot(a, b)
+#endif
+
+#ifdef EUCLID_DISTANCE
+float euclid_metric_f32(vec4 v1, vec4 v2) {
+    vec4 v = v1 - v2;
+    return -v.x * v.x - v.y * v.y - v.z * v.z - v.w * v.w;
+}
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) euclid_metric_f32(a, b)
+#endif
+
+#ifdef MANHATTAN_DISTANCE
+float manhattan_metric_f32(vec4 v1, vec4 v2) {
+    vec4 v = abs(v1 - v2);
+    return -v.x - v.y - v.z - v.w;
+}
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) manhattan_metric_f32(a, b)
+#endif
+
+#endif

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use segment::common::file_operations::{atomic_save_json, read_json};
+use common::fs::{atomic_save_json, read_json};
+use common::tar_ext;
 use serde::{Deserialize, Serialize};
 
 use crate::operations::types::CollectionResult;
@@ -10,9 +11,9 @@ pub const SHARD_CONFIG_FILE: &str = "shard_config.json";
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub enum ShardType {
-    Local,
-    Remote { peer_id: PeerId },
-    Temporary, // same as local, but not ready yet
+    Local,                      // Deprecated
+    Remote { peer_id: PeerId }, // Deprecated
+    Temporary,                  // Deprecated
     ReplicaSet,
 }
 
@@ -32,25 +33,10 @@ impl ShardConfig {
         }
     }
 
-    pub fn new_remote(peer_id: PeerId) -> Self {
-        let r#type = ShardType::Remote { peer_id };
-        Self { r#type }
-    }
-
-    pub fn new_local() -> Self {
-        let r#type = ShardType::Local;
-        Self { r#type }
-    }
-
-    pub fn new_temp() -> Self {
-        let r#type = ShardType::Temporary;
-        Self { r#type }
-    }
-
     pub fn load(shard_path: &Path) -> CollectionResult<Option<Self>> {
         let config_path = Self::get_config_path(shard_path);
         if !config_path.exists() {
-            log::info!("Detected missing shard config file in {:?}", shard_path);
+            log::info!("Detected missing shard config file in {shard_path:?}");
             return Ok(None);
         }
         Ok(Some(read_json(&config_path)?))
@@ -59,5 +45,11 @@ impl ShardConfig {
     pub fn save(&self, shard_path: &Path) -> CollectionResult<()> {
         let config_path = Self::get_config_path(shard_path);
         Ok(atomic_save_json(&config_path, self)?)
+    }
+
+    pub async fn save_to_tar(&self, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
+        let bytes = serde_json::to_vec(self)?;
+        tar.append_data(bytes, Path::new(SHARD_CONFIG_FILE)).await?;
+        Ok(())
     }
 }

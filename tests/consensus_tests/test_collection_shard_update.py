@@ -1,6 +1,7 @@
 import pathlib
 
 from .utils import *
+from .assertions import assert_http_ok
 
 N_PEERS = 3
 N_SHARDS = 4
@@ -55,13 +56,13 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Check that it exists on all peers
-    wait_for_uniform_collection_existence("test_collection", peer_api_uris)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
 
     # Check collection's cluster info
     collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], "test_collection")
     assert collection_cluster_info["shard_count"] == N_SHARDS
 
-    # Create malformed points in first peer's collection
+    # Create request with missing named vectors in first peer's collection
     r = requests.put(
         f"{peer_api_uris[0]}/collections/test_collection/points?wait=true", json={
             "points": [
@@ -94,9 +95,48 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
                 }
             ]
         })
- 
+    assert_http_ok(r)
+
+    # Create malformed points in first peer's collection
+    r = requests.put(
+        f"{peer_api_uris[0]}/collections/test_collection/points?wait=true", json={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "image": [0.05, 0.61, 0.76, 0.74],
+                        "text": [0.05, 0.61, 0.76, 0.74]
+                    }
+                },
+                {
+                    "id": 2,
+                    "vector": {
+                        "image": [0.05, 0.61, 0.76]
+                    }
+                },
+                {
+                    "id": 3,
+                    "vector": {
+                        "image": [0.05, 0.61, 0.76, 0.74],
+                        "text": [0.05, 0.61, 0.76, 0.74]
+                    }
+                },
+                {
+                    "id": 4,
+                    "vector": {
+                        "image": [0.05, 0.61, 0.76, 0.74],
+                        "text": [0.05, 0.61, 0.76, 0.74]
+                    }
+                }
+            ]
+        })
+
     assert r.status_code == 400
     error = r.json()["status"]["error"]
     assert error.__contains__("Wrong input: 1 out of 2 shards failed to apply operation")
-    assert error.__contains__("Wrong input: Missed vector name error: text")
+    # Update requests are applied on the local shard and propagated to the remote shards in parallel.
+    # These operations may complete (or fail) in arbitrary order, and if request fails, Qdrant returns
+    # error message of the first failed operation.
+    # Local and remote operations return different errors, so we check for both.
+    assert error.__contains__("Wrong input: Vector dimension error: expected dim") or error.__contains__("Wrong input: InvalidArgument")
 

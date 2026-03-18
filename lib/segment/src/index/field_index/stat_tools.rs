@@ -1,9 +1,9 @@
 use std::f64::consts::{E, PI};
 
 /// This function estimates how many real points were selected with the filter.
-/// It is assumed that each real point has, on average, X values in correspondence.
-/// As a response to the execution of the query it is possible to establish only the number of matched associated values.
-///
+/// It is assumed that each real point has, on average, X values in correspondence. As a response
+/// to the execution of the query it is possible to establish only the number of matched associated
+/// values.
 ///
 /// # Arguments
 ///
@@ -70,15 +70,34 @@ fn prob_not_select(total: usize, avg: f64, selected: usize) -> f64 {
     .exp()
 }
 
+/// Calculate number of selected points, based on the amount of matched values.
+/// Assuming that values are randomly distributed among points and each point can have multiple values.
+/// Math is based on: <https://en.wikipedia.org/wiki/Bloom_filter#Probability_of_false_positives>
+pub fn number_of_selected_points(points: usize, values: usize) -> usize {
+    let prob_of_selection = 1. - (-(values as f64 / points as f64)).exp();
+    (prob_of_selection * points as f64).round() as usize
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
+    use rand::SeedableRng;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
-    use rand::SeedableRng;
 
     use super::*;
+
+    #[test]
+    fn test_selected_points_est() {
+        let res = number_of_selected_points(100, 1000);
+        assert!(res > 95);
+        assert!(res <= 100);
+
+        let res = number_of_selected_points(1000, 10);
+        assert!(res > 5);
+        assert!(res <= 10);
+    }
 
     fn simulate(uniq: usize, avg: usize, selected: usize) -> usize {
         let mut data: Vec<_> = vec![];
@@ -100,7 +119,7 @@ mod tests {
     #[test]
     fn approx_factorial() {
         let approx = approx_fact_log(10.).exp();
-        let real = (2 * 3 * 4 * 5 * 6 * 7 * 8 * 9 * 10) as f64;
+        let real = f64::from(2 * 3 * 4 * 5 * 6 * 7 * 8 * 9 * 10);
         let error = (approx / real - 1.0).abs();
         assert!(error < 0.01);
     }
@@ -109,22 +128,22 @@ mod tests {
     fn test_estimation_corner_cases() {
         let count = estimate_multi_value_selection_cardinality(10, 20, 20);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(100, 100, 100);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(100, 100, 50);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(10, 10, 10);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(1, 1, 1);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(1, 1, 0);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
     }
 
     #[test]

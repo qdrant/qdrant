@@ -1,15 +1,18 @@
+#[cfg(not(target_os = "windows"))]
 mod prof;
 
-use criterion::{criterion_group, criterion_main, Criterion};
-use rand::rngs::StdRng;
-use rand::{thread_rng, SeedableRng};
-use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
-use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
-use segment::spaces::simple::CosineMetric;
-use segment::types::PointOffsetType;
+use std::hint::black_box;
 
-const NUM_VECTORS: usize = 100000;
+use common::types::PointOffsetType;
+use criterion::{Criterion, criterion_group, criterion_main};
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+use segment::fixtures::index_fixtures::random_vector;
+use segment::index::hnsw_index::graph_layers::SearchAlgorithm;
+use segment::spaces::simple::CosineMetric;
+use segment::vector_storage::DEFAULT_STOPPED;
+
+const NUM_VECTORS: usize = 1_000_000;
 const DIM: usize = 64;
 const M: usize = 16;
 const TOP: usize = 10;
@@ -17,48 +20,73 @@ const EF_CONSTRUCT: usize = 100;
 const EF: usize = 100;
 const USE_HEURISTIC: bool = true;
 
+mod fixture;
+
+type Metric = CosineMetric;
+
 fn hnsw_benchmark(c: &mut Criterion) {
+    let mut group = c.benchmark_group("hnsw-search-graph");
+
+    let (vector_holder, mut graph_layers) =
+        fixture::make_cached_graph::<Metric>(NUM_VECTORS, DIM, M, EF_CONSTRUCT, USE_HEURISTIC);
+
     let mut rng = StdRng::seed_from_u64(42);
-    let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
-    let mut group = c.benchmark_group("hnsw-index-search-group");
-    let mut rng = thread_rng();
-    let fake_filter_context = FakeFilterContext {};
-
-    let mut graph_layers_builder =
-        GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
-    for idx in 0..(NUM_VECTORS as PointOffsetType) {
-        let added_vector = vector_holder.vectors.get(idx).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
-        let level = graph_layers_builder.get_random_layer(&mut rng);
-        graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, scorer);
-    }
-    let graph_layers = graph_layers_builder.into_graph_layers();
-
-    group.bench_function("hnsw_search", |b| {
+    group.bench_function("uncompressed", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let raw_scorer = vector_holder.get_raw_scorer(query);
-            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+            let scorer = vector_holder.scorer(query);
 
-            graph_layers.search(TOP, EF, scorer);
+            black_box(
+                graph_layers
+                    .search(
+                        TOP,
+                        EF,
+                        SearchAlgorithm::Hnsw,
+                        scorer,
+                        None,
+                        &DEFAULT_STOPPED,
+                    )
+                    .unwrap(),
+            );
+        })
+    });
+
+    graph_layers.compress_ram();
+    let mut rng = StdRng::seed_from_u64(42);
+    group.bench_function("compressed", |b| {
+        b.iter(|| {
+            let query = random_vector(&mut rng, DIM);
+
+            let scorer = vector_holder.scorer(query);
+
+            black_box(
+                graph_layers
+                    .search(
+                        TOP,
+                        EF,
+                        SearchAlgorithm::Hnsw,
+                        scorer,
+                        None,
+                        &DEFAULT_STOPPED,
+                    )
+                    .unwrap(),
+            );
         })
     });
 
     let mut plain_search_range: Vec<PointOffsetType> =
         (0..NUM_VECTORS as PointOffsetType).collect();
-    group.bench_function("plain_search", |b| {
+    let mut rng = StdRng::seed_from_u64(42);
+    group.bench_function("plain", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let raw_scorer = vector_holder.get_raw_scorer(query);
-            let mut scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+            let mut scorer = vector_holder.scorer(query);
 
             let mut top_score = 0.;
             let scores = scorer.score_points(&mut plain_search_range, NUM_VECTORS);
-            scores.iter().copied().for_each(|score| {
+            scores.for_each(|score| {
                 if score.score > top_score {
                     top_score = score.score
                 }
@@ -69,9 +97,17 @@ fn hnsw_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
+    targets = hnsw_benchmark
+}
+
+#[cfg(target_os = "windows")]
+criterion_group! {
+    name = benches;
+    config = Criterion::default();
     targets = hnsw_benchmark
 }
 

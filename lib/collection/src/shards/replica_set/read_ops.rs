@@ -1,0 +1,284 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
+use futures::FutureExt as _;
+use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::types::*;
+use shard::count::CountRequestInternal;
+use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
+use shard::search::CoreSearchRequestBatch;
+
+use super::ShardReplicaSet;
+use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::types::*;
+use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
+
+impl ShardReplicaSet {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn scroll_by(
+        &self,
+        request: Arc<ScrollRequestInternal>,
+        read_consistency: Option<ReadConsistency>,
+        local_only: bool,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let request = request.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                let hw_acc = hw_measurement_acc.clone();
+
+                async move {
+                    shard
+                        .scroll_by(request, &search_runtime, timeout, hw_acc)
+                        .await
+                }
+                .boxed()
+            },
+            read_consistency,
+            local_only,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn local_scroll_by_id(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        let with_payload_interface = Arc::new(with_payload_interface.clone());
+        let with_vector = Arc::new(with_vector.clone());
+        let filter = filter.map(|filter| Arc::new(filter.clone()));
+
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let with_payload_interface = with_payload_interface.clone();
+                let with_vector = with_vector.clone();
+                let filter = filter.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                let hw_acc = hw_measurement_acc.clone();
+
+                async move {
+                    shard
+                        .local_scroll_by_id(
+                            offset,
+                            limit,
+                            &with_payload_interface,
+                            &with_vector,
+                            filter.as_deref(),
+                            &search_runtime,
+                            timeout,
+                            hw_acc,
+                            deferred_behavior,
+                        )
+                        .await
+                }
+                .boxed()
+            },
+            read_consistency,
+            true,
+        )
+        .await
+    }
+
+    pub async fn core_search(
+        &self,
+        request: Arc<CoreSearchRequestBatch>,
+        read_consistency: Option<ReadConsistency>,
+        local_only: bool,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let request = Arc::clone(&request);
+                let search_runtime = self.search_runtime.clone();
+                let hw_measurement_acc_clone = hw_measurement_acc.clone();
+                async move {
+                    shard
+                        .core_search(request, &search_runtime, timeout, hw_measurement_acc_clone)
+                        .await
+                }
+                .boxed()
+            },
+            read_consistency,
+            local_only,
+        )
+        .await
+    }
+
+    pub async fn count(
+        &self,
+        request: Arc<CountRequestInternal>,
+        read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
+        local_only: bool,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<CountResult> {
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let request = request.clone();
+                let search_runtime = self.search_runtime.clone();
+                let hw_measurement_acc_clone = hw_measurement_acc.clone();
+                async move {
+                    shard
+                        .count(
+                            request,
+                            &search_runtime,
+                            timeout,
+                            hw_measurement_acc_clone,
+                            deferred_behavior,
+                        )
+                        .await
+                }
+                .boxed()
+            },
+            read_consistency,
+            local_only,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn retrieve(
+        &self,
+        request: Arc<PointRequestInternal>,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
+        local_only: bool,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        let with_payload = Arc::new(with_payload.clone());
+        let with_vector = Arc::new(with_vector.clone());
+
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let request = request.clone();
+                let with_payload = with_payload.clone();
+                let with_vector = with_vector.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                let hw_acc = hw_measurement_acc.clone();
+
+                async move {
+                    shard
+                        .retrieve(
+                            request,
+                            &with_payload,
+                            &with_vector,
+                            &search_runtime,
+                            timeout,
+                            hw_acc,
+                            DeferredBehavior::Exclude,
+                        )
+                        .await
+                }
+                .boxed()
+            },
+            read_consistency,
+            local_only,
+        )
+        .await
+    }
+
+    pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
+        self.execute_read_operation(
+            |shard| async move { shard.info().await }.boxed(),
+            local_only,
+        )
+        .await
+    }
+
+    pub async fn count_local(
+        &self,
+        request: Arc<CountRequestInternal>,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<Option<CountResult>> {
+        let local = self.local.read().await;
+        match &*local {
+            None => Ok(None),
+            Some(shard) => {
+                let search_runtime = self.search_runtime.clone();
+                Ok(Some(
+                    shard
+                        .get()
+                        .count(
+                            request,
+                            &search_runtime,
+                            timeout,
+                            hw_measurement_acc,
+                            deferred_behavior,
+                        )
+                        .await?,
+                ))
+            }
+        }
+    }
+
+    pub async fn query_batch(
+        &self,
+        requests: Arc<Vec<ShardQueryRequest>>,
+        read_consistency: Option<ReadConsistency>,
+        local_only: bool,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let requests = Arc::clone(&requests);
+                let search_runtime = self.search_runtime.clone();
+                let hw_measurement_acc_clone = hw_measurement_acc.clone();
+                async move {
+                    shard
+                        .query_batch(requests, &search_runtime, timeout, hw_measurement_acc_clone)
+                        .await
+                }
+                .boxed()
+            },
+            read_consistency,
+            local_only,
+        )
+        .await
+    }
+
+    pub async fn facet(
+        &self,
+        request: Arc<FacetParams>,
+        read_consistency: Option<ReadConsistency>,
+        local_only: bool,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<FacetResponse> {
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let request = request.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                let hw_acc = hw_measurement_acc.clone();
+                async move { shard.facet(request, &search_runtime, timeout, hw_acc).await }.boxed()
+            },
+            read_consistency,
+            local_only,
+        )
+        .await
+    }
+}

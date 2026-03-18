@@ -1,11 +1,17 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
-use crate::entry::entry_point::OperationResult;
 use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
-use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
+use crate::types::{
+    Distance, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig, VectorName,
+    VectorStorageType,
+};
+
+pub const VECTOR1_NAME: &VectorName = "vector1";
+pub const VECTOR2_NAME: &VectorName = "vector2";
 
 /// Build new segment with plain index in given directory
 ///
@@ -26,12 +32,47 @@ pub fn build_simple_segment(
                 VectorDataConfig {
                     size: dim,
                     distance,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: Default::default(),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
+        None,
+        true,
+    )
+}
+
+pub fn build_simple_segment_with_payload_storage(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    payload_storage_type: PayloadStorageType,
+) -> OperationResult<Segment> {
+    build_segment(
+        path,
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type,
+        },
+        None,
+        true,
     )
 }
 
@@ -43,17 +84,27 @@ pub fn build_multivec_segment(
 ) -> OperationResult<Segment> {
     let mut vectors_config = HashMap::new();
     vectors_config.insert(
-        "vector1".to_owned(),
+        VECTOR1_NAME.into(),
         VectorDataConfig {
             size: dim1,
             distance,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
         },
     );
     vectors_config.insert(
-        "vector2".to_owned(),
+        VECTOR2_NAME.into(),
         VectorDataConfig {
             size: dim2,
             distance,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
         },
     );
 
@@ -61,21 +112,24 @@ pub fn build_multivec_segment(
         path,
         &SegmentConfig {
             vector_data: vectors_config,
-            index: Indexes::Plain {},
-            storage_type: Default::default(),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
+        None,
+        true,
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::only_default_vector;
-    use crate::entry::entry_point::{OperationError, SegmentEntry};
+    use crate::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry as _};
+    use crate::payload_json;
 
     #[test]
     fn test_create_simple_segment() {
@@ -97,33 +151,37 @@ mod tests {
         let vec4 = vec![1.0, 1.0, 0.0, 1.0];
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-        match segment.upsert_vector(1, 120.into(), &only_default_vector(&wrong_vec)) {
-            Err(OperationError::WrongVector { .. }) => (),
+        let hw_counter = HardwareCounterCell::new();
+
+        match segment.upsert_point(1, 120.into(), only_default_vector(&wrong_vec), &hw_counter) {
+            Err(OperationError::WrongVectorDimension { .. }) => (),
             Err(_) => panic!("Wrong error"),
             Ok(_) => panic!("Operation with wrong vector should fail"),
         };
 
         segment
-            .upsert_vector(2, 1.into(), &only_default_vector(&vec1))
+            .upsert_point(2, 1.into(), only_default_vector(&vec1), &hw_counter)
             .unwrap();
         segment
-            .upsert_vector(2, 2.into(), &only_default_vector(&vec2))
+            .upsert_point(2, 2.into(), only_default_vector(&vec2), &hw_counter)
             .unwrap();
         segment
-            .upsert_vector(2, 3.into(), &only_default_vector(&vec3))
+            .upsert_point(2, 3.into(), only_default_vector(&vec3), &hw_counter)
             .unwrap();
         segment
-            .upsert_vector(2, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(2, 4.into(), only_default_vector(&vec4), &hw_counter)
             .unwrap();
         segment
-            .upsert_vector(2, 5.into(), &only_default_vector(&vec5))
+            .upsert_point(2, 5.into(), only_default_vector(&vec5), &hw_counter)
             .unwrap();
 
         segment
             .set_payload(
                 3,
                 1.into(),
-                &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
+                &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
+                &None,
+                &hw_counter,
             )
             .unwrap();
 
@@ -131,7 +189,9 @@ mod tests {
             .set_payload(
                 3,
                 2.into(),
-                &json!({ "color": vec!["red".to_owned(), "blue".to_owned()] }).into(),
+                &payload_json! {"color": vec!["red".to_owned(), "blue".to_owned()]},
+                &None,
+                &hw_counter,
             )
             .unwrap();
 
@@ -139,7 +199,9 @@ mod tests {
             .set_payload(
                 3,
                 3.into(),
-                &json!({ "color": vec!["red".to_owned(), "yellow".to_owned()] }).into(),
+                &payload_json! {"color": vec!["red".to_owned(), "yellow".to_owned()]},
+                &None,
+                &hw_counter,
             )
             .unwrap();
 
@@ -147,31 +209,33 @@ mod tests {
             .set_payload(
                 3,
                 4.into(),
-                &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
+                &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
+                &None,
+                &hw_counter,
             )
             .unwrap();
 
         // Replace vectors
         segment
-            .upsert_vector(4, 1.into(), &only_default_vector(&vec1))
+            .upsert_point(4, 1.into(), only_default_vector(&vec1), &hw_counter)
             .unwrap();
         segment
-            .upsert_vector(5, 2.into(), &only_default_vector(&vec2))
+            .upsert_point(5, 2.into(), only_default_vector(&vec2), &hw_counter)
             .unwrap();
         segment
-            .upsert_vector(6, 3.into(), &only_default_vector(&vec3))
+            .upsert_point(6, 3.into(), only_default_vector(&vec3), &hw_counter)
             .unwrap();
         segment
-            .upsert_vector(7, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(7, 4.into(), only_default_vector(&vec4), &hw_counter)
             .unwrap();
         segment
-            .upsert_vector(8, 5.into(), &only_default_vector(&vec5))
+            .upsert_point(8, 5.into(), only_default_vector(&vec5), &hw_counter)
             .unwrap();
 
         assert_eq!(segment.version(), 8);
 
         let declined = segment
-            .upsert_vector(3, 5.into(), &only_default_vector(&vec5))
+            .upsert_point(3, 5.into(), only_default_vector(&vec5), &hw_counter)
             .unwrap();
 
         // Should not be processed due to operation number

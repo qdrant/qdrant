@@ -1,0 +1,580 @@
+import multiprocessing
+import pathlib
+import random
+from time import sleep
+
+from .fixtures import upsert_random_points, create_collection
+from .utils import *
+
+N_PEERS = 3
+N_SHARDS = 3
+N_REPLICA = 1
+COLLECTION_NAME = "test_collection"
+
+
+def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, duration=None):
+    start = time.time()
+    limit = 3
+
+    while True:
+        upsert_random_points(peer_url, limit, collection_name, offset=offset)
+        offset += limit
+
+        if throttle:
+            sleep(0.1)
+        if duration is not None and (time.time() - start) > duration:
+            break
+
+
+def run_update_points_in_background(peer_url, collection_name, num_points=None, num_cities=None, shard_key=None, init_offset=0, throttle=False, duration=None):
+    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, num_points, num_cities, shard_key, init_offset, throttle, duration))
+    p.start()
+    return p
+
+
+def check_data_consistency(data):
+
+    assert(len(data) > 1)
+
+    for i in range(len(data) - 1):
+        j = i + 1
+
+        data_i = data[i]
+        data_j = data[j]
+
+        if data_i != data_j:
+            ids_i = set(x["id"] for x in data_i["points"])
+            ids_j = set(x["id"] for x in data_j["points"])
+
+            diff = ids_i - ids_j
+
+            if len(diff) < 100:
+                print(f"Diff between {i} and {j}: {diff}")
+            else:
+                print(f"Diff len between {i} and {j}: {len(diff)}")
+
+            assert False, "Data on all nodes should be consistent"
+
+
+# Transfer shards from one node to another
+#
+# Simply does the most basic transfer: no concurrent updates during the
+# transfer.
+#
+# Test that data on the both sides is consistent
+def test_shard_stream_transfer(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+
+    # Insert some initial number of points
+    upsert_random_points(peer_api_uris[0], 100)
+
+    transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+
+    from_peer_id = transfer_collection_cluster_info['peer_id']
+    to_peer_id = receiver_collection_cluster_info['peer_id']
+
+    shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
+
+    # Transfer shard from one node to another
+
+    # Move shard `shard_id` to peer `target_peer_id`
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "stream_records",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+    number_local_shards = len(receiver_collection_cluster_info['local_shards'])
+    assert number_local_shards == 2
+
+    # Point counts must be consistent across nodes
+    counts = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={
+                "exact": True
+            }
+        )
+        assert_http_ok(r)
+        counts.append(r.json()["result"]['count'])
+    assert counts[0] == counts[1] == counts[2]
+
+
+# Transfer shards from one node to another while applying throttled updates in parallel
+#
+# Updates are throttled to prevent sending updates faster than the queue proxy
+# can handle. The transfer must therefore finish in 30 seconds without issues.
+#
+# Test that data on the both sides is consistent
+def test_shard_stream_transfer_throttled_updates(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+
+    # Insert some initial number of points
+    upsert_random_points(peer_api_uris[0], 10000)
+
+    # Start pushing points to the cluster
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, throttle=True)
+    upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=10000, throttle=True)
+    upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=20000, throttle=True)
+
+    transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+
+    from_peer_id = transfer_collection_cluster_info['peer_id']
+    to_peer_id = receiver_collection_cluster_info['peer_id']
+
+    shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
+
+    # Transfer shard from one node to another
+
+    # Move shard `shard_id` to peer `target_peer_id`
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "stream_records",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    upload_process_1.kill()
+    upload_process_2.kill()
+    upload_process_3.kill()
+    sleep(1)
+
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+    number_local_shards = len(receiver_collection_cluster_info['local_shards'])
+    assert number_local_shards == 2
+
+    # Point counts must be consistent across nodes
+    counts = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={
+                "exact": True
+            }
+        )
+        assert_http_ok(r)
+        counts.append(r.json()["result"]['count'])
+    assert counts[0] == counts[1] == counts[2]
+
+
+# Transfer shards from one node to another while applying updates in parallel
+#
+# A fast burst of updates is sent in the first 5 seconds, the queue proxy will
+# not be able to keep up with this. After that, updates are throttled. The
+# transfer must still finish in 30 seconds without issues.
+#
+# Test that data on the both sides is consistent
+def test_shard_stream_transfer_fast_burst(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+
+    # Insert some initial number of points
+    upsert_random_points(peer_api_uris[0], 10000)
+
+    # Start pushing points to the cluster
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, duration=5)
+    upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=10000, duration=5)
+    upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=20000, throttle=True)
+
+    transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+
+    from_peer_id = transfer_collection_cluster_info['peer_id']
+    to_peer_id = receiver_collection_cluster_info['peer_id']
+
+    shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
+
+    # Transfer shard from one node to another
+
+    # Move shard `shard_id` to peer `target_peer_id`
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "stream_records",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    upload_process_1.kill()
+    upload_process_2.kill()
+    upload_process_3.kill()
+    sleep(1)
+
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+    number_local_shards = len(receiver_collection_cluster_info['local_shards'])
+    assert number_local_shards == 2
+
+    # Point counts must be consistent across nodes
+    counts = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={
+                "exact": True
+            }
+        )
+        assert_http_ok(r)
+        counts.append(r.json()["result"]['count'])
+
+    if counts[0] != counts[1] or counts[1] != counts[2]:
+        data = []
+        for uri in peer_api_uris:
+            r = requests.post(
+                f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                    "limit": 999999999,
+                    "with_vectors": False,
+                    "with_payload": False,
+                }
+            )
+            assert_http_ok(r)
+            data.append(r.json()["result"])
+
+        check_data_consistency(data)
+
+
+# Move one replica between nodes a few times, update pending point and ensure
+# completion
+#
+# During the shard move we keep sending an operation that changes the very last
+# point in the collection. More specifically, we invoke the set payload
+# operation on the very last point.
+#
+# While the transfer is ongoing, the target replica might not have received the
+# last point yet. The set payload operation must not mark the target replica as
+# dead because it cannot find the point, as point may be transferred later as
+# part of the transfer.
+#
+# If the test runs successfully, we see that the replica is properly moved. If the
+# test does not run successfully, the point not found errors cascade into
+# cancelling the shard transfers, and the replica will stay on the source node.
+#
+# Tests bug: <https://github.com/qdrant/qdrant/pull/5991>
+#
+# Updates are throttled to prevent overloading the cluster during the test.
+def test_transfer_change_pending_point(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    N_TRANSFERS = 5
+    N_POINTS = 5000
+
+    def set_payload_in_loop(peer_url, point_id):
+        while True:
+            r = requests.post(
+                f"{peer_url}/collections/{COLLECTION_NAME}/points/payload?wait=true",
+                json={
+                    "points": [point_id],
+                    "payload": {"n": random.random()},
+                },
+            )
+            assert_http_ok(r)
+            sleep(0.1)
+
+    def run_set_payload_in_background(peer_url, point_id):
+        p = multiprocessing.Process(target=set_payload_in_loop, args=(peer_url, point_id))
+        p.start()
+        return p
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=1)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+
+    # Insert some initial number of points
+    upsert_random_points(peer_api_uris[0], N_POINTS)
+
+    # Start pushing points to the cluster
+    update_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, throttle=True)
+    update_process_2 = run_set_payload_in_background(peer_api_uris[1], point_id=N_POINTS - 1)
+    update_process_3 = run_set_payload_in_background(peer_api_uris[2], point_id=N_POINTS - 1)
+
+    # Move the shard a few times as it may not always trigger
+    for _ in range(0, N_TRANSFERS):
+        # Find what peer shard is currently on, select next peer as target
+        from_index = None
+        for index, uri in enumerate(peer_api_uris):
+            collection_cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
+            if len(collection_cluster_info['local_shards']) == 1:
+                from_index = index
+                break
+        assert from_index is not None, "No shard found"
+        to_index = (from_index + 1) % len(peer_api_uris)
+
+        # Grab peer IDs
+        from_peer_uri = peer_api_uris[from_index]
+        to_peer_uri = peer_api_uris[to_index]
+        from_info = get_collection_cluster_info(from_peer_uri, COLLECTION_NAME)
+        to_info = get_collection_cluster_info(to_peer_uri, COLLECTION_NAME)
+        from_peer_id = from_info['peer_id']
+        to_peer_id = to_info['peer_id']
+
+        # Move shard from source to target peer
+        r = requests.post(
+            f"{from_peer_uri}/collections/{COLLECTION_NAME}/cluster", json={
+                "move_shard": {
+                    "shard_id": 0,
+                    "from_peer_id": from_peer_id,
+                    "to_peer_id": to_peer_id,
+                    "method": "stream_records",
+                }
+            })
+        assert_http_ok(r)
+
+        # Wait both peers to have recognized end of transfer
+        wait_for_collection_shard_transfers_count(from_peer_uri, COLLECTION_NAME, 0)
+        wait_for_collection_shard_transfers_count(to_peer_uri, COLLECTION_NAME, 0)
+
+        # Assert shard is actually moved
+        # If the transfer succeeded, the replica is moved to the other node
+        # If the transfer failed due to a missing point error, the replica is not moved
+        from_info = get_collection_cluster_info(from_peer_uri, COLLECTION_NAME)
+        to_info = get_collection_cluster_info(to_peer_uri, COLLECTION_NAME)
+        assert len(from_info['local_shards']) == 0, "Shard must be moved off of source peer"
+        assert len(to_info['local_shards']) == 1, "Shard must be moved onto target peer"
+
+    # Cleanup
+    update_process_1.kill()
+    update_process_2.kill()
+    update_process_3.kill()
+
+
+# Transfer a shard, and assert pending operations are also transferred
+#
+# When we start the transfer, there may still be a (large) number of operations
+# pending. Such pending operations may be in the update queue (channel) until
+# the update worker applies them. In Qdrant <1.17.0 these operations were
+# missed. This test proves all operations in the update queue are properly
+# transferred to the target node, and applied there.
+#
+# See: <https://github.com/qdrant/qdrant/pull/8103>
+def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+
+    # Insert some initial number of points
+    upsert_random_points(peer_api_uris[0], 100, offset=100)
+
+    transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+
+    from_peer_id = transfer_collection_cluster_info['peer_id']
+    to_peer_id = receiver_collection_cluster_info['peer_id']
+
+    shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
+
+    # Send delay update operation which will lag all following operations
+    if check_feature_enabled(peer_api_uris[0], "staging"):
+        r = requests.post(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/debug", json={
+                "delay": {
+                    "duration_sec": 2.0
+                }
+            })
+        assert_http_ok(r)
+
+    # Insert points with wait=false
+    # These updates will be pending for some time as they hang in the queue
+    # Insert with low point IDs here to make it more likely to conflict with the transfer
+    upsert_random_points(peer_api_uris[0], 100, offset=0, wait="false", batch_size=1)
+
+    # NOTE: the core issue happened here!
+    # We now have pending updates in the queue which are not applied yet. Below
+    # we start a stream records transfer. The transfer will only transfer
+    # records that have been applied. Only new incoming operations are forwarded
+    # to the remote over a separate channel. It means that all updates in this
+    # gap (the operations pending in the queue) do not appear on the receiver.
+
+    # Move shard `shard_id` to peer `target_peer_id`
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "stream_records",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    # Assert target peer actually has two shards now
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+    number_local_shards = len(receiver_collection_cluster_info['local_shards'])
+    assert number_local_shards == 2
+
+    # Synchronize peers
+    # Send one more wait=true operation to ensure all peers have processed all operations
+    upsert_random_points(peer_api_uris[0], 1, offset=200, wait="true")
+
+    # Point counts must be consistent across nodes
+    counts = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={
+                "exact": True
+            }
+        )
+        assert_http_ok(r)
+        counts.append(r.json()["result"]['count'])
+    assert counts[0] == counts[1] == counts[2]
+
+
+# Transfer a shard, and assert that it doesn't block the shard holder for a long
+# time.
+#
+# A stream records transfer sends batches with wait=false. The last batch uses
+# wait=true to ensure all the transferred data is visible once the call returns.
+# Because of this the last batch may hang for a very long time. In older
+# versions such batch would hold a read lock on the shards holder for the entire
+# duration. It could cascade into freezing the entire cluster for a long time.
+#
+# This test ensures that doesn't happen anymore. It triggers a shard transfer
+# with artificial delay in batches to emulate a long running batch. Then it sends
+# a resharding start operation and confirms consensus is still responsive.
+# Previously this would be blocked and it would time out causing the test to
+# fail.
+#
+# See: <https://github.com/qdrant/qdrant/pull/8373>
+def test_shard_transfer_blocking_shard_holder(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # Prevent optimizers from interfering during the test
+    env = {
+        "QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD_KB": "0",
+        # Artificially make stream records transfer very slow
+        # Would hold shard holder read lock for a long time in previous version
+        "QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC": "10",
+    }
+
+    # Start a 3-node cluster
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
+
+    # Staging feature must be enabled
+    skip_if_no_feature(peer_api_uris[0], "staging")
+
+    # Collect peer IDs
+    peer_ids = [get_cluster_info(uri)["peer_id"] for uri in peer_api_uris]
+
+    # Create collection with 3 shards and replication factor 2
+    create_collection(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_number=N_PEERS,
+        replication_factor=1,
+    )
+    wait_collection_exists_and_active_on_all_peers(COLLECTION_NAME, peer_api_uris)
+    upsert_random_points(
+        peer_api_uris[0],
+        1000,
+        collection_name=COLLECTION_NAME,
+        wait="true",
+        with_sparse_vector=False,
+    )
+
+    # Find what shard is on the first peer
+    collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    local_shard = collection_cluster_info["local_shards"][0]
+    shard_id = local_shard["shard_id"]
+
+    # Trigger shard move transfer (non-blocking)
+    # This would previously hold the shard holder read lock for a long time
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
+        params={
+            "timeout": "3", # Operation is supposed to be accepted quickly
+        },
+        json={
+            "move_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": peer_ids[0],
+                "to_peer_id": peer_ids[1],
+                "method": "stream_records",
+            }
+        },
+    )
+    assert_http_ok(r)
+
+    # Immediately trigger resharding (start_resharding action)
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
+        params={
+            "timeout": "3", # Operation is supposed to be accepted quickly
+        },
+        json={
+            "start_resharding": {
+                "direction": "up",
+            }
+        },
+    )
+    assert_http_ok(r)
+
+    sleep(3)
+
+    # Check that all peers have 0 pending consensus operations
+    for i, uri in enumerate(peer_api_uris):
+        cluster_info = get_cluster_info(uri)
+        pending = cluster_info["raft_info"]["pending_operations"]
+        assert pending == 0, (
+            f"Peer {peer_ids[i]} at {uri} has {pending} pending operations, expected 0"
+        )

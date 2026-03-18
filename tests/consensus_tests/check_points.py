@@ -1,6 +1,9 @@
+#!/usr/bin/env python3
+
 import requests
 import sys
 
+from assertions import assert_http_ok
 
 # Check that 'search' returns the same results on all peers
 for i in range(2, len(sys.argv)):
@@ -10,7 +13,7 @@ for i in range(2, len(sys.argv)):
            "top": 3,
        }
     )
-    assert r.status_code == 200
+    assert_http_ok(r)
     assert r.json()["result"][0]["id"] == 4
     assert r.json()["result"][1]["id"] == 1
     assert r.json()["result"][2]["id"] == 3

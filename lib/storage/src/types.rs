@@ -1,46 +1,163 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use collection::config::WalConfig;
+use collection::common::snapshots_manager::SnapshotsConfig;
+use collection::config::{WalConfig, default_on_disk_payload};
+use collection::operations::config_diff::OptimizersConfigDiff;
+use collection::operations::shared_storage_config::{
+    DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH, SharedStorageConfig,
+};
+use collection::operations::types::{NodeType, PeerMetadata};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
+use collection::shards::transfer::ShardTransferMethod;
+use common::load_concurrency::LoadConcurrencyConfig;
+use common::mmap;
 use schemars::JsonSchema;
-use segment::common::anonymize::Anonymize;
-use segment::types::HnswConfig;
+use segment::common::anonymize::{Anonymize, anonymize_collection_values};
+use segment::data_types::collection_defaults::CollectionConfigDefaults;
+use segment::types::{HnswConfig, HnswGlobalConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
+use validator::{Validate, ValidationError};
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
+pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Validate)]
 pub struct PerformanceConfig {
     pub max_search_threads: usize,
+    #[serde(default)]
+    pub max_optimization_runtime_threads: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_rate_limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_timeout_sec: Option<usize>,
+    /// CPU budget, how many CPUs (threads) to allocate for an optimization job.
+    /// If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
+    /// If negative - subtract this relative number of CPUs from the available CPUs.
+    /// If positive - use this absolute number of CPUs.
+    #[serde(default)]
+    pub optimizer_cpu_budget: isize,
+    /// IO budget, how many parallel IO operations to allow for an optimization job.
+    /// IO usage per optimization job is equivalent to number of indexing threads.
+    /// If 0 - auto selection, one IO operation per each CPU.
+    /// Otherwise - use this exact number of IO operations.
+    #[serde(default)]
+    pub optimizer_io_budget: usize,
+    #[serde(default = "default_io_shard_transfers_limit")]
+    pub incoming_shard_transfers_limit: Option<usize>,
+    #[serde(default = "default_io_shard_transfers_limit")]
+    pub outgoing_shard_transfers_limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub async_scorer: Option<bool>,
+    #[serde(default, flatten)]
+    pub load_concurrency: LoadConcurrencyConfig,
+}
+
+const fn default_io_shard_transfers_limit() -> Option<usize> {
+    DEFAULT_IO_SHARD_TRANSFER_LIMIT
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Clone, Debug, Deserialize, Validate)]
 pub struct StorageConfig {
-    pub storage_path: String,
+    #[validate(custom(function = validate_path))]
+    pub storage_path: PathBuf,
     #[serde(default = "default_snapshots_path")]
-    pub snapshots_path: String,
+    #[validate(custom(function = validate_path))]
+    pub snapshots_path: PathBuf,
+    #[serde(default)]
+    pub snapshots_config: SnapshotsConfig,
+    #[validate(custom(function = validate_path))]
+    #[serde(default)]
+    pub temp_path: Option<PathBuf>,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
+    #[validate(nested)]
     pub optimizers: OptimizersConfig,
+    #[validate(nested)]
+    #[serde(default)]
+    pub optimizers_overwrite: Option<OptimizersConfigDiff>,
+    #[validate(nested)]
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
+    #[validate(nested)]
     pub hnsw_index: HnswConfig,
+    #[validate(nested)]
+    #[serde(default)]
+    pub hnsw_global_config: HnswGlobalConfig,
+    #[serde(default = "default_mmap_advice")]
+    pub mmap_advice: mmap::Advice,
+    #[serde(default)]
+    pub node_type: NodeType,
+    #[serde(default)]
+    pub update_queue_size: Option<usize>,
+    #[serde(default)]
+    pub handle_collection_load_errors: bool,
+    /// If provided - qdrant will start in recovery mode, which means that it will not accept any new data.
+    /// Only collection metadata will be available, and it will only process collection delete requests.
+    /// Provided value will be used error message for unavailable requests.
+    #[serde(default)]
+    pub recovery_mode: Option<String>,
+    #[serde(default)]
+    pub update_concurrency: Option<NonZeroUsize>,
+    /// Default method used for transferring shards.
+    #[serde(default)]
+    pub shard_transfer_method: Option<ShardTransferMethod>,
+    /// Default values for collections.
+    #[validate(nested)]
+    #[serde(default)]
+    pub collection: Option<CollectionConfigDefaults>,
+    /// Maximum number of collections to allow in the cluster.
+    #[serde(default)]
+    pub max_collections: Option<usize>,
 }
 
-fn default_snapshots_path() -> String {
-    "./snapshots".to_string()
+impl StorageConfig {
+    pub fn to_shared_storage_config(&self, is_distributed: bool) -> SharedStorageConfig {
+        SharedStorageConfig::new(
+            self.update_queue_size,
+            self.node_type,
+            self.handle_collection_load_errors,
+            self.recovery_mode.clone(),
+            self.performance
+                .search_timeout_sec
+                .map(|x| Duration::from_secs(x as u64)),
+            self.update_concurrency,
+            is_distributed,
+            self.shard_transfer_method,
+            self.performance.incoming_shard_transfers_limit,
+            self.performance.outgoing_shard_transfers_limit,
+            self.snapshots_path.clone(),
+            self.snapshots_config.clone(),
+            self.hnsw_global_config.clone(),
+            self.performance.load_concurrency.clone(),
+            common::defaults::search_thread_count(self.performance.max_search_threads),
+        )
+    }
 }
 
-fn default_on_disk_payload() -> bool {
-    false
+fn default_snapshots_path() -> PathBuf {
+    PathBuf::from(DEFAULT_SNAPSHOTS_PATH)
+}
+
+const fn default_mmap_advice() -> mmap::Advice {
+    mmap::Advice::Random
+}
+
+fn validate_path(path: &Path) -> Result<(), ValidationError> {
+    if path.as_os_str().is_empty() {
+        return Err(ValidationError::new("Path cannot be empty"));
+    }
+    Ok(())
 }
 
 /// Information of a peer in the cluster
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Anonymize, Debug, Serialize, JsonSchema, Clone)]
 pub struct PeerInfo {
     pub uri: String,
     // ToDo: How long ago was the last communication? In milliseconds
@@ -48,7 +165,8 @@ pub struct PeerInfo {
 }
 
 /// Summary information about the current raft state
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
+#[anonymize(false)]
 pub struct RaftInfo {
     /// Raft divides time into terms of arbitrary length, each beginning with an election.
     /// If a candidate wins the election, it remains the leader for the rest of the term.
@@ -67,15 +185,16 @@ pub struct RaftInfo {
     pub is_voter: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema, Deserialize)]
+/// Role of the peer in the consensus
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema, Anonymize)]
 pub enum StateRole {
-    /// The node is a follower of the leader.
+    // The node is a follower of the leader.
     Follower,
-    /// The node could become a leader.
+    // The node could become a leader.
     Candidate,
-    /// The node is a leader.
+    // The node is a leader.
     Leader,
-    /// The node could become a candidate, if `prevote` is enabled.
+    // The node could become a candidate, if `prevote` is enabled.
     PreCandidate,
 }
 
@@ -91,18 +210,22 @@ impl From<raft::StateRole> for StateRole {
 }
 
 /// Message send failures for a particular peer
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default)]
+#[derive(Debug, Serialize, JsonSchema, Clone, Default)]
 pub struct MessageSendErrors {
     pub count: usize,
     pub latest_error: Option<String>,
+    /// Timestamp of the latest error
+    pub latest_error_timestamp: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Description of enabled cluster
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
 pub struct ClusterInfo {
     /// ID of this peer
+    #[anonymize(false)]
     pub peer_id: PeerId,
     /// Peers composition of the cluster with main information
+    #[anonymize(with = anonymize_collection_values)]
     pub peers: HashMap<PeerId, PeerInfo>,
     /// Status of the Raft consensus
     pub raft_info: RaftInfo,
@@ -110,11 +233,12 @@ pub struct ClusterInfo {
     pub consensus_thread_status: ConsensusThreadStatus,
     /// Consequent failures of message send operations in consensus by peer address.
     /// On the first success to send to that peer - entry is removed from this hashmap.
+    #[anonymize(false)]
     pub message_send_failures: HashMap<String, MessageSendErrors>,
 }
 
 /// Information about current cluster status and structure
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
 #[serde(tag = "status")]
 #[serde(rename_all = "snake_case")]
 pub enum ClusterStatus {
@@ -123,59 +247,12 @@ pub enum ClusterStatus {
 }
 
 /// Information about current consensus thread status
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
 #[serde(tag = "consensus_thread_status")]
 #[serde(rename_all = "snake_case")]
+#[anonymize(false)]
 pub enum ConsensusThreadStatus {
     Working { last_update: DateTime<Utc> },
     Stopped,
     StoppedWithErr { err: String },
-}
-
-impl Anonymize for PeerInfo {
-    fn anonymize(&self) -> Self {
-        PeerInfo {
-            uri: self.uri.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for RaftInfo {
-    fn anonymize(&self) -> Self {
-        RaftInfo {
-            term: self.term,
-            commit: self.commit,
-            pending_operations: self.pending_operations,
-            leader: self.leader,
-            role: self.role,
-            is_voter: self.is_voter,
-        }
-    }
-}
-
-impl Anonymize for ClusterInfo {
-    fn anonymize(&self) -> Self {
-        ClusterInfo {
-            peer_id: self.peer_id,
-            peers: self
-                .peers
-                .iter()
-                .map(|(key, value)| (*key, value.anonymize()))
-                .collect(),
-            raft_info: self.raft_info.anonymize(),
-            consensus_thread_status: self.consensus_thread_status.clone(),
-            message_send_failures: self.message_send_failures.clone(),
-        }
-    }
-}
-
-impl Anonymize for ClusterStatus {
-    fn anonymize(&self) -> Self {
-        match self {
-            ClusterStatus::Disabled => ClusterStatus::Disabled,
-            ClusterStatus::Enabled(cluster_info) => {
-                ClusterStatus::Enabled(cluster_info.anonymize())
-            }
-        }
-    }
 }

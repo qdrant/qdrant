@@ -1,9 +1,20 @@
-#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
+pub mod audit;
+pub mod auth;
 pub mod collections;
-#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
+pub mod debugger;
+pub mod error_reporting;
+pub mod health;
 pub mod helpers;
-#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
-pub mod points;
-#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
+pub mod http_client;
+pub mod inference;
+pub mod metrics;
+pub mod pyroscope_state;
+pub mod query;
+pub mod snapshots;
+pub mod stacktrace;
+pub mod strict_mode;
+pub mod strings;
 pub mod telemetry;
 pub mod telemetry_ops;
+pub mod telemetry_reporting;
+pub mod update;

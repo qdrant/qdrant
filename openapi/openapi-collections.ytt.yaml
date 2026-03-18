@@ -4,7 +4,7 @@ paths:
   /collections:
     get:
       tags:
-        - collections
+        - Collections
       summary: List collections
       description: Get list name of all existing collections
       operationId: get_collections
@@ -13,7 +13,7 @@ paths:
   /collections/{collection_name}:
     get:
       tags:
-        - collections
+        - Collections
       summary: Collection info
       description: Get detailed information about specified existing collection
       operationId: get_collection
@@ -28,7 +28,7 @@ paths:
 
     put:
       tags:
-        - collections
+        - Collections
       summary: Create collection
       description: Create new collection with given parameters
       operationId: create_collection
@@ -49,7 +49,7 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in seconds. 
+            Wait for operation commit timeout in seconds.
             If timeout is reached - request will return with service error.
           schema:
             type: integer
@@ -57,7 +57,7 @@ paths:
 
     patch:
       tags:
-        - collections
+        - Collections
       summary: Update collection parameters
       description: Update parameters of the existing collection
       operationId: update_collection
@@ -78,7 +78,7 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in seconds. 
+            Wait for operation commit timeout in seconds.
             If timeout is reached - request will return with service error.
           schema:
             type: integer
@@ -86,7 +86,7 @@ paths:
 
     delete:
       tags:
-        - collections
+        - Collections
       summary: Delete collection
       description: Drop collection and all associated data
       operationId: delete_collection
@@ -100,7 +100,7 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in seconds. 
+            Wait for operation commit timeout in seconds.
             If timeout is reached - request will return with service error.
           schema:
             type: integer
@@ -109,7 +109,7 @@ paths:
   /collections/aliases:
     post:
       tags:
-        - collections
+        - Aliases
       summary: Update aliases of the collections
       operationId: update_aliases
       requestBody:
@@ -122,7 +122,7 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in seconds. 
+            Wait for operation commit timeout in seconds.
             If timeout is reached - request will return with service error.
           schema:
             type: integer
@@ -131,7 +131,7 @@ paths:
   /collections/{collection_name}/index:
     put:
       tags:
-        - collections
+        - Indexes
       summary: Create index for field in collection
       description: Create index for field in collection
       operationId: create_field_index
@@ -148,6 +148,19 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       requestBody:
         description: Field name
         content:
@@ -157,10 +170,26 @@ paths:
 
       responses: #@ response(reference("UpdateResult"))
 
+  /collections/{collection_name}/exists:
+    get:
+      tags:
+        - Collections
+      summary: Check the existence of a collection
+      description: Returns "true" if the given collection name exists, and "false" otherwise
+      operationId: collection_exists
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("CollectionExistence"))
+
   /collections/{collection_name}/index/{field_name}:
     delete:
       tags:
-        - collections
+        - Indexes
       summary: Delete index for field in collection
       description: Delete field index for collection
       operationId: delete_field_index
@@ -183,13 +212,25 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/cluster:
     get:
       tags:
-        - collections
-        - cluster
+        - Distributed
       summary: Collection cluster info
       description: Get cluster information for a collection
       operationId: collection_cluster_info
@@ -204,8 +245,7 @@ paths:
 
     post:
       tags:
-        - collections
-        - cluster
+        - Distributed
       summary: Update collection cluster setup
       operationId: update_collection_cluster
       requestBody:
@@ -224,8 +264,67 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in seconds. 
+            Wait for operation commit timeout in seconds.
             If timeout is reached - request will return with service error.
           schema:
             type: integer
       responses: #@ response(type("boolean"))
+
+  /collections/{collection_name}/optimizations:
+    get:
+      tags:
+        - Collections
+      summary: Get optimization progress
+      description: Get progress of ongoing and completed optimizations for a collection
+      operationId: get_optimizations
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: with
+          in: query
+          description: |-
+            Comma-separated list of optional fields to include in the response.
+            Possible values: queued, completed, idle_segments.
+          required: false
+          schema:
+            type: string
+        - name: completed_limit
+          in: query
+          description: |-
+            Maximum number of completed optimizations to return.
+            Ignored if `completed` is not in the `with` parameter.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 16 #! Keep in sync with DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT
+      responses: #@ response(reference("OptimizationsResponse"))
+
+  /collections/{collection_name}/aliases:
+    get:
+      tags:
+        - Aliases
+      summary: List aliases for collection
+      description: Get list of all aliases for a collection
+      operationId: get_collection_aliases
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("CollectionsAliasesResponse"))
+
+  /aliases:
+    get:
+      tags:
+        - Aliases
+      summary: List collections aliases
+      description: Get list of all existing collections aliases
+      operationId: get_collections_aliases
+      responses: #@ response(reference("CollectionsAliasesResponse"))

@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::PointOffsetType;
+use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
-
-use crate::spaces::tools::FixedLengthPriorityQueue;
-use crate::types::PointOffsetType;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct EntryPoint {
@@ -38,7 +38,6 @@ impl EntryPoints {
             extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points),
         }
     }
-
     pub fn merge_from_other(&mut self, mut other: EntryPoints) {
         self.entry_points.append(&mut other.entry_points);
         // Do not merge `extra_entry_points` to prevent duplications
@@ -105,28 +104,61 @@ impl EntryPoints {
             .or_else(|| {
                 // Searching for at least some entry point
                 self.extra_entry_points
-                    .iter()
+                    .iter_unsorted()
                     .filter(|entry| checker(entry.point_id))
                     .cloned()
                     .max_by_key(|ep| ep.level)
             })
     }
+
+    pub fn get_random_entry_point<F, R: Rng + ?Sized>(
+        &self,
+        rnd: &mut R,
+        checker: F,
+    ) -> Option<EntryPoint>
+    where
+        F: Fn(PointOffsetType) -> bool,
+    {
+        let filtered_entry_points: Vec<_> = self
+            .entry_points
+            .iter()
+            .filter(|entry| checker(entry.point_id))
+            .cloned()
+            .collect();
+
+        if !filtered_entry_points.is_empty() {
+            let random_index = rnd.random_range(0..filtered_entry_points.len());
+            return Some(filtered_entry_points[random_index].clone());
+        }
+
+        let filtered_extra_entry_points: Vec<_> = self
+            .extra_entry_points
+            .iter_unsorted()
+            .filter(|entry| checker(entry.point_id))
+            .cloned()
+            .collect();
+
+        if !filtered_extra_entry_points.is_empty() {
+            let random_index = rnd.random_range(0..filtered_extra_entry_points.len());
+            return Some(filtered_extra_entry_points[random_index].clone());
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
-
     use super::*;
 
     #[test]
     fn test_entry_points() {
         let mut points = EntryPoints::new(10);
 
-        let mut rnd = rand::thread_rng();
+        let mut rnd = rand::rng();
 
         for i in 0..1000 {
-            let level = rnd.gen_range(0..10000);
+            let level = rnd.random_range(0..10000);
             points.new_point(i, level, |_x| true);
         }
 
@@ -136,7 +168,7 @@ mod tests {
         assert!(points.entry_points[0].level > 1);
 
         for i in 1000..2000 {
-            let level = rnd.gen_range(0..10000);
+            let level = rnd.random_range(0..10000);
             points.new_point(i, level, |x| x % 5 == i % 5);
         }
 

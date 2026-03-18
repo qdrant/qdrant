@@ -1,18 +1,24 @@
-#![allow(deprecated)]
-
 pub mod collection;
 pub mod collection_manager;
 pub mod collection_state;
-mod common;
+pub mod common;
 pub mod config;
+pub mod discovery;
+pub mod grouping;
 pub mod hash_ring;
+pub mod lookup;
 pub mod operations;
 pub mod optimizers_builder;
-pub mod save_on_disk;
+pub mod problems;
+pub mod recommendations;
 pub mod shards;
 pub mod telemetry;
 mod update_handler;
-pub mod wal;
+pub mod wal_delta;
 
+pub mod events;
 #[cfg(test)]
 mod tests;
+
+pub mod profiling;
+pub mod update_workers;

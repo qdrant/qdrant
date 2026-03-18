@@ -1,87 +1,106 @@
-use std::cmp::max;
+use std::collections::HashMap;
 
 use schemars::JsonSchema;
-use segment::common::anonymize::Anonymize;
+use segment::common::anonymize::{Anonymize, anonymize_collection_values};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::telemetry::SegmentTelemetry;
-use serde::{Deserialize, Serialize};
+use segment::types::ShardKey;
+use serde::Serialize;
 
-use crate::operations::types::OptimizersStatus;
-use crate::shards::shard::ShardId;
+use crate::collection_manager::optimizers::TrackerTelemetry;
+use crate::operations::types::{OptimizersStatus, ShardStatus, ShardUpdateQueueInfo};
+use crate::shards::replica_set::replica_set_state::ReplicaState;
+use crate::shards::shard::{PeerId, ShardId};
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct ReplicaSetTelemetry {
+    #[anonymize(false)]
     pub id: ShardId,
+    pub key: Option<ShardKey>,
     pub local: Option<LocalShardTelemetry>,
     pub remote: Vec<RemoteShardTelemetry>,
+    #[anonymize(with = anonymize_collection_values)]
+    pub replicate_states: HashMap<PeerId, ReplicaState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial_snapshot: Option<PartialSnapshotTelemetry>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct RemoteShardTelemetry {
+    #[anonymize(false)]
     pub shard_id: ShardId,
-    pub searches: OperationDurationStatistics,
-    pub updates: OperationDurationStatistics,
+    #[anonymize(false)]
+    pub peer_id: PeerId,
+    pub searches: Option<OperationDurationStatistics>,
+    pub updates: Option<OperationDurationStatistics>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
 pub struct LocalShardTelemetry {
+    #[anonymize(false)]
     pub variant_name: Option<String>,
-    pub segments: Vec<SegmentTelemetry>,
-    pub optimizations: OptimizerTelemetry,
+    pub status: Option<ShardStatus>,
+    /// Total number of optimized points since the last start.
+    pub total_optimized_points: usize,
+    /// An ESTIMATION of effective amount of bytes used for vectors
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vectors_size_bytes: Option<usize>,
+    /// An estimation of the effective amount of bytes used for payloads
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payloads_size_bytes: Option<usize>,
+    /// Sum of segment points
+    /// This is an approximate number
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_points: Option<usize>,
+    /// Sum of number of vectors in all segments
+    /// This is an approximate number
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_vectors: Option<usize>,
+    /// Sum of number of vectors across all segments, grouped by their name.
+    /// This is an approximate number.
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_vectors_by_name: Option<HashMap<String, usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segments: Option<Vec<SegmentTelemetry>>,
+    pub optimizations: Option<OptimizerTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub async_scorer: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indexed_only_excluded_vectors: Option<HashMap<String, usize>>,
+    /// Update queue status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_queue: Option<ShardUpdateQueueInfo>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
 pub struct OptimizerTelemetry {
     pub status: OptimizersStatus,
     pub optimizations: OperationDurationStatistics,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log: Option<Vec<TrackerTelemetry>>,
 }
 
-impl std::ops::Add for OptimizerTelemetry {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self {
-            status: max(self.status, other.status),
-            optimizations: self.optimizations + other.optimizations,
-        }
-    }
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, JsonSchema, Anonymize)]
+pub struct PartialSnapshotTelemetry {
+    #[anonymize(false)]
+    pub ongoing_create_snapshot_requests: usize,
+    #[anonymize(false)]
+    pub is_recovering: bool,
+    #[anonymize(false)]
+    pub recovery_timestamp: u64,
 }
 
-impl Anonymize for OptimizerTelemetry {
-    fn anonymize(&self) -> Self {
-        Self {
-            status: self.status.clone(),
-            optimizations: self.optimizations.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for LocalShardTelemetry {
-    fn anonymize(&self) -> Self {
-        LocalShardTelemetry {
-            variant_name: self.variant_name.clone(),
-            segments: self.segments.anonymize(),
-            optimizations: self.optimizations.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for RemoteShardTelemetry {
-    fn anonymize(&self) -> Self {
-        RemoteShardTelemetry {
-            shard_id: self.shard_id,
-            searches: self.searches.anonymize(),
-            updates: self.updates.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for ReplicaSetTelemetry {
-    fn anonymize(&self) -> Self {
-        ReplicaSetTelemetry {
-            id: self.id,
-            local: self.local.anonymize(),
-            remote: self.remote.anonymize(),
+impl PartialSnapshotTelemetry {
+    pub fn is_empty(&self) -> bool {
+        self == &Self {
+            ongoing_create_snapshot_requests: 0,
+            is_recovering: false,
+            recovery_timestamp: 0,
         }
     }
 }

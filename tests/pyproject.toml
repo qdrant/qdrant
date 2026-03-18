@@ -1,0 +1,38 @@
+[project]
+name = "qdrant-test-deps"
+version = "0.0.1"
+requires-python = ">=3.10,<4"
+dependencies = [
+    "grpc-interceptor>=0.15,<0.16",
+    "grpc-requests>=0.1,<0.2",
+    "more-itertools>=10.8,<11",
+    "pyjwt>=2.10,<3",
+    "jsons>=1.6.3,<2",
+    "pytest>=8.4,<9",
+    "pytest-timeout>=2.4,<3",
+    "pytest-cases>=3.9.1,<4",
+    "requests>=2.32.5,<3",
+    "schemathesis>=3.39.16,<4",
+    "retry>=0.9.2,<0.10",
+    "docker>=7.1.0,<8",
+    "pytest-xdist>=3.8.0,<4",
+    "pytest-subtests>=0.14.1,<0.15",
+    "qdrant-client>=1.16.1,<2",
+    "tqdm>=4.67.1,<5",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+markers = [
+    "longrunning: marks tests as long-running (deselect with '-m \"not longrunning\"')",
+    "xdist_group: group tests to run on the same worker (for pytest-xdist)",
+]
+addopts = """
+    --dist=loadgroup
+"""
+filterwarnings = [
+    "ignore:jsonschema.RefResolver is deprecated:DeprecationWarning:schemathesis",
+    "ignore:jsonschema.exceptions.RefResolutionError is deprecated:DeprecationWarning:schemathesis",
+]

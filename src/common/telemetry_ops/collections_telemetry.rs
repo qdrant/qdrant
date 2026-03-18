@@ -1,117 +1,83 @@
-use collection::config::CollectionParams;
-use collection::operations::types::OptimizersStatus;
-use collection::telemetry::CollectionTelemetry;
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
+
+use ahash::HashSet;
+use collection::operations::types::CollectionResult;
+use collection::telemetry::{
+    CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
+};
+use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::Access;
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
-pub struct CollectionsAggregatedTelemetry {
-    pub vectors: usize,
-    pub optimizers_status: OptimizersStatus,
-    pub params: CollectionParams,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 #[serde(untagged)]
 pub enum CollectionTelemetryEnum {
-    Full(CollectionTelemetry),
-    Aggregated(CollectionsAggregatedTelemetry),
+    Full(Box<CollectionTelemetry>),
+    Aggregated(Box<CollectionsAggregatedTelemetry>),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
 pub struct CollectionsTelemetry {
+    #[anonymize(false)]
     pub number_of_collections: usize,
+    #[anonymize(false)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_collections: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collections: Option<Vec<CollectionTelemetryEnum>>,
-}
-
-impl From<CollectionTelemetry> for CollectionsAggregatedTelemetry {
-    fn from(telemetry: CollectionTelemetry) -> Self {
-        let number_of_vectors = telemetry
-            .shards
-            .iter()
-            .filter_map(|shard| {
-                shard
-                    .local
-                    .as_ref()
-                    .map(|x| x.segments.iter().map(|s| s.info.num_vectors).sum::<usize>())
-            })
-            .sum::<usize>();
-
-        let optimizers_status = telemetry
-            .shards
-            .iter()
-            .flat_map(|shard| shard.local.as_ref().map(|x| x.optimizations.status.clone()))
-            .max()
-            .unwrap_or(OptimizersStatus::Ok);
-
-        CollectionsAggregatedTelemetry {
-            vectors: number_of_vectors,
-            optimizers_status,
-            params: telemetry.config.params,
-        }
-    }
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshots: Option<Vec<CollectionSnapshotTelemetry>>,
 }
 
 impl CollectionsTelemetry {
-    pub async fn collect(level: usize, toc: &TableOfContent) -> Self {
-        let number_of_collections = toc.all_collections().await.len();
-        let collections = if level > 0 {
-            let telemetry_data = toc
-                .get_telemetry_data()
-                .await
-                .into_iter()
-                .map(|telemetry| {
-                    if level > 1 {
-                        CollectionTelemetryEnum::Full(telemetry)
-                    } else {
-                        CollectionTelemetryEnum::Aggregated(telemetry.into())
-                    }
-                })
-                .collect();
+    pub async fn collect(
+        detail: TelemetryDetail,
+        access: &Access,
+        only_collections: Option<HashSet<String>>,
+        toc: &TableOfContent,
+        timeout: Duration,
+        is_stopped: &AtomicBool,
+    ) -> CollectionResult<Self> {
+        let number_of_collections = toc.all_collections(access).await.len();
+        let (collections, snapshots) = if detail.level >= DetailsLevel::Level1 {
+            let telemetry_data = if detail.level >= DetailsLevel::Level2 {
+                let toc_telemetry = toc
+                    .get_telemetry_data(detail, access, only_collections, timeout, is_stopped)
+                    .await?;
 
-            Some(telemetry_data)
+                let collections: Vec<_> = toc_telemetry
+                    .collection_telemetry
+                    .into_iter()
+                    .map(|t| CollectionTelemetryEnum::Full(Box::new(t)))
+                    .collect();
+
+                (collections, toc_telemetry.snapshot_telemetry)
+            } else {
+                let collections = toc
+                    .get_aggregated_telemetry_data(access, timeout, is_stopped)
+                    .await?
+                    .into_iter()
+                    .map(|t| CollectionTelemetryEnum::Aggregated(Box::new(t)))
+                    .collect();
+                (collections, vec![])
+            };
+
+            (Some(telemetry_data.0), Some(telemetry_data.1))
         } else {
-            None
+            (None, None)
         };
 
-        CollectionsTelemetry {
+        let max_collections = toc.max_collections();
+
+        Ok(CollectionsTelemetry {
             number_of_collections,
+            max_collections,
             collections,
-        }
-    }
-}
-
-impl Anonymize for CollectionsTelemetry {
-    fn anonymize(&self) -> Self {
-        CollectionsTelemetry {
-            number_of_collections: self.number_of_collections,
-            collections: self.collections.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for CollectionTelemetryEnum {
-    fn anonymize(&self) -> Self {
-        match self {
-            CollectionTelemetryEnum::Full(telemetry) => {
-                CollectionTelemetryEnum::Full(telemetry.anonymize())
-            }
-            CollectionTelemetryEnum::Aggregated(telemetry) => {
-                CollectionTelemetryEnum::Aggregated(telemetry.anonymize())
-            }
-        }
-    }
-}
-
-impl Anonymize for CollectionsAggregatedTelemetry {
-    fn anonymize(&self) -> Self {
-        CollectionsAggregatedTelemetry {
-            optimizers_status: self.optimizers_status.clone(),
-            vectors: self.vectors.anonymize(),
-            params: self.params.anonymize(),
-        }
+            snapshots,
+        })
     }
 }

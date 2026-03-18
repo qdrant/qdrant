@@ -1,7 +1,7 @@
 import pathlib
-import time
 
 from .utils import *
+from .assertions import assert_http_ok
 
 N_PEERS = 2
 N_SHARDS = 2
@@ -50,7 +50,7 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Check that it exists on all peers
-    wait_for_uniform_collection_existence("test_collection", peer_api_uris)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
 
     # Check collection's cluster info
     collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], "test_collection")
@@ -110,6 +110,19 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
     shard_id = collection_cluster_info["local_shards"][0]["shard_id"]
     source_peer_id = collection_cluster_info["peer_id"]
 
+    # Test that we cannot move shard to ourselves
+    r = requests.post(
+        f"{source_uri}/collections/test_collection/cluster", json={
+            "move_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": source_peer_id,
+                "to_peer_id": source_peer_id
+            }
+        })
+    assert not r.ok
+    assert r.status_code == 422
+    assert r.json()["status"]["error"].__contains__("Validation error in JSON body: [move_shard.to_peer_id: cannot transfer shard to itself")
+
     # Move shard `shard_id` to peer `target_peer_id`
     r = requests.post(
         f"{source_uri}/collections/test_collection/cluster", json={
@@ -124,7 +137,7 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(source_uri, "test_collection", 0)
 
-    # Check the number of local shard goes down by 1
+    # Check the number of local shards goes down by 1
     assert check_collection_local_shards_count(source_uri, "test_collection", before_local_shard_count - 1)
     assert check_collection_local_shards_count(target_uri, "test_collection", target_before_local_shard_count + 1)
 

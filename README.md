@@ -1,51 +1,113 @@
 <p align="center">
-  <img height="100" src="https://github.com/qdrant/qdrant/raw/master/docs/logo.svg" alt="Qdrant">
+  <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/qdrant/qdrant/raw/master/docs/logo-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://github.com/qdrant/qdrant/raw/master/docs/logo-light.svg">
+      <img height="100" alt="Qdrant" src="https://github.com/qdrant/qdrant/raw/master/docs/logo.svg">
+  </picture>
 </p>
 
 <p align="center">
     <b>Vector Search Engine for the next generation of AI applications</b>
 </p>
 
-
 <p align=center>
-    <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://github.com/qdrant/qdrant/workflows/Tests/badge.svg" alt="Tests status"></a>
-    <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success" alt="OpenAPI Docs"></a>
-    <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-success" alt="Apache 2.0 License"></a>
-    <a href="https://qdrant.to/discord"><img src="https://img.shields.io/badge/Discord-Qdrant-5865F2.svg?logo=discord" alt="Discord"></a>
-    <a href="https://qdrant.to/roadmap"><img src="https://img.shields.io/badge/Roadmap-v1.0-bc1439.svg" alt="Roadmap v1.0"></a>
+    <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://img.shields.io/github/actions/workflow/status/qdrant/qdrant/rust.yml?style=flat-square" alt="Tests status"></a>
+    <a href="https://api.qdrant.tech/"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success?style=flat-square" alt="OpenAPI Docs"></a>
+    <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/github/license/qdrant/qdrant?style=flat-square" alt="Apache 2.0 License"></a>
+    <a href="https://qdrant.to/discord"><img src="https://img.shields.io/discord/907569970500743200?logo=Discord&style=flat-square&color=7289da" alt="Discord"></a>
+    <a href="https://qdrant.to/roadmap"><img src="https://img.shields.io/badge/Roadmap-2025-bc1439.svg?style=flat-square" alt="Roadmap 2025"></a>
+    <a href="https://cloud.qdrant.io/"><img src="https://img.shields.io/badge/Qdrant-Cloud-24386C.svg?logo=cloud&style=flat-square" alt="Qdrant Cloud"></a>
 </p>
 
-Qdrant (read: _quadrant_ ) is a vector similarity search engine.
-It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
-Qdrant is tailored to extended filtering support.  It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications. 
+**Qdrant** (read: _quadrant_) is a vector similarity search engine and vector database.
+It provides a production-ready service with a convenient API to store, search, and manage points—vectors with an additional payload
+Qdrant is tailored to extended filtering support. It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications.
 
-Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load.
+Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load. See [benchmarks](https://qdrant.tech/benchmarks/).
 
 With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
 
-## Demo Projects
+Qdrant is also available as a fully managed **[Qdrant Cloud](https://cloud.qdrant.io/)** ⛅ including a **free tier**.
 
-### Semantic Text Search 🔍
+<p align="center">
+<strong><a href="docs/QUICK_START.md">Quick Start</a> • <a href="#clients">Client Libraries</a> • <a href="#demo-projects">Demo Projects</a> • <a href="#integrations">Integrations</a> • <a href="#contacts">Contact</a>
 
-The neural search uses semantic embeddings instead of keywords and works best with short texts.
-With Qdrant and a pre-trained neural network, you can build and deploy semantic neural search on your data in minutes.
-[Try it online!](https://qdrant.to/semantic-search-demo)
+</strong>
+</p>
 
-### Similar Image Search - Food Discovery 🍕
+## Getting Started
 
-There are multiple ways to discover things, text search is not the only one.
-In the case of food, people rely more on appearance than description and ingredients.
-So why not let people choose their next lunch by its appearance, even if they don’t know the name of the dish?
-[Check it out!](https://qdrant.to/food-discovery)
+### Python
 
-### Extreme classification - E-commerce Product Categorization 📺
+```
+pip install qdrant-client
+```
 
-Extreme classification is a rapidly growing research area within machine learning focusing on multi-class and multi-label problems involving an extremely large number of labels.
-Sometimes it is millions and tens of millions classes.
-The most promising way to solve this problem is to use similarity learning models.
-We put together a demo example of how you could approach the problem with a pre-trained transformer model and Qdrant.
-So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
+The python client offers a convenient way to start with Qdrant locally:
 
+```python
+from qdrant_client import QdrantClient
+qdrant = QdrantClient(":memory:") # Create in-memory Qdrant instance, for testing, CI/CD
+# OR
+client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast prototyping
+```
+
+### Client-Server
+
+To experience the full power of Qdrant locally, run the container with this command:
+
+```bash
+docker run -p 6333:6333 qdrant/qdrant
+```
+
+> [!CAUTION]
+> Starts an insecure deployment without authentication open to all network interfaces. Please refer to [secure your instance](https://qdrant.tech/documentation/guides/security/#secure-your-instance).
+
+Now you can connect to this with any client, including Python:
+
+```python
+qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance
+```
+
+Before deploying Qdrant to production, be sure to read our [installation](https://qdrant.tech/documentation/guides/installation/) and [security](https://qdrant.tech/documentation/guides/security/) guides.
+
+### Clients
+
+Qdrant offers the following client libraries to help you integrate it into your application stack with ease:
+
+- Official:
+  - [Go client](https://github.com/qdrant/go-client)
+  - [Rust client](https://github.com/qdrant/rust-client)
+  - [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
+  - [Python client](https://github.com/qdrant/qdrant-client)
+  - [.NET/C# client](https://github.com/qdrant/qdrant-dotnet)
+  - [Java client](https://github.com/qdrant/java-client)
+- Community:
+  - [Elixir](https://hexdocs.pm/qdrant/readme.html)
+  - [PHP](https://github.com/hkulekci/qdrant-php)
+  - [Ruby](https://github.com/andreibondarev/qdrant-ruby)
+  - [Java](https://github.com/metaloom/qdrant-java-client)
+
+### Where do I go from here?
+
+- [Quick Start Guide](docs/QUICK_START.md)
+- End to End [Colab Notebook](https://colab.research.google.com/drive/1Bz8RSVHwnNDaNtDwotfPj0w7AYzsdXZ-?usp=sharing) demo with SentenceBERT and Qdrant
+- Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
+- [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
+
+## Demo Projects<a href="https://replit.com/@qdrant"><img align="right" src="https://replit.com/badge/github/qdrant/qdrant" alt="Run on Repl.it"></a>
+
+### Discover Semantic Text Search 🔍
+
+Unlock the power of semantic embeddings with Qdrant, transcending keyword-based search to find meaningful connections in short texts. Deploy a neural search in minutes using a pre-trained neural network, and experience the future of text search. [Try it online!](https://qdrant.to/semantic-search-demo)
+
+### Explore Similar Image Search - Food Discovery 🍕
+
+There's more to discovery than text search, especially when it comes to food. People often choose meals based on appearance rather than descriptions and ingredients. Let Qdrant help your users find their next delicious meal using visual search, even if they don't know the dish's name. [Check it out!](https://qdrant.to/food-discovery)
+
+### Master Extreme Classification - E-commerce Product Categorization 📺
+
+Enter the cutting-edge realm of extreme classification, an emerging machine learning field tackling multi-class and multi-label problems with millions of labels. Harness the potential of similarity learning models, and see how a pre-trained transformer model and Qdrant can revolutionize e-commerce product categorization. [Play with it online!](https://qdrant.to/extreme-classification-demo)
 
 <details>
 <summary> More solutions </summary>
@@ -103,161 +165,74 @@ So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
 </details>
 
 ## API
+
 ### REST
 
-Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
-OpenAPI makes it easy to generate a client for virtually any framework or programing language.
+Online OpenAPI 3.0 documentation is available [here](https://api.qdrant.tech/).
+OpenAPI makes it easy to generate a client for virtually any framework or programming language.
 
 You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant/blob/master/docs/redoc/master/openapi.json).
 
 ### gRPC
 
-For faster production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/quick_start/#grpc).
-
-### Clients
-
-Qdrant offers the following client libraries to help you integrate it into your application stack with ease:
-
-- [Python client](https://github.com/qdrant/qdrant_client)
-- [Go client](https://github.com/qdrant/go-client)
-- [Rust client](https://github.com/qdrant/rust-client)
+For faster production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/interfaces/#grpc-interface).
 
 ## Features
 
 ### Filtering and Payload
 
-Qdrant supports any JSON payload associated with vectors. It does not only store payload but also allows filter results based on payload values.
-It allows any combinations of `should`, `must`, and `must_not` conditions, but unlike ElasticSearch post-filtering, Qdrant guarantees all relevant vectors are retrieved.
+Qdrant can attach any JSON payloads to vectors, allowing for both the storage and filtering of data based on the values in these payloads.
+Payload supports a wide range of data types and query conditions, including keyword matching, full-text filtering, numerical ranges, geo-locations, and more.
 
-### Rich Data Types
+Filtering conditions can be combined in various ways, including `should`, `must`, and `must_not` clauses,
+ensuring that you can implement any desired business logic on top of similarity matching.
 
-Vector payload supports a large variety of data types and query conditions, including string matching, numerical ranges, geo-locations, and more.
-Payload filtering conditions allow you to build almost any custom business logic that should work on top of similarity matching.
 
-### Query Planning and Payload Indexes
+### Hybrid Search with Sparse Vectors
 
-Using the information about the stored payload values, the `query planner` decides on the best way to execute the query.
-For example, if the search space limited by filters is small, it is more efficient to use a full brute force than an index.
+To address the limitations of vector embeddings when searching for specific keywords, Qdrant introduces support for sparse vectors in addition to the regular dense ones.
 
-### SIMD Hardware Acceleration
+Sparse vectors can be viewed as an generalization of BM25 or TF-IDF ranking. They enable you to harness the capabilities of transformer-based neural networks to weigh individual tokens effectively.
 
-Qdrant can take advantage of modern CPU x86-x64 architectures. 
-It allows you to search even faster on modern hardware.
 
-### Write-Ahead Logging
+### Vector Quantization and On-Disk Storage
 
-Once the service confirmed an update - it won't lose data even in case of power shut down. 
-All operations are stored in the update journal and the latest database state could be easily reconstructed at any moment.
+Qdrant provides multiple options to make vector search cheaper and more resource-efficient.
+Built-in vector quantization reduces RAM usage by up to 97% and dynamically manages the trade-off between search speed and precision.
+
 
 ### Distributed Deployment
 
-Since [v0.8.0](https://github.com/qdrant/qdrant/releases/tag/v0.8.0) Qdrant supports distributed deployment.
-In this mode, multiple Qdrant machines are joined into a cluster to provide horizontal scaling.
-Coordination with the distributed consensus is provided by the [Raft](https://raft.github.io/) protocol.
+Qdrant offers comprehensive horizontal scaling support through two key mechanisms:
+1. Size expansion via sharding and throughput enhancement via replication
+2. Zero-downtime rolling updates and seamless dynamic scaling of the collections
 
-### Stand-alone
 
-Qdrant does not rely on any external database or orchestration controller, which makes it very easy to configure.
+### Highlighted Features
 
-## Usage
+* **Query Planning and Payload Indexes** - leverages stored payload information to optimize query execution strategy.
+* **SIMD Hardware Acceleration** - utilizes modern CPU x86-x64 and Neon architectures to deliver better performance.
+* **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on a network-attached storage.
+* **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages.
 
-### Docker 🐳
 
-Build your own from source
+# Integrations
 
-```bash
-docker build . --tag=qdrant/qdrant
-```
+Examples and/or documentation of Qdrant integrations:
 
-Or use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
-
-```bash
-docker pull qdrant/qdrant
-```
-
-To run the container, use the command:
-
-```bash
-docker run -p 6333:6333 qdrant/qdrant
-```
-
-And once you need a fine-grained setup, you can also define a storage path and custom configuration:
-
-```bash
-docker run -p 6333:6333 \
-    -v $(pwd)/path/to/data:/qdrant/storage \
-    -v $(pwd)/path/to/custom_config.yaml:/qdrant/config/production.yaml \
-    qdrant/qdrant
-```
-
-* `/qdrant/storage` - is a place where Qdrant persists all your data. 
-Make sure to mount it as a volume, otherwise docker will drop it with the container. 
-* `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml) 
-
-Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
-
-## Docs 📓
-
-* The best place to start is [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
-* The [Documentation](https://qdrant.tech/documentation/)
-* Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
-* Follow our [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
-* Assess Qdrant's performance in our [benchmarks](https://qdrant.tech/benchmarks/)
-* Check out our further plans in [v1.0 Roadmap](https://qdrant.to/roadmap)
+- [Cohere](https://docs.cohere.com/docs/qdrant-and-cohere) ([blogpost on building a QA app with Cohere and Qdrant](https://qdrant.tech/articles/qa-with-cohere-and-qdrant/)) - Use Cohere embeddings with Qdrant
+- [DocArray](https://docs.docarray.org/user_guide/storing/index_qdrant/) - Use Qdrant as a document store in DocArray
+- [Haystack](https://haystack.deepset.ai/integrations/qdrant-document-store) - Use Qdrant as a document store with Haystack ([blogpost](https://haystack.deepset.ai/blog/qdrant-integration)).
+- [LangChain](https://python.langchain.com/docs/integrations/providers/qdrant/) ([blogpost](https://qdrant.tech/articles/langchain-integration/)) - Use Qdrant as a memory backend for LangChain.
+- [LlamaIndex](https://developers.llamaindex.ai/python/framework/integrations/vector_stores/qdrantindexdemo/) - Use Qdrant as a Vector Store with LlamaIndex.
+- [OpenAI - ChatGPT retrieval plugin](https://github.com/openai/chatgpt-retrieval-plugin/blob/main/docs/providers/qdrant/setup.md) - Use Qdrant as a memory backend for ChatGPT
+- [Microsoft Semantic Kernel](https://devblogs.microsoft.com/semantic-kernel/the-power-of-persistent-memory-with-semantic-kernel-and-qdrant-vector-database/) - Use Qdrant as persistent memory with Semantic Kernel
 
 ## Contacts
 
-* Join our [Discord channel](https://qdrant.to/discord)
-* Follow us on [Twitter](https://qdrant.to/twitter)
-* Subscribe to our [Newsletters](https://qdrant.to/newsletter)
-* Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
-
-Building something special with Qdrant? We can [help](https://qdrant.tech/pricing/)!
-
-## Contributors ✨
-
-Thanks to the people who contributed to Qdrant:
-
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
-<table>
-  <tr>
-    <td align="center"><a href="https://t.me/neural_network_engineering"><img src="https://avatars.githubusercontent.com/u/1935623?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Andrey Vasnetsov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=generall" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/azayarni"><img src="https://avatars.githubusercontent.com/u/926368?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Andre Zayarni</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=azayarni" title="Documentation">📖</a></td>
-    <td align="center"><a href="http://www.linkedin.com/in/joanfontanalsmartinez/"><img src="https://avatars.githubusercontent.com/u/19825685?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Joan Fontanals</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=JoanFM" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/trean"><img src="https://avatars.githubusercontent.com/u/7085263?v=4?s=50" width="50px;" alt=""/><br /><sub><b>trean</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=trean" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/kgrech"><img src="https://avatars.githubusercontent.com/u/9020133?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Konstantin</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kgrech" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/kekonen"><img src="https://avatars.githubusercontent.com/u/11177808?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Daniil Naumetc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kekonen" title="Code">💻</a></td>
-    <td align="center"><a href="https://dev.to/vearutop"><img src="https://avatars.githubusercontent.com/u/1381436?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Viacheslav Poturaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=vearutop" title="Documentation">📖</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://github.com/galibey"><img src="https://avatars.githubusercontent.com/u/48586936?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Alexander Galibey</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=galibey" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/HaiCheViet"><img src="https://avatars.githubusercontent.com/u/37202591?v=4?s=50" width="50px;" alt=""/><br /><sub><b>HaiCheViet</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=HaiCheViet" title="Code">💻</a></td>
-    <td align="center"><a href="https://tranzystorek-io.github.io/"><img src="https://avatars.githubusercontent.com/u/5671049?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Marcin Puc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=tranzystorek-io" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/anveq"><img src="https://avatars.githubusercontent.com/u/94402218?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Anton V.</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=anveq" title="Code">💻</a></td>
-    <td align="center"><a href="http://agourlay.github.io"><img src="https://avatars.githubusercontent.com/u/606963?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Arnaud Gourlay</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=agourlay" title="Code">💻</a></td>
-    <td align="center"><a href="https://t.me/type_driven_thoughts"><img src="https://avatars.githubusercontent.com/u/17401538?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Egor Ivkov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=eadventurous" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/IvanPleshkov"><img src="https://avatars.githubusercontent.com/u/20946825?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Ivan Pleshkov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=IvanPleshkov" title="Code">💻</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://github.com/daniilsunyaev"><img src="https://avatars.githubusercontent.com/u/3955599?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Daniil</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=daniilsunyaev" title="Code">💻</a></td>
-    <td align="center"><a href="http://homeonrails.com"><img src="https://avatars.githubusercontent.com/u/1282182?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Anton Kaliaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=melekes" title="Code">💻</a></td>
-    <td align="center"><a href="https://soundcloud.com/norom"><img src="https://avatars.githubusercontent.com/u/7762532?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Andre Julius</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=NotNorom" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/prok20"><img src="https://avatars.githubusercontent.com/u/20628026?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Prokudin Alexander</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=prok20" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/elbart"><img src="https://avatars.githubusercontent.com/u/48974?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Tim Eggert</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=elbart" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/gvelo"><img src="https://avatars.githubusercontent.com/u/943360?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Gabriel Velo</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=gvelo" title="Code">💻</a></td>
-    <td align="center"><a href="http://burtonqin.github.io"><img src="https://avatars.githubusercontent.com/u/11943383?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Boqin Qin(秦 伯钦)</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/issues?q=author%3ABurtonQin" title="Bug reports">🐛</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://forloop.co.uk/blog"><img src="https://avatars.githubusercontent.com/u/208231?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Russ Cam</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=russcam" title="Code">💻</a></td>
-  </tr>
-</table>
-
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
-
-<!-- ALL-CONTRIBUTORS-LIST:END -->
+- Have questions? Join our [Discord channel](https://qdrant.to/discord) or mention [@qdrant_engine on Twitter](https://qdrant.to/twitter)
+- Want to stay in touch with latest releases? Subscribe to our [Newsletters](https://qdrant.tech/subscribe/)
+- Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/), need something personalised? We're at [info@qdrant.tech](mailto:info@qdrant.tech)
 
 ## License
 

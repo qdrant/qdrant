@@ -1,279 +1,102 @@
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use parking_lot::Mutex;
-use segment::common::operation_time_statistics::{
-    OperationDurationStatistics, OperationDurationsAggregator,
-};
-use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
-
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegmentHolder, SegmentHolder, SegmentId,
-};
-use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizerThresholds, SegmentOptimizer,
-};
-use crate::config::CollectionParams;
-
-const BYTES_IN_KB: usize = 1024;
-
 /// Looks for the segments, which require to be indexed.
+///
 /// If segment is too large, but still does not have indexes - it is time to create some indexes.
 /// The process of index creation is slow and CPU-bounded, so it is convenient to perform
 /// index building in a same way as segment re-creation.
-pub struct IndexingOptimizer {
-    thresholds_config: OptimizerThresholds,
-    segments_path: PathBuf,
-    collection_temp_dir: PathBuf,
-    collection_params: CollectionParams,
-    hnsw_config: HnswConfig,
-    telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
-}
-
-impl IndexingOptimizer {
-    pub fn new(
-        thresholds_config: OptimizerThresholds,
-        segments_path: PathBuf,
-        collection_temp_dir: PathBuf,
-        collection_params: CollectionParams,
-        hnsw_config: HnswConfig,
-    ) -> Self {
-        IndexingOptimizer {
-            thresholds_config,
-            segments_path,
-            collection_temp_dir,
-            collection_params,
-            hnsw_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
-        }
-    }
-
-    fn smallest_indexed_segment(
-        &self,
-        segments: &SegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Option<(SegmentId, usize)> {
-        segments
-            .iter()
-            .filter_map(|(idx, segment)| {
-                if excluded_ids.contains(idx) {
-                    // This segment is excluded externally. It might already be scheduled for optimization
-                    return None;
-                }
-
-                let segment_entry = segment.get();
-                let read_segment = segment_entry.read();
-                let vector_count = read_segment.points_count();
-                let vector_size = vector_count
-                    * read_segment
-                        .vector_dims()
-                        .values()
-                        .max()
-                        .copied()
-                        .unwrap_or(0)
-                    * VECTOR_ELEMENT_SIZE;
-
-                if read_segment.segment_type() == SegmentType::Special {
-                    return None; // Never optimize already optimized segment
-                }
-
-                let segment_config = read_segment.config();
-
-                let is_vector_indexed = match segment_config.index {
-                    Indexes::Plain { .. } => false,
-                    Indexes::Hnsw(_) => true,
-                };
-
-                let is_memmaped = match segment_config.storage_type {
-                    StorageType::InMemory => false,
-                    StorageType::Mmap => true,
-                };
-
-                if !(is_vector_indexed || is_memmaped) {
-                    return None;
-                }
-
-                Some((idx, vector_size))
-            })
-            .min_by_key(|(_, vector_size)| *vector_size)
-            .map(|(idx, size)| (*idx, size))
-    }
-
-    fn worst_segment(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
-        let segments_read_guard = segments.read();
-        let candidates: Vec<_> = segments_read_guard
-            .iter()
-            .filter_map(|(idx, segment)| {
-                if excluded_ids.contains(idx) {
-                    // This segment is excluded externally. It might already be scheduled for optimization
-                    return None;
-                }
-
-                let segment_entry = segment.get();
-                let read_segment = segment_entry.read();
-                let vector_count = read_segment.points_count();
-                let vector_size = vector_count
-                    * read_segment
-                        .vector_dims()
-                        .values()
-                        .max()
-                        .copied()
-                        .unwrap_or(0)
-                    * VECTOR_ELEMENT_SIZE;
-
-                let segment_config = read_segment.config();
-
-                if read_segment.segment_type() == SegmentType::Special {
-                    return None; // Never optimize already optimized segment
-                }
-
-                // Apply indexing to plain segments which have grown too big
-                let is_vector_indexed = match segment_config.index {
-                    Indexes::Plain { .. } => false,
-                    Indexes::Hnsw(_) => true,
-                };
-
-                let is_memmaped = match segment_config.storage_type {
-                    StorageType::InMemory => false,
-                    StorageType::Mmap => true,
-                };
-
-                let big_for_mmap = vector_size
-                    >= self
-                        .thresholds_config
-                        .memmap_threshold
-                        .saturating_mul(BYTES_IN_KB);
-                let big_for_index = vector_size
-                    >= self
-                        .thresholds_config
-                        .indexing_threshold
-                        .saturating_mul(BYTES_IN_KB);
-
-                let require_indexing =
-                    (big_for_mmap && !is_memmaped) || (big_for_index && !is_vector_indexed);
-
-                match require_indexing {
-                    true => Some((*idx, vector_size)),
-                    false => None,
-                }
-            })
-            .collect();
-        let selected_segment = candidates
-            .iter()
-            .max_by_key(|(_, vector_size)| *vector_size);
-        if selected_segment.is_none() {
-            return vec![];
-        }
-        let (selected_segment_id, selected_segment_size) = *selected_segment.unwrap();
-        // It is better for scheduling if indexing optimizer optimizes 2 segments.
-        // Because result of the optimization is usually 2 segment - it should preserve
-        // overall count of segments.
-        let smallest_unindexed = candidates
-            .iter()
-            .min_by_key(|(_, vector_size)| *vector_size);
-
-        if let Some((idx, size)) = smallest_unindexed {
-            if *idx != selected_segment_id
-                && selected_segment_size + size
-                    < self
-                        .thresholds_config
-                        .max_segment_size
-                        .saturating_mul(BYTES_IN_KB)
-            {
-                return vec![selected_segment_id, *idx];
-            }
-        }
-
-        let smallest_indexed = self.smallest_indexed_segment(&segments_read_guard, excluded_ids);
-
-        if let Some((idx, size)) = smallest_indexed {
-            if idx != selected_segment_id
-                && selected_segment_size + size
-                    < self
-                        .thresholds_config
-                        .max_segment_size
-                        .saturating_mul(BYTES_IN_KB)
-            {
-                return vec![selected_segment_id, idx];
-            }
-        }
-
-        vec![selected_segment_id]
-    }
-}
-
-impl SegmentOptimizer for IndexingOptimizer {
-    fn collection_path(&self) -> &Path {
-        self.segments_path.as_path()
-    }
-
-    fn temp_path(&self) -> &Path {
-        self.collection_temp_dir.as_path()
-    }
-
-    fn collection_params(&self) -> CollectionParams {
-        self.collection_params.clone()
-    }
-
-    fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config
-    }
-
-    fn threshold_config(&self) -> &OptimizerThresholds {
-        &self.thresholds_config
-    }
-
-    fn check_condition(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
-        self.worst_segment(segments, excluded_ids)
-    }
-
-    fn get_telemetry_data(&self) -> OperationDurationStatistics {
-        self.get_telemetry_counter().lock().get_statistics()
-    }
-
-    fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>> {
-        self.telemetry_durations_aggregator.clone()
-    }
-}
+pub use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::num::{NonZeroU32, NonZeroU64};
-    use std::ops::Deref;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::Arc;
+    use std::path::PathBuf;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use fs_err as fs;
     use itertools::Itertools;
-    use parking_lot::lock_api::RwLock;
-    use rand::thread_rng;
+    use rand::rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+    use segment::entry::entry_point::NonAppendableSegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
-    use segment::types::{Payload, PayloadSchemaType, StorageType};
-    use serde_json::json;
+    use segment::json_path::JsonPath;
+    use segment::payload_json;
+    use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
+    use segment::types::{
+        Distance, HnswConfig, HnswGlobalConfig, PayloadSchemaType, QuantizationConfig, SegmentType,
+        VectorNameBuf,
+    };
+    use shard::operations::optimization::OptimizerThresholds;
+    use shard::optimizers::segment_optimizer::SegmentOptimizer;
+    use shard::segment_holder::SegmentId;
+    use shard::segment_holder::locked::LockedSegmentHolder;
+    use shard::update::{process_field_index_operation, process_point_operation};
     use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
-    use crate::collection_manager::segments_updater::{
-        process_field_index_operation, process_point_operation,
+    use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
+    use crate::config::CollectionParams;
+    use crate::operations::point_ops::{
+        BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
-    use crate::config::{VectorParams, VectorsConfig};
-    use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
+    use crate::operations::types::{VectorParams, VectorsConfig};
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::operations::{CreateIndex, FieldIndexOperations};
+    use crate::optimizers_builder::build_segment_optimizer_config;
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_indexing_optimizer(
+        default_segments_number: usize,
+        thresholds_config: OptimizerThresholds,
+        segments_path: PathBuf,
+        collection_temp_dir: PathBuf,
+        collection_params: CollectionParams,
+        hnsw_config: HnswConfig,
+        hnsw_global_config: HnswGlobalConfig,
+        quantization_config: Option<QuantizationConfig>,
+    ) -> IndexingOptimizer {
+        let segment_config =
+            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        shard::optimizers::indexing_optimizer::IndexingOptimizer::new(
+            default_segments_number,
+            thresholds_config,
+            segments_path,
+            collection_temp_dir,
+            segment_config,
+            hnsw_global_config,
+        )
+    }
+
+    fn new_config_mismatch_optimizer(
+        thresholds_config: OptimizerThresholds,
+        segments_path: PathBuf,
+        collection_temp_dir: PathBuf,
+        collection_params: CollectionParams,
+        hnsw_config: HnswConfig,
+        hnsw_global_config: HnswGlobalConfig,
+        quantization_config: Option<QuantizationConfig>,
+    ) -> ConfigMismatchOptimizer {
+        let segment_config =
+            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer::new(
+            thresholds_config,
+            segments_path,
+            collection_temp_dir,
+            segment_config,
+            hnsw_config,
+            hnsw_global_config,
+        )
+    }
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    fn normalize(segments: Vec<Vec<SegmentId>>) -> Vec<Vec<SegmentId>> {
+        segments
+            .into_iter()
+            .map(|group| group.into_iter().sorted().collect_vec())
+            .collect()
     }
 
     #[test]
@@ -281,7 +104,6 @@ mod tests {
         init();
         let mut holder = SegmentHolder::default();
 
-        let stopped = AtomicBool::new(false);
         let dim1 = 128;
         let dim2 = 256;
 
@@ -297,56 +119,54 @@ mod tests {
 
         let segment_config = large_segment.segment_config.clone();
 
-        let large_segment_id = holder.add(large_segment);
+        let large_segment_id = holder.add_new(large_segment);
 
-        let vectors_config: BTreeMap<String, VectorParams> = segment_config
+        let vectors_config: BTreeMap<VectorNameBuf, VectorParams> = segment_config
             .vector_data
             .iter()
             .map(|(name, params)| {
                 (
-                    name.to_string(),
-                    VectorParams {
-                        size: NonZeroU64::new(params.size as u64).unwrap(),
-                        distance: params.distance,
-                    },
+                    name.to_owned(),
+                    VectorParamsBuilder::new(params.size as u64, params.distance).build(),
                 )
             })
             .collect();
 
-        let mut index_optimizer = IndexingOptimizer::new(
+        let mut index_optimizer = new_indexing_optimizer(
+            2,
             OptimizerThresholds {
-                max_segment_size: 300,
-                memmap_threshold: 1000,
-                indexing_threshold: 1000,
+                max_segment_size_kb: 300,
+                memmap_threshold_kb: 1000,
+                indexing_threshold_kb: 1000,
+                deferred_internal_id: None,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
                 vectors: VectorsConfig::Multi(vectors_config),
-                shard_number: NonZeroU32::new(1).unwrap(),
-                replication_factor: NonZeroU32::new(1).unwrap(),
-                on_disk_payload: false,
+                ..CollectionParams::empty()
             },
             Default::default(),
+            HnswGlobalConfig::default(),
+            Default::default(),
         );
-        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
-        let excluded_ids = Default::default();
-
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
         assert!(suggested_to_optimize.is_empty());
 
-        index_optimizer.thresholds_config.memmap_threshold = 1000;
-        index_optimizer.thresholds_config.indexing_threshold = 50;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .memmap_threshold_kb = 1000;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .indexing_threshold_kb = 50;
 
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
-        index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
-            .unwrap();
+        index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
 
         let infos = locked_holder
             .read()
@@ -356,7 +176,7 @@ mod tests {
         let configs = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().config())
+            .map(|(_sid, segment)| segment.get().read().config().clone())
             .collect_vec();
 
         assert_eq!(infos.len(), 2);
@@ -369,8 +189,8 @@ mod tests {
 
         for config in configs {
             assert_eq!(config.vector_data.len(), 2);
-            assert_eq!(config.vector_data.get("vector1").unwrap().size, dim1);
-            assert_eq!(config.vector_data.get("vector2").unwrap().size, dim2);
+            assert_eq!(config.vector_data.get(VECTOR1_NAME).unwrap().size, dim1);
+            assert_eq!(config.vector_data.get(VECTOR2_NAME).unwrap().size, dim2);
         }
     }
 
@@ -378,12 +198,11 @@ mod tests {
     fn test_indexing_optimizer() {
         init();
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut holder = SegmentHolder::default();
 
-        let payload_field = "number".to_owned();
+        let payload_field: JsonPath = "number".parse().unwrap();
 
-        let stopped = AtomicBool::new(false);
         let dim = 256;
 
         let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
@@ -401,100 +220,123 @@ mod tests {
 
         let segment_config = small_segment.segment_config.clone();
 
-        let small_segment_id = holder.add(small_segment);
-        let middle_low_segment_id = holder.add(middle_low_segment);
-        let middle_segment_id = holder.add(middle_segment);
-        let large_segment_id = holder.add(large_segment);
+        let small_segment_id = holder.add_new(small_segment);
+        let middle_low_segment_id = holder.add_new(middle_low_segment);
+        let middle_segment_id = holder.add_new(middle_segment);
+        let large_segment_id = holder.add_new(large_segment);
 
-        let mut index_optimizer = IndexingOptimizer::new(
+        let mut index_optimizer = new_indexing_optimizer(
+            2,
             OptimizerThresholds {
-                max_segment_size: 300,
-                memmap_threshold: 1000,
-                indexing_threshold: 1000,
+                max_segment_size_kb: 300,
+                memmap_threshold_kb: 1000,
+                indexing_threshold_kb: 1000,
+                deferred_internal_id: None,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: VectorsConfig::Single(VectorParams {
-                    size: NonZeroU64::new(
+                vectors: VectorsConfig::Single(
+                    VectorParamsBuilder::new(
                         segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                     )
-                    .unwrap(),
-                    distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
-                }),
-                shard_number: NonZeroU32::new(1).unwrap(),
-                replication_factor: NonZeroU32::new(1).unwrap(),
-                on_disk_payload: false,
+                    .build(),
+                ),
+                ..CollectionParams::empty()
             },
+            Default::default(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
 
-        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
-
-        let excluded_ids = Default::default();
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         // ---- check condition for MMap optimization
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
         assert!(suggested_to_optimize.is_empty());
 
-        index_optimizer.thresholds_config.memmap_threshold = 1000;
-        index_optimizer.thresholds_config.indexing_threshold = 50;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .memmap_threshold_kb = 1000;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .indexing_threshold_kb = 50;
 
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
-        assert!(suggested_to_optimize.contains(&large_segment_id));
-        assert!(suggested_to_optimize.contains(&middle_low_segment_id));
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        assert_eq!(
+            normalize(suggested_to_optimize),
+            normalize(vec![
+                vec![large_segment_id, middle_low_segment_id],
+                vec![middle_segment_id],
+            ]),
+        );
 
-        index_optimizer.thresholds_config.memmap_threshold = 1000;
-        index_optimizer.thresholds_config.indexing_threshold = 1000;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .memmap_threshold_kb = 1000;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .indexing_threshold_kb = 1000;
 
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
         assert!(suggested_to_optimize.is_empty());
 
-        index_optimizer.thresholds_config.memmap_threshold = 50;
-        index_optimizer.thresholds_config.indexing_threshold = 1000;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .memmap_threshold_kb = 50;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .indexing_threshold_kb = 1000;
 
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
-        assert!(suggested_to_optimize.contains(&large_segment_id));
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        assert_eq!(
+            normalize(suggested_to_optimize),
+            normalize(vec![
+                vec![large_segment_id, middle_low_segment_id],
+                vec![middle_segment_id],
+            ]),
+        );
 
-        index_optimizer.thresholds_config.memmap_threshold = 150;
-        index_optimizer.thresholds_config.indexing_threshold = 50;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .memmap_threshold_kb = 150;
+        index_optimizer
+            .threshold_config_mut_for_test()
+            .indexing_threshold_kb = 50;
 
         // ----- CREATE AN INDEXED FIELD ------
+        let hw_counter = HardwareCounterCell::new();
+
         process_field_index_operation(
-            locked_holder.deref(),
+            &locked_holder.read(),
             opnum.next().unwrap(),
             &FieldIndexOperations::CreateIndex(CreateIndex {
-                field_name: payload_field.to_owned(),
+                field_name: payload_field.clone(),
                 field_schema: Some(PayloadSchemaType::Integer.into()),
             }),
+            &hw_counter,
         )
         .unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
-        assert!(suggested_to_optimize.contains(&large_segment_id));
-        eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
-        index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
-            .unwrap();
-        eprintln!("Done");
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        assert_eq!(
+            normalize(suggested_to_optimize.clone()),
+            normalize(vec![
+                vec![large_segment_id, middle_low_segment_id],
+                vec![middle_segment_id],
+            ]),
+        );
+        index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize[0].clone());
 
         // ------ Plain -> Indexed payload
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
-        assert!(suggested_to_optimize.contains(&middle_segment_id));
-        index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
-            .unwrap();
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        assert_eq!(suggested_to_optimize.clone(), vec![vec![middle_segment_id]]);
+        index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize[0].clone());
 
         // ------- Keep smallest segment without changes
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
         assert!(suggested_to_optimize.is_empty());
 
         assert_eq!(
@@ -511,7 +353,7 @@ mod tests {
         let configs = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().config())
+            .map(|(_sid, segment)| segment.get().read().config().clone())
             .collect_vec();
 
         let indexed_count = infos
@@ -523,16 +365,16 @@ mod tests {
             "Testing that 2 segments are actually indexed"
         );
 
-        let mmap_count = configs
+        let on_disk_count = configs
             .iter()
-            .filter(|config| config.storage_type == StorageType::Mmap)
+            .filter(|config| config.is_any_on_disk())
             .count();
         assert_eq!(
-            mmap_count, 1,
+            on_disk_count, 1,
             "Testing that only largest segment is not Mmap"
         );
 
-        let segment_dirs = segments_dir.path().read_dir().unwrap().collect_vec();
+        let segment_dirs = fs::read_dir(segments_dir.path()).unwrap().collect_vec();
         assert_eq!(
             segment_dirs.len(),
             locked_holder.read().len(),
@@ -551,22 +393,24 @@ mod tests {
             );
         }
 
-        let point_payload: Payload = json!({"number":10000i64}).into();
+        let point_payload = payload_json! {"number": 10000i64};
+
+        let batch = BatchPersisted {
+            ids: vec![501.into(), 502.into(), 503.into()],
+            vectors: BatchVectorStructPersisted::Single(vec![
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+            ]),
+            payloads: Some(vec![
+                Some(point_payload.clone()),
+                Some(point_payload.clone()),
+                Some(point_payload),
+            ]),
+        };
+
         let insert_point_ops =
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
-                ids: vec![501.into(), 502.into(), 503.into()],
-                vectors: vec![
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                ]
-                .into(),
-                payloads: Some(vec![
-                    Some(point_payload.clone()),
-                    Some(point_payload.clone()),
-                    Some(point_payload),
-                ]),
-            }));
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch));
 
         let smallest_size = infos
             .iter()
@@ -574,10 +418,13 @@ mod tests {
             .unwrap()
             .num_vectors;
 
+        let hw_counter = HardwareCounterCell::new();
+
         process_point_operation(
-            locked_holder.deref(),
+            &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
+            &hw_counter,
         )
         .unwrap();
 
@@ -601,13 +448,13 @@ mod tests {
         // ---- New appendable segment should be created if none left
 
         // Index even the smallest segment
-        index_optimizer.thresholds_config.indexing_threshold = 20;
-        let suggested_to_optimize =
-            index_optimizer.check_condition(locked_holder.clone(), &Default::default());
-        assert!(suggested_to_optimize.contains(&small_segment_id));
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
-            .unwrap();
+            .threshold_config_mut_for_test()
+            .indexing_threshold_kb = 20;
+        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
+        assert!(suggested_to_optimize.contains(&small_segment_id));
+        index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
 
         let new_infos2 = locked_holder
             .read()
@@ -625,23 +472,279 @@ mod tests {
             "Testing that new segment is created if none left"
         );
 
+        let batch = BatchPersisted {
+            ids: vec![601.into(), 602.into(), 603.into()],
+            vectors: BatchVectorStructPersisted::Single(vec![
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+            ]),
+            payloads: None,
+        };
+
         let insert_point_ops =
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
-                ids: vec![601.into(), 602.into(), 603.into()],
-                vectors: vec![
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                ]
-                .into(),
-                payloads: None,
-            }));
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch));
 
         process_point_operation(
-            locked_holder.deref(),
+            &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
+            &hw_counter,
         )
         .unwrap();
+    }
+
+    /// Test that indexing optimizer maintain expected number of during the optimization duty
+    #[test]
+    fn test_indexing_optimizer_with_number_of_segments() {
+        init();
+
+        let mut holder = SegmentHolder::default();
+
+        let dim = 256;
+
+        let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+        let segments_temp_dir = Builder::new()
+            .prefix("segments_temp_dir")
+            .tempdir()
+            .unwrap();
+        let mut opnum = 101..1000000;
+
+        let segments = vec![
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+        ];
+
+        let number_of_segments = segments.len();
+        let segment_config = segments[0].segment_config.clone();
+
+        let _segment_ids: Vec<SegmentId> = segments
+            .into_iter()
+            .map(|segment| holder.add_new(segment))
+            .collect();
+
+        let locked_holder = LockedSegmentHolder::new(holder);
+
+        let index_optimizer = new_indexing_optimizer(
+            number_of_segments, // Keep the same number of segments
+            OptimizerThresholds {
+                max_segment_size_kb: 1000,
+                memmap_threshold_kb: 1000,
+                indexing_threshold_kb: 10, // Always optimize
+                deferred_internal_id: None,
+            },
+            segments_dir.path().to_owned(),
+            segments_temp_dir.path().to_owned(),
+            CollectionParams {
+                vectors: VectorsConfig::Single(
+                    VectorParamsBuilder::new(
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                    )
+                    .build(),
+                ),
+                ..CollectionParams::empty()
+            },
+            Default::default(),
+            HnswGlobalConfig::default(),
+            Default::default(),
+        );
+
+        // Index until all segments are indexed
+        let mut numer_of_optimizations = 0;
+        loop {
+            let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+            if suggested_to_optimize.is_empty() {
+                break;
+            }
+            log::debug!("suggested_to_optimize = {suggested_to_optimize:#?}");
+            let suggested_to_optimize = suggested_to_optimize.into_iter().next().unwrap();
+
+            index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
+            numer_of_optimizations += 1;
+            assert!(numer_of_optimizations <= number_of_segments);
+            let number_of_segments = locked_holder.read().len();
+            log::debug!(
+                "numer_of_optimizations = {numer_of_optimizations}, number_of_segments = {number_of_segments}"
+            );
+        }
+
+        // Ensure that the total number of segments did not change
+        assert_eq!(locked_holder.read().len(), number_of_segments);
+    }
+
+    /// This tests things are as we expect when we define both `on_disk: false` and `memmap_threshold`
+    ///
+    /// Before this PR (<https://github.com/qdrant/qdrant/pull/3167>) such configuration would create an infinite optimization loop.
+    ///
+    /// It tests whether:
+    /// - the on_disk flag is preferred over memmap_threshold
+    /// - the index optimizer and config mismatch optimizer don't conflict with this preference
+    /// - there is no infinite optiization loop with the above configuration
+    ///
+    /// In short, this is what happens in this test:
+    /// - create randomized segment as base with `on_disk: false` and `memmap_threshold`
+    /// - test that indexing optimizer and config mismatch optimizer dont trigger
+    /// - test that current storage is in memory
+    /// - change `on_disk: None`
+    /// - test that indexing optimizer now wants to optimize for `memmap_threshold`
+    /// - optimize with indexing optimizer to put storage on disk
+    /// - test that config mismatch optimizer doesn't try to revert on disk storage
+    #[test]
+    fn test_on_disk_memmap_threshold_conflict() {
+        // Collection configuration
+        let (point_count, dim) = (1000, 10);
+        let thresholds_config = OptimizerThresholds {
+            max_segment_size_kb: usize::MAX,
+            memmap_threshold_kb: 10,
+            indexing_threshold_kb: usize::MAX,
+            deferred_internal_id: None,
+        };
+        let mut collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(
+                VectorParamsBuilder::new(dim as u64, Distance::Dot)
+                    .with_on_disk(false)
+                    .build(),
+            ),
+            ..CollectionParams::empty()
+        };
+
+        // Base segment
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut holder = SegmentHolder::default();
+
+        let segment = random_segment(dir.path(), 100, point_count, dim as usize);
+
+        let segment_id = holder.add_new(segment);
+        let locked_holder = LockedSegmentHolder::new(holder);
+
+        let hnsw_config = HnswConfig {
+            m: 16,
+            ef_construct: 100,
+            full_scan_threshold: 10,
+            max_indexing_threads: 0,
+            on_disk: None,
+            payload_m: None,
+            inline_storage: None,
+        };
+
+        {
+            // Optimizers used in test
+            let index_optimizer = new_indexing_optimizer(
+                2,
+                thresholds_config,
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                collection_params.clone(),
+                hnsw_config,
+                HnswGlobalConfig::default(),
+                Default::default(),
+            );
+            let config_mismatch_optimizer = new_config_mismatch_optimizer(
+                thresholds_config,
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                collection_params.clone(),
+                hnsw_config,
+                HnswGlobalConfig::default(),
+                Default::default(),
+            );
+
+            // Index optimizer should not optimize and put storage back in memory, nothing changed
+            let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+            assert_eq!(
+                suggested_to_optimize.len(),
+                0,
+                "index optimizer should not run for index nor mmap"
+            );
+
+            // Config mismatch optimizer should not try to change the current state
+            let suggested_to_optimize =
+                config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+            assert_eq!(
+                suggested_to_optimize.len(),
+                0,
+                "config mismatch optimizer should not change anything"
+            );
+
+            // Ensure segment is not on disk
+            locked_holder
+                .read()
+                .iter_original()
+                .map(|(_, segment)| segment.read())
+                .filter(|segment| segment.total_point_count() > 0)
+                .for_each(|segment| {
+                    assert!(
+                        !segment.config().vector_data[DEFAULT_VECTOR_NAME]
+                            .storage_type
+                            .is_on_disk(),
+                        "segment must not be on disk with mmap",
+                    );
+                });
+        }
+
+        // Remove explicit on_disk flag and go back to default
+        collection_params
+            .vectors
+            .get_params_mut(DEFAULT_VECTOR_NAME)
+            .unwrap()
+            .on_disk
+            .take();
+
+        // Optimizers used in test
+        let index_optimizer = new_indexing_optimizer(
+            2,
+            thresholds_config,
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params.clone(),
+            hnsw_config,
+            HnswGlobalConfig::default(),
+            Default::default(),
+        );
+        let config_mismatch_optimizer = new_config_mismatch_optimizer(
+            thresholds_config,
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params,
+            hnsw_config,
+            HnswGlobalConfig::default(),
+            Default::default(),
+        );
+
+        // Use indexing optimizer to build mmap
+        let changed = index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_id]);
+        assert!(
+            changed > 0,
+            "optimizer should have rebuilt this segment for mmap"
+        );
+        assert!(
+            locked_holder.read().get(segment_id).is_none(),
+            "optimized segment should be gone",
+        );
+        assert_eq!(locked_holder.read().len(), 2, "mmap must be built");
+
+        // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
+        let suggested_to_optimize =
+            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        assert_eq!(suggested_to_optimize.len(), 0);
+
+        // Ensure new segment is on disk now
+        locked_holder
+            .read()
+            .iter_original()
+            .map(|(_, segment)| segment.read())
+            .filter(|segment| segment.total_point_count() > 0)
+            .for_each(|segment| {
+                assert!(
+                    segment.config().vector_data[DEFAULT_VECTOR_NAME]
+                        .storage_type
+                        .is_on_disk(),
+                    "segment must be on disk with mmap",
+                );
+            });
     }
 }

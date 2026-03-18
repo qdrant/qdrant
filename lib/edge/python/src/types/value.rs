@@ -1,0 +1,140 @@
+use std::collections::HashMap;
+use std::{fmt, mem};
+
+use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
+use derive_more::Into;
+use pyo3::IntoPyObjectExt as _;
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyString};
+
+use crate::repr::*;
+
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyValue(serde_json::Value);
+
+impl PyValue {
+    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, serde_json::Value>
+    where
+        Self: TransparentWrapper<serde_json::Value>,
+    {
+        unsafe { mem::transmute(map) }
+    }
+
+    pub fn new(value: serde_json::Value) -> Self {
+        Self(value)
+    }
+}
+
+impl FromPyObject<'_, '_> for PyValue {
+    type Error = PyErr;
+
+    fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Helper {
+            Bool(bool),
+            Uint(u64),
+            Int(i64),
+            Float(f64),
+            String(String),
+            Array(Vec<PyValue>),
+            Object(#[pyo3(from_py_with = value_map_from_py)] ValueMap),
+        }
+
+        if value.is_none() {
+            return Ok(Self(serde_json::Value::Null));
+        }
+
+        let value = match value.extract()? {
+            Helper::Bool(bool) => serde_json::Value::Bool(bool),
+            Helper::Uint(uint) => serde_json::Value::Number(serde_json::Number::from(uint)),
+            Helper::Int(int) => serde_json::Value::Number(serde_json::Number::from(int)),
+            Helper::Float(float) => {
+                let num = serde_json::Number::from_f64(float).ok_or_else(|| {
+                    PyValueError::new_err(format!(
+                        "failed to convert {float} into payload number type"
+                    ))
+                })?;
+
+                serde_json::Value::Number(num)
+            }
+            Helper::String(str) => serde_json::Value::String(str),
+            Helper::Array(arr) => serde_json::Value::Array(PyValue::peel_vec(arr)),
+            Helper::Object(map) => serde_json::Value::Object(map),
+        };
+
+        Ok(Self(value))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for PyValue {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(&self, py)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyValue {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match &self.0 {
+            serde_json::Value::Null => Ok(py.None().into_bound(py)),
+            serde_json::Value::Bool(bool) => bool.into_bound_py_any(py),
+            serde_json::Value::Number(num) => {
+                if let Some(uint) = num.as_u64() {
+                    uint.into_bound_py_any(py)
+                } else if let Some(int) = num.as_i64() {
+                    int.into_bound_py_any(py)
+                } else if let Some(float) = num.as_f64() {
+                    float.into_bound_py_any(py)
+                } else {
+                    unreachable!("`serde_json::Number` is always `u64`, `i64` or `f64`")
+                }
+            }
+            serde_json::Value::String(str) => str.into_bound_py_any(py),
+            serde_json::Value::Array(arr) => PyValue::wrap_slice(arr).into_bound_py_any(py),
+            serde_json::Value::Object(map) => value_map_into_py(map, py),
+        }
+    }
+}
+
+impl Repr for PyValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+pub type ValueMap = serde_json::Map<String, serde_json::Value>;
+
+pub fn value_map_from_py(dict: &Bound<'_, PyAny>) -> PyResult<ValueMap> {
+    let dict = dict.cast::<PyDict>()?;
+
+    let mut map = serde_json::Map::with_capacity(dict.len());
+
+    for (key, value) in dict {
+        let key = key.extract()?;
+        let value: PyValue = value.extract()?;
+        map.insert(key, value.into());
+    }
+
+    Ok(map)
+}
+
+pub fn value_map_into_py<'py>(map: &ValueMap, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    let dict = PyDict::new(py);
+
+    for (key, value) in map {
+        let key = PyString::new(py, key);
+        let value = PyValue::wrap_ref(value).into_pyobject(py)?;
+        dict.set_item(key, value)?;
+    }
+
+    Ok(dict.into_any())
+}

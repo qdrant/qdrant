@@ -1,0 +1,19 @@
+name: Setup Qdrant
+description: "Download, install, and start a Qdrant server"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Qdrant
+      uses: extractions/setup-crate@4993624604c307fbca528d28a3c8b60fa5ecc859 # v1.4.0
+      with:
+        repo: qdrant/qdrant
+        version: 1.17.0
+
+    - name: Start Qdrant
+      shell: bash
+      run: |
+        QDRANT_DIR="$HOME/.cargo/bin"
+        cd "$QDRANT_DIR"
+        qdrant >> qdrant.log 2>&1 &
+        curl --fail --retry 30 --retry-delay 1 --retry-all-errors http://localhost:6333

@@ -1,0 +1,138 @@
+#ifndef VECTOR_STORAGE_DENSE_HEADER
+#define VECTOR_STORAGE_DENSE_HEADER
+
+#ifndef VECTOR_STORAGE_LAYOUT_SET
+#error "VECTOR_STORAGE_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+
+#define ELEMENTS_PER_SUBGROUP 4
+#define STORAGE(STORAGE_INDEX) CONCAT(vectors, STORAGE_INDEX)
+
+#define SUBGROUPS_COUNT_PER_VECTOR (DIM / (ELEMENTS_PER_SUBGROUP * SUBGROUP_SIZE))
+#if SUBGROUPS_COUNT_PER_VECTOR < 2
+// Define that describes that the whole vector is stored in a single subgroup.
+// For single subgroup vector we can avoid `for` loops.
+#define SINGLE_SUBGROUP_PER_VECTOR
+#endif
+
+#ifndef VECTOR_STORAGE_QUANTIZATION
+#ifdef VECTOR_STORAGE_ELEMENT_FLOAT32
+#include "vector_storage_f32.comp"
+#endif
+
+#ifdef VECTOR_STORAGE_ELEMENT_FLOAT16
+#include "vector_storage_f16.comp"
+#endif
+
+#ifdef VECTOR_STORAGE_ELEMENT_UINT8
+#include "vector_storage_u8.comp"
+#endif
+#endif
+
+#ifdef VECTOR_STORAGE_ELEMENT_PQ
+#include "vector_storage_pq.comp"
+#endif
+
+#ifdef VECTOR_STORAGE_ELEMENT_SQ
+#include "vector_storage_sq.comp"
+#endif
+
+#ifdef VECTOR_STORAGE_ELEMENT_BQ
+#include "vector_storage_bq.comp"
+#endif
+
+#define VECTOR_STORAGE_DEFINE(STORAGE_INDEX) \
+    layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = STORAGE_INDEX) \
+    readonly buffer CONCAT(Vectors, STORAGE_INDEX) { \
+        VECTOR_STORAGE_ELEMENT_TYPE data[]; \
+    } STORAGE(STORAGE_INDEX);
+
+VECTOR_STORAGE_DEFINE(0)
+VECTOR_STORAGE_DEFINE(1)
+VECTOR_STORAGE_DEFINE(2)
+VECTOR_STORAGE_DEFINE(3)
+
+#ifdef SINGLE_SUBGROUP_PER_VECTOR
+
+#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
+    result += VECTOR_STORAGE_SCORE_ELEMENT( \
+        STORAGE(STORAGE_INDEX).data[index], \
+        target_cache \
+    );
+
+#define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
+    target_cache = STORAGE(STORAGE_INDEX).data[index];
+
+VECTOR_STORAGE_ELEMENT_TYPE target_cache;
+
+#else
+
+#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
+    for (uint i = 0; i < SUBGROUPS_COUNT_PER_VECTOR; i++, index += SUBGROUP_SIZE) { \
+        result += VECTOR_STORAGE_SCORE_ELEMENT( \
+            STORAGE(STORAGE_INDEX).data[index], \
+            target_cache[i] \
+        ); \
+    }
+
+#define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
+    for (uint i = 0; i < SUBGROUPS_COUNT_PER_VECTOR; i++, index += SUBGROUP_SIZE) { \
+        target_cache[i] = STORAGE(STORAGE_INDEX).data[index]; \
+    }
+
+VECTOR_STORAGE_ELEMENT_TYPE target_cache[SUBGROUPS_COUNT_PER_VECTOR];
+
+#endif
+
+void set_target_dense(uint point_id) {
+    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + gl_SubgroupInvocationID;
+    uint storage_index = point_id % STORAGES_COUNT;
+    switch (storage_index) {
+    case 0:
+        VECTOR_STORAGE_SET_TARGET(0);
+        break;
+    case 1:
+        VECTOR_STORAGE_SET_TARGET(1);
+        break;
+    case 2:
+        VECTOR_STORAGE_SET_TARGET(2);
+        break;
+    case 3:
+        VECTOR_STORAGE_SET_TARGET(3);
+        break;
+    }
+
+#ifdef VECTOR_STORAGE_POSTPROCESS_SET_TARGET
+    VECTOR_STORAGE_POSTPROCESS_SET_TARGET();
+#endif
+}
+
+float similarity_dense(uint point_id) {
+#ifdef VECTOR_STORAGE_PREPROCESS
+    VECTOR_STORAGE_PREPROCESS();
+#endif
+
+    VECTOR_STORAGE_SCORE_TYPE result = 0;
+    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + gl_SubgroupInvocationID;
+    uint storage_index = point_id % STORAGES_COUNT;
+    switch (storage_index) {
+    case 0:
+        VECTOR_STORAGE_SCORE_SUBGROUP(0);
+        break;
+    case 1:
+        VECTOR_STORAGE_SCORE_SUBGROUP(1);
+        break;
+    case 2:
+        VECTOR_STORAGE_SCORE_SUBGROUP(2);
+        break;
+    case 3:
+        VECTOR_STORAGE_SCORE_SUBGROUP(3);
+        break;
+    }
+
+    return VECTOR_STORAGE_POSTPROCESS_SCORE(result);
+}
+
+#endif

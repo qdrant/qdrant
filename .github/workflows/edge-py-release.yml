@@ -1,0 +1,243 @@
+name: Qdrant Edge Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to PyPI'
+        type: boolean
+        default: false
+        required: true
+
+
+jobs:
+  edge-py-linux:
+    name: Build Python wheels [Linux]
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+        manylinux: [manylinux_2_17, manylinux_2_28]
+        python:
+          - python3.10
+          - pypy3.11
+
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
+            python: python3.10
+
+          - arch: aarch64
+            target: aarch64-unknown-linux-musl
+            manylinux: musllinux_1_2
+            python: python3.10
+
+        exclude:
+          - target: aarch64
+            manylinux: manylinux_2_17
+
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Build Python wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --features abi3 --interpreter ${{ matrix.python }} --out dist
+          working-directory: lib/edge/python
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+
+      - name: Upload Python wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: qdrant-edge-${{ matrix.manylinux }}-${{ matrix.arch || matrix.target }}-${{ matrix.python }}
+          path: lib/edge/python/dist
+
+
+  edge-py-macos:
+    name: Build Python wheels [macOS]
+
+    runs-on: macos-latest
+
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+        python:
+          - label: python3.10
+            version: '3.10'
+          - pypy3.11
+
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Python
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python.version || matrix.python }}
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Build Python wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --features abi3 --interpreter ${{ steps.setup-python.outputs.python-path }} --out dist
+          working-directory: lib/edge/python
+          target: ${{ matrix.target }}
+
+      - name: Upload Python wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: qdrant-edge-macos-${{ matrix.target }}-${{ matrix.python.label || matrix.python }}
+          path: lib/edge/python/dist
+
+
+  edge-py-windows:
+    name: Build Python wheels [Windows]
+
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        target: [x86_64]
+        python:
+          - label: python3.10
+            version: '3.10'
+          - pypy3.11
+
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Python
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python.version || matrix.python }}
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Build Python wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --features abi3 --interpreter ${{ steps.setup-python.outputs.python-path }} --out dist
+          working-directory: lib/edge/python
+          target: ${{ matrix.target }}
+
+      - name: Upload Python wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: qdrant-edge-windows-${{ matrix.target }}-${{ matrix.python.label || matrix.python }}
+          path: lib/edge/python/dist
+
+
+  edge-py-test:
+    name: Test Python wheels [${{ matrix.os }}, ${{ matrix.python }}]
+
+    runs-on: ${{ matrix.os }}
+    needs:
+      - edge-py-linux
+      - edge-py-macos
+      - edge-py-windows
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-24.04-arm
+          - ubuntu-latest
+          - windows-latest
+        python:
+          - '3.10'
+          - 'pypy3.11'
+
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - uses: extractions/setup-just@v3
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download wheels
+        uses: actions/download-artifact@v8
+        with:
+          pattern: qdrant-edge-*
+          merge-multiple: true
+          path: lib/edge/python/dist
+
+      - name: Setup Qdrant
+        uses: ./.github/actions/setup-qdrant
+
+      - name: Install and test wheel
+        working-directory: lib/edge/python
+        run: |
+          uv venv --allow-existing --python ${{ matrix.python }}
+          uv pip install --no-index --find-links dist/ qdrant-edge-py
+          uv pip install requests
+          just py-examples
+
+
+  merge-artifacts:
+    name: Merge release artifacts
+
+    runs-on: ubuntu-latest
+    needs:
+      - edge-py-linux
+      - edge-py-macos
+      - edge-py-windows
+      - edge-py-test
+
+    if: inputs.publish
+
+    steps:
+      - name: Merge release artifacts
+        uses: actions/upload-artifact/merge@v7
+        with:
+          name: qdrant-edge
+          pattern: qdrant-edge-*
+          delete-merged: false
+
+
+  publish:
+    name: Publish to PyPI
+
+    runs-on: ubuntu-latest
+    needs:
+      - merge-artifacts
+
+    if: inputs.publish
+
+    steps:
+      - name: Install Python
+        uses: actions/setup-python@v6
+
+      - name: Download release wheels
+        uses: actions/download-artifact@v8
+        with:
+          name: qdrant-edge
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN_EDGE }}
+        run: |
+          pip install --upgrade twine
+          twine upload --skip-existing *

@@ -1,0 +1,66 @@
+[package]
+name = "gridstore"
+version = "0.1.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+rocksdb = ["dep:rocksdb"]
+
+[dependencies]
+ahash = { workspace = true }
+ecow = { workspace = true }
+fs-err = { workspace = true }
+serde_cbor = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+smallvec = { workspace = true }
+parking_lot = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+lz4_flex = { version = "0.12.0", default-features = false }
+log = { workspace = true }
+rand = { workspace = true }
+bitvec = { workspace = true }
+itertools = { workspace = true }
+zerocopy = { workspace = true }
+dataset = { path = "../common/dataset" }
+common = { path = "../common/common" }
+
+# this is not on dev-dependencies because dev-dependencies cannot be optional :(
+rocksdb = { version = "0.24.0", optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+csv = "1.4.0"
+fs-err = { workspace = true, features = ["debug"] }
+rstest = { workspace = true }
+proptest = { workspace = true }
+bustle = "0.5.1"
+common = { path = "../common/common", features = ["testing"] }
+env_logger = { workspace = true }
+
+[[bench]]
+name = "random_data_bench"
+harness = false
+
+[[bench]]
+name = "real_data_bench"
+harness = false
+
+[[bench]]
+name = "bitmask_bench"
+harness = false
+
+[[bench]]
+name = "bustle_bench"
+harness = false
+
+[[bench]]
+name = "flush_bench"
+harness = false

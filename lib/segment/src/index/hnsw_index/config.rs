@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use common::fs::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 
-use crate::common::file_operations::{atomic_save_json, read_json};
-use crate::entry::entry_point::OperationResult;
+use crate::common::operation_error::OperationResult;
 
 pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
 
@@ -16,26 +16,40 @@ pub struct HnswGraphConfig {
     pub ef_construct: usize,
     /// Number of neighbours to search on construction
     pub ef: usize,
-    /// Minimal number of vectors to perform indexing
-    pub indexing_threshold: usize,
+    /// We prefer a full scan search upto (excluding) this number of vectors.
+    ///
+    /// Note: this is number of vectors, not KiloBytes.
+    #[serde(alias = "indexing_threshold")]
+    pub full_scan_threshold: usize,
     #[serde(default)]
     pub max_indexing_threads: usize,
+    #[serde(default)]
+    pub payload_m: Option<usize>,
+    #[serde(default)]
+    pub payload_m0: Option<usize>,
+    #[serde(default)]
+    pub indexed_vector_count: Option<usize>,
 }
 
 impl HnswGraphConfig {
     pub fn new(
         m: usize,
         ef_construct: usize,
-        indexing_threshold: usize,
+        full_scan_threshold: usize,
         max_indexing_threads: usize,
+        payload_m: Option<usize>,
+        indexed_vector_count: usize,
     ) -> Self {
         HnswGraphConfig {
             m,
             m0: m * 2,
             ef_construct,
             ef: ef_construct,
-            indexing_threshold,
+            full_scan_threshold,
             max_indexing_threads,
+            payload_m,
+            payload_m0: payload_m.map(|v| v * 2),
+            indexed_vector_count: Some(indexed_vector_count),
         }
     }
 
@@ -49,16 +63,5 @@ impl HnswGraphConfig {
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
         Ok(atomic_save_json(path, self)?)
-    }
-
-    pub fn max_rayon_threads(&self) -> usize {
-        let max_threads = self.max_indexing_threads;
-
-        if max_threads == 0 {
-            let num_cpu = num_cpus::get();
-            std::cmp::max(1, num_cpu - 1)
-        } else {
-            max_threads
-        }
     }
 }

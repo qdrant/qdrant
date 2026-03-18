@@ -1,0 +1,185 @@
+use std::collections::HashMap;
+use std::io::{self, BufRead as _, BufReader, Lines};
+use std::mem::size_of;
+use std::path::Path;
+
+use common::mmap::{Advice, AdviceSetting};
+#[expect(deprecated, reason = "legacy code")]
+use common::mmap::{open_read_mmap, transmute_from_u8, transmute_from_u8_to_slice};
+use fs_err::File;
+use memmap2::Mmap;
+use validator::ValidationErrors;
+
+use crate::common::sparse_vector::SparseVector;
+
+/// Compressed Sparse Row matrix, backed by memory-mapped file.
+///
+/// The layout of the memory-mapped file is as follows:
+///
+/// | name    | type          | size       | start               |
+/// |---------|---------------|------------|---------------------|
+/// | nrow    | `u64`         | 8          | 0                   |
+/// | ncol    | `u64`         | 8          | 8                   |
+/// | nnz     | `u64`         | 8          | 16                  |
+/// | indptr  | `u64[nrow+1]` | 8*(nrow+1) | 24                  |
+/// | indices | `u32[nnz]`    | 4*nnz      | 24+8*(nrow+1)       |
+/// | data    | `u32[nnz]`    | 4*nnz      | 24+8*(nrow+1)+4*nnz |
+pub struct Csr {
+    mmap: Mmap,
+
+    nrow: usize,
+    nnz: usize,
+    intptr: Vec<u64>,
+}
+
+const CSR_HEADER_SIZE: usize = size_of::<CsrHeader>();
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CsrHeader {
+    nrow: u64,
+    ncol: u64,
+    nnz: u64,
+}
+
+impl Csr {
+    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::from_mmap(open_read_mmap(
+            path.as_ref(),
+            AdviceSetting::from(Advice::Normal),
+            false,
+        )?)
+    }
+
+    #[inline]
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.nrow
+    }
+
+    pub fn iter(&self) -> CsrIter<'_> {
+        CsrIter { csr: self, row: 0 }
+    }
+
+    fn from_mmap(mmap: Mmap) -> io::Result<Self> {
+        // Safety: CsrHeader is a POD type.
+        #[expect(deprecated, reason = "legacy code")]
+        let CsrHeader { nrow, ncol, nnz } =
+            unsafe { transmute_from_u8(&mmap.as_ref()[..CSR_HEADER_SIZE]) };
+        let (nrow, _ncol, nnz) = (*nrow as usize, *ncol as usize, *nnz as usize);
+
+        // Safety: correct alignment.
+        let indptr = Vec::from(unsafe {
+            #[expect(deprecated, reason = "legacy code")]
+            transmute_from_u8_to_slice::<u64>(
+                &mmap.as_ref()[CSR_HEADER_SIZE..CSR_HEADER_SIZE + size_of::<u64>() * (nrow + 1)],
+            )
+        });
+        if !indptr.array_windows().all(|[a, b]| a <= b) || indptr.last() != Some(&(nnz as u64)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid indptr array",
+            ));
+        }
+
+        Ok(Self {
+            mmap,
+            nrow,
+            nnz,
+            intptr: indptr,
+        })
+    }
+
+    #[inline]
+    unsafe fn vec(&self, row: usize) -> Result<SparseVector, ValidationErrors> {
+        const _: () = assert!(
+            cfg!(feature = "testing"),
+            "This unsafe block should be used only in internal benchmarks"
+        );
+        unsafe {
+            let start = *self.intptr.get_unchecked(row) as usize;
+            let end = *self.intptr.get_unchecked(row + 1) as usize;
+
+            let mut pos = CSR_HEADER_SIZE + size_of::<u64>() * (self.nrow + 1);
+
+            #[expect(deprecated, reason = "legacy code")]
+            let indices = transmute_from_u8_to_slice::<u32>(
+                self.mmap
+                    .as_ref()
+                    .get_unchecked(pos + size_of::<u32>() * start..pos + size_of::<u32>() * end),
+            );
+            pos += size_of::<u32>() * self.nnz;
+
+            #[expect(deprecated, reason = "legacy code")]
+            let data = transmute_from_u8_to_slice::<f32>(
+                self.mmap
+                    .as_ref()
+                    .get_unchecked(pos + size_of::<f32>() * start..pos + size_of::<f32>() * end),
+            );
+
+            SparseVector::new(indices.to_vec(), data.to_vec())
+        }
+    }
+}
+
+/// Iterator over the rows of a CSR matrix.
+pub struct CsrIter<'a> {
+    csr: &'a Csr,
+    row: usize,
+}
+
+impl Iterator for CsrIter<'_> {
+    type Item = Result<SparseVector, ValidationErrors>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        (self.row < self.csr.nrow).then(|| {
+            let vec = unsafe { self.csr.vec(self.row) };
+            self.row += 1;
+            vec
+        })
+    }
+}
+
+impl ExactSizeIterator for CsrIter<'_> {
+    fn len(&self) -> usize {
+        self.csr.nrow - self.row
+    }
+}
+
+pub fn load_csr_vecs(path: impl AsRef<Path>) -> io::Result<Vec<SparseVector>> {
+    Csr::open(path)?
+        .iter()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+/// Stream of sparse vectors in JSON format.
+pub struct JsonReader(Lines<BufReader<File>>);
+
+impl JsonReader {
+    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        Ok(JsonReader(BufReader::new(File::open(path)?).lines()))
+    }
+}
+
+impl Iterator for JsonReader {
+    type Item = Result<SparseVector, io::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|line| {
+            line.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                .and_then(|line| {
+                    let data: HashMap<String, f32> = serde_json::from_str(&line)?;
+                    SparseVector::new(
+                        data.keys()
+                            .map(|k| k.parse())
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                        data.values().copied().collect(),
+                    )
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                })
+        })
+    }
+}

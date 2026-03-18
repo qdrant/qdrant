@@ -1,0 +1,58 @@
+[package]
+name = "quantization"
+version = "0.1.0"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[features]
+testing = ["common/testing"]
+
+[build-dependencies]
+cc = { workspace = true }
+
+[dependencies]
+fs-err = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+permutation_iterator = "0.1.2"
+rand = { workspace = true }
+rayon = { workspace = true }
+num-traits = { workspace = true }
+common = { path = "../common/common" }
+strum = { workspace = true }
+bytemuck = { workspace = true }
+parking_lot = { workspace = true }
+ordered-float = { workspace = true }
+arrayvec = "0.7.6"
+
+[dev-dependencies]
+fs-err = { workspace = true, features = ["debug"] }
+quantization = { path = ".", features = ["testing"] }
+criterion = { workspace = true }
+num_threads = "0.1.6"
+rand_distr = { workspace = true }
+rstest = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "encode"
+harness = false
+
+[[bench]]
+name = "pq"
+harness = false
+
+[[bench]]
+name = "binary"
+harness = false
+
+[[bench]]
+name = "p_square"
+harness = false

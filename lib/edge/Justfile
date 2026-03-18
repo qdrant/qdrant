@@ -1,0 +1,83 @@
+# Print available recipes
+help:
+  @just --unsorted --list
+
+# Prepare data files in lib/edge/data
+prepare-data:
+  @curl -s http://localhost:6333 > /dev/null || echo "Please start qdrant on localhost:6333"
+  tools/prepare_facet_snapshot.sh
+
+# Check everything, run all examples
+check:
+  just rs-check
+  just rs-examples-build
+  just rs-examples
+  just py-build
+  just py-examples
+
+# 🦀 Run Rust checks
+[working-directory: 'publish']
+rs-check:
+  ./amalgamate.py
+  cargo +nightly fmt -p examples -- --check
+  @# --no-deps because there are lot of warnings in auto-generated `qdrant-edge` package
+  ./cargo clippy -p examples --all-targets --no-deps -- -D warnings
+
+# 🦀 Build Rust examples (optional)
+[working-directory: 'publish']
+rs-examples-build:
+  ./amalgamate.py
+  ./cargo build -p examples
+
+# 🦀 Run Rust examples; Specify example with `-e demo`
+[working-directory: 'publish', script]
+[positional-arguments, arg('e', short = 'e')]
+rs-examples e="":
+  EXAMPLES=${1:-$(just rs-examples-list)}
+  FAILURES=""
+  for fname in $EXAMPLES; do
+    echo "::group::Running example: $fname"
+    python ./cargo run -p examples --bin "$fname" \
+      || FAILURES="$FAILURES $fname"
+    echo "::endgroup::"
+  done
+
+  if [ "$FAILURES" ]; then
+    echo "::error::Failed examples:$FAILURES"
+    exit 1
+  fi
+
+# 🦀 List Rust examples
+[working-directory: 'publish', script]
+rs-examples-list:
+  cargo metadata --format-version 1 --no-deps | \
+    jq -r '.packages[] | select(.name == "examples").targets[] | select(.kind[] == "bin").name'
+
+# 🐍 Build qdrant-edge-py
+[working-directory: 'python', script]
+py-build:
+  uv venv --allow-existing
+  uv pip install requests
+  maturin develop --no-default-features --features abi3
+
+# 🐍 Run Python examples; Specify example with `-e examples/demo.py`
+[working-directory: 'python', script]
+[positional-arguments, arg('e', short = 'e')]
+py-examples e="":
+  EXAMPLES=${1:-$(just py-examples-list)}
+  FAILURES=""
+  for fname in $EXAMPLES; do
+    echo "::group::Running example: $fname"
+    uv run --no-project "$fname" \
+      || FAILURES="$FAILURES $fname"
+    echo "::endgroup::"
+  done
+  if [ "$FAILURES" ]; then
+    echo "::error::Failed examples:$FAILURES"
+    exit 1
+  fi
+
+# 🐍 List Python examples
+[working-directory: 'python', script]
+py-examples-list:
+  find examples -name "*.py" -not -name "__init__.py"

@@ -1,0 +1,51 @@
+#ifndef VECTOR_STORAGE_SQ_HEADER
+#define VECTOR_STORAGE_SQ_HEADER
+
+layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = VECTOR_STORAGE_SQ_OFFSETS_BINDING) \
+readonly buffer VectorOffsets { \
+    float data[]; \
+} vector_offsets;
+
+float target_offset;
+
+uint dot_u8vec4(u8vec4 a, u8vec4 b) {
+    uvec4 sum = uvec4(a) * uvec4(b);
+    return sum.x + sum.y + sum.z + sum.w;
+}
+
+#define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
+#define VECTOR_STORAGE_SCORE_TYPE uint
+#define VECTOR_STORAGE_POSTPROCESS_SET_TARGET() \
+    target_offset = vector_offsets.data[point_id]
+
+float sq_postprocess_score(VECTOR_STORAGE_SCORE_TYPE result, POINT_ID point_id, float target_offset) {
+    float sq_offset = target_offset + vector_offsets.data[point_id] - SQ_DIFF;
+    return SQ_MULTIPLIER * float(subgroupAdd(result)) + sq_offset;
+}
+
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) \
+    sq_postprocess_score(RESULT, point_id, target_offset);
+
+#ifdef COSINE_DISTANCE
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b)
+#endif
+
+#ifdef DOT_DISTANCE
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b)
+#endif
+
+#ifdef EUCLID_DISTANCE
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b)
+#endif
+
+#ifdef MANHATTAN_DISTANCE
+
+VECTOR_STORAGE_SCORE_TYPE manhattan_u8vec4(u8vec4 a, u8vec4 b) {
+    ivec4 diff = ivec4(a) - ivec4(b);
+    return abs(diff.x) + abs(diff.y) + abs(diff.z) + abs(diff.w);
+}
+
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) manhattan_u8vec4(a, b)
+#endif
+
+#endif

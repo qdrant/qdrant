@@ -3,16 +3,27 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
-    ChangeAliases, CollectionOperationResponse, CreateCollection, DeleteCollection,
-    GetCollectionInfoRequest, GetCollectionInfoResponse, ListCollectionsRequest,
-    ListCollectionsResponse, UpdateCollection,
+    ChangeAliases, CollectionClusterInfoRequest, CollectionClusterInfoResponse,
+    CollectionExistsRequest, CollectionExistsResponse, CollectionOperationResponse,
+    CreateCollection, CreateShardKeyRequest, CreateShardKeyResponse, DeleteCollection,
+    DeleteShardKeyRequest, DeleteShardKeyResponse, GetCollectionInfoRequest,
+    GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
+    ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse,
+    ListShardKeysRequest, ListShardKeysResponse, UpdateCollection,
+    UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
 };
-use storage::content_manager::conversions::error_to_status;
+use collection::operations::cluster_ops::{
+    ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
+};
+use collection::operations::types::CollectionsAliasesResponse;
+use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
+use super::validate;
 use crate::common::collections::*;
 use crate::tonic::api::collections_common::get;
+use crate::tonic::auth::extract_auth;
 
 pub struct CollectionsService {
     dispatcher: Arc<Dispatcher>,
@@ -25,7 +36,7 @@ impl CollectionsService {
 
     async fn perform_operation<O>(
         &self,
-        request: Request<O>,
+        mut request: Request<O>,
     ) -> Result<Response<CollectionOperationResponse>, Status>
     where
         O: WithTimeout
@@ -34,14 +45,14 @@ impl CollectionsService {
                 Error = Status,
             >,
     {
+        let timing = Instant::now();
+        let auth = extract_auth(&mut request);
         let operation = request.into_inner();
         let wait_timeout = operation.wait_timeout();
-        let timing = Instant::now();
         let result = self
             .dispatcher
-            .submit_collection_meta_op(operation.try_into()?, wait_timeout)
-            .await
-            .map_err(error_to_status)?;
+            .submit_collection_meta_op(operation.try_into()?, auth, wait_timeout)
+            .await?;
 
         let response = CollectionOperationResponse::from((timing, result));
         Ok(Response::new(response))
@@ -52,17 +63,35 @@ impl CollectionsService {
 impl Collections for CollectionsService {
     async fn get(
         &self,
-        request: Request<GetCollectionInfoRequest>,
+        mut request: Request<GetCollectionInfoRequest>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
-        get(self.dispatcher.as_ref(), request.into_inner(), None).await
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        get(
+            self.dispatcher.toc(&auth, &pass),
+            request.into_inner(),
+            &auth,
+            None,
+        )
+        .await
     }
 
     async fn list(
         &self,
-        _request: Request<ListCollectionsRequest>,
+        mut request: Request<ListCollectionsRequest>,
     ) -> Result<Response<ListCollectionsResponse>, Status> {
+        validate(request.get_ref())?;
         let timing = Instant::now();
-        let result = do_list_collections(&self.dispatcher).await;
+        let auth = extract_auth(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let result = do_list_collections(self.dispatcher.toc(&auth, &pass), &auth).await?;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))
@@ -72,6 +101,7 @@ impl Collections for CollectionsService {
         &self,
         request: Request<CreateCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+        validate(request.get_ref())?;
         self.perform_operation(request).await
     }
 
@@ -79,6 +109,7 @@ impl Collections for CollectionsService {
         &self,
         request: Request<UpdateCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+        validate(request.get_ref())?;
         self.perform_operation(request).await
     }
 
@@ -86,6 +117,7 @@ impl Collections for CollectionsService {
         &self,
         request: Request<DeleteCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+        validate(request.get_ref())?;
         self.perform_operation(request).await
     }
 
@@ -93,7 +125,211 @@ impl Collections for CollectionsService {
         &self,
         request: Request<ChangeAliases>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+        validate(request.get_ref())?;
         self.perform_operation(request).await
+    }
+
+    async fn list_collection_aliases(
+        &self,
+        mut request: Request<ListCollectionAliasesRequest>,
+    ) -> Result<Response<ListAliasesResponse>, Status> {
+        validate(request.get_ref())?;
+        let timing = Instant::now();
+        let auth = extract_auth(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let ListCollectionAliasesRequest { collection_name } = request.into_inner();
+        let CollectionsAliasesResponse { aliases } =
+            do_list_collection_aliases(self.dispatcher.toc(&auth, &pass), &auth, &collection_name)
+                .await?;
+        let response = ListAliasesResponse {
+            aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn list_aliases(
+        &self,
+        mut request: Request<ListAliasesRequest>,
+    ) -> Result<Response<ListAliasesResponse>, Status> {
+        validate(request.get_ref())?;
+        let timing = Instant::now();
+        let auth = extract_auth(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let CollectionsAliasesResponse { aliases } =
+            do_list_aliases(self.dispatcher.toc(&auth, &pass), &auth).await?;
+        let response = ListAliasesResponse {
+            aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn collection_exists(
+        &self,
+        mut request: Request<CollectionExistsRequest>,
+    ) -> Result<Response<CollectionExistsResponse>, Status> {
+        let timing = Instant::now();
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let CollectionExistsRequest { collection_name } = request.into_inner();
+        let result =
+            do_collection_exists(self.dispatcher.toc(&auth, &pass), &auth, &collection_name)
+                .await?;
+        let response = CollectionExistsResponse {
+            result: Some(result),
+            time: timing.elapsed().as_secs_f64(),
+        };
+
+        Ok(Response::new(response))
+    }
+
+    async fn collection_cluster_info(
+        &self,
+        mut request: Request<CollectionClusterInfoRequest>,
+    ) -> Result<Response<CollectionClusterInfoResponse>, Status> {
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let response = do_get_collection_cluster(
+            self.dispatcher.toc(&auth, &pass),
+            &auth,
+            request.into_inner().collection_name.as_str(),
+        )
+        .await?
+        .into();
+
+        Ok(Response::new(response))
+    }
+
+    async fn update_collection_cluster_setup(
+        &self,
+        mut request: Request<UpdateCollectionClusterSetupRequest>,
+    ) -> Result<Response<UpdateCollectionClusterSetupResponse>, Status> {
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+        let UpdateCollectionClusterSetupRequest {
+            collection_name,
+            operation,
+            timeout,
+            ..
+        } = request.into_inner();
+        let result = do_update_collection_cluster(
+            self.dispatcher.as_ref(),
+            collection_name,
+            operation
+                .ok_or_else(|| Status::new(tonic::Code::InvalidArgument, "empty operation"))?
+                .try_into()?,
+            auth,
+            timeout.map(std::time::Duration::from_secs),
+        )
+        .await?;
+        Ok(Response::new(UpdateCollectionClusterSetupResponse {
+            result,
+        }))
+    }
+
+    async fn list_shard_keys(
+        &self,
+        mut request: Request<ListShardKeysRequest>,
+    ) -> Result<Response<ListShardKeysResponse>, Status> {
+        validate(request.get_ref())?;
+        let timing = Instant::now();
+        let auth = extract_auth(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let result = do_get_collection_shard_keys(
+            self.dispatcher.toc(&auth, &pass),
+            &auth,
+            request.into_inner().collection_name.as_str(),
+        )
+        .await?;
+
+        let response = ListShardKeysResponse::from((timing, result));
+        Ok(Response::new(response))
+    }
+
+    async fn create_shard_key(
+        &self,
+        mut request: Request<CreateShardKeyRequest>,
+    ) -> Result<Response<CreateShardKeyResponse>, Status> {
+        let auth = extract_auth(&mut request);
+
+        let CreateShardKeyRequest {
+            collection_name,
+            request,
+            timeout,
+        } = request.into_inner();
+
+        let Some(request) = request else {
+            return Err(Status::new(tonic::Code::InvalidArgument, "empty request"));
+        };
+
+        let timeout = timeout.map(std::time::Duration::from_secs);
+
+        let operation = ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
+            create_sharding_key: request.try_into()?,
+        });
+
+        let result = do_update_collection_cluster(
+            self.dispatcher.as_ref(),
+            collection_name,
+            operation,
+            auth,
+            timeout,
+        )
+        .await?;
+
+        Ok(Response::new(CreateShardKeyResponse { result }))
+    }
+
+    async fn delete_shard_key(
+        &self,
+        mut request: Request<DeleteShardKeyRequest>,
+    ) -> Result<Response<DeleteShardKeyResponse>, Status> {
+        let auth = extract_auth(&mut request);
+
+        let DeleteShardKeyRequest {
+            collection_name,
+            request,
+            timeout,
+        } = request.into_inner();
+
+        let Some(request) = request else {
+            return Err(Status::new(tonic::Code::InvalidArgument, "empty request"));
+        };
+
+        let timeout = timeout.map(std::time::Duration::from_secs);
+
+        let operation = ClusterOperations::DropShardingKey(DropShardingKeyOperation {
+            drop_sharding_key: request.try_into()?,
+        });
+
+        let result = do_update_collection_cluster(
+            self.dispatcher.as_ref(),
+            collection_name,
+            operation,
+            auth,
+            timeout,
+        )
+        .await?;
+
+        Ok(Response::new(DeleteShardKeyResponse { result }))
     }
 }
 
@@ -115,3 +351,4 @@ impl_with_timeout!(CreateCollection);
 impl_with_timeout!(UpdateCollection);
 impl_with_timeout!(DeleteCollection);
 impl_with_timeout!(ChangeAliases);
+impl_with_timeout!(UpdateCollectionClusterSetupRequest);

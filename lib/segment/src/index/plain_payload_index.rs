@@ -1,32 +1,26 @@
 use std::collections::HashMap;
-use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use parking_lot::Mutex;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
+use common::types::PointOffsetType;
+use fs_err as fs;
 use schemars::_serde_json::Value;
 
-use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
-use crate::common::operation_time_statistics::{
-    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
-};
+use super::field_index::FieldIndex;
+use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::IdTrackerSS;
+use crate::common::operation_error::OperationResult;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
-use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, VectorIndex};
+use crate::index::{BuildIndexResult, PayloadIndex};
+use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
-use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType, SearchParams,
-};
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -34,7 +28,7 @@ use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 /// rather than spend time for index re-building
 pub struct PlainPayloadIndex {
     condition_checker: Arc<ConditionCheckerSS>,
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     config: PayloadConfig,
     path: PathBuf,
 }
@@ -51,10 +45,10 @@ impl PlainPayloadIndex {
 
     pub fn open(
         condition_checker: Arc<ConditionCheckerSS>,
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
         path: &Path,
     ) -> OperationResult<Self> {
-        create_dir_all(path)?;
+        fs::create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
@@ -79,97 +73,183 @@ impl PlainPayloadIndex {
 
 impl PayloadIndex for PlainPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.config.indexed_fields.clone()
+        self.config.indices.to_schemas()
+    }
+
+    fn build_index(
+        &self,
+        _field: PayloadKeyTypeRef,
+        _payload_schema: &PayloadFieldSchema,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BuildIndexResult> {
+        Ok(BuildIndexResult::AlreadyBuilt) // No index to build
+    }
+
+    fn apply_index(
+        &mut self,
+        field: PayloadKeyType,
+        payload_schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
+    ) -> OperationResult<()> {
+        let new_schema = PayloadFieldSchemaWithIndexType::new(
+            payload_schema,
+            field_index
+                .iter()
+                .map(|i| i.get_full_index_type())
+                .collect(),
+        );
+
+        let prev_schema = self.config.indices.insert(field, new_schema.clone());
+
+        if let Some(prev_schema) = prev_schema {
+            // the field is already present with the same schema, no need to save the config
+            if prev_schema == new_schema {
+                return Ok(());
+            }
+        }
+        self.save_config()?;
+
+        Ok(())
     }
 
     fn set_indexed(
         &mut self,
         field: PayloadKeyTypeRef,
-        payload_schema: PayloadFieldSchema,
+        payload_schema: impl Into<PayloadFieldSchema>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        if self
-            .config
-            .indexed_fields
-            .insert(field.to_owned(), payload_schema)
-            .is_none()
-        {
-            return self.save_config();
-        }
-
-        Ok(())
+        // No need to build index, just set the field as indexed
+        self.apply_index(field.clone(), payload_schema.into(), vec![])
     }
 
-    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields.remove(field);
-        self.save_config()
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool> {
+        let is_removed = self.config.indices.remove(field).is_some();
+        self.save_config()?;
+        Ok(is_removed)
     }
 
-    fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
-        let total_points = self.id_tracker.borrow().points_count();
-        CardinalityEstimation {
+    fn drop_index_if_incompatible(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        _new_payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<bool> {
+        // Just always drop the index, as we don't have any indexes
+        self.drop_index(field)
+    }
+
+    fn estimate_cardinality(
+        &self,
+        _query: &Filter,
+        _hw_counter: &HardwareCounterCell, // No measurements needed here.
+    ) -> OperationResult<CardinalityEstimation> {
+        let available_points = self.id_tracker.borrow().available_point_count();
+        Ok(CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
-            exp: total_points / 2,
-            max: total_points,
-        }
+            exp: available_points / 2,
+            max: available_points,
+        })
     }
 
-    fn query_points<'a>(
-        &'a self,
-        query: &'a Filter,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let filter_context = self.filter_context(query);
-        Box::new(ArcAtomicRefCellIterator::new(
-            self.id_tracker.clone(),
-            move |points_iterator| {
-                points_iterator
-                    .iter_ids()
-                    .filter(move |id| filter_context.check(*id))
-            },
-        ))
+    /// Forward to non nested implementation.
+    fn estimate_nested_cardinality(
+        &self,
+        query: &Filter,
+        _nested_path: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<CardinalityEstimation> {
+        self.estimate_cardinality(query, hw_counter)
+    }
+
+    fn query_points(
+        &self,
+        filter: &Filter,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        let filter_context = self.filter_context(filter, hw_counter)?;
+        let id_tracker = self.id_tracker.borrow();
+        let all_points_iter = id_tracker.iter_internal_visible(deferred_internal_id);
+        Ok(all_points_iter
+            .stop_if(is_stopped)
+            .filter(|id| filter_context.check(*id))
+            .collect())
     }
 
     fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {
         0 // No points are indexed in the plain index
     }
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(PlainFilterContext {
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        _: &HardwareCounterCell,
+    ) -> OperationResult<Box<dyn FilterContext + 'a>> {
+        Ok(Box::new(PlainFilterContext {
             filter,
             condition_checker: self.condition_checker.clone(),
-        })
+        }))
     }
 
     fn payload_blocks(
         &self,
         _field: PayloadKeyTypeRef,
         _threshold: usize,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PayloadBlockCondition> + '_>> {
         // No blocks for un-indexed payload
-        Box::new(vec![].into_iter())
+        Ok(Box::new(std::iter::empty()))
     }
 
-    fn assign(&mut self, _point_id: PointOffsetType, _payload: &Payload) -> OperationResult<()> {
+    fn overwrite_payload(
+        &mut self,
+        _point_id: PointOffsetType,
+        _payload: &Payload,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         unreachable!()
     }
 
-    fn payload(&self, _point_id: PointOffsetType) -> OperationResult<Payload> {
+    fn set_payload(
+        &mut self,
+        _point_id: PointOffsetType,
+        _payload: &Payload,
+        _key: &Option<JsonPath>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         unreachable!()
     }
 
-    fn delete(
+    fn get_payload(
+        &self,
+        _point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        unreachable!()
+    }
+
+    fn get_payload_sequential(
+        &self,
+        _point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        unreachable!()
+    }
+
+    fn delete_payload(
         &mut self,
         _point_id: PointOffsetType,
         _key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>> {
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Value>> {
         unreachable!()
     }
 
-    fn drop(&mut self, _point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
-        unreachable!()
-    }
-
-    fn wipe(&mut self) -> OperationResult<()> {
+    fn clear_payload(
+        &mut self,
+        _point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>> {
         unreachable!()
     }
 
@@ -177,85 +257,8 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn infer_payload_type(
-        &self,
-        _key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<PayloadSchemaType>> {
-        unreachable!()
-    }
-}
-
-pub struct PlainIndex {
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-    filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
-    unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
-}
-
-impl PlainIndex {
-    pub fn new(
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-    ) -> PlainIndex {
-        PlainIndex {
-            vector_storage,
-            payload_index,
-            filtered_searches_telemetry: OperationDurationsAggregator::new(),
-            unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
-        }
-    }
-}
-
-impl VectorIndex for PlainIndex {
-    fn search(
-        &self,
-        vectors: &[&[VectorElementType]],
-        filter: Option<&Filter>,
-        top: usize,
-        _params: Option<&SearchParams>,
-    ) -> Vec<Vec<ScoredPointOffset>> {
-        match filter {
-            Some(filter) => {
-                let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
-                let borrowed_payload_index = self.payload_index.borrow();
-                let filtered_ids_vec: Vec<_> =
-                    borrowed_payload_index.query_points(filter).collect();
-                vectors
-                    .iter()
-                    .map(|vector| {
-                        self.vector_storage.borrow().score_points(
-                            vector,
-                            &mut filtered_ids_vec.iter().copied(),
-                            top,
-                        )
-                    })
-                    .collect()
-            }
-            None => {
-                let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
-                vectors
-                    .iter()
-                    .map(|vector| self.vector_storage.borrow().score_all(vector, top))
-                    .collect()
-            }
-        }
-    }
-
-    fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
-        Ok(())
-    }
-
-    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
-        VectorIndexSearchesTelemetry {
-            index_name: None,
-            unfiltered_plain: self.unfiltered_searches_telemetry.lock().get_statistics(),
-            filtered_plain: self.filtered_searches_telemetry.lock().get_statistics(),
-            unfiltered_hnsw: OperationDurationStatistics::default(),
-            filtered_small_cardinality: OperationDurationStatistics::default(),
-            filtered_large_cardinality: OperationDurationStatistics::default(),
-            filtered_exact: OperationDurationStatistics::default(),
-            unfiltered_exact: OperationDurationStatistics::default(),
-        }
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.config_path()]
     }
 }
 
@@ -264,7 +267,7 @@ pub struct PlainFilterContext<'a> {
     filter: &'a Filter,
 }
 
-impl<'a> FilterContext for PlainFilterContext<'a> {
+impl FilterContext for PlainFilterContext<'_> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         self.condition_checker.check(point_id, self.filter)
     }

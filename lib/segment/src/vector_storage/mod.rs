@@ -1,7 +1,23 @@
-pub mod chunked_vectors;
-pub mod memmap_vector_storage;
-mod mmap_vectors;
-pub mod simple_vector_storage;
+#[cfg(target_os = "linux")]
+mod async_io;
+mod async_io_mock;
+#[cfg(target_os = "linux")]
+pub mod async_raw_scorer;
+mod bitvec;
+mod chunked_vectors;
+pub mod common;
+pub mod dense;
+pub mod multi_dense;
+pub mod quantized;
+pub mod query;
+pub mod query_scorer;
+pub mod raw_scorer;
+pub mod sparse;
 mod vector_storage_base;
+pub mod volatile_chunked_vectors;
 
+#[cfg(test)]
+mod tests;
+
+pub use raw_scorer::*;
 pub use vector_storage_base::*;

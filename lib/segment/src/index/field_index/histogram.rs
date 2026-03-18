@@ -1,44 +1,152 @@
-use std::cmp::{max, min, Ordering};
 use std::collections::BTreeMap;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 use std::ops::Bound;
+use std::path::{Path, PathBuf};
 
+use common::fs::{atomic_save_bin, atomic_save_json, read_bin, read_json};
+use common::types::PointOffsetType;
 use itertools::Itertools;
+use num_traits::Num;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::utils::check_boundaries;
 
 const MIN_BUCKET_SIZE: usize = 10;
+const CONFIG_PATH: &str = "histogram_config.json";
+const BORDERS_PATH: &str = "histogram_borders.bin";
 
-#[derive(Debug, Clone)]
-struct Counts {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Counts {
     pub left: usize,
     pub right: usize,
 }
 
-#[derive(PartialEq, PartialOrd, Debug, Clone)]
-pub struct Point {
-    pub val: f64,
-    pub idx: usize,
+#[allow(clippy::derive_ord_xor_partial_ord)]
+#[derive(PartialEq, PartialOrd, Debug, Clone, Serialize, Deserialize)]
+#[repr(C)]
+pub struct Point<T> {
+    pub val: T,
+    pub idx: PointOffsetType,
 }
 
-impl Eq for Point {}
+impl<T> Point<T> {
+    pub fn new(val: T, idx: PointOffsetType) -> Self {
+        Self { val, idx }
+    }
+}
 
-#[allow(clippy::derive_ord_xor_partial_ord)]
-impl Ord for Point {
-    fn cmp(&self, other: &Self) -> Ordering {
+impl<T: PartialEq> Eq for Point<T> {}
+
+impl<T: PartialOrd + Copy> Ord for Point<T> {
+    fn cmp(&self, other: &Point<T>) -> std::cmp::Ordering {
         (self.val, self.idx)
             .partial_cmp(&(other.val, other.idx))
             .unwrap()
     }
 }
 
-#[derive(Debug)]
-pub struct Histogram {
+/// A trait that should represent common properties of integer and floating point types.
+/// In particular, i64 and f64.
+pub trait Numericable: Num + PartialEq + PartialOrd + Copy {
+    fn min_value() -> Self;
+    fn max_value() -> Self;
+    fn to_f64(self) -> f64;
+    fn from_f64(x: f64) -> Self;
+    fn from_u128(x: u128) -> Self;
+    fn min(self, b: Self) -> Self {
+        if self < b { self } else { b }
+    }
+    fn max(self, b: Self) -> Self {
+        if self > b { self } else { b }
+    }
+    fn abs_diff(self, b: Self) -> Self {
+        if self > b { self - b } else { b - self }
+    }
+}
+
+impl Numericable for i64 {
+    fn min_value() -> Self {
+        i64::MIN
+    }
+    fn max_value() -> Self {
+        i64::MAX
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+    fn from_f64(x: f64) -> Self {
+        x as Self
+    }
+    fn from_u128(x: u128) -> Self {
+        x as i64
+    }
+    fn abs_diff(self, b: Self) -> Self {
+        i64::abs_diff(self, b) as i64
+    }
+}
+
+impl Numericable for f64 {
+    fn min_value() -> Self {
+        f64::MIN
+    }
+    fn max_value() -> Self {
+        f64::MAX
+    }
+    fn to_f64(self) -> f64 {
+        self
+    }
+    fn from_f64(x: f64) -> Self {
+        x
+    }
+    fn from_u128(x: u128) -> Self {
+        x as Self
+    }
+}
+
+impl Numericable for u128 {
+    fn min_value() -> Self {
+        u128::MIN
+    }
+
+    fn max_value() -> Self {
+        u128::MAX
+    }
+
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+
+    fn from_f64(x: f64) -> Self {
+        x as u128
+    }
+
+    fn from_u128(x: u128) -> Self {
+        x
+    }
+
+    fn abs_diff(self, b: Self) -> Self {
+        u128::abs_diff(self, b)
+    }
+}
+
+#[derive(Default, Debug, PartialEq)]
+pub struct Histogram<T: Numericable + Serialize + DeserializeOwned> {
     max_bucket_size: usize,
     precision: f64,
     total_count: usize,
-    borders: BTreeMap<Point, Counts>,
+    borders: BTreeMap<Point<T>, Counts>,
 }
 
-impl Histogram {
+#[derive(Debug, Serialize, Deserialize)]
+struct HistogramConfig {
+    max_bucket_size: usize,
+    precision: f64,
+    total_count: usize,
+}
+
+impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
     pub fn new(max_bucket_size: usize, precision: f64) -> Self {
         assert!(precision < 1.0);
         assert!(precision > 0.0);
@@ -50,41 +158,84 @@ impl Histogram {
         }
     }
 
-    #[allow(dead_code)]
-    fn validate(&self) -> Result<(), String> {
-        // Iterate over chunks of borders
-        for (left, right) in self.borders.values().tuple_windows() {
-            assert_eq!(left.right, right.left);
-        }
+    pub fn load(path: &Path) -> OperationResult<Self> {
+        let config_path = path.join(CONFIG_PATH);
+        let borders_path = path.join(BORDERS_PATH);
+
+        let histogram_config: HistogramConfig = read_json(&config_path)?;
+        let histogram_buckets: Vec<(Point<T>, Counts)> = read_bin(&borders_path)?;
+
+        Ok(Self {
+            max_bucket_size: histogram_config.max_bucket_size,
+            precision: histogram_config.precision,
+            total_count: histogram_config.total_count,
+            borders: histogram_buckets.into_iter().collect(),
+        })
+    }
+
+    pub fn save(&self, path: &Path) -> OperationResult<()> {
+        let config_path = path.join(CONFIG_PATH);
+        let borders_path = path.join(BORDERS_PATH);
+
+        atomic_save_json(
+            &config_path,
+            &HistogramConfig {
+                max_bucket_size: self.max_bucket_size,
+                precision: self.precision,
+                total_count: self.total_count,
+            },
+        )?;
+
+        let borders: Vec<(Point<T>, Counts)> = self
+            .borders
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        atomic_save_bin(&borders_path, &borders)?;
         Ok(())
+    }
+
+    pub fn files(path: &Path) -> Vec<PathBuf> {
+        vec![path.join(CONFIG_PATH), path.join(BORDERS_PATH)]
+    }
+
+    pub fn immutable_files(path: &Path) -> Vec<PathBuf> {
+        vec![path.join(CONFIG_PATH)]
+    }
+
+    #[cfg(test)]
+    pub fn total_count(&self) -> usize {
+        self.total_count
+    }
+
+    #[cfg(test)]
+    pub fn borders(&self) -> &BTreeMap<Point<T>, Counts> {
+        &self.borders
     }
 
     pub fn current_bucket_size(&self) -> usize {
         let bucket_size = (self.total_count as f64 * self.precision) as usize;
-        min(max(MIN_BUCKET_SIZE, bucket_size), self.max_bucket_size)
+        bucket_size.clamp(MIN_BUCKET_SIZE, self.max_bucket_size)
     }
 
     pub fn get_total_count(&self) -> usize {
         self.total_count
     }
 
-    /// Infers boundaries for bucket of given size and staring point.
+    /// Infers boundaries for bucket of given size and starting point.
     /// Returns `to` range of values starting provided `from`value which is expected to contain
     /// `range_size` values
     ///
-    /// Returns None if there are no points stored
-    pub fn get_range_by_size(&self, from: Bound<f64>, range_size: usize) -> Bound<f64> {
-        // bound_map is unstable, but can be used here
-        // let from_ = from.map(|val| Point { val, idx: usize::MIN });
-
+    /// Returns `Unbounded` if there are no points stored
+    pub fn get_range_by_size(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
         let from_ = match from {
             Included(val) => Included(Point {
                 val,
-                idx: usize::MIN,
+                idx: PointOffsetType::MIN,
             }),
             Excluded(val) => Excluded(Point {
                 val,
-                idx: usize::MAX,
+                idx: PointOffsetType::MAX,
             }),
             Unbounded => Unbounded,
         };
@@ -103,15 +254,15 @@ impl Histogram {
         Unbounded
     }
 
-    pub fn estimate(&self, from: Bound<f64>, to: Bound<f64>) -> (usize, usize, usize) {
+    pub fn estimate(&self, from: Bound<T>, to: Bound<T>) -> (usize, usize, usize) {
         let from_ = match &from {
             Included(val) => Included(Point {
                 val: *val,
-                idx: usize::MIN,
+                idx: PointOffsetType::MIN,
             }),
             Excluded(val) => Excluded(Point {
                 val: *val,
-                idx: usize::MAX,
+                idx: PointOffsetType::MAX,
             }),
             Unbounded => Unbounded,
         };
@@ -119,11 +270,11 @@ impl Histogram {
         let to_ = match &to {
             Included(val) => Included(Point {
                 val: *val,
-                idx: usize::MAX,
+                idx: PointOffsetType::MAX,
             }),
             Excluded(val) => Excluded(Point {
                 val: *val,
-                idx: usize::MIN,
+                idx: PointOffsetType::MIN,
             }),
             Unbounded => Unbounded,
         };
@@ -132,18 +283,14 @@ impl Histogram {
         let from_val = match from {
             Included(val) => val,
             Excluded(val) => val,
-            Unbounded => f64::MIN,
+            Unbounded => T::min_value(),
         };
 
         let to_val = match to {
             Included(val) => val,
             Excluded(val) => val,
-            Unbounded => f64::MAX,
+            Unbounded => T::max_value(),
         };
-
-        if from_val > to_val {
-            return (0, 0, 0);
-        }
 
         let left_border = {
             if matches!(from_, Unbounded) {
@@ -161,14 +308,18 @@ impl Histogram {
             }
         };
 
-        let estimation = left_border
+        if !check_boundaries(&from_, &to_) {
+            return (0, 0, 0);
+        }
+
+        left_border
             .into_iter()
             .chain(self.borders.range((from_, to_)))
-            .chain(right_border.into_iter())
+            .chain(right_border)
             .tuple_windows()
             .map(
-                |((a, a_count), (b, _b_count)): ((&Point, &Counts), (&Point, &Counts))| {
-                    let val_range = b.val - a.val;
+                |((a, a_count), (b, _b_count)): ((&Point<T>, &Counts), (&Point<T>, _))| {
+                    let val_range = (b.val - a.val).to_f64();
 
                     if val_range == 0. {
                         // Zero-length range is always covered
@@ -181,7 +332,7 @@ impl Histogram {
                         return (1, 1, 1);
                     }
 
-                    let cover_range = to_val.min(b.val) - from_val.max(a.val);
+                    let cover_range = (to_val.min(b.val) - from_val.max(a.val)).to_f64();
 
                     let covered_frac = cover_range / val_range;
                     let estimate = (a_count.right as f64 * covered_frac).round() as usize + 1;
@@ -192,19 +343,18 @@ impl Histogram {
                         0
                     };
                     let max_estimate = a_count.right + 1;
+
                     (min_estimate, estimate, max_estimate)
                 },
             )
             .reduce(|a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2))
-            .unwrap_or((0, 0, 0));
-
-        estimation
+            .unwrap_or((0, 0, 0))
     }
 
-    pub fn remove<F, G>(&mut self, val: &Point, left_neighbour: F, right_neighbour: G)
+    pub fn remove<F, G>(&mut self, val: &Point<T>, left_neighbour: F, right_neighbour: G)
     where
-        F: Fn(&Point) -> Option<Point>,
-        G: Fn(&Point) -> Option<Point>,
+        F: Fn(&Point<T>) -> Option<Point<T>>,
+        G: Fn(&Point<T>) -> Option<Point<T>>,
     {
         let (mut close_neighbors, (mut far_left_neighbor, mut far_right_neighbor)) = {
             let mut left_iterator = self
@@ -223,7 +373,7 @@ impl Histogram {
 
         let (to_remove, to_create, removed) = match &mut close_neighbors {
             (None, None) => (None, None, false), // histogram is empty
-            (Some((left_border, ref mut left_border_count)), None) => {
+            (Some((left_border, left_border_count)), None) => {
                 if left_border == val {
                     // ....|
                     // ...|
@@ -234,9 +384,8 @@ impl Histogram {
                     } else {
                         // ...|..|
                         // ...|.|
-                        match &mut far_left_neighbor {
-                            Some((_fln, ref mut fln_count)) => fln_count.right -= 1,
-                            None => {}
+                        if let Some((_fln, fln_count)) = &mut far_left_neighbor {
+                            fln_count.right -= 1
                         }
                         let (new_border, new_border_count) = (
                             left_neighbour(left_border).unwrap(),
@@ -255,7 +404,7 @@ impl Histogram {
                     (None, None, false)
                 }
             }
-            (None, Some((right_border, ref mut right_border_count))) => {
+            (None, Some((right_border, right_border_count))) => {
                 if right_border == val {
                     // |...
                     //  |..
@@ -266,9 +415,8 @@ impl Histogram {
                     } else {
                         // |..|...
                         //  |.|...
-                        match &mut far_right_neighbor {
-                            Some((_frn, ref mut frn_count)) => frn_count.left -= 1,
-                            None => {}
+                        if let Some((_frn, frn_count)) = &mut far_right_neighbor {
+                            frn_count.left -= 1
                         }
                         let (new_border, new_border_count) = (
                             right_neighbour(right_border).unwrap(),
@@ -287,10 +435,7 @@ impl Histogram {
                     (None, None, false)
                 }
             }
-            (
-                Some((left_border, ref mut left_border_count)),
-                Some((right_border, ref mut right_border_count)),
-            ) => {
+            (Some((left_border, left_border_count)), Some((right_border, right_border_count))) => {
                 // ...|...x.|...
                 if left_border == val {
                     // ...|....|...
@@ -306,12 +451,9 @@ impl Histogram {
                     {
                         // ...|.l..r...
                         // ...|. ..r...
-                        match &mut far_left_neighbor {
-                            Some((_fln, ref mut fln_count)) => {
-                                fln_count.right += right_border_count.left;
-                                right_border_count.left = fln_count.right;
-                            }
-                            None => {}
+                        if let Some((_fln, fln_count)) = &mut far_left_neighbor {
+                            fln_count.right += right_border_count.left;
+                            right_border_count.left = fln_count.right;
                         }
                         (Some(left_border.clone()), None, true)
                     } else {
@@ -345,12 +487,9 @@ impl Histogram {
                     {
                         // ...l..r.|...
                         // ...l.. .|...
-                        match &mut far_right_neighbor {
-                            Some((_frn, ref mut frn_count)) => {
-                                frn_count.left += left_border_count.right;
-                                left_border_count.right = frn_count.left;
-                            }
-                            None => {}
+                        if let Some((_frn, frn_count)) = &mut far_right_neighbor {
+                            frn_count.left += left_border_count.right;
+                            left_border_count.right = frn_count.left;
                         }
                         (Some(right_border.clone()), None, true)
                     } else {
@@ -416,10 +555,10 @@ impl Histogram {
     }
 
     /// Warn: `val` should be unique
-    pub fn insert<F, G>(&mut self, val: Point, left_neighbour: F, right_neighbour: G)
+    pub fn insert<F, G>(&mut self, val: Point<T>, left_neighbour: F, right_neighbour: G)
     where
-        F: Fn(&Point) -> Option<Point>,
-        G: Fn(&Point) -> Option<Point>,
+        F: Fn(&Point<T>) -> Option<Point<T>>,
+        G: Fn(&Point<T>) -> Option<Point<T>>,
     {
         self.total_count += 1;
 
@@ -464,11 +603,8 @@ impl Histogram {
                 } else {
                     // x|.....|...
                     // |......|...
-                    match &mut far_right_neighbor {
-                        Some((_frn, frn_count)) => {
-                            frn_count.left = new_count;
-                        }
-                        None => {}
+                    if let Some((_frn, frn_count)) = &mut far_right_neighbor {
+                        frn_count.left = new_count;
                     }
                     (
                         Some(right_border.clone()),
@@ -495,9 +631,8 @@ impl Histogram {
                 } else {
                     // ...|.....|x
                     // ...|......|
-                    match &mut far_left_neighbor {
-                        Some((_fln, ref mut fln_count)) => fln_count.right = new_count,
-                        None => {}
+                    if let Some((_fln, fln_count)) = &mut far_left_neighbor {
+                        fln_count.right = new_count
                     }
                     (
                         Some(left_border.clone()),
@@ -506,18 +641,14 @@ impl Histogram {
                 }
             }
             (Some((left_border, left_border_count)), Some((right_border, right_border_count))) => {
-                if left_border_count.right != right_border_count.left {
-                    eprintln!("error");
-                }
                 assert_eq!(left_border_count.right, right_border_count.left);
                 let new_count = left_border_count.right + 1;
 
                 if new_count > self.current_bucket_size() {
                     // Too many values, let's adjust
                     // Decide which border to move
-
-                    let left_dist = (val.val - left_border.val).abs();
-                    let right_dist = (val.val - right_border.val).abs();
+                    let left_dist = val.val.abs_diff(left_border.val);
+                    let right_dist = val.val.abs_diff(right_border.val);
                     if left_dist < right_dist {
                         // left border closer:
                         //  ...|..x.........|...
@@ -535,13 +666,9 @@ impl Histogram {
                             //we can move
                             //  ...|..x.........|...
                             //  ....|.x.........|...
-                            match &mut far_left_neighbor {
-                                Some((_fln, ref mut fln_count)) => {
-                                    fln_count.right = new_border_count.left
-                                }
-                                None => {}
+                            if let Some((_fln, fln_count)) = &mut far_left_neighbor {
+                                fln_count.right = new_border_count.left
                             }
-
                             (
                                 Some(left_border.clone()),
                                 Some((new_border, new_border_count)),
@@ -571,9 +698,8 @@ impl Histogram {
                             // it's ok, we can move
                             //  1: ...|........x...|...
                             //  2: ...|........x..|....
-                            match &mut far_right_neighbor {
-                                Some((_frn, frn_count)) => frn_count.left = new_border_count.right,
-                                None => {}
+                            if let Some((_frn, frn_count)) = &mut far_right_neighbor {
+                                frn_count.left = new_border_count.right
                             }
                             (
                                 Some(right_border.clone()),
@@ -622,311 +748,5 @@ impl Histogram {
         if let Some((new_border, new_border_count)) = to_create {
             self.borders.insert(new_border, new_border_count);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-    use std::collections::BTreeSet;
-    use std::io;
-    use std::io::Write;
-
-    use itertools::Itertools;
-    use rand::prelude::StdRng;
-    use rand::{Rng, SeedableRng};
-    use rand_distr::StandardNormal;
-
-    use super::*;
-
-    #[allow(dead_code)]
-    fn print_results(points_index: &BTreeSet<Point>, histogram: &Histogram, pnt: Option<Point>) {
-        for point in points_index.iter() {
-            if let Some(border_count) = histogram.borders.get(point) {
-                if pnt.is_some() && pnt.as_ref().unwrap().idx == point.idx {
-                    eprint!(" {}x{} ", border_count.left, border_count.right);
-                } else {
-                    eprint!(" {}|{} ", border_count.left, border_count.right);
-                }
-            } else if pnt.is_some() && pnt.as_ref().unwrap().idx == point.idx {
-                eprint!("x");
-            } else {
-                eprint!(".");
-            }
-        }
-        eprintln!("[{}]", histogram.total_count);
-        io::stdout().flush().unwrap();
-    }
-
-    fn count_range(points_index: &BTreeSet<Point>, a: f64, b: f64) -> usize {
-        points_index
-            .iter()
-            .filter(|x| a <= x.val && x.val <= b)
-            .count()
-    }
-
-    #[test]
-    fn test_build_histogram_small() {
-        let max_bucket_size = 10;
-        let precision = 0.01;
-        let num_samples = 1000;
-        let mut rnd = StdRng::seed_from_u64(42);
-
-        // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
-        let points = (0..num_samples)
-            .map(|i| Point {
-                val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 10.0),
-                idx: i % num_samples / 2,
-            })
-            .collect_vec();
-
-        let mut points_index: BTreeSet<Point> = Default::default();
-
-        let mut histogram = Histogram::new(max_bucket_size, precision);
-
-        for point in &points {
-            points_index.insert(point.clone());
-            // print_results(&points_index, &histogram, Some(point.clone()));
-            histogram.insert(
-                point.clone(),
-                |x| {
-                    points_index
-                        .range((Unbounded, Excluded(x)))
-                        .next_back()
-                        .cloned()
-                },
-                |x| points_index.range((Excluded(x), Unbounded)).next().cloned(),
-            );
-        }
-
-        for point in &points {
-            print_results(&points_index, &histogram, Some(point.clone()));
-            points_index.remove(point);
-            histogram.remove(
-                point,
-                |x| {
-                    points_index
-                        .range((Unbounded, Excluded(x)))
-                        .next_back()
-                        .cloned()
-                },
-                |x| points_index.range((Excluded(x), Unbounded)).next().cloned(),
-            );
-        }
-    }
-
-    fn test_range_by_cardinality(histogram: &Histogram) {
-        let from = Unbounded;
-        let range_size = 100;
-        let to = histogram.get_range_by_size(from, range_size);
-        let estimation = histogram.estimate(from, to);
-        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!(
-            (estimation.1 as i64 - range_size as i64).abs()
-                < 2 * histogram.current_bucket_size() as i64
-        );
-
-        let from = Unbounded;
-        let range_size = 1000;
-        let to = histogram.get_range_by_size(from, range_size);
-        let estimation = histogram.estimate(from, to);
-        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!(
-            (estimation.1 as i64 - range_size as i64).abs()
-                < 2 * histogram.current_bucket_size() as i64
-        );
-
-        let from = Excluded(0.1);
-        let range_size = 100;
-        let to = histogram.get_range_by_size(from, range_size);
-        let estimation = histogram.estimate(from, to);
-        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!(
-            (estimation.1 as i64 - range_size as i64).abs()
-                < 2 * histogram.current_bucket_size() as i64
-        );
-
-        let from = Excluded(0.1);
-        let range_size = 1000;
-        let to = histogram.get_range_by_size(from, range_size);
-        let estimation = histogram.estimate(from, to);
-        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!(
-            (estimation.1 as i64 - range_size as i64).abs()
-                < 2 * histogram.current_bucket_size() as i64
-        );
-
-        let from = Excluded(0.1);
-        let range_size = 100_000;
-        let to = histogram.get_range_by_size(from, range_size);
-        let estimation = histogram.estimate(from, to);
-        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!(matches!(to, Unbounded));
-    }
-
-    fn request_histogram(histogram: &Histogram, points_index: &BTreeSet<Point>) {
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0));
-        let real = count_range(points_index, 0., 0.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0001));
-        let real = count_range(points_index, 0., 0.0001);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.01));
-        let real = count_range(points_index, 0., 0.01);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(1.));
-        let real = count_range(points_index, 0., 1.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(100.));
-        let real = count_range(points_index, 0., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(-100.), Included(100.));
-        let real = count_range(points_index, -100., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(20.), Included(100.));
-        let real = count_range(points_index, 20., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
-    }
-
-    fn build_histogram(
-        max_bucket_size: usize,
-        precision: f64,
-        points: Vec<Point>,
-    ) -> (Histogram, BTreeSet<Point>) {
-        let mut points_index: BTreeSet<Point> = Default::default();
-        let mut histogram = Histogram::new(max_bucket_size, precision);
-
-        let read_counter = Cell::new(0);
-        for point in points {
-            points_index.insert(point.clone());
-            // print_results(&points_index, &histogram, Some(point.clone()));
-            histogram.insert(
-                point,
-                |x| {
-                    read_counter.set(read_counter.get() + 1);
-                    points_index
-                        .range((Unbounded, Excluded(x)))
-                        .next_back()
-                        .cloned()
-                },
-                |x| {
-                    read_counter.set(read_counter.get() + 1);
-                    points_index.range((Excluded(x), Unbounded)).next().cloned()
-                },
-            );
-        }
-        eprintln!("read_counter.get() = {:#?}", read_counter.get());
-        eprintln!("histogram.borders.len() = {:#?}", histogram.borders.len());
-        for border in histogram.borders.iter().take(5) {
-            eprintln!("border = {:?}", border);
-        }
-        (histogram, points_index)
-    }
-
-    #[test]
-    fn test_build_histogram_round() {
-        let max_bucket_size = 100;
-        let precision = 0.01;
-        let num_samples = 100_000;
-        let mut rnd = StdRng::seed_from_u64(42);
-
-        // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
-        let points = (0..num_samples).map(|i| Point {
-            val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 100.0),
-            idx: i,
-        });
-        let (histogram, points_index) =
-            build_histogram(max_bucket_size, precision, points.collect());
-
-        request_histogram(&histogram, &points_index);
-    }
-
-    #[test]
-    fn test_build_histogram() {
-        let max_bucket_size = 1000;
-        let precision = 0.01;
-        let num_samples = 100_000;
-        let mut rnd = StdRng::seed_from_u64(42);
-
-        // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
-        let points = (0..num_samples)
-            .map(|i| Point {
-                val: rnd.sample(StandardNormal),
-                idx: i,
-            })
-            .collect_vec();
-
-        let (histogram, points_index) = build_histogram(max_bucket_size, precision, points);
-        request_histogram(&histogram, &points_index);
-        test_range_by_cardinality(&histogram);
     }
 }
