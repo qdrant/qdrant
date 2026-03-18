@@ -384,20 +384,18 @@ pub fn delete_points_by_filter(
     let mut points_to_delete: AHashMap<_, _> = segments
         .iter()
         .map(|(segment_id, segment)| {
-            (
-                segment_id,
-                segment.get().read().read_filtered(
-                    None,
-                    None,
-                    Some(filter),
-                    &is_stopped,
-                    hw_counter,
-                    // Delete also deferred points.
-                    DeferredBehavior::IncludeAll,
-                ),
-            )
+            let points = segment.get().read().read_filtered(
+                None,
+                None,
+                Some(filter),
+                &is_stopped,
+                hw_counter,
+                // Delete also deferred points.
+                DeferredBehavior::IncludeAll,
+            )?;
+            Ok((segment_id, points))
         })
-        .collect();
+        .collect::<OperationResult<_>>()?;
 
     segments.apply_segments_batched(|s, segment_id| {
         let Some(curr_points) = points_to_delete.get_mut(&segment_id) else {
@@ -919,7 +917,7 @@ fn points_by_filter(
             hw_counter,
             // Read operation used for updates, so we must handle all points
             DeferredBehavior::IncludeAll,
-        );
+        )?;
         affected_points.extend_from_slice(points.as_slice());
         Ok(true)
     })?;

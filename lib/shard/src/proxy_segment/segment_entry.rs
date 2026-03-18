@@ -248,7 +248,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         if self.deleted_points.is_empty() {
             self.wrapped_segment.get().read().read_filtered(
                 offset,
@@ -315,7 +315,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         if self.deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
@@ -436,14 +436,14 @@ impl NonAppendableSegmentEntry for ProxySegment {
         &'a self,
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         let deleted_point_count = self.deleted_points.len();
 
         let (wrapped_segment_est, total_wrapped_size) = {
             let wrapped_segment = self.wrapped_segment.get();
             let wrapped_segment_guard = wrapped_segment.read();
             (
-                wrapped_segment_guard.estimate_point_count(filter, hw_counter),
+                wrapped_segment_guard.estimate_point_count(filter, hw_counter)?,
                 wrapped_segment_guard.available_point_count(),
             )
         };
@@ -462,12 +462,12 @@ impl NonAppendableSegmentEntry for ProxySegment {
             max,
         } = wrapped_segment_est;
 
-        CardinalityEstimation {
+        Ok(CardinalityEstimation {
             primary_clauses,
             min: min.saturating_sub(deleted_point_count),
             exp: exp.saturating_sub(expected_deleted_count),
             max,
-        }
+        })
     }
 
     fn segment_uuid(&self) -> Uuid {

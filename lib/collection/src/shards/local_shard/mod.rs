@@ -43,6 +43,7 @@ use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::Mutex as ParkingMutex;
+use segment::common::operation_error::OperationResult;
 use segment::entry::entry_point::NonAppendableSegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
@@ -928,7 +929,7 @@ impl LocalShard {
         let hw_counter = hw_measurement_acc.get_counter_cell();
         // clone filter for spawning task
         let filter = filter.cloned();
-        let cardinality = tokio::task::spawn_blocking(move || {
+        let cardinality = tokio::task::spawn_blocking(move || -> OperationResult<_> {
             // Collect the segments first so we don't lock the segment holder during the operations.
             let segments = segments
                 .read()
@@ -944,9 +945,9 @@ impl LocalShard {
                         .read() // blocking sync lock
                         .estimate_point_count(filter.as_ref(), &hw_counter)
                 })
-                .merge_independent()
+                .process_results(|iter| iter.merge_independent())
         });
-        let cardinality = AbortOnDropHandle::new(cardinality).await?;
+        let cardinality = AbortOnDropHandle::new(cardinality).await??;
         Ok(cardinality)
     }
 
