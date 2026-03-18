@@ -309,7 +309,6 @@ service:
   # Prefix for the names of metrics in the /metrics API.
   # metrics_prefix: qdrant_
 
-
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false
