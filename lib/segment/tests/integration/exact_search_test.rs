@@ -95,6 +95,7 @@ fn exact_search_test() {
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
+        .map(Result::unwrap)
         .collect_vec();
     for block in blocks.iter() {
         assert!(

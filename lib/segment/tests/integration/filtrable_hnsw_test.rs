@@ -118,6 +118,7 @@ fn _test_filterable_hnsw(
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
+        .map(Result::unwrap)
         .collect_vec();
     for block in blocks.iter() {
         assert!(
@@ -302,6 +303,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
+        .map(Result::unwrap)
         .collect_vec();
     for block in blocks.iter() {
         assert!(
