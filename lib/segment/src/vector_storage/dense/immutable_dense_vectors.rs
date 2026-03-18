@@ -231,24 +231,27 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     pub fn read_vectors_async(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        callback: impl FnMut(usize, PointOffsetType, &[T]),
+        mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
-        match &self.uring_reader {
-            None => self.process_points_simple(points, callback),
+        // Collect all points, so we can match operation/point *index* to point ID *value*
+        let points: Vec<_> = points.collect();
 
-            #[cfg(target_os = "linux")]
-            Some(uring_reader) => {
-                // Use `UringReader` on Linux
-                let mut uring_guard = uring_reader.lock();
-                uring_guard.read_stream(points, callback)?;
-            }
+        let vector_size_bytes = size_of::<T>() * self.dim;
+        let ranges = points.iter().copied().map(|point| ElementsRange {
+            start: (HEADER_SIZE + vector_size_bytes * point as usize) as _,
+            length: vector_size_bytes as _,
+        });
 
-            #[cfg(not(target_os = "linux"))]
-            Some(_) => {
-                // Fallback to synchronous processing on non-Linux platforms
-                self.process_points_simple(points, callback);
-            }
-        }
+        self.storage.read_batch::<false>(ranges, |idx, bytes| {
+            let point = points.get(idx).copied().expect("point ID tracked");
+
+            #[expect(deprecated, reason = "legacy code refactor")]
+            let vector = unsafe { mmap::transmute_from_u8_to_slice(bytes) };
+
+            callback(idx, point, vector);
+            Ok(())
+        })?;
+
         Ok(())
     }
 
