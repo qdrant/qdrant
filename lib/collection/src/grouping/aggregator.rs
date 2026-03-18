@@ -59,13 +59,11 @@ impl GroupsAggregator {
             })
             .ok_or(AggregatorError::KeyNotFound)?;
 
-        let group_keys = payload_values
-            .into_iter()
-            .map(GroupId::try_from)
-            .collect::<Result<Vec<GroupId>, ()>>()
+        let unique_group_keys: Vec<_> =
+            itertools::process_results(payload_values.into_iter().map(GroupId::try_from), |iter| {
+                iter.unique().collect()
+            })
             .map_err(|_| AggregatorError::BadKeyType)?;
-
-        let unique_group_keys: Vec<_> = group_keys.into_iter().unique().collect();
 
         for group_key in unique_group_keys {
             let group = self
