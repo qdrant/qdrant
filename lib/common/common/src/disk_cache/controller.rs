@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use fs_err as fs;
@@ -31,7 +32,7 @@ pub struct CacheController {
     files: RwLock<HashMap<FileId, fs::File>>,
 
     /// Used to assign file ids on new files.
-    file_id_counter: Mutex<FileId>,
+    file_id_counter: AtomicU32,
 
     cache: quick_cache::sync::Cache<
         BlockId,
@@ -97,7 +98,7 @@ impl CacheController {
 
         Ok(Arc::new(CacheController {
             files: RwLock::new(HashMap::new()),
-            file_id_counter: Mutex::new(FileId(0)),
+            file_id_counter: AtomicU32::new(0),
             cache,
             blocks_lifecycle,
             cache_mmap,
@@ -128,21 +129,9 @@ impl CacheController {
 
         let len = f.metadata()?.len() as usize;
 
-        let file_id = {
-            let mut file_id_counter = self.file_id_counter.lock();
-            *file_id_counter = FileId(file_id_counter.0.checked_add(1).unwrap_or_else(|| {
-                // TODO: drain the entire cache so that we don't corrupt stuff
-                //
-                // (luis) actually, it won't be enough to drain. Already "open" files
-                // can still try to access their cached data, and we don't have a mechanism to prevent this.
-                // I think we need to return an error
-                //
-                // (xzfc) Maybe this draining should block on items that `is_pinned`.
-                // Anyway, it's rare case and we can decide it later.
-                unimplemented!("What to do when we have > 4.29 billion files?")
-            }));
-            *file_id_counter
-        };
+        // TODO: this will wrap when we have > 4.29 billion files, what to do then?
+        let file_id = self.file_id_counter.fetch_add(1, Ordering::SeqCst);
+        let file_id = FileId(file_id);
 
         self.files.write().insert(file_id, f);
         Ok((file_id, len))
