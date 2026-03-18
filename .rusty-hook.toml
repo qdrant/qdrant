@@ -1,4 +1,5 @@
 [hooks]
+pre-commit = "! grep -rn '#\\[.*(\"/collections/{' src/actix/api/ | grep -v '{name}' || (echo 'ERROR: Collection routes must use {name} as path parameter. See actix_telemetry.rs.' && exit 1)"
 pre-push = "cargo +nightly fmt --all -- --check"
 
 [logging]
