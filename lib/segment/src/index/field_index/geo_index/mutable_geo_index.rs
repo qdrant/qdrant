@@ -134,7 +134,7 @@ impl MutableGeoMapIndex {
                 max(in_memory_index.max_values_per_point, geo_hashes.len());
             in_memory_index.increment_hash_point_counts(&geo_hashes);
             for geo_hash in geo_hashes {
-                in_memory_index.increment_hash_value_counts(&geo_hash);
+                in_memory_index.increment_hash_value_counts(geo_hash);
             }
         }
 
@@ -203,7 +203,7 @@ impl MutableGeoMapIndex {
                         max(in_memory_index.max_values_per_point, geo_hashes.len());
                     in_memory_index.increment_hash_point_counts(&geo_hashes);
                     for geo_hash in geo_hashes {
-                        in_memory_index.increment_hash_value_counts(&geo_hash);
+                        in_memory_index.increment_hash_value_counts(geo_hash);
                         in_memory_index
                             .points_map
                             .entry(geo_hash)
@@ -404,9 +404,9 @@ impl MutableGeoMapIndex {
         to self.in_memory_index {
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
-            pub fn points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)>;
-            pub fn points_of_hash(&self, hash: &GeoHash) -> usize;
-            pub fn values_of_hash(&self, hash: &GeoHash) -> usize;
+            pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)>;
+            pub fn points_of_hash(&self, hash: GeoHash) -> usize;
+            pub fn values_of_hash(&self, hash: GeoHash) -> usize;
             pub fn stored_sub_regions(
                 &self,
                 geo: GeoHash,
@@ -460,18 +460,18 @@ impl InMemoryGeoMapIndex {
             .unwrap_or_default()
     }
 
-    pub fn points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)> {
+    pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
         self.points_per_hash
             .iter()
-            .map(|(hash, count)| (hash, *count))
+            .map(|(&hash, &count)| (hash, count))
     }
 
-    pub fn points_of_hash(&self, hash: &GeoHash) -> usize {
-        self.points_per_hash.get(hash).copied().unwrap_or(0)
+    pub fn points_of_hash(&self, hash: GeoHash) -> usize {
+        self.points_per_hash.get(&hash).copied().unwrap_or(0)
     }
 
-    pub fn values_of_hash(&self, hash: &GeoHash) -> usize {
-        self.values_per_hash.get(hash).copied().unwrap_or(0)
+    pub fn values_of_hash(&self, hash: GeoHash) -> usize {
+        self.values_per_hash.get(&hash).copied().unwrap_or(0)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
@@ -508,7 +508,7 @@ impl InMemoryGeoMapIndex {
                 self.points_map.remove(&removed_geo_hash);
             }
 
-            self.decrement_hash_value_counts(&removed_geo_hash);
+            self.decrement_hash_value_counts(removed_geo_hash);
         }
 
         self.decrement_hash_point_counts(&removed_geo_hashes);
@@ -549,11 +549,8 @@ impl InMemoryGeoMapIndex {
             geo_hashes.push(added_geo_hash);
         }
 
-        for geo_hash in &geo_hashes {
-            self.points_map
-                .entry(geo_hash.to_owned())
-                .or_default()
-                .insert(idx);
+        for &geo_hash in &geo_hashes {
+            self.points_map.entry(geo_hash).or_default().insert(idx);
 
             self.increment_hash_value_counts(geo_hash);
         }
@@ -577,7 +574,7 @@ impl InMemoryGeoMapIndex {
             .flat_map(|(_, points)| points.iter().copied())
     }
 
-    fn increment_hash_value_counts(&mut self, geo_hash: &GeoHash) {
+    fn increment_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
             match self.values_per_hash.get_mut(&sub_geo_hash) {
@@ -613,7 +610,7 @@ impl InMemoryGeoMapIndex {
         }
     }
 
-    fn decrement_hash_value_counts(&mut self, geo_hash: &GeoHash) {
+    fn decrement_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
             match self.values_per_hash.get_mut(&sub_geo_hash) {
