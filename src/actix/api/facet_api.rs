@@ -14,7 +14,7 @@ use crate::actix::helpers::{
 };
 use crate::settings::ServiceConfig;
 
-#[post("/collections/{name}/facet")]
+#[post("/collections/{collection_name}/facet")]
 async fn facet(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

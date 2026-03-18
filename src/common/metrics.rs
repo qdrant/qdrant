@@ -27,31 +27,31 @@ use crate::common::telemetry_ops::requests_telemetry::{
 ///
 /// This array *must* be sorted.
 const REST_ENDPOINT_WHITELIST: &[&str] = &[
-    "/collections/{name}/index",
-    "/collections/{name}/points",
-    "/collections/{name}/points/batch",
-    "/collections/{name}/points/count",
-    "/collections/{name}/points/delete",
-    "/collections/{name}/points/discover",
-    "/collections/{name}/points/discover/batch",
-    "/collections/{name}/points/facet",
-    "/collections/{name}/points/payload",
-    "/collections/{name}/points/payload/clear",
-    "/collections/{name}/points/payload/delete",
-    "/collections/{name}/points/query",
-    "/collections/{name}/points/query/batch",
-    "/collections/{name}/points/query/groups",
-    "/collections/{name}/points/recommend",
-    "/collections/{name}/points/recommend/batch",
-    "/collections/{name}/points/recommend/groups",
-    "/collections/{name}/points/scroll",
-    "/collections/{name}/points/search",
-    "/collections/{name}/points/search/batch",
-    "/collections/{name}/points/search/groups",
-    "/collections/{name}/points/search/matrix/offsets",
-    "/collections/{name}/points/search/matrix/pairs",
-    "/collections/{name}/points/vectors",
-    "/collections/{name}/points/vectors/delete",
+    "/collections/{collection_name}/index",
+    "/collections/{collection_name}/points",
+    "/collections/{collection_name}/points/batch",
+    "/collections/{collection_name}/points/count",
+    "/collections/{collection_name}/points/delete",
+    "/collections/{collection_name}/points/discover",
+    "/collections/{collection_name}/points/discover/batch",
+    "/collections/{collection_name}/points/facet",
+    "/collections/{collection_name}/points/payload",
+    "/collections/{collection_name}/points/payload/clear",
+    "/collections/{collection_name}/points/payload/delete",
+    "/collections/{collection_name}/points/query",
+    "/collections/{collection_name}/points/query/batch",
+    "/collections/{collection_name}/points/query/groups",
+    "/collections/{collection_name}/points/recommend",
+    "/collections/{collection_name}/points/recommend/batch",
+    "/collections/{collection_name}/points/recommend/groups",
+    "/collections/{collection_name}/points/scroll",
+    "/collections/{collection_name}/points/search",
+    "/collections/{collection_name}/points/search/batch",
+    "/collections/{collection_name}/points/search/groups",
+    "/collections/{collection_name}/points/search/matrix/offsets",
+    "/collections/{collection_name}/points/search/matrix/pairs",
+    "/collections/{collection_name}/points/vectors",
+    "/collections/{collection_name}/points/vectors/delete",
 ];
 
 /// Whitelist for GRPC endpoints in metrics output.
@@ -1353,6 +1353,19 @@ mod tests {
     }
 
     #[test]
+    fn test_rest_whitelist_uses_collection_name_param() {
+        use super::REST_ENDPOINT_WHITELIST;
+
+        for endpoint in REST_ENDPOINT_WHITELIST {
+            assert!(
+                endpoint.contains("{collection_name}"),
+                "REST_ENDPOINT_WHITELIST entry `{endpoint}` must use \
+                 `{{collection_name}}` as the collection path parameter",
+            );
+        }
+    }
+
+    #[test]
     fn test_rest_metrics_global_mode() {
         use std::collections::HashMap;
 
@@ -1370,7 +1383,7 @@ mod tests {
             },
         );
         responses.insert(
-            "POST /collections/{name}/points/search".to_string(),
+            "POST /collections/{collection_name}/points/search".to_string(),
             status_map,
         );
 
@@ -1407,7 +1420,7 @@ mod tests {
             },
         );
         responses.insert(
-            "POST /collections/{name}/points/search".to_string(),
+            "POST /collections/{collection_name}/points/search".to_string(),
             status_map,
         );
 
@@ -1422,7 +1435,7 @@ mod tests {
             },
         );
         methods.insert(
-            "POST /collections/{name}/points/search".to_string(),
+            "POST /collections/{collection_name}/points/search".to_string(),
             col_status_map,
         );
         per_collection.insert("my_collection".to_string(), methods);

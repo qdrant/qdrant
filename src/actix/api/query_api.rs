@@ -24,7 +24,7 @@ use crate::common::inference::query_requests_rest::{
 use crate::common::query::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
-#[post("/collections/{name}/points/query")]
+#[post("/collections/{collection_name}/points/query")]
 #[allow(clippy::too_many_arguments)]
 async fn query_points(
     dispatcher: web::Data<Dispatcher>,
@@ -104,7 +104,7 @@ async fn query_points(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[post("/collections/{name}/points/query/batch")]
+#[post("/collections/{collection_name}/points/query/batch")]
 async fn query_points_batch(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -192,7 +192,7 @@ async fn query_points_batch(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[post("/collections/{name}/points/query/groups")]
+#[post("/collections/{collection_name}/points/query/groups")]
 async fn query_points_groups(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

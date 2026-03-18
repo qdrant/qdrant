@@ -56,7 +56,7 @@ async fn get_aliases(
     helpers::time(do_list_aliases(dispatcher.toc(&auth, &pass), &auth)).await
 }
 
-#[get("/collections/{name}")]
+#[get("/collections/{collection_name}")]
 async fn get_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -74,7 +74,7 @@ async fn get_collection(
     .await
 }
 
-#[get("/collections/{name}/exists")]
+#[get("/collections/{collection_name}/exists")]
 async fn get_collection_existence(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -91,7 +91,7 @@ async fn get_collection_existence(
     .await
 }
 
-#[get("/collections/{name}/aliases")]
+#[get("/collections/{collection_name}/aliases")]
 async fn get_collection_aliases(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -108,7 +108,7 @@ async fn get_collection_aliases(
     .await
 }
 
-#[put("/collections/{name}")]
+#[put("/collections/{collection_name}")]
 async fn create_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<StrictCollectionPath>,
@@ -134,7 +134,7 @@ async fn create_collection(
     process_response(response, timing, None)
 }
 
-#[patch("/collections/{name}")]
+#[patch("/collections/{collection_name}")]
 async fn update_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -157,7 +157,7 @@ async fn update_collection(
     process_response(response, timing, None)
 }
 
-#[delete("/collections/{name}")]
+#[delete("/collections/{collection_name}")]
 async fn delete_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -195,7 +195,7 @@ async fn update_aliases(
     process_response(response, timing, None)
 }
 
-#[get("/collections/{name}/cluster")]
+#[get("/collections/{collection_name}/cluster")]
 async fn get_cluster_info(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -212,7 +212,7 @@ async fn get_cluster_info(
     .await
 }
 
-#[post("/collections/{name}/cluster")]
+#[post("/collections/{collection_name}/cluster")]
 async fn update_collection_cluster(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -273,7 +273,7 @@ impl TryFrom<&OptimizationsParam> for OptimizationsRequestOptions {
     }
 }
 
-#[get("/collections/{name}/optimizations")]
+#[get("/collections/{collection_name}/optimizations")]
 fn get_optimizations(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

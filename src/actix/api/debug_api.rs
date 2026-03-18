@@ -41,7 +41,7 @@ mod staging {
     use super::*;
     use crate::actix::helpers;
 
-    #[get("/collections/{name}/shards/{shard}/wal")]
+    #[get("/collections/{collection_name}/shards/{shard}/wal")]
     pub async fn get_shard_wal(
         dispatcher: web::Data<Dispatcher>,
         path: web::Path<(String, ShardId)>,
@@ -95,7 +95,7 @@ mod staging {
         }
     }
 
-    #[get("/collections/{name}/shards/{shard}/recovery_point")]
+    #[get("/collections/{collection_name}/shards/{shard}/recovery_point")]
     pub async fn get_shard_recovery_point(
         dispatcher: web::Data<Dispatcher>,
         path: web::Path<(String, ShardId)>,

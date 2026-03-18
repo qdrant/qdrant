@@ -13,7 +13,7 @@ use crate::actix::helpers::{self, get_request_hardware_counter, process_response
 use crate::common::query::do_count_points;
 use crate::settings::ServiceConfig;
 
-#[post("/collections/{name}/points/count")]
+#[post("/collections/{collection_name}/points/count")]
 async fn count_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

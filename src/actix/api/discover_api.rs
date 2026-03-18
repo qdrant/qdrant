@@ -16,7 +16,7 @@ use crate::actix::helpers::{self, get_request_hardware_counter, process_response
 use crate::common::query::do_discover_batch_points;
 use crate::settings::ServiceConfig;
 
-#[post("/collections/{name}/points/discover")]
+#[post("/collections/{collection_name}/points/discover")]
 async fn discover_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -79,7 +79,7 @@ async fn discover_points(
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/discover/batch")]
+#[post("/collections/{collection_name}/points/discover/batch")]
 async fn discover_batch_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

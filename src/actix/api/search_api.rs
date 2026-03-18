@@ -24,7 +24,7 @@ use crate::common::query::{
 };
 use crate::settings::ServiceConfig;
 
-#[post("/collections/{name}/points/search")]
+#[post("/collections/{collection_name}/points/search")]
 async fn search_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -86,7 +86,7 @@ async fn search_points(
     process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/search/batch")]
+#[post("/collections/{collection_name}/points/search/batch")]
 async fn batch_search_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -161,7 +161,7 @@ async fn batch_search_points(
     process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/search/groups")]
+#[post("/collections/{collection_name}/points/search/groups")]
 async fn search_point_groups(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -216,7 +216,7 @@ async fn search_point_groups(
     process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/search/matrix/pairs")]
+#[post("/collections/{collection_name}/points/search/matrix/pairs")]
 async fn search_points_matrix_pairs(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -272,7 +272,7 @@ async fn search_points_matrix_pairs(
     process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/search/matrix/offsets")]
+#[post("/collections/{collection_name}/points/search/matrix/offsets")]
 async fn search_points_matrix_offsets(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

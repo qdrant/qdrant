@@ -767,4 +767,3 @@ impl Points for PointsService {
         Ok(Response::new(offsets_response))
     }
 }
-

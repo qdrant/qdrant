@@ -25,7 +25,7 @@ use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::settings::ServiceConfig;
 
-#[post("/collections/{name}/points/recommend")]
+#[post("/collections/{collection_name}/points/recommend")]
 async fn recommend_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -121,7 +121,7 @@ async fn do_recommend_batch_points(
     .await
 }
 
-#[post("/collections/{name}/points/recommend/batch")]
+#[post("/collections/{collection_name}/points/recommend/batch")]
 async fn recommend_batch_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -176,7 +176,7 @@ async fn recommend_batch_points(
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/recommend/groups")]
+#[post("/collections/{collection_name}/points/recommend/groups")]
 async fn recommend_point_groups(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

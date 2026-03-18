@@ -40,13 +40,13 @@ where
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
 
-        // All collection-scoped routes must use `{name}` as the path parameter
-        // for the collection name, so that telemetry can extract it automatically.
+        // All collection-scoped routes must use `{collection_name}` as the path parameter,
+        // so that telemetry can extract it automatically.
         debug_assert!(
             !match_pattern.contains("/collections/{")
-                || match_pattern.contains("/collections/{name}"),
+                || match_pattern.contains("/collections/{collection_name}"),
             "Route `{match_pattern}` uses a non-standard collection path parameter. \
-             Use `{{name}}` instead, e.g. /collections/{{name}}/..."
+             Use `{{collection_name}}` instead, e.g. /collections/{{collection_name}}/..."
         );
 
         let request_key = format!("{} {}", request.method(), match_pattern);
@@ -60,7 +60,7 @@ where
             let collection_name = response
                 .request()
                 .match_info()
-                .get("name")
+                .get("collection_name")
                 .map(|s| s.to_string());
 
             telemetry_data
@@ -105,3 +105,31 @@ where
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_collection_routes_use_collection_name_param() {
+        let api_dir = format!("{}/src/actix/api", env!("CARGO_MANIFEST_DIR"));
+
+        // Find route attributes containing /collections/{ and pipe through
+        // a second filter to exclude lines that correctly use {collection_name}
+        let grep = std::process::Command::new("grep")
+            .args(["-rn", r#"#\[.*("/collections/{"#, &api_dir])
+            .output()
+            .expect("failed to run grep");
+
+        let stdout = String::from_utf8_lossy(&grep.stdout);
+        let bad_lines: Vec<&str> = stdout
+            .lines()
+            .filter(|line| !line.contains("{collection_name}"))
+            .collect();
+
+        assert!(
+            bad_lines.is_empty(),
+            "All collection routes must use {{collection_name}} as path parameter:\n{}",
+            bad_lines.join("\n"),
+        );
+    }
+}
+

@@ -67,7 +67,7 @@ async fn do_get_point(
     .map(|points| points.into_iter().next())
 }
 
-#[get("/collections/{name}/points/{id}")]
+#[get("/collections/{collection_name}/points/{id}")]
 async fn get_point(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -123,7 +123,7 @@ async fn get_point(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points")]
+#[post("/collections/{collection_name}/points")]
 async fn get_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -183,7 +183,7 @@ async fn get_points(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/scroll")]
+#[post("/collections/{collection_name}/points/scroll")]
 async fn scroll_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

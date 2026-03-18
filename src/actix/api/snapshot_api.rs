@@ -146,7 +146,7 @@ pub async fn do_get_snapshot(
     Ok(snapshot_stream)
 }
 
-#[get("/collections/{name}/snapshots")]
+#[get("/collections/{collection_name}/snapshots")]
 async fn list_snapshots(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
@@ -163,7 +163,7 @@ async fn list_snapshots(
     .await
 }
 
-#[post("/collections/{name}/snapshots")]
+#[post("/collections/{collection_name}/snapshots")]
 async fn create_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
@@ -187,7 +187,7 @@ async fn create_snapshot(
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
-#[post("/collections/{name}/snapshots/upload")]
+#[post("/collections/{collection_name}/snapshots/upload")]
 async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
     http_client: web::Data<HttpClient>,
@@ -240,7 +240,7 @@ async fn upload_snapshot(
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
 
-#[put("/collections/{name}/snapshots/recover")]
+#[put("/collections/{collection_name}/snapshots/recover")]
 async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
     http_client: web::Data<HttpClient>,
@@ -266,7 +266,7 @@ async fn recover_from_snapshot(
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
-#[get("/collections/{name}/snapshots/{snapshot_name}")]
+#[get("/collections/{collection_name}/snapshots/{snapshot_name}")]
 async fn get_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, String)>,
@@ -334,7 +334,7 @@ async fn delete_full_snapshot(
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
-#[delete("/collections/{name}/snapshots/{snapshot_name}")]
+#[delete("/collections/{collection_name}/snapshots/{snapshot_name}")]
 async fn delete_collection_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, String)>,
@@ -351,7 +351,7 @@ async fn delete_collection_snapshot(
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
-#[get("/collections/{name}/shards/{shard}/snapshots")]
+#[get("/collections/{collection_name}/shards/{shard}/snapshots")]
 async fn list_shard_snapshots(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
@@ -373,7 +373,7 @@ async fn list_shard_snapshots(
     helpers::time(future).await
 }
 
-#[post("/collections/{name}/shards/{shard}/snapshots")]
+#[post("/collections/{collection_name}/shards/{shard}/snapshots")]
 async fn create_shard_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
@@ -397,7 +397,7 @@ async fn create_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
-#[get("/collections/{name}/shards/{shard}/snapshot")]
+#[get("/collections/{collection_name}/shards/{shard}/snapshot")]
 async fn stream_shard_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
@@ -418,7 +418,7 @@ async fn stream_shard_snapshot(
 }
 
 // TODO: `PUT` (same as `recover_from_snapshot`) or `POST`!?
-#[put("/collections/{name}/shards/{shard}/snapshots/recover")]
+#[put("/collections/{collection_name}/shards/{shard}/snapshots/recover")]
 async fn recover_shard_snapshot(
     dispatcher: web::Data<Dispatcher>,
     http_client: web::Data<HttpClient>,
@@ -453,7 +453,7 @@ async fn recover_shard_snapshot(
 }
 
 // TODO: `POST` (same as `upload_snapshot`) or `PUT`!?
-#[post("/collections/{name}/shards/{shard}/snapshots/upload")]
+#[post("/collections/{collection_name}/shards/{shard}/snapshots/upload")]
 async fn upload_shard_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
@@ -521,7 +521,7 @@ async fn upload_shard_snapshot(
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
 
-#[get("/collections/{name}/shards/{shard}/snapshots/{snapshot}")]
+#[get("/collections/{collection_name}/shards/{shard}/snapshots/{snapshot}")]
 async fn download_shard_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId, String)>,
@@ -553,7 +553,7 @@ async fn download_shard_snapshot(
     Ok(snapshot_stream)
 }
 
-#[delete("/collections/{name}/shards/{shard}/snapshots/{snapshot}")]
+#[delete("/collections/{collection_name}/shards/{shard}/snapshots/{snapshot}")]
 async fn delete_shard_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId, String)>,
@@ -579,7 +579,7 @@ async fn delete_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
-#[post("/collections/{name}/shards/{shard}/snapshot/partial/create")]
+#[post("/collections/{collection_name}/shards/{shard}/snapshot/partial/create")]
 async fn create_partial_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
@@ -604,7 +604,7 @@ async fn create_partial_snapshot(
     Ok(snapshot_stream)
 }
 
-#[post("/collections/{name}/shards/{shard}/snapshot/partial/recover")]
+#[post("/collections/{collection_name}/shards/{shard}/snapshot/partial/recover")]
 async fn recover_partial_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
@@ -696,7 +696,7 @@ pub struct PartialSnapshotRecoverFrom {
     api_key: Option<String>,
 }
 
-#[post("/collections/{name}/shards/{shard}/snapshot/partial/recover_from")]
+#[post("/collections/{collection_name}/shards/{shard}/snapshot/partial/recover_from")]
 async fn recover_partial_snapshot_from(
     dispatcher: web::Data<Dispatcher>,
     http_client: web::Data<HttpClient>,
@@ -853,7 +853,7 @@ async fn recover_partial_snapshot_from(
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
 
-#[get("/collections/{name}/shards/{shard}/snapshot/partial/manifest")]
+#[get("/collections/{collection_name}/shards/{shard}/snapshot/partial/manifest")]
 async fn get_partial_snapshot_manifest(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,

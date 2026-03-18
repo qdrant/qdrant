@@ -29,7 +29,7 @@ struct FieldPath {
     name: JsonPath,
 }
 
-#[put("/collections/{name}/points")]
+#[put("/collections/{collection_name}/points")]
 #[allow(clippy::too_many_arguments)]
 async fn upsert_points(
     dispatcher: web::Data<Dispatcher>,
@@ -77,7 +77,7 @@ async fn upsert_points(
     )
 }
 
-#[post("/collections/{name}/points/delete")]
+#[post("/collections/{collection_name}/points/delete")]
 async fn delete_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -110,7 +110,7 @@ async fn delete_points(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[put("/collections/{name}/points/vectors")]
+#[put("/collections/{collection_name}/points/vectors")]
 #[allow(clippy::too_many_arguments)]
 async fn update_vectors(
     dispatcher: web::Data<Dispatcher>,
@@ -158,7 +158,7 @@ async fn update_vectors(
     )
 }
 
-#[post("/collections/{name}/points/vectors/delete")]
+#[post("/collections/{collection_name}/points/vectors/delete")]
 async fn delete_vectors(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -191,7 +191,7 @@ async fn delete_vectors(
     process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/payload")]
+#[post("/collections/{collection_name}/points/payload")]
 async fn set_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -224,7 +224,7 @@ async fn set_payload(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[put("/collections/{name}/points/payload")]
+#[put("/collections/{collection_name}/points/payload")]
 async fn overwrite_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -257,7 +257,7 @@ async fn overwrite_payload(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/payload/delete")]
+#[post("/collections/{collection_name}/points/payload/delete")]
 async fn delete_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -290,7 +290,7 @@ async fn delete_payload(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/payload/clear")]
+#[post("/collections/{collection_name}/points/payload/clear")]
 async fn clear_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -324,7 +324,7 @@ async fn clear_payload(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[post("/collections/{name}/points/batch")]
+#[post("/collections/{collection_name}/points/batch")]
 async fn update_batch(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -371,7 +371,7 @@ async fn update_batch(
     )
 }
 
-#[put("/collections/{name}/index")]
+#[put("/collections/{collection_name}/index")]
 async fn create_field_index(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -407,7 +407,7 @@ async fn create_field_index(
     )
 }
 
-#[delete("/collections/{name}/index/{field_name}")]
+#[delete("/collections/{collection_name}/index/{field_name}")]
 async fn delete_field_index(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -434,7 +434,7 @@ async fn delete_field_index(
 /// Accepts any staging operation and executes it on the collection.
 /// Only available when the `staging` feature is enabled.
 #[cfg(feature = "staging")]
-#[post("/collections/{name}/debug")]
+#[post("/collections/{collection_name}/debug")]
 async fn staging_operation(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

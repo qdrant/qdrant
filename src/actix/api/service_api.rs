@@ -230,7 +230,7 @@ pub struct TruncateUnappliedWalParams {
     pub wait: Option<bool>,
 }
 
-#[post("/collections/{name}/truncate_unapplied_wal")]
+#[post("/collections/{collection_name}/truncate_unapplied_wal")]
 async fn truncate_unapplied_wal(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
