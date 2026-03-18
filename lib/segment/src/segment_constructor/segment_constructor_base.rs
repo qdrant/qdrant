@@ -63,7 +63,7 @@ use crate::types::{
     VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::dense::memmap_dense_vector_storage::{
-    open_memmap_vector_storage, open_memmap_vector_storage_byte, open_memmap_vector_storage_half,
+    open_dense_vector_storage, open_dense_vector_storage_byte, open_dense_vector_storage_half,
 };
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
@@ -125,19 +125,19 @@ fn open_mmap_vector_storage(
         )
     } else {
         match storage_element_type {
-            VectorStorageDatatype::Float32 => open_memmap_vector_storage(
+            VectorStorageDatatype::Float32 => open_dense_vector_storage(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
                 populate,
             ),
-            VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
+            VectorStorageDatatype::Uint8 => open_dense_vector_storage_byte(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
                 populate,
             ),
-            VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
+            VectorStorageDatatype::Float16 => open_dense_vector_storage_half(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,

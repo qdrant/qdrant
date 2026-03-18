@@ -212,7 +212,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
             length: vector_size_bytes as _,
         });
 
-        self.storage.read_batch::<false>(ranges, |idx, bytes| {
+        self.storage.read_batch::<Random>(ranges, |idx, bytes| {
             let point = points.get(idx).copied().expect("point ID tracked");
 
             #[expect(deprecated, reason = "legacy code refactor")]

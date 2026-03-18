@@ -10,8 +10,6 @@ use common::fs::clear_disk_cache;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
-#[cfg(target_os = "linux")]
-use common::universal_io::IoUringFile;
 use common::universal_io::UniversalRead;
 use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
@@ -21,7 +19,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::common::get_async_scorer;
@@ -70,7 +68,48 @@ where
     }
 }
 
-pub fn open_memmap_vector_storage(
+pub fn open_dense_vector_storage(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    populate: bool,
+) -> OperationResult<VectorStorageEnum> {
+    #[cfg(target_os = "linux")]
+    let with_uring = get_async_scorer(); // `get_async_scorer` only available on Linux
+
+    #[cfg(not(target_os = "linux"))]
+    let with_uring = false;
+
+    open_dense_vector_storage_with_uring(path, dim, distance, populate, with_uring)
+}
+
+pub fn open_dense_vector_storage_with_uring(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    populate: bool,
+    with_uring: bool,
+) -> OperationResult<VectorStorageEnum> {
+    // prevent "unused variable" warning
+    let _ = with_uring;
+
+    #[cfg(target_os = "linux")]
+    if with_uring {
+        match open_dense_vector_storage_impl(path, dim, distance, populate) {
+            Ok(uring_storage) => {
+                return Ok(VectorStorageEnum::DenseUring(Box::new(uring_storage)));
+            }
+            Err(err) => {
+                log::error!("failed to open io_uring based vector storage: {err}");
+            }
+        }
+    }
+
+    let mmap_storage = open_dense_vector_storage_impl(path, dim, distance, populate)?;
+    Ok(VectorStorageEnum::DenseMemmap(Box::new(mmap_storage)))
+}
+
+pub fn open_dense_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
@@ -78,21 +117,21 @@ pub fn open_memmap_vector_storage(
 ) -> OperationResult<VectorStorageEnum> {
     #[cfg(target_os = "linux")]
     if get_async_scorer() {
-        match open_uring_vector_storage(path, dim, distance, populate) {
-            Ok(storage) => return Ok(VectorStorageEnum::DenseUring(storage)),
+        match open_dense_vector_storage_impl(path, dim, distance, populate) {
+            Ok(uring_storage) => {
+                return Ok(VectorStorageEnum::DenseUringHalf(Box::new(uring_storage)));
+            }
             Err(err) => {
                 log::error!("failed to open io_uring based vector storage: {err}");
             }
         }
     }
 
-    let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
-        path, dim, distance, false, populate,
-    )?;
-    Ok(VectorStorageEnum::DenseMemmap(storage))
+    let mmap_storage = open_dense_vector_storage_impl(path, dim, distance, populate)?;
+    Ok(VectorStorageEnum::DenseMemmapHalf(Box::new(mmap_storage)))
 }
 
-pub fn open_memmap_vector_storage_byte(
+pub fn open_dense_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
@@ -100,99 +139,44 @@ pub fn open_memmap_vector_storage_byte(
 ) -> OperationResult<VectorStorageEnum> {
     #[cfg(target_os = "linux")]
     if get_async_scorer() {
-        match open_uring_vector_storage(path, dim, distance, populate) {
-            Ok(storage) => return Ok(VectorStorageEnum::DenseUringByte(storage)),
+        match open_dense_vector_storage_impl(path, dim, distance, populate) {
+            Ok(uring_storage) => {
+                return Ok(VectorStorageEnum::DenseUringByte(Box::new(uring_storage)));
+            }
             Err(err) => {
                 log::error!("failed to open io_uring based vector storage: {err}");
             }
         }
     }
 
-    let storage =
-        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, false, populate)?;
-    Ok(VectorStorageEnum::DenseMemmapByte(storage))
+    let mmap_storage = open_dense_vector_storage_impl(path, dim, distance, populate)?;
+    Ok(VectorStorageEnum::DenseMemmapByte(Box::new(mmap_storage)))
 }
 
-pub fn open_memmap_vector_storage_half(
+fn open_dense_vector_storage_impl<T, S>(
     path: &Path,
     dim: usize,
     distance: Distance,
     populate: bool,
-) -> OperationResult<VectorStorageEnum> {
-    #[cfg(target_os = "linux")]
-    if get_async_scorer() {
-        match open_uring_vector_storage(path, dim, distance, populate) {
-            Ok(storage) => return Ok(VectorStorageEnum::DenseUringHalf(storage)),
-            Err(err) => {
-                log::error!("failed to open io_uring based vector storage: {err}");
-            }
-        }
-    }
-
-    let storage =
-        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, false, populate)?;
-    Ok(VectorStorageEnum::DenseMemmapHalf(storage))
-}
-
-pub fn open_memmap_vector_storage_with_async_io(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    with_async_io: bool,
-    populate: bool,
-) -> OperationResult<VectorStorageEnum> {
-    let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
-        path,
-        dim,
-        distance,
-        with_async_io,
-        populate,
-    )?;
-    Ok(VectorStorageEnum::DenseMemmap(storage))
-}
-
-fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    with_async_io: bool,
-    populate: bool,
-) -> OperationResult<Box<MemmapDenseVectorStorage<T>>> {
+) -> OperationResult<MemmapDenseVectorStorage<T, S>>
+where
+    T: PrimitiveVectorElement,
+    S: UniversalRead<u8>,
+{
     fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
-    let mmap_store =
-        ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, with_async_io, populate)?;
 
-    Ok(Box::new(MemmapDenseVectorStorage {
+    let vectors = ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, false, populate)?;
+    let storage = MemmapDenseVectorStorage {
         vectors_path,
         deleted_path,
-        vectors: Some(mmap_store),
+        vectors: Some(vectors),
         distance,
-    }))
-}
+    };
 
-#[cfg(target_os = "linux")]
-fn open_uring_vector_storage<T: PrimitiveVectorElement>(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    populate: bool,
-) -> OperationResult<Box<MemmapDenseVectorStorage<T, IoUringFile>>> {
-    fs::create_dir_all(path)?;
-
-    let vectors_path = path.join(VECTORS_PATH);
-    let deleted_path = path.join(DELETED_PATH);
-    let mmap_store =
-        ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, true, populate)?;
-
-    Ok(Box::new(MemmapDenseVectorStorage {
-        vectors_path,
-        deleted_path,
-        vectors: Some(mmap_store),
-        distance,
-    }))
+    Ok(storage)
 }
 
 impl<T, S> MemmapDenseVectorStorage<T, S>
@@ -404,7 +388,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::data_types::vectors::{DenseVector, QueryVector};
+    use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType};
     use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
     use crate::id_tracker::IdTracker;
     use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
@@ -426,7 +410,7 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
         let mut id_tracker = create_id_tracker_fixture(points.len());
 
         // Assert this storage lists both the vector and deleted file
@@ -544,7 +528,7 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = create_id_tracker_fixture(points.len());
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -670,7 +654,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
@@ -744,7 +728,7 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
@@ -817,7 +801,7 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 

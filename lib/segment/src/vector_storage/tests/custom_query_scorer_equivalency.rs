@@ -24,7 +24,7 @@ use crate::types::{
 };
 use crate::vector_storage::VectorStorageEnum;
 #[cfg(target_os = "linux")]
-use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
+use crate::vector_storage::dense::memmap_dense_vector_storage::open_dense_vector_storage_with_uring;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
@@ -62,7 +62,7 @@ fn ram_storage(_dir: &Path) -> VectorStorageEnum {
 
 #[cfg(target_os = "linux")]
 fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
-    open_memmap_vector_storage_with_async_io(dir, DIMS, DISTANCE, true, false).unwrap()
+    open_dense_vector_storage_with_uring(dir, DIMS, DISTANCE, false, true).unwrap()
 }
 
 fn scalar_u8() -> WithQuantization {
