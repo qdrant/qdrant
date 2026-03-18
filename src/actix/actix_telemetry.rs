@@ -39,6 +39,16 @@ where
         let match_pattern = request
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
+
+        // All collection-scoped routes must use `{name}` as the path parameter
+        // for the collection name, so that telemetry can extract it automatically.
+        debug_assert!(
+            !match_pattern.contains("/collections/{")
+                || match_pattern.contains("/collections/{name}"),
+            "Route `{match_pattern}` uses a non-standard collection path parameter. \
+             Use `{{name}}` instead, e.g. /collections/{{name}}/..."
+        );
+
         let request_key = format!("{} {}", request.method(), match_pattern);
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();

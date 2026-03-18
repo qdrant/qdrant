@@ -226,8 +226,6 @@ pub fn init_internal(
     runtime
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
-            let record_per_collection = settings.service.record_per_collection.unwrap_or(false);
-
             let qdrant_service = QdrantService::default();
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());

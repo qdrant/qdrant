@@ -33,7 +33,7 @@ pub fn config_local_shard_api(cfg: &mut web::ServiceConfig) {
         .service(cleanup_shard);
 }
 
-#[post("/collections/{collection}/shards/{shard}/points")]
+#[post("/collections/{name}/shards/{shard}/points")]
 async fn get_points(
     dispatcher: web::Data<Dispatcher>,
     ActixAuth(auth): ActixAuth,
@@ -74,7 +74,7 @@ async fn get_points(
     process_response(records, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{collection}/shards/{shard}/points/scroll")]
+#[post("/collections/{name}/shards/{shard}/points/scroll")]
 async fn scroll_points(
     dispatcher: web::Data<Dispatcher>,
     ActixAuth(auth): ActixAuth,
@@ -150,7 +150,7 @@ async fn scroll_points(
     process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{collection}/shards/{shard}/points/count")]
+#[post("/collections/{name}/shards/{shard}/points/count")]
 async fn count_points(
     dispatcher: web::Data<Dispatcher>,
     ActixAuth(auth): ActixAuth,
@@ -230,7 +230,7 @@ pub struct CleanParams {
     pub timeout: Option<NonZeroU64>,
 }
 
-#[post("/collections/{collection}/shards/{shard}/cleanup")]
+#[post("/collections/{name}/shards/{shard}/cleanup")]
 async fn cleanup_shard(
     dispatcher: web::Data<Dispatcher>,
     ActixAuth(auth): ActixAuth,
