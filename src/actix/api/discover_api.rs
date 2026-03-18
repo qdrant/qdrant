@@ -33,7 +33,7 @@ async fn discover_points(
     let pass = match check_strict_mode(
         &discover_request,
         params.timeout_as_secs(),
-        &collection.name,
+        &collection.collection_name,
         &dispatcher,
         &auth,
     )
@@ -50,7 +50,7 @@ async fn discover_points(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
     );
@@ -60,7 +60,7 @@ async fn discover_points(
     let result = dispatcher
         .toc(&auth, &pass)
         .discover(
-            &collection.name,
+            &collection.collection_name,
             discover_request,
             params.consistency,
             shard_selection,
@@ -93,7 +93,7 @@ async fn discover_batch_points(
     let pass = match check_strict_mode_batch(
         request.searches.iter().map(|i| &i.discover_request),
         params.timeout_as_secs(),
-        &collection.name,
+        &collection.collection_name,
         &dispatcher,
         &auth,
     )
@@ -105,7 +105,7 @@ async fn discover_batch_points(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
     );
@@ -113,7 +113,7 @@ async fn discover_batch_points(
 
     let result = do_discover_batch_points(
         dispatcher.toc(&auth, &pass),
-        &collection.name,
+        &collection.collection_name,
         request,
         params.consistency,
         auth,

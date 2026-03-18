@@ -42,7 +42,7 @@ async fn query_points(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
     );
@@ -66,7 +66,7 @@ async fn query_points(
         let pass = check_strict_mode(
             &request,
             params.timeout_as_secs(),
-            &collection.name,
+            &collection.collection_name,
             &dispatcher,
             &auth,
         )
@@ -75,7 +75,7 @@ async fn query_points(
         let points = dispatcher
             .toc(&auth, &pass)
             .query_batch(
-                &collection.name,
+                &collection.collection_name,
                 vec![(request, shard_selection)],
                 params.consistency,
                 auth,
@@ -118,7 +118,7 @@ async fn query_points_batch(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
     );
@@ -154,7 +154,7 @@ async fn query_points_batch(
         let pass = check_strict_mode_batch(
             batch.iter().map(|i| &i.0),
             params.timeout_as_secs(),
-            &collection.name,
+            &collection.collection_name,
             &dispatcher,
             &auth,
         )
@@ -163,7 +163,7 @@ async fn query_points_batch(
         let res = dispatcher
             .toc(&auth, &pass)
             .query_batch(
-                &collection.name,
+                &collection.collection_name,
                 batch,
                 params.consistency,
                 auth,
@@ -209,7 +209,7 @@ async fn query_points_groups(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
     );
@@ -232,7 +232,7 @@ async fn query_points_groups(
         let pass = check_strict_mode(
             &request,
             params.timeout_as_secs(),
-            &collection.name,
+            &collection.collection_name,
             &dispatcher,
             &auth,
         )
@@ -240,7 +240,7 @@ async fn query_points_groups(
 
         let query_result = do_query_point_groups(
             dispatcher.toc(&auth, &pass),
-            &collection.name,
+            &collection.collection_name,
             request,
             params.consistency,
             shard_selection,

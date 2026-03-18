@@ -26,7 +26,7 @@ async fn list_shard_keys(
     helpers::time(do_get_collection_shard_keys(
         dispatcher.toc(&auth, &pass),
         &auth,
-        &collection.name,
+        &collection.collection_name,
     ))
     .await
 }
@@ -51,7 +51,7 @@ async fn create_shard_key(
 
     let response = do_update_collection_cluster(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         operation,
         auth,
         wait_timeout,
@@ -81,7 +81,7 @@ async fn delete_shard_key(
 
     let response = do_update_collection_cluster(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         operation,
         auth,
         wait_timeout,

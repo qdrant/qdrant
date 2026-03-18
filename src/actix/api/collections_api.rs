@@ -68,7 +68,7 @@ async fn get_collection(
     helpers::time(do_get_collection(
         dispatcher.toc(&auth, &pass),
         &auth,
-        &collection.name,
+        &collection.collection_name,
         None,
     ))
     .await
@@ -86,7 +86,7 @@ async fn get_collection_existence(
     helpers::time(do_collection_exists(
         dispatcher.toc(&auth, &pass),
         &auth,
-        &collection.name,
+        &collection.collection_name,
     ))
     .await
 }
@@ -103,7 +103,7 @@ async fn get_collection_aliases(
     helpers::time(do_list_collection_aliases(
         dispatcher.toc(&auth, &pass),
         &auth,
-        &collection.name,
+        &collection.collection_name,
     ))
     .await
 }
@@ -118,7 +118,7 @@ async fn create_collection(
 ) -> HttpResponse {
     let timing = Instant::now();
     let create_collection_op =
-        CreateCollectionOperation::new(collection.name.clone(), operation.into_inner());
+        CreateCollectionOperation::new(collection.collection_name.clone(), operation.into_inner());
 
     let Ok(create_collection_op) = create_collection_op else {
         return process_response(create_collection_op, timing, None);
@@ -143,7 +143,7 @@ async fn update_collection(
     ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let timing = Instant::now();
-    let name = collection.name.clone();
+    let name = collection.collection_name.clone();
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::UpdateCollection(UpdateCollectionOperation::new(
@@ -168,7 +168,7 @@ async fn delete_collection(
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(
-                collection.name.clone(),
+                collection.collection_name.clone(),
             )),
             auth,
             query.timeout(),
@@ -207,7 +207,7 @@ async fn get_cluster_info(
     helpers::time(do_get_collection_cluster(
         dispatcher.toc(&auth, &pass),
         &auth,
-        &collection.name,
+        &collection.collection_name,
     ))
     .await
 }
@@ -224,7 +224,7 @@ async fn update_collection_cluster(
     let wait_timeout = query.timeout();
     let response = do_update_collection_cluster(
         &dispatcher.into_inner(),
-        collection.name.clone(),
+        collection.collection_name.clone(),
         operation.0,
         auth,
         wait_timeout,
@@ -284,7 +284,7 @@ fn get_optimizations(
         let options = OptimizationsRequestOptions::try_from(&params.into_inner())?;
         let pass = new_unchecked_verification_pass();
         let collection_pass = auth.check_collection_access(
-            &collection.name,
+            &collection.collection_name,
             AccessRequirements::new(),
             "get_optimizations",
         )?;

@@ -127,7 +127,6 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp)
     }
 
     async fn update_vectors(
@@ -297,7 +296,6 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp)
     }
 
     async fn create_field_index(
@@ -448,7 +446,6 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp)
     }
 
     async fn recommend(
@@ -689,7 +686,6 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp)
     }
 
     async fn search_matrix_pairs(

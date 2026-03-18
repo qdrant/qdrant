@@ -213,9 +213,12 @@ async fn upload_snapshot(
             }
         }
 
-        let snapshot_location =
-            do_save_uploaded_snapshot(dispatcher.toc(&auth, &pass), &collection.name, snapshot)
-                .await?;
+        let snapshot_location = do_save_uploaded_snapshot(
+            dispatcher.toc(&auth, &pass),
+            &collection.collection_name,
+            snapshot,
+        )
+        .await?;
 
         // Snapshot is a local file, we do not need an API key for that
         let http_client = http_client.client(None)?;
@@ -229,7 +232,7 @@ async fn upload_snapshot(
 
         do_recover_from_snapshot(
             dispatcher.get_ref(),
-            &collection.name,
+            &collection.collection_name,
             snapshot_recover,
             auth,
             http_client,
@@ -255,7 +258,7 @@ async fn recover_from_snapshot(
 
         do_recover_from_snapshot(
             dispatcher.get_ref(),
-            &collection.name,
+            &collection.collection_name,
             snapshot_recover,
             auth,
             http_client,

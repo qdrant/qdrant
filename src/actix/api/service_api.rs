@@ -240,7 +240,7 @@ async fn truncate_unapplied_wal(
     let future = async move {
         let collection_pass = auth
             .check_global_access(AccessRequirements::new().manage(), "truncate_unapplied_wal")?
-            .issue_pass(&collection.name)
+            .issue_pass(&collection.collection_name)
             .into_static();
 
         let pass = new_unchecked_verification_pass();
