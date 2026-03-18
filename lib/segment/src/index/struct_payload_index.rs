@@ -617,6 +617,7 @@ impl StructPayloadIndex {
             .unwrap_or(false)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
