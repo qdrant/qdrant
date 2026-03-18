@@ -44,7 +44,7 @@ use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
-use crate::tonic::api::points_api::PointsService;
+use crate::tonic::api::points_api::{PointsService, PointsTelemetryWrapper};
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use crate::tonic::api::qdrant_internal_api::QdrantInternalService;
 use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
@@ -177,7 +177,7 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .add_service(
-                PointsServer::new(points_service)
+                PointsServer::new(PointsTelemetryWrapper::new(points_service))
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),

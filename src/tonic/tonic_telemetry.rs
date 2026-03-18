@@ -70,6 +70,8 @@ where
                     }
                 });
 
+            // Collection name is attached to response extensions by
+            // `PointsTelemetryWrapper` (see points_api.rs).
             let collection_name = response
                 .extensions()
                 .get::<CollectionName>()
