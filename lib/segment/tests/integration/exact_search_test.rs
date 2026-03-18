@@ -7,7 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
-use itertools::Itertools;
+use fallible_iterator::FallibleIterator;
 use ordered_float::OrderedFloat;
 use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
@@ -95,7 +95,8 @@ fn exact_search_test() {
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     for block in blocks.iter() {
         assert!(
             block.condition.range.is_some(),

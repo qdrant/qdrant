@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::{FallibleIterator, IteratorExt as _};
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
@@ -395,7 +396,7 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         let make_block = |count, value, key: PayloadKeyType| {
             if count > threshold {
                 Some(PayloadBlockCondition {
@@ -420,7 +421,7 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         .into_iter()
         .flatten();
 
-        Box::new(iter)
+        Box::new(iter.map(Ok).transpose_into_fallible())
     }
 
     fn count_indexed_points(&self) -> usize {

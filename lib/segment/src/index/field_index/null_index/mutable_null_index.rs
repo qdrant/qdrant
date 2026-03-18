@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use fs_err as fs;
 use serde_json::Value;
 
@@ -358,9 +359,8 @@ impl PayloadFieldIndex for MutableNullIndex {
         &self,
         _threshold: usize,
         _key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        // No payload blocks
-        Box::new(std::iter::empty())
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
+        Box::new(fallible_iterator::empty())
     }
 }
 

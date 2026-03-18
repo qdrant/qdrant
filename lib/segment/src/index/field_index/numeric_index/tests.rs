@@ -284,7 +284,8 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
@@ -292,7 +293,8 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
@@ -300,7 +302,8 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
@@ -308,7 +311,8 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 }
@@ -348,7 +352,8 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
 }
 

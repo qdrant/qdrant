@@ -4,11 +4,12 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use serde_json::Value;
 
 use super::field_index::FieldIndex;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
@@ -107,7 +108,7 @@ pub trait PayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_>;
 
     /// Overwrite payload for point_id. If payload already exists, replace it.
     fn overwrite_payload(

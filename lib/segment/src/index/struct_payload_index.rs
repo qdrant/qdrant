@@ -11,6 +11,7 @@ use common::defaults::log_load_timing;
 use common::either_variant::EitherVariant;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use fallible_iterator::{FallibleIterator, IteratorExt as _};
 use fs_err as fs;
 use schemars::_serde_json::Value;
 
@@ -1023,14 +1024,21 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         match self.field_indexes.get(field) {
-            None => Box::new(std::iter::empty()),
+            None => Box::new(fallible_iterator::empty()),
             Some(indexes) => {
                 let field_clone = field.to_owned();
-                Box::new(indexes.iter().flat_map(move |field_index| {
-                    field_index.payload_blocks(threshold, field_clone.clone())
-                }))
+                Box::new(
+                    indexes
+                        .iter()
+                        .flat_map(move |field_index| {
+                            field_index
+                                .payload_blocks(threshold, field_clone.clone())
+                                .iterator()
+                        })
+                        .transpose_into_fallible(),
+                )
             }
         }
     }

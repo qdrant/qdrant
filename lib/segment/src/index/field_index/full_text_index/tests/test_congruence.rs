@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rstest::rstest;
@@ -461,10 +462,12 @@ fn test_congruence(
                 assert_eq!(
                     index_a
                         .payload_blocks(threshold, JsonPath::new(FIELD_NAME))
-                        .count(),
+                        .count()
+                        .unwrap(),
                     index_b
                         .payload_blocks(threshold, JsonPath::new(FIELD_NAME))
-                        .count(),
+                        .count()
+                        .unwrap(),
                 );
             }
         }

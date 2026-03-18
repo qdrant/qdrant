@@ -7051,6 +7051,7 @@ dependencies = [
  "delegate",
  "ecow",
  "env_logger",
+ "fallible-iterator",
  "fnv",
  "fs-err",
  "fs_extra",

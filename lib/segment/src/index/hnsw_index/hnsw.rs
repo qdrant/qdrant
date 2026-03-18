@@ -593,7 +593,9 @@ impl HNSWIndex {
 
                 let counter = field_progress.track_progress(None);
 
-                for payload_block in payload_index_ref.payload_blocks(&field, full_scan_threshold) {
+                let mut payload_blocks_iterator =
+                    payload_index_ref.payload_blocks(&field, full_scan_threshold);
+                while let Some(payload_block) = payload_blocks_iterator.next()? {
                     check_process_stopped(stopped)?;
 
                     if payload_block.cardinality > max_block_size {

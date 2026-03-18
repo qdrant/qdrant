@@ -13,9 +13,10 @@ use std::collections::HashMap;
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::{FallibleIterator, IteratorExt as _};
 use itertools::Itertools;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::query_estimator::expected_should_estimation;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
@@ -356,7 +357,7 @@ pub trait InvertedIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> impl Iterator<Item = PayloadBlockCondition> + '_ {
+    ) -> impl FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_ {
         let map_filter_condition = move |(token, postings_len): (&str, usize)| {
             if postings_len >= threshold {
                 Some(PayloadBlockCondition {
@@ -372,6 +373,8 @@ pub trait InvertedIndex {
         // so we only build it for individual tokens
         self.vocab_with_postings_len_iter()
             .filter_map(map_filter_condition)
+            .map(Ok)
+            .transpose_into_fallible()
     }
 
     fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool;

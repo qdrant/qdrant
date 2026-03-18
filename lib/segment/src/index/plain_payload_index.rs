@@ -7,13 +7,14 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use fs_err as fs;
 use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndex;
 use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
@@ -197,9 +198,8 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         _field: PayloadKeyTypeRef,
         _threshold: usize,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        // No blocks for un-indexed payload
-        Box::new(std::iter::empty())
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
+        Box::new(fallible_iterator::empty())
     }
 
     fn overwrite_payload(

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
+use fallible_iterator::{FallibleIterator, IteratorExt as _};
 use fs_err as fs;
 use roaring::RoaringBitmap;
 
@@ -424,7 +425,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         let make_block = |count, value, key: PayloadKeyType| {
             if count > threshold {
                 Some(PayloadBlockCondition {
@@ -449,7 +450,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
         .into_iter()
         .flatten();
 
-        Box::new(iter)
+        Box::new(iter.map(Ok).transpose_into_fallible())
     }
 }
 

@@ -1,5 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use mutable_bool_index::MutableBoolIndex;
 #[cfg(feature = "rocksdb")]
 use simple_bool_index::SimpleBoolIndex;
@@ -7,7 +8,7 @@ use simple_bool_index::SimpleBoolIndex;
 use super::facet_index::FacetIndex;
 use super::map_index::IdIter;
 use super::{PayloadFieldIndex, ValueIndexer};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -224,7 +225,8 @@ impl PayloadFieldIndex for BoolIndex {
         &self,
         threshold: usize,
         key: crate::types::PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = super::PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = super::PayloadBlockCondition, Error = OperationError> + '_>
+    {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.payload_blocks(threshold, key),
@@ -305,6 +307,7 @@ mod tests {
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use fallible_iterator::FallibleIterator;
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json::json;
@@ -556,7 +559,8 @@ mod tests {
 
         let blocks = index
             .payload_blocks(0, JsonPath::new(FIELD_NAME))
-            .collect_vec();
+            .collect::<Vec<_>>()
+            .unwrap();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].cardinality, 6);
         assert_eq!(blocks[1].cardinality, 6);

@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::{FallibleIterator, IteratorExt as _};
 use itertools::Itertools;
 use mutable_geo_index::InMemoryGeoMapIndex;
 #[cfg(feature = "rocksdb")]
@@ -827,16 +828,19 @@ impl PayloadFieldIndex for GeoMapIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         Box::new(
             self.large_hashes(threshold)
-                .map(move |(geo_hash, size)| PayloadBlockCondition {
-                    condition: FieldCondition::new_geo_bounding_box(
-                        key.clone(),
-                        geo_hash_to_box(geo_hash),
-                    ),
-                    cardinality: size,
-                }),
+                .map(move |(geo_hash, size)| {
+                    Ok(PayloadBlockCondition {
+                        condition: FieldCondition::new_geo_bounding_box(
+                            key.clone(),
+                            geo_hash_to_box(geo_hash),
+                        ),
+                        cardinality: size,
+                    })
+                })
+                .transpose_into_fallible(),
         )
     }
 }
@@ -1284,7 +1288,8 @@ mod tests {
 
         let blocks = field_index
             .payload_blocks(100, JsonPath::new("test"))
-            .collect_vec();
+            .collect::<Vec<_>>()
+            .unwrap();
         blocks.iter().for_each(|block| {
             let hw_acc = HwMeasurementAcc::new();
             let hw_counter = hw_acc.get_counter_cell();

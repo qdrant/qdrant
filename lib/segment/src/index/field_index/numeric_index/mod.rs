@@ -18,6 +18,7 @@ use chrono::DateTime;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
+use fallible_iterator::{FallibleIterator, IteratorExt as _};
 use gridstore::Blob;
 use mmap_numeric_index::MmapNumericIndex;
 use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
@@ -989,7 +990,7 @@ where
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         let mut lower_bound = Unbounded;
         let mut pre_lower_bound: Option<Bound<T>> = None;
         let mut payload_conditions = Vec::new();
@@ -1053,7 +1054,12 @@ where
                 Unbounded => break,
             };
         }
-        Box::new(payload_conditions.into_iter())
+        Box::new(
+            payload_conditions
+                .into_iter()
+                .map(Ok)
+                .transpose_into_fallible(),
+        )
     }
 }
 

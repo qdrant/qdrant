@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use serde_json::Value;
 
 use super::bool_index::BoolIndex;
@@ -20,7 +21,7 @@ use super::numeric_index::{
     NumericIndex, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder, StreamRange,
 };
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::MutableNullIndex;
@@ -72,7 +73,7 @@ pub trait PayloadFieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_>;
 }
 
 pub trait ValueIndexer {
@@ -266,7 +267,7 @@ impl FieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         self.get_payload_field_index()
             .payload_blocks(threshold, key)
     }

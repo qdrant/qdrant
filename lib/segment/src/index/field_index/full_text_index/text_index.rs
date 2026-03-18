@@ -6,6 +6,7 @@ use std::sync::Arc;
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
@@ -180,7 +181,7 @@ impl FullTextIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         match self {
             Self::Mutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
             Self::Immutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
@@ -638,7 +639,7 @@ impl PayloadFieldIndex for FullTextIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         self.payload_blocks(threshold, key)
     }
 }
