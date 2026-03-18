@@ -1205,7 +1205,7 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::only_default_vector;
-    use crate::entry::{ReadSegmentEntry, SegmentEntry};
+    use crate::entry::SegmentEntry;
     use crate::index::payload_config::{IndexMutability, PayloadIndexType};
     use crate::segment_constructor::load_segment;
     use crate::segment_constructor::simple_segment_constructor::build_simple_segment;

@@ -24,8 +24,10 @@ use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::entry::entry_point::NonAppendableSegmentEntry as _;
-use segment::entry::{ReadSegmentEntry as _, SegmentEntry as _, StorageSegmentEntry as _};
+use segment::entry::{
+    NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
+    StorageSegmentEntry as _,
+};
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::PointIdType;
@@ -331,7 +333,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
 
     for (point_id, versions) in deleted_points_snapshot {
         optimized_segment
-            .delete_point_mut(versions.operation_version, point_id, hw_counter)
+            .delete_point(versions.operation_version, point_id, hw_counter)
             .unwrap();
     }
 

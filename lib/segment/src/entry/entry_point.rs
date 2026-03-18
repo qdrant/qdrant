@@ -232,6 +232,144 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// the appendable state of the wrapped segment.
     fn is_appendable(&self) -> bool;
 
+    /// Get indexed fields
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
+
+    /// Checks if segment errored during last operations
+    fn check_error(&self) -> Option<SegmentFailedState>;
+
+    // Get collected telemetry data of segment
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
+
+    fn fill_query_context(&self, query_context: &mut QueryContext);
+
+    /// Check whether the point is marked as deferred in the segment
+    fn point_is_deferred(&self, point_id: PointIdType) -> bool;
+
+    /// Returns external IDs of all deferred points in the segment
+    fn deferred_point_ids(&self) -> Vec<PointIdType>;
+
+    /// Returns the amount of non-deleted deferred points.
+    ///
+    /// Note: This value can return `0` with `has_deferred_points()` returning `true`.
+    /// This is because this function returns the *non-deleted* deferred points.
+    fn deferred_point_count(&self) -> usize;
+
+    /// Returns `true` if there is at least one point that is hidden (deferred).
+    /// Non-appendable segments always return `false` as they can't have deferred points.
+    ///
+    /// Note: the deferred point can be deleted and this function would still return `true`.
+    fn has_deferred_points(&self) -> bool;
+}
+
+/// Segment with storage.
+pub trait StorageSegmentEntry: ReadSegmentEntry {
+    /// Get current persistent version of the segment
+    fn persistent_version(&self) -> SeqNumberType;
+
+    /// Returns a function, which when called, will flush all pending changes to disk.
+    /// If there are currently no changes to flush, returns None.
+    /// If `force` is true, will return a flusher even if there are no changes to flush.
+    fn flusher(&self, force: bool) -> Option<Flusher>;
+
+    /// Immediately flush all changes to disk and return persisted version.
+    /// Blocks the current thread.
+    fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
+        if let Some(flusher) = self.flusher(force) {
+            flusher()?;
+        }
+        Ok(self.persistent_version())
+    }
+
+    /// Removes all persisted data and forces to destroy segment
+    fn drop_data(self) -> OperationResult<()>;
+
+    /// Path to data, owned by segment
+    fn data_path(&self) -> PathBuf;
+}
+
+/// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
+///
+/// Assume all operations are idempotent - which means that no matter how many times an operation
+/// is executed - the storage state will be the same.
+pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+}
+
+/// Define mutable operations which can be performed with Segment or Segment-like entity.
+///
+/// Assume all operations are idempotent - which means that no matter how many times an operation
+/// is executed - the storage state will be the same.
+///
+/// This is not a superset of `NonAppendableSegmentEntry` as its operations (will) differ in mutability.
+pub trait SegmentEntry: StorageSegmentEntry {
+    fn delete_point_mut(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn upsert_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn update_vectors(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn delete_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector_name: &VectorName,
+    ) -> OperationResult<bool>;
+
+    fn set_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        payload: &Payload,
+        key: &Option<JsonPath>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn set_full_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        full_payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn delete_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn clear_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
     /// Delete field index, if exists
     fn delete_field_index(
         &mut self,
@@ -303,141 +441,4 @@ pub trait ReadSegmentEntry: SnapshotEntry {
 
         self.apply_field_index(op_num, key.to_owned(), schema, indexes)
     }
-
-    /// Get indexed fields
-    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
-
-    /// Checks if segment errored during last operations
-    fn check_error(&self) -> Option<SegmentFailedState>;
-
-    // Get collected telemetry data of segment
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
-
-    fn fill_query_context(&self, query_context: &mut QueryContext);
-
-    /// Check whether the point is marked as deferred in the segment
-    fn point_is_deferred(&self, point_id: PointIdType) -> bool;
-
-    /// Returns external IDs of all deferred points in the segment
-    fn deferred_point_ids(&self) -> Vec<PointIdType>;
-
-    /// Returns the amount of non-deleted deferred points.
-    ///
-    /// Note: This value can return `0` with `has_deferred_points()` returning `true`.
-    /// This is because this function returns the *non-deleted* deferred points.
-    fn deferred_point_count(&self) -> usize;
-
-    /// Returns `true` if there is at least one point that is hidden (deferred).
-    /// Non-appendable segments always return `false` as they can't have deferred points.
-    ///
-    /// Note: the deferred point can be deleted and this function would still return `true`.
-    fn has_deferred_points(&self) -> bool;
-}
-
-pub trait StorageSegmentEntry: ReadSegmentEntry {
-    /// Get current persistent version of the segment
-    fn persistent_version(&self) -> SeqNumberType;
-
-    /// Returns a function, which when called, will flush all pending changes to disk.
-    /// If there are currently no changes to flush, returns None.
-    /// If `force` is true, will return a flusher even if there are no changes to flush.
-    fn flusher(&self, force: bool) -> Option<Flusher>;
-
-    /// Immediately flush all changes to disk and return persisted version.
-    /// Blocks the current thread.
-    fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
-        if let Some(flusher) = self.flusher(force) {
-            flusher()?;
-        }
-        Ok(self.persistent_version())
-    }
-
-    /// Removes all persisted data and forces to destroy segment
-    fn drop_data(self) -> OperationResult<()>;
-
-    /// Path to data, owned by segment
-    fn data_path(&self) -> PathBuf;
-}
-
-/// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
-///
-/// Assume all operations are idempotent - which means that no matter how many times an operation
-/// is executed - the storage state will be the same.
-pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-}
-
-/// Define mutable operations which can be performed with Segment or Segment-like entity.
-///
-/// Assume all operations are idempotent - which means that no matter how many times an operation
-/// is executed - the storage state will be the same.
-///
-/// This is not a superset of `NonAppendableSegmentEntry` as its operations will differ in mutability.
-pub trait SegmentEntry: StorageSegmentEntry {
-    fn delete_point_mut(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn upsert_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn update_vectors(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn delete_vector(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        vector_name: &VectorName,
-    ) -> OperationResult<bool>;
-
-    fn set_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        payload: &Payload,
-        key: &Option<JsonPath>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn set_full_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: &Payload,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn delete_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn clear_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
 }
