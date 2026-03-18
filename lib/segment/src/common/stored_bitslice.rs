@@ -501,7 +501,7 @@ mod tests {
                     .flat_map(|el: u64| (el * 64..el * 64 + 64).map(|i| (i, true))),
             )
             .unwrap();
-        assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 15));
+        assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 111));
 
         // Out of bounds
         assert!(
@@ -514,7 +514,7 @@ mod tests {
         storage
             .set_ascending_bits_batch(std::iter::empty())
             .unwrap();
-        assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 15));
+        assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 111));
     }
 
     #[test]
