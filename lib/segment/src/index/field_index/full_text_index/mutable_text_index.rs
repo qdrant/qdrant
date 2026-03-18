@@ -424,6 +424,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
+                .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0, 4]);
 
@@ -431,12 +432,14 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
+                .unwrap()
                 .collect();
             assert_eq!(search_res, vec![2]);
 
             let filter_condition = filter_request("the great time");
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
+                .unwrap()
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![4]);
@@ -448,6 +451,7 @@ mod tests {
             assert!(
                 index
                     .filter(&filter_condition, &hw_counter)
+                    .unwrap()
                     .unwrap()
                     .next()
                     .is_none()
@@ -486,12 +490,14 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
+                .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0]);
 
             let filter_condition = filter_request("the");
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
+                .unwrap()
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0, 1, 3, 4]);
@@ -502,6 +508,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
+                .unwrap()
                 .collect();
             assert!(search_res.is_empty());
             assert_eq!(index.count_indexed_points(), 3);
@@ -510,6 +517,7 @@ mod tests {
             let filter_condition = filter_request("the");
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
+                .unwrap()
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![1, 4]);

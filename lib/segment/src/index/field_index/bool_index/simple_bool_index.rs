@@ -352,8 +352,8 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         &'a self,
         condition: &'a crate::types::FieldCondition,
         _: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
@@ -364,7 +364,7 @@ impl PayloadFieldIndex for SimpleBoolIndex {
                 }
             }
             _ => None,
-        }
+        })
     }
 
     fn estimate_cardinality(

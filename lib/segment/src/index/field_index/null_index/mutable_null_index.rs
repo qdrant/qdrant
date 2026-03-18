@@ -254,7 +254,7 @@ impl PayloadFieldIndex for MutableNullIndex {
         &'a self,
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         let FieldCondition {
             key: _,
             r#match: _,
@@ -267,7 +267,7 @@ impl PayloadFieldIndex for MutableNullIndex {
             is_null,
         } = condition;
 
-        if let Some(is_empty) = is_empty {
+        Ok(if let Some(is_empty) = is_empty {
             if *is_empty {
                 // Return points that don't have values
                 let iter = self.storage.has_values_flags.iter_falses();
@@ -289,7 +289,7 @@ impl PayloadFieldIndex for MutableNullIndex {
             }
         } else {
             None
-        }
+        })
     }
 
     fn estimate_cardinality(
@@ -449,9 +449,11 @@ mod tests {
         let is_null_values: Vec<_> = null_index
             .filter(&filter_is_null, &hw_counter)
             .unwrap()
+            .unwrap()
             .collect();
         let not_empty_values: Vec<_> = null_index
             .filter(&filter_is_not_empty, &hw_counter)
+            .unwrap()
             .unwrap()
             .collect();
 
