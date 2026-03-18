@@ -1,5 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
+use common::universal_io::UniversalRead;
 
 use super::query::{
     ContextQuery, DiscoverQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
@@ -7,7 +8,8 @@ use super::query::{
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::{QueryScorerBytes, QueryScorerBytesImpl};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorInternal};
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{DenseVector, QueryVector, VectorInternal};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
@@ -18,27 +20,39 @@ use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::{RawScorer, VectorStorage as _};
 
-pub fn new<'a>(
+pub fn new<'a, T, Storage>(
     query: QueryVector,
-    storage: &'a MemmapDenseVectorStorage<VectorElementType>,
+    storage: &'a MemmapDenseVectorStorage<T, Storage>,
     hardware_counter: HardwareCounterCell,
-) -> OperationResult<Box<dyn RawScorer + 'a>> {
+) -> OperationResult<Box<dyn RawScorer + 'a>>
+where
+    T: PrimitiveVectorElement,
+    Storage: UniversalRead<u8>,
+    CosineMetric: Metric<T>,
+    EuclidMetric: Metric<T>,
+    DotProductMetric: Metric<T>,
+    ManhattanMetric: Metric<T>,
+{
     AsyncRawScorerBuilder::new(query, storage, hardware_counter).build()
 }
 
-pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<TVector = [VectorElementType]>> {
-    query_scorer: TQueryScorer,
-    storage: &'a ImmutableDenseVectors<VectorElementType>,
+pub struct AsyncRawScorerImpl<'a, T, Storage, Scorer>
+where
+    T: PrimitiveVectorElement,
+    Storage: UniversalRead<u8>,
+    Scorer: QueryScorer<TVector = [T]>,
+{
+    query_scorer: Scorer,
+    storage: &'a ImmutableDenseVectors<T, Storage>,
 }
 
-impl<'a, TQueryScorer> AsyncRawScorerImpl<'a, TQueryScorer>
+impl<'a, T, Storage, Scorer> AsyncRawScorerImpl<'a, T, Storage, Scorer>
 where
-    TQueryScorer: QueryScorer<TVector = [VectorElementType]>,
+    T: PrimitiveVectorElement,
+    Storage: UniversalRead<u8>,
+    Scorer: QueryScorer<TVector = [T]>,
 {
-    fn new(
-        query_scorer: TQueryScorer,
-        storage: &'a ImmutableDenseVectors<VectorElementType>,
-    ) -> Self {
+    fn new(query_scorer: Scorer, storage: &'a ImmutableDenseVectors<T, Storage>) -> Self {
         Self {
             query_scorer,
             storage,
@@ -46,9 +60,11 @@ where
     }
 }
 
-impl<TQueryScorer> RawScorer for AsyncRawScorerImpl<'_, TQueryScorer>
+impl<'a, T, Storage, Scorer> RawScorer for AsyncRawScorerImpl<'a, T, Storage, Scorer>
 where
-    TQueryScorer: QueryScorer<TVector = [VectorElementType]>,
+    T: PrimitiveVectorElement,
+    Storage: UniversalRead<u8>,
+    Scorer: QueryScorer<TVector = [T]>,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
         assert_eq!(points.len(), scores.len());
@@ -78,17 +94,25 @@ where
     }
 }
 
-struct AsyncRawScorerBuilder<'a> {
+struct AsyncRawScorerBuilder<'a, T, Storage>
+where
+    T: PrimitiveVectorElement,
+    Storage: UniversalRead<u8>,
+{
     query: QueryVector,
-    storage: &'a MemmapDenseVectorStorage<VectorElementType>,
+    storage: &'a MemmapDenseVectorStorage<T, Storage>,
     distance: Distance,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a> AsyncRawScorerBuilder<'a> {
+impl<'a, T, Storage> AsyncRawScorerBuilder<'a, T, Storage>
+where
+    T: PrimitiveVectorElement,
+    Storage: UniversalRead<u8>,
+{
     pub fn new(
         query: QueryVector,
-        storage: &'a MemmapDenseVectorStorage<VectorElementType>,
+        storage: &'a MemmapDenseVectorStorage<T, Storage>,
         hardware_counter: HardwareCounterCell,
     ) -> Self {
         Self {
@@ -99,7 +123,13 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         }
     }
 
-    pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>>
+    where
+        CosineMetric: Metric<T>,
+        EuclidMetric: Metric<T>,
+        DotProductMetric: Metric<T>,
+        ManhattanMetric: Metric<T>,
+    {
         match self.distance {
             Distance::Cosine => self._build_with_metric::<CosineMetric>(),
             Distance::Euclid => self._build_with_metric::<EuclidMetric>(),
@@ -108,7 +138,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         }
     }
 
-    fn _build_with_metric<TMetric: Metric<VectorElementType> + 'a>(
+    fn _build_with_metric<TMetric: Metric<T> + 'a>(
         self,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         let Self {
@@ -127,6 +157,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                             storage,
                             hardware_counter,
                         );
+
                         Ok(async_raw_scorer_from_query_scorer(query_scorer, storage))
                     }
                     VectorInternal::Sparse(_sparse_vector) => Err(OperationError::service_error(
@@ -189,12 +220,14 @@ impl<'a> AsyncRawScorerBuilder<'a> {
     }
 }
 
-fn async_raw_scorer_from_query_scorer<'a, TQueryScorer>(
-    query_scorer: TQueryScorer,
-    storage: &'a MemmapDenseVectorStorage<VectorElementType>,
+fn async_raw_scorer_from_query_scorer<'a, T, Storage, Scorer>(
+    query_scorer: Scorer,
+    storage: &'a MemmapDenseVectorStorage<T, Storage>,
 ) -> Box<dyn RawScorer + 'a>
 where
-    TQueryScorer: QueryScorer<TVector = [VectorElementType]> + 'a,
+    T: PrimitiveVectorElement,
+    Storage: UniversalRead<u8>,
+    Scorer: QueryScorer<TVector = [T]> + 'a,
 {
     Box::new(AsyncRawScorerImpl::new(
         query_scorer,
