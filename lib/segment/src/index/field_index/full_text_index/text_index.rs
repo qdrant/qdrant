@@ -614,20 +614,24 @@ impl PayloadFieldIndex for FullTextIndex {
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         let parsed_query_opt = match &condition.r#match {
             Some(Match::Text(MatchText { text })) => self.parse_text_query(text, hw_counter),
             Some(Match::Phrase(MatchPhrase { phrase })) => {
                 self.parse_phrase_query(phrase, hw_counter)
             }
-            _ => return None,
+            _ => return Ok(None),
         };
 
         let Some(parsed_query) = parsed_query_opt else {
-            return Some(CardinalityEstimation::exact(0));
+            return Ok(Some(CardinalityEstimation::exact(0)));
         };
 
-        Some(self.estimate_query_cardinality(&parsed_query, condition, hw_counter))
+        Ok(Some(self.estimate_query_cardinality(
+            &parsed_query,
+            condition,
+            hw_counter,
+        )))
     }
 
     fn payload_blocks(

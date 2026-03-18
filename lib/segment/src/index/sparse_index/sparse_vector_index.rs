@@ -273,17 +273,17 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         &self,
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let available_vector_count = vector_storage.available_vector_count();
-        let query_point_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
-        adjust_to_available_vectors(
+        let query_point_cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
+        Ok(adjust_to_available_vectors(
             query_point_cardinality,
             available_vector_count,
             id_tracker.available_point_count(),
-        )
+        ))
     }
 
     // Search using raw scorer
@@ -325,7 +325,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                             &hw_counter,
                             &is_stopped,
                             vector_query_context.deferred_internal_id(),
-                        );
+                        )?;
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
@@ -372,7 +372,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     &hw_counter,
                     &is_stopped,
                     vector_query_context.deferred_internal_id(),
-                );
+                )?;
                 *prefiltered_points = Some(filtered_points);
                 prefiltered_points.as_ref().unwrap().iter()
             }
@@ -411,7 +411,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         filter: Option<&Filter>,
         top: usize,
         vector_query_context: &VectorQueryContext,
-    ) -> Vec<ScoredPointOffset> {
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
         let deleted_point_bitslice = vector_query_context
@@ -448,13 +448,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         match filter {
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
-                let filter_context = payload_index.filter_context(filter, &hw_counter);
+                let filter_context = payload_index.filter_context(filter, &hw_counter)?;
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check(idx)
                 };
-                search_context.search(&matches_filter_condition)
+                Ok(search_context.search(&matches_filter_condition))
             }
-            None => search_context.search(&not_deleted_condition),
+            None => Ok(search_context.search(&not_deleted_condition)),
         }
     }
 
@@ -474,7 +474,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             Some(filter) => {
                 // if cardinality is small - use plain search
                 let query_cardinality =
-                    self.get_query_cardinality(filter, &vector_query_context.hardware_counter());
+                    self.get_query_cardinality(filter, &vector_query_context.hardware_counter())?;
                 let threshold = self
                     .config
                     .full_scan_threshold
@@ -492,12 +492,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse);
-                    Ok(self.search_sparse(vector, Some(filter), top, vector_query_context))
+                    self.search_sparse(vector, Some(filter), top, vector_query_context)
                 }
             }
             None => {
                 let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
-                Ok(self.search_sparse(vector, filter, top, vector_query_context))
+                self.search_sparse(vector, filter, top, vector_query_context)
             }
         }
     }

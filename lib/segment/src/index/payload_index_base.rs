@@ -69,7 +69,7 @@ pub trait PayloadIndex {
         &self,
         query: &Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation;
+    ) -> OperationResult<CardinalityEstimation>;
 
     /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
     fn estimate_nested_cardinality(
@@ -77,7 +77,7 @@ pub trait PayloadIndex {
         query: &Filter,
         nested_path: &JsonPath,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation;
+    ) -> OperationResult<CardinalityEstimation>;
 
     /// Return list of all point ids, which satisfy filtering criteria
     ///
@@ -90,7 +90,7 @@ pub trait PayloadIndex {
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> Vec<PointOffsetType>;
+    ) -> OperationResult<Vec<PointOffsetType>>;
 
     /// Return number of points, indexed by this field
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
@@ -99,7 +99,7 @@ pub trait PayloadIndex {
         &'a self,
         filter: &'a Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn FilterContext + 'a>;
+    ) -> OperationResult<Box<dyn FilterContext + 'a>>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
