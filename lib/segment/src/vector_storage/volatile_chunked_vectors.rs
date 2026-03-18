@@ -209,4 +209,12 @@ mod tests {
         // check if middle chunk is fully allocated
         assert_eq!(vectors.get(5_000_000), &[0, 0, 0]);
     }
+
+    #[test]
+    fn test_try_set_capacity_exact_zero_does_not_panic() {
+        let mut vectors = VolatileChunkedVectors::<u8>::new(3);
+        vectors.try_set_capacity_exact(0).unwrap();
+        assert!(vectors.chunks.is_empty());
+        assert_eq!(vectors.len(), 0);
+    }
 }
