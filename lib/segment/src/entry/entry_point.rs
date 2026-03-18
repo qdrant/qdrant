@@ -31,7 +31,7 @@ use crate::types::{
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait SearchSegmentEntry: SnapshotEntry {
+pub trait ReadSegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
@@ -361,7 +361,7 @@ pub trait SearchSegmentEntry: SnapshotEntry {
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait NonAppendableSegmentEntry: SearchSegmentEntry {
+pub trait NonAppendableSegmentEntry: ReadSegmentEntry {
     fn delete_point(
         &mut self,
         op_num: SeqNumberType,
@@ -376,7 +376,7 @@ pub trait NonAppendableSegmentEntry: SearchSegmentEntry {
 /// is executed - the storage state will be the same.
 ///
 /// This is not a superset of `NonAppendableSegmentEntry` as its operations will differ in mutability.
-pub trait SegmentEntry: SearchSegmentEntry {
+pub trait SegmentEntry: ReadSegmentEntry {
     fn delete_point_mut(
         &mut self,
         op_num: SeqNumberType,

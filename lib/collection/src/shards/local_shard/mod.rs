@@ -44,7 +44,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::Mutex as ParkingMutex;
 use segment::common::operation_error::OperationResult;
-use segment::entry::SearchSegmentEntry as _;
+use segment::entry::ReadSegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{

@@ -5,7 +5,7 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::SearchSegmentEntry;
+use segment::entry::ReadSegmentEntry;
 use segment::index::VectorIndex;
 use segment::segment::Segment;
 use segment::types::HnswGlobalConfig;

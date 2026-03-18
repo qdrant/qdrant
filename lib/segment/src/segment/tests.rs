@@ -26,7 +26,7 @@ use crate::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, VectorRef, only_default_vector,
 };
 use crate::entry::SnapshotEntry as _;
-use crate::entry::entry_point::{SearchSegmentEntry as _, SegmentEntry as _};
+use crate::entry::entry_point::{ReadSegmentEntry as _, SegmentEntry as _};
 use crate::id_tracker::IdTracker;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::JsonPath;

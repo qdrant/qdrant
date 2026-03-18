@@ -5,7 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::SearchSegmentEntry;
+use segment::entry::ReadSegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, VectorName};
 
@@ -65,7 +65,7 @@ impl ConfigMismatchOptimizer {
             .and_then(|cfg| cfg.on_disk)
     }
 
-    fn has_config_mismatch(&self, segment: &dyn SearchSegmentEntry) -> bool {
+    fn has_config_mismatch(&self, segment: &dyn ReadSegmentEntry) -> bool {
         let segment_config = segment.config();
 
         if self

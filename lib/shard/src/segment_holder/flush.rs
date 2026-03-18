@@ -6,7 +6,7 @@ use common::sort_utils::sort_permutation;
 use log::trace;
 use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::SearchSegmentEntry;
+use segment::entry::ReadSegmentEntry;
 use segment::types::SeqNumberType;
 
 use crate::locked_segment::LockedSegment;
@@ -182,7 +182,7 @@ impl SegmentHolder {
     /// If all changes are saved - returns max version.
     fn get_max_persisted_version(
         &self,
-        segment_reads: Vec<RwLockReadGuard<'_, dyn SearchSegmentEntry>>,
+        segment_reads: Vec<RwLockReadGuard<'_, dyn ReadSegmentEntry>>,
         lock_order: Vec<SegmentId>,
     ) -> SeqNumberType {
         // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
@@ -233,7 +233,7 @@ impl SegmentHolder {
     fn read_segment_locks(
         &self,
         segment_ids: impl IntoIterator<Item = SegmentId>,
-    ) -> OperationResult<Vec<&RwLock<dyn SearchSegmentEntry>>> {
+    ) -> OperationResult<Vec<&RwLock<dyn ReadSegmentEntry>>> {
         segment_ids
             .into_iter()
             .map(|segment_id| {
@@ -241,7 +241,7 @@ impl SegmentHolder {
                     .ok_or_else(|| {
                         OperationError::service_error(format!("No segment with ID {segment_id}"))
                     })
-                    .map(LockedSegment::get_non_appendable)
+                    .map(LockedSegment::get_read)
             })
             .collect()
     }

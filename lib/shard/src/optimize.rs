@@ -25,7 +25,7 @@ use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::entry::entry_point::NonAppendableSegmentEntry as _;
-use segment::entry::{SearchSegmentEntry, SegmentEntry};
+use segment::entry::{ReadSegmentEntry, SegmentEntry};
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::PointIdType;

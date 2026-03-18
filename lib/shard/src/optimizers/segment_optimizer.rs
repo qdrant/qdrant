@@ -10,7 +10,7 @@ use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::SearchSegmentEntry;
+use segment::entry::ReadSegmentEntry;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;

@@ -7,7 +7,7 @@ use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
-use segment::entry::SearchSegmentEntry as _;
+use segment::entry::ReadSegmentEntry as _;
 use segment::segment::SegmentVersion;
 use segment::types::SegmentConfig;
 

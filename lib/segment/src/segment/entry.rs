@@ -23,7 +23,7 @@ use crate::data_types::query_context::{
 };
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
-use crate::entry::entry_point::{NonAppendableSegmentEntry, SearchSegmentEntry, SegmentEntry};
+use crate::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use crate::id_tracker::{IdTracker, PointMappingsGuard};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::query_estimator::adjust_for_deferred_points;
@@ -40,7 +40,7 @@ use crate::vector_storage::VectorStorage;
 
 /// This is a basic implementation of the trait, meaning that it implements the _actual_ operations with data and not
 /// any kind of proxy or wrapping.
-impl SearchSegmentEntry for Segment {
+impl ReadSegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
         self.version.unwrap_or(0)
     }

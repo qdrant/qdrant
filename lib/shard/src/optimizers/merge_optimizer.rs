@@ -4,7 +4,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::SearchSegmentEntry as _;
+use segment::entry::ReadSegmentEntry as _;
 use segment::types::HnswGlobalConfig;
 
 use super::config::SegmentOptimizerConfig;

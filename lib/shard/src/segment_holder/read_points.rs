@@ -4,7 +4,7 @@ use std::time::Duration;
 use parking_lot::RwLockReadGuard;
 use segment::common::check_stopped;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::SearchSegmentEntry;
+use segment::entry::ReadSegmentEntry;
 use segment::types::PointIdType;
 
 use crate::locked_segment::LockedSegment;
@@ -20,14 +20,11 @@ impl SegmentHolder {
         mut f: F,
     ) -> OperationResult<usize>
     where
-        F: FnMut(
-            &[PointIdType],
-            &RwLockReadGuard<dyn SearchSegmentEntry>,
-        ) -> OperationResult<usize>,
+        F: FnMut(&[PointIdType], &RwLockReadGuard<dyn ReadSegmentEntry>) -> OperationResult<usize>,
     {
         let mut read_points = 0;
         for segment in segments {
-            let segment_arc = segment.get_non_appendable();
+            let segment_arc = segment.get_read();
             let read_segment = segment_arc.read();
             let segment_point_ids: Vec<PointIdType> = ids
                 .iter()
@@ -69,10 +66,7 @@ impl SegmentHolder {
         f: F,
     ) -> OperationResult<usize>
     where
-        F: FnMut(
-            &[PointIdType],
-            &RwLockReadGuard<dyn SearchSegmentEntry>,
-        ) -> OperationResult<usize>,
+        F: FnMut(&[PointIdType], &RwLockReadGuard<dyn ReadSegmentEntry>) -> OperationResult<usize>,
     {
         let segments: Vec<_> = {
             let Some(holder_guard) = locked_holder.try_read_for(timeout) else {
@@ -94,10 +88,7 @@ impl SegmentHolder {
         f: F,
     ) -> OperationResult<usize>
     where
-        F: FnMut(
-            &[PointIdType],
-            &RwLockReadGuard<dyn SearchSegmentEntry>,
-        ) -> OperationResult<usize>,
+        F: FnMut(&[PointIdType], &RwLockReadGuard<dyn ReadSegmentEntry>) -> OperationResult<usize>,
     {
         let segments = self.segments_for_retrieval();
         Self::_read_points(segments, ids, is_stopped, f)
