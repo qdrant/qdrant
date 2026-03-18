@@ -10,6 +10,7 @@ use common::fs::clear_disk_cache;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
@@ -34,14 +35,22 @@ const DELETED_PATH: &str = "deleted.dat";
 ///
 /// Mem-mapped storage can only be constructed from another storage
 #[derive(Debug)]
-pub struct MemmapDenseVectorStorage<T: PrimitiveVectorElement> {
+pub struct MemmapDenseVectorStorage<T, S = MmapUniversal<u8>>
+where
+    T: PrimitiveVectorElement,
+    S: UniversalRead<u8>,
+{
     vectors_path: PathBuf,
     deleted_path: PathBuf,
-    vectors: Option<ImmutableDenseVectors<T, MmapUniversal<u8>>>,
+    vectors: Option<ImmutableDenseVectors<T, S>>,
     distance: Distance,
 }
 
-impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
+impl<T, S> MemmapDenseVectorStorage<T, S>
+where
+    T: PrimitiveVectorElement,
+    S: UniversalRead<u8>,
+{
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) {
@@ -145,8 +154,12 @@ fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
     }))
 }
 
-impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
-    pub fn get_mmap_vectors(&self) -> &ImmutableDenseVectors<T> {
+impl<T, S> MemmapDenseVectorStorage<T, S>
+where
+    T: PrimitiveVectorElement,
+    S: UniversalRead<u8>,
+{
+    pub fn get_mmap_vectors(&self) -> &ImmutableDenseVectors<T, S> {
         self.vectors.as_ref().unwrap()
     }
 
@@ -158,7 +171,11 @@ impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
     }
 }
 
-impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStorage<T> {
+impl<T, S> DenseVectorStorage<T> for MemmapDenseVectorStorage<T, S>
+where
+    T: PrimitiveVectorElement,
+    S: UniversalRead<u8>,
+{
     fn vector_dim(&self) -> usize {
         self.vectors.as_ref().unwrap().dim
     }
@@ -177,7 +194,11 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
     }
 }
 
-impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
+impl<T, S> VectorStorage for MemmapDenseVectorStorage<T, S>
+where
+    T: PrimitiveVectorElement,
+    S: UniversalRead<u8>,
+{
     fn distance(&self) -> Distance {
         self.distance
     }
