@@ -396,10 +396,10 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         let make_block = |count, value, key: PayloadKeyType| {
             if count > threshold {
-                Some(PayloadBlockCondition {
+                Some(Ok(PayloadBlockCondition {
                     condition: FieldCondition::new_match(
                         key,
                         Match::Value(MatchValue {
@@ -407,7 +407,7 @@ impl PayloadFieldIndex for SimpleBoolIndex {
                         }),
                     ),
                     cardinality: count,
-                })
+                }))
             } else {
                 None
             }

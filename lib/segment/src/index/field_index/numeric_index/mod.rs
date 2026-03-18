@@ -987,7 +987,7 @@ where
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         let mut lower_bound = Unbounded;
         let mut pre_lower_bound: Option<Bound<T>> = None;
         let mut payload_conditions = Vec::new();
@@ -1051,7 +1051,7 @@ where
                 Unbounded => break,
             };
         }
-        Box::new(payload_conditions.into_iter())
+        Box::new(payload_conditions.into_iter().map(Ok))
     }
 }
 
