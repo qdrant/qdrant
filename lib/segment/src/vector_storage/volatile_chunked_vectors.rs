@@ -169,7 +169,7 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
 impl<T: Clone> TrySetCapacityExact for VolatileChunkedVectors<T> {
     fn try_set_capacity_exact(&mut self, capacity: usize) -> Result<(), TryReserveError> {
         let num_chunks = capacity.div_ceil(self.chunk_capacity);
-        let last_chunk_idx = num_chunks - 1;
+        let last_chunk_idx = num_chunks.saturating_sub(1);
         self.chunks.try_set_capacity_exact(num_chunks)?;
         self.chunks.resize_with(num_chunks, Vec::new);
         for chunk_idx in 0..num_chunks {
