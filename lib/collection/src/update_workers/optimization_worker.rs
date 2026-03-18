@@ -171,7 +171,6 @@ impl UpdateWorkers {
             let limit = max_handles.saturating_sub(optimization_handles.lock().await.len());
             if limit == 0 {
                 log::trace!("Skipping optimization check, we reached optimization thread limit");
-                let _ = optimization_finished_sender.send(());
                 continue;
             }
 
@@ -234,7 +233,6 @@ impl UpdateWorkers {
         optimization_finished_sender: watch::Sender<()>,
         limit: usize,
     ) {
-        let optimization_finished_sender_clone = optimization_finished_sender.clone();
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
             optimizers_log,
@@ -244,7 +242,7 @@ impl UpdateWorkers {
             move || {
                 // Notify other components that optimization is finished
                 // We do not care if there are no receivers or if they are lagging behind
-                let _ = optimization_finished_sender_clone.send(());
+                let _ = optimization_finished_sender.send(());
 
                 // After optimization is finished, we still need to check if there are
                 // some further optimizations possible.
@@ -254,9 +252,6 @@ impl UpdateWorkers {
             },
             Some(limit),
         );
-        if new_handles.is_empty() {
-            let _ = optimization_finished_sender.send(());
-        }
         let mut handles = optimization_handles.lock().await;
         handles.append(&mut new_handles);
     }

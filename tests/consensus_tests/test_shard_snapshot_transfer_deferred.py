@@ -103,7 +103,6 @@ def update_collection_config(peer_url, config):
     assert_http_ok(r)
 
 
-@pytest.mark.skip(reason="Investigating CI hang - deferred wait blocks on constrained resources")
 def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path):
     """Snapshot shard transfer must include deferred points.
 
@@ -175,7 +174,6 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
 
     # Wait for the transfer to complete
     wait_for_collection_shard_transfers_count(source_uri, COLLECTION_NAME, 0)
-
     # Verify the target now has the shard
     dst_info_after = get_collection_cluster_info(target_uri, COLLECTION_NAME)
     assert len(dst_info_after["local_shards"]) == 1, (
@@ -190,18 +188,48 @@ def test_shard_snapshot_transfer_includes_deferred_points(tmp_path: pathlib.Path
         f"should match source ({visible_count})"
     )
 
+    # With optimizers disabled, wait=true hangs because deferred points
+    # can never be resolved without optimizers running. The client times out.
+    try:
+        requests.put(
+            f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+            json={"points": make_points(total_points + 1, 1)},
+            timeout=5,
+        )
+        raise AssertionError("Expected timeout for wait=true with optimizers disabled")
+    except requests.exceptions.ReadTimeout:
+        pass  # Expected: server blocks forever, client times out
+
     # Enable optimizers to resolve deferred points
     update_collection_config(source_uri, {
         "optimizers_config": {"max_optimization_threads": "auto"},
     })
 
-    # Trigger an optimization pass with wait=True to ensure the write is applied.
-    # Use a short client timeout — we don't need the response, just the server-side effect.
-    # wait_collection_green handles waiting for optimization to complete.
-    try:
-        upsert_points(source_uri, start_id=total_points + 1, count=1, wait=True, client_timeout=5)
-    except requests.exceptions.ReadTimeout:
-        pass
+    # The config change propagates through Raft and restarts the update workers,
+    # cancelling the old worker's deferred wait loop. Retry wait=true until the
+    # new worker (with optimizers enabled) handles the request with "completed" status.
+    for attempt in range(10):
+        try:
+            r = requests.put(
+                f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+                json={"points": make_points(total_points + 1, 1)},
+                timeout=30,
+            )
+        except requests.exceptions.ReadTimeout:
+            # Server still processing, retry — the update is durably applied regardless
+            time.sleep(1)
+            continue
+        assert_http_ok(r)
+        result_status = r.json().get("result", {}).get("status")
+        if result_status == "completed":
+            break
+        # "wait_timeout" = update applied but deferred visibility not confirmed (old worker cancelled)
+        assert result_status == "wait_timeout", (
+            f"Unexpected result status '{result_status}' on attempt {attempt}: {r.text}"
+        )
+        time.sleep(1)
+    else:
+        raise AssertionError("wait=true upsert did not succeed after retries")
 
     # Wait for optimization to complete on both peers
     wait_collection_green(source_uri, COLLECTION_NAME)
