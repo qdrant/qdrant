@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::io::Write;
+use std::marker::PhantomData;
 use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
@@ -12,15 +13,10 @@ use common::types::PointOffsetType;
 use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{ElementsRange, OpenOptions as UniversalOpenOptions, UniversalRead};
 use fs_err::{File, OpenOptions};
-use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
-#[cfg(target_os = "linux")]
-use crate::vector_storage::async_io::UringReader;
-#[cfg(not(target_os = "linux"))]
-use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 
@@ -38,13 +34,11 @@ pub struct ImmutableDenseVectors<
     pub num_vectors: usize,
     /// Byte-addressable vector data storage, providing read access via [`UniversalRead<u8>`].
     storage: S,
-    /// Context for io_uring-based async IO
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    uring_reader: Option<Mutex<UringReader<T>>>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
+    _phantom: PhantomData<T>,
 }
 
 impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S> {
@@ -52,7 +46,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
-        with_async_io: bool,
+        _with_async_io: bool,
         populate: bool,
     ) -> OperationResult<Self> {
         // Allocate/open vectors file
@@ -92,27 +86,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
-        let uring_reader = if with_async_io {
-            // Keep file handle open for async IO
-            let vectors_file = File::open(vectors_path)?;
-            let raw_size = dim * size_of::<T>();
-            Some(UringReader::new(vectors_file, raw_size, HEADER_SIZE)?)
-        } else {
-            None
-        };
-
-        Ok(ImmutableDenseVectors {
+        Ok(Self {
             dim,
             num_vectors,
             storage,
-            uring_reader: uring_reader.map(Mutex::new),
             deleted,
             deleted_count,
+            _phantom: PhantomData,
         })
-    }
-
-    pub fn has_async_reader(&self) -> bool {
-        self.uring_reader.is_some()
     }
 
     pub fn flusher(&self) -> MmapFlusher {
@@ -212,17 +193,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     /// vectors in this segment.
     pub fn deleted_vector_bitslice(&self) -> &BitSlice {
         &self.deleted
-    }
-
-    fn process_points_simple(
-        &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(usize, PointOffsetType, &[T]),
-    ) {
-        for (idx, point) in points.enumerate() {
-            let vector = self.get_vector::<Random>(point);
-            callback(idx, point, &vector);
-        }
     }
 
     /// Reads vectors for the given ids and calls the callback for each vector.

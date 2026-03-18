@@ -168,13 +168,6 @@ where
     pub fn get_mmap_vectors(&self) -> &ImmutableDenseVectors<T, S> {
         self.vectors.as_ref().unwrap()
     }
-
-    pub fn has_async_reader(&self) -> bool {
-        self.vectors
-            .as_ref()
-            .map(|x| x.has_async_reader())
-            .unwrap_or(false)
-    }
 }
 
 impl<T, S> DenseVectorStorage<T> for MemmapDenseVectorStorage<T, S>
@@ -272,12 +265,6 @@ where
         let start_index = self.vectors.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
 
-        let with_async_io = self
-            .vectors
-            .take()
-            .map(|x| x.has_async_reader())
-            .unwrap_or(get_async_scorer());
-
         // Extend vectors file, write other vectors into it
         let mut vectors_file = BufWriter::new(open_append(&self.vectors_path)?);
         let mut deleted_ids = vec![];
@@ -308,7 +295,7 @@ where
             &self.vectors_path,
             &self.deleted_path,
             dim,
-            with_async_io,
+            false,
             false, // No need to populate
         )?);
 
