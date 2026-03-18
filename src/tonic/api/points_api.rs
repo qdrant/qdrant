@@ -28,7 +28,6 @@ use super::validate;
 use crate::common::inference::api_keys::extract_inference_auth;
 use crate::common::inference::params::InferenceParams;
 use crate::common::strict_mode::*;
-use crate::common::telemetry_ops::requests_telemetry::CollectionName;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 use crate::tonic::auth::extract_auth;
@@ -60,6 +59,7 @@ impl PointsService {
     }
 }
 
+#[macros::attach_collection_name(PointsTelemetryWrapper)]
 #[tonic::async_trait]
 impl Points for PointsService {
     async fn upsert(
@@ -768,99 +768,3 @@ impl Points for PointsService {
     }
 }
 
-/// Wrapper that automatically attaches `CollectionName` to every Points response.
-///
-/// This provides compile-time enforcement: if a new method is added to the `Points`
-/// trait, this wrapper will fail to compile until the method is added here.
-/// Handlers in `PointsService` don't need to call `attach_collection()`.
-pub struct PointsTelemetryWrapper<T> {
-    inner: T,
-}
-
-impl<T> PointsTelemetryWrapper<T> {
-    pub fn new(inner: T) -> Self {
-        Self { inner }
-    }
-}
-
-/// Generates a delegating method that extracts `collection_name` from the request,
-/// forwards to the inner service, and attaches `CollectionName` to the response.
-///
-/// Note: we manually desugar `async fn` into a boxed future because `#[async_trait]`
-/// cannot see through declarative macro expansions.
-macro_rules! delegate_with_collection {
-    ($method:ident, $req:ty, $resp:ty) => {
-        fn $method<'life0, 'async_trait>(
-            &'life0 self,
-            request: Request<$req>,
-        ) -> futures_util::future::BoxFuture<'async_trait, Result<Response<$resp>, Status>>
-        where
-            'life0: 'async_trait,
-            Self: 'async_trait,
-        {
-            Box::pin(async move {
-                let collection_name = request.get_ref().collection_name.clone();
-                let mut response = self.inner.$method(request).await?;
-                response
-                    .extensions_mut()
-                    .insert(CollectionName(collection_name));
-                Ok(response)
-            })
-        }
-    };
-}
-
-impl<T: Points> Points for PointsTelemetryWrapper<T> {
-    delegate_with_collection!(upsert, UpsertPoints, PointsOperationResponse);
-    delegate_with_collection!(delete, DeletePoints, PointsOperationResponse);
-    delegate_with_collection!(get, GetPoints, GetResponse);
-    delegate_with_collection!(update_vectors, UpdatePointVectors, PointsOperationResponse);
-    delegate_with_collection!(delete_vectors, DeletePointVectors, PointsOperationResponse);
-    delegate_with_collection!(set_payload, SetPayloadPoints, PointsOperationResponse);
-    delegate_with_collection!(overwrite_payload, SetPayloadPoints, PointsOperationResponse);
-    delegate_with_collection!(delete_payload, DeletePayloadPoints, PointsOperationResponse);
-    delegate_with_collection!(clear_payload, ClearPayloadPoints, PointsOperationResponse);
-    delegate_with_collection!(update_batch, UpdateBatchPoints, UpdateBatchResponse);
-    delegate_with_collection!(
-        create_field_index,
-        CreateFieldIndexCollection,
-        PointsOperationResponse
-    );
-    delegate_with_collection!(
-        delete_field_index,
-        DeleteFieldIndexCollection,
-        PointsOperationResponse
-    );
-    delegate_with_collection!(search, SearchPoints, SearchResponse);
-    delegate_with_collection!(search_batch, SearchBatchPoints, SearchBatchResponse);
-    delegate_with_collection!(search_groups, SearchPointGroups, SearchGroupsResponse);
-    delegate_with_collection!(scroll, ScrollPoints, ScrollResponse);
-    delegate_with_collection!(recommend, RecommendPoints, RecommendResponse);
-    delegate_with_collection!(
-        recommend_batch,
-        RecommendBatchPoints,
-        RecommendBatchResponse
-    );
-    delegate_with_collection!(
-        recommend_groups,
-        RecommendPointGroups,
-        RecommendGroupsResponse
-    );
-    delegate_with_collection!(discover, DiscoverPoints, DiscoverResponse);
-    delegate_with_collection!(discover_batch, DiscoverBatchPoints, DiscoverBatchResponse);
-    delegate_with_collection!(count, CountPoints, CountResponse);
-    delegate_with_collection!(query, QueryPoints, QueryResponse);
-    delegate_with_collection!(query_batch, QueryBatchPoints, QueryBatchResponse);
-    delegate_with_collection!(query_groups, QueryPointGroups, QueryGroupsResponse);
-    delegate_with_collection!(facet, FacetCounts, FacetResponse);
-    delegate_with_collection!(
-        search_matrix_pairs,
-        SearchMatrixPoints,
-        SearchMatrixPairsResponse
-    );
-    delegate_with_collection!(
-        search_matrix_offsets,
-        SearchMatrixPoints,
-        SearchMatrixOffsetsResponse
-    );
-}
