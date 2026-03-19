@@ -1024,7 +1024,7 @@ impl LocalShard {
                 .await;
 
             if let Err(err) = &deferred_point_count {
-                log::warn!("Failed to get deferred ponit counts: {err:?}");
+                log::warn!("Failed to get deferred point counts: {err:?}");
             }
 
             deferred_point_count.ok()
