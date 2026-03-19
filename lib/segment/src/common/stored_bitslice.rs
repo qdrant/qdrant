@@ -11,6 +11,7 @@ use std::path::Path;
 use bitvec::mem::BitRegister;
 use bitvec::order::Lsb0;
 use common::bitvec::BitVec;
+use common::generic_consts::Random;
 use common::universal_io::{
     ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalWrite,
 };
@@ -121,7 +122,7 @@ impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
             return Ok(None);
         }
 
-        let element = self.storage.read::<false>(ElementsRange {
+        let element = self.storage.read::<Random>(ElementsRange {
             start: element_index,
             length: 1,
         })?[0];
@@ -189,7 +190,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
 
             let mut buf = self
                 .storage
-                .read::<false>(ElementsRange {
+                .read::<Random>(ElementsRange {
                     start: element_start,
                     length: num_elements,
                 })?
@@ -236,7 +237,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         // Fetch existing, in case the source length is not a multiple of element size
         let element_count = bit_count.div_ceil(u64::from(BITS_PER_ELEMENT));
 
-        let existing = self.storage.read::<false>(ElementsRange {
+        let existing = self.storage.read::<Random>(ElementsRange {
             start: 0,
             length: element_count,
         })?;
@@ -279,7 +280,7 @@ mod tests {
                 });
             }
 
-            let mut element = self.storage.read::<false>(ElementsRange {
+            let mut element = self.storage.read::<Random>(ElementsRange {
                 start: element_index,
                 length: 1,
             })?[0];

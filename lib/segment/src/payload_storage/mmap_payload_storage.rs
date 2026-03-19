@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use gridstore::config::StorageOptions;
@@ -99,7 +100,7 @@ impl PayloadStorage for MmapPayloadStorage {
         payload: &Payload,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        match self.storage.get_value::<false>(point_id, hw_counter)? {
+        match self.storage.get_value::<Random>(point_id, hw_counter)? {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
                 self.storage.put_value(
@@ -126,7 +127,7 @@ impl PayloadStorage for MmapPayloadStorage {
         key: &JsonPath,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        match self.storage.get_value::<false>(point_id, hw_counter)? {
+        match self.storage.get_value::<Random>(point_id, hw_counter)? {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
                 self.storage.put_value(
@@ -153,7 +154,7 @@ impl PayloadStorage for MmapPayloadStorage {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        match self.storage.get_value::<false>(point_id, hw_counter)? {
+        match self.storage.get_value::<Random>(point_id, hw_counter)? {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
@@ -164,7 +165,7 @@ impl PayloadStorage for MmapPayloadStorage {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        match self.storage.get_value::<true>(point_id, hw_counter)? {
+        match self.storage.get_value::<Sequential>(point_id, hw_counter)? {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
@@ -176,7 +177,7 @@ impl PayloadStorage for MmapPayloadStorage {
         key: PayloadKeyTypeRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
-        match self.storage.get_value::<false>(point_id, hw_counter)? {
+        match self.storage.get_value::<Random>(point_id, hw_counter)? {
             Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {

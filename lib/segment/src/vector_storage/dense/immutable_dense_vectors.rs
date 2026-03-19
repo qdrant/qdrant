@@ -148,12 +148,10 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
             length: self.raw_size() as u64,
         };
 
-        let cow: Cow<'_, [u8]> = if P::IS_SEQUENTIAL {
-            self.storage.read::<true>(range)
-        } else {
-            self.storage.read::<false>(range)
-        }
-        .expect("vector read from storage failed");
+        let cow: Cow<'_, [u8]> = self
+            .storage
+            .read::<P>(range)
+            .expect("vector read from storage failed");
 
         match cow {
             Cow::Borrowed(byte_slice) => Cow::Borrowed(bytemuck::cast_slice(byte_slice)),

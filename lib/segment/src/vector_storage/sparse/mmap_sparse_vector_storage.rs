@@ -183,14 +183,10 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        let result = if P::IS_SEQUENTIAL {
-            self.storage
-                .get_value::<true>(key, &HardwareCounterCell::disposable())? // Vector storage read IO not measured
-        } else {
-            self.storage
-                .get_value::<false>(key, &HardwareCounterCell::disposable())?
-        };
-        result.map(SparseVector::try_from).transpose()
+        self.storage
+            .get_value::<P>(key, &HardwareCounterCell::disposable())? // Vector storage read IO not measured
+            .map(SparseVector::try_from)
+            .transpose()
     }
 }
 

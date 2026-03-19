@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
+use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_from_u8, transmute_to_u8};
@@ -283,7 +284,7 @@ impl<S: UniversalRead<u8>> Tracker<S> {
     }
 
     fn read_header(storage: &S) -> Result<TrackerHeader> {
-        let header_bytes = storage.read::<false>(ElementsRange {
+        let header_bytes = storage.read::<Random>(ElementsRange {
             start: 0,
             length: std::mem::size_of::<TrackerHeader>() as u64,
         })?;
@@ -346,7 +347,7 @@ impl<S: UniversalRead<u8>> Tracker<S> {
         if end_offset as u64 > storage_len {
             return Ok(None);
         }
-        let bytes = self.storage.read::<false>(ElementsRange {
+        let bytes = self.storage.read::<Random>(ElementsRange {
             start: start_offset as u64,
             length: std::mem::size_of::<Optional<ValuePointer>>() as u64,
         })?;

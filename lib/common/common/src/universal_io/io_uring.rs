@@ -13,6 +13,7 @@ use ahash::AHashMap;
 use fs_err as fs;
 
 use super::*;
+use crate::generic_consts::AccessPattern;
 
 thread_local! {
     static IO_URING: io::Result<RefCell<IoUring>> = init_io_uring().map(RefCell::new);
@@ -82,7 +83,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         Ok(file)
     }
 
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
         with_uring_runtime(|mut rt| {
             let entry = rt.state.read(0, self.fd(), range)?;
             rt.enqueue_single(entry)?;
@@ -94,7 +95,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         })?
     }
 
-    fn read_batch<const SEQUENTIAL: bool>(
+    fn read_batch<P: AccessPattern>(
         &self,
         ranges: impl IntoIterator<Item = ElementsRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
@@ -125,7 +126,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         })?
     }
 
-    fn read_multi<const SEQUENTIAL: bool>(
+    fn read_multi<P: AccessPattern>(
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
@@ -601,6 +602,7 @@ impl IoErrorContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::generic_consts::Sequential;
 
     #[test]
     fn test_io_uring_file_for_u64() -> Result<()> {
@@ -616,7 +618,7 @@ mod tests {
         let file = <IoUringFile as UniversalRead<u64>>::open(&path, OpenOptions::default())?;
 
         // Read all elements
-        let read_back = <IoUringFile as UniversalRead<u64>>::read::<true>(
+        let read_back = <IoUringFile as UniversalRead<u64>>::read::<Sequential>(
             &file,
             ElementsRange {
                 start: 0,
@@ -626,7 +628,7 @@ mod tests {
         assert_eq!(read_back.as_ref(), &data);
 
         // Read a sub-range
-        let read_sub = <IoUringFile as UniversalRead<u64>>::read::<true>(
+        let read_sub = <IoUringFile as UniversalRead<u64>>::read::<Sequential>(
             &file,
             ElementsRange {
                 start: 10,
