@@ -690,23 +690,25 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
             ));
         }
 
-        let vector = SparseVector::try_from(new_vector)?;
-        let old_vector: Option<SparseVector> =
-            old_vector.map(SparseVector::try_from).transpose()?;
-
         let point_is_deferred = self
             .deferred_internal_id
             .is_some_and(|deferred| id >= deferred);
 
+        if point_is_deferred {
+            return Ok(());
+        }
+
+        let vector = SparseVector::try_from(new_vector)?;
+        let old_vector: Option<SparseVector> =
+            old_vector.map(SparseVector::try_from).transpose()?;
+
         // do not upsert empty or deferred vectors into the index
-        if !vector.is_empty() && !point_is_deferred {
+        if !vector.is_empty() {
             self.indices_tracker.register_indices(&vector);
             let vector = self.indices_tracker.remap_vector(vector);
             let old_vector = old_vector.map(|v| self.indices_tracker.remap_vector(v));
             self.inverted_index.upsert(id, vector, old_vector);
-        } else if let Some(old_vector) = old_vector
-            && vector.is_empty()
-        {
+        } else if let Some(old_vector) = old_vector {
             // Make sure empty vectors do not interfere with the index
             if !old_vector.is_empty() {
                 let old_vector = self.indices_tracker.remap_vector(old_vector);
