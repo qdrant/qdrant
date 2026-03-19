@@ -692,6 +692,11 @@ impl Segment {
 
         let id_tracker = self.id_tracker.borrow();
         let total_points = id_tracker.total_point_count();
+
+        if total_points < deferred_from as usize {
+            return 0;
+        }
+
         id_tracker.deleted_point_bitslice()[deferred_from as usize..total_points].count_ones()
     }
 
