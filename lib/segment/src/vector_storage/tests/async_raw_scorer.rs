@@ -1,4 +1,4 @@
-use bitvec::slice::BitSlice;
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;

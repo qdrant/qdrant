@@ -1,6 +1,6 @@
 use std::hint::black_box;
 
-use bitvec::vec::BitVec;
+use common::bitvec::BitVec;
 use criterion::{Criterion, criterion_group, criterion_main};
 use gridstore::bitmask::Bitmask;
 use gridstore::config::DEFAULT_REGION_SIZE_BLOCKS;

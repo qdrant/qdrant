@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use bitvec::vec::BitVec;
+use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
-use common::mmap;
-use common::mmap::{AdviceSetting, MmapBitSlice, MmapSlice};
+use common::mmap::{self, AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
+use common::universal_io::OpenOptions;
 use itertools::Either;
 use mmap_postings::{MmapPostingValue, MmapPostings};
 
@@ -22,6 +22,7 @@ use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
     check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
@@ -88,7 +89,20 @@ impl MmapInvertedIndex {
             .iter()
             .map(|count| *count == 0)
             .collect();
-        MmapBitSlice::create(&deleted_points_path, &deleted_bitslice)?;
+        {
+            let deleted_flags_count = deleted_bitslice.len();
+            let _ = create_and_ensure_length(
+                &deleted_points_path,
+                deleted_flags_count
+                    .div_ceil(u8::BITS as usize)
+                    .next_multiple_of(size_of::<u64>()),
+            )?;
+
+            let mut deleted_storage =
+                MmapBitSlice::open(&deleted_points_path, OpenOptions::default())?;
+            deleted_storage.write_bitslice(&deleted_bitslice)?;
+            deleted_storage.flusher()()?;
+        }
 
         // The actual values go in the slice
         let point_to_tokens_count_iter = point_to_tokens_count.iter().copied();
@@ -130,10 +144,14 @@ impl MmapInvertedIndex {
             )?)?
         };
 
-        let deleted = mmap::open_write_mmap(&deleted_points_path, AdviceSetting::Global, populate)?;
-        let deleted = MmapBitSlice::from(deleted, 0);
-
-        let num_deleted_points = deleted.count_ones();
+        let deleted = MmapBitSlice::open(
+            &deleted_points_path,
+            OpenOptions {
+                populate: Some(populate),
+                ..OpenOptions::default()
+            },
+        )?;
+        let num_deleted_points = deleted.count_ones()?;
         let deleted_points = MmapBitSliceBufferedUpdateWrapper::new(deleted);
         let points_count = point_to_tokens_count.len() - num_deleted_points;
 

@@ -4,9 +4,8 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::{BitSlice, BitVec};
+use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -20,7 +19,6 @@ use crate::data_types::vectors::{
     TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::{CHUNK_SIZE, StoredRecord};
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{

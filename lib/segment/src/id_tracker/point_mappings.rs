@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::iter;
 
-use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::LittleEndian;
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
+use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use itertools::Itertools;
 #[cfg(test)]

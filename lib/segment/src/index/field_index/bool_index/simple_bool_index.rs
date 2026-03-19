@@ -21,8 +21,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
 
 mod memory {
-    use bitvec::vec::BitVec;
-    use common::ext::BitSliceExt as _;
+    use common::bitvec::{BitSliceExt as _, BitVec};
     use common::types::PointOffsetType;
 
     pub struct BooleanItem {
