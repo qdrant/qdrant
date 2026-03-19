@@ -301,7 +301,7 @@ self_cell! {
     ///
     /// Used by `NonAppendableSegmentEntry::iter_points()` to return an iterator
     /// over external point IDs without creating the iterator inside the unsafe block.
-    pub(crate) struct PointMappingsGuard<'a> {
+    pub struct PointMappingsGuard<'a> {
         owner: AtomicRef<'a, IdTrackerEnum>,
 
         #[covariant]
