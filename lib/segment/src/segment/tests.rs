@@ -1031,7 +1031,9 @@ fn test_deferred_point_estimation_with_filter() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
-        let estimation = segment.estimate_point_count(Some(&filter), &hw_counter);
+        let estimation = segment
+            .estimate_point_count(Some(&filter), &hw_counter)
+            .unwrap();
 
         // We test with different amount of deferred points (including no deferred points) and expect the
         // cardinality to not change.
@@ -1041,7 +1043,9 @@ fn test_deferred_point_estimation_with_filter() {
         // For consistency we also test that the same cardinality is estimated if no deferred points exist.
         if n_deferred == 0 {
             assert_eq!(segment.deferred_internal_id, None);
-            let estimation = segment.estimate_point_count(Some(&filter), &hw_counter);
+            let estimation = segment
+                .estimate_point_count(Some(&filter), &hw_counter)
+                .unwrap();
             assert_eq!(estimation.exp, 6);
             assert_eq!(estimation.max, 12);
         }
@@ -1077,14 +1081,16 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Read Filtered",
         |segment, filter| {
-            segment.read_filtered(
-                None,
-                None,
-                filter,
-                &AtomicBool::new(false),
-                &hw_counter,
-                DeferredBehavior::Exclude,
-            )
+            segment
+                .read_filtered(
+                    None,
+                    None,
+                    filter,
+                    &AtomicBool::new(false),
+                    &hw_counter,
+                    DeferredBehavior::Exclude,
+                )
+                .unwrap()
         },
         |i| *i,
         true,
@@ -1117,7 +1123,9 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Read random filtered",
         |segment, filter| {
-            segment.read_random_filtered(500, filter, &AtomicBool::new(false), &hw_counter)
+            segment
+                .read_random_filtered(500, filter, &AtomicBool::new(false), &hw_counter)
+                .unwrap()
         },
         |i| *i,
         true,

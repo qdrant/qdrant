@@ -282,8 +282,8 @@ impl NonAppendableSegmentEntry for Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
-    ) -> Vec<PointIdType> {
-        match filter {
+    ) -> OperationResult<Vec<PointIdType>> {
+        Ok(match filter {
             None => self.read_by_id_stream(offset, limit, deferred_behavior),
             Some(condition) => {
                 if self.should_pre_filter(condition, limit, hw_counter) {
@@ -306,7 +306,7 @@ impl NonAppendableSegmentEntry for Segment {
                     )
                 }
             }
-        }
+        })
     }
 
     fn read_ordered_filtered<'a>(
@@ -357,8 +357,8 @@ impl NonAppendableSegmentEntry for Segment {
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-    ) -> Vec<PointIdType> {
-        match filter {
+    ) -> OperationResult<Vec<PointIdType>> {
+        Ok(match filter {
             None => self.read_by_random_id(limit),
             Some(condition) => {
                 if self.should_pre_filter(condition, Some(limit), hw_counter) {
@@ -367,7 +367,7 @@ impl NonAppendableSegmentEntry for Segment {
                     self.filtered_read_by_random_stream(limit, condition, is_stopped, hw_counter)
                 }
             }
-        }
+        })
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
@@ -412,8 +412,8 @@ impl NonAppendableSegmentEntry for Segment {
         &'a self,
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
-        match filter {
+    ) -> OperationResult<CardinalityEstimation> {
+        Ok(match filter {
             None => {
                 let available = self.non_deferred_point_count_estimated();
                 CardinalityEstimation {
@@ -431,7 +431,7 @@ impl NonAppendableSegmentEntry for Segment {
                 let available_points = self.non_deferred_point_count_estimated();
                 adjust_for_deferred_points(cardinality, available_points, total_points)
             }
-        }
+        })
     }
 
     fn unique_values(

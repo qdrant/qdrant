@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
+use itertools::Itertools as _;
 use segment::common::operation_error::OperationResult;
 use segment::index::field_index::EstimationMerge;
 use shard::count::CountRequestInternal;
@@ -17,7 +18,7 @@ impl EdgeShard {
 
         let points_count = if exact {
             segments
-                .flat_map(|segment| {
+                .map(|segment| {
                     segment.get().read().read_filtered(
                         None,
                         None,
@@ -27,7 +28,7 @@ impl EdgeShard {
                         DeferredBehavior::Exclude,
                     )
                 })
-                .count()
+                .process_results(|iter| iter.flatten().count())?
         } else {
             let cardinality = segments
                 .map(|segment| {
@@ -36,7 +37,7 @@ impl EdgeShard {
                         .read() // blocking sync lock
                         .estimate_point_count(filter.as_ref(), &HardwareCounterCell::disposable())
                 })
-                .merge_independent();
+                .process_results(|iter| iter.merge_independent())?;
 
             cardinality.exp
         };

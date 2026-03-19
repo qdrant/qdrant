@@ -117,7 +117,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
-    ) -> Vec<PointIdType>;
+    ) -> OperationResult<Vec<PointIdType>>;
 
     /// Return points which satisfies filtering condition ordered by the `order_by.key` field,
     /// starting with `order_by.start_from` value including.
@@ -143,7 +143,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-    ) -> Vec<PointIdType>;
+    ) -> OperationResult<Vec<PointIdType>>;
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
@@ -175,7 +175,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         &'a self,
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation;
+    ) -> OperationResult<CardinalityEstimation>;
 
     fn vector_names(&self) -> HashSet<VectorNameBuf>;
 
