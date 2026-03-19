@@ -15,7 +15,7 @@ use common::types::PointOffsetType;
 use common::universal_io::IoUringFile;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
+use super::dense::dense_vector_storage::DenseVectorStorageImpl;
 #[cfg(feature = "rocksdb")]
 use super::dense::simple_dense_vector_storage::SimpleDenseVectorStorage;
 use super::dense::volatile_dense_vector_storage::VolatileDenseVectorStorage;
@@ -242,16 +242,16 @@ pub enum VectorStorageEnum {
     #[cfg(test)]
     DenseVolatileHalf(VolatileDenseVectorStorage<VectorElementTypeHalf>),
 
-    DenseMemmap(Box<MemmapDenseVectorStorage<VectorElementType>>),
-    DenseMemmapByte(Box<MemmapDenseVectorStorage<VectorElementTypeByte>>),
-    DenseMemmapHalf(Box<MemmapDenseVectorStorage<VectorElementTypeHalf>>),
+    DenseMemmap(Box<DenseVectorStorageImpl<VectorElementType>>),
+    DenseMemmapByte(Box<DenseVectorStorageImpl<VectorElementTypeByte>>),
+    DenseMemmapHalf(Box<DenseVectorStorageImpl<VectorElementTypeHalf>>),
 
     #[cfg(target_os = "linux")]
-    DenseUring(Box<MemmapDenseVectorStorage<VectorElementType, IoUringFile>>),
+    DenseUring(Box<DenseVectorStorageImpl<VectorElementType, IoUringFile>>),
     #[cfg(target_os = "linux")]
-    DenseUringByte(Box<MemmapDenseVectorStorage<VectorElementTypeByte, IoUringFile>>),
+    DenseUringByte(Box<DenseVectorStorageImpl<VectorElementTypeByte, IoUringFile>>),
     #[cfg(target_os = "linux")]
-    DenseUringHalf(Box<MemmapDenseVectorStorage<VectorElementTypeHalf, IoUringFile>>),
+    DenseUringHalf(Box<DenseVectorStorageImpl<VectorElementTypeHalf, IoUringFile>>),
 
     DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
     DenseAppendableMemmapByte(Box<AppendableMmapDenseVectorStorage<VectorElementTypeByte>>),

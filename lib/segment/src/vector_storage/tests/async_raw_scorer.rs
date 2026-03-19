@@ -13,9 +13,7 @@ use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::Distance;
 use crate::vector_storage::VectorStorageEnum;
-use crate::vector_storage::dense::memmap_dense_vector_storage::{
-    open_dense_vector_storage_with_uring, open_memmap_vector_storage_with_async_io,
-};
+use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage_with_uring;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 

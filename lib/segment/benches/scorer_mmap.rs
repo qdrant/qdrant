@@ -12,7 +12,7 @@ use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::id_tracker::{IdTracker, IdTrackerEnum};
 use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use segment::types::Distance;
-use segment::vector_storage::dense::memmap_dense_vector_storage::open_dense_vector_storage;
+use segment::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
 use segment::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 

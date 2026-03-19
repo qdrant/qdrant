@@ -62,7 +62,7 @@ use crate::types::{
     SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
     VectorStorageDatatype, VectorStorageType,
 };
-use crate::vector_storage::dense::memmap_dense_vector_storage::{
+use crate::vector_storage::dense::dense_vector_storage::{
     open_dense_vector_storage, open_dense_vector_storage_byte, open_dense_vector_storage_half,
 };
 #[cfg(feature = "rocksdb")]

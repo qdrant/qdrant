@@ -13,8 +13,8 @@ use crate::data_types::vectors::{DenseVector, QueryVector, VectorInternal};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
+use crate::vector_storage::dense::dense_vector_storage::DenseVectorStorageImpl;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
-use crate::vector_storage::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
 use crate::vector_storage::query::NaiveFeedbackQuery;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
@@ -22,7 +22,7 @@ use crate::vector_storage::{RawScorer, VectorStorage as _};
 
 pub fn new<'a, T, Storage>(
     query: QueryVector,
-    storage: &'a MemmapDenseVectorStorage<T, Storage>,
+    storage: &'a DenseVectorStorageImpl<T, Storage>,
     hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>>
 where
@@ -100,7 +100,7 @@ where
     Storage: UniversalRead<u8>,
 {
     query: QueryVector,
-    storage: &'a MemmapDenseVectorStorage<T, Storage>,
+    storage: &'a DenseVectorStorageImpl<T, Storage>,
     distance: Distance,
     hardware_counter: HardwareCounterCell,
 }
@@ -112,7 +112,7 @@ where
 {
     pub fn new(
         query: QueryVector,
-        storage: &'a MemmapDenseVectorStorage<T, Storage>,
+        storage: &'a DenseVectorStorageImpl<T, Storage>,
         hardware_counter: HardwareCounterCell,
     ) -> Self {
         Self {
@@ -222,7 +222,7 @@ where
 
 fn async_raw_scorer_from_query_scorer<'a, T, Storage, Scorer>(
     query_scorer: Scorer,
-    storage: &'a MemmapDenseVectorStorage<T, Storage>,
+    storage: &'a DenseVectorStorageImpl<T, Storage>,
 ) -> Box<dyn RawScorer + 'a>
 where
     T: PrimitiveVectorElement,

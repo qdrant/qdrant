@@ -36,7 +36,7 @@ const DELETED_PATH: &str = "deleted.dat";
 ///
 /// Mem-mapped storage can only be constructed from another storage
 #[derive(Debug)]
-pub struct MemmapDenseVectorStorage<T, S = MmapUniversal<u8>>
+pub struct DenseVectorStorageImpl<T, S = MmapUniversal<u8>>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<u8>,
@@ -47,7 +47,7 @@ where
     distance: Distance,
 }
 
-impl<T, S> MemmapDenseVectorStorage<T, S>
+impl<T, S> DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<u8>,
@@ -158,7 +158,7 @@ fn open_dense_vector_storage_impl<T, S>(
     dim: usize,
     distance: Distance,
     populate: bool,
-) -> OperationResult<MemmapDenseVectorStorage<T, S>>
+) -> OperationResult<DenseVectorStorageImpl<T, S>>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<u8>,
@@ -169,7 +169,7 @@ where
     let deleted_path = path.join(DELETED_PATH);
 
     let vectors = ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, false, populate)?;
-    let storage = MemmapDenseVectorStorage {
+    let storage = DenseVectorStorageImpl {
         vectors_path,
         deleted_path,
         vectors: Some(vectors),
@@ -179,7 +179,7 @@ where
     Ok(storage)
 }
 
-impl<T, S> MemmapDenseVectorStorage<T, S>
+impl<T, S> DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<u8>,
@@ -189,7 +189,7 @@ where
     }
 }
 
-impl<T, S> DenseVectorStorage<T> for MemmapDenseVectorStorage<T, S>
+impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<u8>,
@@ -212,7 +212,7 @@ where
     }
 }
 
-impl<T, S> VectorStorage for MemmapDenseVectorStorage<T, S>
+impl<T, S> VectorStorage for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<u8>,
