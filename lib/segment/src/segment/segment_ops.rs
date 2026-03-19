@@ -309,7 +309,22 @@ impl Segment {
             .borrow_mut()
             .clear_payload(internal_id, hw_counter)?;
 
-        self.id_tracker.borrow_mut().drop_internal(internal_id)?;
+        let mut id_tracker = self.id_tracker.borrow_mut();
+
+        let is_point_already_deleted = id_tracker.is_deleted_point(internal_id);
+
+        id_tracker.drop_internal(internal_id)?;
+
+        let deferred_point_status = self.deferred_point_status.as_mut();
+
+        // Increase counter for deleted points.
+        if let Some(deferred_point_status) = deferred_point_status
+            && internal_id >= deferred_point_status.deferred_internal_id
+            // Don't count the deletion of the same point twice
+            && !is_point_already_deleted
+        {
+            deferred_point_status.deferred_deleted_count += 1;
+        }
 
         // Before, we propagated point deletions to also delete its vectors. This turns
         // out to be problematic because this sometimes makes us lose vector data
@@ -653,27 +668,46 @@ impl Segment {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }
 
-    /// Returns the (estimated) amount of deferred points.
-    ///
-    /// This value is an estimation because it does not account for deferred points
-    /// that have been deleted before becoming visible.
-    pub fn deferred_point_count_estimated(&self) -> usize {
-        match self.deferred_internal_id {
-            Some(internal_id) => {
-                let id_tracker = self.id_tracker.borrow();
-                let max_id = id_tracker.total_point_count();
-                max_id.saturating_sub(internal_id as usize)
-            }
+    /// Returns the amount of non-deleted deferred points.
+    pub fn deferred_point_count(&self) -> usize {
+        match self.deferred_internal_id() {
+            Some(internal_id) => self
+                .id_tracker
+                .borrow()
+                .total_point_count()
+                .saturating_sub(internal_id as usize)
+                .saturating_sub(self.deferred_deleted_count().unwrap_or_default()),
             None => 0,
         }
     }
 
-    /// Returns the amount of points that are not deferred.
-    pub fn non_deferred_point_count_estimated(&self) -> usize {
-        self.id_tracker
-            .borrow()
-            .available_point_count()
-            .saturating_sub(self.deferred_point_count_estimated())
+    /// Calculates the amount of deleted deferred points by iterating over all points in the ID tracker. Therefore this operation
+    /// can be expensive and should only be run once at segment creation.
+    pub(crate) fn calculate_deleted_deferred_point_count(&self) -> usize {
+        let Some(deferred_from) = self.deferred_internal_id() else {
+            return 0;
+        };
+
+        let id_tracker = self.id_tracker.borrow();
+        let total_points = id_tracker.total_point_count();
+
+        if total_points < deferred_from as usize {
+            return 0;
+        }
+
+        id_tracker.deleted_point_bitslice()[deferred_from as usize..total_points].count_ones()
+    }
+
+    pub(crate) fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.deferred_point_status
+            .as_ref()
+            .map(|i| i.deferred_internal_id)
+    }
+
+    pub(crate) fn deferred_deleted_count(&self) -> Option<usize> {
+        self.deferred_point_status
+            .as_ref()
+            .map(|i| i.deferred_deleted_count)
     }
 }
 

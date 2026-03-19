@@ -39,7 +39,7 @@ pub fn get_index_only_excluded_vectors(
                 .filter_map(move |vector_name| {
                     let segment_config = segment_guard.config().vector_data.get(&vector_name)?;
 
-                    let points = segment_guard.available_point_count();
+                    let points = segment_guard.available_point_count_without_deferred();
 
                     // Skip segments that have an index.
                     if segment_config.index.is_indexed() {

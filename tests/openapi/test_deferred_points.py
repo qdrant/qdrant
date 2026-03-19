@@ -55,6 +55,41 @@ def get_collection_info():
     return response.json()['result']
 
 
+def get_point_count_excluding_deferred():
+    """
+    Manually calculate the amount of visible (non-deferred) points for now,
+    since we don't provide it in CollectionInfo yet.
+    """
+
+    response = request_with_validation(
+        api='/telemetry',
+        method="GET",
+        query_params={"details_level": 10}
+    )
+    assert response.ok
+    collections = response.json()['result']['collections']['collections']
+
+    num_points = 0
+    had_collection = False
+    for collection in collections:
+        if collection['id'] != COLLECTION_NAME:
+            continue
+
+        had_collection = True
+
+        for shard in collection['shards']:
+            if 'local' not in shard:
+                continue
+
+            for segment in shard['local']['segments']:
+                info = segment['info']
+                num_points += int(info['num_points']) - int(info['num_deferred_points'])
+
+    assert had_collection, "Collection not found in telemetry!"
+
+    return num_points
+
+
 def upsert_points_batch(points, wait=True):
     """Upsert a list of points in a single request."""
     response = request_with_validation(
@@ -223,9 +258,10 @@ def test_deferred_points():
     visible_ids = {p['id'] for p in scrolled}
 
     # Point count from collection info should match scrolled count
-    info = get_collection_info()
-    assert info['points_count'] == visible_count, (
-        f"points_count ({info['points_count']}) should match scrolled count ({visible_count})"
+    # info = get_collection_info()
+    point_count = get_point_count_excluding_deferred()
+    assert point_count == visible_count, (
+        f"points_count ({point_count}) should match scrolled count ({visible_count})"
     )
 
     # Retrieve all 2000 IDs: only non-deferred ones should be returned
@@ -261,9 +297,9 @@ def test_deferred_points():
     time.sleep(2)
 
     # These new points should also be deferred (added beyond the threshold)
-    info = get_collection_info()
-    assert info['points_count'] == visible_count, (
-        f"Expected {visible_count} visible points (new points deferred), got {info['points_count']}"
+    point_count = get_point_count_excluding_deferred()
+    assert point_count == visible_count, (
+        f"Expected {visible_count} visible points (new points deferred), got {point_count}"
     )
 
     new_point_ids = set(range(new_points_start, new_points_start + new_points_count))
@@ -287,9 +323,9 @@ def test_deferred_points():
 
     # After optimization, ALL points should be visible
     expected_total = total_upserted + new_points_count + 1
-    info = get_collection_info()
-    assert info['points_count'] == expected_total, (
-        f"After optimization, expected {expected_total} points, got {info['points_count']}"
+    point_count = get_point_count_excluding_deferred()
+    assert point_count == expected_total, (
+        f"After optimization, expected {expected_total} points, got {point_count}"
     )
 
     # The deferred set_payload should now be visible

@@ -806,8 +806,7 @@ fn create_deferred_segment(
     .unwrap();
 
     // Initially, no deferred points (empty segment)
-
-    assert_eq!(segment.deferred_points_count(), 0);
+    assert!(!segment.has_deferred_points());
     for i in 0..n_vectors {
         assert!(
             !segment.point_is_deferred(PointIdType::from(i as u64)),
@@ -896,9 +895,9 @@ fn create_deferred_segment(
         .unwrap();
 
     // Now we should have deferred points
+    assert_eq!(segment.has_deferred_points(), n_deferred > 0);
     if n_deferred > 0 {
-        assert_eq!(segment.deferred_points_count(), n_deferred);
-        assert_eq!(segment.deferred_internal_id, Some(n_vectors as u32));
+        assert_eq!(segment.deferred_internal_id(), Some(n_vectors as u32));
     }
 
     // Points 1 to n_vectors should NOT be deferred
@@ -941,8 +940,8 @@ fn create_deferred_segment(
     );
 
     // Test deferred point count estimation.
-    assert_eq!(segment.deferred_point_count_estimated(), n_deferred);
-    assert_eq!(segment.non_deferred_point_count_estimated(), n_vectors);
+    assert_eq!(segment.deferred_point_count(), n_deferred);
+    assert_eq!(segment.available_point_count_without_deferred(), n_vectors);
 
     segment
 }
@@ -991,11 +990,11 @@ fn test_dense_deferred_points() {
 
     // Deferred points should still be the same after reopening
     assert!(
-        segment.deferred_points_count() > 0,
+        segment.has_deferred_points(),
         "Segment should still have deferred points after reopening"
     );
     assert_eq!(
-        segment.deferred_internal_id,
+        segment.deferred_internal_id(),
         Some(13),
         "Deferred internal ID should still be `DEFERRED_POINTS_ID` after reopening"
     );
@@ -1042,7 +1041,7 @@ fn test_deferred_point_estimation_with_filter() {
 
         // For consistency we also test that the same cardinality is estimated if no deferred points exist.
         if n_deferred == 0 {
-            assert_eq!(segment.deferred_internal_id, None);
+            assert_eq!(segment.deferred_internal_id(), None);
             let estimation = segment
                 .estimate_point_count(Some(&filter), &hw_counter)
                 .unwrap();
@@ -1273,14 +1272,14 @@ fn test_deferred_point_facets() {
                     .facet(&request, &AtomicBool::new(false), &hw_counter)
                     .unwrap();
 
-                let old_deferred_id = segment.deferred_internal_id.take();
+                let old_status = segment.deferred_point_status.take();
                 if n_deferred > 0 {
-                    assert!(old_deferred_id.is_some());
+                    assert!(old_status.is_some());
                 }
                 let facet_res = segment
                     .facet(&request, &AtomicBool::new(false), &hw_counter)
                     .unwrap();
-                segment.deferred_internal_id = old_deferred_id;
+                segment.deferred_point_status = old_status;
 
                 let expected_deferred = if filter.is_some() {
                     n_deferred.div_ceil(3)
@@ -1413,7 +1412,7 @@ fn assert_deferred_points_excluded<F, R, T>(
             }
 
             // Disable deferred points and search again.
-            segment.deferred_internal_id = None;
+            segment.deferred_point_status = None;
             let search_res_normal = operation(&segment, filter_set.filter.as_ref());
             assert_eq!(
                 search_res_normal.len(),
@@ -1423,5 +1422,62 @@ fn assert_deferred_points_excluded<F, R, T>(
             drop(segment);
             dir.close().unwrap();
         }
+    }
+}
+
+#[test]
+fn test_deleted_deferred_point_count() {
+    let hw_counter = HardwareCounterCell::new();
+
+    for n_deferred in [0, 1, 10, 300] {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+
+        assert_eq!(segment.deferred_point_count(), n_deferred);
+
+        if n_deferred == 0 {
+            continue;
+        }
+
+        assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
+
+        for d in 0..n_deferred {
+            let delete_id = segment.deferred_internal_id().unwrap() + d as u32;
+            segment
+                .delete_point_internal(delete_id, &hw_counter)
+                .unwrap();
+
+            let deleted_count = d + 1; // The first index is 0 but this point is deleted, so count must be 1.
+            assert_eq!(
+                segment.deferred_point_count(),
+                n_deferred.checked_sub(deleted_count).unwrap()
+            );
+            assert_eq!(
+                segment.calculate_deleted_deferred_point_count(),
+                deleted_count,
+            );
+
+            // Do the operation twice to test that we don't double count the same point.
+            segment
+                .delete_point_internal(delete_id, &hw_counter)
+                .unwrap();
+
+            assert_eq!(
+                segment.deferred_point_count(),
+                n_deferred.checked_sub(deleted_count).unwrap()
+            );
+
+            assert_eq!(
+                segment.calculate_deleted_deferred_point_count(),
+                deleted_count
+            );
+
+            assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
+        }
+
+        // We delete all deferred points in the segment.
+        assert_eq!(segment.deferred_point_count(), 0);
+        assert_eq!(segment.calculate_deleted_deferred_point_count(), n_deferred);
+        assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
     }
 }

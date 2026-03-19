@@ -58,7 +58,7 @@ impl Segment {
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
-                        self.deferred_internal_id,
+                        self.deferred_internal_id(),
                     )
                     .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                     .fold(HashMap::new(), |mut map, point_id| {
@@ -98,7 +98,8 @@ impl Segment {
                         let count = iter
                             .dedup()
                             .take_while(|&point_id| {
-                                point_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+                                point_id
+                                    < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
                             })
                             .filter(|&point_id| context.check(point_id))
                             .count();
@@ -112,7 +113,7 @@ impl Segment {
         } else {
             // just count how many points each value has
             let iter = facet_index
-                .iter_counts_per_value(self.deferred_internal_id)
+                .iter_counts_per_value(self.deferred_internal_id())
                 .stop_if(is_stopped)
                 .filter(|hit| hit.count > 0);
 
@@ -152,7 +153,7 @@ impl Segment {
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,
-                    self.deferred_internal_id,
+                    self.deferred_internal_id(),
                 )
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(BTreeSet::new(), |mut set, point_id| {
@@ -164,7 +165,7 @@ impl Segment {
                 .collect()
         } else {
             facet_index
-                .iter_values(hw_counter, self.deferred_internal_id)
+                .iter_values(hw_counter, self.deferred_internal_id())
                 .stop_if(is_stopped)
                 .map(|value_ref| value_ref.to_owned())
                 .collect()

@@ -191,10 +191,14 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
     /// Number of available points
     ///
     /// - excludes soft deleted points
+    /// - includes deferred points.
     fn available_point_count(&self) -> usize;
 
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
+
+    /// Similar to `available_point_count()` but excludes all deferred points.
+    fn available_point_count_without_deferred(&self) -> usize;
 
     /// Size of all available vectors in storage
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
@@ -346,6 +350,12 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
 
     /// Returns external IDs of all deferred points in the segment
     fn deferred_point_ids(&self) -> Vec<PointIdType>;
+
+    /// Returns `true` if there is at least one point that is hidden (deferred).
+    /// Non-appendable segments always return `false` as they can't have deferred points.
+    ///
+    /// Note: the deferred point can be deleted and this function would still return `true`.
+    fn has_deferred_points(&self) -> bool;
 }
 
 /// Define mutable operations which can be performed with Segment or Segment-like entity.
@@ -407,6 +417,4 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
-
-    fn deferred_points_count(&self) -> usize;
 }

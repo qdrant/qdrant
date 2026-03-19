@@ -77,7 +77,7 @@ impl NonAppendableSegmentEntry for Segment {
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         let vector_query_context =
-            query_context.get_vector_context(vector_name, self.deferred_internal_id);
+            query_context.get_vector_context(vector_name, self.deferred_internal_id());
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,
@@ -183,7 +183,7 @@ impl NonAppendableSegmentEntry for Segment {
         // Filter out deferred points. This is done in two stages to prevent cloning `point_ids` and iterating more that needed
         // but still satisfy rusts ownership constraints.
         let behavior_allows_filtering = !deferred_behavior.include_all_points();
-        let filter_deferred = self.deferred_points_count() > 0 && behavior_allows_filtering;
+        let filter_deferred = self.has_deferred_points() && behavior_allows_filtering;
         let filtered_point_ids = filter_deferred.then(|| {
             point_ids
                 .iter()
@@ -415,7 +415,7 @@ impl NonAppendableSegmentEntry for Segment {
     ) -> OperationResult<CardinalityEstimation> {
         Ok(match filter {
             None => {
-                let available = self.non_deferred_point_count_estimated();
+                let available = self.available_point_count_without_deferred();
                 CardinalityEstimation {
                     primary_clauses: vec![],
                     min: available,
@@ -428,7 +428,7 @@ impl NonAppendableSegmentEntry for Segment {
                 let cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
                 let total_points = self.id_tracker.borrow().available_point_count();
-                let available_points = self.non_deferred_point_count_estimated();
+                let available_points = self.available_point_count_without_deferred();
                 adjust_for_deferred_points(cardinality, available_points, total_points)
             }
         })
@@ -507,9 +507,7 @@ impl NonAppendableSegmentEntry for Segment {
             0
         };
 
-        let num_points = self.available_point_count();
-
-        let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
+        let vectors_size_bytes = total_average_vectors_size_bytes * self.available_point_count();
 
         // Unwrap and default to 0 here because the RocksDB storage is the only faillible one, and we will remove it eventually.
         let payloads_size_bytes = self
@@ -523,7 +521,9 @@ impl NonAppendableSegmentEntry for Segment {
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,
-            num_points: self.non_deferred_point_count_estimated(),
+            num_points: self.available_point_count(),
+            num_deferred_points: Some(self.deferred_point_count()),
+            num_deleted_deferred_points: Some(self.deferred_deleted_count().unwrap_or_default()),
             num_deleted_vectors: self.deleted_point_count(),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
@@ -532,7 +532,7 @@ impl NonAppendableSegmentEntry for Segment {
             is_appendable: self.appendable_flag,
             index_schema: HashMap::new(),
             vector_data: vector_data_info,
-            deferred_internal_id: self.deferred_internal_id,
+            deferred_internal_id: self.deferred_internal_id(),
         }
     }
 
@@ -891,7 +891,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) {
-        query_context.add_available_point_count(self.available_point_count());
+        query_context.add_available_point_count(self.available_point_count_without_deferred());
         let hw_acc = query_context.hardware_usage_accumulator();
         let hw_counter = hw_acc.get_counter_cell();
 
@@ -918,7 +918,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        if let Some(deferred_from) = self.deferred_internal_id
+        if let Some(deferred_from) = self.deferred_internal_id()
             && let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id)
         {
             return self.is_appendable() && internal_id >= deferred_from;
@@ -927,15 +927,31 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let Some(deferred_from) = self.deferred_internal_id else {
+        let Some(deferred_from) = self.deferred_internal_id() else {
             return vec![];
         };
+        if self.deferred_point_count() == 0 {
+            return vec![];
+        }
+
         let id_tracker = self.id_tracker.borrow();
         id_tracker
             .iter_internal()
             .skip_while(|&internal_id| internal_id < deferred_from)
             .filter_map(|internal_id| id_tracker.external_id(internal_id))
             .collect()
+    }
+
+    fn available_point_count_without_deferred(&self) -> usize {
+        self.id_tracker
+            .borrow()
+            .available_point_count()
+            .saturating_sub(self.deferred_point_count())
+    }
+
+    fn has_deferred_points(&self) -> bool {
+        self.deferred_internal_id()
+            .is_some_and(|deferred_from| self.total_point_count() > deferred_from as usize)
     }
 }
 
@@ -1116,16 +1132,5 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             }),
         })
-    }
-
-    fn deferred_points_count(&self) -> usize {
-        if let Some(deferred_from) = self.deferred_internal_id
-            && self.is_appendable()
-        {
-            return self
-                .total_point_count()
-                .saturating_sub(deferred_from as usize);
-        }
-        0
     }
 }

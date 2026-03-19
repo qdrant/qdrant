@@ -40,7 +40,7 @@ impl Segment {
 
         let start_from = order_by.start_from();
 
-        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
 
         let values_ids_iterator = payload_index
             .iter_filtered_points(
@@ -114,7 +114,7 @@ impl Segment {
             // We can't early stop the iterator for deferred points because the items are sorted lexicographically by type `(T, internalID)`.
             .filter(|&(_, internal_id)| {
                 deferred_behavior.include_all_points()
-                    || internal_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+                    || internal_id < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
             });
 
         let directed_range_iter = match order_by.direction() {

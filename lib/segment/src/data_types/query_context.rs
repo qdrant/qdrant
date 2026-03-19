@@ -26,7 +26,7 @@ pub struct QueryIdfStats {
 
 #[derive(Debug)]
 pub struct QueryContext {
-    /// Total amount of available points in the segment.
+    /// Total amount of available (and visible) points in the segment.
     available_point_count: usize,
 
     /// Parameter, which defines how big a plain segment can be to be considered
@@ -70,6 +70,7 @@ impl QueryContext {
         self
     }
 
+    /// Returns the amount of available (and visible) points.
     pub fn available_point_count(&self) -> usize {
         self.available_point_count
     }
