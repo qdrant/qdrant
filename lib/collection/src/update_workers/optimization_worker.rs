@@ -29,7 +29,7 @@ use crate::collection_manager::optimizers::{
     Tracker, TrackerLog, TrackerSegmentInfo, TrackerStatus,
 };
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{Optimizer, OptimizerSignal};
 use crate::update_workers::UpdateWorkers;
@@ -516,7 +516,12 @@ impl UpdateWorkers {
             None => {}
             Some(first_failed_op) => {
                 let wal_lock = wal.lock().await;
-                for (op_num, operation) in wal_lock.read(first_failed_op) {
+                for entry in wal_lock.read(first_failed_op) {
+                    let (op_num, operation) = entry.map_err(|e| {
+                        CollectionError::service_error(format!(
+                            "Failed to read WAL during recovery: {e}"
+                        ))
+                    })?;
                     CollectionUpdater::update(
                         &segments,
                         op_num,

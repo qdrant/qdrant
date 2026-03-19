@@ -774,7 +774,13 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
-        for (op_num, update) in wal.read_range(from..to) {
+        for entry in wal.read_range(from..to) {
+            let (op_num, update) = entry.map_err(|e| {
+                CollectionError::service_error(format!(
+                    "Failed to read WAL during recovery of {}: {e}",
+                    self.path.display(),
+                ))
+            })?;
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
             }
@@ -1251,11 +1257,14 @@ impl LocalShard {
     /// Get the last N entries from the WAL
     ///
     /// Returns a vector of (sequence_number, operation) tuples, newest first.
-    pub async fn get_wal_entries(&self, count: u64) -> Vec<(SeqNumberType, OperationWithClockTag)> {
+    pub async fn get_wal_entries(
+        &self,
+        count: u64,
+    ) -> CollectionResult<Vec<(SeqNumberType, OperationWithClockTag)>> {
         let wal = self.wal.wal.lock().await;
 
         if wal.len(true) == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let count = cmp::min(count, wal.len(true));
@@ -1263,7 +1272,10 @@ impl LocalShard {
         let end = wal.last_index();
         let start = end.saturating_sub(count);
 
-        wal.read_range(start..end + 1).rev().collect()
+        wal.read_range(start..end + 1)
+            .rev()
+            .collect::<shard::wal::Result<Vec<_>>>()
+            .map_err(|e| CollectionError::service_error(format!("Failed to read WAL entries: {e}")))
     }
 
     /// Check if the read rate limiter allows the operation to proceed

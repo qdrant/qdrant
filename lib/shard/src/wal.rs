@@ -111,7 +111,7 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     pub fn read_all(
         &self,
         with_acknowledged: bool,
-    ) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+    ) -> impl DoubleEndedIterator<Item = Result<(u64, R)>> + '_ {
         if with_acknowledged {
             self.read(self.first_closed_index())
         } else {
@@ -130,7 +130,7 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         }
     }
 
-    pub fn read(&self, from: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+    pub fn read(&self, from: u64) -> impl DoubleEndedIterator<Item = Result<(u64, R)>> + '_ {
         // We have to explicitly do `from..self.first_index() + self.len(false)`, instead of more
         // concise `from..=self.last_index()`, because if the WAL is empty, `Wal::last_index`
         // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
@@ -139,17 +139,18 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         self.read_range(from..to)
     }
 
-    pub fn read_range(&self, range: Range<u64>) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+    pub fn read_range(
+        &self,
+        range: Range<u64>,
+    ) -> impl DoubleEndedIterator<Item = Result<(u64, R)>> + '_ {
         range.map(move |idx| {
-            let record_bin = self
-                .wal
-                .entry(idx)
-                .unwrap_or_else(|| panic!("Can't read entry {idx} from WAL"));
+            let record_bin = self.wal.entry(idx).ok_or_else(|| {
+                WalError::ReadWalError(format!("Can't read entry {idx} from WAL"))
+            })?;
 
-            let record: R = WalRawRecord::deserialize_from(&record_bin)
-                .expect("Can't deserialize entry, probably corrupted WAL or version mismatch");
+            let record: R = WalRawRecord::deserialize_from(&record_bin)?;
 
-            (idx, record)
+            Ok((idx, record))
         })
     }
 
@@ -310,6 +311,8 @@ pub enum WalError {
     InitWalError(String),
     #[error("Can't write WAL: {0}")]
     WriteWalError(String),
+    #[error("Can't read WAL: {0}")]
+    ReadWalError(String),
     #[error("Can't truncate WAL: {0}")]
     TruncateWalError(String),
     #[error("Operation rejected by WAL for old clock")]
@@ -374,7 +377,8 @@ mod tests {
             assert_eq!(metadata.size() as usize, capacity);
         };
 
-        for (_idx, rec) in serde_wal.read(0) {
+        for entry in serde_wal.read(0) {
+            let (_idx, rec) = entry.unwrap();
             println!("{rec:?}");
         }
 
@@ -386,8 +390,8 @@ mod tests {
 
         let mut read_iterator = serde_wal.read(0);
 
-        let (idx1, record1) = read_iterator.next().unwrap();
-        let (idx2, record2) = read_iterator.next().unwrap();
+        let (idx1, record1) = read_iterator.next().unwrap().unwrap();
+        let (idx2, record2) = read_iterator.next().unwrap().unwrap();
 
         assert_eq!(idx1, 0);
         assert_eq!(idx2, 1);
@@ -447,7 +451,8 @@ mod tests {
         serde_wal.drop_from(5).expect("Can't drop WAL from index");
         assert_eq!(serde_wal.len(false), 5);
 
-        for (idx, record) in serde_wal.read(0) {
+        for entry in serde_wal.read(0) {
+            let (idx, record) = entry.unwrap();
             assert!(idx <= 4);
             match record {
                 TestRecord::Struct1(x) => assert_eq!(x.data, idx as usize),
