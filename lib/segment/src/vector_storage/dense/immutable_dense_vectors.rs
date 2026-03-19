@@ -26,10 +26,11 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Immutable storage for dense vectors.
 #[derive(Debug)]
-pub struct ImmutableDenseVectors<
+pub struct ImmutableDenseVectors<T, S = MmapUniversal<u8>>
+where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8> = MmapUniversal<u8>,
-> {
+    S: UniversalRead<u8>,
+{
     pub dim: usize,
     pub num_vectors: usize,
     /// Byte-addressable vector data storage, providing read access via [`UniversalRead<u8>`].
