@@ -445,12 +445,19 @@ pub fn delete_points_by_filter(
             }
         }
 
-        // Remove points that should be kept from all segment deletion lists.
-        if !points_to_keep.is_empty() {
-            for point_ids in points_to_delete.values_mut() {
-                point_ids.retain(|id| !points_to_keep.contains(id));
-            }
-        }
+        // Collect unique point IDs excluding kept ones, and expand to ALL segments
+        // so that old copies of deferred points are deleted from every segment.
+        let all_points: Vec<PointIdType> = points_to_delete
+            .values()
+            .flat_map(|points| points.iter().copied())
+            .collect::<AHashSet<_>>()
+            .into_iter()
+            .filter(|id| !points_to_keep.contains(id))
+            .collect();
+        points_to_delete = segments
+            .iter()
+            .map(|(segment_id, _)| (segment_id, all_points.clone()))
+            .collect();
     }
 
     segments.apply_segments_batched(|s, segment_id| {
