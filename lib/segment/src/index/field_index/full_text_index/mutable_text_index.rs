@@ -293,6 +293,7 @@ impl MutableFullTextIndex {
     /// Get the tokenized document stored for a given point ID. Only for testing purposes.
     #[cfg(test)]
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
+        use common::generic_consts::Random;
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db) => {
@@ -303,7 +304,7 @@ impl MutableFullTextIndex {
                 .unwrap()
             }
             Storage::Gridstore(gridstore) => gridstore
-                .get_value::<false>(idx, &HardwareCounterCell::disposable())
+                .get_value::<Random>(idx, &HardwareCounterCell::disposable())
                 .unwrap()
                 .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
         }

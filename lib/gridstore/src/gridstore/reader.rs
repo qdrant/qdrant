@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
+use common::generic_consts::AccessPattern;
 use common::universal_io::mmap::{MmapUniversal, MmapUniversalRo};
 use common::universal_io::read_json_via;
 
@@ -76,13 +77,12 @@ impl<V: Blob> GridstoreReader<V> {
         self.base_path.join(format!("page_{page_id}.dat"))
     }
 
-    pub fn get_value<const READ_SEQUENTIAL: bool>(
+    pub fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        self.view()
-            .get_value::<READ_SEQUENTIAL>(point_offset, hw_counter)
+        self.view().get_value::<P>(point_offset, hw_counter)
     }
 
     pub fn iter<F, E>(

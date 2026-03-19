@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
+use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::UniversalRead;
 use lz4_flex::compress_prepend_size;
 
@@ -64,12 +65,8 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     }
 
     /// Read raw value from the pages, considering that values can span more than one page.
-    pub fn read_from_pages<const READ_SEQUENTIAL: bool>(
-        &self,
-        pointer: ValuePointer,
-    ) -> Result<Vec<u8>> {
-        self.pages
-            .read_from_pages::<READ_SEQUENTIAL>(pointer, self.config)
+    pub fn read_from_pages<P: AccessPattern>(&self, pointer: ValuePointer) -> Result<Vec<u8>> {
+        self.pages.read_from_pages::<P>(pointer, self.config)
     }
 }
 
@@ -89,7 +86,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     }
 
     /// Get the value for a given point offset.
-    pub fn get_value<const READ_SEQUENTIAL: bool>(
+    pub fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
@@ -98,7 +95,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
             return Ok(None);
         };
 
-        let raw = self.read_from_pages::<READ_SEQUENTIAL>(pointer)?;
+        let raw = self.read_from_pages::<P>(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
@@ -148,7 +145,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
             }
             nth += 1;
 
-            let raw = self.read_from_pages::<true>(pointer)?;
+            let raw = self.read_from_pages::<Sequential>(pointer)?;
 
             hw_counter.incr_delta(raw.len());
 

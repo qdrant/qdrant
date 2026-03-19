@@ -2,6 +2,7 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use ahash::HashSet;
+use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::universal_io::{
     ElementsRange, FileIndex, Flusher, OpenOptions, UniversalRead, UniversalWrite,
@@ -137,7 +138,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
         (page_ranges, buffer_offsets)
     }
 
-    pub fn read_from_pages<const READ_SEQUENTIAL: bool>(
+    pub fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
         config: &StorageConfig,
@@ -147,7 +148,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
         let (read_ranges, buffer_offsets) = Self::get_page_value_ranges(pointer, config);
 
-        S::read_multi::<READ_SEQUENTIAL>(self.pages.as_slice(), read_ranges, |idx, _, slice| {
+        S::read_multi::<P>(self.pages.as_slice(), read_ranges, |idx, _, slice| {
             let offset = buffer_offsets[idx];
             raw_value[offset..offset + slice.len()].write_copy_of_slice(slice);
             Ok(())

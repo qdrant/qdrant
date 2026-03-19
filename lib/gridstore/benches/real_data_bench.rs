@@ -3,6 +3,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
 use fs_err::File;
@@ -89,7 +90,10 @@ pub fn real_data_data_bench(c: &mut Criterion) {
         let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for i in 0..storage.max_point_offset() {
-                let res = storage.get_value::<false>(i, &hw_counter).unwrap().unwrap();
+                let res = storage
+                    .get_value::<Random>(i, &hw_counter)
+                    .unwrap()
+                    .unwrap();
                 assert!(res.0.contains_key("article_id"));
             }
         });

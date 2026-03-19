@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::{AccessPattern, Random};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
@@ -55,24 +56,6 @@ impl VectorOffset for VectorOffsetType {
     fn offset(self) -> VectorOffsetType {
         self
     }
-}
-
-pub trait AccessPattern: Copy {
-    const IS_SEQUENTIAL: bool;
-}
-
-#[derive(Copy, Clone)]
-pub struct Random;
-
-#[derive(Copy, Clone)]
-pub struct Sequential;
-
-impl AccessPattern for Random {
-    const IS_SEQUENTIAL: bool = false;
-}
-
-impl AccessPattern for Sequential {
-    const IS_SEQUENTIAL: bool = true;
 }
 
 /// Trait for vector storage

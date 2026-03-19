@@ -1,11 +1,12 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
+use crate::vector_storage::SparseVectorStorage;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
-use crate::vector_storage::{Random, SparseVectorStorage};
 
 pub struct SparseMetricQueryScorer<'a> {
     vector_storage: &'a VolatileSparseVectorStorage,

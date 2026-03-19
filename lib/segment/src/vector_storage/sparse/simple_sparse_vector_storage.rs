@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -18,9 +19,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::common::StoredRecord;
-use crate::vector_storage::{
-    AccessPattern, Random, SparseVectorStorage, VectorStorage, VectorStorageEnum,
-};
+use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredSparseVector = StoredRecord<SparseVector>;
 
@@ -281,6 +280,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
 
 #[cfg(test)]
 mod tests {
+    use common::generic_consts::Sequential;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use sparse::common::sparse_vector_fixture::random_sparse_vector;
@@ -289,7 +289,6 @@ mod tests {
     use super::*;
     use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::segment_constructor::migrate_rocksdb_sparse_vector_storage_to_mmap;
-    use crate::vector_storage::Sequential;
 
     const RAND_SEED: u64 = 42;
 

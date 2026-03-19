@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use gridstore::fixtures::{empty_storage, random_payload};
 
@@ -26,7 +27,7 @@ pub fn random_data_bench(c: &mut Criterion) {
         let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for i in 0..PAYLOAD_COUNT {
-                let res = storage.get_value::<false>(i, &hw_counter).unwrap();
+                let res = storage.get_value::<Random>(i, &hw_counter).unwrap();
                 assert!(res.is_some());
             }
         });

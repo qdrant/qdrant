@@ -3,12 +3,13 @@ use std::iter::Iterator;
 
 use ahash::AHashMap;
 use atomic_refcell::AtomicRef;
+use common::generic_consts::Sequential;
 use common::small_uint::U24;
 use common::types::PointOffsetType;
 
 use crate::data_types::named_vectors::CowVector;
 use crate::types::CompactExtendedPointId;
-use crate::vector_storage::{Sequential, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 const BATCH_SIZE: usize = 256;
 

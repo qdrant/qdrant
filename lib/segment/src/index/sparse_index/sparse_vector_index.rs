@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::storage_version::{StorageVersion as _, VERSION_FILE};
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
@@ -36,7 +37,7 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;
-use crate::vector_storage::{Random, VectorStorage, VectorStorageEnum, check_deleted_condition};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, check_deleted_condition};
 
 /// Whether to use the new compressed format.
 pub const USE_COMPRESSED: bool = true;

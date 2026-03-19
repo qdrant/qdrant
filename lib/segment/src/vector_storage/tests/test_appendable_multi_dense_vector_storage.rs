@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::validation::MAX_MULTIVECTOR_FLATTENED_LEN;
@@ -18,7 +19,7 @@ use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage_full;
 use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use crate::vector_storage::{
-    DEFAULT_STOPPED, MultiVectorStorage, Random, VectorStorage, VectorStorageEnum,
+    DEFAULT_STOPPED, MultiVectorStorage, VectorStorage, VectorStorageEnum,
 };
 
 #[derive(Clone, Copy)]

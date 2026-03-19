@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
@@ -42,8 +43,8 @@ use crate::vector_storage::quantized::quantized_ram_storage::{
     QuantizedRamStorage, QuantizedRamStorageBuilder,
 };
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, Random, RawScorer, RawScorerImpl, Sequential,
-    VectorStorage, VectorStorageEnum,
+    DenseVectorStorage, MultiVectorStorage, RawScorer, RawScorerImpl, VectorStorage,
+    VectorStorageEnum,
 };
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
