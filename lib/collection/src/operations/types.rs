@@ -138,9 +138,15 @@ pub struct ShardUpdateQueueInfo {
     /// Number of elements in the queue
     #[anonymize(false)]
     pub length: usize,
+
     /// last operation number processed
     #[anonymize(false)]
     pub op_num: Option<usize>,
+
+    /// Number of points that are deferred (i.e hidden from search as they're not yet optimized).
+    #[anonymize(false)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred_points: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema, Default, Anonymize)]
@@ -148,6 +154,11 @@ pub struct UpdateQueueInfo {
     /// Number of elements in the queue
     #[anonymize(false)]
     pub length: usize,
+
+    /// Number of points that are deferred (i.e hidden from search as they're not yet optimized).
+    #[anonymize(false)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred_points: Option<usize>,
 }
 
 // Version of the collection config we can present to the user
@@ -276,8 +287,15 @@ impl From<ShardInfoInternal> for CollectionInfo {
 impl From<ShardUpdateQueueInfo> for UpdateQueueInfo {
     fn from(value: ShardUpdateQueueInfo) -> Self {
         // ignore field `op_num`, no sane way to aggregate across shards
-        let ShardUpdateQueueInfo { length, op_num: _ } = value;
-        UpdateQueueInfo { length }
+        let ShardUpdateQueueInfo {
+            length,
+            op_num: _,
+            deferred_points,
+        } = value;
+        UpdateQueueInfo {
+            length,
+            deferred_points,
+        }
     }
 }
 
