@@ -153,15 +153,7 @@ impl EdgeShard {
                     DeferredBehavior::Exclude,
                 )
             })
-            .collect();
-
-        let point_ids = point_ids
-            .into_iter()
-            .flatten()
-            .sorted()
-            .dedup()
-            .take(limit)
-            .collect_vec();
+            .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
 
         let mut points = retrieve_blocking(
             self.segments.clone(),
@@ -267,11 +259,11 @@ impl EdgeShard {
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
-                );
+                )?;
 
-                (point_count, point_ids)
+                OperationResult::Ok((point_count, point_ids))
             })
-            .unzip();
+            .process_results(|iter| iter.unzip())?;
 
         // Shortcut if all segments are empty
         if point_count.iter().all(|&count| count == 0) {

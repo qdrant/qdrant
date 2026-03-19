@@ -10,6 +10,7 @@ use itertools::Itertools as _;
 use rand::RngExt;
 use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
+use segment::common::operation_error::OperationResult;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -164,7 +165,7 @@ impl LocalShard {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let task = search_runtime_handle.spawn_blocking(move || {
+            let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let work = || {
                     segment.get().read().read_filtered(
                         offset,
@@ -198,11 +199,7 @@ impl LocalShard {
 
         let point_ids = all_reads
             .into_iter()
-            .flatten()
-            .sorted()
-            .dedup()
-            .take(limit)
-            .collect_vec();
+            .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
 
         let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
@@ -379,20 +376,20 @@ impl LocalShard {
 
             let hw_counter = hw_counter.fork();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let task = search_runtime_handle.spawn_blocking(move || {
-                let work = || {
+            let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let work = || -> OperationResult<_> {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
-                    (
+                    Ok((
                         read_segment.available_point_count(),
                         read_segment.read_random_filtered(
                             limit,
                             filter.as_ref(),
                             &is_stopped,
                             &hw_counter,
-                        ),
-                    )
+                        )?,
+                    ))
                 };
                 match cpu_utilization {
                     Some(cu) => cu.measure(work),
@@ -416,7 +413,8 @@ impl LocalShard {
         .await
         .map_err(|_| CollectionError::timeout(timeout, "scroll_randomly"))??;
 
-        let (availability, mut segments_reads): (Vec<_>, Vec<_>) = all_reads.into_iter().unzip();
+        let (availability, mut segments_reads): (Vec<_>, Vec<_>) =
+            all_reads.into_iter().process_results(|iter| iter.unzip())?;
 
         // Shortcut if all segments are empty
         if availability.iter().all(|&count| count == 0) {

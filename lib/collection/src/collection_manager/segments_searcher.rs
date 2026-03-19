@@ -447,10 +447,10 @@ impl SegmentsSearcher {
 
             let hw_counter = hw_measurement_acc.get_counter_cell();
 
-            let work = || {
+            let work = || -> CollectionResult<_> {
                 let all_points: BTreeSet<_> = segments
                     .into_iter()
-                    .flat_map(|segment| {
+                    .map(|segment| {
                         segment.get().read().read_filtered(
                             None,
                             None,
@@ -460,7 +460,7 @@ impl SegmentsSearcher {
                             deferred_behavior,
                         )
                     })
-                    .collect();
+                    .process_results(|iter| iter.flatten().collect())?;
                 Ok(all_points)
             };
 

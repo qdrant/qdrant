@@ -1331,6 +1331,7 @@ fn validate_facet_result(
                 &hw_counter,
                 DeferredBehavior::Exclude,
             )
+            .unwrap()
             .len();
 
         ensure!(*count == exact, "Facet value: {value:?}");
