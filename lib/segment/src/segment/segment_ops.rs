@@ -691,10 +691,8 @@ impl Segment {
         };
 
         let id_tracker = self.id_tracker.borrow();
-
-        (deferred_from..id_tracker.total_point_count() as u32)
-            .filter(|&internal_id| id_tracker.external_id(internal_id).is_none())
-            .count()
+        let total_points = id_tracker.total_point_count();
+        id_tracker.deleted_point_bitslice()[deferred_from as usize..total_points].count_ones()
     }
 
     /// Returns the `deferred_internal_id` of the segment if there is at least one non-deleted deferred point in the segment.
