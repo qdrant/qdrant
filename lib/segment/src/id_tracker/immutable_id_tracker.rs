@@ -2,14 +2,11 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitSlice;
-use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use common::ext::BitSliceExt as _;
-use common::mmap::{
-    AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
-};
+use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
+use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
+use common::universal_io::OpenOptions;
 use fs_err::File;
 use uuid::Uuid;
 
@@ -17,6 +14,7 @@ use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
 use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
@@ -246,14 +244,18 @@ impl ImmutableIdTracker {
     }
 
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
-        let deleted_raw = open_write_mmap(
-            &Self::deleted_file_path(segment_path),
-            AdviceSetting::Global,
-            true,
+        let deleted_storage = MmapBitSlice::open(
+            Self::deleted_file_path(segment_path),
+            OpenOptions {
+                populate: Some(true),
+                ..OpenOptions::default()
+            },
         )?;
-        let deleted_mmap = MmapBitSlice::try_from(deleted_raw, 0)?;
-        let deleted_bitvec = deleted_mmap.to_bitvec();
-        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_mmap);
+
+        let mut deleted_bitvec = BitVec::new();
+        deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
+
+        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
 
         let internal_to_version_map = open_write_mmap(
             &Self::version_mapping_file_path(segment_path),
@@ -285,22 +287,29 @@ impl ImmutableIdTracker {
     ) -> OperationResult<Self> {
         // Create mmap file for deleted bitvec
         let deleted_filepath = Self::deleted_file_path(path);
-        {
-            let deleted_size = bitmap_mmap_size(mappings.total_point_count());
-            create_and_ensure_length(&deleted_filepath, deleted_size)?;
-        }
 
         debug_assert!(mappings.deleted().len() <= mappings.total_point_count());
 
-        let deleted_mmap = open_write_mmap(&deleted_filepath, AdviceSetting::Global, false)?;
-        let mut deleted_new = MmapBitSlice::try_from(deleted_mmap, 0)?;
-        deleted_new[..mappings.deleted().len()].copy_from_bitslice(mappings.deleted());
+        let _ = create_and_ensure_length(
+            &deleted_filepath,
+            mappings
+                .total_point_count()
+                .div_ceil(u8::BITS as usize)
+                .next_multiple_of(size_of::<u64>()),
+        )?;
 
-        for i in mappings.deleted().len()..mappings.total_point_count() {
-            deleted_new.set(i, true);
-        }
+        let mut deleted_storage = MmapBitSlice::open(&deleted_filepath, OpenOptions::default())?;
 
-        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_new);
+        // Set bits for deleted points from the mappings,
+        deleted_storage.write_bitslice(mappings.deleted())?;
+        // plus any trailing points beyond mappings.deleted().len() are also marked deleted.
+        deleted_storage.set_ascending_bits_batch(
+            (mappings.deleted().len()..mappings.total_point_count()).map(|i| (i as u64, true)),
+        )?;
+
+        deleted_storage.flusher()()?;
+
+        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
 
         // Create mmap file for internal-to-version list
         let version_filepath = Self::version_mapping_file_path(path);
@@ -373,11 +382,6 @@ impl ImmutableIdTracker {
 fn mmap_size<T>(len: usize) -> usize {
     let item_width = size_of::<T>();
     len.div_ceil(item_width) * item_width // Make it a multiple of usize-width.
-}
-
-/// Returns the required mmap filesize for a `BitSlice`.
-fn bitmap_mmap_size(number_of_elements: usize) -> usize {
-    mmap_size::<usize>(number_of_elements.div_ceil(u8::BITS as usize))
 }
 
 impl IdTracker for ImmutableIdTracker {

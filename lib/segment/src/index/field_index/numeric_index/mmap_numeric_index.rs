@@ -7,10 +7,10 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap;
-use common::mmap::{AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length};
+use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
 use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::{OpenOptions, UniversalRead};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ use super::mutable_numeric_index::InMemoryNumericIndex;
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stored_point_to_values::{StoredPointToValues, StoredValue};
 
@@ -133,22 +134,24 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
         }
 
         {
-            const BITS_IN_BYTE: usize = 8;
             let deleted_flags_count = in_memory_index.point_to_values.len();
-            let deleted_file = create_and_ensure_length(
+            let _ = create_and_ensure_length(
                 &deleted_path,
-                BITS_IN_BYTE
-                    * BITS_IN_BYTE
-                    * deleted_flags_count.div_ceil(BITS_IN_BYTE * BITS_IN_BYTE),
+                deleted_flags_count
+                    .div_ceil(u8::BITS as usize)
+                    .next_multiple_of(size_of::<u64>()),
             )?;
-            let mut deleted_mmap = unsafe { MmapMut::map_mut(&deleted_file)? };
-            deleted_mmap.fill(0);
-            let mut deleted_bitflags = MmapBitSlice::from(deleted_mmap, 0);
-            for (idx, values) in in_memory_index.point_to_values.iter().enumerate() {
-                if values.is_empty() {
-                    deleted_bitflags.set(idx, true);
-                }
-            }
+
+            let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+            deleted.set_ascending_bits_batch(
+                in_memory_index
+                    .point_to_values
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, values)| values.is_empty())
+                    .map(|(idx, _)| (idx as u64, true)),
+            )?;
+            deleted.flusher()()?;
         }
 
         Self::open(path, is_on_disk)?.ok_or_else(|| {
@@ -169,9 +172,8 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
 
         let histogram = Histogram::<T>::load(path)?;
         let config: MmapNumericIndexConfig = read_json(&config_path)?;
-        let deleted = mmap::open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
-        let deleted = MmapBitSlice::from(deleted, 0);
-        let deleted_count = deleted.count_ones();
+        let deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+        let deleted_count = deleted.count_ones()?;
         let do_populate = !is_on_disk;
         let map = unsafe {
             MmapSlice::try_from(mmap::open_write_mmap(

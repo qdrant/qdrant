@@ -14,6 +14,7 @@ skip = [
 
 ignore-words-list = [
     "ABD",                 # Geohash example
+    "INDX",                # bitvec crate const
     "generall",            # The boss
     "hel",                 # Query token
     "mmapped",             # Memory mapped

@@ -3,8 +3,7 @@ use std::io::Write;
 use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
-use bitvec::prelude::BitSlice;
-use common::ext::BitSliceExt as _;
+use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};

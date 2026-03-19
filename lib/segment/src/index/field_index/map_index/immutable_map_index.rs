@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
-use bitvec::vec::BitVec;
+use common::bitvec::BitVec;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
 use gridstore::Blob;
