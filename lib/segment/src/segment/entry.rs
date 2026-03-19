@@ -24,7 +24,7 @@ use crate::data_types::query_context::{
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::{IdTracker, PointMappingsGuard};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::query_estimator::adjust_for_deferred_points;
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
@@ -266,12 +266,12 @@ impl NonAppendableSegmentEntry for Segment {
         Ok(records)
     }
 
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType>> {
-        // Sorry for that, but I didn't find any way easier.
-        // If you try simply return iterator - it won't work because AtomicRef should exist
-        // If you try to make callback instead - you won't be able to create <dyn SegmentEntry>
-        // Attempt to create return borrowed value along with iterator failed because of insane lifetimes
-        unsafe { self.id_tracker.as_ptr().as_ref().unwrap().iter_external() }
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+        let mappings =
+            PointMappingsGuard::new(self.id_tracker.borrow(), |guard| guard.point_mappings());
+        Box::new(IterPointsIterator::new(mappings, |mappings| {
+            mappings.borrow_dependent().iter_external()
+        }))
     }
 
     fn read_filtered<'a>(
@@ -372,7 +372,7 @@ impl NonAppendableSegmentEntry for Segment {
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
         let id_tracker = self.id_tracker.borrow();
-        let iterator = id_tracker.iter_from(from).map(|x| x.0);
+        let iterator = id_tracker.point_mappings().iter_from(from).map(|x| x.0);
         match to {
             None => iterator.collect(),
             Some(to_id) => iterator.take_while(|x| *x < to_id).collect(),
@@ -936,6 +936,7 @@ impl NonAppendableSegmentEntry for Segment {
 
         let id_tracker = self.id_tracker.borrow();
         id_tracker
+            .point_mappings()
             .iter_internal()
             .skip_while(|&internal_id| internal_id < deferred_from)
             .filter_map(|internal_id| id_tracker.external_id(internal_id))
@@ -1144,5 +1145,24 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             }),
         })
+    }
+}
+
+// The alias is needed because of self_cell limitation.
+type BoxedPointIdIterator<'a> = Box<dyn Iterator<Item = PointIdType> + 'a>;
+
+self_cell::self_cell! {
+    struct IterPointsIterator<'a> {
+        owner: PointMappingsGuard<'a>,
+        #[covariant]
+        dependent: BoxedPointIdIterator,
+    }
+}
+
+impl<'a> Iterator for IterPointsIterator<'a> {
+    type Item = PointIdType;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.with_dependent_mut(|_, dependent| dependent.next())
     }
 }

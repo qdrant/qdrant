@@ -19,12 +19,14 @@ impl Segment {
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let point_mappings = id_tracker.point_mappings();
 
         let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
         let ids_iterator = payload_index
             .iter_filtered_points(
                 condition,
                 &id_tracker,
+                &point_mappings,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
@@ -50,6 +52,7 @@ impl Segment {
         let filter_context = payload_index.filter_context(condition, hw_counter);
         self.id_tracker
             .borrow()
+            .point_mappings()
             .iter_random_visible(self.deferred_internal_id())
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
@@ -61,6 +64,7 @@ impl Segment {
     pub(super) fn read_by_random_id(&self, limit: usize) -> Vec<PointIdType> {
         self.id_tracker
             .borrow()
+            .point_mappings()
             .iter_random_visible(self.deferred_internal_id())
             .map(|x| x.0)
             .take(limit)
