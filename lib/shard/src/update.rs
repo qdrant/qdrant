@@ -391,7 +391,7 @@ pub fn delete_points_by_filter(
                 // Include also deferred points.
                 DeferredBehavior::IncludeAll,
             )?;
-            has_deferred |= segment.deferred_points_count() > 0;
+            has_deferred |= segment.has_deferred_points();
             Ok((segment_id, point_ids))
         })
         .collect::<OperationResult<_>>()?;
@@ -417,7 +417,7 @@ pub fn delete_points_by_filter(
         let mut points_to_keep: AHashSet<PointIdType> = AHashSet::new();
         for (_segment_id, segment) in segments.iter() {
             let segment = segment.get().read();
-            if segment.deferred_points_count() == 0 {
+            if !segment.has_deferred_points() {
                 continue;
             }
             for (point_id, max_version) in &max_versions {
