@@ -414,34 +414,35 @@ pub fn delete_points_by_filter(
         // Check the corner case: if there is a deferred version of a point which has a newer
         // version but doesn't match the filter, we should not delete the point from any segment.
         // The old filtered copies will be cleaned up during optimization deduplication.
+        //
+        // While iterating segments, also collect which matched points each segment has,
+        // so we can expand deletions to old copies in segments where the filter didn't match.
         let mut points_to_keep: AHashSet<PointIdType> = AHashSet::new();
-        for (_segment_id, segment) in segments.iter() {
+        for (segment_id, segment) in segments.iter() {
             let segment = segment.get().read();
-            if !segment.has_deferred_points() {
-                continue;
-            }
+            let mut present = Vec::new();
             for (point_id, max_version) in &max_versions {
                 if !segment.has_point(*point_id) {
                     continue;
                 }
-                if segment.point_version(*point_id) > *max_version
+                present.push(*point_id);
+                if segment.has_deferred_points()
+                    && segment.point_version(*point_id) > *max_version
                     && segment.point_is_deferred(*point_id)
                 {
                     points_to_keep.insert(*point_id);
                 }
             }
+            // Store per-segment points for expansion below.
+            points_to_delete.insert(segment_id, present);
         }
 
-        // Expand to ALL segments so that old copies of deferred points are deleted everywhere.
-        // `max_versions` already has deduplicated point IDs, no need to re-collect.
-        let all_points: Vec<PointIdType> = max_versions
-            .into_keys()
-            .filter(|id| !points_to_keep.contains(id))
-            .collect();
-        points_to_delete = segments
-            .iter()
-            .map(|(segment_id, _)| (segment_id, all_points.clone()))
-            .collect();
+        // Remove points_to_keep from each segment's list.
+        if !points_to_keep.is_empty() {
+            for points in points_to_delete.values_mut() {
+                points.retain(|id| !points_to_keep.contains(id));
+            }
+        }
     }
 
     segments.apply_segments_batched(|s, segment_id| {
