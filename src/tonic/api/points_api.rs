@@ -750,218 +750,68 @@ mod tests {
     use super::PointsTelemetryWrapper;
     use crate::common::telemetry_ops::requests_telemetry::CollectionName;
 
-    struct MockPoints;
+    macro_rules! mock_and_test_points {
+        ($($method:ident($req:ident) -> $resp:ident),* $(,)?) => {
+            struct MockPoints;
 
-    #[tonic::async_trait]
-    #[allow(unused_variables)]
-    impl Points for MockPoints {
-        async fn upsert(
-            &self,
-            r: Request<UpsertPoints>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn delete(
-            &self,
-            r: Request<DeletePoints>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn get(&self, r: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn update_vectors(
-            &self,
-            r: Request<UpdatePointVectors>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn delete_vectors(
-            &self,
-            r: Request<DeletePointVectors>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn set_payload(
-            &self,
-            r: Request<SetPayloadPoints>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn overwrite_payload(
-            &self,
-            r: Request<SetPayloadPoints>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn delete_payload(
-            &self,
-            r: Request<DeletePayloadPoints>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn clear_payload(
-            &self,
-            r: Request<ClearPayloadPoints>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn update_batch(
-            &self,
-            r: Request<UpdateBatchPoints>,
-        ) -> Result<Response<UpdateBatchResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn create_field_index(
-            &self,
-            r: Request<CreateFieldIndexCollection>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn delete_field_index(
-            &self,
-            r: Request<DeleteFieldIndexCollection>,
-        ) -> Result<Response<PointsOperationResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn search(
-            &self,
-            r: Request<SearchPoints>,
-        ) -> Result<Response<SearchResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn search_batch(
-            &self,
-            r: Request<SearchBatchPoints>,
-        ) -> Result<Response<SearchBatchResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn search_groups(
-            &self,
-            r: Request<SearchPointGroups>,
-        ) -> Result<Response<SearchGroupsResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn scroll(
-            &self,
-            r: Request<ScrollPoints>,
-        ) -> Result<Response<ScrollResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn recommend(
-            &self,
-            r: Request<RecommendPoints>,
-        ) -> Result<Response<RecommendResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn recommend_batch(
-            &self,
-            r: Request<RecommendBatchPoints>,
-        ) -> Result<Response<RecommendBatchResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn recommend_groups(
-            &self,
-            r: Request<RecommendPointGroups>,
-        ) -> Result<Response<RecommendGroupsResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn discover(
-            &self,
-            r: Request<DiscoverPoints>,
-        ) -> Result<Response<DiscoverResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn discover_batch(
-            &self,
-            r: Request<DiscoverBatchPoints>,
-        ) -> Result<Response<DiscoverBatchResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn count(&self, r: Request<CountPoints>) -> Result<Response<CountResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn query(&self, r: Request<QueryPoints>) -> Result<Response<QueryResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn query_batch(
-            &self,
-            r: Request<QueryBatchPoints>,
-        ) -> Result<Response<QueryBatchResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn query_groups(
-            &self,
-            r: Request<QueryPointGroups>,
-        ) -> Result<Response<QueryGroupsResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn facet(&self, r: Request<FacetCounts>) -> Result<Response<FacetResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn search_matrix_pairs(
-            &self,
-            r: Request<SearchMatrixPoints>,
-        ) -> Result<Response<SearchMatrixPairsResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
-        async fn search_matrix_offsets(
-            &self,
-            r: Request<SearchMatrixPoints>,
-        ) -> Result<Response<SearchMatrixOffsetsResponse>, Status> {
-            Ok(Response::new(Default::default()))
-        }
+            #[tonic::async_trait]
+            #[allow(unused_variables)]
+            impl Points for MockPoints {
+                $(
+                    async fn $method(&self, r: Request<$req>) -> Result<Response<$resp>, Status> {
+                        Ok(Response::new(Default::default()))
+                    }
+                )*
+            }
+
+            $(
+                #[tokio::test]
+                async fn $method() {
+                    let w = PointsTelemetryWrapper::new(MockPoints);
+                    let r = w
+                        .$method(Request::new($req {
+                            collection_name: stringify!($method).into(),
+                            ..Default::default()
+                        }))
+                        .await
+                        .unwrap();
+                    assert_eq!(
+                        r.extensions().get::<CollectionName>().unwrap().0,
+                        stringify!($method),
+                    );
+                }
+            )*
+        };
     }
 
-    #[tokio::test]
-    async fn test_wrapper_count() {
-        let w = PointsTelemetryWrapper::new(MockPoints);
-        let r = w
-            .count(Request::new(CountPoints {
-                collection_name: "col_a".into(),
-                ..Default::default()
-            }))
-            .await
-            .unwrap();
-        assert_eq!(r.extensions().get::<CollectionName>().unwrap().0, "col_a");
-    }
-
-    #[tokio::test]
-    async fn test_wrapper_search() {
-        let w = PointsTelemetryWrapper::new(MockPoints);
-        let r = w
-            .search(Request::new(SearchPoints {
-                collection_name: "col_b".into(),
-                ..Default::default()
-            }))
-            .await
-            .unwrap();
-        assert_eq!(r.extensions().get::<CollectionName>().unwrap().0, "col_b");
-    }
-
-    #[tokio::test]
-    async fn test_wrapper_upsert() {
-        let w = PointsTelemetryWrapper::new(MockPoints);
-        let r = w
-            .upsert(Request::new(UpsertPoints {
-                collection_name: "col_c".into(),
-                ..Default::default()
-            }))
-            .await
-            .unwrap();
-        assert_eq!(r.extensions().get::<CollectionName>().unwrap().0, "col_c");
-    }
-
-    #[tokio::test]
-    async fn test_wrapper_scroll() {
-        let w = PointsTelemetryWrapper::new(MockPoints);
-        let r = w
-            .scroll(Request::new(ScrollPoints {
-                collection_name: "col_d".into(),
-                ..Default::default()
-            }))
-            .await
-            .unwrap();
-        assert_eq!(r.extensions().get::<CollectionName>().unwrap().0, "col_d");
+    mock_and_test_points! {
+        upsert(UpsertPoints) -> PointsOperationResponse,
+        delete(DeletePoints) -> PointsOperationResponse,
+        get(GetPoints) -> GetResponse,
+        update_vectors(UpdatePointVectors) -> PointsOperationResponse,
+        delete_vectors(DeletePointVectors) -> PointsOperationResponse,
+        set_payload(SetPayloadPoints) -> PointsOperationResponse,
+        overwrite_payload(SetPayloadPoints) -> PointsOperationResponse,
+        delete_payload(DeletePayloadPoints) -> PointsOperationResponse,
+        clear_payload(ClearPayloadPoints) -> PointsOperationResponse,
+        update_batch(UpdateBatchPoints) -> UpdateBatchResponse,
+        create_field_index(CreateFieldIndexCollection) -> PointsOperationResponse,
+        delete_field_index(DeleteFieldIndexCollection) -> PointsOperationResponse,
+        search(SearchPoints) -> SearchResponse,
+        search_batch(SearchBatchPoints) -> SearchBatchResponse,
+        search_groups(SearchPointGroups) -> SearchGroupsResponse,
+        scroll(ScrollPoints) -> ScrollResponse,
+        recommend(RecommendPoints) -> RecommendResponse,
+        recommend_batch(RecommendBatchPoints) -> RecommendBatchResponse,
+        recommend_groups(RecommendPointGroups) -> RecommendGroupsResponse,
+        discover(DiscoverPoints) -> DiscoverResponse,
+        discover_batch(DiscoverBatchPoints) -> DiscoverBatchResponse,
+        count(CountPoints) -> CountResponse,
+        query(QueryPoints) -> QueryResponse,
+        query_batch(QueryBatchPoints) -> QueryBatchResponse,
+        query_groups(QueryPointGroups) -> QueryGroupsResponse,
+        facet(FacetCounts) -> FacetResponse,
+        search_matrix_pairs(SearchMatrixPoints) -> SearchMatrixPairsResponse,
+        search_matrix_offsets(SearchMatrixPoints) -> SearchMatrixOffsetsResponse,
     }
 }
