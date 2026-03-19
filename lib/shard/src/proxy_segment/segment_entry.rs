@@ -1,14 +1,14 @@
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, TelemetryDetail};
-use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use segment::common::Flusher;
+use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
