@@ -3428,14 +3428,13 @@ impl<'de> serde::Deserialize<'de> for Condition {
 
         // Special case: FieldCondition first to surface datetime parse errors.
         // Untagged enum would swallow these errors with generic message.
-        if let serde_value::Value::Map(ref map) = value {
-            let key_key = serde_value::Value::String("key".to_string());
-            if map.contains_key(&key_key) {
-                return value
-                    .deserialize_into::<FieldCondition>()
-                    .map(Condition::Field)
-                    .map_err(serde::de::Error::custom);
-            }
+        if let serde_value::Value::Map(obj) = &value
+            && obj.contains_key(&serde_value::Value::String("key".into()))
+        {
+            return value
+                .deserialize_into()
+                .map(Condition::Field)
+                .map_err(serde::de::Error::custom);
         }
 
         // All other variants handled by ConditionUntagged (compiler-safe)

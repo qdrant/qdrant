@@ -444,4 +444,31 @@ mod tests {
 
         assert_eq!(operation, deserialized);
     }
+
+    #[test]
+    fn test_wal_roundtrip_delete_by_filter_with_has_id_uuids() {
+        use crate::wal::WalRawRecord;
+
+        let uuids: Vec<PointIdType> = vec![ExtendedPointId::Uuid(
+            uuid::Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap(),
+        )];
+
+        let filter = Filter {
+            should: None,
+            min_should: None,
+            must: None,
+            must_not: Some(vec![Condition::HasId(HasIdCondition::from(
+                uuids.into_iter().collect::<ahash::AHashSet<_>>(),
+            ))]),
+        };
+
+        let operation = CollectionUpdateOperations::PointOperation(
+            PointOperations::DeletePointsByFilter(filter),
+        );
+
+        let raw = WalRawRecord::new(&operation).unwrap();
+        let deserialized: CollectionUpdateOperations = raw.deserialize().unwrap();
+
+        assert_eq!(operation, deserialized);
+    }
 }
