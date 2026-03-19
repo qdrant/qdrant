@@ -422,9 +422,9 @@ mod tests {
 
     #[test]
     fn test_delete_by_filter_with_has_id_uuids_cbor_roundtrip() {
-        let uuids: Vec<PointIdType> = vec![
-            ExtendedPointId::Uuid(uuid::Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap()),
-        ];
+        let uuids: Vec<PointIdType> = vec![ExtendedPointId::Uuid(
+            uuid::Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap(),
+        )];
 
         let filter = Filter {
             should: None,
