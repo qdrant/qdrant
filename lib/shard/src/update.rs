@@ -406,14 +406,8 @@ pub fn delete_points_by_filter(
             let segment = segments.get(*segment_id).unwrap().get().read();
             for point_id in point_ids {
                 let version = segment.point_version(*point_id);
-                max_versions
-                    .entry(*point_id)
-                    .and_modify(|existing| {
-                        if version > *existing {
-                            *existing = version;
-                        }
-                    })
-                    .or_insert(version);
+                let entry = max_versions.entry(*point_id).or_insert(None);
+                *entry = std::cmp::max(*entry, version);
             }
         }
 
@@ -423,7 +417,6 @@ pub fn delete_points_by_filter(
         let mut points_to_keep: AHashSet<PointIdType> = AHashSet::new();
         for (_segment_id, segment) in segments.iter() {
             let segment = segment.get().read();
-            // Only need to check segments that have deferred points.
             if segment.deferred_points_count() == 0 {
                 continue;
             }
@@ -431,27 +424,18 @@ pub fn delete_points_by_filter(
                 if !segment.has_point(*point_id) {
                     continue;
                 }
-
-                let version = segment.point_version(*point_id);
-                let is_deferred = segment.point_is_deferred(*point_id);
-
-                // Point is:
-                // - newer than any filtered copy
-                // - deferred
-                // - does not match the filter
-                if version > *max_version && is_deferred {
+                if segment.point_version(*point_id) > *max_version
+                    && segment.point_is_deferred(*point_id)
+                {
                     points_to_keep.insert(*point_id);
                 }
             }
         }
 
-        // Collect unique point IDs excluding kept ones, and expand to ALL segments
-        // so that old copies of deferred points are deleted from every segment.
-        let all_points: Vec<PointIdType> = points_to_delete
-            .values()
-            .flat_map(|points| points.iter().copied())
-            .collect::<AHashSet<_>>()
-            .into_iter()
+        // Expand to ALL segments so that old copies of deferred points are deleted everywhere.
+        // `max_versions` already has deduplicated point IDs, no need to re-collect.
+        let all_points: Vec<PointIdType> = max_versions
+            .into_keys()
             .filter(|id| !points_to_keep.contains(id))
             .collect();
         points_to_delete = segments
