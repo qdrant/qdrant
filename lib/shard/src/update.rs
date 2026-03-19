@@ -390,9 +390,9 @@ pub fn delete_points_by_filter(
                 hw_counter,
                 // Include also deferred points.
                 DeferredBehavior::IncludeAll,
-            );
+            )?;
             has_deferred |= segment.deferred_points_count() > 0;
-            (segment_id, point_ids)
+            Ok((segment_id, point_ids))
         })
         .collect::<OperationResult<_>>()?;
 
