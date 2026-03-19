@@ -12749,8 +12749,6 @@
           "disk_usage_bytes",
           "index_schema",
           "is_appendable",
-          "num_deferred_points",
-          "num_deleted_deferred_points",
           "num_deleted_vectors",
           "num_indexed_vectors",
           "num_points",
@@ -12783,12 +12781,14 @@
           "num_deferred_points": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "num_deleted_deferred_points": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "num_indexed_vectors": {
             "type": "integer",

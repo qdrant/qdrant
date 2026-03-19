@@ -546,21 +546,21 @@ fn test_proxy_deferred() {
 
     let initial_estimation = wrapped_segment.estimate_point_count(None, &hw_counter);
 
-    let initial_deferred_point_count = wrapped_segment.size_info().num_deferred_points;
+    let initial_deferred_point_count = wrapped_segment.size_info().num_deferred_points.unwrap();
 
     wrapped_segment
         .delete_point_internal(3, &hw_counter)
         .unwrap();
 
     assert_eq!(
-        wrapped_segment.size_info().num_deferred_points,
+        wrapped_segment.size_info().num_deferred_points.unwrap(),
         initial_deferred_point_count - 1
     );
 
     let mut proxy_segment = ProxySegment::new(LockedSegment::new(wrapped_segment));
 
     assert_eq!(
-        proxy_segment.size_info().num_deferred_points,
+        proxy_segment.size_info().num_deferred_points.unwrap(),
         initial_deferred_point_count - 1
     );
 
@@ -571,7 +571,7 @@ fn test_proxy_deferred() {
         .unwrap();
 
     assert_eq!(
-        proxy_segment.size_info().num_deferred_points,
+        proxy_segment.size_info().num_deferred_points.unwrap(),
         initial_deferred_point_count - 2
     );
 

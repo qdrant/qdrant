@@ -522,8 +522,8 @@ impl NonAppendableSegmentEntry for Segment {
             num_vectors,
             num_indexed_vectors,
             num_points: self.available_point_count(),
-            num_deferred_points: self.deferred_point_count(),
-            num_deleted_deferred_points: self.deferred_deleted_count.unwrap_or_default(),
+            num_deferred_points: Some(self.deferred_point_count()),
+            num_deleted_deferred_points: Some(self.deferred_deleted_count.unwrap_or_default()),
             num_deleted_vectors: self.deleted_point_count(),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
