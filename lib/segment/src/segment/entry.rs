@@ -77,7 +77,7 @@ impl NonAppendableSegmentEntry for Segment {
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         let vector_query_context =
-            query_context.get_vector_context(vector_name, self.deferred_internal_id);
+            query_context.get_vector_context(vector_name, self.deferred_internal_id());
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,
@@ -523,7 +523,7 @@ impl NonAppendableSegmentEntry for Segment {
             num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deferred_points: Some(self.deferred_point_count()),
-            num_deleted_deferred_points: Some(self.deferred_deleted_count.unwrap_or_default()),
+            num_deleted_deferred_points: Some(self.deferred_deleted_count().unwrap_or_default()),
             num_deleted_vectors: self.deleted_point_count(),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
@@ -532,7 +532,7 @@ impl NonAppendableSegmentEntry for Segment {
             is_appendable: self.appendable_flag,
             index_schema: HashMap::new(),
             vector_data: vector_data_info,
-            deferred_internal_id: self.deferred_internal_id,
+            deferred_internal_id: self.deferred_internal_id(),
         }
     }
 
@@ -918,7 +918,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        if let Some(deferred_from) = self.deferred_internal_id
+        if let Some(deferred_from) = self.deferred_internal_id()
             && let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id)
         {
             return self.is_appendable() && internal_id >= deferred_from;
@@ -927,9 +927,13 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let Some(deferred_from) = self.deferred_internal_id_if_any() else {
+        let Some(deferred_from) = self.deferred_internal_id() else {
             return vec![];
         };
+        if self.deferred_point_count() == 0 {
+            return vec![];
+        }
+
         let id_tracker = self.id_tracker.borrow();
         id_tracker
             .iter_internal()
@@ -946,9 +950,8 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn has_deferred_points(&self) -> bool {
-        self.deferred_internal_id.is_some_and(|deferred_from| {
-            self.is_appendable() && self.total_point_count() > deferred_from as usize
-        })
+        self.deferred_internal_id()
+            .is_some_and(|deferred_from| self.total_point_count() > deferred_from as usize)
     }
 }
 

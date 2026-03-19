@@ -52,7 +52,9 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 #[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
+use crate::segment::{
+    DeferredPointStatus, SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData,
+};
 #[cfg(feature = "rocksdb")]
 use crate::types::MultiVectorConfig;
 use crate::types::{
@@ -684,16 +686,16 @@ fn create_segment(
         error_status: None,
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
-        deferred_internal_id: None,
-        deferred_deleted_count: None,
+        deferred_point_status: None,
     };
 
-    if segment.is_appendable() {
-        segment.deferred_internal_id = deferred_internal_id;
-
-        if deferred_internal_id.is_some() {
-            segment.deferred_deleted_count = Some(segment.calculate_deleted_deferred_point_count());
-        }
+    if let Some(deferred_internal_id) = deferred_internal_id
+        && segment.is_appendable()
+    {
+        segment.deferred_point_status = Some(DeferredPointStatus {
+            deferred_internal_id,
+            deferred_deleted_count: segment.calculate_deleted_deferred_point_count(),
+        });
     }
 
     Ok(segment)
