@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use super::*;
-use crate::generic_consts::{AccessPattern, Sequential};
+use crate::generic_consts::{AccessPattern, Sequential, YieldOrder};
 use crate::universal_io::file_ops::UniversalReadFileOps;
 
 /// Interface for accessing files in a universal way, abstracting away possible
@@ -25,7 +25,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         })
     }
 
-    fn read_batch<P: AccessPattern, E: From<UniversalIoError>>(
+    fn read_batch<P: AccessPattern, O: YieldOrder, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = ElementsRange>,
         callback: impl FnMut(usize, &[T]) -> Result<(), E>,

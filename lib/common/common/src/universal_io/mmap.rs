@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, YieldOrder};
 use crate::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapSlice, MmapSliceReadOnly, open_read_mmap,
     open_write_mmap,
@@ -166,7 +166,7 @@ where
         Ok(Cow::Borrowed(data_range))
     }
 
-    fn read_batch<P: AccessPattern, E: From<UniversalIoError>>(
+    fn read_batch<P: AccessPattern, O: YieldOrder, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = ElementsRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<(), E>,
