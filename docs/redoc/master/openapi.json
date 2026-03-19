@@ -12778,6 +12778,18 @@
             "format": "uint",
             "minimum": 0
           },
+          "num_deferred_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_deleted_deferred_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "num_indexed_vectors": {
             "type": "integer",
             "format": "uint",

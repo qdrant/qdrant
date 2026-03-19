@@ -472,6 +472,8 @@ pub struct SegmentInfo {
     pub segment_type: SegmentType,
     pub num_vectors: usize,
     pub num_points: usize,
+    pub num_deferred_points: Option<usize>,
+    pub num_deleted_deferred_points: Option<usize>,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
     /// An ESTIMATION of effective amount of bytes used for vectors
