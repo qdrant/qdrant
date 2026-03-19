@@ -25,11 +25,11 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         })
     }
 
-    fn read_batch<P: AccessPattern>(
+    fn read_batch<P: AccessPattern, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
-        callback: impl FnMut(usize, &[T]) -> Result<()>,
-    ) -> Result<()>;
+        callback: impl FnMut(usize, &[T]) -> Result<(), E>,
+    ) -> Result<(), E>;
 
     fn len(&self) -> Result<u64>;
 
@@ -48,11 +48,11 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn clear_ram_cache(&self) -> Result<()>;
 
     /// Read from multiple files in a single operation.
-    fn read_multi<P: AccessPattern>(
+    fn read_multi<P: AccessPattern, E: From<UniversalIoError>>(
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
-        mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
         for (operation_index, (file_index, range)) in reads.into_iter().enumerate() {
             let file = files
                 .get(file_index)

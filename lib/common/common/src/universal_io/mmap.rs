@@ -166,11 +166,11 @@ where
         Ok(Cow::Borrowed(data_range))
     }
 
-    fn read_batch<P: AccessPattern>(
+    fn read_batch<P: AccessPattern, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
-        mut callback: impl FnMut(usize, &[T]) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(usize, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
         let data_slice = self.as_slice::<P>();
         let data_length = data_slice.len();
 

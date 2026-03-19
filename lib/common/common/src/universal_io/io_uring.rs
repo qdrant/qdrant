@@ -95,11 +95,11 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         })?
     }
 
-    fn read_batch<P: AccessPattern>(
+    fn read_batch<P: AccessPattern, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
-        mut callback: impl FnMut(usize, &[T]) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(usize, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
         with_uring_runtime(|mut rt| {
             let mut ranges = ranges.into_iter().enumerate().peekable();
 
@@ -113,10 +113,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                     Ok(Some(entry))
                 })?;
 
-                rt.submit_and_wait(1)?;
+                rt.submit_and_wait(1).map_err(UniversalIoError::from)?;
 
                 for result in rt.completed() {
-                    let (id, resp) = result?;
+                    let (id, resp) = result.map_err(UniversalIoError::from)?;
                     let items = resp.expect_read();
                     callback(id as _, &items)?;
                 }
@@ -126,11 +126,11 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         })?
     }
 
-    fn read_multi<P: AccessPattern>(
+    fn read_multi<P: AccessPattern, E: From<UniversalIoError>>(
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
-        mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
         with_uring_runtime(|mut rt| {
             let mut reads = reads.into_iter().enumerate().peekable();
             let mut file_indices = Vec::new();
@@ -154,10 +154,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                     Ok(Some(entry))
                 })?;
 
-                rt.submit_and_wait(1)?;
+                rt.submit_and_wait(1).map_err(UniversalIoError::from)?;
 
                 for result in rt.completed() {
-                    let (id, resp) = result?;
+                    let (id, resp) = result.map_err(UniversalIoError::from)?;
 
                     let file_idx = file_indices
                         .get(id as usize)
