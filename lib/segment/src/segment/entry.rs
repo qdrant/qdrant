@@ -953,6 +953,18 @@ impl NonAppendableSegmentEntry for Segment {
         self.deferred_internal_id()
             .is_some_and(|deferred_from| self.total_point_count() > deferred_from as usize)
     }
+
+    fn deferred_point_count(&self) -> usize {
+        match self.deferred_internal_id() {
+            Some(internal_id) => self
+                .id_tracker
+                .borrow()
+                .total_point_count()
+                .saturating_sub(internal_id as usize)
+                .saturating_sub(self.deferred_deleted_count().unwrap_or_default()),
+            None => 0,
+        }
+    }
 }
 
 impl SegmentEntry for Segment {

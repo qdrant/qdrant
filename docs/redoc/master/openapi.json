@@ -8432,6 +8432,13 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "deferred_points": {
+            "description": "Number of points that are deferred (i.e hidden from search as they're not yet optimized).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -13474,6 +13481,13 @@
           },
           "op_num": {
             "description": "last operation number processed",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "deferred_points": {
+            "description": "Number of points that are deferred (i.e hidden from search as they're not yet optimized).",
             "type": "integer",
             "format": "uint",
             "minimum": 0,

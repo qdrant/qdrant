@@ -668,19 +668,6 @@ impl Segment {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }
 
-    /// Returns the amount of non-deleted deferred points.
-    pub fn deferred_point_count(&self) -> usize {
-        match self.deferred_internal_id() {
-            Some(internal_id) => self
-                .id_tracker
-                .borrow()
-                .total_point_count()
-                .saturating_sub(internal_id as usize)
-                .saturating_sub(self.deferred_deleted_count().unwrap_or_default()),
-            None => 0,
-        }
-    }
-
     /// Calculates the amount of deleted deferred points by iterating over all points in the ID tracker. Therefore this operation
     /// can be expensive and should only be run once at segment creation.
     pub(crate) fn calculate_deleted_deferred_point_count(&self) -> usize {

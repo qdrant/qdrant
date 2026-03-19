@@ -531,9 +531,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             num_vectors,
             num_indexed_vectors,
             num_points: self.available_point_count(),
-            num_deferred_points: wrapped_info.num_deferred_points.map(|num_deferred_points| {
-                num_deferred_points.saturating_sub(self.deleted_deferred_count)
-            }),
+            num_deferred_points: Some(self.deferred_point_count()),
             num_deleted_deferred_points: wrapped_info.num_deleted_deferred_points.map(
                 |num_deleted_deferred_points| {
                     num_deleted_deferred_points.saturating_add(self.deleted_deferred_count)
@@ -788,6 +786,14 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
     fn has_deferred_points(&self) -> bool {
         self.wrapped_segment.get().read().has_deferred_points()
+    }
+
+    fn deferred_point_count(&self) -> usize {
+        self.wrapped_segment
+            .get()
+            .read()
+            .deferred_point_count()
+            .saturating_sub(self.deleted_deferred_count)
     }
 }
 

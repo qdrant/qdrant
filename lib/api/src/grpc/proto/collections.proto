@@ -1,10 +1,10 @@
 syntax = "proto3";
 package qdrant;
 
-option csharp_namespace = "Qdrant.Client.Grpc";
-
 import "json_with_int.proto";
 import "qdrant_common.proto";
+
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 enum Datatype {
   Default = 0;
@@ -749,8 +749,11 @@ message PayloadSchemaInfo {
 }
 
 message UpdateQueueInfo {
-    // Number of elements in the queue
-    uint64 length = 1;
+  // Number of elements in the queue
+  uint64 length = 1;
+
+  // Number of points that are deferred (i.e hidden from search as they're not yet optimized).
+  optional uint64 deferred_points = 2;
 }
 
 message CollectionInfo {
