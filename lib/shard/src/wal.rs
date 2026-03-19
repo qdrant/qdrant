@@ -64,7 +64,7 @@ impl<R: DeserializeOwned + Serialize> WalRawRecord<R> {
         let record: R = serde_cbor::from_slice(record)
             .or_else(|_err| rmp_serde::from_slice(record))
             .map_err(|err| {
-                WalError::WriteWalError(format!(
+                WalError::ReadWalError(format!(
                     "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
                 ))
             })?;
