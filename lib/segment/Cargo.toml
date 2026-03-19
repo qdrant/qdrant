@@ -88,7 +88,7 @@ ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
-self_cell = { workspace = true }
+self_cell.workspace = true
 sha2 = { workspace = true }
 smallvec = { workspace = true }
 strum = { workspace = true }

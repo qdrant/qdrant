@@ -948,15 +948,13 @@ impl SegmentHolder {
         // Iterator produces groups of points by point ID
         let point_group_iter = locked_segments
             .iter()
-            .map(|(&segment_id, locked_segment)| {
-                locked_segment
-                    .iter_points()
-                    .map(move |point_id| DedupPoint {
-                        segment_id,
-                        point_id,
-                        version: None,
-                        is_deferred: false,
-                    })
+            .map(|(&segment_id, segment)| {
+                segment.iter_points().map(move |point_id| DedupPoint {
+                    segment_id,
+                    point_id,
+                    version: None,
+                    is_deferred: false,
+                })
             })
             .kmerge_by(|a, b| a.point_id < b.point_id)
             .chunk_by(|entry| entry.point_id);

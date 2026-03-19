@@ -380,6 +380,7 @@ mod tests {
 
                 let vector1_vecs_to_delete = id_tracker
                     .borrow()
+                    .point_mappings()
                     .iter_external()
                     .enumerate()
                     .filter_map(|(i, point_id)| (i % 4 == 0).then_some(point_id))
@@ -398,6 +399,7 @@ mod tests {
 
                 let vector2_vecs_to_delete = id_tracker
                     .borrow()
+                    .point_mappings()
                     .iter_external()
                     .enumerate()
                     .filter_map(|(i, point_id)| (i % 10 == 7).then_some(point_id))

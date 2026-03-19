@@ -42,10 +42,12 @@ impl Segment {
 
         let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
 
+        let point_mappings = id_tracker.point_mappings();
         let values_ids_iterator = payload_index
             .iter_filtered_points(
                 condition,
                 &id_tracker,
+                &point_mappings,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,

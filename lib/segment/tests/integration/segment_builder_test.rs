@@ -198,7 +198,7 @@ fn check_points_defragmented(
 
     let hw_counter = HardwareCounterCell::new();
 
-    for internal_id in id_tracker.iter_internal() {
+    for internal_id in id_tracker.point_mappings().iter_internal() {
         let external_id = id_tracker.external_id(internal_id).unwrap();
         let payload = segment.payload(external_id, &hw_counter).unwrap();
         let values = payload.get_value(defragment_key);
