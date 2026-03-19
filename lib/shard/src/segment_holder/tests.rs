@@ -1244,7 +1244,7 @@ fn test_double_proxies() {
         .1
         .get()
         .write()
-        .delete_point_mut(10, 1.into(), &hw_counter)
+        .delete_point(10, 1.into(), &hw_counter)
         .unwrap();
 
     let (outer_proxies, outer_tmp_segment, outer_segments_lock) =
@@ -1274,7 +1274,7 @@ fn test_double_proxies() {
             proxy
                 .get()
                 .write()
-                .delete_point_mut(11, 2.into(), &hw_counter)
+                .delete_point(11, 2.into(), &hw_counter)
                 .unwrap();
 
             break;

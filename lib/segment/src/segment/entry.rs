@@ -868,7 +868,7 @@ impl StorageSegmentEntry for Segment {
 }
 
 impl NonAppendableSegmentEntry for Segment {
-    fn delete_point(
+    fn delete_point_concurrent(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -892,7 +892,7 @@ impl NonAppendableSegmentEntry for Segment {
 }
 
 impl SegmentEntry for Segment {
-    fn delete_point_mut(
+    fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -1092,11 +1092,7 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn delete_field_index(
-        &mut self,
-        op_num: u64,
-        key: PayloadKeyTypeRef,
-    ) -> OperationResult<bool> {
+    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
             segment.payload_index.borrow_mut().drop_index(key)?;
             segment.version_tracker.set_payload_index_schema(key, None);

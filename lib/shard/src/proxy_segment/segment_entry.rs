@@ -651,13 +651,13 @@ impl StorageSegmentEntry for ProxySegment {
 }
 
 impl SegmentEntry for ProxySegment {
-    fn delete_point_mut(
+    fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        NonAppendableSegmentEntry::delete_point(self, op_num, point_id, hw_counter)
+        NonAppendableSegmentEntry::delete_point_concurrent(self, op_num, point_id, hw_counter)
     }
 
     fn upsert_point(
@@ -744,11 +744,7 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
-    fn delete_field_index(
-        &mut self,
-        op_num: u64,
-        key: PayloadKeyTypeRef,
-    ) -> OperationResult<bool> {
+    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
         }
@@ -821,7 +817,7 @@ impl SegmentEntry for ProxySegment {
 }
 
 impl NonAppendableSegmentEntry for ProxySegment {
-    fn delete_point(
+    fn delete_point_concurrent(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,

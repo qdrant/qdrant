@@ -561,7 +561,7 @@ impl SegmentHolder {
 
             for point_id in points {
                 if let Some(version) = write_segment.point_version(point_id) {
-                    write_segment.delete_point_mut(version, point_id, hw_counter)?;
+                    write_segment.delete_point(version, point_id, hw_counter)?;
                 }
             }
         }
@@ -713,7 +713,7 @@ impl SegmentHolder {
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
                         if !appendable_write_segment.point_is_deferred(point_id) {
-                            write_segment.delete_point_mut(op_num, point_id, hw_counter)?;
+                            write_segment.delete_point(op_num, point_id, hw_counter)?;
                         }
 
                         Ok(true)
@@ -911,7 +911,7 @@ impl SegmentHolder {
                     for &point_id in &points {
                         if let Some(point_version) = write_segment.point_version(point_id) {
                             removed_points += 1;
-                            write_segment.delete_point_mut(point_version, point_id, &disposable_hw_counter)?; // Internal operation
+                            write_segment.delete_point(point_version, point_id, &disposable_hw_counter)?; // Internal operation
                         }
                     }
 

@@ -201,8 +201,8 @@ fn ordered_deletion_test() {
 
     let path = {
         let mut segment = build_segment_1(dir.path());
-        segment.delete_point_mut(6, 5.into(), &hw_counter).unwrap();
-        segment.delete_point_mut(6, 4.into(), &hw_counter).unwrap();
+        segment.delete_point(6, 5.into(), &hw_counter).unwrap();
+        segment.delete_point(6, 4.into(), &hw_counter).unwrap();
         segment.flush(false).unwrap();
         segment.segment_path.clone()
     };

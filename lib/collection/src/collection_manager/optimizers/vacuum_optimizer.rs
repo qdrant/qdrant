@@ -117,7 +117,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .delete_point_mut(101, point_id, &hw_counter)
+                .delete_point(101, point_id, &hw_counter)
                 .unwrap();
         }
 
@@ -369,9 +369,7 @@ mod tests {
                 .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
             for &point_id in &segment_points_to_delete {
-                segment
-                    .delete_point_mut(201, point_id, &hw_counter)
-                    .unwrap();
+                segment.delete_point(201, point_id, &hw_counter).unwrap();
             }
 
             // Delete 25% of vectors named vector1

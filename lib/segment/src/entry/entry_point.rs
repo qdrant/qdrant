@@ -293,7 +293,7 @@ pub trait StorageSegmentEntry: ReadSegmentEntry {
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
 pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
-    fn delete_point(
+    fn delete_point_concurrent(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -308,7 +308,7 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
 ///
 /// This is not a superset of `NonAppendableSegmentEntry` as its operations (will) differ in mutability.
 pub trait SegmentEntry: StorageSegmentEntry {
-    fn delete_point_mut(
+    fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,

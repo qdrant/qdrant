@@ -71,7 +71,7 @@ fn test_rebuild_with_removed_vectors() {
         }
         if i % 2 == 0 {
             segment2
-                .delete_point_mut(2, (NUM_VECTORS_1 + i).into(), &hw_counter)
+                .delete_point(2, (NUM_VECTORS_1 + i).into(), &hw_counter)
                 .unwrap();
         }
     }

@@ -223,7 +223,7 @@ impl ProxySegment {
                         // wrapped segment is considered to be newer. This is possible because
                         // different proxy segments can share state through a common write segment.
                         // See: <https://github.com/qdrant/qdrant/pull/7208>
-                        wrapped_segment.delete_point_mut(
+                        wrapped_segment.delete_point(
                             versions.operation_version,
                             *point_id,
                             &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
