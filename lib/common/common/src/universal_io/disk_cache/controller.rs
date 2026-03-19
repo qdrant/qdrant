@@ -165,10 +165,12 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
                     .get(&key.file_id)
                     .expect("cached file descriptor is not open");
 
+                // Always request a full BLOCK_SIZE so that the read length stays
+                // sector-aligned (required by O_DIRECT). The kernel will return a
+                // short read for the last block of the file.
                 let elem_range = ReadRange {
                     byte_offset: key.offset.bytes() as u64,
-                    length: ((file.len()? as usize).saturating_sub(key.offset.bytes()))
-                        .min(BLOCK_SIZE) as u64,
+                    length: BLOCK_SIZE as u64,
                 };
 
                 let cow = file.read::<Random>(elem_range)?;
@@ -183,7 +185,7 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
                 // the insert guard prevent concurrent writes to the same block.
                 unsafe {
                     let dst = self.cache_mmap.as_mut_ptr().add(offset);
-                    let data_len = elem_range.length as usize;
+                    let data_len = cow.len();
                     dst.copy_from(cow.as_ptr(), data_len);
                     if data_len < BLOCK_SIZE {
                         dst.add(data_len).write_bytes(0, BLOCK_SIZE - data_len);
