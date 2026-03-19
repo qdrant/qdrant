@@ -168,7 +168,7 @@ where
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
 
-    let vectors = ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, false, populate)?;
+    let vectors = ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, populate)?;
     let storage = DenseVectorStorageImpl {
         vectors_path,
         deleted_path,
@@ -314,7 +314,6 @@ where
             &self.vectors_path,
             &self.deleted_path,
             dim,
-            false,
             false, // No need to populate
         )?);
 

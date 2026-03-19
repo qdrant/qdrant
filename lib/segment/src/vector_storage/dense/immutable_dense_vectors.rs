@@ -47,7 +47,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
-        _with_async_io: bool,
         populate: bool,
     ) -> OperationResult<Self> {
         // Allocate/open vectors file
