@@ -5908,7 +5908,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant-edge-py"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ahash",
  "bytemuck",
