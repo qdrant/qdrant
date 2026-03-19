@@ -574,6 +574,13 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
+
+        assert_eq!(
+            self.deferred_internal_id,
+            query_context.deferred_internal_id(),
+            "SparseIndex and VectorQueryContext deferred_internal_id consistency violated."
+        );
+
         for vector in vectors {
             check_process_stopped(&query_context.is_stopped())?;
 
