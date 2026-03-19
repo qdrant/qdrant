@@ -5,6 +5,7 @@ use std::path::Path;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
+use common::generic_consts::Random;
 use common::tar_unpack::tar_unpack_file;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -24,7 +25,7 @@ use crate::types::{
     SnapshotFormat, VectorName,
 };
 use crate::utils;
-use crate::vector_storage::{Random, VectorStorage};
+use crate::vector_storage::VectorStorage;
 
 impl Segment {
     /// Replace vectors in-place

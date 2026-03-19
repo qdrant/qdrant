@@ -2,17 +2,16 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use super::*;
+use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::file_ops::UniversalReadFileOps;
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized;
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
+    fn read<P: AccessPattern>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
 
     /// Read the entire file in one logical access.
     ///
@@ -20,13 +19,13 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
     fn read_whole(&self) -> Result<Cow<'_, [T]>> {
         let n = self.len()?;
-        self.read::<true>(ElementsRange {
+        self.read::<Sequential>(ElementsRange {
             start: 0,
             length: n,
         })
     }
 
-    fn read_batch<const SEQUENTIAL: bool>(
+    fn read_batch<P: AccessPattern>(
         &self,
         ranges: impl IntoIterator<Item = ElementsRange>,
         callback: impl FnMut(usize, &[T]) -> Result<()>,
@@ -49,14 +48,11 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn clear_ram_cache(&self) -> Result<()>;
 
     /// Read from multiple files in a single operation.
-    fn read_multi<const SEQUENTIAL: bool>(
+    fn read_multi<P: AccessPattern>(
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
+    ) -> Result<()> {
         for (operation_index, (file_index, range)) in reads.into_iter().enumerate() {
             let file = files
                 .get(file_index)
@@ -65,7 +61,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
                     files: files.len(),
                 })?;
 
-            let data = file.read::<SEQUENTIAL>(range)?;
+            let data = file.read::<P>(range)?;
             callback(operation_index, file_index, &data)?;
         }
 

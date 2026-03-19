@@ -59,7 +59,7 @@ pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
 /// Uses a single logical read when the backend overrides [`UniversalRead::read_whole`].
 pub fn read_json_via<S, T>(path: impl AsRef<Path>) -> Result<T>
 where
-    S: UniversalRead<u8> + Sized,
+    S: UniversalRead<u8>,
     T: DeserializeOwned,
 {
     let options = OpenOptions {

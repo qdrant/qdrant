@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -20,9 +21,7 @@ use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_de
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
-use crate::vector_storage::{
-    DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum, new_raw_scorer,
-};
+use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points = [

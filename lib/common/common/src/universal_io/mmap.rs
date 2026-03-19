@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use crate::generic_consts::AccessPattern;
 use crate::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapSlice, MmapSliceReadOnly, open_read_mmap,
     open_write_mmap,
@@ -16,10 +17,8 @@ use crate::universal_io::{
 /// Trait for mmap types that support read access to a slice of `T`.
 ///
 /// Both [`MmapSlice<T>`] and [`MmapSliceReadOnly<T>`] satisfy this trait.
-pub trait MmapAccess<T>: AsRef<[T]> + std::fmt::Debug {
-    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self>
-    where
-        Self: Sized;
+pub trait MmapAccess<T>: AsRef<[T]> + std::fmt::Debug + Sized {
+    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self>;
 
     fn populate(&self) -> std::io::Result<()>;
 
@@ -94,8 +93,8 @@ where
             .unwrap_or(self.mmap.as_ref())
     }
 
-    fn as_slice<const SEQUENTIAL: bool>(&self) -> &[T] {
-        if SEQUENTIAL {
+    fn as_slice<P: AccessPattern>(&self) -> &[T] {
+        if P::IS_SEQUENTIAL {
             self.as_seq_slice()
         } else {
             self.mmap.as_ref()
@@ -122,10 +121,7 @@ where
     T: Copy + 'static,
     M: MmapAccess<T>,
 {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized,
-    {
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
             need_sequential,
             disk_parallel: _,
@@ -154,8 +150,8 @@ where
         })
     }
 
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
-        let data_slice = self.as_slice::<SEQUENTIAL>();
+    fn read<P: AccessPattern>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
+        let data_slice = self.as_slice::<P>();
         let start = range.start as usize;
         let end = start + range.length as usize;
 
@@ -170,12 +166,12 @@ where
         Ok(Cow::Borrowed(data_range))
     }
 
-    fn read_batch<const SEQUENTIAL: bool>(
+    fn read_batch<P: AccessPattern>(
         &self,
         ranges: impl IntoIterator<Item = ElementsRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
-        let data_slice = self.as_slice::<SEQUENTIAL>();
+        let data_slice = self.as_slice::<P>();
         let data_length = data_slice.len();
 
         for (idx, range) in ranges.into_iter().enumerate() {

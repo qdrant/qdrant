@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
@@ -12,9 +13,7 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::{
-    AccessPattern, Random, SparseVectorStorage, VectorStorage, VectorStorageEnum,
-};
+use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum};
 
 pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 

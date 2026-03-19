@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;
@@ -21,7 +22,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
-    AccessPattern, DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
 
 type StoredDenseVector<T> = StoredRecord<Vec<T>>;
@@ -337,6 +338,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
 
 #[cfg(test)]
 mod tests {
+    use common::generic_consts::Sequential;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -344,7 +346,6 @@ mod tests {
     use super::*;
     use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::segment_constructor::migrate_rocksdb_dense_vector_storage_to_mmap;
-    use crate::vector_storage::Sequential;
 
     const RAND_SEED: u64 = 42;
 

@@ -15,10 +15,7 @@ pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
     fn write_multi<'a>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ElementOffset, &'a [T])>,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
+    ) -> Result<()> {
         let files_len = files.len();
 
         for (file_index, offset, data) in writes {

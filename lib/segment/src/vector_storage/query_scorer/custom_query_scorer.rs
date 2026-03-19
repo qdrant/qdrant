@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use zerocopy::FromBytes;
@@ -9,10 +10,10 @@ use zerocopy::FromBytes;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
+use crate::vector_storage::DenseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::{DenseVectorStorage, Random};
 
 pub struct CustomQueryScorer<
     'a,

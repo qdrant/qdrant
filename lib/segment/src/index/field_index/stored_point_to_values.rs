@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::ext::ResultOptionExt;
 use common::fs::clear_disk_cache;
+use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::{self, ElementsRange, UniversalRead};
@@ -174,7 +175,7 @@ where
 
         let store = S::open(&file_name, open_options)?;
 
-        let header_bytes = store.read::<false>(ElementsRange {
+        let header_bytes = store.read::<Random>(ElementsRange {
             start: 0,
             length: std::mem::size_of::<Header>() as u64,
         })?;
@@ -242,7 +243,7 @@ where
             return Ok(None);
         };
 
-        let bytes = self.store.read::<false>(bytes_range)?;
+        let bytes = self.store.read::<Random>(bytes_range)?;
         let count = self.get_values_count(point_id)?.unwrap_or(0);
 
         let iter = ValuesIter::new(bytes, count);
@@ -269,7 +270,7 @@ where
             let range_offset = (self.header.ranges_start as usize)
                 + (point_id as usize) * std::mem::size_of::<MmapRange>();
 
-            let bytes = self.store.read::<false>(ElementsRange {
+            let bytes = self.store.read::<Random>(ElementsRange {
                 start: range_offset as u64,
                 length: std::mem::size_of::<MmapRange>() as u64,
             })?;

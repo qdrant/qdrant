@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::mmap::MmapUniversal;
@@ -26,8 +27,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::{
-    AccessPattern, MultiVectorStorage, Random, Sequential, VectorOffsetType, VectorStorage,
-    VectorStorageEnum,
+    MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
 
 const VECTORS_DIR_PATH: &str = "vectors";

@@ -11,6 +11,7 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::fs::atomic_save_json;
+use common::generic_consts::{AccessPattern, Random};
 use common::is_alive_lock::IsAliveLock;
 use common::mmap::create_and_ensure_length;
 use common::universal_io::mmap::MmapUniversal;
@@ -309,7 +310,7 @@ impl<V: Blob> Gridstore<V> {
             return Ok(None);
         };
 
-        let raw = self.with_view(|view| view.read_from_pages::<false>(pointer))?;
+        let raw = self.with_view(|view| view.read_from_pages::<Random>(pointer))?;
         let decompressed = self.with_view(|view| view.decompress(raw));
         let value = V::from_bytes(&decompressed);
 
@@ -365,12 +366,12 @@ impl<V: Blob> Gridstore<V> {
         self.bitmask.read().get_storage_size_bytes()
     }
 
-    pub fn get_value<const READ_SEQUENTIAL: bool>(
+    pub fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        self.with_view(|view| view.get_value::<READ_SEQUENTIAL>(point_offset, hw_counter))
+        self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
     }
 
     #[cfg(test)]

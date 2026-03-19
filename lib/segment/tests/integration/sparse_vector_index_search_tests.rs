@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::storage_version::VERSION_FILE;
 use common::types::{PointOffsetType, TelemetryDetail};
 use fs_err as fs;
@@ -31,7 +32,7 @@ use segment::types::{
     SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType, VectorName,
     VectorStorageDatatype,
 };
-use segment::vector_storage::{Random, VectorStorage};
+use segment::vector_storage::VectorStorage;
 use segment::{fixture_for_all_indices, payload_json};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapType, create_and_ensure_length,
@@ -25,7 +26,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{CHUNK_SIZE, PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
-use crate::vector_storage::{AccessPattern, VectorOffset, VectorOffsetType};
+use crate::vector_storage::{VectorOffset, VectorOffsetType};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
@@ -311,9 +312,9 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             force_sequential || elements_length * size_of::<T>() > PAGE_SIZE_BYTES * 4;
 
         if use_sequential {
-            chunk.read::<true>(range).ok()
+            chunk.read::<Sequential>(range).ok()
         } else {
-            chunk.read::<false>(range).ok()
+            chunk.read::<Random>(range).ok()
         }
     }
 

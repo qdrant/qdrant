@@ -1188,9 +1188,9 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Sequential;
     use common::types::PointOffsetType;
 
-    use crate::vector_storage::Sequential;
     use crate::vector_storage::dense::appendable_dense_vector_storage::find_storage_files;
 
     log::info!(
@@ -1279,9 +1279,9 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Sequential;
     use common::types::PointOffsetType;
 
-    use crate::vector_storage::Sequential;
     use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::find_storage_files;
 
     log::info!(
@@ -1419,9 +1419,9 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Sequential;
     use common::types::PointOffsetType;
 
-    use crate::vector_storage::Sequential;
     use crate::vector_storage::sparse::mmap_sparse_vector_storage::find_storage_files;
 
     log::info!(

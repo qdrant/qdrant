@@ -1,9 +1,11 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+#[cfg(debug_assertions)]
+use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
 use segment::common::operation_error::OperationResult;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 #[cfg(debug_assertions)]
-use segment::vector_storage::{Random, VectorStorage};
+use segment::vector_storage::VectorStorage;
 use segment::vector_storage::{RawScorer, VectorStorageEnum, new_raw_scorer};
 
 /// Compute the similarity matrix lazily.
