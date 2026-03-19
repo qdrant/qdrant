@@ -251,7 +251,7 @@ where
         self.vectors
             .as_ref()
             .unwrap()
-            .read_vectors_async(keys.into_iter(), |_pos, key, vector| {
+            .read_vectors_async::<P>(keys.into_iter(), |_pos, key, vector| {
                 let cow_vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(key, cow_vector);
             })

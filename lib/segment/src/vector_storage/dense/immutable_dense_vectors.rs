@@ -199,7 +199,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     /// Reads vectors for the given ids and calls the callback for each vector.
     /// Tries to utilize asynchronous IO if possible.
     /// In particular, uses io_uring on Linux and simple synchronous IO otherwise.
-    pub fn read_vectors_async(
+    pub fn read_vectors_async<P: AccessPattern>(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
@@ -213,7 +213,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
             length: vector_size_bytes as _,
         });
 
-        self.storage.read_batch::<Random>(ranges, |idx, bytes| {
+        self.storage.read_batch::<P>(ranges, |idx, bytes| {
             let point = points.get(idx).copied().expect("point ID tracked");
 
             #[expect(deprecated, reason = "legacy code refactor")]

@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::UniversalRead;
 
@@ -71,7 +72,7 @@ where
         let points_stream = points.iter().copied();
 
         self.storage
-            .read_vectors_async(points_stream, |idx, _point_id, other_vector| {
+            .read_vectors_async::<Random>(points_stream, |idx, _point_id, other_vector| {
                 scores[idx] = self.query_scorer.score(other_vector);
             })
             .unwrap();
