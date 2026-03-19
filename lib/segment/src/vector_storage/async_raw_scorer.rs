@@ -69,10 +69,9 @@ where
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
         assert_eq!(points.len(), scores.len());
-        let points_stream = points.iter().copied();
 
         self.storage
-            .read_vectors_async::<Random>(points_stream, |idx, _point_id, other_vector| {
+            .read_vectors_async::<Random>(points, |idx, _point_id, other_vector| {
                 scores[idx] = self.query_scorer.score(other_vector);
             })
             .unwrap();

@@ -200,12 +200,9 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     /// In particular, uses io_uring on Linux and simple synchronous IO otherwise.
     pub fn read_vectors_async<P: AccessPattern>(
         &self,
-        points: impl Iterator<Item = PointOffsetType>,
+        points: &[PointOffsetType],
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
-        // Collect all points, so we can match operation/point *index* to point ID *value*
-        let points: Vec<_> = points.collect();
-
         let vector_size_bytes = size_of::<T>() * self.dim;
         let ranges = points.iter().copied().map(|point| ElementsRange {
             start: (HEADER_SIZE + vector_size_bytes * point as usize) as _,
