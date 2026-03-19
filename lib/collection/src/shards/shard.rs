@@ -78,12 +78,16 @@ impl Shard {
     }
 
     /// Check if this shard has any deferred points.
-    /// Only local shards can have deferred points.
+    /// All proxy types delegate to their wrapped local shard.
     pub fn has_deferred_points(&self) -> bool {
         match self {
             Shard::Local(local_shard) => local_shard.has_deferred_points(),
             Shard::Proxy(proxy_shard) => proxy_shard.wrapped_shard.has_deferred_points(),
-            Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => false,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.has_deferred_points(),
+            Shard::QueueProxy(proxy_shard) => proxy_shard
+                .wrapped_shard()
+                .is_some_and(|shard| shard.has_deferred_points()),
+            Shard::Dummy(_) => false,
         }
     }
 
