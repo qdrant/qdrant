@@ -374,6 +374,16 @@ impl ShardHolder {
         self.shards.iter().map(|(id, shard)| (*id, shard))
     }
 
+    /// Check if any local shard in this holder has deferred points.
+    pub async fn has_deferred_points(&self) -> bool {
+        for replica_set in self.shards.values() {
+            if replica_set.has_deferred_points().await {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn all_shards(&self) -> impl Iterator<Item = &ShardReplicaSet> {
         self.shards.values()
     }

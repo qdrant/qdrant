@@ -331,6 +331,15 @@ impl LocalShard {
         self.segments.clone()
     }
 
+    /// Check if any appendable segment in this shard has deferred points.
+    /// Only appendable segments can have deferred points.
+    pub fn has_deferred_points(&self) -> bool {
+        self.segments
+            .read()
+            .iter_appendable()
+            .any(|segment| segment.get().read().has_deferred_points())
+    }
+
     /// Recovers shard from disk.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(

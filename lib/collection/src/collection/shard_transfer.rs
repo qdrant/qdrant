@@ -41,14 +41,18 @@ impl Collection {
             .await
             .map(|config| config.prevent_unoptimized.unwrap_or(false))
             .unwrap_or(false);
+        // Only scan shards for deferred points if prevent_unoptimized is enabled,
+        // since deferred points can only exist with that configuration.
         if prevent_unoptimized {
-            log::info!("Using snapshot transfer method because prevent_unoptimized is enabled");
-            ShardTransferMethod::Snapshot
-        } else {
-            self.shared_storage_config
-                .default_shard_transfer_method
-                .unwrap_or(ShardTransferMethod::StreamRecords)
+            let has_deferred = self.shards_holder.read().await.has_deferred_points().await;
+            if has_deferred {
+                log::info!("Using snapshot transfer method because collection has deferred points");
+                return ShardTransferMethod::Snapshot;
+            }
         }
+        self.shared_storage_config
+            .default_shard_transfer_method
+            .unwrap_or(ShardTransferMethod::StreamRecords)
     }
 
     pub async fn start_shard_transfer<T, F>(

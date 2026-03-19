@@ -77,6 +77,16 @@ impl Shard {
         }
     }
 
+    /// Check if this shard has any deferred points.
+    /// Only local shards can have deferred points.
+    pub fn has_deferred_points(&self) -> bool {
+        match self {
+            Shard::Local(local_shard) => local_shard.has_deferred_points(),
+            Shard::Proxy(proxy_shard) => proxy_shard.wrapped_shard.has_deferred_points(),
+            Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => false,
+        }
+    }
+
     pub async fn get_telemetry_data(
         &self,
         detail: TelemetryDetail,

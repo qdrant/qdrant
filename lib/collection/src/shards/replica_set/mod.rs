@@ -410,6 +410,14 @@ impl ShardReplicaSet {
         self.local.read().await.is_some()
     }
 
+    /// Check if the local shard has any deferred points.
+    pub async fn has_deferred_points(&self) -> bool {
+        match self.local.read().await.as_ref() {
+            Some(shard) => shard.has_deferred_points(),
+            None => false,
+        }
+    }
+
     /// Checks if the shard exists locally and not a proxy.
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
