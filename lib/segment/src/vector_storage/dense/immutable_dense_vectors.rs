@@ -4,6 +4,7 @@ use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
@@ -22,7 +23,6 @@ use crate::vector_storage::async_io::UringReader;
 use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
-use crate::vector_storage::{AccessPattern, Random, Sequential};
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";

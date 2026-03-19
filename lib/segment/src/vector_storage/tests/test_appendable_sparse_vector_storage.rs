@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
@@ -19,7 +20,7 @@ use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorS
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
-use crate::vector_storage::{DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![

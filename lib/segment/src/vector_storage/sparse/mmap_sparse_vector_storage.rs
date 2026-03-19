@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -18,7 +19,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
-use crate::vector_storage::{AccessPattern, SparseVectorStorage, VectorStorage};
+use crate::vector_storage::{SparseVectorStorage, VectorStorage};
 
 const DELETED_DIRNAME: &str = "deleted";
 const STORAGE_DIRNAME: &str = "store";
@@ -330,6 +331,7 @@ mod test {
     use std::path::{Path, PathBuf};
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Random;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use sparse::common::sparse_vector;
@@ -337,10 +339,10 @@ mod test {
     use tempfile::Builder;
 
     use super::*;
+    use crate::vector_storage::VectorStorage;
     use crate::vector_storage::sparse::mmap_sparse_vector_storage::{
         MmapSparseVectorStorage, VectorRef,
     };
-    use crate::vector_storage::{Random, VectorStorage};
 
     const RAND_SEED: u64 = 42;
 

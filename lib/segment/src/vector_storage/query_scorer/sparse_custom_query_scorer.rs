@@ -1,12 +1,13 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
+use crate::vector_storage::SparseVectorStorage;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::{Random, SparseVectorStorage};
 
 pub struct SparseCustomQueryScorer<
     'a,

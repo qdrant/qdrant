@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
@@ -21,6 +22,7 @@ use crate::types::{
     BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
     ScalarQuantizationConfig,
 };
+use crate::vector_storage::VectorStorageEnum;
 #[cfg(target_os = "linux")]
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
@@ -28,7 +30,6 @@ use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{Random, VectorStorageEnum};
 
 const DIMS: usize = 128;
 const NUM_POINTS: usize = 600;

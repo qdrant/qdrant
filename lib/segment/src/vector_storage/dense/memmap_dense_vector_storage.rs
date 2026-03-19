@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
+use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
 use common::universal_io::mmap::MmapUniversal;
@@ -21,7 +22,7 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
-use crate::vector_storage::{AccessPattern, DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_PATH: &str = "matrix.dat";
 const DELETED_PATH: &str = "deleted.dat";
@@ -347,6 +348,7 @@ mod tests {
     use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Random;
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_to_u8_slice;
     use itertools::Itertools;
@@ -362,7 +364,7 @@ mod tests {
     use crate::vector_storage::quantized::quantized_vectors::{
         QuantizedVectors, QuantizedVectorsStorageType,
     };
-    use crate::vector_storage::{DEFAULT_STOPPED, Random, new_raw_scorer};
+    use crate::vector_storage::{DEFAULT_STOPPED, new_raw_scorer};
 
     #[test]
     fn test_basic_persistence() {
