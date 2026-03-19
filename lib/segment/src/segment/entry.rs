@@ -266,8 +266,12 @@ impl NonAppendableSegmentEntry for Segment {
         Ok(records)
     }
 
-    fn get_points(&self) -> PointMappingsGuard<'_> {
-        PointMappingsGuard::new(self.id_tracker.borrow(), |guard| guard.point_mappings())
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+        let mappings =
+            PointMappingsGuard::new(self.id_tracker.borrow(), |guard| guard.point_mappings());
+        Box::new(IterPointsIterator::new(mappings, |mappings| {
+            mappings.borrow_dependent().iter_external()
+        }))
     }
 
     fn read_filtered<'a>(
@@ -1141,5 +1145,24 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             }),
         })
+    }
+}
+
+// The alias is needed because of self_cell limitation.
+type BoxedPointIdIterator<'a> = Box<dyn Iterator<Item = PointIdType> + 'a>;
+
+self_cell::self_cell! {
+    struct IterPointsIterator<'a> {
+        owner: PointMappingsGuard<'a>,
+        #[covariant]
+        dependent: BoxedPointIdIterator,
+    }
+}
+
+impl<'a> Iterator for IterPointsIterator<'a> {
+    type Item = PointIdType;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.with_dependent_mut(|_, dependent| dependent.next())
     }
 }

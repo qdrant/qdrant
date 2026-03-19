@@ -386,7 +386,7 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
     // - exclude already removed points from post-optimization removing
     let already_remove_points = {
         let mut all_removed_points = proxy_deleted_points(proxies);
-        for existing_point in optimized_segment.get_points().iter() {
+        for existing_point in optimized_segment.iter_points() {
             all_removed_points.remove(&existing_point);
         }
         all_removed_points

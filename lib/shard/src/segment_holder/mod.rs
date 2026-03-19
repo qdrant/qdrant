@@ -944,16 +944,12 @@ impl SegmentHolder {
             .iter()
             .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
             .collect::<BTreeMap<_, _>>();
-        let point_iterators = locked_segments
-            .iter()
-            .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.get_points()))
-            .collect::<Vec<(_, _)>>();
 
         // Iterator produces groups of points by point ID
-        let point_group_iter = point_iterators
+        let point_group_iter = locked_segments
             .iter()
-            .map(|&(segment_id, ref iter)| {
-                iter.iter().map(move |point_id| DedupPoint {
+            .map(|(&segment_id, segment)| {
+                segment.iter_points().map(move |point_id| DedupPoint {
                     segment_id,
                     point_id,
                     version: None,

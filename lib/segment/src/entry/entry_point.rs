@@ -18,7 +18,6 @@ use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQuer
 use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::snapshot_entry::SnapshotEntry;
-use crate::id_tracker::PointMappingsGuard;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
@@ -105,7 +104,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
     ) -> OperationResult<Payload>;
 
     /// Iterator over all points in segment in ascending order.
-    fn get_points(&self) -> PointMappingsGuard<'_>;
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     ///

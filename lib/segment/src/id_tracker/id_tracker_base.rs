@@ -299,18 +299,13 @@ impl<'a> PointMappingsRefEnum<'a> {
 self_cell! {
     /// Wrapper around `PointMappingsRefEnum` that only exposes external ID iteration.
     ///
-    /// Used by `NonAppendableSegmentEntry::get_points()` to return a handle
+    /// Used by `NonAppendableSegmentEntry::iter_points()` to return an iterator
     /// over external point IDs without creating the iterator inside the unsafe block.
-    pub struct PointMappingsGuard<'a> {
+    pub(crate) struct PointMappingsGuard<'a> {
         owner: AtomicRef<'a, IdTrackerEnum>,
 
         #[covariant]
         dependent: PointMappingsRefEnum,
-    }
-}
-impl<'a> PointMappingsGuard<'a> {
-    pub fn iter(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        self.borrow_dependent().iter_external()
     }
 }
 
