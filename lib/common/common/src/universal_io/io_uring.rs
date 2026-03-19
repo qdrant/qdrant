@@ -64,10 +64,7 @@ impl UniversalReadFileOps for IoUringFile {
 }
 
 impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
-    fn open(path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized,
-    {
+    fn open(path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self> {
         // Check that `io_uring` was successfully initialized
         with_uring_runtime::<u8, _, _>(|_| ())?;
 
@@ -132,10 +129,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
+    ) -> Result<()> {
         with_uring_runtime(|mut rt| {
             let mut reads = reads.into_iter().enumerate().peekable();
             let mut file_indices = Vec::new();
@@ -250,10 +244,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     fn write_multi<'a>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ElementOffset, &'a [T])>,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
+    ) -> Result<()> {
         with_uring_runtime(|mut rt| {
             let mut writes = writes.into_iter().enumerate().peekable();
 

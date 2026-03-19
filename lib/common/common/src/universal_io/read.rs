@@ -7,9 +7,7 @@ use crate::universal_io::file_ops::UniversalReadFileOps;
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized;
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
     /// Prefer [`read_batch`] if you need high performance.
     fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
@@ -53,10 +51,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
+    ) -> Result<()> {
         for (operation_index, (file_index, range)) in reads.into_iter().enumerate() {
             let file = files
                 .get(file_index)

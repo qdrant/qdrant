@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-pub trait UniversalReadFileOps {
+pub trait UniversalReadFileOps: Sized {
     /// List files in the storage with the given prefix.
     /// The prefix is used to filter files, e.g. by directory or filename pattern.
     ///

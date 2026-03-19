@@ -16,10 +16,8 @@ use crate::universal_io::{
 /// Trait for mmap types that support read access to a slice of `T`.
 ///
 /// Both [`MmapSlice<T>`] and [`MmapSliceReadOnly<T>`] satisfy this trait.
-pub trait MmapAccess<T>: AsRef<[T]> + std::fmt::Debug {
-    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self>
-    where
-        Self: Sized;
+pub trait MmapAccess<T>: AsRef<[T]> + std::fmt::Debug + Sized {
+    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self>;
 
     fn populate(&self) -> std::io::Result<()>;
 
@@ -122,10 +120,7 @@ where
     T: Copy + 'static,
     M: MmapAccess<T>,
 {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized,
-    {
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
             need_sequential,
             disk_parallel: _,
