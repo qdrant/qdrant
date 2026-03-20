@@ -3433,26 +3433,29 @@ impl<'de> serde::Deserialize<'de> for Condition {
     where
         D: serde::Deserializer<'de>,
     {
-        if deserializer.is_human_readable() {
-            let value = serde_json::Value::deserialize(deserializer)?;
+        // Buffer into serde_value::Value which, unlike serde_json::Value,
+        // can represent byte arrays from non-human-readable formats (e.g. CBOR).
+        // Note: we cannot rely on `deserializer.is_human_readable()` here because
+        // serde's internal ContentDeserializer (used by flatten + untagged) always
+        // reports `true` regardless of the original format.
+        let value = serde_value::Value::deserialize(deserializer)?;
 
-            // Special case: FieldCondition first to surface datetime parse errors.
-            // Untagged enum would swallow these errors with generic message.
-            if let Some(obj) = value.as_object()
-                && obj.contains_key("key")
-            {
-                return serde_json::from_value::<FieldCondition>(value)
-                    .map(Condition::Field)
-                    .map_err(serde::de::Error::custom);
-            }
-
-            // All other variants handled by ConditionUntagged (compiler-safe)
-            serde_json::from_value::<ConditionUntagged>(value)
-                .map(Condition::from)
-                .map_err(serde::de::Error::custom)
-        } else {
-            ConditionUntagged::deserialize(deserializer).map(Condition::from)
+        // Special case: FieldCondition first to surface datetime parse errors.
+        // Untagged enum would swallow these errors with generic message.
+        if let serde_value::Value::Map(obj) = &value
+            && obj.contains_key(&serde_value::Value::String("key".into()))
+        {
+            return value
+                .deserialize_into()
+                .map(Condition::Field)
+                .map_err(serde::de::Error::custom);
         }
+
+        // All other variants handled by ConditionUntagged (compiler-safe)
+        value
+            .deserialize_into::<ConditionUntagged>()
+            .map(Condition::from)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -5282,6 +5285,37 @@ mod tests {
             }
         };
         assert_eq!(payload, expected);
+    }
+
+    #[test]
+    fn test_extended_point_id_cbor_roundtrip() {
+        let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+
+        for point_id in [ExtendedPointId::Uuid(uuid), ExtendedPointId::NumId(42)] {
+            let cbor_bytes = serde_cbor::to_vec(&point_id).unwrap();
+            let deserialized: ExtendedPointId = serde_cbor::from_slice(&cbor_bytes).unwrap();
+            assert_eq!(point_id, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_filter_with_match_and_has_id_uuid_cbor_roundtrip() {
+        let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let filter = Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![Condition::Field(FieldCondition::new_match(
+                crate::json_path::JsonPath::new("org_id"),
+                Match::new_value(ValueVariants::String("test_org".to_string())),
+            ))]),
+            must_not: Some(vec![Condition::HasId(HasIdCondition {
+                has_id: [ExtendedPointId::Uuid(uuid)].into_iter().collect(),
+            })]),
+        };
+
+        let cbor_bytes = serde_cbor::to_vec(&filter).unwrap();
+        let deserialized: Filter = serde_cbor::from_slice(&cbor_bytes).unwrap();
+        assert_eq!(filter, deserialized);
     }
 }
 
