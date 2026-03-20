@@ -5,10 +5,12 @@ pub mod io_uring;
 pub mod local_file_ops;
 pub mod mmap;
 pub mod read;
+mod reordering_queue;
 pub mod write;
 
 use std::path::Path;
 
+use reordering_queue::ReorderingQueue;
 use serde::de::DeserializeOwned;
 
 pub use self::error::UniversalIoError;

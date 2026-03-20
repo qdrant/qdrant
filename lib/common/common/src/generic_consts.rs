@@ -1,3 +1,30 @@
+//! Named consts to use as generic parameters.
+//!
+//! ```ignore
+//! // Not obvious:
+//! fn read<const IS_SEQUENTIAL: bool>(&self);
+//! foo.read::<true>();
+//!
+//! // Better:
+//! fn read<P: AccessPattern>(&self);
+//! foo.read::<Sequential>();
+//! ```
+//!
+//!
+//! Ideally, we should use regular enums instead of traits and unit structs from
+//! this module:
+//! ```ignore
+//! enum AccessPattern { Random, Sequential }
+//! fn read<const P: AccessPattern>(&self);
+//! foo.read::<AccessPattern::Sequential>();
+//! ```
+//! But until <https://github.com/rust-lang/rust/issues/95174> is resolved, we
+//! have to use this workaround.
+
+/// A hint describing the pattern in which the caller retrieves items by IDs.
+/// Affects the performance. The implementation might enable read-ahead aka
+/// pre-fetch for sequential access.
+/// [`Random`] is like `MADV_RANDOM`. [`Sequential`] is like `MADV_SEQUENTIAL`.
 pub trait AccessPattern: Copy {
     const IS_SEQUENTIAL: bool;
 }
@@ -14,4 +41,27 @@ impl AccessPattern for Random {
 
 impl AccessPattern for Sequential {
     const IS_SEQUENTIAL: bool = true;
+}
+
+/// Controls whether the implementation is allowed to reorder callback calls.
+/// Affects the behavior.
+/// [`SubmissionOrder`] - call callbacks in the same order as requested.
+/// [`CompletionOrder`] - an implementation can reorder them for performance
+/// reasons. Async implementations like `io_uring` might benefid from it.
+pub trait YieldOrder: Copy {
+    const IS_COMPLETION_ORDER: bool;
+}
+
+#[derive(Copy, Clone)]
+pub struct CompletionOrder;
+
+#[derive(Copy, Clone)]
+pub struct SubmissionOrder;
+
+impl YieldOrder for CompletionOrder {
+    const IS_COMPLETION_ORDER: bool = true;
+}
+
+impl YieldOrder for SubmissionOrder {
+    const IS_COMPLETION_ORDER: bool = false;
 }

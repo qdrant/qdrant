@@ -13,16 +13,16 @@ use ahash::AHashMap;
 use fs_err as fs;
 
 use super::*;
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, YieldOrder};
 
 thread_local! {
     static IO_URING: io::Result<RefCell<IoUring>> = init_io_uring().map(RefCell::new);
 }
 
-const IO_URING_QUEUE_LENGTH: u32 = 16;
+const IO_URING_QUEUE_LENGTH: usize = 16;
 
 fn init_io_uring() -> io::Result<IoUring> {
-    let io_uring = IoUring::new(IO_URING_QUEUE_LENGTH)
+    let io_uring = IoUring::new(IO_URING_QUEUE_LENGTH as _)
         .map_err(|err| io_error_context(err, "failed to setup io_uring"))?;
 
     let mut probe = Probe::new();
@@ -95,13 +95,14 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         })?
     }
 
-    fn read_batch<P: AccessPattern>(
+    fn read_batch<P: AccessPattern, O: YieldOrder, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = ElementsRange>,
-        mut callback: impl FnMut(usize, &[T]) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(usize, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
         with_uring_runtime(|mut rt| {
             let mut ranges = ranges.into_iter().enumerate().peekable();
+            let mut reorder_queue = ReorderingQueue::<Vec<T>, IO_URING_QUEUE_LENGTH>::new();
 
             while ranges.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
@@ -113,24 +114,32 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                     Ok(Some(entry))
                 })?;
 
-                rt.submit_and_wait(1)?;
+                rt.submit_and_wait(1).map_err(UniversalIoError::from)?;
 
                 for result in rt.completed() {
-                    let (id, resp) = result?;
+                    let (id, resp) = result.map_err(UniversalIoError::from)?;
                     let items = resp.expect_read();
-                    callback(id as _, &items)?;
+                    if O::IS_COMPLETION_ORDER {
+                        callback(id as _, &items)?;
+                    } else {
+                        reorder_queue.put(id as _, items);
+                        while let Some((id, items)) = reorder_queue.get() {
+                            callback(id as _, &items)?;
+                        }
+                    }
                 }
             }
 
+            debug_assert!(reorder_queue.is_empty());
             Ok(())
         })?
     }
 
-    fn read_multi<P: AccessPattern>(
+    fn read_multi<P: AccessPattern, E: From<UniversalIoError>>(
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
-        mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
         with_uring_runtime(|mut rt| {
             let mut reads = reads.into_iter().enumerate().peekable();
             let mut file_indices = Vec::new();
@@ -154,10 +163,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                     Ok(Some(entry))
                 })?;
 
-                rt.submit_and_wait(1)?;
+                rt.submit_and_wait(1).map_err(UniversalIoError::from)?;
 
                 for result in rt.completed() {
-                    let (id, resp) = result?;
+                    let (id, resp) = result.map_err(UniversalIoError::from)?;
 
                     let file_idx = file_indices
                         .get(id as usize)
@@ -342,14 +351,14 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
     {
         let mut sqe = self.io_uring.submission();
 
-        if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
+        if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH {
             return Ok(());
         }
 
         while let Some(entry) = entries(&mut self.state)? {
             unsafe { sqe.push(&entry).expect("SQE is not full") };
 
-            if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
+            if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH {
                 break;
             }
         }
