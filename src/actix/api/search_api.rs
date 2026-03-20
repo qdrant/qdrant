@@ -7,9 +7,7 @@ use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
 use itertools::Itertools;
-use storage::content_manager::collection_verification::{
-    check_strict_mode, check_strict_mode_batch,
-};
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -95,6 +93,19 @@ async fn batch_search_points(
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
+    let pass = match check_strict_mode(
+        &*request,
+        params.timeout_as_secs(),
+        &collection.collection_name,
+        &dispatcher,
+        &auth,
+    )
+        .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now(), None),
+    };
+
     let requests = request
         .into_inner()
         .searches
@@ -113,19 +124,6 @@ async fn batch_search_points(
             (core_request, shard_selection)
         })
         .collect::<Vec<_>>();
-
-    let pass = match check_strict_mode_batch(
-        requests.iter().map(|i| &i.0),
-        params.timeout_as_secs(),
-        &collection.collection_name,
-        &dispatcher,
-        &auth,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,

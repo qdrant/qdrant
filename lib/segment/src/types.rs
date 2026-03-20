@@ -1085,6 +1085,10 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upsert_max_batchsize: Option<usize>,
 
+    /// Max batchsize when searching
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_batchsize: Option<usize>,
+
     /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_vector_size_bytes: Option<usize>,
@@ -1147,6 +1151,7 @@ impl Hash for StrictModeConfig {
             // We skip hashing this field because we cannot reliably hash a float
             search_max_oversampling: _,
             upsert_max_batchsize,
+            search_max_batchsize,
             max_collection_vector_size_bytes,
             read_rate_limit,
             write_rate_limit,
@@ -1166,6 +1171,7 @@ impl Hash for StrictModeConfig {
         search_max_hnsw_ef.hash(state);
         search_allow_exact.hash(state);
         upsert_max_batchsize.hash(state);
+        search_max_batchsize.hash(state);
         max_collection_vector_size_bytes.hash(state);
         read_rate_limit.hash(state);
         write_rate_limit.hash(state);
@@ -1226,6 +1232,10 @@ pub struct StrictModeConfigOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub upsert_max_batchsize: Option<usize>,
+    /// Max batchsize when searching
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub search_max_batchsize: Option<usize>,
 
     /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1288,6 +1298,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             search_allow_exact,
             search_max_oversampling,
             upsert_max_batchsize,
+            search_max_batchsize,
             max_collection_vector_size_bytes,
             read_rate_limit,
             write_rate_limit,
@@ -1310,6 +1321,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             search_allow_exact,
             search_max_oversampling,
             upsert_max_batchsize,
+            search_max_batchsize,
             max_collection_vector_size_bytes,
             read_rate_limit,
             write_rate_limit,
