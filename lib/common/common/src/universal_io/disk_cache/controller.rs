@@ -281,15 +281,15 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
             let mut ops = ops.collect_vec();
             let ranges = ops
                 .iter()
-                .map(|op| ElementsRange {
-                    start: op.req.key.offset.bytes() as u64,
+                .map(|op| ReadRange {
+                    byte_offset: op.req.key.offset.bytes() as u64,
                     // Always request entire block, if we get to EOF, UniversalRead should return a short read.
                     // We don't want to request less than this because O_DIRECT requires to be aligned to some block size
                     length: BLOCK_SIZE as u64,
                 })
                 .collect_vec();
 
-            file.read_batch::<false>(ranges, |op_idx, data: &[u8]| {
+            file.read_batch::<Random>(ranges, |op_idx, data: &[u8]| {
                 let SlowReadOp {
                     req_idx,
                     ref req,
