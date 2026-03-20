@@ -35,13 +35,18 @@ impl Collection {
             .check_transfer_exists(transfer_key)
     }
 
-    pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
-        let prevent_unoptimized = self
-            .effective_optimizers_config()
+    async fn is_prevent_unoptimized(&self) -> bool {
+        self.effective_optimizers_config()
             .await
             .map(|config| config.prevent_unoptimized.unwrap_or(false))
-            .unwrap_or(false);
-        if prevent_unoptimized {
+            .unwrap_or(false)
+    }
+
+    pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+        if self.is_prevent_unoptimized().await {
+            // With prevent_unoptimized, use snapshot as the default method.
+            // For automatic transfers, mod.rs prefers WalDelta when all peers
+            // support it and falls back to this default otherwise.
             log::info!("Using snapshot transfer method because prevent_unoptimized is enabled");
             ShardTransferMethod::Snapshot
         } else {
@@ -185,7 +190,14 @@ impl Collection {
 
         let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
 
-        let fallback_method = ShardTransferMethod::StreamRecords;
+        // With prevent_unoptimized, fall back to snapshot which preserves deferred
+        // point state exactly (raw segment copy). stream_records sends deferred
+        // points but they won't be deferred on the target.
+        let fallback_method = if self.is_prevent_unoptimized().await {
+            ShardTransferMethod::Snapshot
+        } else {
+            ShardTransferMethod::StreamRecords
+        };
         let transfer_task = transfer::driver::spawn_transfer_task(
             shard_holder,
             progress.clone(),
