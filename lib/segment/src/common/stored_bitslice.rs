@@ -13,7 +13,7 @@ use bitvec::order::Lsb0;
 use common::bitvec::BitVec;
 use common::generic_consts::Random;
 use common::universal_io::{
-    ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalWrite,
+    Flusher, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalWrite,
 };
 use itertools::Itertools;
 
@@ -122,8 +122,8 @@ impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
             return Ok(None);
         }
 
-        let element = self.storage.read::<Random>(ElementsRange {
-            start: element_index,
+        let element = self.storage.read::<Random>(ReadRange {
+            byte_offset: element_index * size_of::<BitStore>() as u64,
             length: 1,
         })?[0];
 
@@ -190,8 +190,8 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
 
             let mut buf = self
                 .storage
-                .read::<Random>(ElementsRange {
-                    start: element_start,
+                .read::<Random>(ReadRange {
+                    byte_offset: element_start * size_of::<BitStore>() as u64,
                     length: num_elements,
                 })?
                 .into_owned();
@@ -204,7 +204,8 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
             }
 
             // expect batching on flush
-            self.storage.write(element_start, &buf)?;
+            self.storage
+                .write(element_start * size_of::<BitStore>() as u64, &buf)?;
         }
 
         Ok(())
@@ -237,8 +238,8 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         // Fetch existing, in case the source length is not a multiple of element size
         let element_count = bit_count.div_ceil(u64::from(BITS_PER_ELEMENT));
 
-        let existing = self.storage.read::<Random>(ElementsRange {
-            start: 0,
+        let existing = self.storage.read::<Random>(ReadRange {
+            byte_offset: 0,
             length: element_count,
         })?;
 
@@ -280,8 +281,8 @@ mod tests {
                 });
             }
 
-            let mut element = self.storage.read::<Random>(ElementsRange {
-                start: element_index,
+            let mut element = self.storage.read::<Random>(ReadRange {
+                byte_offset: element_index * size_of::<BitStore>() as u64,
                 length: 1,
             })?[0];
 
@@ -292,7 +293,8 @@ mod tests {
             let old_bit = bitslice.replace(bit_within_element as usize, value);
 
             if old_bit != value {
-                self.storage.write(element_index, &[*element])?;
+                self.storage
+                    .write(element_index * size_of::<BitStore>() as u64, &[*element])?;
             }
 
             Ok(old_bit)

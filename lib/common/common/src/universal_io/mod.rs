@@ -44,12 +44,14 @@ impl Default for OpenOptions {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct ElementsRange {
-    pub start: ElementOffset,
+pub struct ReadRange {
+    /// Start position in bytes from the beginning of the file/storage.
+    pub byte_offset: u64,
+    /// Number of elements to read.
     pub length: u64,
 }
 
-pub type ElementOffset = u64;
+pub type ByteOffset = u64;
 
 pub type FileIndex = usize;
 
