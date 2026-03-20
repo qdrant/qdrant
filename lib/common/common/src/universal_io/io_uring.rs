@@ -14,6 +14,7 @@ use fs_err as fs;
 
 use super::*;
 use crate::generic_consts::AccessPattern;
+use crate::maybe_uninit::assume_init_vec;
 
 thread_local! {
     static IO_URING: io::Result<RefCell<IoUring>> = init_io_uring().map(RefCell::new);
@@ -497,6 +498,7 @@ impl<'data, T> IoUringState<'data, T> {
             IoUringRequest::Read(items) => {
                 assert_eq!(mem::size_of_val(items.as_slice()), byte_length as usize);
                 let items: Vec<T> = unsafe { mem::transmute(items) };
+                let items: Vec<T> = unsafe { assume_init_vec(items) };
                 IoUringResponse::Read(items)
             }
 
