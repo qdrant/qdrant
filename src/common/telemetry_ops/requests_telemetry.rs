@@ -179,7 +179,11 @@ impl TonicWorkerTelemetryCollector {
         // Add to per-collection statistics if collection is provided and per-collection tracking is enabled
         if let Some(collection) = collection
             && self.enable_per_collection
-            && self.methods_per_collection.len() < self.max_collections
+            && self.methods_per_collection
+                .values()
+                .flat_map(|c| c.keys())
+                .collect::<std::collections::HashSet<_>>()
+                .len() < self.max_collections
         {
             let collection_aggregator = self
                 .methods_per_collection
@@ -240,7 +244,11 @@ impl ActixWorkerTelemetryCollector {
         // Add to per-collection statistics if collection is provided and per-collection tracking is enabled
         if let Some(collection) = collection
             && self.enable_per_collection
-            && self.methods_per_collection.len() < self.max_collections
+            && self.methods_per_collection
+                .values()
+                .flat_map(|c| c.keys())
+                .collect::<std::collections::HashSet<_>>()
+                .len() < self.max_collections
         {
             let collection_aggregator = self
                 .methods_per_collection

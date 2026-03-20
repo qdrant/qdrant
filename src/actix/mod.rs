@@ -127,8 +127,10 @@ pub fn init(
                         .exclude("/readyz")
                         .exclude("/livez"),
                 )
-                .wrap(actix_telemetry::ActixTelemetryTransform::new(
+                .wrap(actix_telemetry::ActixTelemetryTransform::with_config(
                     actix_telemetry_collector.clone(),
+                    settings.telemetry.enable_per_collection_metrics,
+                    settings.telemetry.max_collections_for_metrics,
                 ))
                 .app_data(dispatcher_data.clone())
                 .app_data(telemetry_collector_data.clone())

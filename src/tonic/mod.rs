@@ -147,8 +147,10 @@ pub fn init(
         // The stack of middleware that our service will be wrapped in
         let middleware_layer = tower::ServiceBuilder::new()
             .layer(logging::LoggingMiddlewareLayer::new())
-            .layer(tonic_telemetry::TonicTelemetryLayer::new(
+            .layer(tonic_telemetry::TonicTelemetryLayer::with_config(
                 telemetry_collector,
+                settings.telemetry.enable_per_collection_metrics,
+                settings.telemetry.max_collections_for_metrics,
             ))
             .option_layer({
                 AuthKeys::try_create(
@@ -260,8 +262,10 @@ pub fn init_internal(
             // The stack of middleware that our service will be wrapped in
             let middleware_layer = tower::ServiceBuilder::new()
                 .layer(logging::LoggingMiddlewareLayer::new())
-                .layer(tonic_telemetry::TonicTelemetryLayer::new(
+                .layer(tonic_telemetry::TonicTelemetryLayer::with_config(
                     tonic_telemetry_collector,
+                    settings.telemetry.enable_per_collection_metrics,
+                    settings.telemetry.max_collections_for_metrics,
                 ))
                 .into_inner();
 
