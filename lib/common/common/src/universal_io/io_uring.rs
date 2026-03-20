@@ -495,9 +495,14 @@ impl<'data, T> IoUringState<'data, T> {
             .ok_or_else(|| io::Error::other("request {id} does not exist"))?;
 
         let resp = match req {
-            IoUringRequest::Read(items) => {
-                assert_eq!(mem::size_of_val(items.as_slice()), byte_length as usize);
-                let items: Vec<T> = unsafe { mem::transmute(items) };
+            IoUringRequest::Read(mut items) => {
+                let actual_items = byte_length as usize / mem::size_of::<T>();
+                debug_assert!(
+                    actual_items <= items.len(),
+                    "read returned more bytes than requested"
+                );
+                // Truncate to the actual number of items read (short read at EOF).
+                items.truncate(actual_items);
                 let items: Vec<T> = unsafe { assume_init_vec(items) };
                 IoUringResponse::Read(items)
             }
