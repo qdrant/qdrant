@@ -51,7 +51,7 @@ pub struct ReadRange {
     pub length: u64,
 }
 
-pub type ElementOffset = u64;
+pub type ByteOffset = u64;
 
 pub type FileIndex = usize;
 

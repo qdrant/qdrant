@@ -204,7 +204,8 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
             }
 
             // expect batching on flush
-            self.storage.write(element_start, &buf)?;
+            self.storage
+                .write(element_start * size_of::<BitStore>() as u64, &buf)?;
         }
 
         Ok(())
@@ -292,7 +293,8 @@ mod tests {
             let old_bit = bitslice.replace(bit_within_element as usize, value);
 
             if old_bit != value {
-                self.storage.write(element_index, &[*element])?;
+                self.storage
+                    .write(element_index * size_of::<BitStore>() as u64, &[*element])?;
             }
 
             Ok(old_bit)

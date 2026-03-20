@@ -242,7 +242,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
 
         let chunk = &mut self.chunks[chunk_idx];
 
-        chunk.write(chunk_offset as u64, vectors)?;
+        chunk.write((chunk_offset * size_of::<T>()) as u64, vectors)?;
 
         hw_counter
             .vector_io_write_counter()

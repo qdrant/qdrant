@@ -199,9 +199,8 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 }
 
 impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
-    fn write(&mut self, offset: ElementOffset, items: &[T]) -> Result<()> {
+    fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         with_uring_runtime(|mut rt| {
-            let byte_offset = element_to_byte_offset::<T>(offset);
             let entry = rt.state.write(0, self.fd(), byte_offset, items)?;
             rt.enqueue_single(entry)?;
             rt.submit_and_wait(1)?;
@@ -214,18 +213,17 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
 
     fn write_batch<'a>(
         &mut self,
-        items: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
+        items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
         with_uring_runtime(|mut rt| {
             let mut items = items.into_iter().enumerate().peekable();
 
             while items.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
-                    let Some((id, (offset, items))) = items.next() else {
+                    let Some((id, (byte_offset, items))) = items.next() else {
                         return Ok(None);
                     };
 
-                    let byte_offset = element_to_byte_offset::<T>(offset);
                     let entry = state.write(id as _, self.fd(), byte_offset, items)?;
                     Ok(Some(entry))
                 })?;
@@ -244,14 +242,14 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
 
     fn write_multi<'a>(
         files: &mut [Self],
-        writes: impl IntoIterator<Item = (FileIndex, ElementOffset, &'a [T])>,
+        writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {
         with_uring_runtime(|mut rt| {
             let mut writes = writes.into_iter().enumerate().peekable();
 
             while writes.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
-                    let Some((id, (file_index, offset, items))) = writes.next() else {
+                    let Some((id, (file_index, byte_offset, items))) = writes.next() else {
                         return Ok(None);
                     };
 
@@ -262,7 +260,6 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                         }
                     })?;
 
-                    let byte_offset = element_to_byte_offset::<T>(offset);
                     let entry = state.write(id as _, file.fd(), byte_offset, items)?;
                     Ok(Some(entry))
                 })?;
@@ -517,11 +514,6 @@ impl<'data, T> Drop for IoUringState<'data, T> {
     fn drop(&mut self) {
         debug_assert!(self.is_empty());
     }
-}
-
-/// Convert element offset to byte offset
-fn element_to_byte_offset<T>(element_offset: ElementOffset) -> u64 {
-    element_offset * size_of::<T>() as u64
 }
 
 type RequestId = u64;
