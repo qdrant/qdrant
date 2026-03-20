@@ -13,6 +13,9 @@ use serde::de::DeserializeOwned;
 
 pub use self::error::UniversalIoError;
 pub use self::file_ops::UniversalReadFileOps;
+#[cfg(target_os = "linux")]
+pub use self::io_uring::*;
+pub use self::mmap::*;
 pub use self::read::UniversalRead;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
