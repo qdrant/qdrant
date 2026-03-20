@@ -231,6 +231,7 @@ impl CollectionsTelemetry {
 
         // Update queue
         let mut update_queue_length = Vec::with_capacity(num_collections);
+        let mut deferred_points_count = Vec::with_capacity(num_collections);
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -368,16 +369,25 @@ impl CollectionsTelemetry {
             ));
 
             // Update queue
-            let total_queue_length: usize = collection
+            let (total_queue_length, total_deferred_count): (usize, usize) = collection
                 .shards
                 .iter()
                 .flatten()
                 .filter_map(|shard| shard.local.as_ref())
                 .filter_map(|local| local.update_queue.as_ref())
-                .map(|uq| uq.length)
-                .sum();
+                .map(|uq| (uq.length, uq.deferred_points))
+                .fold((0, 0), |(acc_queue, acc_deferred), (queue, deferred)| {
+                    (
+                        acc_queue + queue,
+                        acc_deferred + deferred.unwrap_or_default(),
+                    )
+                });
 
             update_queue_length.push(gauge(total_queue_length as f64, &[("id", &collection.id)]));
+            deferred_points_count.push(gauge(
+                total_deferred_count as f64,
+                &[("id", &collection.id)],
+            ));
         }
 
         for snapshot_telemetry in self.snapshots.iter().flatten() {
@@ -525,6 +535,14 @@ impl CollectionsTelemetry {
             "number of pending operations in update queues per collection",
             MetricType::GAUGE,
             update_queue_length,
+            prefix,
+        ));
+
+        metrics.push_metric(metric_family(
+            "collection_update_queue_deferred_points",
+            "number of points currently hidden during read operations as they're not yet optimized",
+            MetricType::GAUGE,
+            deferred_points_count,
             prefix,
         ));
     }
