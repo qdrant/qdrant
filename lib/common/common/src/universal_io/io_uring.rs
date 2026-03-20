@@ -83,7 +83,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         Ok(file)
     }
 
-    fn read<P: AccessPattern>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         with_uring_runtime(|mut rt| {
             let entry = rt.state.read(0, self.fd(), range)?;
             rt.enqueue_single(entry)?;
@@ -97,7 +97,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn read_batch<P: AccessPattern>(
         &self,
-        ranges: impl IntoIterator<Item = ElementsRange>,
+        ranges: impl IntoIterator<Item = ReadRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
         with_uring_runtime(|mut rt| {
@@ -128,7 +128,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn read_multi<P: AccessPattern>(
         files: &[Self],
-        reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
     ) -> Result<()> {
         with_uring_runtime(|mut rt| {
@@ -199,9 +199,8 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 }
 
 impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
-    fn write(&mut self, offset: ElementOffset, items: &[T]) -> Result<()> {
+    fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         with_uring_runtime(|mut rt| {
-            let byte_offset = element_to_byte_offset::<T>(offset);
             let entry = rt.state.write(0, self.fd(), byte_offset, items)?;
             rt.enqueue_single(entry)?;
             rt.submit_and_wait(1)?;
@@ -214,18 +213,17 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
 
     fn write_batch<'a>(
         &mut self,
-        items: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
+        items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
         with_uring_runtime(|mut rt| {
             let mut items = items.into_iter().enumerate().peekable();
 
             while items.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
-                    let Some((id, (offset, items))) = items.next() else {
+                    let Some((id, (byte_offset, items))) = items.next() else {
                         return Ok(None);
                     };
 
-                    let byte_offset = element_to_byte_offset::<T>(offset);
                     let entry = state.write(id as _, self.fd(), byte_offset, items)?;
                     Ok(Some(entry))
                 })?;
@@ -244,14 +242,14 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
 
     fn write_multi<'a>(
         files: &mut [Self],
-        writes: impl IntoIterator<Item = (FileIndex, ElementOffset, &'a [T])>,
+        writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {
         with_uring_runtime(|mut rt| {
             let mut writes = writes.into_iter().enumerate().peekable();
 
             while writes.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
-                    let Some((id, (file_index, offset, items))) = writes.next() else {
+                    let Some((id, (file_index, byte_offset, items))) = writes.next() else {
                         return Ok(None);
                     };
 
@@ -262,7 +260,6 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                         }
                     })?;
 
-                    let byte_offset = element_to_byte_offset::<T>(offset);
                     let entry = state.write(id as _, file.fd(), byte_offset, items)?;
                     Ok(Some(entry))
                 })?;
@@ -422,12 +419,12 @@ impl<'data, T> IoUringState<'data, T> {
 
     /// Allocates `Vec<MaybeUninit<T>>`, reinterprets it as `Vec<MaybeUninit<u8>>`, and stores the byte buffer
     /// so the kernel writes into correctly aligned memory for `T`.
-    pub fn read(&mut self, id: RequestId, fd: Fd, range: ElementsRange) -> io::Result<squeue::Entry>
+    pub fn read(&mut self, id: RequestId, fd: Fd, range: ReadRange) -> io::Result<squeue::Entry>
     where
         T: bytemuck::Pod,
     {
-        let ElementsRange {
-            start: offset,
+        let ReadRange {
+            byte_offset,
             length,
         } = range;
 
@@ -437,7 +434,6 @@ impl<'data, T> IoUringState<'data, T> {
         let items = self.init(id, IoUringRequest::Read(items))?.expect_read();
 
         let bytes_ptr = items.as_mut_ptr().cast();
-        let byte_offset = offset * size_of::<T>() as u64;
         let byte_length = length * size_of::<T>() as u64;
         let byte_length = u32::try_from(byte_length).expect("read buffer length fit within u32");
         let entry = opcode::Read::new(fd, bytes_ptr, byte_length)
@@ -518,11 +514,6 @@ impl<'data, T> Drop for IoUringState<'data, T> {
     fn drop(&mut self) {
         debug_assert!(self.is_empty());
     }
-}
-
-/// Convert element offset to byte offset
-fn element_to_byte_offset<T>(element_offset: ElementOffset) -> u64 {
-    element_offset * size_of::<T>() as u64
 }
 
 type RequestId = u64;
@@ -620,18 +611,18 @@ mod tests {
         // Read all elements
         let read_back = <IoUringFile as UniversalRead<u64>>::read::<Sequential>(
             &file,
-            ElementsRange {
-                start: 0,
+            ReadRange {
+                byte_offset: 0,
                 length: data.len() as u64,
             },
         )?;
         assert_eq!(read_back.as_ref(), &data);
 
-        // Read a sub-range
+        // Read a sub-range (start at element 10, byte offset = 10 * size_of::<u64>())
         let read_sub = <IoUringFile as UniversalRead<u64>>::read::<Sequential>(
             &file,
-            ElementsRange {
-                start: 10,
+            ReadRange {
+                byte_offset: 10 * size_of::<u64>() as u64,
                 length: 20,
             },
         )?;
