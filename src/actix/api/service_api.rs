@@ -78,6 +78,7 @@ pub struct MetricsParam {
     pub anonymize: Option<bool>,
     #[validate(range(min = 1))]
     pub timeout: Option<u64>,
+    pub per_collection: Option<bool>,
 }
 
 impl MetricsParam {
@@ -101,6 +102,7 @@ async fn metrics(
     }
 
     let anonymize = params.anonymize.unwrap_or(false);
+    let per_collection: bool = params.per_collection.unwrap_or(false);
     let telemetry_data = telemetry_collector
         .lock()
         .await
@@ -127,7 +129,7 @@ async fn metrics(
             HttpResponse::Ok()
                 .content_type(ContentType::plaintext())
                 .body(
-                    MetricsData::new_from_telemetry(telemetry_data, metrics_prefix)
+                    MetricsData::new_from_telemetry(telemetry_data, metrics_prefix, per_collection)
                         .format_metrics(),
                 )
         }
