@@ -36,10 +36,10 @@ const DELETED_PATH: &str = "deleted.dat";
 ///
 /// Mem-mapped storage can only be constructed from another storage
 #[derive(Debug)]
-pub struct DenseVectorStorageImpl<T, S = MmapUniversal<u8>>
+pub struct DenseVectorStorageImpl<T, S = MmapUniversal<T>>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8>,
+    S: UniversalRead<T>,
 {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
@@ -50,7 +50,7 @@ where
 impl<T, S> DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8>,
+    S: UniversalRead<T>,
 {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
@@ -161,7 +161,7 @@ fn open_dense_vector_storage_impl<T, S>(
 ) -> OperationResult<DenseVectorStorageImpl<T, S>>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8>,
+    S: UniversalRead<T>,
 {
     fs::create_dir_all(path)?;
 
@@ -182,7 +182,7 @@ where
 impl<T, S> DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8>,
+    S: UniversalRead<T>,
 {
     pub fn get_mmap_vectors(&self) -> &ImmutableDenseVectors<T, S> {
         self.vectors.as_ref().unwrap()
@@ -192,7 +192,7 @@ where
 impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8>,
+    S: UniversalRead<T>,
 {
     fn vector_dim(&self) -> usize {
         self.vectors.as_ref().unwrap().dim
@@ -215,7 +215,7 @@ where
 impl<T, S> VectorStorage for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8>,
+    S: UniversalRead<T>,
 {
     fn distance(&self) -> Distance {
         self.distance
