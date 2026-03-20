@@ -493,7 +493,7 @@ fn finish_optimization(
     let deferred_points: Vec<PointIdType> = deferred_points_set.into_iter().collect();
 
     if !deferred_points.is_empty() {
-        const BATCH_SIZE: usize = 100;
+        const CHUNK_SIZE: usize = 100;
 
         // Deferred points in proxy segment may become visible for optimized segment (in most cases).
         // It's time to deduplicate them and remove older versions from optimized segment,
@@ -502,8 +502,8 @@ fn finish_optimization(
         // so `deduplicate_points` also cover this case and delete only older versions of the point,
         // which are still visible for optimized segment.
         deferred_points
-            .chunks(BATCH_SIZE)
-            .try_for_each(|batch| read_segment_holder.deduplicate_points(batch, hw_counter))?;
+            .chunks(CHUNK_SIZE)
+            .try_for_each(|chunk| read_segment_holder.deduplicate_points(chunk, hw_counter))?;
     }
 
     drop(read_segment_holder);
