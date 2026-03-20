@@ -1,13 +1,15 @@
 use std::io;
+use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use fs_err as fs;
+use itertools::Itertools;
 use memmap2::MmapRaw;
 use parking_lot::{Condvar, Mutex};
 use quick_cache::UnitWeighter;
-use quick_cache::sync::GuardResult;
+use quick_cache::sync::{GuardResult, PlaceholderGuard};
 
 use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, FileId};
 use crate::fs::clear_disk_cache;
@@ -16,6 +18,9 @@ use crate::universal_io::io_uring::IoUringFile;
 use crate::universal_io::{self, ReadRange, OpenOptions, UniversalRead};
 
 const UNUSED_BLOCKS_MARGIN: u64 = 16;
+
+type CacheGuard<'a> =
+    PlaceholderGuard<'a, BlockId, BlockOffset, UnitWeighter, ahash::RandomState, BlocksLifecycle>;
 
 /// Caching layer for files in a slow disk, to be mapped into a file in a fast disk.
 ///
@@ -202,6 +207,118 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
             }
             GuardResult::Timeout => unreachable!("We didn't set a timeout"),
         }
+    }
+
+    /// Fetch multiple blocks from cache, batching cold-storage reads via `read_batch`.
+    ///
+    /// Cache hits are served immediately from the mmap. Cache misses are collected
+    /// and submitted as a single `read_batch` call per file for asynchronous I/O,
+    /// then written to hot storage and committed to the cache.
+    ///
+    /// For each request, calls `on_result(index, &[u8])` with the requested byte
+    /// slice. The `index` corresponds to the position in the `requests` iterator.
+    pub(super) fn get_from_cache_batch(
+        &self,
+        requests: impl IntoIterator<Item = BlockRequest>,
+        mut on_result: impl FnMut(usize, &[u8]),
+    ) -> universal_io::Result<()> {
+        // Phase 1: Check cache, serve hits immediately, collect misses.
+        struct SlowReadOp<'a> {
+            req_idx: usize,
+            req: BlockRequest,
+            insert_guard: Option<CacheGuard<'a>>,
+        }
+        let mut misses: Vec<SlowReadOp> = Vec::new();
+
+        for (idx, req) in requests.into_iter().enumerate() {
+            let BlockRequest { key, ref range } = req;
+
+            match self.cache.get_value_or_guard(&key, None) {
+                GuardResult::Value(block_offset) => {
+                    let byte_range =
+                        block_offset.bytes() + range.start..block_offset.bytes() + range.end;
+                    let slice = unsafe {
+                        std::slice::from_raw_parts(
+                            self.cache_mmap.as_ptr().add(byte_range.start),
+                            byte_range.len(),
+                        )
+                    };
+                    on_result(idx, slice);
+                }
+                GuardResult::Guard(guard) => {
+                    misses.push(SlowReadOp {
+                        req_idx: idx,
+                        req: req,
+                        insert_guard: Some(guard),
+                    });
+                }
+                GuardResult::Timeout => unreachable!("We didn't set a timeout"),
+            }
+        }
+
+        if misses.is_empty() {
+            return Ok(());
+        }
+
+        // Phase 2: Batch read all misses from cold storage.
+        //
+        // Group misses by file_id so each group can be submitted as a single
+        // `read_batch` call. Collect ranges upfront to avoid borrowing `misses`
+        // while the callback also needs mutable access to it.
+
+        let files = self.files.pin();
+
+        // We expect usage to be batched for a single file at a time anyway, but chunk to be sure.
+        let per_file = misses.into_iter().chunk_by(|op| op.req.key.file_id);
+
+        for (file_id, ops) in per_file.into_iter() {
+            let file = files
+                .get(&file_id)
+                .expect("cached file descriptor is not open");
+
+            let mut ops = ops.collect_vec();
+            let ranges = ops
+                .iter()
+                .map(|op| ElementsRange {
+                    start: op.req.key.offset.bytes() as u64,
+                    // Always request entire block, if we get to EOF, UniversalRead should return a short read.
+                    // We don't want to request less than this because O_DIRECT requires to be aligned to some block size
+                    length: BLOCK_SIZE as u64,
+                })
+                .collect_vec();
+
+            file.read_batch::<false>(ranges, |op_idx, data: &[u8]| {
+                let SlowReadOp {
+                    req_idx,
+                    ref req,
+                    ref mut insert_guard,
+                } = ops[op_idx];
+
+                // Write to hot storage.
+                let allocated_offset = self.blocks_lifecycle.pop_unused_block();
+                let offset = allocated_offset.bytes();
+                // SAFETY: the blocks_lifecycle ensures we are writing in a safe section of the mmap,
+                // and the insert guard makes sure we are the only ones doing so.
+                unsafe {
+                    let dst = self.cache_mmap.as_mut_ptr().add(offset);
+                    let data_len = data.len();
+                    dst.copy_from(data.as_ptr(), data_len);
+                    if data_len < BLOCK_SIZE {
+                        // Zero out the rest of the block in case we had a short read.
+                        dst.add(data_len).write_bytes(0, BLOCK_SIZE - data_len);
+                    }
+                }
+
+                // Commit to cache.
+                let guard = insert_guard.take();
+                guard.expect("each read is only carried out once").insert(allocated_offset).expect("There are no remove operations happening, and we always insert through placeholder");
+
+                on_result(req_idx, &data[req.range.clone()]);
+                Ok(())
+            })?;
+        }
+
+        Ok(())
     }
 }
 
