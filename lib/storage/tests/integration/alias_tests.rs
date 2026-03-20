@@ -57,6 +57,7 @@ fn test_alias_operation() {
             incoming_shard_transfers_limit: Some(1),
             outgoing_shard_transfers_limit: Some(1),
             async_scorer: None,
+            async_io_parallelism: None,
             load_concurrency: LoadConcurrencyConfig::default(),
         },
         hnsw_index: Default::default(),
