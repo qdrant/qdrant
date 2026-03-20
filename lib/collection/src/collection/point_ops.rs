@@ -114,7 +114,8 @@ impl Collection {
                 WriteOrdering::Weak => {
                     let wait = match WaitUntil::from(wait) {
                         WaitUntil::Visible => WaitUntil::Segment,
-                        other => other,
+                        WaitUntil::Segment => WaitUntil::Segment,
+                        WaitUntil::Wal => WaitUntil::Wal,
                     };
                     shard.update_local(operation, wait, timeout, hw_measurement_acc.clone(), false).await
                 }
