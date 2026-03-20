@@ -560,7 +560,15 @@ impl Inner {
             let wal = self.wrapped_shard.wal.wal.lock().await;
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
-            let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
+            let batch = wal
+                .read(transfer_from)
+                .take(BATCH_SIZE)
+                .collect::<shard::wal::Result<Vec<_>>>()
+                .map_err(|e| {
+                    CollectionError::service_error(format!(
+                        "Failed to read WAL during queue proxy transfer: {e}"
+                    ))
+                })?;
             debug_assert!(
                 batch.len() <= items_left as usize,
                 "batch cannot be larger than items_left",

@@ -416,7 +416,7 @@ impl Shard {
             Shard::Dummy(dummy) => return Err(dummy.dummy_error("get_wal_entries")),
         };
 
-        Ok(local.get_wal_entries(count).await)
+        local.get_wal_entries(count).await
     }
 
     pub async fn set_extended_wal_retention(&self) {
