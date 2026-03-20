@@ -133,7 +133,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
 
         self.storage
             .read::<P>(range)
-            .expect("vector read succesfully")
+            .expect("vector read successfully")
     }
 
     /// Returns vector data by key
