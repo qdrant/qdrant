@@ -1,10 +1,12 @@
+use std::sync::atomic::AtomicU64;
+
 use bitvec::order::{BitOrder, Lsb0};
 use bitvec::store::BitStore;
 
 use crate::types::PointOffsetType;
 
-pub type BitVec = bitvec::vec::BitVec<u64, Lsb0>;
-pub type BitSlice = bitvec::slice::BitSlice<u64, Lsb0>;
+pub type BitVec = bitvec::vec::BitVec<AtomicU64, Lsb0>;
+pub type BitSlice = bitvec::slice::BitSlice<AtomicU64, Lsb0>;
 
 /// Set deleted state in given bitvec.
 ///

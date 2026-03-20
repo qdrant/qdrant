@@ -14,7 +14,8 @@ pub fn bench_bitmask_ops(c: &mut Criterion) {
         .take(1000 * DEFAULT_REGION_SIZE_BLOCKS)
         .collect::<BitVec>();
 
-    let mut bitslice_iter = random_bitvec.windows(DEFAULT_REGION_SIZE_BLOCKS).cycle();
+    let mut bitslice_iter =
+        std::iter::repeat_with(|| random_bitvec.windows(DEFAULT_REGION_SIZE_BLOCKS)).flatten();
 
     c.bench_function("calculate_gaps", |b| {
         b.iter(|| {

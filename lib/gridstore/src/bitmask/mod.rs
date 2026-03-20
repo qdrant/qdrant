@@ -286,7 +286,7 @@ impl Bitmask {
         // Iterate over the integers that compose the bitvec. So that we can perform bitwise operations.
         const BITS_IN_CHUNK: u32 = usize::BITS;
         for (chunk_idx, chunk) in raw_region.iter().enumerate() {
-            let mut chunk = *chunk;
+            let mut chunk = chunk.load(std::sync::atomic::Ordering::Relaxed);
 
             // case of all zeros
             if chunk == 0 {
@@ -439,7 +439,7 @@ impl Bitmask {
         // So starting from the end should give us bigger `max` earlier.
         for chunk in raw_region.iter().rev() {
             // Ensure that the chunk is little-endian.
-            let mut chunk = chunk.to_le();
+            let mut chunk = chunk.load(std::sync::atomic::Ordering::Relaxed).to_le();
             // case of all zeros
             if chunk == 0 {
                 current += BITS_IN_CHUNK;
@@ -506,13 +506,15 @@ impl Bitmask {
         } else {
             leading = raw_region
                 .iter()
-                .take_while_inclusive(|chunk| chunk == &&0)
+                .map(|chunk| chunk.load(std::sync::atomic::Ordering::Relaxed))
+                .take_while_inclusive(|chunk| chunk == &0)
                 .map(|chunk| chunk.trailing_zeros())
                 .sum::<u32>();
             trailing = raw_region
                 .iter()
+                .map(|chunk| chunk.load(std::sync::atomic::Ordering::Relaxed))
                 .rev()
-                .take_while_inclusive(|chunk| chunk == &&0)
+                .take_while_inclusive(|chunk| chunk == &0)
                 .map(|chunk| chunk.leading_zeros())
                 .sum::<u32>();
         }
@@ -551,6 +553,8 @@ impl Bitmask {
 
 #[cfg(test)]
 mod tests {
+
+    use std::sync::atomic::Ordering;
 
     use bitvec::bits;
     use common::bitvec::BitVec;
@@ -644,9 +648,9 @@ mod tests {
         let raw = bitvec.as_raw_slice();
         assert_eq!(raw.len() as u32, 64 / usize::BITS);
 
-        assert_eq!(raw[0].trailing_zeros(), 4);
-        assert_eq!(raw[0].leading_zeros(), 0);
-        assert_eq!((raw[0] >> 1).trailing_zeros(), 3)
+        assert_eq!(raw[0].load(Ordering::Relaxed).trailing_zeros(), 4);
+        assert_eq!(raw[0].load(Ordering::Relaxed).leading_zeros(), 0);
+        assert_eq!((raw[0].load(Ordering::Relaxed) >> 1).trailing_zeros(), 3)
     }
 
     prop_compose! {
