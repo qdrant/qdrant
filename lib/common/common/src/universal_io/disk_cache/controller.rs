@@ -132,6 +132,34 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
         Ok((file_id, len))
     }
 
+    /// Read a slice from the hot-storage mmap at the given block offset and byte range.
+    ///
+    /// # Safety
+    /// The caller must ensure `block_offset` and `range` refer to a valid,
+    /// previously-written region of `cache_mmap`.
+    unsafe fn read_cache_mmap(&self, block_offset: BlockOffset, range: Range<usize>) -> &[u8] {
+        let start = block_offset.bytes() + range.start;
+        let len = range.end - range.start;
+        unsafe { std::slice::from_raw_parts(self.cache_mmap.as_ptr().add(start), len) }
+    }
+
+    /// Write a block's data into hot storage at the given offset,
+    /// zero-padding if the data is shorter than `BLOCK_SIZE`.
+    ///
+    /// # Safety
+    /// The caller must ensure `allocated_offset` points to a region that is not
+    /// concurrently read or written (guaranteed by the block lifecycle + insert guard).
+    unsafe fn write_cache_mmap(&self, allocated_offset: BlockOffset, data: &[u8]) {
+        unsafe {
+            let dst = self.cache_mmap.as_mut_ptr().add(allocated_offset.bytes());
+            let data_len = data.len();
+            dst.copy_from(data.as_ptr(), data_len);
+            if data_len < BLOCK_SIZE {
+                dst.add(data_len).write_bytes(0, BLOCK_SIZE - data_len);
+            }
+        }
+    }
+
     /// Fetch a block from cache, or read it from cold storage on miss.
     ///
     /// On hit, returns a borrowed slice from the mmap. On miss, calls
@@ -147,17 +175,9 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
         match self.cache.get_value_or_guard(&key, None) {
             // Cache hit.
             GuardResult::Value(block_offset) => {
-                // Read from hot mmap.
-                let range = block_offset.bytes() + range.start..block_offset.bytes() + range.end;
-
                 // TODO: Pin the block_id, track the lifetime of the borrow,
                 // then release the block_id when the borrow ends
-                let slice = unsafe {
-                    std::slice::from_raw_parts(
-                        self.cache_mmap.as_ptr().add(range.start),
-                        range.len(),
-                    )
-                };
+                let slice = unsafe { self.read_cache_mmap(block_offset, range) };
                 Ok(CacheRead::Hit(slice))
             }
             // Cache miss.
@@ -184,18 +204,7 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
                 // ------------------------
 
                 let allocated_offset = self.blocks_lifecycle.pop_unused_block();
-
-                let offset = allocated_offset.bytes();
-                // SAFETY: non-overlapping regions are guaranteed by the block allocation logic;
-                // the insert guard prevent concurrent writes to the same block.
-                unsafe {
-                    let dst = self.cache_mmap.as_mut_ptr().add(offset);
-                    let data_len = cow.len();
-                    dst.copy_from(cow.as_ptr(), data_len);
-                    if data_len < BLOCK_SIZE {
-                        dst.add(data_len).write_bytes(0, BLOCK_SIZE - data_len);
-                    }
-                }
+                unsafe { self.write_cache_mmap(allocated_offset, &cow) };
 
                 // 3. Commit.
                 // ----------
@@ -235,20 +244,13 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
 
             match self.cache.get_value_or_guard(&key, None) {
                 GuardResult::Value(block_offset) => {
-                    let byte_range =
-                        block_offset.bytes() + range.start..block_offset.bytes() + range.end;
-                    let slice = unsafe {
-                        std::slice::from_raw_parts(
-                            self.cache_mmap.as_ptr().add(byte_range.start),
-                            byte_range.len(),
-                        )
-                    };
+                    let slice = unsafe { self.read_cache_mmap(block_offset, range.clone()) };
                     on_result(idx, slice);
                 }
                 GuardResult::Guard(guard) => {
                     misses.push(SlowReadOp {
                         req_idx: idx,
-                        req: req,
+                        req,
                         insert_guard: Some(guard),
                     });
                 }
@@ -296,18 +298,7 @@ impl<SlowFile: UniversalRead<u8>> CacheController<SlowFile> {
 
                 // Write to hot storage.
                 let allocated_offset = self.blocks_lifecycle.pop_unused_block();
-                let offset = allocated_offset.bytes();
-                // SAFETY: the blocks_lifecycle ensures we are writing in a safe section of the mmap,
-                // and the insert guard makes sure we are the only ones doing so.
-                unsafe {
-                    let dst = self.cache_mmap.as_mut_ptr().add(offset);
-                    let data_len = data.len();
-                    dst.copy_from(data.as_ptr(), data_len);
-                    if data_len < BLOCK_SIZE {
-                        // Zero out the rest of the block in case we had a short read.
-                        dst.add(data_len).write_bytes(0, BLOCK_SIZE - data_len);
-                    }
-                }
+                unsafe { self.write_cache_mmap(allocated_offset, data) };
 
                 // Commit to cache.
                 let guard = insert_guard.take();
