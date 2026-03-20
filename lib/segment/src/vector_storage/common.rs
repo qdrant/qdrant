@@ -1,9 +1,11 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 #[cfg(feature = "rocksdb")]
 use serde::{Deserialize, Serialize};
 
 static ASYNC_SCORER: AtomicBool = AtomicBool::new(false);
+pub const DEFAULT_ASYNC_IO_PARALLELISM: usize = 16;
+static ASYNC_IO_PARALLELISM: AtomicUsize = AtomicUsize::new(DEFAULT_ASYNC_IO_PARALLELISM);
 
 pub fn set_async_scorer(async_scorer: bool) {
     ASYNC_SCORER.store(async_scorer, Ordering::Relaxed);
@@ -11,6 +13,14 @@ pub fn set_async_scorer(async_scorer: bool) {
 
 pub fn get_async_scorer() -> bool {
     ASYNC_SCORER.load(Ordering::Relaxed)
+}
+
+pub fn set_async_io_parallelism(async_io_parallelism: usize) {
+    ASYNC_IO_PARALLELISM.store(async_io_parallelism, Ordering::Relaxed);
+}
+
+pub fn get_async_io_parallelism() -> usize {
+    ASYNC_IO_PARALLELISM.load(Ordering::Relaxed)
 }
 
 /// Storage type for RocksDB based storage

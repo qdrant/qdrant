@@ -8,8 +8,7 @@ use io_uring::{IoUring, opcode, types};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
-
-const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
+use crate::vector_storage::common::get_async_io_parallelism;
 
 #[derive(Debug)]
 struct BufferMeta {
@@ -69,8 +68,9 @@ impl<T: PrimitiveVectorElement> fmt::Debug for UringReader<T> {
 
 impl<T: PrimitiveVectorElement> UringReader<T> {
     pub fn new(file: File, raw_size: usize, header_size: usize) -> OperationResult<Self> {
-        let buffers = BufferStore::new(DISK_PARALLELISM, raw_size);
-        let io_uring = IoUring::new(DISK_PARALLELISM as _)?;
+        let disk_parallelism = get_async_io_parallelism();
+        let buffers = BufferStore::new(disk_parallelism, raw_size);
+        let io_uring = IoUring::new(disk_parallelism as _)?;
 
         Ok(Self {
             file,
@@ -94,7 +94,7 @@ impl<T: PrimitiveVectorElement> UringReader<T> {
             // Use existing `IoUring` if there's one...
             Some(io_uring) => io_uring,
             // ...or create a new one if not
-            None => IoUring::new(DISK_PARALLELISM as _)?,
+            None => IoUring::new(get_async_io_parallelism() as _)?,
         };
 
         let buffers_count = self.buffers.buffers.len();

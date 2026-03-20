@@ -185,6 +185,13 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
+    segment::vector_storage::common::set_async_io_parallelism(
+        settings
+            .storage
+            .performance
+            .async_io_parallelism
+            .unwrap_or(segment::vector_storage::common::DEFAULT_ASYNC_IO_PARALLELISM),
+    );
     welcome(&settings);
 
     // If audit logging is enabled, but failed to initialize,
