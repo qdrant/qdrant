@@ -107,7 +107,17 @@ impl Collection {
             };
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, WaitUntil::from(wait), timeout, hw_measurement_acc.clone(), false).await,
+                // Cap internal peer updates to WaitUntil::Segment to avoid blocking on
+                // wait_for_deferred_points_ready. Internal transfers (e.g. queue proxy last
+                // batch) send wait=true to ensure data reaches segments, but don't need to
+                // wait for deferred point optimization.
+                WriteOrdering::Weak => {
+                    let wait = match WaitUntil::from(wait) {
+                        WaitUntil::Visible => WaitUntil::Segment,
+                        other => other,
+                    };
+                    shard.update_local(operation, wait, timeout, hw_measurement_acc.clone(), false).await
+                }
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(
