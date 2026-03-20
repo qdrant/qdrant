@@ -28,7 +28,7 @@ pub fn new<'a, T, Storage>(
 ) -> OperationResult<Box<dyn RawScorer + 'a>>
 where
     T: PrimitiveVectorElement,
-    Storage: UniversalRead<u8>,
+    Storage: UniversalRead<T>,
     CosineMetric: Metric<T>,
     EuclidMetric: Metric<T>,
     DotProductMetric: Metric<T>,
@@ -40,7 +40,7 @@ where
 pub struct AsyncRawScorerImpl<'a, T, Storage, Scorer>
 where
     T: PrimitiveVectorElement,
-    Storage: UniversalRead<u8>,
+    Storage: UniversalRead<T>,
     Scorer: QueryScorer<TVector = [T]>,
 {
     query_scorer: Scorer,
@@ -50,7 +50,7 @@ where
 impl<'a, T, Storage, Scorer> AsyncRawScorerImpl<'a, T, Storage, Scorer>
 where
     T: PrimitiveVectorElement,
-    Storage: UniversalRead<u8>,
+    Storage: UniversalRead<T>,
     Scorer: QueryScorer<TVector = [T]>,
 {
     fn new(query_scorer: Scorer, storage: &'a ImmutableDenseVectors<T, Storage>) -> Self {
@@ -64,7 +64,7 @@ where
 impl<'a, T, Storage, Scorer> RawScorer for AsyncRawScorerImpl<'a, T, Storage, Scorer>
 where
     T: PrimitiveVectorElement,
-    Storage: UniversalRead<u8>,
+    Storage: UniversalRead<T>,
     Scorer: QueryScorer<TVector = [T]>,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
@@ -97,7 +97,7 @@ where
 struct AsyncRawScorerBuilder<'a, T, Storage>
 where
     T: PrimitiveVectorElement,
-    Storage: UniversalRead<u8>,
+    Storage: UniversalRead<T>,
 {
     query: QueryVector,
     storage: &'a DenseVectorStorageImpl<T, Storage>,
@@ -108,7 +108,7 @@ where
 impl<'a, T, Storage> AsyncRawScorerBuilder<'a, T, Storage>
 where
     T: PrimitiveVectorElement,
-    Storage: UniversalRead<u8>,
+    Storage: UniversalRead<T>,
 {
     pub fn new(
         query: QueryVector,
@@ -226,7 +226,7 @@ fn async_raw_scorer_from_query_scorer<'a, T, Storage, Scorer>(
 ) -> Box<dyn RawScorer + 'a>
 where
     T: PrimitiveVectorElement,
-    Storage: UniversalRead<u8>,
+    Storage: UniversalRead<T>,
     Scorer: QueryScorer<TVector = [T]> + 'a,
 {
     Box::new(AsyncRawScorerImpl::new(

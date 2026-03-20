@@ -26,10 +26,10 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Immutable storage for dense vectors.
 #[derive(Debug)]
-pub struct ImmutableDenseVectors<T, S = MmapUniversal<u8>>
+pub struct ImmutableDenseVectors<T, S = MmapUniversal<T>>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8>,
+    S: UniversalRead<T>,
 {
     pub dim: usize,
     pub num_vectors: usize,
@@ -42,7 +42,7 @@ where
     _phantom: PhantomData<T>,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S> {
+impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
@@ -62,7 +62,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
             populate: Some(populate),
             advice: None,
         };
-        let storage = UniversalRead::<u8>::open(vectors_path, options).map_err(|e| {
+        let storage = UniversalRead::<T>::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(
                 "Failed to open vector mmap at {}: {e}",
                 vectors_path.display()
@@ -124,20 +124,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     /// Read one vector's worth of bytes from storage at `byte_offset` and reinterpret
     /// the byte slice as `&[T]`.
     fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
+        debug_assert_eq!(byte_offset % size_of::<T>(), 0);
+
         let range = ElementsRange {
-            start: byte_offset as u64,
+            start: (byte_offset / size_of::<T>()) as u64,
             length: self.raw_size() as u64,
         };
 
-        let cow: Cow<'_, [u8]> = self
-            .storage
+        self.storage
             .read::<P>(range)
-            .expect("vector read from storage failed");
-
-        match cow {
-            Cow::Borrowed(byte_slice) => Cow::Borrowed(bytemuck::cast_slice(byte_slice)),
-            Cow::Owned(byte_vec) => Cow::Owned(bytemuck::cast_vec(byte_vec)),
-        }
+            .expect("vector read succesfully")
     }
 
     /// Returns vector data by key
@@ -203,18 +199,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         points: &[PointOffsetType],
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
-        let vector_size_bytes = size_of::<T>() * self.dim;
+        let header_size_items = HEADER_SIZE / size_of::<T>();
+        debug_assert_eq!(HEADER_SIZE % size_of::<T>(), 0);
+
         let ranges = points.iter().copied().map(|point| ElementsRange {
-            start: (HEADER_SIZE + vector_size_bytes * point as usize) as _,
-            length: vector_size_bytes as _,
+            start: (header_size_items + self.dim * point as usize) as u64,
+            length: self.dim as u64,
         });
 
-        self.storage.read_batch::<P>(ranges, |idx, bytes| {
+        self.storage.read_batch::<P>(ranges, |idx, vector| {
             let point = points.get(idx).copied().expect("point ID tracked");
-
-            #[expect(deprecated, reason = "legacy code refactor")]
-            let vector = unsafe { mmap::transmute_from_u8_to_slice(bytes) };
-
             callback(idx, point, vector);
             Ok(())
         })?;
