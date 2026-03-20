@@ -710,21 +710,23 @@ impl LocalShard {
 
         let from = wal.first_index();
         let last_wal_index = from + wal.len(false);
-        let to = self
-            .applied_seq_handler
-            .op_num_upper_bound()
-            .unwrap_or(last_wal_index);
+        let op_num_upper_bound = self.applied_seq_handler.op_num_upper_bound();
+        let to = op_num_upper_bound.unwrap_or(last_wal_index);
 
         // Cap the number of WAL entries to move to the update queue size,
         // since the update queue is limited and must hold all pending operations.
         let update_queue_size = self.update_sender.load().capacity();
-        let to = std::cmp::max(
+        let to = cmp::max(
             to,
             last_wal_index.saturating_sub(update_queue_size as u64 - 1),
         );
 
-        let to = std::cmp::min(to, last_wal_index);
-        let wal_entries_to_replay = to - from;
+        let to = cmp::min(to, last_wal_index);
+        debug_assert!(
+            from <= to,
+            "WAL first_index ({from}) is ahead of replay target ({to}) (last_wal_index:{last_wal_index} op_num_upper_bound:{op_num_upper_bound:?})"
+        );
+        let wal_entries_to_replay = to.saturating_sub(from);
 
         assert!(
             last_wal_index - to <= update_queue_size as u64,
