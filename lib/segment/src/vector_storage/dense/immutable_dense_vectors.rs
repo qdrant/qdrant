@@ -11,7 +11,7 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{ElementsRange, OpenOptions as UniversalOpenOptions, UniversalRead};
+use common::universal_io::{OpenOptions as UniversalOpenOptions, ReadRange, UniversalRead};
 use fs_err::{File, OpenOptions};
 
 use crate::common::error_logging::LogError;
@@ -124,8 +124,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     /// Read one vector's worth of bytes from storage at `byte_offset` and reinterpret
     /// the byte slice as `&[T]`.
     fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
-        let range = ElementsRange {
-            start: byte_offset as u64,
+        let range = ReadRange {
+            byte_offset: byte_offset as u64,
             length: self.raw_size() as u64,
         };
 
@@ -204,8 +204,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
         let vector_size_bytes = size_of::<T>() * self.dim;
-        let ranges = points.iter().copied().map(|point| ElementsRange {
-            start: (HEADER_SIZE + vector_size_bytes * point as usize) as _,
+        let ranges = points.iter().copied().map(|point| ReadRange {
+            byte_offset: (HEADER_SIZE + vector_size_bytes * point as usize) as _,
             length: vector_size_bytes as _,
         });
 

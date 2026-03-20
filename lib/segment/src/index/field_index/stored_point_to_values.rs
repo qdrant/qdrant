@@ -9,7 +9,7 @@ use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, ElementsRange, UniversalRead};
+use common::universal_io::{self, ReadRange, UniversalRead};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -175,8 +175,8 @@ where
 
         let store = S::open(&file_name, open_options)?;
 
-        let header_bytes = store.read::<Random>(ElementsRange {
-            start: 0,
+        let header_bytes = store.read::<Random>(ReadRange {
+            byte_offset: 0,
             length: std::mem::size_of::<Header>() as u64,
         })?;
 
@@ -231,8 +231,8 @@ where
 
         // first, get range of values for point
         let Some(bytes_range) = self.get_bytes_range(point_id)?.map(|range| {
-            let range = universal_io::ElementsRange {
-                start: range.start,
+            let range = universal_io::ReadRange {
+                byte_offset: range.start,
                 length: range.end - range.start,
             };
             // Measure IO overhead of `self.get_bytes_range()` and the length of the values
@@ -270,8 +270,8 @@ where
             let range_offset = (self.header.ranges_start as usize)
                 + (point_id as usize) * std::mem::size_of::<MmapRange>();
 
-            let bytes = self.store.read::<Random>(ElementsRange {
-                start: range_offset as u64,
+            let bytes = self.store.read::<Random>(ReadRange {
+                byte_offset: range_offset as u64,
                 length: std::mem::size_of::<MmapRange>() as u64,
             })?;
             Ok(MmapRange::read_from_prefix(&bytes)

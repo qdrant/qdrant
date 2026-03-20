@@ -83,7 +83,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         Ok(file)
     }
 
-    fn read<P: AccessPattern>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         with_uring_runtime(|mut rt| {
             let entry = rt.state.read(0, self.fd(), range)?;
             rt.enqueue_single(entry)?;
@@ -97,7 +97,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn read_batch<P: AccessPattern>(
         &self,
-        ranges: impl IntoIterator<Item = ElementsRange>,
+        ranges: impl IntoIterator<Item = ReadRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
         with_uring_runtime(|mut rt| {
@@ -128,7 +128,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn read_multi<P: AccessPattern>(
         files: &[Self],
-        reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
     ) -> Result<()> {
         with_uring_runtime(|mut rt| {
@@ -422,12 +422,12 @@ impl<'data, T> IoUringState<'data, T> {
 
     /// Allocates `Vec<MaybeUninit<T>>`, reinterprets it as `Vec<MaybeUninit<u8>>`, and stores the byte buffer
     /// so the kernel writes into correctly aligned memory for `T`.
-    pub fn read(&mut self, id: RequestId, fd: Fd, range: ElementsRange) -> io::Result<squeue::Entry>
+    pub fn read(&mut self, id: RequestId, fd: Fd, range: ReadRange) -> io::Result<squeue::Entry>
     where
         T: bytemuck::Pod,
     {
-        let ElementsRange {
-            start: offset,
+        let ReadRange {
+            byte_offset,
             length,
         } = range;
 
@@ -437,7 +437,6 @@ impl<'data, T> IoUringState<'data, T> {
         let items = self.init(id, IoUringRequest::Read(items))?.expect_read();
 
         let bytes_ptr = items.as_mut_ptr().cast();
-        let byte_offset = offset * size_of::<T>() as u64;
         let byte_length = length * size_of::<T>() as u64;
         let byte_length = u32::try_from(byte_length).expect("read buffer length fit within u32");
         let entry = opcode::Read::new(fd, bytes_ptr, byte_length)
@@ -620,18 +619,18 @@ mod tests {
         // Read all elements
         let read_back = <IoUringFile as UniversalRead<u64>>::read::<Sequential>(
             &file,
-            ElementsRange {
-                start: 0,
+            ReadRange {
+                byte_offset: 0,
                 length: data.len() as u64,
             },
         )?;
         assert_eq!(read_back.as_ref(), &data);
 
-        // Read a sub-range
+        // Read a sub-range (start at element 10, byte offset = 10 * size_of::<u64>())
         let read_sub = <IoUringFile as UniversalRead<u64>>::read::<Sequential>(
             &file,
-            ElementsRange {
-                start: 10,
+            ReadRange {
+                byte_offset: 10 * size_of::<u64>() as u64,
                 length: 20,
             },
         )?;

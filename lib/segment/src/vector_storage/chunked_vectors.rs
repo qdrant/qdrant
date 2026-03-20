@@ -15,7 +15,7 @@ use common::mmap::{
 };
 use common::universal_io::mmap::MmapUniversalRo;
 use common::universal_io::{
-    ElementsRange, OpenOptions, UniversalIoError, UniversalWrite, read_json_via,
+    OpenOptions, ReadRange, UniversalIoError, UniversalWrite, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -303,8 +303,8 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             return None;
         }
 
-        let range = ElementsRange {
-            start: element_offset as u64,
+        let range = ReadRange {
+            byte_offset: (element_offset * size_of::<T>()) as u64,
             length: elements_length as u64,
         };
 
