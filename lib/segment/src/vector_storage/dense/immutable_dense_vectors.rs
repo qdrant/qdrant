@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::io::Write;
+use std::marker::PhantomData;
 use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
@@ -12,15 +13,10 @@ use common::types::PointOffsetType;
 use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{ElementsRange, OpenOptions as UniversalOpenOptions, UniversalRead};
 use fs_err::{File, OpenOptions};
-use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
-#[cfg(target_os = "linux")]
-use crate::vector_storage::async_io::UringReader;
-#[cfg(not(target_os = "linux"))]
-use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 
@@ -30,21 +26,20 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Immutable storage for dense vectors.
 #[derive(Debug)]
-pub struct ImmutableDenseVectors<
+pub struct ImmutableDenseVectors<T, S = MmapUniversal<u8>>
+where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8> = MmapUniversal<u8>,
-> {
+    S: UniversalRead<u8>,
+{
     pub dim: usize,
     pub num_vectors: usize,
     /// Byte-addressable vector data storage, providing read access via [`UniversalRead<u8>`].
     storage: S,
-    /// Context for io_uring-based async IO
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    uring_reader: Option<Mutex<UringReader<T>>>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
+    _phantom: PhantomData<T>,
 }
 
 impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S> {
@@ -52,7 +47,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
-        with_async_io: bool,
         populate: bool,
     ) -> OperationResult<Self> {
         // Allocate/open vectors file
@@ -92,27 +86,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
-        let uring_reader = if with_async_io {
-            // Keep file handle open for async IO
-            let vectors_file = File::open(vectors_path)?;
-            let raw_size = dim * size_of::<T>();
-            Some(UringReader::new(vectors_file, raw_size, HEADER_SIZE)?)
-        } else {
-            None
-        };
-
-        Ok(ImmutableDenseVectors {
+        Ok(Self {
             dim,
             num_vectors,
             storage,
-            uring_reader: uring_reader.map(Mutex::new),
             deleted,
             deleted_count,
+            _phantom: PhantomData,
         })
-    }
-
-    pub fn has_async_reader(&self) -> bool {
-        self.uring_reader.is_some()
     }
 
     pub fn flusher(&self) -> MmapFlusher {
@@ -214,41 +195,30 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         &self.deleted
     }
 
-    fn process_points_simple(
-        &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(usize, PointOffsetType, &[T]),
-    ) {
-        for (idx, point) in points.enumerate() {
-            let vector = self.get_vector::<Random>(point);
-            callback(idx, point, &vector);
-        }
-    }
-
     /// Reads vectors for the given ids and calls the callback for each vector.
     /// Tries to utilize asynchronous IO if possible.
     /// In particular, uses io_uring on Linux and simple synchronous IO otherwise.
-    pub fn read_vectors_async(
+    pub fn read_vectors_async<P: AccessPattern>(
         &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        callback: impl FnMut(usize, PointOffsetType, &[T]),
+        points: &[PointOffsetType],
+        mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
-        match &self.uring_reader {
-            None => self.process_points_simple(points, callback),
+        let vector_size_bytes = size_of::<T>() * self.dim;
+        let ranges = points.iter().copied().map(|point| ElementsRange {
+            start: (HEADER_SIZE + vector_size_bytes * point as usize) as _,
+            length: vector_size_bytes as _,
+        });
 
-            #[cfg(target_os = "linux")]
-            Some(uring_reader) => {
-                // Use `UringReader` on Linux
-                let mut uring_guard = uring_reader.lock();
-                uring_guard.read_stream(points, callback)?;
-            }
+        self.storage.read_batch::<P>(ranges, |idx, bytes| {
+            let point = points.get(idx).copied().expect("point ID tracked");
 
-            #[cfg(not(target_os = "linux"))]
-            Some(_) => {
-                // Fallback to synchronous processing on non-Linux platforms
-                self.process_points_simple(points, callback);
-            }
-        }
+            #[expect(deprecated, reason = "legacy code refactor")]
+            let vector = unsafe { mmap::transmute_from_u8_to_slice(bytes) };
+
+            callback(idx, point, vector);
+            Ok(())
+        })?;
+
         Ok(())
     }
 

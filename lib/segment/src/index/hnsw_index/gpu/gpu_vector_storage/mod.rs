@@ -419,6 +419,21 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseMemmapHalf(vector_storage) => {
                 Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
             }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(vector_storage) => Self::new_dense_f32(
+                device,
+                vector_storage.as_ref(),
+                force_half_precision,
+                stopped,
+            ),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(vector_storage) => {
+                Self::new_dense(device, vector_storage.as_ref(), stopped)
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(vector_storage) => {
+                Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
+            }
             VectorStorageEnum::DenseAppendableMemmap(vector_storage) => Self::new_dense_f32(
                 device,
                 vector_storage.as_ref(),
