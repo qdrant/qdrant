@@ -73,6 +73,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         // We need to prevent them from being found by search request
         // That is why we need to pass additional filter for deleted points
         let do_update_filter = !self.deleted_points.is_empty();
+
         let wrapped_results = if do_update_filter {
             // If we are wrapping a segment with deleted points,
             // we can make this hack of replacing deleted_points of the wrapped_segment
