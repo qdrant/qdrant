@@ -10302,6 +10302,10 @@ pub struct SyncPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10315,6 +10319,10 @@ pub struct UpsertPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10328,6 +10336,10 @@ pub struct DeletePointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10341,6 +10353,10 @@ pub struct UpdateVectorsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10354,6 +10370,10 @@ pub struct DeleteVectorsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10367,6 +10387,10 @@ pub struct SetPayloadPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10380,6 +10404,10 @@ pub struct DeletePayloadPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10393,6 +10421,10 @@ pub struct ClearPayloadPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10408,6 +10440,10 @@ pub struct CreateFieldIndexCollectionInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10423,6 +10459,10 @@ pub struct DeleteFieldIndexCollectionInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10474,6 +10514,10 @@ pub struct UpdateBatchInternal {
     #[prost(message, repeated, tag = "1")]
     #[validate(nested)]
     pub operations: ::prost::alloc::vec::Vec<UpdateOperation>,
+    /// When present, overrides the `wait` parameter for all operations in the batch.
+    /// Propagated to individual operations if not already set.
+    #[prost(enumeration = "WaitUntil", optional, tag = "2")]
+    pub wait_override: ::core::option::Option<i32>,
 }
 /// Has to be backward compatible with `PointsOperationResponse`!
 #[derive(serde::Serialize)]
@@ -11049,6 +11093,42 @@ pub struct FacetResponseInternal {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
+}
+/// Controls how an update operation waits for completion.
+/// When present, fully overrides the `wait` boolean from the wrapped public message.
+/// When absent, the `wait` boolean is used (backward compatible with older nodes).
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WaitUntil {
+    /// Wait until the operation is written in WAL (equivalent to wait=false).
+    Wal = 0,
+    /// Wait until the operation is written in a segment (but not necessarily visible).
+    Segment = 1,
+    /// Wait until the operation is visible in search results (equivalent to wait=true).
+    Visible = 2,
+}
+impl WaitUntil {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            WaitUntil::Wal => "Wal",
+            WaitUntil::Segment => "Segment",
+            WaitUntil::Visible => "Visible",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Wal" => Some(Self::Wal),
+            "Segment" => Some(Self::Segment),
+            "Visible" => Some(Self::Visible),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod points_internal_client {

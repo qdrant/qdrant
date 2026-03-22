@@ -590,12 +590,18 @@ impl Inner {
             drop(update_lock.take());
         }
 
-        // If we are transferring the last batch, we need to wait for it to be applied.
+        // If we are transferring the last batch, we need to wait for it to be written to a segment.
         //  - Why can we not wait? Assuming that order of operations is still enforced by the WAL,
         //    we should end up in exactly the same state with or without waiting.
         //  - Why do we need to wait on the last batch? If we switch to ready state before
         //    updates are actually applied, we might create an inconsistency for read operations.
-        let wait = last_batch;
+        //  - Why Segment and not Visible? We only need the data to be written, not necessarily
+        //    visible through deferred indexing. Waiting for full visibility would be unnecessarily slow.
+        let wait = if last_batch {
+            WaitUntil::Segment
+        } else {
+            WaitUntil::Wal
+        };
 
         // Set initial progress on the first batch
         let is_first = transfer_from == self.started_at;
@@ -822,7 +828,7 @@ impl ShardOperation for Inner {
 async fn transfer_operations_batch(
     batch: &[(u64, OperationWithClockTag)],
     remote_shard: &RemoteShard,
-    wait: bool,
+    wait: WaitUntil,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
