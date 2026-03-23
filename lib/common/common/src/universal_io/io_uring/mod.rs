@@ -8,7 +8,6 @@ mod tests;
 
 use std::borrow::Cow;
 use std::io::{self, Read as _, Seek as _};
-use std::iter;
 use std::os::fd::AsRawFd as _;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -96,7 +95,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()> {
-        for record in self.read_iter::<P, Meta>(ranges) {
+        for record in self.read_iter::<P, Meta>(ranges)? {
             let (meta, items) = record?;
             callback(meta, &items)?;
         }
@@ -107,18 +106,14 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     fn read_iter<P: AccessPattern, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>> {
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
         let fd = self.fd();
         let direct_io = self.direct_io;
         let ranges = ranges
             .into_iter()
             .map(move |(meta, range)| (meta, fd, direct_io, range));
-        match IoUringReadIter::new(ranges) {
-            Ok(iter) => itertools::Either::Left(
-                iter.map(|result| result.map(|(meta, items)| (meta, Cow::Owned(items)))),
-            ),
-            Err(err) => itertools::Either::Right(iter::once(Err(err))),
-        }
+        Ok(IoUringReadIter::new(ranges)?
+            .map(|result| result.map(|(meta, items)| (meta, Cow::Owned(items)))))
     }
 
     fn read_multi<'a, P: AccessPattern, Meta: 'a>(
@@ -128,7 +123,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     where
         Self: 'a,
     {
-        for record in Self::read_multi_iter::<'a, P, Meta>(reads) {
+        for record in Self::read_multi_iter::<'a, P, Meta>(reads)? {
             let (meta, items) = record?;
             callback(meta, &items)?;
         }
@@ -138,17 +133,13 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn read_multi_iter<'a, P: AccessPattern, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>> {
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>> {
         let ranges = reads
             .into_iter()
             .map(|(meta, file, range)| (meta, file.fd(), file.direct_io, range));
 
-        match IoUringReadIter::new(ranges) {
-            Ok(iter) => itertools::Either::Left(
-                iter.map(|result| result.map(|(meta, items)| (meta, Cow::Owned(items)))),
-            ),
-            Err(err) => itertools::Either::Right(iter::once(Err(err))),
-        }
+        Ok(IoUringReadIter::new(ranges)?
+            .map(|result| result.map(|(meta, items)| (meta, Cow::Owned(items)))))
     }
 
     fn len(&self) -> Result<u64> {

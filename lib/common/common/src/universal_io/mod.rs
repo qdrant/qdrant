@@ -60,6 +60,15 @@ pub struct ReadRange {
     pub length: u64,
 }
 
+impl ReadRange {
+    pub fn one(byte_offset: u64) -> ReadRange {
+        ReadRange {
+            byte_offset,
+            length: 1,
+        }
+    }
+}
+
 pub type ByteOffset = u64;
 
 pub type FileIndex = usize;

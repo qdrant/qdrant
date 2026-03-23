@@ -69,7 +69,7 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     fn read_iter<P: AccessPattern, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>> {
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
         self.inner.read_iter::<P, Meta>(ranges)
     }
 
@@ -107,7 +107,7 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     #[inline]
     fn read_multi_iter<'a, P: AccessPattern, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>>
     where
         Self: 'a,
     {

@@ -82,7 +82,7 @@ fn test_io_uring_read_batch() -> Result<()> {
 
     // --- read_iter (iterator API) ---
     let mut iter_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    for record in file.read_iter::<Sequential, _>(ranges.iter().copied().enumerate()) {
+    for record in file.read_iter::<Sequential, _>(ranges.iter().copied().enumerate())? {
         let (idx, cow) = record?;
         iter_results.push((idx, cow.into_owned()));
     }
@@ -103,7 +103,7 @@ fn test_io_uring_read_batch() -> Result<()> {
     });
 
     let mut count = 0;
-    for record in file.read_iter::<Sequential, _>(many_ranges.enumerate()) {
+    for record in file.read_iter::<Sequential, _>(many_ranges.enumerate())? {
         let (idx, cow) = record?;
         assert_eq!(
             cow.as_ref(),
@@ -155,8 +155,8 @@ fn test_io_uring_concurrent_read_iter() -> Result<()> {
         length: CHUNK,
     });
 
-    let iter_a = file_a.read_iter::<Sequential, _>(ranges_a.enumerate());
-    let iter_b = file_b.read_iter::<Sequential, _>(ranges_b.enumerate());
+    let iter_a = file_a.read_iter::<Sequential, _>(ranges_a.enumerate())?;
+    let iter_b = file_b.read_iter::<Sequential, _>(ranges_b.enumerate())?;
 
     // Zip alternates next() calls between the two iterators on the same
     // thread-local io_uring ring. With in-flight operations left across
@@ -223,7 +223,7 @@ fn test_io_uring_read_multi_iter_basic() -> Result<()> {
     ];
 
     let mut results: Vec<(char, Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads) {
+    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
         let (idx, cow) = record?;
         results.push((idx, cow.into_owned()));
     }
@@ -278,7 +278,7 @@ fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
         .collect();
 
     let mut results: Vec<((usize, usize), Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads) {
+    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
         let (idx, cow) = record?;
         results.push((idx, cow.into_owned()));
     }
@@ -335,7 +335,7 @@ fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
 
     // Collect via iterator.
     let mut iter_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads) {
+    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
         let (idx, cow) = record?;
         iter_results.push((idx, cow.into_owned()));
     }

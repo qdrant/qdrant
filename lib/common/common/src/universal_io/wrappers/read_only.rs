@@ -57,7 +57,7 @@ where
     fn read_iter<'a, P: AccessPattern, Meta>(
         &'a self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>> {
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>> {
         self.0.read_iter::<P, Meta>(ranges)
     }
 
@@ -93,7 +93,7 @@ where
     #[inline]
     fn read_multi_iter<'a, P: AccessPattern, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>>
     where
         Self: 'a,
     {
