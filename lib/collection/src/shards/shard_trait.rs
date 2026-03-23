@@ -64,6 +64,26 @@ impl From<bool> for WaitUntil {
     }
 }
 
+impl From<api::grpc::qdrant::WaitUntil> for WaitUntil {
+    fn from(value: api::grpc::qdrant::WaitUntil) -> Self {
+        match value {
+            api::grpc::qdrant::WaitUntil::Wal => WaitUntil::Wal,
+            api::grpc::qdrant::WaitUntil::Segment => WaitUntil::Segment,
+            api::grpc::qdrant::WaitUntil::Visible => WaitUntil::Visible,
+        }
+    }
+}
+
+impl From<WaitUntil> for api::grpc::qdrant::WaitUntil {
+    fn from(value: WaitUntil) -> Self {
+        match value {
+            WaitUntil::Wal => api::grpc::qdrant::WaitUntil::Wal,
+            WaitUntil::Segment => api::grpc::qdrant::WaitUntil::Segment,
+            WaitUntil::Visible => api::grpc::qdrant::WaitUntil::Visible,
+        }
+    }
+}
+
 #[async_trait]
 pub trait ShardOperation {
     async fn update(

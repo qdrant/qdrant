@@ -137,7 +137,7 @@ impl ShardReplicaSet {
     pub async fn update_with_consistency(
         &self,
         operation: CollectionUpdateOperations,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         update_only_existing: bool,
@@ -170,7 +170,7 @@ impl ShardReplicaSet {
 
             self.update(
                 operation,
-                WaitUntil::from(wait),
+                wait,
                 timeout,
                 update_only_existing,
                 hw_measurement_acc,
@@ -712,7 +712,7 @@ impl ShardReplicaSet {
         &self,
         leader_peer: PeerId,
         operation: CollectionUpdateOperations,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,

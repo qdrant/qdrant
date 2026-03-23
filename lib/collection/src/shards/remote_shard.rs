@@ -67,7 +67,7 @@ use crate::shards::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
     internal_delete_index, internal_delete_payload, internal_delete_points,
     internal_delete_points_by_filter, internal_set_payload, internal_sync_points,
-    internal_upsert_points, try_scored_point_from_grpc,
+    internal_upsert_points, try_scored_point_from_grpc, wait_override_to_proto,
 };
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -237,7 +237,7 @@ impl RemoteShard {
     pub async fn forward_update_batch(
         &self,
         operations: Vec<OperationWithClockTag>,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
@@ -457,6 +457,7 @@ impl RemoteShard {
 
         let batch_request = &UpdateBatchInternal {
             operations: updates,
+            wait_override: wait_override_to_proto(wait),
         };
 
         let point_operation_response = self
@@ -486,7 +487,7 @@ impl RemoteShard {
     pub async fn forward_update(
         &self,
         operation: OperationWithClockTag,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
@@ -514,7 +515,7 @@ impl RemoteShard {
         shard_id: Option<ShardId>,
         collection_name: String,
         operation: OperationWithClockTag,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: Option<WriteOrdering>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -1040,7 +1041,7 @@ impl ShardOperation for RemoteShard {
             shard_id,
             self.collection_id.clone(),
             operation,
-            wait.needs_callback(),
+            wait,
             timeout,
             None,
             hw_measurement_acc,

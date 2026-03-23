@@ -31,6 +31,7 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_trait::WaitUntil;
 
 const DIM: u64 = 4;
 const PEER_ID: u64 = 1;
@@ -121,7 +122,7 @@ async fn fixture() -> Collection {
     collection
         .update_from_client(
             operation,
-            true,
+            WaitUntil::from(true),
             None,
             WriteOrdering::Weak,
             None,
