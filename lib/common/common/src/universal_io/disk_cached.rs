@@ -4,6 +4,7 @@ use std::sync::Arc;
 use fs_err as fs;
 
 use crate::disk_cache::{self, CachedSlice};
+use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     OpenOptions, Result, UniversalIoError, UniversalRead, UniversalReadFileOps, local_file_ops,
 };
@@ -52,11 +53,12 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
         Ok(CachedSlice::open(controller, path.as_ref())?)
     }
 
-    fn read<const SEQUENTIAL: bool>(
+    fn read<P: AccessPattern>(
         &self,
-        range: crate::universal_io::ElementsRange,
+        range: crate::universal_io::ReadRange,
     ) -> Result<Cow<'_, [T]>> {
-        let elem_start = usize::try_from(range.start).expect("range.start is within usize");
+        let elem_start = usize::try_from(range.byte_offset).expect("range.start is within usize")
+            / std::mem::size_of::<T>();
         let elem_length = usize::try_from(range.length).expect("range.length is within usize");
 
         let range = elem_start..elem_start + elem_length;
@@ -64,13 +66,13 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
         Ok(self.get_range(range)?)
     }
 
-    fn read_batch<const SEQUENTIAL: bool>(
+    fn read_batch<P: AccessPattern>(
         &self,
-        ranges: impl IntoIterator<Item = crate::universal_io::ElementsRange>,
+        ranges: impl IntoIterator<Item = crate::universal_io::ReadRange>,
         mut callback: impl FnMut(usize, &[T]) -> crate::universal_io::Result<()>,
     ) -> crate::universal_io::Result<()> {
         for (i, range) in ranges.into_iter().enumerate() {
-            let data = self.read::<SEQUENTIAL>(range)?;
+            let data = self.read::<P>(range)?;
             callback(i, &data)?;
         }
 
