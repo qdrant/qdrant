@@ -58,60 +58,90 @@ message SyncPointsInternal {
   SyncPoints sync_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message UpsertPointsInternal {
   UpsertPoints upsert_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message DeletePointsInternal {
   DeletePoints delete_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message UpdateVectorsInternal {
   UpdatePointVectors update_vectors = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message DeleteVectorsInternal {
   DeletePointVectors delete_vectors = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message SetPayloadPointsInternal {
   SetPayloadPoints set_payload_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message DeletePayloadPointsInternal {
   DeletePayloadPoints delete_payload_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message ClearPayloadPointsInternal {
   ClearPayloadPoints clear_payload_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message CreateFieldIndexCollectionInternal {
   CreateFieldIndexCollection create_field_index_collection = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message DeleteFieldIndexCollectionInternal {
   DeleteFieldIndexCollection delete_field_index_collection = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  // When present, overrides the `wait` parameter of the wrapped public message.
+  // When absent, falls back to `wait` (backward compatible with older nodes).
+  optional WaitUntil wait_override = 4;
 }
 
 message UpdateOperation {
@@ -132,6 +162,9 @@ message UpdateOperation {
 
 message UpdateBatchInternal {
   repeated UpdateOperation operations = 1;
+  // When present, overrides the `wait` parameter for all operations in the batch.
+  // Propagated to individual operations if not already set.
+  optional WaitUntil wait_override = 2;
 }
 
 // Has to be backward compatible with `PointsOperationResponse`!
@@ -159,6 +192,19 @@ message ClockTag {
   uint64 token = 4;
   bool force = 5;
 }
+
+// Controls how an update operation waits for completion.
+// When present, fully overrides the `wait` boolean from the wrapped public message.
+// When absent, the `wait` boolean is used (backward compatible with older nodes).
+enum WaitUntil {
+  // Wait until the operation is written in WAL (equivalent to wait=false).
+  Wal = 0;
+  // Wait until the operation is written in a segment (but not necessarily visible).
+  Segment = 1;
+  // Wait until the operation is visible in search results (equivalent to wait=true).
+  Visible = 2;
+}
+
 
 message SearchPointsInternal {
   SearchPoints search_points = 1;

@@ -32,7 +32,7 @@ impl Collection {
     pub async fn update_all_local(
         &self,
         operation: CollectionUpdateOperations,
-        wait: bool,
+        wait: WaitUntil,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         let shard_holder = self.shards_holder.clone().read_owned().await;
@@ -56,7 +56,7 @@ impl Collection {
                         // so it's *impossible* to assign any single clock tag to this operation.
                         shard.update_local(
                             OperationWithClockTag::from(operation.clone()),
-                            WaitUntil::from(wait),
+                            wait,
                             None,
                             hw_measurement_acc.clone(),
                             false,
@@ -94,7 +94,7 @@ impl Collection {
         &self,
         operation: OperationWithClockTag,
         shard_selection: ShardId,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
@@ -107,7 +107,7 @@ impl Collection {
             };
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, WaitUntil::from(wait), timeout, hw_measurement_acc.clone(), false).await,
+                WriteOrdering::Weak => shard.update_local(operation, wait, timeout, hw_measurement_acc.clone(), false).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(
@@ -143,7 +143,7 @@ impl Collection {
     pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         shard_keys_selection: Option<ShardKey>,
@@ -294,8 +294,15 @@ impl Collection {
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        self.update_from_client(operation, wait, timeout, ordering, None, hw_measurement_acc)
-            .await
+        self.update_from_client(
+            operation,
+            WaitUntil::from(wait),
+            timeout,
+            ordering,
+            None,
+            hw_measurement_acc,
+        )
+        .await
     }
 
     pub async fn scroll_by(

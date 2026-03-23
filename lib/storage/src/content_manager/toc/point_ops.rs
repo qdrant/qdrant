@@ -13,6 +13,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::*;
 use collection::operations::universal_query::collection_query::CollectionQueryRequest;
 use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
+use collection::shards::shard_trait::WaitUntil;
 use collection::{discovery, recommendations};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryStreamExt as _;
@@ -452,7 +453,7 @@ impl TableOfContent {
         collection: &Collection,
         shard_keys: Vec<ShardKey>,
         operation: CollectionUpdateOperations,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
@@ -490,7 +491,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         operation: OperationWithClockTag,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
