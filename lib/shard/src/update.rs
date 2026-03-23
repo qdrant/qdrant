@@ -22,7 +22,7 @@ use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointOperations, PointStructPersisted, UpdateMode,
 };
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
-use crate::segment_holder::SegmentHolder;
+use crate::segment_holder::{SegmentHolder, SegmentId};
 
 pub fn process_point_operation(
     segments: &SegmentHolder,
@@ -367,6 +367,52 @@ pub fn delete_points(
     Ok(total_deleted_points)
 }
 
+/// Deferred points corner case for filtered operations.
+///
+/// When a point has multiple copies across segments, the old non-deferred copy may match
+/// a filter while the newest deferred copy does not. In this case, the operation should NOT
+/// be applied to the point — the old copy will be cleaned up during optimization deduplication.
+///
+/// Given per-segment filter match results, this function returns the set of point IDs that
+/// should be excluded from the operation because a newer deferred version exists that wasn't
+/// matched by the filter.
+fn deferred_points_to_exclude_by_filter(
+    segments: &SegmentHolder,
+    per_segment_points: &AHashMap<SegmentId, Vec<PointIdType>>,
+) -> AHashSet<PointIdType> {
+    // Find the maximum version for each point across segments where the filter matched.
+    let mut max_versions: AHashMap<PointIdType, Option<SeqNumberType>> = Default::default();
+    for (segment_id, point_ids) in per_segment_points {
+        let segment = segments.get(*segment_id).unwrap().get().read();
+        for point_id in point_ids {
+            let version = segment.point_version(*point_id);
+            let entry = max_versions.entry(*point_id).or_insert(None);
+            *entry = std::cmp::max(*entry, version);
+        }
+    }
+
+    // Check if any deferred point has a newer version than the max matched version.
+    // Such a point was not matched by the filter (its deferred version has different data),
+    // so the operation should not be applied.
+    let mut to_exclude = AHashSet::new();
+    for (_segment_id, segment) in segments.iter() {
+        let segment = segment.get().read();
+        if !segment.has_deferred_points() {
+            continue;
+        }
+        for (point_id, max_version) in &max_versions {
+            if segment.has_point(*point_id)
+                && segment.point_version(*point_id) > *max_version
+                && segment.point_is_deferred(*point_id)
+            {
+                to_exclude.insert(*point_id);
+            }
+        }
+    }
+
+    to_exclude
+}
+
 /// Deletes points from all segments matching the given filter
 pub fn delete_points_by_filter(
     segments: &SegmentHolder,
@@ -400,40 +446,21 @@ pub fn delete_points_by_filter(
     // If the latest version of a point is deferred and does not match the filter,
     // we need to skip deletion for all copies and let deduplication during optimization delete old points.
     if has_deferred {
-        // Find the maximum version for each point across segments where the filter matched.
-        let mut max_versions: AHashMap<PointIdType, Option<SeqNumberType>> = Default::default();
-        for (segment_id, point_ids) in &points_to_delete {
-            let segment = segments.get(*segment_id).unwrap().get().read();
-            for point_id in point_ids {
-                let version = segment.point_version(*point_id);
-                let entry = max_versions.entry(*point_id).or_insert(None);
-                *entry = std::cmp::max(*entry, version);
-            }
-        }
+        let points_to_keep = deferred_points_to_exclude_by_filter(segments, &points_to_delete);
 
-        // Check the corner case: if there is a deferred version of a point which has a newer
-        // version but doesn't match the filter, we should not delete the point from any segment.
-        // The old filtered copies will be cleaned up during optimization deduplication.
-        //
-        // While iterating segments, also collect which matched points each segment has,
-        // so we can expand deletions to old copies in segments where the filter didn't match.
-        let mut points_to_keep: AHashSet<PointIdType> = AHashSet::new();
+        // Expand per-segment lists to include all segments that have each matched point,
+        // so that ALL copies get deleted (not just the segment where the filter matched).
+        let all_matched_points: AHashSet<PointIdType> = points_to_delete
+            .values()
+            .flat_map(|v| v.iter().copied())
+            .collect();
         for (segment_id, segment) in segments.iter() {
             let segment = segment.get().read();
-            let mut present = Vec::new();
-            for (point_id, max_version) in &max_versions {
-                if !segment.has_point(*point_id) {
-                    continue;
-                }
-                present.push(*point_id);
-                if segment.has_deferred_points()
-                    && segment.point_version(*point_id) > *max_version
-                    && segment.point_is_deferred(*point_id)
-                {
-                    points_to_keep.insert(*point_id);
-                }
-            }
-            // Store per-segment points for expansion below.
+            let present: Vec<_> = all_matched_points
+                .iter()
+                .copied()
+                .filter(|point_id| segment.has_point(*point_id))
+                .collect();
             points_to_delete.insert(segment_id, present);
         }
 
@@ -953,22 +980,41 @@ fn points_by_filter(
     filter: &Filter,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<PointIdType>> {
-    let mut affected_points: Vec<PointIdType> = Vec::new();
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
-    segments.for_each_segment(|s| {
-        let points = s.read_filtered(
-            None,
-            None,
-            Some(filter),
-            &is_stopped,
-            hw_counter,
-            // Read operation used for updates, so we must handle all points
-            DeferredBehavior::IncludeAll,
-        )?;
-        affected_points.extend_from_slice(points.as_slice());
-        Ok(true)
-    })?;
+    let mut has_deferred = false;
+    let per_segment_points: AHashMap<SegmentId, Vec<PointIdType>> = segments
+        .iter()
+        .map(|(segment_id, segment)| {
+            let segment = segment.get().read();
+            let point_ids = segment.read_filtered(
+                None,
+                None,
+                Some(filter),
+                &is_stopped,
+                hw_counter,
+                // Read operation used for updates, so we must handle all points
+                DeferredBehavior::IncludeAll,
+            )?;
+            has_deferred |= segment.has_deferred_points();
+            Ok((segment_id, point_ids))
+        })
+        .collect::<OperationResult<_>>()?;
+
+    let mut affected_points: Vec<PointIdType> = per_segment_points
+        .values()
+        .flat_map(|v| v.iter().copied())
+        .collect();
+
+    // Deferred points corner case: exclude points where the newest version is deferred
+    // and wasn’t matched by the filter (only an old stale copy matched).
+    if has_deferred {
+        let to_exclude = deferred_points_to_exclude_by_filter(segments, &per_segment_points);
+        if !to_exclude.is_empty() {
+            affected_points.retain(|id| !to_exclude.contains(id));
+        }
+    }
+
     Ok(affected_points)
 }
 
@@ -990,18 +1036,23 @@ mod test {
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use parking_lot::RwLock;
-    use segment::data_types::vectors::only_default_vector;
+    use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
     use segment::entry::ReadSegmentEntry as _;
     use segment::entry::entry_point::SegmentEntry as _;
     use segment::payload_json;
-    use segment::types::{Condition, FieldCondition, Filter, Match, MatchValue, ValueVariants};
+    use segment::types::{
+        Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, ValueVariants,
+    };
     use tempfile::Builder;
 
     use crate::fixtures::{
         build_segment_1, build_segment_2, empty_segment, empty_segment_with_deferred,
     };
     use crate::segment_holder::SegmentHolder;
-    use crate::update::delete_points_by_filter;
+    use crate::update::{
+        clear_payload_by_filter, delete_payload_by_filter, delete_points_by_filter,
+        delete_vectors_by_filter, overwrite_payload_by_filter, set_payload_by_filter,
+    };
 
     #[test]
     fn test_delete_by_filter_version_bump() {
@@ -1192,5 +1243,324 @@ mod test {
             non_app.has_point(1.into()),
             "Old copy must be kept (deferred version is newer and does not match filter)"
         );
+    }
+
+    // --- set_payload_by_filter deferred tests ---
+
+    /// Set payload by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Amsterdam (matches deferred copy)
+    ///
+    /// The deferred point (newest) matches the filter, so the operation should be applied.
+    #[test]
+    fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+
+        let filter = city_filter("Amsterdam");
+        let payload: segment::types::Payload = payload_json! {"color": "red"};
+        let updated =
+            set_payload_by_filter(&holder, 10, &payload, &filter, &None, &hw_counter).unwrap();
+
+        assert!(updated > 0, "Should have updated at least one point");
+    }
+
+    /// Set payload by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Berlin (matches old copy only)
+    ///
+    /// The deferred version does NOT match, so the operation must be skipped.
+    #[test]
+    fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        let sid_non_app = holder.add_new(non_appendable);
+        let sid_app = holder.add_new(appendable);
+
+        let filter = city_filter("Berlin");
+        let payload: segment::types::Payload = payload_json! {"color": "red"};
+        let updated =
+            set_payload_by_filter(&holder, 10, &payload, &filter, &None, &hw_counter).unwrap();
+
+        assert_eq!(
+            updated, 0,
+            "Operation should be skipped (deferred version does not match filter)"
+        );
+
+        let non_app = holder.get(sid_non_app).unwrap().get();
+        let non_app = non_app.read();
+        let app = holder.get(sid_app).unwrap().get();
+        let app = app.read();
+
+        assert!(non_app.has_point(1.into()), "Old copy must be kept");
+        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+    }
+
+    // --- delete_payload_by_filter deferred tests ---
+
+    /// Delete payload by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Amsterdam (matches deferred copy)
+    ///
+    /// The deferred point (newest) matches, so the payload key should be deleted.
+    #[test]
+    fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+
+        let filter = city_filter("Amsterdam");
+        let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
+        let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, &hw_counter).unwrap();
+
+        assert!(updated > 0, "Should have updated at least one point");
+    }
+
+    /// Delete payload by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Berlin (matches old copy only)
+    ///
+    /// The deferred version does NOT match, so the operation must be skipped.
+    #[test]
+    fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        let sid_non_app = holder.add_new(non_appendable);
+        let sid_app = holder.add_new(appendable);
+
+        let filter = city_filter("Berlin");
+        let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
+        let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, &hw_counter).unwrap();
+
+        assert_eq!(
+            updated, 0,
+            "Operation should be skipped (deferred version does not match filter)"
+        );
+
+        let non_app = holder.get(sid_non_app).unwrap().get();
+        let non_app = non_app.read();
+        let app = holder.get(sid_app).unwrap().get();
+        let app = app.read();
+
+        assert!(non_app.has_point(1.into()), "Old copy must be kept");
+        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+    }
+
+    // --- clear_payload_by_filter deferred tests ---
+
+    /// Clear payload by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Amsterdam (matches deferred copy)
+    ///
+    /// The deferred point (newest) matches, so the payload should be cleared.
+    #[test]
+    fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+
+        let filter = city_filter("Amsterdam");
+        let updated = clear_payload_by_filter(&holder, 10, &filter, &hw_counter).unwrap();
+
+        assert!(updated > 0, "Should have updated at least one point");
+    }
+
+    /// Clear payload by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Berlin (matches old copy only)
+    ///
+    /// The deferred version does NOT match, so the operation must be skipped.
+    #[test]
+    fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        let sid_non_app = holder.add_new(non_appendable);
+        let sid_app = holder.add_new(appendable);
+
+        let filter = city_filter("Berlin");
+        let updated = clear_payload_by_filter(&holder, 10, &filter, &hw_counter).unwrap();
+
+        assert_eq!(
+            updated, 0,
+            "Operation should be skipped (deferred version does not match filter)"
+        );
+
+        let non_app = holder.get(sid_non_app).unwrap().get();
+        let non_app = non_app.read();
+        let app = holder.get(sid_app).unwrap().get();
+        let app = app.read();
+
+        assert!(non_app.has_point(1.into()), "Old copy must be kept");
+        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+    }
+
+    // --- overwrite_payload_by_filter deferred tests ---
+
+    /// Overwrite payload by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Amsterdam (matches deferred copy)
+    ///
+    /// The deferred point (newest) matches, so the payload should be overwritten.
+    #[test]
+    fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+
+        let filter = city_filter("Amsterdam");
+        let payload: segment::types::Payload = payload_json! {"color": "red"};
+        let updated =
+            overwrite_payload_by_filter(&holder, 10, &payload, &filter, &hw_counter).unwrap();
+
+        assert!(updated > 0, "Should have updated at least one point");
+    }
+
+    /// Overwrite payload by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Berlin (matches old copy only)
+    ///
+    /// The deferred version does NOT match, so the operation must be skipped.
+    #[test]
+    fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        let sid_non_app = holder.add_new(non_appendable);
+        let sid_app = holder.add_new(appendable);
+
+        let filter = city_filter("Berlin");
+        let payload: segment::types::Payload = payload_json! {"color": "red"};
+        let updated =
+            overwrite_payload_by_filter(&holder, 10, &payload, &filter, &hw_counter).unwrap();
+
+        assert_eq!(
+            updated, 0,
+            "Operation should be skipped (deferred version does not match filter)"
+        );
+
+        let non_app = holder.get(sid_non_app).unwrap().get();
+        let non_app = non_app.read();
+        let app = holder.get(sid_app).unwrap().get();
+        let app = app.read();
+
+        assert!(non_app.has_point(1.into()), "Old copy must be kept");
+        assert!(app.has_point(1.into()), "Deferred copy must be kept");
+    }
+
+    // --- delete_vectors_by_filter deferred tests ---
+
+    /// Delete vectors by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Amsterdam (matches deferred copy)
+    ///
+    /// The deferred point (newest) matches, so the vector should be deleted.
+    #[test]
+    fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+
+        let filter = city_filter("Amsterdam");
+        let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
+        let deleted =
+            delete_vectors_by_filter(&holder, 10, &filter, &vector_names, &hw_counter).unwrap();
+
+        assert!(deleted > 0, "Should have deleted at least one vector");
+    }
+
+    /// Delete vectors by filter with deferred points:
+    ///   - Non-appendable: point 1 v1, city=Berlin
+    ///   - Deferred: point 1 v2, city=Amsterdam
+    ///   - Filter: city=Berlin (matches old copy only)
+    ///
+    /// The deferred version does NOT match, so the operation must be skipped.
+    #[test]
+    fn test_delete_vectors_by_filter_deferred_filter_matches_old_copy() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+        let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+        let mut holder = SegmentHolder::default();
+        let sid_non_app = holder.add_new(non_appendable);
+        let sid_app = holder.add_new(appendable);
+
+        let filter = city_filter("Berlin");
+        let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
+        let deleted =
+            delete_vectors_by_filter(&holder, 10, &filter, &vector_names, &hw_counter).unwrap();
+
+        assert_eq!(
+            deleted, 0,
+            "Operation should be skipped (deferred version does not match filter)"
+        );
+
+        let non_app = holder.get(sid_non_app).unwrap().get();
+        let non_app = non_app.read();
+        let app = holder.get(sid_app).unwrap().get();
+        let app = app.read();
+
+        assert!(non_app.has_point(1.into()), "Old copy must be kept");
+        assert!(app.has_point(1.into()), "Deferred copy must be kept");
     }
 }
