@@ -12,9 +12,7 @@ use api::grpc::qdrant::{
     ReadWholeRequest, ReadWholeResponse,
 };
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{
-    ElementsRange, FileIndex, OpenOptions, UniversalIoError, UniversalRead,
-};
+use common::universal_io::{FileIndex, OpenOptions, ReadRange, UniversalIoError, UniversalRead};
 use futures::Stream;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status, async_trait};
@@ -148,7 +146,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             let cow = dispatch_read(
                 &storage,
-                ElementsRange::new(offset, length),
+                ReadRange {
+                    byte_offset: offset,
+                    length,
+                },
                 open_options.need_sequential,
             )
             .map_err(io_error_to_status)?;
@@ -181,7 +182,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let path = self.resolve_path(&auth, &collection_name, &path)?;
         let open_options = OpenOptions::default();
         let sequential = open_options.need_sequential;
-        let range = ElementsRange::new(offset, length);
+        let range = ReadRange {
+            byte_offset: offset,
+            length,
+        };
         let (storage, range) = tokio::task::spawn_blocking(move || {
             let s = S::open(&path, open_options).map_err(io_error_to_status)?;
             let file_len = s.len().map_err(io_error_to_status)?;
@@ -194,7 +198,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let storage = Arc::new(storage);
 
         let stream = futures::stream::try_unfold(
-            (storage, range.start, range.length),
+            (storage, range.byte_offset, range.length),
             move |(storage, current_offset, remaining)| async move {
                 if remaining == 0 {
                     return Ok(None);
@@ -206,7 +210,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 let data = tokio::task::spawn_blocking(move || {
                     dispatch_read(
                         &*storage_for_read,
-                        ElementsRange::new(current_offset, chunk_size),
+                        ReadRange {
+                            byte_offset: current_offset,
+                            length: chunk_size,
+                        },
                         sequential,
                     )
                     .map(|cow| cow.into_owned())
@@ -267,7 +274,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let open_options = OpenOptions::default();
         let ranges = ranges
             .iter()
-            .map(|r| ElementsRange::new(r.offset, r.length))
+            .map(|r| ReadRange {
+                byte_offset: r.offset,
+                length: r.length,
+            })
             .collect::<Vec<_>>();
 
         let data = tokio::task::spawn_blocking(move || {
@@ -318,7 +328,13 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 unique_paths.push(resolved);
                 idx
             });
-            reads_.push((file_index, ElementsRange::new(entry.offset, entry.length)));
+            reads_.push((
+                file_index,
+                ReadRange {
+                    byte_offset: entry.offset,
+                    length: entry.length,
+                },
+            ));
         }
 
         let data = tokio::task::spawn_blocking(move || {

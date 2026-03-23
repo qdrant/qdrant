@@ -3,7 +3,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use collection::operations::verification::new_unchecked_verification_pass;
-use common::universal_io::{ElementsRange, FileIndex, UniversalIoError, UniversalRead};
+use common::generic_consts::{Random, Sequential};
+use common::universal_io::{FileIndex, ReadRange, UniversalIoError, UniversalRead};
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
 use tonic::Status;
@@ -133,19 +134,19 @@ fn canonicalize_existing_ancestor(path: &Path) -> std::io::Result<Option<PathBuf
 
 /// Validate a requested range against the file size using the same
 /// out-of-bounds semantics as `UniversalRead::read()`.
-pub fn validate_range(range: ElementsRange, data_length: u64) -> common::universal_io::Result<()> {
+pub fn validate_range(range: ReadRange, data_length: u64) -> common::universal_io::Result<()> {
     let end = range
-        .start
+        .byte_offset
         .checked_add(range.length)
         .ok_or(UniversalIoError::OutOfBounds {
-            start: range.start,
+            start: range.byte_offset,
             end: u64::MAX,
             elements: usize::try_from(data_length).unwrap_or(usize::MAX),
         })?;
 
     if end > data_length {
         return Err(UniversalIoError::OutOfBounds {
-            start: range.start,
+            start: range.byte_offset,
             end,
             elements: usize::try_from(data_length).unwrap_or(usize::MAX),
         });
@@ -188,40 +189,40 @@ pub fn io_error_to_status(e: UniversalIoError) -> Status {
 /// Needed because `UniversalRead::read` uses a const generic parameter.
 pub fn dispatch_read<S: UniversalRead<u8>>(
     storage: &S,
-    range: ElementsRange,
+    range: ReadRange,
     sequential: bool,
 ) -> common::universal_io::Result<std::borrow::Cow<'_, [u8]>> {
     if sequential {
-        storage.read::<true>(range)
+        storage.read::<Sequential>(range)
     } else {
-        storage.read::<false>(range)
+        storage.read::<Random>(range)
     }
 }
 
 /// Dispatch a read_batch call based on a runtime `sequential` flag.
 pub fn dispatch_read_batch<S: UniversalRead<u8>>(
     storage: &S,
-    ranges: impl IntoIterator<Item = ElementsRange>,
+    ranges: impl IntoIterator<Item = ReadRange>,
     sequential: bool,
     callback: impl FnMut(usize, &[u8]) -> common::universal_io::Result<()>,
 ) -> common::universal_io::Result<()> {
     if sequential {
-        storage.read_batch::<true>(ranges, callback)
+        storage.read_batch::<Sequential>(ranges, callback)
     } else {
-        storage.read_batch::<false>(ranges, callback)
+        storage.read_batch::<Random>(ranges, callback)
     }
 }
 
 /// Dispatch a read_multi call based on a runtime `sequential` flag.
 pub fn dispatch_read_multi<S: UniversalRead<u8>>(
     files: &[S],
-    reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
+    reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
     sequential: bool,
     callback: impl FnMut(usize, FileIndex, &[u8]) -> common::universal_io::Result<()>,
 ) -> common::universal_io::Result<()> {
     if sequential {
-        S::read_multi::<true>(files, reads, callback)
+        S::read_multi::<Sequential>(files, reads, callback)
     } else {
-        S::read_multi::<false>(files, reads, callback)
+        S::read_multi::<Random>(files, reads, callback)
     }
 }
