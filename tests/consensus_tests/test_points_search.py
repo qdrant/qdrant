@@ -1,5 +1,7 @@
 import pathlib
 
+import pytest
+
 from .utils import *
 from .assertions import assert_http_ok
 
@@ -7,19 +9,22 @@ N_PEERS = 5
 N_SHARDS = 4
 N_REPLICA = 2
 
-ASYNC_SCORER_ENV = {"QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORER": "true"}
 
+@pytest.mark.parametrize("async_scorer", [False, True], ids=["sync_scorer", "async_scorer"])
+def test_points_search(tmp_path: pathlib.Path, async_scorer: bool):
+    extra_env = {}
+    if async_scorer:
+        extra_env["QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORER"] = "true"
 
-def test_points_search(tmp_path: pathlib.Path):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, N_PEERS)
 
     # Gathers REST API uris
     peer_api_uris = []
 
-    # Start bootstrap with async_scorer enabled to exercise io_uring path on Linux
+    # Start bootstrap
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(
-        peer_dirs[0], "peer_0_0.log", extra_env=ASYNC_SCORER_ENV)
+        peer_dirs[0], "peer_0_0.log", extra_env=extra_env)
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
@@ -28,7 +33,7 @@ def test_points_search(tmp_path: pathlib.Path):
     # Start other peers
     for i in range(1, len(peer_dirs)):
         peer_api_uris.append(start_peer(
-            peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, extra_env=ASYNC_SCORER_ENV))
+            peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, extra_env=extra_env))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader)
