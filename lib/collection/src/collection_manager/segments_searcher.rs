@@ -799,22 +799,23 @@ mod tests {
 
         match &*vector_index_borrow {
             VectorIndexEnum::Plain(plain_index) => {
-                let res_1 = plain_index.is_small_enough_for_unindexed_search(25, None, &hw_counter);
+                let res_1 = plain_index
+                    .is_small_enough_for_unindexed_search(25, None, &hw_counter)
+                    .unwrap();
                 assert!(!res_1);
 
-                let res_2 =
-                    plain_index.is_small_enough_for_unindexed_search(225, None, &hw_counter);
+                let res_2 = plain_index
+                    .is_small_enough_for_unindexed_search(225, None, &hw_counter)
+                    .unwrap();
                 assert!(res_2);
 
                 let ids: AHashSet<_> = vec![1, 2].into_iter().map(PointIdType::from).collect();
 
                 let ids_filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 
-                let res_3 = plain_index.is_small_enough_for_unindexed_search(
-                    25,
-                    Some(&ids_filter),
-                    &hw_counter,
-                );
+                let res_3 = plain_index
+                    .is_small_enough_for_unindexed_search(25, Some(&ids_filter), &hw_counter)
+                    .unwrap();
                 assert!(res_3);
             }
             _ => panic!("Expected plain index"),

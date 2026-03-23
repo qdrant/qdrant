@@ -141,14 +141,14 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         _query: &Filter,
         _hw_counter: &HardwareCounterCell, // No measurements needed here.
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         let available_points = self.id_tracker.borrow().available_point_count();
-        CardinalityEstimation {
+        Ok(CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
             exp: available_points / 2,
             max: available_points,
-        }
+        })
     }
 
     /// Forward to non nested implementation.
@@ -157,7 +157,7 @@ impl PayloadIndex for PlainPayloadIndex {
         query: &Filter,
         _nested_path: &JsonPath,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         self.estimate_cardinality(query, hw_counter)
     }
 
@@ -167,15 +167,15 @@ impl PayloadIndex for PlainPayloadIndex {
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> Vec<PointOffsetType> {
-        let filter_context = self.filter_context(filter, hw_counter);
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        let filter_context = self.filter_context(filter, hw_counter)?;
         let id_tracker = self.id_tracker.borrow();
         let point_mappings = id_tracker.point_mappings();
         let all_points_iter = point_mappings.iter_internal_visible(deferred_internal_id);
-        all_points_iter
+        Ok(all_points_iter
             .stop_if(is_stopped)
             .filter(|id| filter_context.check(*id))
-            .collect()
+            .collect())
     }
 
     fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {
@@ -186,11 +186,11 @@ impl PayloadIndex for PlainPayloadIndex {
         &'a self,
         filter: &'a Filter,
         _: &HardwareCounterCell,
-    ) -> Box<dyn FilterContext + 'a> {
-        Box::new(PlainFilterContext {
+    ) -> OperationResult<Box<dyn FilterContext + 'a>> {
+        Ok(Box::new(PlainFilterContext {
             filter,
             condition_checker: self.condition_checker.clone(),
-        })
+        }))
     }
 
     fn payload_blocks(

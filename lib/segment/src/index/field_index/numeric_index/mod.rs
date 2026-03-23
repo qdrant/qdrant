@@ -956,7 +956,7 @@ where
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         if let Some(Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
         })) = &condition.r#match
@@ -966,21 +966,21 @@ where
                 let key = T::from_u128(uuid.as_u128());
 
                 let estimated_count = self.estimate_points(&key, hw_counter);
-                return Some(
+                return Ok(Some(
                     CardinalityEstimation::exact(estimated_count).with_primary_clause(
                         PrimaryCondition::Condition(Box::new(condition.clone())),
                     ),
-                );
+                ));
             }
         }
 
-        condition.range.as_ref().map(|range| {
+        Ok(condition.range.as_ref().map(|range| {
             let mut cardinality = self.range_cardinality(range);
             cardinality
                 .primary_clauses
                 .push(PrimaryCondition::Condition(Box::new(condition.clone())));
             cardinality
-        })
+        }))
     }
 
     fn payload_blocks(

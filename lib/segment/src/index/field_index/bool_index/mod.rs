@@ -212,7 +212,7 @@ impl PayloadFieldIndex for BoolIndex {
         &self,
         condition: &crate::types::FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<super::CardinalityEstimation> {
+    ) -> OperationResult<Option<super::CardinalityEstimation>> {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.estimate_cardinality(condition, hw_counter),
@@ -581,11 +581,13 @@ mod tests {
 
         let cardinality = index
             .estimate_cardinality(&match_bool(true), &hw_counter)
+            .unwrap()
             .unwrap();
         assert_eq!(cardinality.exp, 6);
 
         let cardinality = index
             .estimate_cardinality(&match_bool(false), &hw_counter)
+            .unwrap()
             .unwrap();
         assert_eq!(cardinality.exp, 6);
     }

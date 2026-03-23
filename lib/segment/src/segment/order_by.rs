@@ -36,7 +36,7 @@ impl Segment {
                 key: order_by.key.to_string(),
             })?;
 
-        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
+        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter)?;
 
         let start_from = order_by.start_from();
 
@@ -52,7 +52,7 @@ impl Segment {
                 hw_counter,
                 is_stopped,
                 effective_deferred_id,
-            )
+            )?
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has
                 numeric_index
@@ -129,7 +129,7 @@ impl Segment {
         let filtered_iter = match filter {
             None => Either::Left(directed_range_iter),
             Some(filter) => {
-                let filter_context = payload_index.filter_context(filter, hw_counter);
+                let filter_context = payload_index.filter_context(filter, hw_counter)?;
 
                 Either::Right(
                     directed_range_iter
