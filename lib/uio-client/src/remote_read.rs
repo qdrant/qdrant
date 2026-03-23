@@ -18,6 +18,18 @@ pub struct RemoteClient {
     inner: Arc<tokio::sync::Mutex<StorageReadClient<Channel>>>,
 }
 
+impl RemoteClient {
+    pub async fn connect(url: impl Into<String>) -> Result<Self> {
+        let client = StorageReadClient::connect(url.into())
+            .await
+            .map_err(|e| UniversalIoError::Io(std::io::Error::other(e)))?;
+
+        Ok(Self {
+            inner: Arc::new(tokio::sync::Mutex::new(client)),
+        })
+    }
+}
+
 /// Universal I/O read implementation backed by a remote Qdrant node over gRPC.
 ///
 /// Stateless design: every request carries `collection_name` + `path`.
