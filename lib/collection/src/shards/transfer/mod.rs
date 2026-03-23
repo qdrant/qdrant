@@ -1,3 +1,4 @@
+use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -167,7 +168,7 @@ impl ShardTransfer {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShardTransferRestart {
     pub shard_id: ShardId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -175,6 +176,35 @@ pub struct ShardTransferRestart {
     pub from: PeerId,
     pub to: PeerId,
     pub method: ShardTransferMethod,
+}
+
+impl fmt::Debug for ShardTransferRestart {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Delegate to ShardTransfer's Debug so log lines use the same format
+        ShardTransfer::from(self).fmt(f)
+    }
+}
+
+impl From<&ShardTransferRestart> for ShardTransfer {
+    fn from(restart: &ShardTransferRestart) -> Self {
+        let ShardTransferRestart {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            method,
+        } = *restart;
+
+        Self {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            sync: false,
+            method: Some(method),
+            filter: None,
+        }
+    }
 }
 
 impl ShardTransferRestart {
