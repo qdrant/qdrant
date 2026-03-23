@@ -7,6 +7,7 @@ use std::cmp::{max, min};
 
 use itertools::Itertools;
 
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::types::{Condition, Filter, MinShould};
 
@@ -212,9 +213,9 @@ fn estimate_condition<F>(
     estimator: &F,
     condition: &Condition,
     total: usize,
-) -> CardinalityEstimation
+) -> OperationResult<CardinalityEstimation>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     match condition {
         Condition::Filter(filter) => estimate_filter(estimator, filter, total),
@@ -222,9 +223,13 @@ where
     }
 }
 
-pub fn estimate_filter<F>(estimator: &F, filter: &Filter, total: usize) -> CardinalityEstimation
+pub fn estimate_filter<F>(
+    estimator: &F,
+    filter: &Filter,
+    total: usize,
+) -> OperationResult<CardinalityEstimation>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
 
@@ -232,7 +237,7 @@ where
         None => {}
         Some(conditions) => {
             if !conditions.is_empty() {
-                filter_estimations.push(estimate_must(estimator, conditions, total));
+                filter_estimations.push(estimate_must(estimator, conditions, total)?);
             }
         }
     }
@@ -240,7 +245,7 @@ where
         None => {}
         Some(conditions) => {
             if !conditions.is_empty() {
-                filter_estimations.push(estimate_should(estimator, conditions, total));
+                filter_estimations.push(estimate_should(estimator, conditions, total)?);
             }
         }
     }
@@ -251,31 +256,31 @@ where
             min_count,
         }) => filter_estimations.push(estimate_min_should(
             estimator, conditions, *min_count, total,
-        )),
+        )?),
     }
     match &filter.must_not {
         None => {}
         Some(conditions) => {
             if !conditions.is_empty() {
-                filter_estimations.push(estimate_must_not(estimator, conditions, total))
+                filter_estimations.push(estimate_must_not(estimator, conditions, total)?)
             }
         }
     }
 
-    combine_must_estimations(&filter_estimations, total)
+    Ok(combine_must_estimations(&filter_estimations, total))
 }
 
 fn estimate_should<F>(
     estimator: &F,
     conditions: &[Condition],
     total: usize,
-) -> CardinalityEstimation
+) -> OperationResult<CardinalityEstimation>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let estimate = |x| estimate_condition(estimator, x, total);
-    let should_estimations = conditions.iter().map(estimate).collect_vec();
-    combine_should_estimations(&should_estimations, total)
+    let should_estimations: OperationResult<Vec<_>> = conditions.iter().map(estimate).collect();
+    Ok(combine_should_estimations(&should_estimations?, total))
 }
 
 fn estimate_min_should<F>(
@@ -283,23 +288,30 @@ fn estimate_min_should<F>(
     conditions: &[Condition],
     min_count: usize,
     total: usize,
-) -> CardinalityEstimation
+) -> OperationResult<CardinalityEstimation>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let estimate = |x| estimate_condition(estimator, x, total);
-    let min_should_estimations = conditions.iter().map(estimate).collect_vec();
-    combine_min_should_estimations(&min_should_estimations, min_count, total)
+    let min_should_estimations: OperationResult<Vec<_>> = conditions.iter().map(estimate).collect();
+    Ok(combine_min_should_estimations(
+        &min_should_estimations?,
+        min_count,
+        total,
+    ))
 }
 
-fn estimate_must<F>(estimator: &F, conditions: &[Condition], total: usize) -> CardinalityEstimation
+fn estimate_must<F>(
+    estimator: &F,
+    conditions: &[Condition],
+    total: usize,
+) -> OperationResult<CardinalityEstimation>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let estimate = |x| estimate_condition(estimator, x, total);
-    let must_estimations = conditions.iter().map(estimate).collect_vec();
-
-    combine_must_estimations(&must_estimations, total)
+    let must_estimations: OperationResult<Vec<_>> = conditions.iter().map(estimate).collect();
+    Ok(combine_must_estimations(&must_estimations?, total))
 }
 
 pub fn invert_estimation(
@@ -318,13 +330,16 @@ fn estimate_must_not<F>(
     estimator: &F,
     conditions: &[Condition],
     total: usize,
-) -> CardinalityEstimation
+) -> OperationResult<CardinalityEstimation>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
-    let estimate = |x| invert_estimation(&estimate_condition(estimator, x, total), total);
-    let must_not_estimations = conditions.iter().map(estimate).collect_vec();
-    combine_must_estimations(&must_not_estimations, total)
+    let estimate = |x| -> OperationResult<_> {
+        let estimation = estimate_condition(estimator, x, total)?;
+        Ok(invert_estimation(&estimation, total))
+    };
+    let must_not_estimations: OperationResult<Vec<_>> = conditions.iter().map(estimate).collect();
+    Ok(combine_must_estimations(&must_not_estimations?, total))
 }
 
 #[cfg(test)]
@@ -350,8 +365,12 @@ mod tests {
         })
     }
 
-    fn test_estimator(condition: &Condition) -> CardinalityEstimation {
-        match condition {
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "estimate_filter expects an OperationResult"
+    )]
+    fn test_estimator(condition: &Condition) -> OperationResult<CardinalityEstimation> {
+        Ok(match condition {
             Condition::Filter(_) => panic!("unexpected Filter"),
             Condition::Nested(_) => panic!("unexpected Nested"),
             Condition::CustomIdChecker(_) => panic!("unexpected CustomIdChecker"),
@@ -411,13 +430,13 @@ mod tests {
                 exp: TOTAL / 2,
                 max: TOTAL,
             },
-        }
+        })
     }
 
     #[test]
     fn simple_query_estimation_test() {
         let query = Filter::new_must(test_condition("color"));
-        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
         assert_eq!(estimation.exp, 200);
         assert!(!estimation.primary_clauses.is_empty());
     }
@@ -435,7 +454,7 @@ mod tests {
             must_not: None,
         };
 
-        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
         assert_eq!(estimation.primary_clauses.len(), 1);
         match &estimation.primary_clauses[0] {
             PrimaryCondition::Condition(field) => assert_eq!(&field.key.to_string(), "size"),
@@ -455,7 +474,7 @@ mod tests {
             must_not: None,
         };
 
-        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
         assert_eq!(estimation.primary_clauses.len(), 2);
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
@@ -475,7 +494,7 @@ mod tests {
             must_not: None,
         };
 
-        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
         assert_eq!(estimation.primary_clauses.len(), 0);
         eprintln!("estimation = {estimation:#?}");
         assert!(estimation.max <= TOTAL);
@@ -489,7 +508,7 @@ mod tests {
             conditions: vec![test_condition("color"), test_condition("size")],
             min_count: 1,
         });
-        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
         assert_eq!(estimation.primary_clauses.len(), 2);
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
@@ -507,7 +526,7 @@ mod tests {
             min_count: 2,
         });
 
-        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
         assert_eq!(estimation.primary_clauses.len(), 3);
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
@@ -526,7 +545,7 @@ mod tests {
             min_count: 3,
         });
 
-        let estimation = estimate_filter(&test_estimator, &min_should_query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &min_should_query, TOTAL).unwrap();
 
         let must_query = Filter {
             should: None,
@@ -535,7 +554,7 @@ mod tests {
             must_not: None,
         };
 
-        let expected_estimation = estimate_filter(&test_estimator, &must_query, TOTAL);
+        let expected_estimation = estimate_filter(&test_estimator, &must_query, TOTAL).unwrap();
 
         assert_eq!(
             estimation.primary_clauses,
@@ -570,7 +589,7 @@ mod tests {
             })]),
         };
 
-        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
         assert_eq!(estimation.primary_clauses.len(), 2);
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
@@ -601,7 +620,7 @@ mod tests {
             })]),
         };
 
-        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
         assert_eq!(estimation.primary_clauses.len(), 2);
         estimation.primary_clauses.iter().for_each(|x| match x {
             PrimaryCondition::Condition(field) => {

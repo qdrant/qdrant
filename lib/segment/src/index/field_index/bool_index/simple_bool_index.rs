@@ -371,8 +371,8 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         &self,
         condition: &FieldCondition,
         _: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
@@ -388,7 +388,7 @@ impl PayloadFieldIndex for SimpleBoolIndex {
                 Some(estimation)
             }
             _ => None,
-        }
+        })
     }
 
     fn payload_blocks(

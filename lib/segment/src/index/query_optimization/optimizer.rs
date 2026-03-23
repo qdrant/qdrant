@@ -3,6 +3,7 @@ use std::cmp::Reverse;
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::{
     combine_min_should_estimations, combine_must_estimations, combine_should_estimations,
@@ -41,73 +42,67 @@ impl StructPayloadIndex {
         payload_provider: PayloadProvider,
         total: usize,
         hw_counter: &HardwareCounterCell,
-    ) -> (OptimizedFilter<'a>, CardinalityEstimation) {
+    ) -> OperationResult<(OptimizedFilter<'a>, CardinalityEstimation)> {
         let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
 
         let optimized_filter = OptimizedFilter {
-            should: filter.should.as_ref().and_then(|conditions| {
-                if !conditions.is_empty() {
-                    let (optimized_conditions, estimation) = self.optimize_should(
-                        conditions,
-                        payload_provider.clone(),
-                        total,
-                        hw_counter,
-                    );
-                    filter_estimations.push(estimation);
-                    Some(optimized_conditions)
-                } else {
-                    None
-                }
-            }),
-            min_should: filter.min_should.as_ref().and_then(
-                |MinShould {
-                     conditions,
-                     min_count,
-                 }| {
-                    if !conditions.is_empty() {
-                        let (optimized_conditions, estimation) = self.optimize_min_should(
-                            conditions,
-                            *min_count,
-                            payload_provider.clone(),
-                            total,
-                            hw_counter,
-                        );
-                        filter_estimations.push(estimation);
-                        Some(OptimizedMinShould {
-                            conditions: optimized_conditions,
-                            min_count: *min_count,
-                        })
-                    } else {
-                        None
-                    }
-                },
-            ),
-            must: filter.must.as_ref().and_then(|conditions| {
-                if !conditions.is_empty() {
-                    let (optimized_conditions, estimation) =
-                        self.optimize_must(conditions, payload_provider.clone(), total, hw_counter);
-                    filter_estimations.push(estimation);
-                    Some(optimized_conditions)
-                } else {
-                    None
-                }
-            }),
-            must_not: filter.must_not.as_ref().and_then(|conditions| {
-                if !conditions.is_empty() {
-                    let (optimized_conditions, estimation) =
-                        self.optimize_must_not(conditions, payload_provider, total, hw_counter);
-                    filter_estimations.push(estimation);
-                    Some(optimized_conditions)
-                } else {
-                    None
-                }
-            }),
+            should: if let Some(conditions) = filter.should.as_ref()
+                && !conditions.is_empty()
+            {
+                let (optimized_conditions, estimation) =
+                    self.optimize_should(conditions, payload_provider.clone(), total, hw_counter)?;
+                filter_estimations.push(estimation);
+                Some(optimized_conditions)
+            } else {
+                None
+            },
+            min_should: if let Some(MinShould {
+                conditions,
+                min_count,
+            }) = filter.min_should.as_ref()
+                && !conditions.is_empty()
+            {
+                let (optimized_conditions, estimation) = self.optimize_min_should(
+                    conditions,
+                    *min_count,
+                    payload_provider.clone(),
+                    total,
+                    hw_counter,
+                )?;
+                filter_estimations.push(estimation);
+                Some(OptimizedMinShould {
+                    conditions: optimized_conditions,
+                    min_count: *min_count,
+                })
+            } else {
+                None
+            },
+            must: if let Some(conditions) = filter.must.as_ref()
+                && !conditions.is_empty()
+            {
+                let (optimized_conditions, estimation) =
+                    self.optimize_must(conditions, payload_provider.clone(), total, hw_counter)?;
+                filter_estimations.push(estimation);
+                Some(optimized_conditions)
+            } else {
+                None
+            },
+            must_not: if let Some(conditions) = filter.must_not.as_ref()
+                && !conditions.is_empty()
+            {
+                let (optimized_conditions, estimation) =
+                    self.optimize_must_not(conditions, payload_provider, total, hw_counter)?;
+                filter_estimations.push(estimation);
+                Some(optimized_conditions)
+            } else {
+                None
+            },
         };
 
-        (
+        Ok((
             optimized_filter,
             combine_must_estimations(&filter_estimations, total),
-        )
+        ))
     }
 
     pub fn convert_conditions<'a>(
@@ -116,20 +111,20 @@ impl StructPayloadIndex {
         payload_provider: PayloadProvider,
         total: usize,
         hw_counter: &HardwareCounterCell,
-    ) -> Vec<(OptimizedCondition<'a>, CardinalityEstimation)> {
+    ) -> OperationResult<Vec<(OptimizedCondition<'a>, CardinalityEstimation)>> {
         conditions
             .iter()
             .map(|condition| match condition {
                 Condition::Filter(filter) => {
                     let (optimized_filter, estimation) =
-                        self.optimize_filter(filter, payload_provider.clone(), total, hw_counter);
-                    (OptimizedCondition::Filter(optimized_filter), estimation)
+                        self.optimize_filter(filter, payload_provider.clone(), total, hw_counter)?;
+                    Ok((OptimizedCondition::Filter(optimized_filter), estimation))
                 }
                 _ => {
-                    let estimation = self.condition_cardinality(condition, None, hw_counter);
+                    let estimation = self.condition_cardinality(condition, None, hw_counter)?;
                     let condition_checker =
                         self.condition_converter(condition, payload_provider.clone(), hw_counter);
-                    (OptimizedCondition::Checker(condition_checker), estimation)
+                    Ok((OptimizedCondition::Checker(condition_checker), estimation))
                 }
             })
             .collect()
@@ -141,14 +136,14 @@ impl StructPayloadIndex {
         payload_provider: PayloadProvider,
         total: usize,
         hw_counter: &HardwareCounterCell,
-    ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation) {
+    ) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)> {
         let mut converted =
-            self.convert_conditions(conditions, payload_provider, total, hw_counter);
+            self.convert_conditions(conditions, payload_provider, total, hw_counter)?;
         // More probable conditions first
         converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
-        (conditions, combine_should_estimations(&estimations, total))
+        Ok((conditions, combine_should_estimations(&estimations, total)))
     }
 
     fn optimize_min_should<'a>(
@@ -158,9 +153,9 @@ impl StructPayloadIndex {
         payload_provider: PayloadProvider,
         total: usize,
         hw_counter: &HardwareCounterCell,
-    ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation) {
+    ) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)> {
         let mut converted =
-            self.convert_conditions(conditions, payload_provider, total, hw_counter);
+            self.convert_conditions(conditions, payload_provider, total, hw_counter)?;
         // More probable conditions first if min_count < number of conditions
         if min_count < conditions.len() / 2 {
             converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
@@ -170,10 +165,10 @@ impl StructPayloadIndex {
         }
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
-        (
+        Ok((
             conditions,
             combine_min_should_estimations(&estimations, min_count, total),
-        )
+        ))
     }
 
     fn optimize_must<'a>(
@@ -182,14 +177,14 @@ impl StructPayloadIndex {
         payload_provider: PayloadProvider,
         total: usize,
         hw_counter: &HardwareCounterCell,
-    ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation) {
+    ) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)> {
         let mut converted =
-            self.convert_conditions(conditions, payload_provider, total, hw_counter);
+            self.convert_conditions(conditions, payload_provider, total, hw_counter)?;
         // Less probable conditions first
         converted.sort_by_key(|(_, estimation)| estimation.exp);
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
-        (conditions, combine_must_estimations(&estimations, total))
+        Ok((conditions, combine_must_estimations(&estimations, total)))
     }
 
     fn optimize_must_not<'a>(
@@ -198,14 +193,14 @@ impl StructPayloadIndex {
         payload_provider: PayloadProvider,
         total: usize,
         hw_counter: &HardwareCounterCell,
-    ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation) {
+    ) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)> {
         let mut converted =
-            self.convert_conditions(conditions, payload_provider, total, hw_counter);
+            self.convert_conditions(conditions, payload_provider, total, hw_counter)?;
         // More probable conditions first, as it will be reverted
         converted.sort_by_key(|(_, estimation)| estimation.exp);
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
-        (
+        Ok((
             conditions,
             combine_must_estimations(
                 &estimations
@@ -214,6 +209,6 @@ impl StructPayloadIndex {
                     .collect_vec(),
                 total,
             ),
-        )
+        ))
     }
 }

@@ -5,6 +5,7 @@ use common::iterator_ext::IteratorExt;
 use common::types::DeferredBehavior;
 
 use super::Segment;
+use crate::common::operation_error::OperationResult;
 use crate::entry::entry_point::NonAppendableSegmentEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::PayloadIndex;
@@ -22,10 +23,10 @@ impl Segment {
         filter: &Filter,
         limit: Option<usize>,
         hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         let query_cardinality = {
             let payload_index = self.payload_index.borrow();
-            payload_index.estimate_cardinality(filter, hw_counter)
+            payload_index.estimate_cardinality(filter, hw_counter)?
         };
 
         // ToDo: Add telemetry for this heuristics
@@ -57,7 +58,7 @@ impl Segment {
         // use `query cardinality` as a starting point.
         let exp_index_checks = query_cardinality.max;
 
-        exp_stream_checks > exp_index_checks
+        Ok(exp_stream_checks > exp_index_checks)
     }
 
     pub fn filtered_read_by_id_stream(
@@ -68,12 +69,13 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
 
         let payload_index = self.payload_index.borrow();
-        let filter_context = payload_index.filter_context(condition, hw_counter);
-        self.id_tracker
+        let filter_context = payload_index.filter_context(condition, hw_counter)?;
+        Ok(self
+            .id_tracker
             .borrow()
             .point_mappings()
             .iter_from_visible(offset, effective_deferred_id)
@@ -81,7 +83,7 @@ impl Segment {
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
             .take(limit.unwrap_or(usize::MAX))
-            .collect()
+            .collect())
     }
 
     pub(super) fn read_by_id_stream(
@@ -109,12 +111,12 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
 
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
-        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
+        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter)?;
         let point_mappings = id_tracker.point_mappings();
 
         let ids_iterator = payload_index
@@ -126,7 +128,7 @@ impl Segment {
                 hw_counter,
                 is_stopped,
                 effective_deferred_id,
-            )
+            )?
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {
@@ -145,6 +147,6 @@ impl Segment {
 
         page.sort_unstable();
 
-        page
+        Ok(page)
     }
 }

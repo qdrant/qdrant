@@ -106,6 +106,7 @@ fn range_filtering(c: &mut Criterion) {
             |filter| {
                 result_size += index
                     .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .unwrap()
                     .len();
                 query_count += 1;
             },
@@ -119,6 +120,7 @@ fn range_filtering(c: &mut Criterion) {
             |filter| {
                 result_size += index
                     .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .unwrap()
                     .len();
                 query_count += 1;
             },
@@ -147,6 +149,7 @@ fn range_filtering(c: &mut Criterion) {
             |filter| {
                 result_size += index
                     .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .unwrap()
                     .len();
                 query_count += 1;
             },
@@ -160,6 +163,7 @@ fn range_filtering(c: &mut Criterion) {
             |filter| {
                 result_size += index
                     .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .unwrap()
                     .len();
                 query_count += 1;
             },

@@ -46,7 +46,7 @@ impl Segment {
             .collect::<Vec<_>>();
 
         let index_ref = self.payload_index.borrow();
-        let scorer = index_ref.formula_scorer(formula, &prefetches_scores, hw_counter);
+        let scorer = index_ref.formula_scorer(formula, &prefetches_scores, hw_counter)?;
 
         // Perform rescoring
         let mut error = None;
