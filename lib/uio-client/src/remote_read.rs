@@ -32,7 +32,30 @@ impl<T: Copy + 'static> RemoteUniversalRead<T> {
         collection_name: impl Into<String>,
         path: impl Into<String>,
     ) -> Result<Self> {
-        todo!()
+        let collection_name = collection_name.into();
+        let path = path.into();
+
+        let mut client = StorageReadClient::connect(endpoint.into())
+            .await
+            .map_err(|e| UniversalIoError::Io(std::io::Error::other(e)))?;
+
+        let length = client
+            .file_length(qdrant::FileLengthRequest {
+                collection_name: collection_name.clone(),
+                path: path.clone(),
+            })
+            .await
+            .map_err(|e| UniversalIoError::Io(std::io::Error::other(e)))?
+            .into_inner()
+            .length;
+
+        Ok(Self {
+            client: Arc::new(tokio::sync::Mutex::new(client)),
+            collection_name,
+            path: path.into(),
+            length,
+            _phantom: std::marker::PhantomData,
+        })
     }
 
     /// Wrap an already-connected client.
@@ -133,5 +156,18 @@ impl<T: Copy + 'static> UniversalRead<T> for RemoteUniversalRead<T> {
 
 /// Reinterpret raw bytes as a `Vec<T>`.
 fn bytes_to_elements<T: Copy + 'static>(bytes: &[u8]) -> Vec<T> {
-    todo!()
+    let element_size = std::mem::size_of::<T>();
+    if element_size == 0 {
+        return Vec::new();
+    }
+    let count = bytes.len() / element_size;
+    let mut result = Vec::with_capacity(count);
+    // SAFETY: T is Copy and we're reading raw bytes that were serialized from T on the server.
+    unsafe {
+        let src = bytes.as_ptr() as *const T;
+        let dst = result.as_mut_ptr() as *mut T;
+        std::ptr::copy_nonoverlapping(src, dst, count);
+        result.set_len(count);
+    }
+    result
 }
