@@ -187,13 +187,21 @@ impl fmt::Debug for ShardTransferRestart {
 
 impl From<&ShardTransferRestart> for ShardTransfer {
     fn from(restart: &ShardTransferRestart) -> Self {
+        let ShardTransferRestart {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            method,
+        } = *restart;
+
         Self {
-            shard_id: restart.shard_id,
-            to_shard_id: restart.to_shard_id,
-            from: restart.from,
-            to: restart.to,
+            shard_id,
+            to_shard_id,
+            from,
+            to,
             sync: false,
-            method: Some(restart.method),
+            method: Some(method),
             filter: None,
         }
     }
