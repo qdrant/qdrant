@@ -231,6 +231,22 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
         f"Target should have 1 local shard, got {len(dst_info_after['local_shards'])}"
     )
 
+    # Verify deferred points were transferred: target should have hidden points.
+    # For snapshot, the target gets a raw segment copy — deferred state is preserved exactly.
+    # For stream_records, points are re-inserted on the target and may not be deferred.
+    target_visible = scroll_all(target_uri)
+    target_visible_count = len(target_visible)
+    if transfer_method == "snapshot":
+        assert target_visible_count == visible_count, (
+            f"Snapshot transfer should preserve deferred state: "
+            f"target visible={target_visible_count}, source visible={visible_count}"
+        )
+    else:
+        assert target_visible_count >= visible_count, (
+            f"Target should have at least as many visible points as source: "
+            f"target={target_visible_count}, source={visible_count}"
+        )
+
     # Trigger optimization with wait=true to ensure deferred points are resolved
     trigger_upsert_wait_true(source_uri, total_points)
 
