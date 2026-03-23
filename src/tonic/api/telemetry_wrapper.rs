@@ -1,3 +1,9 @@
+//! Thin wrappers around gRPC service traits that extract `collection_name`
+//! from every request and attach it as a [`CollectionName`] extension on the
+//! response. The telemetry Tower layer ([`TonicTelemetryService`]) later reads
+//! this extension to record per-collection metrics without the individual
+//! handlers having to know about telemetry at all.
+
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::shard_snapshots_server::ShardSnapshots;
 use api::grpc::qdrant::snapshots_server::Snapshots;
@@ -22,6 +28,7 @@ use tonic::{Request, Response, Status};
 
 use crate::common::telemetry_ops::requests_telemetry::CollectionName;
 
+/// Wraps a [`Points`] service, attaching `collection_name` to every response.
 pub struct PointsTelemetryWrapper<T> {
     inner: T,
 }
@@ -312,6 +319,8 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
     }
 }
 
+/// Wraps a [`Snapshots`] service, attaching `collection_name` to every
+/// collection-scoped response. Full-snapshot methods are passed through as-is.
 pub struct SnapshotsTelemetryWrapper<T> {
     inner: T,
 }
@@ -376,6 +385,7 @@ impl<T: Snapshots> Snapshots for SnapshotsTelemetryWrapper<T> {
     }
 }
 
+/// Wraps a [`ShardSnapshots`] service, attaching `collection_name` to every response.
 pub struct ShardSnapshotsTelemetryWrapper<T> {
     inner: T,
 }
