@@ -195,7 +195,7 @@ impl MutableIdTracker {
             .collect()
     }
 
-    fn set_internal_deleted(&self, internal_id: PointOffsetType) {
+    fn set_internal_version_deleted(&self, internal_id: PointOffsetType) {
         let version = DELETED_POINT_VERSION;
         if self.external_id(internal_id).is_some()
             && let Some(internal_version_cell) = self.internal_to_version.get(internal_id as usize)
@@ -262,7 +262,7 @@ impl IdTracker for MutableIdTracker {
             .lock()
             .push(MappingChange::Delete(external_id));
         if let Some(internal_id) = internal_id {
-            self.set_internal_deleted(internal_id);
+            self.set_internal_version_deleted(internal_id);
         }
         Ok(())
     }
@@ -275,7 +275,7 @@ impl IdTracker for MutableIdTracker {
                 .push(MappingChange::Delete(external_id));
         }
 
-        self.set_internal_deleted(internal_id);
+        self.set_internal_version_deleted(internal_id);
 
         Ok(())
     }

@@ -50,7 +50,7 @@ impl InMemoryIdTracker {
         id_tracker
     }
 
-    fn set_internal_deleted(&self, internal_id: PointOffsetType) {
+    fn set_internal_version_deleted(&self, internal_id: PointOffsetType) {
         let version = DELETED_POINT_VERSION;
         if self.external_id(internal_id).is_some()
             && let Some(internal_version_cell) = self.internal_to_version.get(internal_id as usize)
@@ -106,7 +106,7 @@ impl IdTracker for InMemoryIdTracker {
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
         if let Some(internal_id) = self.internal_id(external_id) {
-            self.set_internal_deleted(internal_id);
+            self.set_internal_version_deleted(internal_id);
         }
         self.mappings.drop(external_id);
         Ok(())
@@ -114,7 +114,7 @@ impl IdTracker for InMemoryIdTracker {
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
-        self.set_internal_deleted(internal_id);
+        self.set_internal_version_deleted(internal_id);
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
