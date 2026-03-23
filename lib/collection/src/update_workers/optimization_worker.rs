@@ -310,9 +310,7 @@ impl UpdateWorkers {
             log::debug!(
                 "Optimizer '{}' running on segments: {uuids}",
                 optimizer.name(),
-                uuids = segment_infos.iter().format_with(", ", |segment_info, f| {
-                    f(&format_args!("{}", segment_info.uuid))
-                })
+                uuids = segment_infos.iter().map(|s| s.uuid.to_string()).join(", "),
             );
 
             // Determine how many Resources we prefer for optimization task, acquire permit for it
