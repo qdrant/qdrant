@@ -34,7 +34,7 @@ const VECTORS_DIR_PATH: &str = "vectors";
 const OFFSETS_DIR_PATH: &str = "offsets";
 const DELETED_DIR_PATH: &str = "deleted";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct MultivectorMmapOffset {
     offset: u32,

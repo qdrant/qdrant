@@ -18,7 +18,18 @@ use crate::types::{MultiVectorComparator, MultiVectorConfig};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Deserialize,
+    Serialize,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
+#[repr(C)]
 pub struct MultivectorOffset {
     pub start: PointOffsetType,
     pub count: PointOffsetType,

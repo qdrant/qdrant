@@ -5,7 +5,6 @@ pub mod file_ops;
 #[cfg(target_os = "linux")]
 pub mod io_uring;
 pub mod local_file_ops;
-pub mod mmap;
 pub mod mmap_file;
 pub mod mmap_universal;
 pub mod read;
@@ -20,8 +19,9 @@ pub use self::error::UniversalIoError;
 pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::*;
-pub use self::mmap::*;
 pub use self::mmap_file::*;
+pub use self::mmap_universal as mmap;
+pub use self::mmap_universal::*;
 pub use self::read::UniversalRead;
 pub use self::read_only::*;
 pub use self::write::UniversalWrite;
