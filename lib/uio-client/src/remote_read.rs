@@ -13,6 +13,11 @@ use tonic::transport::Channel;
 use crate::StorageReadClient;
 use crate::generated::qdrant;
 
+#[derive(Clone)]
+pub struct RemoteClient {
+    inner: Arc<tokio::sync::Mutex<StorageReadClient<Channel>>>,
+}
+
 /// Universal I/O read implementation backed by a remote Qdrant node over gRPC.
 ///
 /// Stateless design: every request carries `collection_name` + `path`.
