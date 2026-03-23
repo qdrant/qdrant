@@ -42,6 +42,7 @@ pub struct TelemetryCollector {
     pub app_telemetry_collector: AppBuildTelemetryCollector,
     pub actix_telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
     pub tonic_telemetry_collector: Arc<Mutex<TonicTelemetryCollector>>,
+    pub grpc_telemetry: Arc<crate::telemetry::grpc::GrpcTelemetry>,
 }
 
 // Whole telemetry data
@@ -79,6 +80,7 @@ impl TelemetryCollector {
             tonic_telemetry_collector: Arc::new(Mutex::new(TonicTelemetryCollector {
                 workers: Vec::new(),
             })),
+            grpc_telemetry: Arc::new(crate::telemetry::grpc::GrpcTelemetry::new(1000, false)),
         }
     }
 

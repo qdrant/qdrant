@@ -645,10 +645,16 @@ impl MetricsProvider for RequestsTelemetry {
 impl MetricsProvider for WebApiTelemetry {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         let mut builder = OperationDurationMetricsBuilder::default();
-        for (endpoint, responses) in &self.responses {
-            let Some((method, endpoint)) = endpoint.split_once(' ') else {
+        for (request_key, responses) in &self.responses {
+            let Some((method, rest)) = request_key.split_once(' ') else {
                 continue;
             };
+            
+            let (endpoint, collection) = match rest.split_once('|') {
+                Some((path, coll)) => (path, coll),
+                None => (rest, "unknown"),
+            };
+            
             // Endpoint must be whitelisted
             if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
                 continue;
@@ -659,6 +665,7 @@ impl MetricsProvider for WebApiTelemetry {
                     &[
                         ("method", method),
                         ("endpoint", endpoint),
+                        ("collection", collection),
                         ("status", &status.to_string()),
                     ],
                     *status == REST_TIMINGS_FOR_STATUS,

@@ -9,6 +9,7 @@ mod snapshots;
 mod startup;
 mod tonic;
 mod tracing;
+pub mod telemetry;
 
 use std::io::Error;
 use std::sync::Arc;
@@ -410,7 +411,7 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
-    let (telemetry_collector, tonic_telemetry_collector, dispatcher_arc, health_checker);
+    let (telemetry_collector, tonic_telemetry_collector, grpc_telemetry, dispatcher_arc, health_checker);
     if is_distributed_deployment {
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
@@ -434,6 +435,7 @@ fn main() -> anyhow::Result<()> {
         let telemetry =
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
         tonic_telemetry_collector = telemetry.tonic_telemetry_collector.clone();
+        grpc_telemetry = telemetry.grpc_telemetry.clone();
 
         telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry));
 
@@ -521,6 +523,7 @@ fn main() -> anyhow::Result<()> {
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
 
         tonic_telemetry_collector = telemetry.tonic_telemetry_collector.clone();
+        grpc_telemetry = telemetry.grpc_telemetry.clone();
         telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry));
         health_checker = None;
     };
@@ -624,6 +627,7 @@ fn main() -> anyhow::Result<()> {
                     tonic::init(
                         dispatcher_arc,
                         tonic_telemetry_collector,
+                        grpc_telemetry,
                         settings,
                         grpc_port,
                         runtime_handle,

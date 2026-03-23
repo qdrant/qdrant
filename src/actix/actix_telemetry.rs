@@ -39,7 +39,14 @@ where
         let match_pattern = request
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
-        let request_key = format!("{} {}", request.method(), match_pattern);
+        
+        let path = request.path();
+        let mut collection = "unknown";
+        if path.starts_with("/collections/") {
+            collection = path.split('/').nth(2).unwrap_or("unknown");
+        }
+            
+        let request_key = format!("{} {}|{}", request.method(), match_pattern, collection);
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {

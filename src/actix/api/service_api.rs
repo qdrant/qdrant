@@ -124,12 +124,16 @@ async fn metrics(
             };
 
             let metrics_prefix = config.metrics_prefix.as_deref();
+            let mut metrics_string = MetricsData::new_from_telemetry(telemetry_data, metrics_prefix)
+                .format_metrics();
+            
+            let grpc_telemetry = telemetry_collector.lock().await.grpc_telemetry.clone();
+            metrics_string.push('\n');
+            metrics_string.push_str(&crate::telemetry::grpc::render_prometheus_grpc(&grpc_telemetry));
+
             HttpResponse::Ok()
                 .content_type(ContentType::plaintext())
-                .body(
-                    MetricsData::new_from_telemetry(telemetry_data, metrics_prefix)
-                        .format_metrics(),
-                )
+                .body(metrics_string)
         }
     }
 }

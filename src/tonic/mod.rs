@@ -100,6 +100,7 @@ async fn wait_stop_signal(for_what: &str) {
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+    grpc_telemetry: Arc<crate::telemetry::grpc::GrpcTelemetry>,
     settings: Settings,
     grpc_port: u16,
     runtime: Handle,
@@ -147,6 +148,7 @@ pub fn init(
         // The stack of middleware that our service will be wrapped in
         let middleware_layer = tower::ServiceBuilder::new()
             .layer(logging::LoggingMiddlewareLayer::new())
+            .layer(crate::telemetry::grpc::GrpcTelemetryLayer::new(grpc_telemetry.clone()))
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
             ))

@@ -148,6 +148,11 @@ console-subscriber = { version = "0.5.0", default-features = false, features = [
 ], optional = true }
 tracing-tracy = { version = "0.11.4", features = ["ondemand"], optional = true }
 actix-web-extras = "0.1.0"
+prost.workspace = true
+prost-derive = "0.14.3"
+sha2.workspace = true
+http-body = "0.4.6"
+bytes = "1.11"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.18.0", default-features = false }
