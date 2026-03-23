@@ -117,27 +117,36 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalI
         if self.len == 0 {
             return Ok(None);
         }
-        if let Some((seqnum, value)) = self.rq.get_unordered() {
-            return Ok(Some((seqnum as u64, value)));
+
+        if let Some((_seqnum, value)) = self.rq.get() {
+            let idx = self.index;
+            self.index += 1;
+            self.len -= 1;
+            return Ok(Some((idx, value)));
         }
 
-        let it = (0..self.len)
-            .map(|i| ReadRange {
-                byte_offset: self.byte_offset + i * size_of::<T>() as u64,
-                length: size_of::<T>() as u64,
-            })
-            .take(QUEUE_DEPTH);
+        // Buffer empty — fetch a new batch.
+        self.rq = ReorderingQueue::new();
+        let batch_size = self.len.min(QUEUE_DEPTH as u64);
+        let it = (0..batch_size).map(|i| ReadRange {
+            byte_offset: self.byte_offset + i * size_of::<T>() as u64,
+            length: size_of::<T>() as u64,
+        });
         self.source.read_batch::<Sequential, _>(it, |idx, data| {
-            self.rq.put(idx as usize, data[0]);
-            Result::<(), UniversalIoError>::Ok(())
+            self.rq.put(idx, data[0]);
+            Ok::<(), UniversalIoError>(())
         })?;
+        self.byte_offset += batch_size * size_of::<T>() as u64;
 
-        let (seqnum, value) = self
+        let (_seqnum, value) = self
             .rq
-            .get_unordered()
+            .get()
             .expect("read_batch should have filled the queue");
 
-        Ok(Some((seqnum as u64, value)))
+        let idx = self.index;
+        self.index += 1;
+        self.len -= 1;
+        Ok(Some((idx, value)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -145,10 +154,24 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalI
     }
 
     fn nth(&mut self, n: usize) -> Result<Option<(u64, T)>> {
-        let skip = (n as u64).min(self.len);
+        // Drain buffered items first.
+        let mut remaining = n;
+        while remaining > 0 {
+            if self.rq.get().is_some() {
+                remaining -= 1;
+                self.index += 1;
+                self.len -= 1;
+            } else {
+                break;
+            }
+        }
+
+        // Skip unfetched items.
+        let skip = (remaining as u64).min(self.len);
         self.byte_offset += skip * size_of::<T>() as u64;
         self.index += skip;
         self.len -= skip;
+
         self.next()
     }
 
@@ -157,16 +180,34 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalI
         E: From<UniversalIoError>,
         F: FnMut(B, (u64, T)) -> Result<B, E>,
     {
-        let it = (0..self.len).map(|i| ReadRange {
-            byte_offset: self.byte_offset + i * size_of::<T>() as u64,
-            length: size_of::<T>() as u64,
-        });
+        // Drain buffer first.
+        let mut acc = init;
+        while let Some((_seqnum, value)) = self.rq.get() {
+            acc = f(acc, (self.index, value))?;
+            self.index += 1;
+            self.len -= 1;
+        }
 
-        let mut acc = Some(init);
-        self.source.read_batch::<Sequential, E>(it, |idx, data| {
-            acc = Some(f(acc.take().unwrap(), (self.index + idx as u64, data[0]))?);
-            Ok(())
-        })?;
-        Ok(acc.unwrap())
+        // Read all remaining in a single batch.
+        if self.len > 0 {
+            let it = (0..self.len).map(|i| ReadRange {
+                byte_offset: self.byte_offset + i * size_of::<T>() as u64,
+                length: size_of::<T>() as u64,
+            });
+
+            let index = self.index;
+            let mut acc_opt = Some(acc);
+            self.source.read_batch::<Sequential, E>(it, |idx, data| {
+                acc_opt = Some(f(acc_opt.take().unwrap(), (index + idx as u64, data[0]))?);
+                Ok(())
+            })?;
+            acc = acc_opt.unwrap();
+
+            self.byte_offset += self.len * size_of::<T>() as u64;
+            self.index += self.len;
+            self.len = 0;
+        }
+
+        Ok(acc)
     }
 }
