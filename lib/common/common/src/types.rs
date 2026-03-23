@@ -34,11 +34,16 @@ impl PartialOrd for ScoredPointOffset {
 pub struct TelemetryDetail {
     pub level: DetailsLevel,
     pub histograms: bool,
+    pub per_collection: bool,
 }
 
 impl TelemetryDetail {
     pub fn new(level: DetailsLevel, histograms: bool) -> Self {
-        Self { level, histograms }
+        Self {
+            level,
+            histograms,
+            per_collection: false,
+        }
     }
 }
 
@@ -76,6 +81,7 @@ impl Default for TelemetryDetail {
         TelemetryDetail {
             level: DetailsLevel::Level0,
             histograms: false,
+            per_collection: false,
         }
     }
 }

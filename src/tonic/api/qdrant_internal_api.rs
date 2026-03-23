@@ -89,6 +89,7 @@ impl QdrantInternal for QdrantInternalService {
         let detail = TelemetryDetail {
             level: details_level,
             histograms: false,
+            per_collection: false,
         };
 
         let only_collections =

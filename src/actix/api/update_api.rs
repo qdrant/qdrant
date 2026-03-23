@@ -29,7 +29,7 @@ struct FieldPath {
     name: JsonPath,
 }
 
-#[put("/collections/{name}/points")]
+#[put("/collections/{collection_name}/points")]
 #[allow(clippy::too_many_arguments)]
 async fn upsert_points(
     dispatcher: web::Data<Dispatcher>,
@@ -44,7 +44,7 @@ async fn upsert_points(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -54,7 +54,7 @@ async fn upsert_points(
 
     let result_with_usage = do_upsert_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -77,7 +77,7 @@ async fn upsert_points(
     )
 }
 
-#[post("/collections/{name}/points/delete")]
+#[post("/collections/{collection_name}/points/delete")]
 async fn delete_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -90,7 +90,7 @@ async fn delete_points(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -98,7 +98,7 @@ async fn delete_points(
 
     let res = do_delete_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -110,7 +110,7 @@ async fn delete_points(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[put("/collections/{name}/points/vectors")]
+#[put("/collections/{collection_name}/points/vectors")]
 #[allow(clippy::too_many_arguments)]
 async fn update_vectors(
     dispatcher: web::Data<Dispatcher>,
@@ -125,7 +125,7 @@ async fn update_vectors(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -135,7 +135,7 @@ async fn update_vectors(
 
     let res = do_update_vectors(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -158,7 +158,7 @@ async fn update_vectors(
     )
 }
 
-#[post("/collections/{name}/points/vectors/delete")]
+#[post("/collections/{collection_name}/points/vectors/delete")]
 async fn delete_vectors(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -171,7 +171,7 @@ async fn delete_vectors(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -179,7 +179,7 @@ async fn delete_vectors(
 
     let response = do_delete_vectors(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -191,7 +191,7 @@ async fn delete_vectors(
     process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/payload")]
+#[post("/collections/{collection_name}/points/payload")]
 async fn set_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -204,7 +204,7 @@ async fn set_payload(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -212,7 +212,7 @@ async fn set_payload(
 
     let res = do_set_payload(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -224,7 +224,7 @@ async fn set_payload(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[put("/collections/{name}/points/payload")]
+#[put("/collections/{collection_name}/points/payload")]
 async fn overwrite_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -237,7 +237,7 @@ async fn overwrite_payload(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -245,7 +245,7 @@ async fn overwrite_payload(
 
     let res = do_overwrite_payload(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -257,7 +257,7 @@ async fn overwrite_payload(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/payload/delete")]
+#[post("/collections/{collection_name}/points/payload/delete")]
 async fn delete_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -270,7 +270,7 @@ async fn delete_payload(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -278,7 +278,7 @@ async fn delete_payload(
 
     let res = do_delete_payload(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -290,7 +290,7 @@ async fn delete_payload(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
-#[post("/collections/{name}/points/payload/clear")]
+#[post("/collections/{collection_name}/points/payload/clear")]
 async fn clear_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -303,7 +303,7 @@ async fn clear_payload(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -311,7 +311,7 @@ async fn clear_payload(
 
     let res = do_clear_payload(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -324,7 +324,7 @@ async fn clear_payload(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[post("/collections/{name}/points/batch")]
+#[post("/collections/{collection_name}/points/batch")]
 async fn update_batch(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -338,7 +338,7 @@ async fn update_batch(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
@@ -348,7 +348,7 @@ async fn update_batch(
 
     let result_with_usage = do_batch_update_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operations.operations,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -371,7 +371,7 @@ async fn update_batch(
     )
 }
 
-#[put("/collections/{name}/index")]
+#[put("/collections/{collection_name}/index")]
 async fn create_field_index(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -385,14 +385,14 @@ async fn create_field_index(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         Some(params.wait),
     );
 
     let response = do_create_index(
         dispatcher.into_inner(),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -407,7 +407,7 @@ async fn create_field_index(
     )
 }
 
-#[delete("/collections/{name}/index/{field_name}")]
+#[delete("/collections/{collection_name}/index/{field_name}")]
 async fn delete_field_index(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -419,7 +419,7 @@ async fn delete_field_index(
 
     let response = do_delete_index(
         dispatcher.into_inner(),
-        collection.into_inner().name,
+        collection.into_inner().collection_name,
         field.name.clone(),
         InternalUpdateParams::default(),
         params.into_inner(),
@@ -434,7 +434,7 @@ async fn delete_field_index(
 /// Accepts any staging operation and executes it on the collection.
 /// Only available when the `staging` feature is enabled.
 #[cfg(feature = "staging")]
-#[post("/collections/{name}/debug")]
+#[post("/collections/{collection_name}/debug")]
 async fn staging_operation(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -447,7 +447,7 @@ async fn staging_operation(
 
     let timing = Instant::now();
     let operation = operation.into_inner();
-    let collection_name = collection.into_inner().name;
+    let collection_name = collection.into_inner().collection_name;
 
     let collection_operation = CollectionUpdateOperations::from(operation);
 

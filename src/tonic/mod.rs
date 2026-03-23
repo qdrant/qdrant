@@ -48,6 +48,9 @@ use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use crate::tonic::api::qdrant_internal_api::QdrantInternalService;
 use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
+use crate::tonic::api::telemetry_wrapper::{
+    PointsTelemetryWrapper, ShardSnapshotsTelemetryWrapper, SnapshotsTelemetryWrapper,
+};
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -177,13 +180,13 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .add_service(
-                PointsServer::new(points_service)
+                PointsServer::new(PointsTelemetryWrapper::new(points_service))
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
             )
             .add_service(
-                SnapshotsServer::new(snapshot_service)
+                SnapshotsServer::new(SnapshotsTelemetryWrapper::new(snapshot_service))
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
@@ -226,7 +229,6 @@ pub fn init_internal(
     runtime
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
-
             let qdrant_service = QdrantService::default();
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
@@ -292,10 +294,12 @@ pub fn init_internal(
                         .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
-                    ShardSnapshotsServer::new(shard_snapshots_service)
-                        .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip)
-                        .max_decoding_message_size(usize::MAX),
+                    ShardSnapshotsServer::new(ShardSnapshotsTelemetryWrapper::new(
+                        shard_snapshots_service,
+                    ))
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
                     RaftServer::new(raft_service)
