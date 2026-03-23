@@ -44,10 +44,13 @@ use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
-use crate::tonic::api::points_api::{PointsService, PointsTelemetryWrapper};
+use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use crate::tonic::api::qdrant_internal_api::QdrantInternalService;
 use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
+use crate::tonic::api::telemetry_wrapper::{
+    PointsTelemetryWrapper, ShardSnapshotsTelemetryWrapper, SnapshotsTelemetryWrapper,
+};
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -183,7 +186,7 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .add_service(
-                SnapshotsServer::new(snapshot_service)
+                SnapshotsServer::new(SnapshotsTelemetryWrapper::new(snapshot_service))
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
@@ -291,10 +294,12 @@ pub fn init_internal(
                         .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
-                    ShardSnapshotsServer::new(shard_snapshots_service)
-                        .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip)
-                        .max_decoding_message_size(usize::MAX),
+                    ShardSnapshotsServer::new(ShardSnapshotsTelemetryWrapper::new(
+                        shard_snapshots_service,
+                    ))
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
                     RaftServer::new(raft_service)

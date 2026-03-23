@@ -59,7 +59,6 @@ impl PointsService {
     }
 }
 
-#[macros::attach_collection_name(PointsTelemetryWrapper)]
 #[tonic::async_trait]
 impl Points for PointsService {
     async fn upsert(
@@ -738,80 +737,5 @@ impl Points for PointsService {
         };
 
         Ok(Response::new(offsets_response))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use api::grpc::qdrant::points_server::Points;
-    use api::grpc::qdrant::*;
-    use tonic::{Request, Response, Status};
-
-    use super::PointsTelemetryWrapper;
-    use crate::common::telemetry_ops::requests_telemetry::CollectionName;
-
-    macro_rules! mock_and_test_points {
-        ($($method:ident($req:ident) -> $resp:ident),* $(,)?) => {
-            struct MockPoints;
-
-            #[tonic::async_trait]
-            #[allow(unused_variables)]
-            impl Points for MockPoints {
-                $(
-                    async fn $method(&self, r: Request<$req>) -> Result<Response<$resp>, Status> {
-                        Ok(Response::new(Default::default()))
-                    }
-                )*
-            }
-
-            $(
-                #[tokio::test]
-                async fn $method() {
-                    let w = PointsTelemetryWrapper::new(MockPoints);
-                    let r = w
-                        .$method(Request::new($req {
-                            collection_name: stringify!($method).into(),
-                            ..Default::default()
-                        }))
-                        .await
-                        .unwrap();
-                    assert_eq!(
-                        r.extensions().get::<CollectionName>().unwrap().0,
-                        stringify!($method),
-                    );
-                }
-            )*
-        };
-    }
-
-    mock_and_test_points! {
-        upsert(UpsertPoints) -> PointsOperationResponse,
-        delete(DeletePoints) -> PointsOperationResponse,
-        get(GetPoints) -> GetResponse,
-        update_vectors(UpdatePointVectors) -> PointsOperationResponse,
-        delete_vectors(DeletePointVectors) -> PointsOperationResponse,
-        set_payload(SetPayloadPoints) -> PointsOperationResponse,
-        overwrite_payload(SetPayloadPoints) -> PointsOperationResponse,
-        delete_payload(DeletePayloadPoints) -> PointsOperationResponse,
-        clear_payload(ClearPayloadPoints) -> PointsOperationResponse,
-        update_batch(UpdateBatchPoints) -> UpdateBatchResponse,
-        create_field_index(CreateFieldIndexCollection) -> PointsOperationResponse,
-        delete_field_index(DeleteFieldIndexCollection) -> PointsOperationResponse,
-        search(SearchPoints) -> SearchResponse,
-        search_batch(SearchBatchPoints) -> SearchBatchResponse,
-        search_groups(SearchPointGroups) -> SearchGroupsResponse,
-        scroll(ScrollPoints) -> ScrollResponse,
-        recommend(RecommendPoints) -> RecommendResponse,
-        recommend_batch(RecommendBatchPoints) -> RecommendBatchResponse,
-        recommend_groups(RecommendPointGroups) -> RecommendGroupsResponse,
-        discover(DiscoverPoints) -> DiscoverResponse,
-        discover_batch(DiscoverBatchPoints) -> DiscoverBatchResponse,
-        count(CountPoints) -> CountResponse,
-        query(QueryPoints) -> QueryResponse,
-        query_batch(QueryBatchPoints) -> QueryBatchResponse,
-        query_groups(QueryPointGroups) -> QueryGroupsResponse,
-        facet(FacetCounts) -> FacetResponse,
-        search_matrix_pairs(SearchMatrixPoints) -> SearchMatrixPairsResponse,
-        search_matrix_offsets(SearchMatrixPoints) -> SearchMatrixOffsetsResponse,
     }
 }
