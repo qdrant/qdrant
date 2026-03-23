@@ -623,6 +623,16 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .apply_state_update(|state| state.hard_state.commit = index)
     }
 
+    pub fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+        self.toc
+            .collections_snapshot()
+            .collections
+            .values()
+            .flat_map(|state| state.shards.values())
+            .flat_map(|shard_info| shard_info.replicas.keys())
+            .any(|&id| id == peer_id)
+    }
+
     pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
         self.persistent.write().insert_peer(peer_id, uri)
     }

@@ -4,11 +4,12 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use serde_json::Value;
 
 use super::field_index::FieldIndex;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
@@ -69,7 +70,7 @@ pub trait PayloadIndex {
         &self,
         query: &Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation;
+    ) -> OperationResult<CardinalityEstimation>;
 
     /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
     fn estimate_nested_cardinality(
@@ -77,7 +78,7 @@ pub trait PayloadIndex {
         query: &Filter,
         nested_path: &JsonPath,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation;
+    ) -> OperationResult<CardinalityEstimation>;
 
     /// Return list of all point ids, which satisfy filtering criteria
     ///
@@ -90,7 +91,7 @@ pub trait PayloadIndex {
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> Vec<PointOffsetType>;
+    ) -> OperationResult<Vec<PointOffsetType>>;
 
     /// Return number of points, indexed by this field
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
@@ -99,7 +100,7 @@ pub trait PayloadIndex {
         &'a self,
         filter: &'a Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn FilterContext + 'a>;
+    ) -> OperationResult<Box<dyn FilterContext + 'a>>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
@@ -107,7 +108,7 @@ pub trait PayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_>;
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_>;
 
     /// Overwrite payload for point_id. If payload already exists, replace it.
     fn overwrite_payload(

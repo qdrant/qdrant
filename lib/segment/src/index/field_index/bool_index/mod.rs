@@ -1,5 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use mutable_bool_index::MutableBoolIndex;
 #[cfg(feature = "rocksdb")]
 use simple_bool_index::SimpleBoolIndex;
@@ -7,7 +8,7 @@ use simple_bool_index::SimpleBoolIndex;
 use super::facet_index::FacetIndex;
 use super::map_index::IdIter;
 use super::{PayloadFieldIndex, ValueIndexer};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -200,7 +201,7 @@ impl PayloadFieldIndex for BoolIndex {
         &'a self,
         condition: &'a crate::types::FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.filter(condition, hw_counter),
@@ -212,7 +213,7 @@ impl PayloadFieldIndex for BoolIndex {
         &self,
         condition: &crate::types::FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<super::CardinalityEstimation> {
+    ) -> OperationResult<Option<super::CardinalityEstimation>> {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.estimate_cardinality(condition, hw_counter),
@@ -224,7 +225,8 @@ impl PayloadFieldIndex for BoolIndex {
         &self,
         threshold: usize,
         key: crate::types::PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<super::PayloadBlockCondition>> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = super::PayloadBlockCondition, Error = OperationError> + '_>
+    {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.payload_blocks(threshold, key),
@@ -305,6 +307,7 @@ mod tests {
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use fallible_iterator::FallibleIterator;
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json::json;
@@ -385,6 +388,7 @@ mod tests {
         let count = index
             .filter(&match_bool(match_on), &hw_counter)
             .unwrap()
+            .unwrap()
             .count();
 
         assert_eq!(count, expected_count);
@@ -451,11 +455,13 @@ mod tests {
         let point_offsets = new_index
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![1, 2, 3, 5, 6, 10]);
 
         let point_offsets = new_index
             .filter(&match_bool(true), &hw_counter)
+            .unwrap()
             .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![0, 2, 3, 4, 6, 11]);
@@ -488,6 +494,7 @@ mod tests {
         let point_offsets = index
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
 
@@ -496,10 +503,12 @@ mod tests {
         let point_offsets = index
             .filter(&match_bool(true), &hw_counter)
             .unwrap()
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
         let point_offsets = index
             .filter(&match_bool(false), &hw_counter)
+            .unwrap()
             .unwrap()
             .collect_vec();
         assert!(point_offsets.is_empty());
@@ -550,8 +559,8 @@ mod tests {
 
         let blocks = index
             .payload_blocks(0, JsonPath::new(FIELD_NAME))
-            .map(Result::unwrap)
-            .collect_vec();
+            .collect::<Vec<_>>()
+            .unwrap();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].cardinality, 6);
         assert_eq!(blocks[1].cardinality, 6);
@@ -581,11 +590,13 @@ mod tests {
 
         let cardinality = index
             .estimate_cardinality(&match_bool(true), &hw_counter)
+            .unwrap()
             .unwrap();
         assert_eq!(cardinality.exp, 6);
 
         let cardinality = index
             .estimate_cardinality(&match_bool(false), &hw_counter)
+            .unwrap()
             .unwrap();
         assert_eq!(cardinality.exp, 6);
     }

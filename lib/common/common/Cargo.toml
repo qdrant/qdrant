@@ -23,6 +23,7 @@ bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 delegate = { workspace = true }
+fallible-iterator = { workspace = true }
 fs-err = { workspace = true }
 fs_extra = { workspace = true }
 itertools = { workspace = true }

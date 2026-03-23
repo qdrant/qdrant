@@ -57,11 +57,11 @@ impl PlainVectorIndex {
         search_optimized_threshold_kb: usize,
         filter: Option<&Filter>,
         hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         let vector_storage = self.vector_storage.borrow();
         let available_vector_count = vector_storage.available_vector_count();
         if available_vector_count == 0 {
-            return true;
+            return Ok(true);
         }
 
         let vector_size_bytes =
@@ -70,12 +70,12 @@ impl PlainVectorIndex {
 
         if let Some(payload_filter) = filter {
             let payload_index = self.payload_index.borrow();
-            let cardinality = payload_index.estimate_cardinality(payload_filter, hw_counter);
+            let cardinality = payload_index.estimate_cardinality(payload_filter, hw_counter)?;
             let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
-            scan_size <= indexing_threshold_bytes
+            Ok(scan_size <= indexing_threshold_bytes)
         } else {
             let vector_storage_size = vector_size_bytes.saturating_mul(available_vector_count);
-            vector_storage_size <= indexing_threshold_bytes
+            Ok(vector_storage_size <= indexing_threshold_bytes)
         }
     }
 }
@@ -95,7 +95,7 @@ impl VectorIndex for PlainVectorIndex {
                 query_context.search_optimized_threshold_kb(),
                 filter,
                 &query_context.hardware_counter(),
-            )
+            )?
         {
             return Ok(vec![vec![]; query_vectors.len()]);
         }
@@ -143,7 +143,7 @@ impl VectorIndex for PlainVectorIndex {
                     &hw_counter,
                     &is_stopped,
                     deferred_internal_id,
-                );
+                )?;
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => batch_searcher.peek_top_all(&is_stopped, deferred_internal_id)?,

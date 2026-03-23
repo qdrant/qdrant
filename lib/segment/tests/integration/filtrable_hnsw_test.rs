@@ -7,7 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::{PointOffsetType, TelemetryDetail};
-use itertools::Itertools;
+use fallible_iterator::FallibleIterator;
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
@@ -118,8 +118,8 @@ fn _test_filterable_hnsw(
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
-        .map(Result::unwrap)
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     for block in blocks.iter() {
         assert!(
             block.condition.range.is_some(),
@@ -131,7 +131,9 @@ fn _test_filterable_hnsw(
     let px = payload_index_ptr.borrow();
     for block in &blocks {
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-        let points = px.query_points(&filter, &hw_counter, &stopped, None);
+        let points = px
+            .query_points(&filter, &hw_counter, &stopped, None)
+            .unwrap();
         for point in points {
             coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
         }
@@ -303,8 +305,8 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
-        .map(Result::unwrap)
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     for block in blocks.iter() {
         assert!(
             block.condition.range.is_some(),

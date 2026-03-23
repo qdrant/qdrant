@@ -63,7 +63,7 @@ impl StructPayloadIndex {
         parsed_formula: &'q ParsedFormula,
         prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
         hw_counter: &'q HardwareCounterCell,
-    ) -> FormulaScorer<'q>
+    ) -> OperationResult<FormulaScorer<'q>>
     where
         's: 'q,
     {
@@ -79,18 +79,18 @@ impl StructPayloadIndex {
         let payload_provider = PayloadProvider::new(self.payload.clone());
         let total = self.available_point_count();
         let condition_checkers = self
-            .convert_conditions(conditions, payload_provider, total, hw_counter)
+            .convert_conditions(conditions, payload_provider, total, hw_counter)?
             .into_iter()
             .map(|(checker, _estimation)| checker)
             .collect();
 
-        FormulaScorer {
+        Ok(FormulaScorer {
             formula: formula.clone(),
             prefetches_scores,
             payload_retrievers,
             condition_checkers,
             defaults: defaults.clone(),
-        }
+        })
     }
 }
 

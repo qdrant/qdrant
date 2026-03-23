@@ -166,6 +166,7 @@ fn cardinality_request(
             &hw_counter,
         )
         .unwrap()
+        .unwrap()
         .unique()
         .collect_vec();
 
@@ -283,8 +284,8 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
@@ -292,8 +293,8 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
@@ -301,8 +302,8 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
@@ -310,8 +311,8 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 }
@@ -351,8 +352,8 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
     let blocks = index
         .inner()
         .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+        .collect::<Vec<_>>()
+        .unwrap();
     assert!(!blocks.is_empty());
 }
 
@@ -607,7 +608,11 @@ fn test_cond<
     let condition = FieldCondition::new_range(JsonPath::new("unused"), ordered_range);
     let hw_acc = HwMeasurementAcc::new();
     let hw_counter = hw_acc.get_counter_cell();
-    let offsets = index.filter(&condition, &hw_counter).unwrap().collect_vec();
+    let offsets = index
+        .filter(&condition, &hw_counter)
+        .unwrap()
+        .unwrap()
+        .collect_vec();
     assert_eq!(offsets, result);
 }
 

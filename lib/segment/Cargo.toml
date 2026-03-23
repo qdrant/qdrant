@@ -45,6 +45,7 @@ pprof = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
 delegate = { workspace = true }
+fallible-iterator = { workspace = true }
 fs-err = { workspace = true }
 integer-encoding = { workspace = true }
 tempfile = { workspace = true }

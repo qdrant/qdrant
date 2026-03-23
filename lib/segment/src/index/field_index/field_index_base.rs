@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fallible_iterator::FallibleIterator;
 use serde_json::Value;
 
 use super::bool_index::BoolIndex;
@@ -20,7 +21,7 @@ use super::numeric_index::{
     NumericIndex, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder, StreamRange,
 };
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::MutableNullIndex;
@@ -56,15 +57,15 @@ pub trait PayloadFieldIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
 
     /// Return estimation of amount of points which satisfy given condition.
-    /// Returns `None` if the condition does not match the index type
+    /// Returns `Ok(None)` if the condition does not match the index type
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation>;
+    ) -> OperationResult<Option<CardinalityEstimation>>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
@@ -72,7 +73,7 @@ pub trait PayloadFieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_>;
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_>;
 }
 
 pub trait ValueIndexer {
@@ -249,7 +250,7 @@ impl FieldIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         self.get_payload_field_index().filter(condition, hw_counter)
     }
 
@@ -257,7 +258,7 @@ impl FieldIndex {
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         self.get_payload_field_index()
             .estimate_cardinality(condition, hw_counter)
     }
@@ -266,7 +267,7 @@ impl FieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         self.get_payload_field_index()
             .payload_blocks(threshold, key)
     }

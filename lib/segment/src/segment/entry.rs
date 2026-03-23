@@ -283,10 +283,10 @@ impl NonAppendableSegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
-        Ok(match filter {
-            None => self.read_by_id_stream(offset, limit, deferred_behavior),
+        match filter {
+            None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),
             Some(condition) => {
-                if self.should_pre_filter(condition, limit, hw_counter) {
+                if self.should_pre_filter(condition, limit, hw_counter)? {
                     self.filtered_read_by_index(
                         offset,
                         limit,
@@ -306,7 +306,7 @@ impl NonAppendableSegmentEntry for Segment {
                     )
                 }
             }
-        })
+        }
     }
 
     fn read_ordered_filtered<'a>(
@@ -328,7 +328,7 @@ impl NonAppendableSegmentEntry for Segment {
                 deferred_behavior,
             ),
             Some(filter) => {
-                if self.should_pre_filter(filter, limit, hw_counter) {
+                if self.should_pre_filter(filter, limit, hw_counter)? {
                     self.filtered_read_by_index_ordered(
                         order_by,
                         limit,
@@ -358,16 +358,16 @@ impl NonAppendableSegmentEntry for Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
-        Ok(match filter {
-            None => self.read_by_random_id(limit),
+        match filter {
+            None => Ok(self.read_by_random_id(limit)),
             Some(condition) => {
-                if self.should_pre_filter(condition, Some(limit), hw_counter) {
+                if self.should_pre_filter(condition, Some(limit), hw_counter)? {
                     self.filtered_read_by_index_shuffled(limit, condition, is_stopped, hw_counter)
                 } else {
                     self.filtered_read_by_random_stream(limit, condition, is_stopped, hw_counter)
                 }
             }
-        })
+        }
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
@@ -425,7 +425,7 @@ impl NonAppendableSegmentEntry for Segment {
             }
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
-                let cardinality = payload_index.estimate_cardinality(filter, hw_counter);
+                let cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
 
                 let total_points = self.id_tracker.borrow().available_point_count();
                 let available_points = self.available_point_count_without_deferred();

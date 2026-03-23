@@ -222,6 +222,7 @@ data-encoding = "2.10.0"
 delegate = "0.13.5"
 ecow = { version = "0.2.6", features = ["serde"] }
 env_logger = "0.11"
+fallible-iterator = "0.3.0"
 fnv = "1.0"
 fs4 = "0.13.1"
 fs-err = { version = "3.2.2", features = ["tokio"] }
@@ -287,7 +288,7 @@ sha2 = "0.10.9"
 serde_json = { version = "~1.0", features = ["preserve_order"] }
 strum = { version = "0.28.0", features = ["derive"] }
 tap = "1.0.1"
-tar = "0.4.41"
+tar = "0.4.45"
 tempfile = "3.27.0"
 tinyvec = { version = "1.11.0", features = ["alloc", "latest_stable_rust"] }
 tokio = { version = "1.49.0", features = ["full"] }

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
+use fallible_iterator::{FallibleIterator, IteratorExt as _};
 use fs_err as fs;
 use roaring::RoaringBitmap;
 
@@ -376,8 +377,8 @@ impl PayloadFieldIndex for MutableBoolIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
@@ -393,15 +394,15 @@ impl PayloadFieldIndex for MutableBoolIndex {
                 Some(Box::new(iter))
             }
             _ => None,
-        }
+        })
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
@@ -417,17 +418,17 @@ impl PayloadFieldIndex for MutableBoolIndex {
                 Some(estimation)
             }
             _ => None,
-        }
+        })
     }
 
     fn payload_blocks(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+    ) -> Box<dyn FallibleIterator<Item = PayloadBlockCondition, Error = OperationError> + '_> {
         let make_block = |count, value, key: PayloadKeyType| {
             if count > threshold {
-                Some(Ok(PayloadBlockCondition {
+                Some(PayloadBlockCondition {
                     condition: FieldCondition::new_match(
                         key,
                         Match::Value(MatchValue {
@@ -435,7 +436,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
                         }),
                     ),
                     cardinality: count,
-                }))
+                })
             } else {
                 None
             }
@@ -449,7 +450,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
         .into_iter()
         .flatten();
 
-        Box::new(iter)
+        Box::new(iter.map(Ok).transpose_into_fallible())
     }
 }
 
