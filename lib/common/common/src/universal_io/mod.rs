@@ -7,6 +7,7 @@ pub mod io_uring;
 pub mod local_file_ops;
 pub mod mmap;
 pub mod mmap_file;
+pub mod mmap_universal;
 pub mod read;
 pub mod write;
 
