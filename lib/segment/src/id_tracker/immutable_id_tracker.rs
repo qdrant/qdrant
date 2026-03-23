@@ -382,7 +382,10 @@ impl ImmutableIdTracker {
         base.join(MAPPINGS_FILE_NAME)
     }
 
-    fn set_internal_version_deleted(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn set_internal_version_deleted(
+        &mut self,
+        internal_id: PointOffsetType,
+    ) -> OperationResult<()> {
         let version = DELETED_POINT_VERSION;
         self.set_internal_version(internal_id, version)
     }
