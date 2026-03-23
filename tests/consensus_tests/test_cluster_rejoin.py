@@ -101,6 +101,7 @@ def test_rejoin_origin_from_wal(tmp_path: pathlib.Path):
 
     rejoin_cluster_test(tmp_path, start_cluster, overwrite_first_voter)
 
+
 def test_rejoin_origin_from_state(tmp_path: pathlib.Path):
     """
     This test checks that Qdrant persists origin peer ID (`first_voter` field in `raft_state.json`)
@@ -121,6 +122,7 @@ def test_rejoin_origin_from_state(tmp_path: pathlib.Path):
         assert state["first_voter"] == origin_peer_id
 
     rejoin_cluster_test(tmp_path, start_preconfigured_cluster, assert_first_voter)
+
 
 @pytest.mark.skip("this test simulates and asserts past, incorrect behavior")
 def test_rejoin_no_origin(tmp_path: pathlib.Path):
@@ -324,6 +326,7 @@ def rejoin_cluster_test(
     info = get_collection_cluster_info(new_peer_uri, collection)
     assert len(info["remote_shards"]) == expected_shards
 
+
 def start_preconfigured_cluster(tmp_path: pathlib.Path, peers: int = 3):
     assert_project_root()
 
@@ -408,6 +411,194 @@ def move_all_shards_from_peer(peer_uri: str, collection: str = "test_collection"
 
     return current_peer_id, other_peer_id
 
+
+def test_replace_peer_without_shards_same_uri(tmp_path: pathlib.Path):
+    """
+    A new peer can replace an existing peer that has no shards by reusing its URI.
+
+    This bootstraps a new peer into the cluster, kills it and wipes its local
+    data without removing it from consensus, then bootstraps another new peer
+    reusing the killed peer's URI. Because the killed peer has no shard
+    replicas, the cluster should accept the replacement.
+    """
+
+    assert_project_root()
+
+    # Start cluster with fixed ports so we can reuse them later
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000)
+
+    # Create collection with 1 shard and replication_factor=1 so data lives only on peer 0
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=1)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    upsert_random_points(peer_api_uris[0], 100)
+
+    # Add a 4th peer to the cluster
+    extra_peer_port = 10000 + N_PEERS * 100
+    extra_peer_dir = make_peer_folder(tmp_path, N_PEERS)
+    extra_peer_api_uri = start_peer(extra_peer_dir, "peer_extra.log", bootstrap_uri, port=extra_peer_port)
+    wait_for_peer_online(extra_peer_api_uri)
+    wait_peer_added(peer_api_uris[0], expected_size=N_PEERS + 1)
+
+    # Remember the peer ID of the extra peer
+    extra_peer_id = get_cluster_info(extra_peer_api_uri)['peer_id']
+
+    # Verify extra peer has no shards
+    collection_cluster_info = get_collection_cluster_info(extra_peer_api_uri, "test_collection")
+    assert len(collection_cluster_info["local_shards"]) == 0
+
+    # Kill the extra peer and wipe its storage (do NOT remove from consensus)
+    p = processes.pop()
+    p.kill()
+    shutil.rmtree(extra_peer_dir / 'storage')
+
+    # The old peer is still registered in consensus
+    cluster_info = get_cluster_info(peer_api_uris[0])
+    assert str(extra_peer_id) in cluster_info['peers']
+
+    # Bootstrap a new peer reusing the same URI and port
+    new_extra_peer_dir = make_peer_folder(tmp_path, N_PEERS + 1)
+    new_extra_peer_api_uri = start_peer(new_extra_peer_dir, "peer_extra_replaced.log", bootstrap_uri, port=extra_peer_port)
+
+    # The new peer should successfully join, replacing the old one
+    wait_for_peer_online(new_extra_peer_api_uri)
+    wait_peer_added(peer_api_uris[0], expected_size=N_PEERS + 1)
+
+    new_peer_id = get_cluster_info(new_extra_peer_api_uri)['peer_id']
+    assert new_peer_id != extra_peer_id
+
+    # Old peer should have been removed from consensus and replaced by the new one
+    cluster_info = get_cluster_info(peer_api_uris[0])
+    assert str(extra_peer_id) not in cluster_info['peers']
+    assert str(new_peer_id) in cluster_info['peers']
+
+
+def test_replace_running_peer_without_shards_same_uri(tmp_path: pathlib.Path):
+    """
+    A new peer can replace a still-running peer that has no shards by reusing
+    its URI.
+
+    This bootstraps a new peer into the cluster (which has no shards), keeps it
+    running, then bootstraps another new peer that announces the same p2p URI.
+    Because the old peer has no shard replicas, the cluster should accept the
+    replacement. The old peer, still running, should observe its own removal and
+    transition its consensus thread status to 'Stopped'.
+    """
+
+    assert_project_root()
+
+    # Start cluster with fixed ports
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000)
+
+    # Create collection with 1 shard and replication_factor=1 so data lives only on peer 0
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=1)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    upsert_random_points(peer_api_uris[0], 100)
+
+    # Add a 4th peer to the cluster
+    extra_peer_port = 10000 + N_PEERS * 100
+    extra_peer_dir = make_peer_folder(tmp_path, N_PEERS)
+    extra_peer_api_uri = start_peer(extra_peer_dir, "peer_extra.log", bootstrap_uri, port=extra_peer_port)
+    wait_for_peer_online(extra_peer_api_uri)
+    wait_peer_added(peer_api_uris[0], expected_size=N_PEERS + 1)
+
+    # Remember the peer ID and p2p URI of the extra peer
+    extra_peer_id = get_cluster_info(extra_peer_api_uri)['peer_id']
+    extra_peer_p2p_uri = get_uri(extra_peer_port)
+
+    # Verify extra peer has no shards
+    collection_cluster_info = get_collection_cluster_info(extra_peer_api_uri, "test_collection")
+    assert len(collection_cluster_info["local_shards"]) == 0
+
+    # Do not kill the extra peer — it stays running
+
+    # Bootstrap a new peer on different ports but announcing the same p2p URI
+    # as the still-running extra peer. We must construct the process manually
+    # because start_peer always derives the URI from the port.
+    new_peer_port = 10000 + (N_PEERS + 1) * 100
+    new_peer_p2p_port = new_peer_port + 0
+    busy_ports[new_peer_p2p_port] = True
+    new_peer_grpc_port = new_peer_port + 1
+    busy_ports[new_peer_grpc_port] = True
+    new_peer_http_port = new_peer_port + 2
+    busy_ports[new_peer_http_port] = True
+
+    new_peer_dir = make_peer_folder(tmp_path, N_PEERS + 1)
+    test_log_folder = init_pytest_log_folder()
+    log_file = open(f"{test_log_folder}/peer_extra_replaced.log", "w")
+
+    args = [
+        get_qdrant_exec(),
+        "--bootstrap", bootstrap_uri,
+        "--uri", extra_peer_p2p_uri,  # same URI as the old peer
+    ]
+    env = get_env(new_peer_p2p_port, new_peer_grpc_port, new_peer_http_port)
+    proc = Popen(args, env=env, cwd=new_peer_dir, stdout=log_file)
+    processes.append(PeerProcess(proc, new_peer_http_port, new_peer_grpc_port, new_peer_p2p_port))
+    new_extra_peer_api_uri = get_uri(new_peer_http_port)
+
+    # The old peer (still running) should observe its removal and stop consensus.
+    # We cannot wait for the new peer to be fully online because it announced
+    # the old peer's p2p URI and thus won't receive raft messages. Instead,
+    # wait for the old peer's consensus thread to transition to 'stopped'.
+    def old_peer_consensus_stopped():
+        try:
+            info = get_cluster_info(extra_peer_api_uri)
+            return info['consensus_thread_status']['consensus_thread_status'] == 'stopped'
+        except Exception:
+            return False
+
+    wait_for(old_peer_consensus_stopped)
+
+    # Old peer should have been removed from consensus
+    cluster_info = get_cluster_info(peer_api_uris[0])
+    assert str(extra_peer_id) not in cluster_info['peers']
+
+
+def test_reject_replace_peer_with_shards_same_uri(tmp_path: pathlib.Path):
+    """
+    A new peer cannot replace an existing peer that still has shards by reusing
+    its URI.
+
+    This creates a cluster and a collection with data on all peers, then
+    attempts to bootstrap a new peer reusing the URI of the last peer. Because
+    the last peer still has shard replicas, the cluster must reject it.
+    """
+
+    assert_project_root()
+
+    # Start cluster with fixed ports
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000)
+
+    # Create collection with enough shards and replication to ensure all peers have data
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    upsert_random_points(peer_api_uris[0], 100)
+
+    # Verify the last peer has shards
+    collection_cluster_info = get_collection_cluster_info(peer_api_uris[-1], "test_collection")
+    assert len(collection_cluster_info["local_shards"]) > 0
+
+    # Kill the last peer and wipe its storage (do NOT remove from consensus)
+    target_peer_id = get_cluster_info(peer_api_uris[-1])['peer_id']
+    p = processes.pop()
+    p.kill()
+    shutil.rmtree(peer_dirs[-1] / 'storage')
+
+    # Bootstrap a new peer reusing the same port (= same URI) as the killed peer
+    broken_peer_port = 10000 + (N_PEERS - 1) * 100
+    new_url = start_peer(peer_dirs[-1], "peer_replaced_rejected.log", bootstrap_uri, port=broken_peer_port)
+
+    # Expect the process to crash because the old peer still has shards
+    processes[-1].proc.wait(timeout=20)
+    assert processes[-1].proc.returncode == 101
+    processes.pop().kill()
+
+    # The old peer must still be registered in consensus with its original state
+    cluster_info = get_cluster_info(peer_api_uris[0])
+    assert str(target_peer_id) in cluster_info['peers']
+    assert len(cluster_info['peers']) == N_PEERS
+
+
 def remove_peer(peer_uri: str, peer_id: int | None = None):
     if peer_id is None:
         info = get_cluster_info(peer_uri)
@@ -415,6 +606,7 @@ def remove_peer(peer_uri: str, peer_id: int | None = None):
 
     resp = requests.delete(f"{peer_uri}/cluster/peer/{peer_id}")
     assert_http_ok(resp)
+
 
 def add_new_peer(tmp_path: pathlib.Path, peer_idx: int, bootstrap_uri: str, collection: str | None = None):
     peer_dir = make_peer_folder(tmp_path, peer_idx)
