@@ -169,11 +169,17 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]>;
 
-    /// Get the raw bytes of the vector by the given key if it exists
-    fn get_dense_bytes_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        ((key as usize) < self.total_vector_count()).then(|| match self.get_dense::<P>(key) {
-            Cow::Borrowed(slice) => Cow::Borrowed(bytemuck::cast_slice(slice)),
-            Cow::Owned(vec) => Cow::Owned(bytemuck::cast_vec(vec)),
+    /// Call `f` with the raw bytes of the vector if it exists.
+    ///
+    /// Uses `bytemuck::cast_slice` on the borrowed data — zero copy, zero allocation.
+    fn with_dense_bytes_opt<P: AccessPattern, R>(
+        &self,
+        key: PointOffsetType,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> Option<R> {
+        ((key as usize) < self.total_vector_count()).then(|| {
+            let dense = self.get_dense::<P>(key);
+            f(bytemuck::cast_slice(&dense))
         })
     }
 
@@ -573,37 +579,42 @@ impl VectorStorageEnum {
         Ok(())
     }
 
-    /// Get the raw bytes of the vector by the given key if it exists
-    pub fn get_vector_bytes_opt<P: AccessPattern>(
+    /// Call `f` with the raw bytes of the vector if it exists.
+    pub fn with_vector_bytes_opt<P: AccessPattern, R>(
         &self,
         key: PointOffsetType,
-    ) -> Option<Cow<'_, [u8]>> {
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> Option<R> {
         match self {
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimple(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseSimple(v) => v.with_dense_bytes_opt::<P, R>(key, f),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleByte(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseSimpleByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleHalf(v) => v.get_dense_bytes_opt::<P>(key),
-            VectorStorageEnum::DenseVolatile(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseSimpleHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseVolatile(v) => v.with_dense_bytes_opt::<P, R>(key, f),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseVolatileByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.get_dense_bytes_opt::<P>(key),
-            VectorStorageEnum::DenseMemmap(v) => v.get_dense_bytes_opt::<P>(key),
-            VectorStorageEnum::DenseMemmapByte(v) => v.get_dense_bytes_opt::<P>(key),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseVolatileHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseMemmap(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseMemmapByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
 
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseUring(v) => v.with_dense_bytes_opt::<P, R>(key, f),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseUringByte(v) => v.with_dense_bytes_opt::<P, R>(key, f),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseUringHalf(v) => v.with_dense_bytes_opt::<P, R>(key, f),
 
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_dense_bytes_opt::<P>(key),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_dense_bytes_opt::<P>(key),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_dense_bytes_opt::<P>(key),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.with_dense_bytes_opt::<P, R>(key, f),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                v.with_dense_bytes_opt::<P, R>(key, f)
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                v.with_dense_bytes_opt::<P, R>(key, f)
+            }
             #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => None,
             VectorStorageEnum::SparseVolatile(_) => None,

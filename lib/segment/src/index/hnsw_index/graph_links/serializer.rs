@@ -127,12 +127,14 @@ pub fn serialize_graph_links<W: Write + Seek>(
 
                     // 1. Base vector (`B` in the doc, only on level 0).
                     if level == 0 {
-                        let vector = vectors.get_base_vector(id)?;
-                        if vector.len() != vectors_layout.base.size() {
-                            return Err(OperationError::service_error("Vector size mismatch"));
-                        }
-                        writer.write_all(&vector)?;
-                        offset += vector.len();
+                        vectors.for_base_vector(id, &mut |vector_bytes| {
+                            if vector_bytes.len() != vectors_layout.base.size() {
+                                return Err(OperationError::service_error("Vector size mismatch"));
+                            }
+                            writer.write_all(vector_bytes)?;
+                            Ok(())
+                        })?;
+                        offset += vectors_layout.base.size();
                     }
 
                     // 2. The varint-encoded length (`#` in the doc).
