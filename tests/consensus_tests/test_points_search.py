@@ -7,6 +7,8 @@ N_PEERS = 5
 N_SHARDS = 4
 N_REPLICA = 2
 
+ASYNC_SCORER_ENV = {"QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORER": "true"}
+
 
 def test_points_search(tmp_path: pathlib.Path):
     assert_project_root()
@@ -15,9 +17,9 @@ def test_points_search(tmp_path: pathlib.Path):
     # Gathers REST API uris
     peer_api_uris = []
 
-    # Start bootstrap
+    # Start bootstrap with async_scorer enabled to exercise io_uring path on Linux
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(
-        peer_dirs[0], "peer_0_0.log")
+        peer_dirs[0], "peer_0_0.log", extra_env=ASYNC_SCORER_ENV)
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
@@ -26,7 +28,7 @@ def test_points_search(tmp_path: pathlib.Path):
     # Start other peers
     for i in range(1, len(peer_dirs)):
         peer_api_uris.append(start_peer(
-            peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
+            peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, extra_env=ASYNC_SCORER_ENV))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader)

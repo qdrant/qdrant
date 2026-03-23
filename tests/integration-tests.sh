@@ -9,7 +9,6 @@ cd "$(dirname "$0")/../"
 MODE=$1
 QDRANT_HOST='localhost:6333'
 export QDRANT__SERVICE__GRPC_PORT="6334"
-export QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORER="true"
 export LLVM_PROFILE_FILE="./target/llvm-cov-target/qdrant-openapi-$MODE-%m.profraw"
 
 if [ "$COVERAGE" == "1" ]; then
