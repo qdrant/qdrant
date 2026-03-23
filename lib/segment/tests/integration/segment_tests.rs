@@ -12,7 +12,7 @@ use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, VectorRef, VectorStructInternal, only_default_vector,
 };
 use segment::entry::StorageSegmentEntry as _;
-use segment::entry::entry_point::{ReadSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{NonAppendableSegmentEntry as _, ReadSegmentEntry, SegmentEntry};
 use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};

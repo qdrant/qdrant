@@ -8,7 +8,8 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::{
-    ReadSegmentEntry as _, SegmentEntry as _, SnapshotEntry as _, StorageSegmentEntry as _,
+    NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _, SnapshotEntry as _,
+    StorageSegmentEntry as _,
 };
 use segment::types::{FieldCondition, PayloadSchemaType};
 use tempfile::Builder;

@@ -868,30 +868,6 @@ impl StorageSegmentEntry for Segment {
 }
 
 impl NonAppendableSegmentEntry for Segment {
-    fn delete_point_concurrent(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        match internal_id {
-            // Point does already not exist anymore
-            None => Ok(false),
-            Some(internal_id) => {
-                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
-                    segment.delete_point_internal(internal_id, hw_counter)?;
-
-                    segment.version_tracker.set_payload(Some(op_num));
-
-                    Ok((true, Some(internal_id)))
-                })
-            }
-        }
-    }
-}
-
-impl SegmentEntry for Segment {
     fn delete_point(
         &mut self,
         op_num: SeqNumberType,
@@ -914,6 +890,90 @@ impl SegmentEntry for Segment {
         }
     }
 
+    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+        self.handle_segment_version_and_failure(op_num, |segment| {
+            segment.payload_index.borrow_mut().drop_index(key)?;
+            segment.version_tracker.set_payload_index_schema(key, None);
+            Ok(true)
+        })
+    }
+
+    fn delete_field_index_if_incompatible(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyTypeRef,
+        field_schema: &PayloadFieldSchema,
+    ) -> OperationResult<bool> {
+        self.handle_segment_version_and_failure(op_num, |segment| {
+            let is_incompatible = segment
+                .payload_index
+                .borrow_mut()
+                .drop_index_if_incompatible(key, field_schema)?;
+
+            if is_incompatible {
+                segment.version_tracker.set_payload_index_schema(key, None);
+            }
+
+            Ok(true)
+        })
+    }
+
+    fn build_field_index(
+        &self,
+        op_num: SeqNumberType,
+        key: PayloadKeyTypeRef,
+        field_type: &PayloadFieldSchema,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BuildFieldIndexResult> {
+        // Check version without updating it
+        if self.version.unwrap_or(0) > op_num {
+            return Ok(BuildFieldIndexResult::SkippedByVersion);
+        }
+
+        let field_index = match self
+            .payload_index
+            .borrow()
+            .build_index(key, field_type, hw_counter)?
+        {
+            BuildIndexResult::Built(indexes) => indexes,
+            BuildIndexResult::AlreadyBuilt => {
+                return Ok(BuildFieldIndexResult::AlreadyExists);
+            }
+            BuildIndexResult::IncompatibleSchema => {
+                // This function expects that incompatible schema is already removed
+                return Ok(BuildFieldIndexResult::IncompatibleSchema);
+            }
+        };
+
+        Ok(BuildFieldIndexResult::Built {
+            indexes: field_index,
+            schema: field_type.clone(),
+        })
+    }
+
+    fn apply_field_index(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyType,
+        schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
+    ) -> OperationResult<bool> {
+        self.handle_segment_version_and_failure(op_num, |segment| {
+            segment
+                .payload_index
+                .borrow_mut()
+                .apply_index(key.clone(), schema, field_index)?;
+
+            segment
+                .version_tracker
+                .set_payload_index_schema(&key, Some(op_num));
+
+            Ok(true)
+        })
+    }
+}
+
+impl SegmentEntry for Segment {
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
@@ -1089,88 +1149,6 @@ impl SegmentEntry for Segment {
             None => Err(OperationError::PointIdError {
                 missed_point_id: point_id,
             }),
-        })
-    }
-
-    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        self.handle_segment_version_and_failure(op_num, |segment| {
-            segment.payload_index.borrow_mut().drop_index(key)?;
-            segment.version_tracker.set_payload_index_schema(key, None);
-            Ok(true)
-        })
-    }
-
-    fn delete_field_index_if_incompatible(
-        &mut self,
-        op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
-        field_schema: &PayloadFieldSchema,
-    ) -> OperationResult<bool> {
-        self.handle_segment_version_and_failure(op_num, |segment| {
-            let is_incompatible = segment
-                .payload_index
-                .borrow_mut()
-                .drop_index_if_incompatible(key, field_schema)?;
-
-            if is_incompatible {
-                segment.version_tracker.set_payload_index_schema(key, None);
-            }
-
-            Ok(true)
-        })
-    }
-
-    fn build_field_index(
-        &self,
-        op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
-        field_type: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<BuildFieldIndexResult> {
-        // Check version without updating it
-        if self.version.unwrap_or(0) > op_num {
-            return Ok(BuildFieldIndexResult::SkippedByVersion);
-        }
-
-        let field_index = match self
-            .payload_index
-            .borrow()
-            .build_index(key, field_type, hw_counter)?
-        {
-            BuildIndexResult::Built(indexes) => indexes,
-            BuildIndexResult::AlreadyBuilt => {
-                return Ok(BuildFieldIndexResult::AlreadyExists);
-            }
-            BuildIndexResult::IncompatibleSchema => {
-                // This function expects that incompatible schema is already removed
-                return Ok(BuildFieldIndexResult::IncompatibleSchema);
-            }
-        };
-
-        Ok(BuildFieldIndexResult::Built {
-            indexes: field_index,
-            schema: field_type.clone(),
-        })
-    }
-
-    fn apply_field_index(
-        &mut self,
-        op_num: SeqNumberType,
-        key: PayloadKeyType,
-        schema: PayloadFieldSchema,
-        field_index: Vec<FieldIndex>,
-    ) -> OperationResult<bool> {
-        self.handle_segment_version_and_failure(op_num, |segment| {
-            segment
-                .payload_index
-                .borrow_mut()
-                .apply_index(key.clone(), schema, field_index)?;
-
-            segment
-                .version_tracker
-                .set_payload_index_schema(&key, Some(op_num));
-
-            Ok(true)
         })
     }
 }

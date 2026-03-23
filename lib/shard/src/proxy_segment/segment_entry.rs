@@ -651,15 +651,6 @@ impl StorageSegmentEntry for ProxySegment {
 }
 
 impl SegmentEntry for ProxySegment {
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        NonAppendableSegmentEntry::delete_point_concurrent(self, op_num, point_id, hw_counter)
-    }
-
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
@@ -743,81 +734,10 @@ impl SegmentEntry for ProxySegment {
             "Clear payload is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
-
-    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
-
-        self.version = cmp::max(self.version, op_num);
-
-        // Store index change to later propagate to optimized/wrapped segment
-        self.changed_indexes
-            .insert(key.clone(), ProxyIndexChange::Delete(op_num));
-
-        Ok(true)
-    }
-
-    fn delete_field_index_if_incompatible(
-        &mut self,
-        op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
-        field_schema: &PayloadFieldSchema,
-    ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
-
-        self.version = cmp::max(self.version, op_num);
-
-        self.changed_indexes.insert(
-            key.clone(),
-            ProxyIndexChange::DeleteIfIncompatible(op_num, field_schema.clone()),
-        );
-
-        Ok(true)
-    }
-
-    fn build_field_index(
-        &self,
-        op_num: SeqNumberType,
-        _key: PayloadKeyTypeRef,
-        field_type: &PayloadFieldSchema,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<BuildFieldIndexResult> {
-        if self.version() > op_num {
-            return Ok(BuildFieldIndexResult::SkippedByVersion);
-        }
-
-        Ok(BuildFieldIndexResult::Built {
-            indexes: vec![], // No actual index is built in proxy segment, they will be created later
-            schema: field_type.clone(),
-        })
-    }
-
-    fn apply_field_index(
-        &mut self,
-        op_num: SeqNumberType,
-        key: PayloadKeyType,
-        field_schema: PayloadFieldSchema,
-        _field_index: Vec<FieldIndex>,
-    ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
-
-        self.version = cmp::max(self.version, op_num);
-
-        // Store index change to later propagate to optimized/wrapped segment
-        self.changed_indexes
-            .insert(key, ProxyIndexChange::Create(field_schema, op_num));
-
-        Ok(true)
-    }
 }
 
 impl NonAppendableSegmentEntry for ProxySegment {
-    fn delete_point_concurrent(
+    fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -895,5 +815,76 @@ impl NonAppendableSegmentEntry for ProxySegment {
         }
 
         Ok(was_deleted)
+    }
+
+    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.version = cmp::max(self.version, op_num);
+
+        // Store index change to later propagate to optimized/wrapped segment
+        self.changed_indexes
+            .insert(key.clone(), ProxyIndexChange::Delete(op_num));
+
+        Ok(true)
+    }
+
+    fn delete_field_index_if_incompatible(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyTypeRef,
+        field_schema: &PayloadFieldSchema,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.version = cmp::max(self.version, op_num);
+
+        self.changed_indexes.insert(
+            key.clone(),
+            ProxyIndexChange::DeleteIfIncompatible(op_num, field_schema.clone()),
+        );
+
+        Ok(true)
+    }
+
+    fn build_field_index(
+        &self,
+        op_num: SeqNumberType,
+        _key: PayloadKeyTypeRef,
+        field_type: &PayloadFieldSchema,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BuildFieldIndexResult> {
+        if self.version() > op_num {
+            return Ok(BuildFieldIndexResult::SkippedByVersion);
+        }
+
+        Ok(BuildFieldIndexResult::Built {
+            indexes: vec![], // No actual index is built in proxy segment, they will be created later
+            schema: field_type.clone(),
+        })
+    }
+
+    fn apply_field_index(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyType,
+        field_schema: PayloadFieldSchema,
+        _field_index: Vec<FieldIndex>,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.version = cmp::max(self.version, op_num);
+
+        // Store index change to later propagate to optimized/wrapped segment
+        self.changed_indexes
+            .insert(key, ProxyIndexChange::Create(field_schema, op_num));
+
+        Ok(true)
     }
 }
