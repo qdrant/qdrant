@@ -16,7 +16,8 @@ fn main() -> std::io::Result<()> {
         let local_contents = std::fs::read_to_string(local)?;
 
         assert_eq!(
-            source_contents, local_contents,
+            source_contents,
+            local_contents,
             "proto out of sync: local `{local}` differs from `{}`. \
              Update the local copy to match the api crate.",
             source.display(),
