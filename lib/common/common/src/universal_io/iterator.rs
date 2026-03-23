@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use fallible_iterator::FallibleIterator;
 
 use super::*;
-use crate::generic_consts::{Sequential, SubmissionOrder};
+use crate::generic_consts::Sequential;
 
 /// A bounded view into a [`UniversalRead`] source.
 ///
@@ -57,14 +57,13 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> UniversalSlice<'a, T, S> {
         let mut acc = init;
         for chunk in self.range.iter_chunks(CHUNK) {
             let n = chunk.length as usize;
-            self.source
-                .read_batch::<Sequential, SubmissionOrder, UniversalIoError>(
-                    chunk.iter_chunks(1),
-                    |idx, data| {
-                        buf[idx].write(data[0]);
-                        Ok(())
-                    },
-                )?;
+            self.source.read_batch::<Sequential, UniversalIoError>(
+                chunk.iter_chunks(1),
+                |idx, data| {
+                    buf[idx].write(data[0]);
+                    Ok(())
+                },
+            )?;
             for item in &buf[..n] {
                 acc = f(acc, unsafe { item.assume_init() });
             }
@@ -88,27 +87,16 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> UniversalSlice<'a, T, S> {
         })
     }
 
-    /// Element-by-element iterator. Prefer [`my_try_fold`](Self::my_try_fold) for bulk ops.
-    pub fn iter(&self) -> UniversalIteratorResult<'a, T, S> {
-        UniversalIteratorResult {
+    pub fn iter_unordered(&self) -> UniversalIteratorUnordered<'a, T, S> {
+        UniversalIteratorUnordered {
             source: self.source,
             range: self.range,
             _phantom: PhantomData,
         }
     }
 
-    /// Element-by-element iterator that panics on read errors.
-    /// TODO(uio): Remove this. It's an temporary escape hatch while migrating to uio.
-    pub fn iter_unwrap(&self) -> UniversalIteratorUnwrap<'a, T, S> {
-        UniversalIteratorUnwrap {
-            source: self.source,
-            range: self.range,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn iter2(&self) -> SliceFallibleIterator<'a, T, S> {
-        SliceFallibleIterator {
+    pub fn iter_ordered(&self) -> UniversalIteratorUnordered<'a, T, S> {
+        UniversalIteratorUnordered {
             source: self.source,
             range: self.range,
             _phantom: PhantomData,
@@ -116,66 +104,14 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> UniversalSlice<'a, T, S> {
     }
 }
 
-/// Element-by-element iterator over a [`UniversalSlice`].
-pub struct UniversalIteratorResult<'a, T: Copy + 'static, S: UniversalRead<T>> {
-    source: &'a S,
-    range: ReadRange,
-    _phantom: PhantomData<T>,
-}
-
-impl<'a, T: Copy + 'static, S: UniversalRead<T>> Iterator for UniversalIteratorResult<'a, T, S> {
-    type Item = Result<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.range.length == 0 {
-            return None;
-        }
-        let item = self.source.read::<Sequential>(ReadRange {
-            byte_offset: self.range.byte_offset,
-            length: 1,
-        });
-        self.range.byte_offset += 1;
-        self.range.length -= 1;
-        Some(item.map(|cow| cow[0]))
-    }
-}
-
-/// Element-by-element iterator that panics on read errors.
-/// TODO(uio): Remove this. It's an temporary escape hatch while migrating to uio.
-pub struct UniversalIteratorUnwrap<'a, T: Copy + 'static, S: UniversalRead<T>> {
-    source: &'a S,
-    range: ReadRange,
-    _phantom: PhantomData<T>,
-}
-
-impl<'a, T: Copy + 'static, S: UniversalRead<T>> Iterator for UniversalIteratorUnwrap<'a, T, S> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.range.length == 0 {
-            return None;
-        }
-        let item = self
-            .source
-            .read::<Sequential>(ReadRange {
-                byte_offset: self.range.byte_offset,
-                length: 1,
-            })
-            .unwrap();
-        self.range.byte_offset += 1;
-        self.range.length -= 1;
-        Some(item[0])
-    }
-}
-
-pub struct SliceFallibleIterator<'a, T: Copy + 'static, S: UniversalRead<T>> {
+pub struct UniversalIteratorUnordered<'a, T: Copy + 'static, S: UniversalRead<T>> {
     source: &'a S,
     range: ReadRange,
     _phantom: PhantomData<T>,
 }
 
 impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator
-    for SliceFallibleIterator<'a, T, S>
+    for UniversalIteratorUnordered<'a, T, S>
 {
     type Item = T;
     type Error = UniversalIoError;
@@ -211,13 +147,11 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator
         F: FnMut(B, T) -> Result<B, E>,
     {
         let mut acc = Some(init);
-        self.source.read_batch::<Sequential, SubmissionOrder, E>(
-            self.range.iter_chunks(1),
-            |_idx, data| {
+        self.source
+            .read_batch::<Sequential, E>(self.range.iter_chunks(1), |_idx, data| {
                 acc = Some(f(acc.take().unwrap(), data[0])?);
                 Ok(())
-            },
-        )?;
+            })?;
         self.range.byte_offset += self.range.length;
         self.range.length = 0;
         Ok(acc.unwrap())

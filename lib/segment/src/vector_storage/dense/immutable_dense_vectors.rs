@@ -15,7 +15,7 @@ use common::universal_io::{OpenOptions as UniversalOpenOptions, ReadRange, Unive
 use fs_err::{File, OpenOptions};
 
 use crate::common::error_logging::LogError;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
@@ -197,11 +197,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             length: self.dim as _,
         });
 
-        self.storage.read_batch::<P, OperationError>(ranges, |idx, vector| {
-            let point = points.get(idx).copied().expect("point ID tracked");
-            callback(idx, point, vector);
-            Ok(())
-        })?;
+        self.storage
+            .read_batch::<P, OperationError>(ranges, |idx, vector| {
+                let point = points.get(idx).copied().expect("point ID tracked");
+                callback(idx, point, vector);
+                Ok(())
+            })?;
 
         Ok(())
     }

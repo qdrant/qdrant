@@ -18,11 +18,11 @@ pub use self::error::UniversalIoError;
 pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::*;
-pub use self::iterator::{UniversalIteratorResult, UniversalIteratorUnwrap, UniversalSlice};
+pub use self::iterator::UniversalSlice;
 pub use self::mmap::*;
 pub use self::read::UniversalRead;
 pub use self::write::UniversalWrite;
-use crate::generic_consts::{CompletionOrder, Random};
+use crate::generic_consts::Random;
 use crate::mmap::{Advice, AdviceSetting};
 
 #[derive(Copy, Clone, Debug)]
@@ -88,7 +88,7 @@ pub fn read_one<T: Copy + 'static, R>(
 ) -> Result<R> {
     let mut f = Some(f);
     let mut result = None;
-    storage.read_batch::<Random, CompletionOrder, UniversalIoError>(
+    storage.read_batch::<Random, UniversalIoError>(
         [ReadRange {
             byte_offset: index as u64,
             length: 1,
