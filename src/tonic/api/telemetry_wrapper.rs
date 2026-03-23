@@ -544,6 +544,7 @@ mod tests {
 
                 $(
                     #[tokio::test]
+                    #[allow(clippy::needless_update)]
                     async fn $method() {
                         let w = SnapshotsTelemetryWrapper::new(MockSnapshots);
                         let r = w
