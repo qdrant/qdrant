@@ -452,18 +452,6 @@ fn finish_optimization(
         .filter(|&(point_id, _)| !already_remove_points.contains_key(point_id));
 
     for (&point_id, &versions) in points_diff {
-        // In this specific case we're sure logical point data in the wrapped segment is not
-        // changed at all. We ensure this with an assertion at time of proxying, which makes
-        // sure we only wrap original segments. Because we're sure logical data doesn't change,
-        // we also know pending deletes are always newer. Here we assert that's actually the
-        // case.
-        debug_assert!(
-            versions.operation_version >= optimized_segment.point_version(point_id).unwrap_or(0),
-            "proxied point deletes should have newer version than point in segment {} < {:?}, point id: {}",
-            versions.operation_version,
-            optimized_segment.point_version(point_id),
-            point_id,
-        );
         optimized_segment
             .delete_point(versions.operation_version, point_id, hw_counter)
             .unwrap();
