@@ -43,6 +43,11 @@ fn full_internal_auth() -> Auth {
 }
 
 /// This API is intended for P2P communication within a distributed deployment.
+///
+/// Note: unlike the public `PointsService`, this service does NOT attach
+/// `CollectionName` to gRPC responses. Internal endpoints
+/// (`/qdrant.PointsInternal/…`) are not in `GRPC_ENDPOINT_WHITELIST`, so
+/// attaching a collection name would have no effect on `/metrics` output.
 pub struct PointsInternalService {
     toc: Arc<TableOfContent>,
     service_config: ServiceConfig,

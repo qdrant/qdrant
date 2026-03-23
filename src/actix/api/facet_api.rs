@@ -14,7 +14,7 @@ use crate::actix::helpers::{
 };
 use crate::settings::ServiceConfig;
 
-#[post("/collections/{name}/facet")]
+#[post("/collections/{collection_name}/facet")]
 async fn facet(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -33,7 +33,7 @@ async fn facet(
     let pass = match check_strict_mode(
         &facet_request,
         params.timeout_as_secs(),
-        &collection.name,
+        &collection.collection_name,
         &dispatcher,
         &auth,
     )
@@ -52,7 +52,7 @@ async fn facet(
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
-        collection.name.clone(),
+        collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
     );
@@ -60,7 +60,7 @@ async fn facet(
     let response = dispatcher
         .toc(&auth, &pass)
         .facet(
-            &collection.name,
+            &collection.collection_name,
             facet_params,
             shard_selection,
             params.consistency,

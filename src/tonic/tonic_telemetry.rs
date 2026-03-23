@@ -7,7 +7,7 @@ use tower::Service;
 use tower_layer::Layer;
 
 use crate::common::telemetry_ops::requests_telemetry::{
-    TonicTelemetryCollector, TonicWorkerTelemetryCollector,
+    CollectionName, TonicTelemetryCollector, TonicWorkerTelemetryCollector,
 };
 
 /// Based on https://grpc.io/docs/guides/status-codes/
@@ -70,9 +70,16 @@ where
                     }
                 });
 
+            // Collection name is attached to response extensions by
+            // telemetry wrappers (see telemetry_wrapper.rs).
+            let collection_name = response
+                .extensions()
+                .get::<CollectionName>()
+                .map(|cn| cn.0.clone());
+
             telemetry_data
                 .lock()
-                .add_response(method_name, instant, status_code);
+                .add_response(method_name, instant, status_code, collection_name);
             Ok(response)
         })
     }

@@ -5855,6 +5855,7 @@ dependencies = [
  "itertools 0.14.0",
  "jsonwebtoken",
  "log",
+ "macros",
  "mockito",
  "murmur3",
  "nix 0.31.2",

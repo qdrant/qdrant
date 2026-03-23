@@ -32,7 +32,7 @@ struct StrictCollectionPath {
         length(min = 1, max = 255),
         custom(function = "validate_collection_name")
     )]
-    name: String,
+    collection_name: String,
 }
 
 /// A collection path with basic validation
@@ -46,5 +46,5 @@ struct CollectionPath {
         length(min = 1, max = 255),
         custom(function = "validate_collection_name_legacy")
     )]
-    name: String,
+    collection_name: String,
 }
