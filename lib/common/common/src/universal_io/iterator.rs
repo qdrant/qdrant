@@ -91,7 +91,8 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> UniversalSlice<'a, T, S> {
         UniversalIterator {
             source: self.source,
             rq: ReorderingQueue::new(),
-            index: 0,
+            batch_start: 0,
+            batch_len: 0,
             len: self.range.length,
             byte_offset: self.range.byte_offset,
             _phantom: PhantomData,
@@ -103,13 +104,26 @@ const QUEUE_DEPTH: usize = 64;
 pub struct UniversalIterator<'a, T: Copy + 'static, S: UniversalRead<T>> {
     source: &'a S,
     rq: ReorderingQueue<T, QUEUE_DEPTH>,
-    index: u64,
+    /// Absolute index of the first element in the current batch.
+    batch_start: u64,
+    /// Number of elements loaded in the current batch.
+    batch_len: u64,
+    /// Remaining elements to yield (including buffered ones).
     len: u64,
+    /// Byte offset of the next element to fetch from source.
     byte_offset: u64,
     _phantom: PhantomData<T>,
 }
 
-impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalIterator<'a, T, S> {
+impl<T: Copy + 'static, S: UniversalRead<T>> UniversalIterator<'_, T, S> {
+    /// Advance `batch_start` past the current batch and reset `batch_len`.
+    fn close_batch(&mut self) {
+        self.batch_start += self.batch_len;
+        self.batch_len = 0;
+    }
+}
+
+impl<T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalIterator<'_, T, S> {
     type Item = (u64, T);
     type Error = UniversalIoError;
 
@@ -118,14 +132,13 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalI
             return Ok(None);
         }
 
-        if let Some((_seqnum, value)) = self.rq.get() {
-            let idx = self.index;
-            self.index += 1;
+        if let Some((seqnum, value)) = self.rq.get_unordered() {
             self.len -= 1;
-            return Ok(Some((idx, value)));
+            return Ok(Some((self.batch_start + seqnum as u64, value)));
         }
 
-        // Buffer empty — fetch a new batch.
+        // Buffer empty — advance past previous batch and fetch a new one.
+        self.close_batch();
         self.rq = ReorderingQueue::new();
         let batch_size = self.len.min(QUEUE_DEPTH as u64);
         let it = (0..batch_size).map(|i| ReadRange {
@@ -136,17 +149,16 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalI
             self.rq.put(idx, data[0]);
             Ok::<(), UniversalIoError>(())
         })?;
+        self.batch_len = batch_size;
         self.byte_offset += batch_size * size_of::<T>() as u64;
 
-        let (_seqnum, value) = self
+        let (seqnum, value) = self
             .rq
-            .get()
+            .get_unordered()
             .expect("read_batch should have filled the queue");
 
-        let idx = self.index;
-        self.index += 1;
         self.len -= 1;
-        Ok(Some((idx, value)))
+        Ok(Some((self.batch_start + seqnum as u64, value)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -157,9 +169,8 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalI
         // Drain buffered items first.
         let mut remaining = n;
         while remaining > 0 {
-            if self.rq.get().is_some() {
+            if self.rq.get_unordered().is_some() {
                 remaining -= 1;
-                self.index += 1;
                 self.len -= 1;
             } else {
                 break;
@@ -167,10 +178,13 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalI
         }
 
         // Skip unfetched items.
-        let skip = (remaining as u64).min(self.len);
-        self.byte_offset += skip * size_of::<T>() as u64;
-        self.index += skip;
-        self.len -= skip;
+        if remaining > 0 {
+            self.close_batch();
+            let skip = (remaining as u64).min(self.len);
+            self.batch_start += skip;
+            self.byte_offset += skip * size_of::<T>() as u64;
+            self.len -= skip;
+        }
 
         self.next()
     }
@@ -182,29 +196,32 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalI
     {
         // Drain buffer first.
         let mut acc = init;
-        while let Some((_seqnum, value)) = self.rq.get() {
-            acc = f(acc, (self.index, value))?;
-            self.index += 1;
+        while let Some((seqnum, value)) = self.rq.get_unordered() {
+            acc = f(acc, (self.batch_start + seqnum as u64, value))?;
             self.len -= 1;
         }
+        self.close_batch();
 
         // Read all remaining in a single batch.
         if self.len > 0 {
+            let batch_start = self.batch_start;
             let it = (0..self.len).map(|i| ReadRange {
                 byte_offset: self.byte_offset + i * size_of::<T>() as u64,
                 length: size_of::<T>() as u64,
             });
 
-            let index = self.index;
             let mut acc_opt = Some(acc);
             self.source.read_batch::<Sequential, E>(it, |idx, data| {
-                acc_opt = Some(f(acc_opt.take().unwrap(), (index + idx as u64, data[0]))?);
+                acc_opt = Some(f(
+                    acc_opt.take().unwrap(),
+                    (batch_start + idx as u64, data[0]),
+                )?);
                 Ok(())
             })?;
             acc = acc_opt.unwrap();
 
             self.byte_offset += self.len * size_of::<T>() as u64;
-            self.index += self.len;
+            self.batch_start += self.len;
             self.len = 0;
         }
 
