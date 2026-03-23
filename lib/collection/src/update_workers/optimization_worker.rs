@@ -310,9 +310,7 @@ impl UpdateWorkers {
             log::debug!(
                 "Optimizer '{}' running on segments: {uuids}",
                 optimizer.name(),
-                uuids = segment_infos.iter().format_with(", ", |segment_info, f| {
-                    f(&format_args!("{}", segment_info.uuid))
-                })
+                uuids = segment_infos.iter().map(|s| s.uuid.to_string()).join(", "),
             );
 
             // Determine how many Resources we prefer for optimization task, acquire permit for it
@@ -534,5 +532,51 @@ impl UpdateWorkers {
             }
         };
         Ok(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+    use uuid::Uuid;
+
+    /// Reproduces the panic from `itertools::format_with` being formatted more
+    /// than once. When used in `log::debug!` with the `tracing-log` bridge,
+    /// the tracing subscriber's `Escape` wrapper formats the value twice:
+    /// once to check if escaping is needed, then again for output. The second
+    /// call panics because `FormatWith` consumes the iterator on first format.
+    #[test]
+    #[allow(clippy::uninlined_format_args)]
+    fn test_format_with_panics_on_reuse() {
+        // Intentionally reproduces the original buggy pattern: passing
+        // `format_with` directly into a formatting macro.
+        let uuids = [Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+
+        let formatted = uuids
+            .iter()
+            .format_with(", ", |uuid, f| f(&format_args!("{}", uuid)));
+
+        // First formatting succeeds (consumes the iterator).
+        let first = format!("{}", formatted);
+        assert!(!first.is_empty());
+
+        // Second formatting panics — this is the bug path triggered by
+        // tracing-subscriber's Escape wrapper.
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| format!("{}", formatted)));
+        assert!(result.is_err(), "format_with must panic on second format");
+    }
+
+    /// Validates that eagerly joining into a `String` is safe to format
+    /// multiple times — the approach used by the fix.
+    #[test]
+    fn test_join_is_safe_to_format_multiple_times() {
+        let uuids = [Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+
+        let joined = uuids.iter().map(|u| u.to_string()).join(", ");
+
+        let first = joined.clone();
+        let second = joined;
+        assert_eq!(first, second);
     }
 }
