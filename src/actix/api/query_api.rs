@@ -24,6 +24,9 @@ use crate::common::inference::query_requests_rest::{
 use crate::common::query::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
+#[cfg(test)]
+pub const THIS_FILE: &str = file!();
+
 #[post("/collections/{collection_name}/points/query")]
 #[allow(clippy::too_many_arguments)]
 async fn query_points(

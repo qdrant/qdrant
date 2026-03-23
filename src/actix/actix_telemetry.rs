@@ -108,22 +108,46 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    use crate::actix::api::query_api::THIS_FILE;
+
+    /// Recursively collect all `.rs` files under `dir`.
+    fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in fs_err::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                collect_rs_files(&path, out);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
     #[test]
     fn test_collection_routes_use_collection_name_param() {
-        let api_dir = format!("{}/src/actix/api", env!("CARGO_MANIFEST_DIR"));
+        let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let file_path = manifest_path.join(THIS_FILE);
+        let actix_dir = file_path.parent().unwrap();
 
-        // Find route attributes containing /collections/{ and pipe through
-        // a second filter to exclude lines that correctly use {collection_name}
-        let grep = std::process::Command::new("grep")
-            .args(["-rn", r#"#\[.*("/collections/{"#, &api_dir])
-            .output()
-            .expect("failed to run grep");
+        let mut rs_files = Vec::new();
+        collect_rs_files(actix_dir, &mut rs_files);
 
-        let stdout = String::from_utf8_lossy(&grep.stdout);
-        let bad_lines: Vec<&str> = stdout
-            .lines()
-            .filter(|line| !line.contains("{collection_name}"))
-            .collect();
+        let mut bad_lines = Vec::new();
+        for path in &rs_files {
+            let contents = fs_err::read_to_string(path).unwrap();
+            for (line_no, line) in contents.lines().enumerate() {
+                let trimmed = line.trim();
+                // Only check route attribute macros like #[get("/collections/{...")]
+                if trimmed.starts_with("#[")
+                    && trimmed.contains("/collections/{")
+                    && !trimmed.contains("{collection_name}")
+                {
+                    bad_lines.push(format!("{}:{}: {}", path.display(), line_no + 1, trimmed));
+                }
+            }
+        }
 
         assert!(
             bad_lines.is_empty(),
