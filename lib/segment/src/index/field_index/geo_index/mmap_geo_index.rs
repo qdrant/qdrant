@@ -311,28 +311,16 @@ impl MmapGeoMapIndex {
     }
 
     pub fn points_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
-
-        hw_counter
-            .payload_index_io_read_counter()
-            // Simulate binary search complexity as IO read estimation
-            .incr_delta(
-                (self.storage.counts_per_hash.len() as f32).log2().ceil() as usize
-                    * size_of::<Counts>(),
-            );
-
-        if let Ok(index) = self
-            .storage
-            .counts_per_hash
-            .binary_search_by(|x| x.hash.cmp(&hash))
-        {
-            self.storage.counts_per_hash[index].points as usize
-        } else {
-            0
-        }
+        let (points, _) = self.counts_of_hash(hash, hw_counter);
+        points
     }
 
     pub fn values_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+        let (_, values) = self.counts_of_hash(hash, hw_counter);
+        values
+    }
+
+    fn counts_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> (usize, usize) {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         hw_counter
@@ -348,9 +336,10 @@ impl MmapGeoMapIndex {
             .counts_per_hash
             .binary_search_by(|x| x.hash.cmp(&hash))
         {
-            self.storage.counts_per_hash[index].values as usize
+            let counts = self.storage.counts_per_hash[index];
+            (counts.points as usize, counts.values as usize)
         } else {
-            0
+            (0, 0)
         }
     }
 
