@@ -459,7 +459,10 @@ fn finish_optimization(
         // case.
         debug_assert!(
             versions.operation_version >= optimized_segment.point_version(point_id).unwrap_or(0),
-            "proxied point deletes should have newer version than point in segment",
+            "proxied point deletes should have newer version than point in segment {} < {:?}, point id: {}",
+            versions.operation_version,
+            optimized_segment.point_version(point_id),
+            point_id,
         );
         optimized_segment
             .delete_point(versions.operation_version, point_id, hw_counter)
