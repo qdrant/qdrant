@@ -59,6 +59,16 @@ impl<T, const DEPTH: usize> ReorderingQueue<T, DEPTH> {
         Some((self.next_read - 1, value))
     }
 
+    pub fn get_unordered(&mut self) -> Option<(usize, T)> {
+        if let Some(i) = self.occupied.first_one() {
+            self.occupied.set(i, false);
+            let seqnum = (self.next_read / DEPTH) * DEPTH + i;
+            let value = unsafe { self.buffer[i].assume_init_read() };
+            return Some((seqnum, value));
+        }
+        None
+    }
+
     pub fn is_empty(&self) -> bool {
         self.occupied.not_any()
     }

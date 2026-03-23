@@ -87,73 +87,86 @@ impl<'a, T: Copy + 'static, S: UniversalRead<T>> UniversalSlice<'a, T, S> {
         })
     }
 
-    pub fn iter_unordered(&self) -> UniversalIteratorUnordered<'a, T, S> {
-        UniversalIteratorUnordered {
+    pub fn iter(&self) -> UniversalIterator<'a, T, S> {
+        UniversalIterator {
             source: self.source,
-            range: self.range,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn iter_ordered(&self) -> UniversalIteratorUnordered<'a, T, S> {
-        UniversalIteratorUnordered {
-            source: self.source,
-            range: self.range,
+            rq: ReorderingQueue::new(),
+            index: 0,
+            len: self.range.length,
+            byte_offset: self.range.byte_offset,
             _phantom: PhantomData,
         }
     }
 }
 
-pub struct UniversalIteratorUnordered<'a, T: Copy + 'static, S: UniversalRead<T>> {
+const QUEUE_DEPTH: usize = 64;
+pub struct UniversalIterator<'a, T: Copy + 'static, S: UniversalRead<T>> {
     source: &'a S,
-    range: ReadRange,
+    rq: ReorderingQueue<T, QUEUE_DEPTH>,
+    index: u64,
+    len: u64,
+    byte_offset: u64,
     _phantom: PhantomData<T>,
 }
 
-impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator
-    for UniversalIteratorUnordered<'a, T, S>
-{
-    type Item = T;
+impl<'a, T: Copy + 'static, S: UniversalRead<T>> FallibleIterator for UniversalIterator<'a, T, S> {
+    type Item = (u64, T);
     type Error = UniversalIoError;
 
-    fn next(&mut self) -> Result<Option<T>> {
-        if self.range.length == 0 {
+    fn next(&mut self) -> Result<Option<(u64, T)>> {
+        if self.len == 0 {
             return Ok(None);
         }
-        let item = self.source.read::<Sequential>(ReadRange {
-            byte_offset: self.range.byte_offset,
-            length: 1,
+        if let Some((seqnum, value)) = self.rq.get_unordered() {
+            return Ok(Some((seqnum as u64, value)));
+        }
+
+        let it = (0..self.len)
+            .map(|i| ReadRange {
+                byte_offset: self.byte_offset + i * size_of::<T>() as u64,
+                length: size_of::<T>() as u64,
+            })
+            .take(QUEUE_DEPTH);
+        self.source.read_batch::<Sequential, _>(it, |idx, data| {
+            self.rq.put(idx as usize, data[0]);
+            Result::<(), UniversalIoError>::Ok(())
         })?;
-        self.range.byte_offset += 1;
-        self.range.length -= 1;
-        Ok(Some(item[0]))
+
+        let (seqnum, value) = self
+            .rq
+            .get_unordered()
+            .expect("read_batch should have filled the queue");
+
+        Ok(Some((seqnum as u64, value)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.range.length as usize;
-        (len, Some(len))
+        (self.len as usize, Some(self.len as usize))
     }
 
-    fn nth(&mut self, n: usize) -> Result<Option<T>> {
-        let skip = (n as u64).min(self.range.length);
-        self.range.byte_offset += skip;
-        self.range.length -= skip;
+    fn nth(&mut self, n: usize) -> Result<Option<(u64, T)>> {
+        let skip = (n as u64).min(self.len);
+        self.byte_offset += skip * size_of::<T>() as u64;
+        self.index += skip;
+        self.len -= skip;
         self.next()
     }
 
     fn try_fold<B, E, F>(&mut self, init: B, mut f: F) -> Result<B, E>
     where
         E: From<UniversalIoError>,
-        F: FnMut(B, T) -> Result<B, E>,
+        F: FnMut(B, (u64, T)) -> Result<B, E>,
     {
+        let it = (0..self.len).map(|i| ReadRange {
+            byte_offset: self.byte_offset + i * size_of::<T>() as u64,
+            length: size_of::<T>() as u64,
+        });
+
         let mut acc = Some(init);
-        self.source
-            .read_batch::<Sequential, E>(self.range.iter_chunks(1), |_idx, data| {
-                acc = Some(f(acc.take().unwrap(), data[0])?);
-                Ok(())
-            })?;
-        self.range.byte_offset += self.range.length;
-        self.range.length = 0;
+        self.source.read_batch::<Sequential, E>(it, |idx, data| {
+            acc = Some(f(acc.take().unwrap(), (self.index + idx as u64, data[0]))?);
+            Ok(())
+        })?;
         Ok(acc.unwrap())
     }
 }
