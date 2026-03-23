@@ -2,9 +2,10 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::generic_consts::AccessPattern;
 use common::universal_io::file_ops::UniversalReadFileOps;
 use common::universal_io::{
-    ElementsRange, FileIndex, OpenOptions, Result, UniversalIoError, UniversalRead,
+    ByteOffset, FileIndex, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead,
 };
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
@@ -90,7 +91,7 @@ impl<T: Copy + 'static> UniversalRead<T> for RemoteUniversalRead<T> {
         todo!()
     }
 
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         todo!()
     }
 
@@ -98,9 +99,9 @@ impl<T: Copy + 'static> UniversalRead<T> for RemoteUniversalRead<T> {
         todo!()
     }
 
-    fn read_batch<const SEQUENTIAL: bool>(
+    fn read_batch<P: AccessPattern>(
         &self,
-        ranges: impl IntoIterator<Item = ElementsRange>,
+        ranges: impl IntoIterator<Item = ReadRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
         todo!()
@@ -118,9 +119,9 @@ impl<T: Copy + 'static> UniversalRead<T> for RemoteUniversalRead<T> {
         todo!()
     }
 
-    fn read_multi<const SEQUENTIAL: bool>(
+    fn read_multi<P: AccessPattern>(
         files: &[Self],
-        reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
     ) -> Result<()>
     where
