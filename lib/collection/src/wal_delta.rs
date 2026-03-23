@@ -232,16 +232,18 @@ fn resolve_wal_delta(
     // Ensure the recovering node gets records for a clock it might not have seen yet
     recovery_point.initialize_clocks_missing_from(&newest_clocks);
 
-    // Remove clocks that are equal to this node, we don't have to transfer records for them
-    // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
-    recovery_point.remove_clocks_equal_to(&newest_clocks);
-
-    // Recovery point may not be below our cutoff point
+    // Recovery point may not be below our cutoff point.
+    // This check must happen before removing equal clocks, otherwise we may
+    // accidentally accept an empty delta for an already truncated history.
     if recovery_point.has_any_older_clocks_than(&oldest_clocks) {
         return Err(WalDeltaError::Cutoff);
     }
 
-    // If there are no points left, WALs match op so we do not recovery anything
+    // Remove clocks that are equal to this node, we don't have to transfer records for them
+    // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
+    recovery_point.remove_clocks_equal_to(&newest_clocks);
+
+    // If there are no points left, WALs match op so we do not recover anything
     if recovery_point.is_empty() {
         return Ok(None);
     }
@@ -1707,6 +1709,33 @@ mod tests {
         recovery_point.insert(1, 1, 10);
         newest_clocks.insert(1, 0, 20);
         newest_clocks.insert(1, 1, 12);
+        oldest_clocks.insert(1, 0, 16);
+
+        let resolve_result = resolve_wal_delta(
+            wal.wal
+                .blocking_lock()
+                .read_all(true)
+                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
+            recovery_point,
+            newest_clocks,
+            oldest_clocks,
+        );
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Cutoff);
+    }
+
+    /// Recovery point may look equal to newest clocks but still be below cutoff.
+    /// This must return cutoff instead of accepting an empty delta.
+    #[test]
+    fn test_recover_point_cutoff_before_equal_removal() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        let mut recovery_point = RecoveryPoint::default();
+        let mut newest_clocks = RecoveryPoint::default();
+        let mut oldest_clocks = RecoveryPoint::default();
+
+        // Same clock in recovery/newest, but below source cutoff.
+        recovery_point.insert(1, 0, 15);
+        newest_clocks.insert(1, 0, 15);
         oldest_clocks.insert(1, 0, 16);
 
         let resolve_result = resolve_wal_delta(
