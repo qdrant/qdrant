@@ -31,6 +31,14 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         callback: impl FnMut(usize, &[T]) -> Result<(), E>,
     ) -> Result<(), E>;
 
+    fn read_batch_ordered<P: AccessPattern, E: From<UniversalIoError>>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+        callback: impl FnMut(&[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        todo!()
+    }
+
     fn len(&self) -> Result<u64>;
 
     fn is_empty(&self) -> Result<bool> {

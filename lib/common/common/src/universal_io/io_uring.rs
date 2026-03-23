@@ -126,6 +126,37 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         })?
     }
 
+    fn read_batch_ordered<P: AccessPattern, E: From<UniversalIoError>>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+        mut callback: impl FnMut(usize, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        with_uring_runtime(|mut rt| {
+            let mut ranges = ranges.into_iter().enumerate().peekable();
+
+            while ranges.peek().is_some() || rt.in_progress > 0 {
+                rt.enqueue(|state| {
+                    let Some((id, range)) = ranges.next() else {
+                        return Ok(None);
+                    };
+
+                    let entry = state.read(id as _, self.fd(), range)?;
+                    Ok(Some(entry))
+                })?;
+
+                rt.submit_and_wait(1).map_err(UniversalIoError::from)?;
+
+                for result in rt.completed() {
+                    let (id, resp) = result.map_err(UniversalIoError::from)?;
+                    let items = resp.expect_read();
+                    callback(id as _, &items)?;
+                }
+            }
+
+            Ok(())
+        })?
+    }
+
     fn read_multi<P: AccessPattern, E: From<UniversalIoError>>(
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
