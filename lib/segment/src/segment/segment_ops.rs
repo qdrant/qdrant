@@ -277,7 +277,7 @@ impl Segment {
     where
         F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
     {
-        // If point does not exist or has lower version, ignore operation
+        // If point exist and has higher version, ignore operation
         if let Some(point_offset) = op_point_offset
             && self
                 .id_tracker
