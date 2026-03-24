@@ -55,6 +55,7 @@ impl ClockSet {
 }
 
 #[derive(Debug)]
+#[must_use = "dropping this guard immediately marks the clock as inactive"]
 pub struct ClockGuard {
     id: u32,
     clock: Arc<Clock>,
