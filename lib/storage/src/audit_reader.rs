@@ -99,19 +99,29 @@ fn list_audit_files(dir: &Path) -> Result<Vec<PathBuf>, StorageError> {
     Ok(files)
 }
 
+/// Parsed audit log file timestamp with its rotation granularity.
+struct AuditFileDate {
+    start: DateTime<Utc>,
+    /// Duration that this file covers (1 day for daily, 1 hour for hourly rotation).
+    span: chrono::Duration,
+}
+
 /// Parse the date portion from an audit log filename.
 ///
 /// Expected formats:
-/// - `audit.2024-01-15.log`    -> Some(2024-01-15T00:00:00Z)
-/// - `audit.2024-01-15-14.log` -> Some(2024-01-15T14:00:00Z)
+/// - `audit.2024-01-15.log`    -> daily file starting at 2024-01-15T00:00:00Z
+/// - `audit.2024-01-15-14.log` -> hourly file starting at 2024-01-15T14:00:00Z
 /// - `audit.log`               -> None (current, always included)
-fn parse_file_date(path: &Path) -> Option<DateTime<Utc>> {
+fn parse_file_date(path: &Path) -> Option<AuditFileDate> {
     let name = path.file_stem()?.to_str()?;
     let date_part = name.strip_prefix("audit.")?;
 
     // Daily format: "2024-01-15"
     if let Ok(date) = NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
-        return Some(date.and_hms_opt(0, 0, 0)?.and_utc());
+        return Some(AuditFileDate {
+            start: date.and_hms_opt(0, 0, 0)?.and_utc(),
+            span: chrono::Duration::days(1),
+        });
     }
 
     // Hourly format: "2024-01-15-14"
@@ -123,7 +133,10 @@ fn parse_file_date(path: &Path) -> Option<DateTime<Utc>> {
         )
         && hour < 24
     {
-        return Some(date.and_hms_opt(hour, 0, 0)?.and_utc());
+        return Some(AuditFileDate {
+            start: date.and_hms_opt(hour, 0, 0)?.and_utc(),
+            span: chrono::Duration::hours(1),
+        });
     }
 
     None
@@ -139,13 +152,13 @@ fn filter_files_by_time_range<'a>(files: &'a [PathBuf], query: &AuditLogQuery) -
             };
 
             if let Some(ref time_to) = query.time_to
-                && file_date >= *time_to + chrono::Duration::days(1)
+                && file_date.start >= *time_to
             {
                 return false;
             }
 
             if let Some(ref time_from) = query.time_from {
-                let file_end = file_date + chrono::Duration::days(1);
+                let file_end = file_date.start + file_date.span;
                 if file_end <= *time_from {
                     return false;
                 }
@@ -242,21 +255,23 @@ mod tests {
     #[test]
     fn test_parse_file_date_daily() {
         let path = PathBuf::from("/storage/audit/audit.2024-06-15.log");
-        let date = parse_file_date(&path).unwrap();
+        let file_date = parse_file_date(&path).unwrap();
         assert_eq!(
-            date,
+            file_date.start,
             "2024-06-15T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
+        assert_eq!(file_date.span, chrono::Duration::days(1));
     }
 
     #[test]
     fn test_parse_file_date_hourly() {
         let path = PathBuf::from("/storage/audit/audit.2024-06-15-14.log");
-        let date = parse_file_date(&path).unwrap();
+        let file_date = parse_file_date(&path).unwrap();
         assert_eq!(
-            date,
+            file_date.start,
             "2024-06-15T14:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
+        assert_eq!(file_date.span, chrono::Duration::hours(1));
     }
 
     #[test]
