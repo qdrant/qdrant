@@ -120,11 +120,21 @@ pub struct ShardTransfer {
 
 impl ShardTransfer {
     pub fn key(&self) -> ShardTransferKey {
+        let ShardTransfer {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            sync: _,
+            method: _,
+            filter: _,
+        } = self;
+
         ShardTransferKey {
-            shard_id: self.shard_id,
-            to_shard_id: self.to_shard_id,
-            from: self.from,
-            to: self.to,
+            shard_id: *shard_id,
+            to_shard_id: *to_shard_id,
+            from: *from,
+            to: *to,
         }
     }
 
@@ -209,21 +219,39 @@ impl From<&ShardTransferRestart> for ShardTransfer {
 
 impl ShardTransferRestart {
     pub fn key(&self) -> ShardTransferKey {
+        let ShardTransferRestart {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            method: _,
+        } = self;
+
         ShardTransferKey {
-            shard_id: self.shard_id,
-            to_shard_id: self.to_shard_id,
-            from: self.from,
-            to: self.to,
+            shard_id: *shard_id,
+            to_shard_id: *to_shard_id,
+            from: *from,
+            to: *to,
         }
     }
 
     pub fn from_transfer(transfer: ShardTransfer, default_method: ShardTransferMethod) -> Self {
+        let ShardTransfer {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            sync: _,
+            method,
+            filter: _,
+        } = transfer;
+
         Self {
-            shard_id: transfer.shard_id,
-            to_shard_id: transfer.to_shard_id,
-            from: transfer.from,
-            to: transfer.to,
-            method: transfer.method.unwrap_or(default_method),
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            method: method.unwrap_or(default_method),
         }
     }
 }
