@@ -9,6 +9,7 @@ pub mod mmap;
 pub mod mmap_file;
 pub mod mmap_universal;
 pub mod read;
+pub mod read_only;
 pub mod write;
 
 use std::path::Path;
@@ -22,6 +23,7 @@ pub use self::io_uring::*;
 pub use self::mmap::*;
 pub use self::mmap_file::*;
 pub use self::read::UniversalRead;
+pub use self::read_only::*;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
 
