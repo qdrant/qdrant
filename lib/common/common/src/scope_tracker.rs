@@ -17,7 +17,6 @@ impl ScopeTracker {
 
     /// Measures the scope, the counter should keep track of.
     /// Must always be bound to a variable, to not get dropped prematurely!
-    #[must_use]
     pub fn measure_scope(&self) -> ScopeTrackerGuard {
         ScopeTrackerGuard::measure(self)
     }
@@ -38,7 +37,6 @@ pub struct ScopeTrackerGuard {
 }
 
 impl ScopeTrackerGuard {
-    #[must_use]
     fn measure(scope_tracker: &ScopeTracker) -> Self {
         let scope_tracker = scope_tracker.clone();
         scope_tracker.inner.fetch_add(COUNT_SIZE, Ordering::SeqCst);
