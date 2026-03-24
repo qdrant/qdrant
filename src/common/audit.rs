@@ -22,13 +22,12 @@ pub async fn fetch_cluster_audit_logs(
 ) -> Result<AuditLogResult, StorageError> {
     let config = audit_config.clone();
     let query_clone = query.clone();
-    let local_entries =
-        tokio::task::spawn_blocking(move || read_local_audit_logs(&config, &query_clone))
-            .await
-            .map_err(|e| {
-                StorageError::service_error(format!("Failed to read local audit logs: {e}"))
-            })?
-            .unwrap_or_default();
+    let local_entries = cancel::blocking::spawn_cancel_on_drop(move |cancel| {
+        read_local_audit_logs(&config, &query_clone, &cancel)
+    })
+    .await
+    .map_err(|e| StorageError::service_error(format!("Failed to read local audit logs: {e}")))?
+    .unwrap_or_default();
 
     let grpc_request = grpc::GetAuditLogRequest {
         time_from: query.time_from.map(|dt| dt.to_rfc3339()),

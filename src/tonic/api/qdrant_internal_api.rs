@@ -125,15 +125,19 @@ impl QdrantInternal for QdrantInternalService {
         &self,
         request: Request<GetAuditLogRequest>,
     ) -> Result<Response<GetAuditLogResponse>, Status> {
-        let req = request.into_inner();
+        let GetAuditLogRequest {
+            time_from,
+            time_to,
+            filters,
+            limit,
+        } = request.into_inner();
 
         let audit_config = self
             .audit_config
             .as_ref()
             .ok_or_else(|| Status::failed_precondition("Audit logging is not configured"))?;
 
-        let time_from = req
-            .time_from
+        let time_from = time_from
             .as_deref()
             .map(|s| {
                 DateTime::parse_from_rfc3339(s)
@@ -142,8 +146,7 @@ impl QdrantInternal for QdrantInternalService {
             })
             .transpose()?;
 
-        let time_to = req
-            .time_to
+        let time_to = time_to
             .as_deref()
             .map(|s| {
                 DateTime::parse_from_rfc3339(s)
@@ -152,18 +155,23 @@ impl QdrantInternal for QdrantInternalService {
             })
             .transpose()?;
 
-        let filters: HashMap<String, String> = req.filters;
+        let filters: HashMap<String, String> = filters;
 
-        let limit = if req.limit == 0 {
+        let limit = if limit == 0 {
             None
         } else {
-            Some(req.limit as usize)
+            Some(limit as usize)
         };
 
         let query = AuditLogQuery::new(time_from, time_to, filters, limit);
 
-        let entries = read_local_audit_logs(audit_config, &query)
-            .map_err(|e| Status::internal(e.to_string()))?;
+        let config = audit_config.clone();
+        let entries = cancel::blocking::spawn_cancel_on_drop(move |cancel| {
+            read_local_audit_logs(&config, &query, &cancel)
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Failed to read local audit logs: {e}")))?
+        .map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(GetAuditLogResponse { entries }))
     }

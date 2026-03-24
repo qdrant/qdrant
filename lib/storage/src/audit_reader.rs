@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use cancel::CancellationToken;
 use chrono::{DateTime, NaiveDate, Utc};
 
 use crate::audit::AuditConfig;
@@ -41,6 +42,7 @@ impl AuditLogQuery {
 pub fn read_local_audit_logs(
     config: &AuditConfig,
     query: &AuditLogQuery,
+    cancel: &CancellationToken,
 ) -> Result<Vec<String>, StorageError> {
     if !config.enabled {
         return Err(StorageError::BadRequest {
@@ -61,12 +63,12 @@ pub fn read_local_audit_logs(
     let mut results = Vec::new();
 
     for file_path in log_files {
-        if results.len() >= query.limit {
+        if cancel.is_cancelled() || results.len() >= query.limit {
             break;
         }
 
         let remaining = query.limit - results.len();
-        let mut entries = read_entries_from_file(file_path, query, remaining)?;
+        let mut entries = read_entries_from_file(file_path, query, remaining, cancel)?;
         results.append(&mut entries);
     }
 
@@ -174,6 +176,7 @@ fn read_entries_from_file(
     path: &Path,
     query: &AuditLogQuery,
     remaining: usize,
+    cancel: &CancellationToken,
 ) -> Result<Vec<String>, StorageError> {
     let file = fs_err::File::open(path).map_err(|e| StorageError::service_error(e.to_string()))?;
     let reader = BufReader::new(file);
@@ -181,7 +184,7 @@ fn read_entries_from_file(
     let mut results = Vec::new();
 
     for line in reader.lines() {
-        if results.len() >= remaining {
+        if cancel.is_cancelled() || results.len() >= remaining {
             break;
         }
 
