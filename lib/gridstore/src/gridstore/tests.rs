@@ -27,7 +27,7 @@ fn test_empty_payload_storage() {
     let (_dir, storage) = empty_storage();
     let payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(payload.is_none());
-    assert_eq!(storage.get_storage_size_bytes(), 0);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn test_put_single_empty_value() {
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), Payload::default());
-    assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), DEFAULT_BLOCK_SIZE_BYTES);
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn test_put_single_payload() {
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
-    assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), DEFAULT_BLOCK_SIZE_BYTES);
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn test_delete_single_payload() {
 
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(stored_payload, Some(payload));
-    assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), DEFAULT_BLOCK_SIZE_BYTES);
 
     // delete payload
     let deleted = storage.delete_value(0).unwrap();
@@ -179,7 +179,7 @@ fn test_delete_single_payload() {
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_none());
     storage.flusher()().unwrap();
-    assert_eq!(storage.get_storage_size_bytes(), 0);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 }
 
 #[test]
@@ -472,14 +472,14 @@ fn test_behave_like_hashmap(
     // flush data
     storage.flusher()().unwrap();
 
-    let before_size = storage.get_storage_size_bytes();
+    let before_size = storage.get_storage_size_bytes().unwrap();
     // drop storage
     drop(storage);
 
     // reopen storage
     let storage = Gridstore::<Payload>::open(dir.path().to_path_buf()).unwrap();
     // assert same size
-    assert_eq!(storage.get_storage_size_bytes(), before_size);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), before_size);
     // assert same length
     assert_eq!(
         storage.tracker.read().mapping_len().unwrap(),

@@ -239,7 +239,7 @@ impl PayloadStorage for MmapPayloadStorage {
     }
 
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
-        Ok(self.storage.get_storage_size_bytes())
+        Ok(self.storage.get_storage_size_bytes()?)
     }
 
     fn is_on_disk(&self) -> bool {
