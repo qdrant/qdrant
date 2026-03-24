@@ -9,7 +9,7 @@ use crate::generic_consts::AccessPattern;
 pub type MmapUniversalRw<T> = MmapUniversal<T>;
 
 /// Read-only mmap
-pub type MmapUniversalRo<T> = MmapUniversal<T>;
+pub type MmapUniversalRo<T> = ReadOnly<MmapUniversal<T>>;
 
 #[derive(Debug)]
 pub struct MmapUniversal<T> {
