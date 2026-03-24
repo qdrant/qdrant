@@ -991,7 +991,7 @@ mod test {
     use common::counter::hardware_counter::HardwareCounterCell;
     use parking_lot::RwLock;
     use segment::data_types::vectors::only_default_vector;
-    use segment::entry::NonAppendableSegmentEntry as _;
+    use segment::entry::ReadSegmentEntry as _;
     use segment::entry::entry_point::SegmentEntry as _;
     use segment::payload_json;
     use segment::types::{Condition, FieldCondition, Filter, Match, MatchValue, ValueVariants};

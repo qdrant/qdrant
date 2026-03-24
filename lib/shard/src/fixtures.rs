@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use rand::RngExt;
 use rand::rngs::ThreadRng;
 use segment::data_types::vectors::only_default_vector;
-use segment::entry::NonAppendableSegmentEntry;
+use segment::entry::ReadSegmentEntry;
 use segment::entry::entry_point::SegmentEntry;
 use segment::payload_json;
 use segment::segment::Segment;
