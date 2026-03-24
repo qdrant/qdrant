@@ -1,13 +1,17 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
-    GetConsensusCommitRequest, GetConsensusCommitResponse, GetTelemetryRequest,
-    GetTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
+    GetAuditLogRequest, GetAuditLogResponse, GetConsensusCommitRequest, GetConsensusCommitResponse,
+    GetTelemetryRequest, GetTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
     WaitOnConsensusCommitResponse,
 };
+use chrono::DateTime;
 use common::types::{DetailsLevel, TelemetryDetail};
+use storage::audit::AuditConfig;
+use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::rbac::{Access, Auth};
 use tokio::sync::Mutex;
@@ -23,6 +27,8 @@ pub struct QdrantInternalService {
     settings: Settings,
     /// Consensus state
     consensus_state: ConsensusStateRef,
+    /// Audit configuration
+    audit_config: Option<AuditConfig>,
 }
 
 impl QdrantInternalService {
@@ -31,10 +37,12 @@ impl QdrantInternalService {
         settings: Settings,
         consensus_state: ConsensusStateRef,
     ) -> Self {
+        let audit_config = settings.audit.clone();
         Self {
             telemetry_collector,
             settings,
             consensus_state,
+            audit_config,
         }
     }
 }
@@ -111,5 +119,52 @@ impl QdrantInternal for QdrantInternalService {
         };
 
         Ok(Response::new(response))
+    }
+
+    async fn get_audit_log(
+        &self,
+        request: Request<GetAuditLogRequest>,
+    ) -> Result<Response<GetAuditLogResponse>, Status> {
+        let req = request.into_inner();
+
+        let audit_config = self
+            .audit_config
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("Audit logging is not configured"))?;
+
+        let time_from = req
+            .time_from
+            .as_deref()
+            .map(|s| {
+                DateTime::parse_from_rfc3339(s)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .map_err(|e| Status::invalid_argument(format!("Invalid time_from: {e}")))
+            })
+            .transpose()?;
+
+        let time_to = req
+            .time_to
+            .as_deref()
+            .map(|s| {
+                DateTime::parse_from_rfc3339(s)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .map_err(|e| Status::invalid_argument(format!("Invalid time_to: {e}")))
+            })
+            .transpose()?;
+
+        let filters: HashMap<String, String> = req.filters;
+
+        let limit = if req.limit == 0 {
+            None
+        } else {
+            Some(req.limit as usize)
+        };
+
+        let query = AuditLogQuery::new(time_from, time_to, filters, limit);
+
+        let entries = read_local_audit_logs(audit_config, &query)
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        Ok(Response::new(GetAuditLogResponse { entries }))
     }
 }
