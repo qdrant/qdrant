@@ -63,6 +63,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             disk_parallel: None,
             populate: Some(populate),
             advice: None,
+            prevent_caching: None,
         };
         let storage = ReadOnly::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(

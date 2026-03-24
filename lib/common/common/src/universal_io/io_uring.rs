@@ -11,6 +11,7 @@ use ::io_uring::types::Fd;
 use ::io_uring::{IoUring, Probe, opcode, squeue};
 use ahash::AHashMap;
 use fs_err as fs;
+use fs_err::os::unix::fs::OpenOptionsExt;
 
 use super::*;
 use crate::generic_consts::AccessPattern;
@@ -47,6 +48,12 @@ fn init_io_uring() -> io::Result<IoUring> {
 #[derive(Debug)]
 pub struct IoUringFile {
     file: Arc<fs::File>,
+    /// Whether the file was opened with `O_DIRECT` flag. This allows reads to be shorter
+    /// than requested.
+    ///
+    /// This is because `O_DIRECT` can only read in aligned blocks of data, so reads at EOF might not
+    /// be aligned with O_DIRECT aligment, but it is not possible to request less than one block.
+    uses_o_direct: bool,
 }
 
 impl IoUringFile {
@@ -76,17 +83,24 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
             disk_parallel: _,
             populate: _,
             advice: _,
+            prevent_caching
         } = options;
 
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(writeable)
-            .create(false)
+        let mut opts = fs::OpenOptions::new();
+        opts.read(true);
+        opts.write(writeable);
+        opts.create(false);
+        if prevent_caching.unwrap_or_default() {
+            opts.custom_flags(nix::libc::O_DIRECT);
+        }
+
+        let file = opts
             .open(path.as_ref())
             .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
 
         let file = Self {
             file: Arc::new(file),
+            uses_o_direct: prevent_caching.unwrap_or_default(),
         };
 
         Ok(file)
@@ -94,7 +108,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         with_uring_runtime(|mut rt| {
-            let entry = rt.state.read(0, self.fd(), range)?;
+            let entry = rt.state.read(0, self.fd(), range, self.uses_o_direct)?;
             rt.enqueue_single(entry)?;
             rt.submit_and_wait(1)?;
 
@@ -118,7 +132,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                         return Ok(None);
                     };
 
-                    let entry = state.read(id as _, self.fd(), range)?;
+                    let entry = state.read(id as _, self.fd(), range, self.uses_o_direct)?;
                     Ok(Some(entry))
                 })?;
 
@@ -159,7 +173,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
                     file_indices.push(file_index);
 
-                    let entry = state.read(id as _, file.fd(), range)?;
+                    let entry = state.read(id as _, file.fd(), range, file.uses_o_direct)?;
                     Ok(Some(entry))
                 })?;
 
@@ -428,7 +442,13 @@ impl<'data, T> IoUringState<'data, T> {
 
     /// Allocates `Vec<MaybeUninit<T>>`, reinterprets it as `Vec<MaybeUninit<u8>>`, and stores the byte buffer
     /// so the kernel writes into correctly aligned memory for `T`.
-    pub fn read(&mut self, id: RequestId, fd: Fd, range: ReadRange) -> io::Result<squeue::Entry>
+    pub fn read(
+        &mut self,
+        id: RequestId,
+        fd: Fd,
+        range: ReadRange,
+        allow_short_read: bool,
+    ) -> io::Result<squeue::Entry>
     where
         T: bytemuck::Pod,
     {
@@ -440,7 +460,15 @@ impl<'data, T> IoUringState<'data, T> {
         let mut items: Vec<MaybeUninit<T>> = Vec::with_capacity(length as _);
         items.resize_with(length as _, || MaybeUninit::uninit());
 
-        let items = self.init(id, IoUringRequest::Read(items))?.expect_read();
+        let items = self
+            .init(
+                id,
+                IoUringRequest::Read {
+                    buffer: items,
+                    allow_short_read,
+                },
+            )?
+            .expect_read();
 
         let bytes_ptr = items.as_mut_ptr().cast();
         let byte_length = length * size_of::<T>() as u64;
@@ -495,14 +523,21 @@ impl<'data, T> IoUringState<'data, T> {
             .ok_or_else(|| io::Error::other("request {id} does not exist"))?;
 
         let resp = match req {
-            IoUringRequest::Read(mut items) => {
-                let actual_items = byte_length as usize / mem::size_of::<T>();
-                debug_assert!(
-                    actual_items <= items.len(),
-                    "read returned more bytes than requested"
-                );
-                // Truncate to the actual number of items read (short read at EOF).
-                items.truncate(actual_items);
+            IoUringRequest::Read {
+                buffer: mut items,
+                allow_short_read,
+            } => {
+                if allow_short_read {
+                    let actual_items = byte_length as usize / mem::size_of::<T>();
+                    debug_assert!(
+                        actual_items <= items.len(),
+                        "read returned more bytes than requested"
+                    );
+                    // Truncate to the actual number of items read (short read at EOF).
+                    items.truncate(actual_items);
+                } else {
+                    assert_eq!(mem::size_of_val(items.as_slice()), byte_length as usize);
+                }
                 let items: Vec<T> = unsafe { assume_init_vec(items) };
                 IoUringResponse::Read(items)
             }
@@ -535,7 +570,10 @@ type RequestId = u64;
 
 #[derive(Debug)]
 enum IoUringRequest<'data, T> {
-    Read(Vec<MaybeUninit<T>>),
+    Read {
+        buffer: Vec<MaybeUninit<T>>,
+        allow_short_read: bool,
+    },
     Write(&'data [T]),
 }
 
@@ -543,7 +581,7 @@ impl<'data, T> IoUringRequest<'data, T> {
     pub fn expect_read(&mut self) -> &mut Vec<MaybeUninit<T>> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            IoUringRequest::Read(buffer) => buffer,
+            IoUringRequest::Read { buffer, .. } => buffer,
             _ => panic!(),
         }
     }

@@ -449,6 +449,7 @@ pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
                 disk_parallel: None,
                 populate: Some(populate),
                 advice: Some(advice),
+                prevent_caching: None,
             },
         )?;
 
@@ -479,6 +480,7 @@ pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
             disk_parallel: None,
             populate: Some(false), // don't populate newly created chunk, as it's empty and will be filled later
             advice: None,
+            prevent_caching: None,
         },
     )
 }

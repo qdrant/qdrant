@@ -172,6 +172,7 @@ where
             disk_parallel: None,
             populate: Some(populate),
             advice: None,
+            prevent_caching: None,
         };
 
         let store = ReadOnly::open(&file_name, open_options)?;
