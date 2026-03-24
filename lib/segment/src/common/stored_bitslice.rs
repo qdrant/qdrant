@@ -10,6 +10,7 @@ use std::path::Path;
 
 use bitvec::mem::BitRegister;
 use bitvec::order::Lsb0;
+use common::bitvec::BitVec;
 use common::generic_consts::Random;
 use common::universal_io::{
     ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalWrite,
@@ -21,7 +22,6 @@ const BITS_PER_ELEMENT: u32 = BitStore::BITS;
 
 type BitStore = u64;
 type BitSlice = bitvec::slice::BitSlice<BitStore, Lsb0>;
-type BitVec = bitvec::vec::BitVec<BitStore, Lsb0>;
 
 /// Convenience alias for a bitslice backed by a memory-mapped file.
 pub type MmapBitSlice = StoredBitSlice<common::universal_io::mmap::MmapUniversal<BitStore>>;
