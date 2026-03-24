@@ -33,11 +33,11 @@ serde = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
-crc = "3.3.0"
+crc = "3.4.0"
 criterion = { workspace = true }
 hdrhistogram = "7.5.4"
-quickcheck = "1.0.3"
-regex = "1.11.3"
+quickcheck = "1.1.0"
+regex = "1.12.3"
 tempfile = { workspace = true }
 
 [[bench]]

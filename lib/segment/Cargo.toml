@@ -98,7 +98,7 @@ zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
 sysinfo = "0.38"
-charabia = { version = "0.9.7", default-features = false, features = [
+charabia = { version = "0.9.9", default-features = false, features = [
     "greek",
     "hebrew",
     "thai",
