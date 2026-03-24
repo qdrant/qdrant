@@ -380,7 +380,7 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::mmap::MmapUniversal;
+    use common::universal_io::MmapUniversal;
     use itertools::Itertools;
     use tempfile::Builder;
 

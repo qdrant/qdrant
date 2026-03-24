@@ -592,7 +592,7 @@ mod tests {
 
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_from_u8;
-    use common::universal_io::mmap::MmapUniversal;
+    use common::universal_io::MmapUniversal;
     use rstest::rstest;
     use tempfile::Builder;
 

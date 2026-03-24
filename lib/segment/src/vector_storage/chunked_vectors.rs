@@ -13,9 +13,8 @@ use common::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapType, create_and_ensure_length,
     open_write_mmap,
 };
-use common::universal_io::mmap::MmapUniversalRo;
 use common::universal_io::{
-    OpenOptions, ReadRange, UniversalIoError, UniversalWrite, read_json_via,
+    MmapUniversalRo, OpenOptions, ReadRange, UniversalIoError, UniversalWrite, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -488,7 +487,7 @@ pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
 mod tests {
     use std::iter::zip;
 
-    use common::universal_io::mmap::MmapUniversal;
+    use common::universal_io::MmapUniversal;
     use rand::SeedableRng;
     use rand::prelude::StdRng;
     use tempfile::Builder;

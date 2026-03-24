@@ -24,7 +24,7 @@ type BitStore = u64;
 type BitSlice = bitvec::slice::BitSlice<BitStore, Lsb0>;
 
 /// Convenience alias for a bitslice backed by a memory-mapped file.
-pub type MmapBitSlice = StoredBitSlice<common::universal_io::mmap::MmapUniversal<BitStore>>;
+pub type MmapBitSlice = StoredBitSlice<common::universal_io::MmapUniversal<BitStore>>;
 
 /// A storage-agnostic bitslice that supports both reading and writing bits.
 ///
@@ -260,7 +260,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
 mod tests {
     use std::io::Write;
 
-    use common::universal_io::mmap::MmapUniversal;
+    use common::universal_io::MmapUniversal;
     use tempfile::NamedTempFile;
 
     use super::*;

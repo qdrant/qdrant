@@ -14,7 +14,7 @@ use common::fs::atomic_save_json;
 use common::generic_consts::{AccessPattern, Random};
 use common::is_alive_lock::IsAliveLock;
 use common::mmap::create_and_ensure_length;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::MmapUniversal;
 use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::RwLock;

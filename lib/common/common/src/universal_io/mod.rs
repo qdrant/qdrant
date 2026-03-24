@@ -20,7 +20,6 @@ pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::*;
 pub use self::mmap_file::*;
-pub use self::mmap_universal as mmap;
 pub use self::mmap_universal::*;
 pub use self::read::UniversalRead;
 pub use self::read_only::*;

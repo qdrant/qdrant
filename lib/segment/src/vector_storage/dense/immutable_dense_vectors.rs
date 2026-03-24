@@ -10,9 +10,8 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{
-    OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, UniversalRead,
+    MmapUniversal, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, UniversalRead,
 };
 use fs_err::{File, OpenOptions};
 
