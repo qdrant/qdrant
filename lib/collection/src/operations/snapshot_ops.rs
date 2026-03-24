@@ -105,11 +105,18 @@ pub struct SnapshotDescription {
 
 impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
     fn from(value: SnapshotDescription) -> Self {
+        let SnapshotDescription {
+            name,
+            creation_time,
+            size,
+            checksum,
+        } = value;
+
         Self {
-            name: value.name,
-            creation_time: value.creation_time.map(naive_date_time_to_proto),
-            size: value.size as i64,
-            checksum: value.checksum,
+            name,
+            creation_time: creation_time.map(naive_date_time_to_proto),
+            size: size as i64,
+            checksum,
         }
     }
 }

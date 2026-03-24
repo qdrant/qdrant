@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
+use common::counter::hardware_data::HardwareData;
 
 use super::TableOfContent;
 
@@ -35,14 +36,24 @@ impl RequestHwCounter {
 
     pub fn to_rest_api(self) -> Option<api::rest::models::HardwareUsage> {
         if self.report_to_api {
+            let HardwareData {
+                cpu,
+                payload_io_read,
+                payload_io_write,
+                payload_index_io_read,
+                payload_index_io_write,
+                vector_io_read,
+                vector_io_write,
+            } = self.counter.hw_data();
+
             Some(api::rest::models::HardwareUsage {
-                cpu: self.counter.get_cpu(),
-                payload_io_read: self.counter.get_payload_io_read(),
-                payload_io_write: self.counter.get_payload_io_write(),
-                payload_index_io_read: self.counter.get_payload_index_io_read(),
-                payload_index_io_write: self.counter.get_payload_index_io_write(),
-                vector_io_read: self.counter.get_vector_io_read(),
-                vector_io_write: self.counter.get_vector_io_write(),
+                cpu,
+                payload_io_read,
+                payload_io_write,
+                payload_index_io_read,
+                payload_index_io_write,
+                vector_io_read,
+                vector_io_write,
             })
         } else {
             None
@@ -51,14 +62,24 @@ impl RequestHwCounter {
 
     pub fn to_grpc_api(self) -> Option<api::grpc::qdrant::HardwareUsage> {
         if self.report_to_api {
+            let HardwareData {
+                cpu,
+                payload_io_read,
+                payload_io_write,
+                payload_index_io_read,
+                payload_index_io_write,
+                vector_io_read,
+                vector_io_write,
+            } = self.counter.hw_data();
+
             Some(api::grpc::qdrant::HardwareUsage {
-                cpu: self.counter.get_cpu() as u64,
-                payload_io_read: self.counter.get_payload_io_read() as u64,
-                payload_io_write: self.counter.get_payload_io_write() as u64,
-                payload_index_io_read: self.counter.get_payload_index_io_read() as u64,
-                payload_index_io_write: self.counter.get_payload_index_io_write() as u64,
-                vector_io_read: self.counter.get_vector_io_read() as u64,
-                vector_io_write: self.counter.get_vector_io_write() as u64,
+                cpu: cpu as u64,
+                payload_io_read: payload_io_read as u64,
+                payload_io_write: payload_io_write as u64,
+                payload_index_io_read: payload_index_io_read as u64,
+                payload_index_io_write: payload_index_io_write as u64,
+                vector_io_read: vector_io_read as u64,
+                vector_io_write: vector_io_write as u64,
             })
         } else {
             None

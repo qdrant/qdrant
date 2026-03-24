@@ -25,6 +25,7 @@ use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
+use crate::operations::types::{SparseVectorParams, VectorParams};
 use crate::update_handler::Optimizer;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq)]
@@ -189,20 +190,29 @@ pub fn build_segment_optimizer_config(
         .vectors
         .params_iter()
         .map(|(name, params)| {
+            let VectorParams {
+                size,
+                distance,
+                hnsw_config,
+                quantization_config,
+                on_disk,
+                datatype,
+                multivector_config,
+            } = params;
+
             (
                 name.into(),
                 DenseVectorOptimizerInput {
-                    size: params.size.get() as usize,
-                    distance: params.distance,
-                    on_disk: params.on_disk,
-                    hnsw_config: global_hnsw_config.update_opt(params.hnsw_config.as_ref()),
-                    quantization_config: params
-                        .quantization_config
+                    size: size.get() as usize,
+                    distance: *distance,
+                    on_disk: *on_disk,
+                    hnsw_config: global_hnsw_config.update_opt(hnsw_config.as_ref()),
+                    quantization_config: quantization_config
                         .as_ref()
                         .or(global_quantization_config.as_ref())
                         .cloned(),
-                    multivector_config: params.multivector_config,
-                    datatype: params.datatype.map(VectorStorageDatatype::from),
+                    multivector_config: *multivector_config,
+                    datatype: datatype.map(VectorStorageDatatype::from),
                 },
             )
         })
@@ -215,19 +225,18 @@ pub fn build_segment_optimizer_config(
             config
                 .iter()
                 .map(|(name, params)| {
+                    let SparseVectorParams { index, modifier } = params;
+
                     (
                         name.clone(),
                         SparseVectorOptimizerInput {
-                            on_disk: params.index.and_then(|index| index.on_disk),
-                            full_scan_threshold: params
-                                .index
-                                .and_then(|index| index.full_scan_threshold),
-                            index_datatype: params
-                                .index
+                            on_disk: index.and_then(|index| index.on_disk),
+                            full_scan_threshold: index.and_then(|index| index.full_scan_threshold),
+                            index_datatype: index
                                 .and_then(|index| index.datatype)
                                 .map(VectorStorageDatatype::from),
                             storage_type: params.storage_type(),
-                            modifier: params.modifier,
+                            modifier: *modifier,
                         },
                     )
                 })

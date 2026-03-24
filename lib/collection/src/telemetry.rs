@@ -201,21 +201,30 @@ mod internal_conversions {
         type Error = Status;
 
         fn try_from(value: grpc::ShardTransferTelemetry) -> Result<Self, Self::Error> {
+            let grpc::ShardTransferTelemetry {
+                shard_id,
+                to_shard_id,
+                from,
+                to,
+                sync,
+                method,
+                comment,
+            } = value;
+
             Ok(ShardTransferInfo {
-                shard_id: value.shard_id,
-                to_shard_id: value.to_shard_id,
-                from: value.from,
-                to: value.to,
-                sync: value.sync,
-                method: value
-                    .method
+                shard_id,
+                to_shard_id,
+                from,
+                to,
+                sync,
+                method: method
                     .map(grpc::ShardTransferMethod::try_from)
                     .transpose()
                     .map_err(|err| {
                         Status::invalid_argument(format!("cannot decode ShardTransferMethod {err}"))
                     })?
                     .map(ShardTransferMethod::from),
-                comment: (!value.comment.is_empty()).then_some(value.comment),
+                comment: (!comment.is_empty()).then_some(comment),
             })
         }
     }
@@ -250,16 +259,24 @@ mod internal_conversions {
 
     impl From<ShardTransferInfo> for grpc::ShardTransferTelemetry {
         fn from(value: ShardTransferInfo) -> Self {
+            let ShardTransferInfo {
+                shard_id,
+                to_shard_id,
+                from,
+                to,
+                sync,
+                method,
+                comment,
+            } = value;
+
             grpc::ShardTransferTelemetry {
-                shard_id: value.shard_id,
-                to_shard_id: value.to_shard_id,
-                from: value.from,
-                to: value.to,
-                sync: value.sync,
-                method: value
-                    .method
-                    .map(|method| grpc::ShardTransferMethod::from(method) as i32),
-                comment: value.comment.unwrap_or_default(),
+                shard_id,
+                to_shard_id,
+                from,
+                to,
+                sync,
+                method: method.map(|method| grpc::ShardTransferMethod::from(method) as i32),
+                comment: comment.unwrap_or_default(),
             }
         }
     }
@@ -268,35 +285,51 @@ mod internal_conversions {
         type Error = Status;
 
         fn try_from(value: grpc::ReshardingTelemetry) -> Result<Self, Self::Error> {
+            let grpc::ReshardingTelemetry {
+                uuid,
+                direction,
+                shard_id,
+                peer_id,
+                shard_key,
+                stage,
+            } = value;
+
             Ok(ReshardingInfo {
-                uuid: Uuid::parse_str(&value.uuid)
+                uuid: Uuid::parse_str(&uuid)
                     .map_err(|err| Status::invalid_argument(format!("cannot parse Uuid {err}")))?,
                 direction: ReshardingDirection::from(
-                    grpc::ReshardingDirection::try_from(value.direction).map_err(|err| {
+                    grpc::ReshardingDirection::try_from(direction).map_err(|err| {
                         Status::invalid_argument(format!("cannot decode ReshardingDirection {err}"))
                     })?,
                 ),
-                shard_id: value.shard_id,
-                peer_id: value.peer_id,
-                shard_key: convert_shard_key_from_grpc_opt(value.shard_key),
-                stage: ReshardingStage::from(
-                    grpc::ReshardingStage::try_from(value.stage).map_err(|err| {
-                        Status::invalid_argument(format!("cannot decode ReshardingStage {err}"))
-                    })?,
-                ),
+                shard_id,
+                peer_id,
+                shard_key: convert_shard_key_from_grpc_opt(shard_key),
+                stage: ReshardingStage::from(grpc::ReshardingStage::try_from(stage).map_err(
+                    |err| Status::invalid_argument(format!("cannot decode ReshardingStage {err}")),
+                )?),
             })
         }
     }
 
     impl From<ReshardingInfo> for grpc::ReshardingTelemetry {
         fn from(value: ReshardingInfo) -> Self {
+            let ReshardingInfo {
+                uuid,
+                direction,
+                shard_id,
+                peer_id,
+                shard_key,
+                stage,
+            } = value;
+
             grpc::ReshardingTelemetry {
-                uuid: value.uuid.to_string(),
-                direction: grpc::ReshardingDirection::from(value.direction) as i32,
-                shard_id: value.shard_id,
-                peer_id: value.peer_id,
-                shard_key: value.shard_key.map(convert_shard_key_to_grpc),
-                stage: grpc::ReshardingStage::from(value.stage) as i32,
+                uuid: uuid.to_string(),
+                direction: grpc::ReshardingDirection::from(direction) as i32,
+                shard_id,
+                peer_id,
+                shard_key: shard_key.map(convert_shard_key_to_grpc),
+                stage: grpc::ReshardingStage::from(stage) as i32,
             }
         }
     }
