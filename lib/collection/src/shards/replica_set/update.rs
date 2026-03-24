@@ -791,6 +791,7 @@ mod tests {
     use std::sync::Arc;
 
     use common::budget::ResourceBudget;
+    use common::counter::hardware_accumulator::HwSharedDrain;
     use common::save_on_disk::SaveOnDisk;
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
@@ -958,6 +959,7 @@ mod tests {
             search_runtime,
             ResourceBudget::default(),
             None,
+            Arc::new(HwSharedDrain::default()),
         )
         .await
         .unwrap()

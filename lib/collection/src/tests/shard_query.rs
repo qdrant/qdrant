@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
@@ -45,6 +45,7 @@ async fn test_shard_query_rrf_rescoring() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -255,6 +256,7 @@ async fn test_shard_query_vector_rescoring() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -398,6 +400,7 @@ async fn test_shard_query_payload_vector() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();

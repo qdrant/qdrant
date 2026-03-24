@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwSharedDrain;
 use common::save_on_disk::SaveOnDisk;
 use common::types::{DetailsLevel, TelemetryDetail};
 use strum::IntoEnumIterator;
@@ -40,6 +41,7 @@ async fn test_shard_telemetry() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();

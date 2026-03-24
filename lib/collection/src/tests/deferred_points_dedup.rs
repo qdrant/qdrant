@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use rand::rng;
 use segment::data_types::vectors::VectorStructInternal;
@@ -106,6 +106,7 @@ async fn build_shard() -> (LocalShard, TempDir) {
         current_runtime.clone(),
         ResourceBudget::default(),
         optimizer_config,
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();

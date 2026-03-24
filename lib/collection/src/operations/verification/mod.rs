@@ -330,7 +330,7 @@ mod test {
     use std::sync::Arc;
 
     use common::budget::ResourceBudget;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,
@@ -539,6 +539,7 @@ mod test {
             None,
             ResourceBudget::default(),
             None,
+            Arc::new(HwSharedDrain::default()),
         )
         .await
         .expect("Failed to create new fixture collection");
