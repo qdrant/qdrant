@@ -23,7 +23,9 @@ use crate::data_types::query_context::{
 };
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
-use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use crate::entry::entry_point::{
+    NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
+};
 use crate::id_tracker::{IdTracker, PointMappingsGuard};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::query_estimator::adjust_for_deferred_points;
@@ -40,13 +42,9 @@ use crate::vector_storage::VectorStorage;
 
 /// This is a basic implementation of the trait, meaning that it implements the _actual_ operations with data and not
 /// any kind of proxy or wrapping.
-impl NonAppendableSegmentEntry for Segment {
+impl ReadSegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
         self.version.unwrap_or(0)
-    }
-
-    fn persistent_version(&self) -> SeqNumberType {
-        (*self.persisted_version.lock()).unwrap_or(0)
     }
 
     fn is_proxy(&self) -> bool {
@@ -561,6 +559,119 @@ impl NonAppendableSegmentEntry for Segment {
     fn is_appendable(&self) -> bool {
         self.appendable_flag
     }
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
+        self.payload_index.borrow().indexed_fields()
+    }
+
+    fn check_error(&self) -> Option<SegmentFailedState> {
+        self.error_status.clone()
+    }
+
+    fn vector_names(&self) -> HashSet<VectorNameBuf> {
+        self.vector_data.keys().cloned().collect()
+    }
+
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
+        let vector_index_searches: Vec<_> = self
+            .vector_data
+            .iter()
+            .map(|(k, v)| {
+                let mut telemetry = v.vector_index.borrow().get_telemetry_data(detail);
+                telemetry.index_name = Some(k.clone());
+                telemetry
+            })
+            .collect();
+
+        SegmentTelemetry {
+            info: self.info(),
+            config: self.config().clone(),
+            vector_index_searches,
+            payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
+        }
+    }
+
+    fn fill_query_context(&self, query_context: &mut QueryContext) {
+        query_context.add_available_point_count(self.available_point_count_without_deferred());
+        let hw_acc = query_context.hardware_usage_accumulator();
+        let hw_counter = hw_acc.get_counter_cell();
+
+        let QueryIdfStats {
+            idf,
+            indexed_vectors,
+        } = query_context.mut_idf_stats();
+
+        for (vector_name, idf) in idf.iter_mut() {
+            if let Some(vector_data) = self.vector_data.get(vector_name) {
+                let vector_index = vector_data.vector_index.borrow();
+
+                let indexed_vector_count = vector_index.indexed_vectors();
+
+                if let Some(count) = indexed_vectors.get_mut(vector_name) {
+                    *count += indexed_vector_count;
+                } else {
+                    indexed_vectors.insert(vector_name.clone(), indexed_vector_count);
+                }
+
+                vector_index.fill_idf_statistics(idf, &hw_counter);
+            }
+        }
+    }
+
+    fn point_is_deferred(&self, point_id: PointIdType) -> bool {
+        if let Some(deferred_from) = self.deferred_internal_id()
+            && let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id)
+        {
+            return self.is_appendable() && internal_id >= deferred_from;
+        };
+        false
+    }
+
+    fn deferred_point_ids(&self) -> Vec<PointIdType> {
+        let Some(deferred_from) = self.deferred_internal_id() else {
+            return vec![];
+        };
+        if self.deferred_point_count() == 0 {
+            return vec![];
+        }
+
+        let id_tracker = self.id_tracker.borrow();
+        id_tracker
+            .point_mappings()
+            .iter_internal()
+            .skip_while(|&internal_id| internal_id < deferred_from)
+            .filter_map(|internal_id| id_tracker.external_id(internal_id))
+            .collect()
+    }
+
+    fn available_point_count_without_deferred(&self) -> usize {
+        self.id_tracker
+            .borrow()
+            .available_point_count()
+            .saturating_sub(self.deferred_point_count())
+    }
+
+    fn has_deferred_points(&self) -> bool {
+        self.deferred_internal_id()
+            .is_some_and(|deferred_from| self.total_point_count() > deferred_from as usize)
+    }
+
+    fn deferred_point_count(&self) -> usize {
+        match self.deferred_internal_id() {
+            Some(internal_id) => self
+                .id_tracker
+                .borrow()
+                .total_point_count()
+                .saturating_sub(internal_id as usize)
+                .saturating_sub(self.deferred_deleted_count().unwrap_or_default()),
+            None => 0,
+        }
+    }
+}
+
+impl StorageSegmentEntry for Segment {
+    fn persistent_version(&self) -> SeqNumberType {
+        (*self.persisted_version.lock()).unwrap_or(0)
+    }
 
     fn flusher(&self, force: bool) -> Option<Flusher> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
@@ -754,6 +865,30 @@ impl NonAppendableSegmentEntry for Segment {
     fn data_path(&self) -> PathBuf {
         self.segment_path.clone()
     }
+}
+
+impl NonAppendableSegmentEntry for Segment {
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        match internal_id {
+            // Point does already not exist anymore
+            None => Ok(false),
+            Some(internal_id) => {
+                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
+                    segment.delete_point_internal(internal_id, hw_counter)?;
+
+                    segment.version_tracker.set_payload(Some(op_num));
+
+                    Ok((true, Some(internal_id)))
+                })
+            }
+        }
+    }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
@@ -835,136 +970,6 @@ impl NonAppendableSegmentEntry for Segment {
 
             Ok(true)
         })
-    }
-
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        match internal_id {
-            // Point does already not exist anymore
-            None => Ok(false),
-            Some(internal_id) => {
-                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
-                    segment.delete_point_internal(internal_id, hw_counter)?;
-
-                    segment.version_tracker.set_payload(Some(op_num));
-
-                    Ok((true, Some(internal_id)))
-                })
-            }
-        }
-    }
-
-    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.payload_index.borrow().indexed_fields()
-    }
-
-    fn check_error(&self) -> Option<SegmentFailedState> {
-        self.error_status.clone()
-    }
-
-    fn vector_names(&self) -> HashSet<VectorNameBuf> {
-        self.vector_data.keys().cloned().collect()
-    }
-
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
-        let vector_index_searches: Vec<_> = self
-            .vector_data
-            .iter()
-            .map(|(k, v)| {
-                let mut telemetry = v.vector_index.borrow().get_telemetry_data(detail);
-                telemetry.index_name = Some(k.clone());
-                telemetry
-            })
-            .collect();
-
-        SegmentTelemetry {
-            info: self.info(),
-            config: self.config().clone(),
-            vector_index_searches,
-            payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
-        }
-    }
-
-    fn fill_query_context(&self, query_context: &mut QueryContext) {
-        query_context.add_available_point_count(self.available_point_count_without_deferred());
-        let hw_acc = query_context.hardware_usage_accumulator();
-        let hw_counter = hw_acc.get_counter_cell();
-
-        let QueryIdfStats {
-            idf,
-            indexed_vectors,
-        } = query_context.mut_idf_stats();
-
-        for (vector_name, idf) in idf.iter_mut() {
-            if let Some(vector_data) = self.vector_data.get(vector_name) {
-                let vector_index = vector_data.vector_index.borrow();
-
-                let indexed_vector_count = vector_index.indexed_vectors();
-
-                if let Some(count) = indexed_vectors.get_mut(vector_name) {
-                    *count += indexed_vector_count;
-                } else {
-                    indexed_vectors.insert(vector_name.clone(), indexed_vector_count);
-                }
-
-                vector_index.fill_idf_statistics(idf, &hw_counter);
-            }
-        }
-    }
-
-    fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        if let Some(deferred_from) = self.deferred_internal_id()
-            && let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id)
-        {
-            return self.is_appendable() && internal_id >= deferred_from;
-        };
-        false
-    }
-
-    fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let Some(deferred_from) = self.deferred_internal_id() else {
-            return vec![];
-        };
-        if self.deferred_point_count() == 0 {
-            return vec![];
-        }
-
-        let id_tracker = self.id_tracker.borrow();
-        id_tracker
-            .point_mappings()
-            .iter_internal()
-            .skip_while(|&internal_id| internal_id < deferred_from)
-            .filter_map(|internal_id| id_tracker.external_id(internal_id))
-            .collect()
-    }
-
-    fn available_point_count_without_deferred(&self) -> usize {
-        self.id_tracker
-            .borrow()
-            .available_point_count()
-            .saturating_sub(self.deferred_point_count())
-    }
-
-    fn has_deferred_points(&self) -> bool {
-        self.deferred_internal_id()
-            .is_some_and(|deferred_from| self.total_point_count() > deferred_from as usize)
-    }
-
-    fn deferred_point_count(&self) -> usize {
-        match self.deferred_internal_id() {
-            Some(internal_id) => self
-                .id_tracker
-                .borrow()
-                .total_point_count()
-                .saturating_sub(internal_id as usize)
-                .saturating_sub(self.deferred_deleted_count().unwrap_or_default()),
-            None => 0,
-        }
     }
 }
 

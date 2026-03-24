@@ -16,7 +16,8 @@ use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::StorageSegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -26,13 +27,9 @@ use uuid::Uuid;
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
 
-impl NonAppendableSegmentEntry for ProxySegment {
+impl ReadSegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(self.wrapped_segment.get().read().version(), self.version)
-    }
-
-    fn persistent_version(&self) -> SeqNumberType {
-        self.wrapped_segment.get().read().persistent_version()
     }
 
     fn is_proxy(&self) -> bool {
@@ -559,171 +556,6 @@ impl NonAppendableSegmentEntry for ProxySegment {
         false
     }
 
-    fn flusher(&self, force: bool) -> Option<Flusher> {
-        let wrapped_segment = self.wrapped_segment.get();
-        let wrapped_segment_guard = wrapped_segment.read();
-        wrapped_segment_guard.flusher(force)
-    }
-
-    fn drop_data(self) -> OperationResult<()> {
-        self.wrapped_segment.drop_data()
-    }
-
-    fn data_path(&self) -> PathBuf {
-        self.wrapped_segment.get().read().data_path()
-    }
-
-    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
-
-        self.version = cmp::max(self.version, op_num);
-
-        // Store index change to later propagate to optimized/wrapped segment
-        self.changed_indexes
-            .insert(key.clone(), ProxyIndexChange::Delete(op_num));
-
-        Ok(true)
-    }
-
-    fn delete_field_index_if_incompatible(
-        &mut self,
-        op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
-        field_schema: &PayloadFieldSchema,
-    ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
-
-        self.version = cmp::max(self.version, op_num);
-
-        self.changed_indexes.insert(
-            key.clone(),
-            ProxyIndexChange::DeleteIfIncompatible(op_num, field_schema.clone()),
-        );
-
-        Ok(true)
-    }
-
-    fn build_field_index(
-        &self,
-        op_num: SeqNumberType,
-        _key: PayloadKeyTypeRef,
-        field_type: &PayloadFieldSchema,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<BuildFieldIndexResult> {
-        if self.version() > op_num {
-            return Ok(BuildFieldIndexResult::SkippedByVersion);
-        }
-
-        Ok(BuildFieldIndexResult::Built {
-            indexes: vec![], // No actual index is built in proxy segment, they will be created later
-            schema: field_type.clone(),
-        })
-    }
-
-    fn apply_field_index(
-        &mut self,
-        op_num: SeqNumberType,
-        key: PayloadKeyType,
-        field_schema: PayloadFieldSchema,
-        _field_index: Vec<FieldIndex>,
-    ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
-
-        self.version = cmp::max(self.version, op_num);
-
-        // Store index change to later propagate to optimized/wrapped segment
-        self.changed_indexes
-            .insert(key, ProxyIndexChange::Create(field_schema, op_num));
-
-        Ok(true)
-    }
-
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let mut was_deleted = false;
-        let was_deferred_point;
-
-        self.version = cmp::max(self.version, op_num);
-
-        let point_offset = match &self.wrapped_segment {
-            LockedSegment::Original(raw_segment) => {
-                let (point_offset, is_deferred) = {
-                    let read_segment = raw_segment.read();
-                    (
-                        read_segment.get_internal_id(point_id),
-                        read_segment.point_is_deferred(point_id),
-                    )
-                };
-                was_deferred_point = is_deferred;
-
-                if point_offset.is_some() {
-                    let prev = self.deleted_points.insert(
-                        point_id,
-                        ProxyDeletedPoint {
-                            local_version: op_num,
-                            operation_version: op_num,
-                        },
-                    );
-                    was_deleted = prev.is_none();
-                    if let Some(prev) = prev {
-                        debug_assert!(
-                            prev.operation_version < op_num,
-                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                        )
-                    }
-                }
-                point_offset
-            }
-            LockedSegment::Proxy(proxy) => {
-                let (has_point, is_deferred) = {
-                    let read_proxy = proxy.read();
-                    (
-                        read_proxy.has_point(point_id),
-                        read_proxy.point_is_deferred(point_id),
-                    )
-                };
-                was_deferred_point = is_deferred;
-
-                if has_point {
-                    let prev = self.deleted_points.insert(
-                        point_id,
-                        ProxyDeletedPoint {
-                            local_version: op_num,
-                            operation_version: op_num,
-                        },
-                    );
-                    was_deleted = prev.is_none();
-                    if let Some(prev) = prev {
-                        debug_assert!(
-                            prev.operation_version < op_num,
-                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                        )
-                    }
-                }
-                None
-            }
-        };
-
-        self.set_deleted_offset(point_offset);
-
-        // Increase delete counter for deferred point.
-        if was_deleted && was_deferred_point {
-            self.deleted_deferred_count += 1;
-        }
-
-        Ok(was_deleted)
-    }
-
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         let mut indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
 
@@ -795,6 +627,26 @@ impl NonAppendableSegmentEntry for ProxySegment {
             .read()
             .deferred_point_count()
             .saturating_sub(self.deleted_deferred_count)
+    }
+}
+
+impl StorageSegmentEntry for ProxySegment {
+    fn persistent_version(&self) -> SeqNumberType {
+        self.wrapped_segment.get().read().persistent_version()
+    }
+
+    fn flusher(&self, force: bool) -> Option<Flusher> {
+        let wrapped_segment = self.wrapped_segment.get();
+        let wrapped_segment_guard = wrapped_segment.read();
+        wrapped_segment_guard.flusher(force)
+    }
+
+    fn drop_data(self) -> OperationResult<()> {
+        self.wrapped_segment.drop_data()
+    }
+
+    fn data_path(&self) -> PathBuf {
+        self.wrapped_segment.get().read().data_path()
     }
 }
 
@@ -881,5 +733,158 @@ impl SegmentEntry for ProxySegment {
         Err(OperationError::service_error(format!(
             "Clear payload is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
+    }
+}
+
+impl NonAppendableSegmentEntry for ProxySegment {
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        let mut was_deleted = false;
+        let was_deferred_point;
+
+        self.version = cmp::max(self.version, op_num);
+
+        let point_offset = match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => {
+                let (point_offset, is_deferred) = {
+                    let read_segment = raw_segment.read();
+                    (
+                        read_segment.get_internal_id(point_id),
+                        read_segment.point_is_deferred(point_id),
+                    )
+                };
+                was_deferred_point = is_deferred;
+
+                if point_offset.is_some() {
+                    let prev = self.deleted_points.insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                        )
+                    }
+                }
+                point_offset
+            }
+            LockedSegment::Proxy(proxy) => {
+                let (has_point, is_deferred) = {
+                    let read_proxy = proxy.read();
+                    (
+                        read_proxy.has_point(point_id),
+                        read_proxy.point_is_deferred(point_id),
+                    )
+                };
+                was_deferred_point = is_deferred;
+
+                if has_point {
+                    let prev = self.deleted_points.insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                        )
+                    }
+                }
+                None
+            }
+        };
+
+        self.set_deleted_offset(point_offset);
+
+        // Increase delete counter for deferred point.
+        if was_deleted && was_deferred_point {
+            self.deleted_deferred_count += 1;
+        }
+
+        Ok(was_deleted)
+    }
+
+    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.version = cmp::max(self.version, op_num);
+
+        // Store index change to later propagate to optimized/wrapped segment
+        self.changed_indexes
+            .insert(key.clone(), ProxyIndexChange::Delete(op_num));
+
+        Ok(true)
+    }
+
+    fn delete_field_index_if_incompatible(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyTypeRef,
+        field_schema: &PayloadFieldSchema,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.version = cmp::max(self.version, op_num);
+
+        self.changed_indexes.insert(
+            key.clone(),
+            ProxyIndexChange::DeleteIfIncompatible(op_num, field_schema.clone()),
+        );
+
+        Ok(true)
+    }
+
+    fn build_field_index(
+        &self,
+        op_num: SeqNumberType,
+        _key: PayloadKeyTypeRef,
+        field_type: &PayloadFieldSchema,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BuildFieldIndexResult> {
+        if self.version() > op_num {
+            return Ok(BuildFieldIndexResult::SkippedByVersion);
+        }
+
+        Ok(BuildFieldIndexResult::Built {
+            indexes: vec![], // No actual index is built in proxy segment, they will be created later
+            schema: field_type.clone(),
+        })
+    }
+
+    fn apply_field_index(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyType,
+        field_schema: PayloadFieldSchema,
+        _field_index: Vec<FieldIndex>,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.version = cmp::max(self.version, op_num);
+
+        // Store index change to later propagate to optimized/wrapped segment
+        self.changed_indexes
+            .insert(key, ProxyIndexChange::Create(field_schema, op_num));
+
+        Ok(true)
     }
 }

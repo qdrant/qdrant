@@ -24,7 +24,9 @@ use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::entry::NonAppendableSegmentEntry;
+use segment::entry::{
+    NonAppendableSegmentEntry as _, ReadSegmentEntry as _, StorageSegmentEntry as _,
+};
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::PointIdType;

@@ -6,7 +6,7 @@ use common::types::DeferredBehavior;
 
 use super::Segment;
 use crate::common::operation_error::OperationResult;
-use crate::entry::entry_point::NonAppendableSegmentEntry;
+use crate::entry::ReadSegmentEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::PayloadIndex;
 use crate::spaces::tools::peek_top_smallest_iterable;
