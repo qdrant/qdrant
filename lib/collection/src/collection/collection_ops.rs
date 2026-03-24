@@ -356,11 +356,23 @@ impl Collection {
             info.points_count = info.points_count.zip(points_count).map(|(a, b)| a + b);
             info.segments_count += segments_count;
             info.warnings.extend(warnings);
-            if let Some(queue) = &mut info.update_queue {
-                queue.length += update_queue.map(|q| q.length).unwrap_or(0);
+
+            if let Some(UpdateQueueInfo {
+                length,
+                deferred_points,
+            }) = &mut info.update_queue
+            {
+                *length += update_queue.as_ref().map(|q| q.length).unwrap_or(0);
+
+                if let Some(deferred_points) = deferred_points.as_mut() {
+                    *deferred_points += update_queue
+                        .map(|i| i.deferred_points.unwrap_or_default())
+                        .unwrap_or(0);
+                }
             } else {
                 info.update_queue = update_queue;
             }
+
             for (key, response_schema) in payload_schema {
                 info.payload_schema
                     .entry(key)
