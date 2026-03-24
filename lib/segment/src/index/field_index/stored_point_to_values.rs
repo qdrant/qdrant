@@ -9,7 +9,7 @@ use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, ReadRange, UniversalRead};
+use common::universal_io::{self, ReadOnly, ReadRange, UniversalRead};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -71,7 +71,7 @@ impl StoredValue for str {
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
 pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead<u8>> {
     file_name: PathBuf,
-    store: S,
+    store: ReadOnly<S>,
     header: Header,
     phantom: std::marker::PhantomData<T>,
 }
@@ -174,7 +174,7 @@ where
             advice: None,
         };
 
-        let store = S::open(&file_name, open_options)?;
+        let store = ReadOnly::open(&file_name, open_options)?;
 
         let header_bytes = store.read::<Random>(ReadRange {
             byte_offset: 0,

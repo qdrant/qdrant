@@ -11,7 +11,9 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{OpenOptions as UniversalOpenOptions, ReadRange, UniversalRead};
+use common::universal_io::{
+    OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, UniversalRead,
+};
 use fs_err::{File, OpenOptions};
 
 use crate::common::error_logging::LogError;
@@ -34,7 +36,7 @@ where
     pub dim: usize,
     pub num_vectors: usize,
     /// Vector data storage, providing read access via [`UniversalRead<T>`].
-    storage: S,
+    storage: ReadOnly<S>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -63,7 +65,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             populate: Some(populate),
             advice: None,
         };
-        let storage = S::open(vectors_path, options).map_err(|e| {
+        let storage = ReadOnly::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(
                 "Failed to open vector mmap at {}: {e}",
                 vectors_path.display()
