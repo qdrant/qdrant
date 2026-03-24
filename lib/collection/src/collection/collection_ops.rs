@@ -364,10 +364,10 @@ impl Collection {
             {
                 *length += update_queue.as_ref().map(|q| q.length).unwrap_or(0);
 
-                if let Some(deferred_points) = deferred_points.as_mut() {
-                    *deferred_points += update_queue
-                        .map(|i| i.deferred_points.unwrap_or_default())
-                        .unwrap_or(0);
+                if let Some(response_deferred_count) = update_queue.and_then(|i| i.deferred_points)
+                    && response_deferred_count > 0
+                {
+                    *deferred_points.get_or_insert_default() += response_deferred_count;
                 }
             } else {
                 info.update_queue = update_queue;
