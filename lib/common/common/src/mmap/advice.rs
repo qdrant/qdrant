@@ -2,8 +2,8 @@
 //! and [`memmap2::Advice`].
 
 use std::hint::black_box;
-use std::io;
 use std::num::Wrapping;
+use std::{io, slice};
 
 use serde::Deserialize;
 
@@ -98,63 +98,66 @@ pub fn madvise(madviseable: &impl Madviseable, advice: Advice) -> io::Result<()>
 /// over [`memmap2::Mmap::advise`] and [`memmap2::MmapMut::advise`].
 pub trait Madviseable {
     /// Advise OS how given memory map will be accessed. On non-Unix platforms this is a no-op.
-    fn madvise(&self, advice: Advice) -> io::Result<()>;
-
-    fn populate(&self);
-}
-
-impl Madviseable for memmap2::Mmap {
     fn madvise(&self, advice: Advice) -> io::Result<()> {
         #[cfg(unix)]
-        self.advise(advice.into())?;
+        self.advise_impl(advice.into())?;
+
         #[cfg(not(unix))]
-        log::debug!("Ignore {advice:?} on this platform");
+        log::debug!("Madvice {advice:?} is ignored on non-unix platforms");
+
         Ok(())
     }
 
+    #[cfg(unix)]
+    fn advise_impl(&self, advice: memmap2::Advice) -> io::Result<()>;
+
     fn populate(&self) {
         #[cfg(target_os = "linux")]
-        if *POPULATE_READ_IS_SUPPORTED {
-            match self.advise(memmap2::Advice::PopulateRead) {
-                Ok(()) => return,
-                Err(err) => log::warn!(
-                    "Failed to populate with MADV_POPULATE_READ: {err}. \
-                     Falling back to naive approach."
-                ),
+        {
+            use std::sync::LazyLock;
+
+            /// True if `MADV_POPULATE_READ` is supported (added in Linux 5.14)
+            static POPULATE_READ_IS_SUPPORTED: LazyLock<bool> =
+                LazyLock::new(|| memmap2::Advice::PopulateRead.is_supported());
+
+            if *POPULATE_READ_IS_SUPPORTED {
+                match self.advise_impl(memmap2::Advice::PopulateRead) {
+                    Ok(()) => return,
+                    Err(err) => log::warn!(
+                        "Failed to populate with MADV_POPULATE_READ: {err}. \
+                         Falling back to naive approach."
+                    ),
+                }
             }
         }
+
+        self.populate_simple_impl();
+    }
+
+    fn populate_simple_impl(&self);
+}
+
+impl Madviseable for memmap2::Mmap {
+    #[cfg(unix)]
+    fn advise_impl(&self, advice: memmap2::Advice) -> io::Result<()> {
+        self.advise(advice)
+    }
+
+    fn populate_simple_impl(&self) {
         populate_simple(self);
     }
 }
 
 impl Madviseable for memmap2::MmapMut {
-    fn madvise(&self, advice: Advice) -> io::Result<()> {
-        #[cfg(unix)]
-        self.advise(advice.into())?;
-        #[cfg(not(unix))]
-        log::debug!("Ignore {advice:?} on this platform");
-        Ok(())
+    #[cfg(unix)]
+    fn advise_impl(&self, advice: memmap2::Advice) -> io::Result<()> {
+        self.advise(advice)
     }
 
-    fn populate(&self) {
-        #[cfg(target_os = "linux")]
-        if *POPULATE_READ_IS_SUPPORTED {
-            match self.advise(memmap2::Advice::PopulateRead) {
-                Ok(()) => return,
-                Err(err) => log::warn!(
-                    "Failed to populate with MADV_POPULATE_READ: {err}. \
-                     Falling back to naive approach."
-                ),
-            }
-        }
+    fn populate_simple_impl(&self) {
         populate_simple(self);
     }
 }
-
-/// True if `MADV_POPULATE_READ` is supported (added in Linux 5.14).
-#[cfg(target_os = "linux")]
-static POPULATE_READ_IS_SUPPORTED: std::sync::LazyLock<bool> =
-    std::sync::LazyLock::new(|| memmap2::Advice::PopulateRead.is_supported());
 
 /// On older Linuxes and non-Unix platforms, we just read every 512th byte to
 /// populate the page cache. This is not as efficient as `madvise(2)` with
