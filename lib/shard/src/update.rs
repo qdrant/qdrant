@@ -459,16 +459,11 @@ pub fn delete_points_by_filter(
             let present: Vec<_> = all_matched_points
                 .iter()
                 .copied()
-                .filter(|point_id| segment.has_point(*point_id))
+                .filter(|point_id| {
+                    segment.has_point(*point_id) && !points_to_keep.contains(point_id)
+                })
                 .collect();
             points_to_delete.insert(segment_id, present);
-        }
-
-        // Remove points_to_keep from each segment's list.
-        if !points_to_keep.is_empty() {
-            for points in points_to_delete.values_mut() {
-                points.retain(|id| !points_to_keep.contains(id));
-            }
         }
     }
 
