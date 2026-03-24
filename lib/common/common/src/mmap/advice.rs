@@ -159,6 +159,18 @@ impl Madviseable for memmap2::MmapMut {
     }
 }
 
+impl Madviseable for memmap2::MmapRaw {
+    #[cfg(unix)]
+    fn advise_impl(&self, advice: memmap2::Advice) -> io::Result<()> {
+        self.advise(advice)
+    }
+
+    fn populate_simple_impl(&self) {
+        let mmap = unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) };
+        populate_simple(mmap);
+    }
+}
+
 /// On older Linuxes and non-Unix platforms, we just read every 512th byte to
 /// populate the page cache. This is not as efficient as `madvise(2)` with
 /// `MADV_POPULATE_READ` but it's better than nothing.
