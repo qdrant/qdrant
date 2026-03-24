@@ -57,6 +57,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
         let num_vectors = file_len.saturating_sub(HEADER_SIZE) / dim / size_of::<T>();
 
         let options = UniversalOpenOptions {
+            writeable: false,
             need_sequential: true,
             disk_parallel: None,
             populate: Some(populate),

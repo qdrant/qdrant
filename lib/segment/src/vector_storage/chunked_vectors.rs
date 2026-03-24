@@ -445,6 +445,7 @@ pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
         let chunk = S::open(
             &chunk_path,
             OpenOptions {
+                writeable: true,
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
                 disk_parallel: None,
                 populate: Some(populate),
@@ -474,6 +475,7 @@ pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
     S::open(
         &chunk_file_path,
         OpenOptions {
+            writeable: true,
             need_sequential: *MULTI_MMAP_IS_SUPPORTED,
             disk_parallel: None,
             populate: Some(false), // don't populate newly created chunk, as it's empty and will be filled later

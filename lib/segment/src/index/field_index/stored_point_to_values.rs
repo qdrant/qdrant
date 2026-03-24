@@ -167,6 +167,7 @@ where
         let file_name = path.join(POINT_TO_VALUES_PATH);
 
         let open_options = common::universal_io::OpenOptions {
+            writeable: false,
             need_sequential: false,
             disk_parallel: None,
             populate: Some(populate),

@@ -21,6 +21,7 @@ pub type PageId = u32;
 /// OpenOptions for the tracker file (random access, no populate).
 fn tracker_open_options() -> OpenOptions {
     OpenOptions {
+        writeable: true,
         need_sequential: false,
         disk_parallel: None,
         populate: Some(false),

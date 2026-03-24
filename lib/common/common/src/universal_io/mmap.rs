@@ -18,7 +18,7 @@ use crate::universal_io::{
 ///
 /// Both [`MmapSlice<T>`] and [`MmapSliceReadOnly<T>`] satisfy this trait.
 pub trait MmapAccess<T>: AsRef<[T]> + std::fmt::Debug + Sized {
-    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self>;
+    fn open_mmap(path: &Path, write: bool, advice: AdviceSetting, populate: bool) -> Result<Self>;
 
     fn populate(&self) -> std::io::Result<()>;
 
@@ -33,7 +33,9 @@ pub trait MmapAccess<T>: AsRef<[T]> + std::fmt::Debug + Sized {
 
 // MmapMut-backed slice
 impl<T: Copy + 'static> MmapAccess<T> for MmapSlice<T> {
-    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self> {
+    fn open_mmap(path: &Path, write: bool, advice: AdviceSetting, populate: bool) -> Result<Self> {
+        debug_assert!(write);
+
         let mmap = open_write_mmap(path, advice, populate)
             .map_err(|err| UniversalIoError::extract_not_found(err, path))?;
         Ok(unsafe { MmapSlice::try_from(mmap) }?)
@@ -46,7 +48,9 @@ impl<T: Copy + 'static> MmapAccess<T> for MmapSlice<T> {
 
 // Mmap (read only) backed slice
 impl<T: Copy + 'static> MmapAccess<T> for MmapSliceReadOnly<T> {
-    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self> {
+    fn open_mmap(path: &Path, write: bool, advice: AdviceSetting, populate: bool) -> Result<Self> {
+        debug_assert!(!write);
+
         let mmap = open_read_mmap(path, advice, populate)
             .map_err(|err| UniversalIoError::extract_not_found(err, path))?;
         Ok(unsafe { MmapSliceReadOnly::try_from(mmap) }?)
@@ -123,6 +127,7 @@ where
 {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
+            writeable,
             need_sequential,
             disk_parallel: _,
             populate,
@@ -132,7 +137,7 @@ where
         let mmap_file = path.as_ref();
         let advice = advice.unwrap_or(AdviceSetting::Global);
 
-        let mmap = M::open_mmap(mmap_file, advice, populate.unwrap_or_default())?;
+        let mmap = M::open_mmap(mmap_file, writeable, advice, populate.unwrap_or_default())?;
 
         let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED && need_sequential {
             let mmap_seq =

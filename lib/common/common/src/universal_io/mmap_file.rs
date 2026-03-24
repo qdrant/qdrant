@@ -32,6 +32,7 @@ where
 {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
+            writeable,
             need_sequential,
             disk_parallel: _,
             populate,
@@ -40,7 +41,7 @@ where
 
         let mmap = open_mmap(
             path.as_ref(),
-            true,
+            writeable,
             populate.unwrap_or_default(),
             advice.unwrap_or(AdviceSetting::Global),
         )?;

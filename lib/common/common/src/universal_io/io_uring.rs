@@ -65,13 +65,21 @@ impl UniversalReadFileOps for IoUringFile {
 }
 
 impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
-    fn open(path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self> {
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         // Check that `io_uring` was successfully initialized
         with_uring_runtime::<u8, _, _>(|_| ())?;
 
+        let OpenOptions {
+            writeable,
+            need_sequential: _,
+            disk_parallel: _,
+            populate: _,
+            advice: _,
+        } = options;
+
         let file = fs::OpenOptions::new()
             .read(true)
-            .write(true)
+            .write(writeable)
             .create(false)
             .open(path.as_ref())
             .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
