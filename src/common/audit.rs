@@ -5,7 +5,7 @@ use collection::shards::channel_service::ChannelService;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 pub use storage::audit::*;
-use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
+use storage::audit_reader::{AuditLogQuery, TIMESTAMP_KEY, read_local_audit_logs};
 use storage::content_manager::errors::StorageError;
 
 pub struct AuditLogResult {
@@ -92,8 +92,8 @@ pub async fn fetch_cluster_audit_logs(
 
     // Sort by timestamp descending (newest first)
     all_entries.sort_by(|a, b| {
-        let ts_a = a.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
-        let ts_b = b.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+        let ts_a = a.get(TIMESTAMP_KEY).and_then(|v| v.as_str()).unwrap_or("");
+        let ts_b = b.get(TIMESTAMP_KEY).and_then(|v| v.as_str()).unwrap_or("");
         ts_b.cmp(ts_a)
     });
 

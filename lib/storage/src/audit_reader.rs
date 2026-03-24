@@ -10,6 +10,7 @@ use crate::content_manager::errors::StorageError;
 
 const DEFAULT_LIMIT: usize = 100;
 const MAX_LIMIT: usize = 10_000;
+pub const TIMESTAMP_KEY: &str = "timestamp";
 
 /// Parameters for querying audit logs.
 #[derive(Debug, Clone)]
@@ -214,7 +215,7 @@ fn matches_query(json_line: &str, query: &AuditLogQuery) -> bool {
 
     // Time range check
     if query.time_from.is_some() || query.time_to.is_some() {
-        let Some(ts_val) = obj.get("timestamp").and_then(|v| v.as_str()) else {
+        let Some(ts_val) = obj.get(TIMESTAMP_KEY).and_then(|v| v.as_str()) else {
             return false;
         };
         let Ok(ts) = ts_val.parse::<DateTime<Utc>>() else {
