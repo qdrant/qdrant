@@ -584,26 +584,36 @@ impl CollectionParams {
         self.vectors
             .params_iter()
             .map(|(name, params)| {
+                let VectorParams {
+                    size,
+                    distance,
+                    hnsw_config: _,
+                    quantization_config,
+                    on_disk,
+                    datatype,
+                    multivector_config,
+                } = params;
+
                 (
                     name.into(),
                     VectorDataConfig {
-                        size: params.size.get() as usize,
-                        distance: params.distance,
+                        size: size.get() as usize,
+                        distance: *distance,
                         // Plain (disabled) index
                         index: Indexes::Plain {},
                         // Quantizaton config in appendable segment if runtime feature flag is set
                         quantization_config: common::flags::feature_flags()
                             .appendable_quantization
-                            .then(|| quantization_fn(params.quantization_config.as_ref()))
+                            .then(|| quantization_fn(quantization_config.as_ref()))
                             .flatten(),
                         // Default to in memory storage
-                        storage_type: if params.on_disk.unwrap_or_default() {
+                        storage_type: if on_disk.unwrap_or_default() {
                             VectorStorageType::ChunkedMmap
                         } else {
                             VectorStorageType::InRamChunkedMmap
                         },
-                        multivector_config: params.multivector_config,
-                        datatype: params.datatype.map(VectorStorageDatatype::from),
+                        multivector_config: *multivector_config,
+                        datatype: datatype.map(VectorStorageDatatype::from),
                     },
                 )
             })

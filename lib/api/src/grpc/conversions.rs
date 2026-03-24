@@ -3234,14 +3234,24 @@ impl From<rest::SearchMatrixPair> for SearchMatrixPair {
 
 impl From<HwMeasurementAcc> for HardwareUsage {
     fn from(value: HwMeasurementAcc) -> Self {
+        let HardwareData {
+            cpu,
+            payload_io_read,
+            payload_io_write,
+            payload_index_io_read,
+            payload_index_io_write,
+            vector_io_read,
+            vector_io_write,
+        } = value.hw_data();
+
         Self {
-            cpu: value.get_cpu() as u64,
-            payload_io_read: value.get_payload_io_read() as u64,
-            payload_io_write: value.get_payload_io_write() as u64,
-            payload_index_io_read: value.get_payload_index_io_read() as u64,
-            payload_index_io_write: value.get_payload_index_io_write() as u64,
-            vector_io_read: value.get_vector_io_read() as u64,
-            vector_io_write: value.get_vector_io_write() as u64,
+            cpu: cpu as u64,
+            payload_io_read: payload_io_read as u64,
+            payload_io_write: payload_io_write as u64,
+            payload_index_io_read: payload_index_io_read as u64,
+            payload_index_io_write: payload_index_io_write as u64,
+            vector_io_read: vector_io_read as u64,
+            vector_io_write: vector_io_write as u64,
         }
     }
 }

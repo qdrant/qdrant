@@ -37,20 +37,37 @@ impl ReshardState {
     }
 
     pub fn matches(&self, key: &ReshardKey) -> bool {
-        self.uuid == key.uuid
-            && self.direction == key.direction
-            && self.peer_id == key.peer_id
-            && self.shard_id == key.shard_id
-            && self.shard_key == key.shard_key
+        let ReshardKey {
+            uuid,
+            direction,
+            peer_id,
+            shard_id,
+            shard_key,
+        } = key;
+
+        self.uuid == *uuid
+            && self.direction == *direction
+            && self.peer_id == *peer_id
+            && self.shard_id == *shard_id
+            && self.shard_key == *shard_key
     }
 
     pub fn key(&self) -> ReshardKey {
+        let ReshardState {
+            uuid,
+            peer_id,
+            shard_id,
+            shard_key,
+            direction,
+            stage: _,
+        } = self;
+
         ReshardKey {
-            uuid: self.uuid,
-            direction: self.direction,
-            peer_id: self.peer_id,
-            shard_id: self.shard_id,
-            shard_key: self.shard_key.clone(),
+            uuid: *uuid,
+            direction: *direction,
+            peer_id: *peer_id,
+            shard_id: *shard_id,
+            shard_key: shard_key.clone(),
         }
     }
 }
