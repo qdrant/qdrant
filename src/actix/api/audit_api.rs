@@ -4,7 +4,7 @@ use actix_web::{HttpResponse, get, web};
 use actix_web_validator::Query;
 use api::grpc;
 use api::grpc::transport_channel_pool::DEFAULT_GRPC_TIMEOUT;
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use collection::operations::verification::new_unchecked_verification_pass;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -22,9 +22,9 @@ use crate::actix::helpers;
 #[derive(Debug, Deserialize, Validate)]
 pub struct AuditLogParams {
     /// ISO-8601 start time (inclusive)
-    pub time_from: Option<String>,
+    pub time_from: Option<DateTime<Utc>>,
     /// ISO-8601 end time (exclusive)
-    pub time_to: Option<String>,
+    pub time_to: Option<DateTime<Utc>>,
     /// Maximum number of entries to return (default: 100, max: 10000)
     #[validate(range(min = 1, max = 10000))]
     pub limit: Option<usize>,
@@ -85,33 +85,16 @@ async fn get_audit_logs(
             });
         }
 
-        let time_from = params
-            .time_from
-            .as_deref()
-            .map(|s| {
-                DateTime::parse_from_rfc3339(s)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .map_err(|e| StorageError::BadRequest {
-                        description: format!("Invalid time_from: {e}"),
-                    })
-            })
-            .transpose()?;
-
-        let time_to = params
-            .time_to
-            .as_deref()
-            .map(|s| {
-                DateTime::parse_from_rfc3339(s)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .map_err(|e| StorageError::BadRequest {
-                        description: format!("Invalid time_to: {e}"),
-                    })
-            })
-            .transpose()?;
-
         let filters = parse_filters(req.query_string());
 
-        let query = AuditLogQuery::new(time_from, time_to, filters.clone(), params.limit);
+        let AuditLogParams {
+            time_from,
+            time_to,
+            limit,
+            timeout,
+        } = params.into_inner();
+
+        let query = AuditLogQuery::new(time_from, time_to, filters.clone(), limit);
 
         let limit = query.limit;
 
@@ -130,15 +113,15 @@ async fn get_audit_logs(
             .copied()
             .collect();
 
-        let timeout = params.timeout.unwrap_or(DEFAULT_GRPC_TIMEOUT.as_secs());
+        let timeout = timeout.unwrap_or(DEFAULT_GRPC_TIMEOUT.as_secs());
         let _ = timeout; // reserved for future per-peer timeout
 
         let mut futures = all_peers
             .into_iter()
             .map(|peer_id| {
                 let request = grpc::GetAuditLogRequest {
-                    time_from: params.time_from.clone(),
-                    time_to: params.time_to.clone(),
+                    time_from: time_from.map(|dt| dt.to_rfc3339()),
+                    time_to: time_to.map(|dt| dt.to_rfc3339()),
                     filters: grpc_filters.clone(),
                     limit: limit as u64,
                 };
