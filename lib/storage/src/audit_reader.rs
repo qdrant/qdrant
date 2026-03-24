@@ -213,20 +213,27 @@ fn matches_query(json_line: &str, query: &AuditLogQuery) -> bool {
         return false;
     };
 
+    let AuditLogQuery {
+        time_from,
+        time_to,
+        filters,
+        limit: _,
+    } = query;
+
     // Time range check
-    if query.time_from.is_some() || query.time_to.is_some() {
+    if time_from.is_some() || time_to.is_some() {
         let Some(ts_val) = obj.get(TIMESTAMP_KEY).and_then(|v| v.as_str()) else {
             return false;
         };
         let Ok(ts) = ts_val.parse::<DateTime<Utc>>() else {
             return false;
         };
-        if let Some(ref from) = query.time_from
+        if let Some(from) = time_from
             && ts < *from
         {
             return false;
         }
-        if let Some(ref to) = query.time_to
+        if let Some(to) = time_to
             && ts >= *to
         {
             return false;
@@ -234,18 +241,16 @@ fn matches_query(json_line: &str, query: &AuditLogQuery) -> bool {
     }
 
     // Key=value filtering: each filter key must match the corresponding top-level field
-    for (key, expected_value) in &query.filters {
+    for (key, expected_value) in filters {
         match obj.get(key) {
-            Some(actual) => {
-                let actual_str = match actual {
-                    serde_json::Value::String(s) => s.as_str().to_string(),
-                    other => other.to_string(),
-                };
-                if actual_str != *expected_value {
+            Some(serde_json::Value::String(s)) => {
+                if s.as_str() != expected_value {
                     return false;
                 }
             }
-            None => return false,
+            _ => {
+                return false;
+            }
         }
     }
 
