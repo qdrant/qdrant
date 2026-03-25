@@ -2,12 +2,12 @@ use std::hint::black_box;
 use std::iter;
 
 use common::mmap::create_and_ensure_length;
+use common::stored_bitslice::MmapBitSlice;
 use common::universal_io::OpenOptions;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use segment::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
-use segment::common::stored_bitslice::MmapBitSlice;
 use tempfile::tempdir;
 
 const SIZE: usize = 4 * 1024 * 1024;

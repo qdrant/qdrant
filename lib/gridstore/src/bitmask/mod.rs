@@ -6,10 +6,9 @@ use std::path::{Path, PathBuf};
 use ahash::AHashSet;
 use common::bitvec::BitSlice;
 use common::fs::clear_disk_cache;
-use common::mmap::{
-    Advice, AdviceSetting, MmapBitSlice, create_and_ensure_length, open_write_mmap,
-};
-use common::universal_io::{MmapUniversalRw, UniversalWrite};
+use common::mmap::create_and_ensure_length;
+use common::stored_bitslice::StoredBitSlice;
+use common::universal_io::{OpenOptions, UniversalWrite};
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
 
@@ -20,30 +19,34 @@ use crate::tracker::{BlockOffset, PageId};
 
 const BITMASK_NAME: &str = "bitmask.dat";
 
+const OPEN_OPTIONS: OpenOptions = OpenOptions {
+    writeable: true,
+    need_sequential: false,
+    disk_parallel: None,
+    populate: Some(false),
+    advice: None,
+};
+
 type RegionId = u32;
 
 /// Concrete bitmask type using memory-mapped storage.
-pub type MmapBitmask = Bitmask<MmapUniversalRw<RegionGaps>>;
+pub type MmapBitmask = Bitmask<MmapUniversalRw<RegionGaps>, MmapUniversalRw<u64>>;
 
 #[derive(Debug)]
-pub struct Bitmask<GapsStore: UniversalWrite<RegionGaps>> {
+pub struct Bitmask<GapsStore, BitSliceStore> {
     config: StorageConfig,
 
     /// A summary of every 1KB (8_192 bits) of contiguous zeros in the bitmask, or less if it is the last region.
     regions_gaps: BitmaskGaps<GapsStore>,
 
     /// The actual bitmask. Each bit represents a block. A 1 means the block is used, a 0 means it is free.
-    bitslice: MmapBitSlice,
+    bitslice: StoredBitSlice<BitSliceStore>,
 
     /// The path to the file containing the bitmask.
     path: PathBuf,
 }
 
-/// Access pattern to the bitmask is always random reads by the already calculated page id.
-/// We never need to iterate over multiple bitmask file pages in a row, therefore we can use random access.
-const DEFAULT_ADVICE: Advice = Advice::Random;
-
-impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
+impl<G: UniversalWrite<RegionGaps>, B: UniversalWrite<u64>> Bitmask<G, B> {
     pub fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone(), self.regions_gaps.path()]
     }
@@ -53,7 +56,8 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
         let trailing_gap = self.regions_gaps.trailing_free_blocks()?;
         #[cfg(debug_assertions)]
         {
-            let num_trailing_zeros = self.bitslice.trailing_zeros();
+            let all_bits = self.bitslice.read_all()?;
+            let num_trailing_zeros = all_bits.trailing_zeros();
             debug_assert_eq!(num_trailing_zeros, trailing_gap as usize);
         }
 
@@ -84,24 +88,25 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
 
         let length = Self::length_for_page(&config);
 
-        // create bitmask mmap
+        // create bitmask file
         let path = Self::bitmask_path(dir);
-        create_and_ensure_length(&path, length).unwrap();
-        let mmap = open_write_mmap(&path, AdviceSetting::from(DEFAULT_ADVICE), false)?;
-        let mmap_bitslice = MmapBitSlice::try_from(mmap, 0)?;
+        create_and_ensure_length(&path, length)?;
 
-        assert_eq!(mmap_bitslice.len(), length * 8, "Bitmask length mismatch");
+        let bitslice = StoredBitSlice::open(&path, OPEN_OPTIONS)?;
 
-        // create regions gaps mmap
-        let num_regions = mmap_bitslice.len() / config.region_size_blocks;
+        let bit_len = bitslice.bit_len() as usize;
+        assert_eq!(bit_len, length * 8, "Bitmask length mismatch");
+
+        // create regions gaps
+        let num_regions = bit_len / config.region_size_blocks;
         let region_gaps = vec![RegionGaps::all_free(config.region_size_blocks as u16); num_regions];
 
-        let mmap_region_gaps = BitmaskGaps::create(dir, region_gaps.into_iter(), config.clone())?;
+        let regions_gaps = BitmaskGaps::create(dir, region_gaps.into_iter(), config.clone())?;
 
         Ok(Self {
             config,
-            regions_gaps: mmap_region_gaps,
-            bitslice: mmap_bitslice,
+            regions_gaps,
+            bitslice,
             path,
         })
     }
@@ -121,15 +126,14 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
                 path.display()
             )));
         }
-        let mmap = open_write_mmap(&path, AdviceSetting::from(DEFAULT_ADVICE), false)?;
-        let mmap_bitslice = MmapBitSlice::from(mmap, 0);
 
-        let bitmask_gaps = BitmaskGaps::open(dir, config.clone())?;
+        let bitslice = StoredBitSlice::open(&path, OpenOptions::default())?;
+        let regions_gaps = BitmaskGaps::open(dir, config.clone())?;
 
         Ok(Self {
             config,
-            regions_gaps: bitmask_gaps,
-            bitslice: mmap_bitslice,
+            regions_gaps,
+            bitslice,
             path,
         })
     }
@@ -138,7 +142,7 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
         dir.join(BITMASK_NAME)
     }
 
-    pub fn flusher(&self) -> impl FnOnce() -> Result<()> + Send + use<S> {
+    pub fn flusher(&self) -> impl FnOnce() -> Result<()> + Send + use<G, B> {
         let bitslice_flusher = self.bitslice.flusher();
         let gaps_flusher = self.regions_gaps.flusher();
         move || {
@@ -156,6 +160,7 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
         let block_size_bytes = self.config.block_size_bytes;
         let region_size_bytes = region_size_blocks * block_size_bytes;
         let gaps = self.regions_gaps.as_slice()?;
+        let all_bits = self.bitslice.read_all()?;
         for (gap_id, gap) in gaps.iter().enumerate() {
             // skip empty regions
             if gap.is_empty(region_size_blocks as u16) {
@@ -168,7 +173,7 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
                 // compute the size of the occupied blocks for the region
                 let gap_offset_start = gap_id * region_size_blocks;
                 let gap_offset_end = gap_offset_start + region_size_blocks;
-                let occupied_blocks = self.bitslice[gap_offset_start..gap_offset_end].count_ones();
+                let occupied_blocks = all_bits[gap_offset_start..gap_offset_end].count_ones();
                 size += occupied_blocks * block_size_bytes
             }
         }
@@ -176,7 +181,7 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
     }
 
     pub fn infer_num_pages(&self) -> usize {
-        let bits = self.bitslice.len();
+        let bits = self.bitslice.bit_len() as usize;
         let covered_bytes = bits * self.config.block_size_bytes;
         covered_bytes.div_euclid(self.config.page_size_bytes)
     }
@@ -186,26 +191,23 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
         let extra_length = Self::length_for_page(&self.config);
 
         // flush outstanding changes
-        self.bitslice.flusher()().unwrap();
+        self.bitslice.flusher()()?;
 
         // reopen the file with a larger size
-        let previous_bitslice_len = self.bitslice.len();
-        let new_length = (previous_bitslice_len / u8::BITS as usize) + extra_length;
-        create_and_ensure_length(&self.path, new_length).unwrap();
-        let mmap = open_write_mmap(&self.path, AdviceSetting::from(DEFAULT_ADVICE), false)?;
+        let previous_bit_len = self.bitslice.bit_len() as usize;
+        let new_length = (previous_bit_len / u8::BITS as usize) + extra_length;
+        create_and_ensure_length(&self.path, new_length)?;
 
-        self.bitslice = MmapBitSlice::try_from(mmap, 0)?;
+        self.bitslice = StoredBitSlice::open(&self.path, OPEN_OPTIONS)?;
+
+        let current_bit_len = self.bitslice.bit_len() as usize;
 
         // extend the region gaps
         let current_total_regions = self.regions_gaps.len()?;
-        let expected_total_full_regions = self
-            .bitslice
-            .len()
-            .div_euclid(self.config.region_size_blocks);
+        let expected_total_full_regions =
+            current_bit_len.div_euclid(self.config.region_size_blocks);
         debug_assert!(
-            self.bitslice
-                .len()
-                .is_multiple_of(self.config.region_size_blocks),
+            current_bit_len.is_multiple_of(self.config.region_size_blocks),
             "Bitmask length must be a multiple of region size"
         );
         let new_regions = expected_total_full_regions.saturating_sub(current_total_regions);
@@ -215,7 +217,7 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
 
         assert_eq!(
             self.regions_gaps.len()? * self.config.region_size_blocks,
-            self.bitslice.len(),
+            current_bit_len,
             "Bitmask length mismatch",
         );
 
@@ -231,18 +233,19 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
 
     /// The amount of blocks that have never been used in the page.
     #[cfg(test)]
-    pub(crate) fn free_blocks_for_page(&self, page_id: PageId) -> usize {
+    pub(crate) fn free_blocks_for_page(&self, page_id: PageId) -> Result<usize> {
         let range_of_page = self.range_of_page(page_id);
-        self.bitslice[range_of_page].trailing_zeros()
+        let all_bits = self.bitslice.read_all()?;
+        Ok(all_bits[range_of_page].trailing_zeros())
     }
 
     /// The amount of blocks that are available for reuse in the page.
     #[allow(dead_code)]
-    pub(crate) fn fragmented_blocks_for_page(&self, page_id: PageId) -> usize {
+    pub(crate) fn fragmented_blocks_for_page(&self, page_id: PageId) -> Result<usize> {
         let range_of_page = self.range_of_page(page_id);
-        let bitslice = &self.bitslice[range_of_page];
-
-        bitslice.count_zeros() - bitslice.trailing_zeros()
+        let all_bits = self.bitslice.read_all()?;
+        let bitslice = &all_bits[range_of_page];
+        Ok(bitslice.count_zeros() - bitslice.trailing_zeros())
     }
 
     pub(crate) fn find_available_blocks(
@@ -267,7 +270,8 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
             (page_id as PageId, page_block_offset as BlockOffset)
         };
 
-        let regions_bitslice = &self.bitslice[regions_start_offset..regions_end_offset];
+        let all_bits = self.bitslice.read_all()?;
+        let regions_bitslice = &all_bits[regions_start_offset..regions_end_offset];
 
         Ok(Self::find_available_blocks_in_slice(
             regions_bitslice,
@@ -405,7 +409,10 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
 
         for range in local_block_ranges {
             let bitmask_range = (range.start + page_start)..(range.end + page_start);
-            self.bitslice[bitmask_range.clone()].fill(used);
+
+            self.bitslice.set_ascending_bits_batch(
+                (bitmask_range.start as u64..bitmask_range.end as u64).map(|i| (i, used)),
+            )?;
 
             let start_region_id =
                 (bitmask_range.start / self.config.region_size_blocks) as RegionId;
@@ -421,10 +428,10 @@ impl<S: UniversalWrite<RegionGaps>> Bitmask<S> {
     fn update_region_gaps(&mut self, dirty_regions: AHashSet<RegionId>) -> Result<()> {
         for region_id in dirty_regions {
             let region_id = region_id as usize;
-            let region_start = region_id * self.config.region_size_blocks;
-            let region_end = region_start + self.config.region_size_blocks;
+            let region_start = (region_id * self.config.region_size_blocks) as u64;
+            let region_end = region_start + self.config.region_size_blocks as u64;
 
-            let bitslice = &self.bitslice[region_start..region_end];
+            let bitslice = &self.bitslice.read_bit_range(region_start..region_end)?;
 
             let gaps = Self::calculate_gaps(bitslice, self.config.region_size_blocks);
 
@@ -604,7 +611,7 @@ mod tests {
             super::Bitmask::create(dir.path(), options.try_into().unwrap()).unwrap();
         bitmask.cover_new_page().unwrap();
 
-        assert_eq!(bitmask.bitslice.len() as u32, blocks_per_page * 2);
+        assert_eq!(bitmask.bitslice.bit_len() as u32, blocks_per_page * 2);
 
         // 1..10
         bitmask.mark_blocks(0, 1, 9, true).unwrap();
@@ -613,7 +620,9 @@ mod tests {
         bitmask.mark_blocks(0, 15, 5, true).unwrap();
 
         // 30..blocks_per_page
-        bitmask.mark_blocks(0, 30, blocks_per_page - 30, true).unwrap();
+        bitmask
+            .mark_blocks(0, 30, blocks_per_page - 30, true)
+            .unwrap();
 
         // blocks_per_page..blocks_per_page + 1
         bitmask.mark_blocks(1, 0, 1, true).unwrap();
