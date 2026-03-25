@@ -15941,8 +15941,6 @@ pub struct FileExistsRequest {
     #[prost(string, tag = "2")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
-    #[prost(bool, tag = "3")]
-    pub sequential: bool,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
