@@ -122,10 +122,9 @@ impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
             return Ok(None);
         }
 
-        let element = self.storage.read::<Random>(ReadRange {
-            byte_offset: element_index * size_of::<BitStore>() as u64,
-            length: 1,
-        })?[0];
+        let element = self
+            .storage
+            .read::<Random>(ReadRange::one(element_index * size_of::<BitStore>() as u64))?[0];
 
         let bitslice = BitSlice::from_element(&element);
 
@@ -281,10 +280,9 @@ mod tests {
                 });
             }
 
-            let mut element = self.storage.read::<Random>(ReadRange {
-                byte_offset: element_index * size_of::<BitStore>() as u64,
-                length: 1,
-            })?[0];
+            let mut element = self
+                .storage
+                .read::<Random>(ReadRange::one(element_index * size_of::<BitStore>() as u64))?[0];
 
             let element = &mut element;
 
