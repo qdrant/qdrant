@@ -21,6 +21,7 @@ pub type PageId = u32;
 /// OpenOptions for the tracker file (random access, no populate).
 fn tracker_open_options() -> OpenOptions {
     OpenOptions {
+        writeable: true,
         need_sequential: false,
         disk_parallel: None,
         populate: Some(false),
@@ -591,7 +592,7 @@ mod tests {
 
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_from_u8;
-    use common::universal_io::mmap::MmapUniversal;
+    use common::universal_io::MmapUniversal;
     use rstest::rstest;
     use tempfile::Builder;
 

@@ -73,11 +73,14 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
 
         // Disk-cache is backed by a single file
         let OpenOptions {
+            writeable,
             need_sequential: _,
             disk_parallel: _,
             populate: _,
             advice: _,
         } = options;
+
+        debug_assert!(!writeable);
 
         Ok(CachedSlice::open(controller, path.as_ref())?)
     }

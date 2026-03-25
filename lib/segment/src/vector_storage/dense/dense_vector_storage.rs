@@ -10,8 +10,7 @@ use common::fs::clear_disk_cache;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::{MmapUniversal, UniversalRead};
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
 

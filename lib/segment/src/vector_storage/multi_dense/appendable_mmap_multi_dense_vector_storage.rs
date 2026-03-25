@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::MmapUniversal;
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -34,7 +34,7 @@ const VECTORS_DIR_PATH: &str = "vectors";
 const OFFSETS_DIR_PATH: &str = "offsets";
 const DELETED_DIR_PATH: &str = "deleted";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct MultivectorMmapOffset {
     offset: u32,
