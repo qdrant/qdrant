@@ -85,8 +85,16 @@ pub enum AuditRotation {
 // Audit event
 // ---------------------------------------------------------------------------
 
+/// Whether the access check passed or was denied.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuditResult {
+    Ok,
+    Denied,
+}
+
 /// A single structured audit log entry.
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuditEvent {
     /// ISO‑8601 timestamp.
     pub timestamp: DateTime<Utc>,
@@ -95,21 +103,21 @@ pub struct AuditEvent {
     /// How the request was authenticated.
     pub auth_type: AuthType,
     /// The `subject` field from the JWT (if any).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject: Option<String>,
     /// Remote IP address of the client.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote: Option<String>,
     /// Collection name, if the check was collection‑scoped.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collection: Option<String>,
     /// Tracing ID extracted from request headers, if present.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tracing_id: Option<String>,
-    /// `"ok"` when the access check passed, `"denied"` otherwise.
-    pub result: &'static str,
+    /// Whether the access check passed or was denied.
+    pub result: AuditResult,
     /// Error message when the access check failed.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 

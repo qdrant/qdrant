@@ -6,13 +6,13 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use shard::PeerId;
+use storage::audit::AuditEvent;
 pub use storage::audit::*;
-use storage::audit_reader::{AuditLogQuery, TIMESTAMP_KEY, read_local_audit_logs};
+use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
 use storage::content_manager::errors::StorageError;
 
 pub struct AuditLogResult {
-    pub entries: Vec<serde_json::Value>,
-    pub missing_peers: Vec<u64>,
+    pub entries: Vec<AuditEvent>,
 }
 
 /// Fetch audit logs from local node and all remote peers, merge and return newest first.
@@ -58,55 +58,44 @@ pub async fn fetch_cluster_audit_logs(
         })
         .collect::<FuturesUnordered<_>>();
 
-    let mut missing_peers: Vec<u64> = Vec::new();
-
     // Each source provides entries already sorted descending (newest first).
-    let mut sources: Vec<Vec<serde_json::Value>> = Vec::new();
+    let mut sources: Vec<Vec<AuditEvent>> = Vec::new();
 
-    sources.push(
-        local_entries
-            .iter()
-            .filter_map(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-            .collect(),
-    );
+    sources.push(local_entries);
 
     while let Some((peer_id, result)) = futures.next().await {
         match result {
             Ok(Ok(response)) => {
-                sources.push(
-                    response
-                        .into_inner()
-                        .entries
-                        .iter()
-                        .filter_map(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-                        .collect(),
-                );
+                let entries: Result<Vec<_>, _> = response
+                    .into_inner()
+                    .entries
+                    .iter()
+                    .map(|s| serde_json::from_str::<AuditEvent>(s))
+                    .collect();
+
+                sources.push(entries?);
             }
             Ok(Err(err)) => {
-                log::error!("Failed to fetch audit logs from peer {peer_id}: {err:#?}");
-                missing_peers.push(peer_id);
+                return Err(StorageError::service_error(format!(
+                    "Failed to fetch audit logs from peer {peer_id}: {err}"
+                )));
             }
-            Err(_) => {
-                log::error!("Timed out fetching audit logs from peer {peer_id}");
-                missing_peers.push(peer_id);
+            Err(elapsed) => {
+                return Err(StorageError::timeout(
+                    timeout,
+                    format!("Timed out fetching audit logs from peer {peer_id} after {elapsed:?}"),
+                ));
             }
         }
     }
 
     // Each source is pre-sorted descending (newest first). K-way merge
     // picks the newest entry across all heads at each step.
-    let entries: Vec<serde_json::Value> = sources
+    let entries: Vec<AuditEvent> = sources
         .into_iter()
-        .kmerge_by(|a, b| {
-            let ts_a = a.get(TIMESTAMP_KEY).and_then(|v| v.as_str()).unwrap_or("");
-            let ts_b = b.get(TIMESTAMP_KEY).and_then(|v| v.as_str()).unwrap_or("");
-            ts_a >= ts_b
-        })
+        .kmerge_by(|a, b| a.timestamp >= b.timestamp)
         .take(query.limit)
         .collect();
 
-    Ok(AuditLogResult {
-        entries,
-        missing_peers,
-    })
+    Ok(AuditLogResult { entries })
 }

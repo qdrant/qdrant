@@ -173,6 +173,11 @@ impl QdrantInternal for QdrantInternalService {
         .map_err(|e| Status::internal(format!("Failed to read local audit logs: {e}")))?
         .map_err(|e| Status::internal(e.to_string()))?;
 
+        let entries: Vec<String> = entries
+            .iter()
+            .filter_map(|e| serde_json::to_string(e).ok())
+            .collect();
+
         Ok(Response::new(GetAuditLogResponse { entries }))
     }
 }

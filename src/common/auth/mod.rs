@@ -7,7 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;
-use storage::audit::{AuditEvent, audit_log, is_audit_enabled};
+use storage::audit::{AuditEvent, AuditResult, audit_log, is_audit_enabled};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -82,7 +82,7 @@ pub fn log_denied_auth(
             remote,
             collection: None,
             tracing_id,
-            result: "denied",
+            result: AuditResult::Denied,
             error: Some(error.to_string()),
         });
     }

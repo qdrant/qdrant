@@ -5,12 +5,11 @@ use std::path::{Path, PathBuf};
 use cancel::CancellationToken;
 use chrono::{DateTime, NaiveDate, Utc};
 
-use crate::audit::AuditConfig;
+use crate::audit::{AuditConfig, AuditEvent};
 use crate::content_manager::errors::StorageError;
 
 const DEFAULT_LIMIT: usize = 100;
 const MAX_LIMIT: usize = 10_000;
-pub const TIMESTAMP_KEY: &str = "timestamp";
 
 /// Parameters for querying audit logs.
 #[derive(Debug, Clone)]
@@ -39,7 +38,7 @@ impl AuditLogQuery {
 
 /// Read audit log entries from local files, applying time range and field filters.
 ///
-/// Returns matching entries as raw JSON strings in **descending** chronological
+/// Returns matching entries as [`AuditEvent`]s in **descending** chronological
 /// order (newest first). Files are iterated from newest to oldest; within each
 /// file a sliding window keeps only the last (newest) `remaining` matches so
 /// memory stays O(limit) regardless of file size.
@@ -47,7 +46,7 @@ pub fn read_local_audit_logs(
     config: &AuditConfig,
     query: &AuditLogQuery,
     cancel: &CancellationToken,
-) -> Result<Vec<String>, StorageError> {
+) -> Result<Vec<AuditEvent>, StorageError> {
     if !config.enabled {
         return Err(StorageError::BadRequest {
             description: "Audit logging is not enabled".to_string(),
@@ -198,11 +197,11 @@ fn read_entries_from_file(
     query: &AuditLogQuery,
     remaining: usize,
     cancel: &CancellationToken,
-) -> Result<Vec<String>, StorageError> {
+) -> Result<Vec<AuditEvent>, StorageError> {
     let file = fs_err::File::open(path).map_err(|e| StorageError::service_error(e.to_string()))?;
     let reader = BufReader::new(file);
 
-    let mut window: VecDeque<String> = VecDeque::with_capacity(remaining);
+    let mut window: VecDeque<AuditEvent> = VecDeque::with_capacity(remaining);
 
     for line in reader.lines() {
         if cancel.is_cancelled() {
@@ -215,12 +214,16 @@ fn read_entries_from_file(
             continue;
         }
 
-        match matches_query_result(trimmed, query) {
+        let Ok(event) = serde_json::from_str::<AuditEvent>(trimmed) else {
+            continue;
+        };
+
+        match matches_query_result(&event, query) {
             MatchResult::Match => {
                 if window.len() >= remaining {
                     window.pop_front();
                 }
-                window.push_back(trimmed.to_string());
+                window.push_back(event);
             }
             MatchResult::NoMatch => {}
             // Entries are chronological; once we exceed time_to, all
@@ -240,16 +243,8 @@ enum MatchResult {
     PastTimeTo,
 }
 
-/// Check if a JSON line matches the query filters and time range.
-fn matches_query_result(json_line: &str, query: &AuditLogQuery) -> MatchResult {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(json_line) else {
-        return MatchResult::NoMatch;
-    };
-
-    let Some(obj) = value.as_object() else {
-        return MatchResult::NoMatch;
-    };
-
+/// Check whether an audit event matches the query time range and filters.
+fn matches_query_result(event: &AuditEvent, query: &AuditLogQuery) -> MatchResult {
     let AuditLogQuery {
         time_from,
         time_to,
@@ -258,48 +253,88 @@ fn matches_query_result(json_line: &str, query: &AuditLogQuery) -> MatchResult {
     } = query;
 
     // Time range check
-    if time_from.is_some() || time_to.is_some() {
-        let Some(ts_val) = obj.get(TIMESTAMP_KEY).and_then(|v| v.as_str()) else {
-            return MatchResult::NoMatch;
-        };
-        let Ok(ts) = ts_val.parse::<DateTime<Utc>>() else {
-            return MatchResult::NoMatch;
-        };
-        if let Some(from) = time_from
-            && ts < *from
-        {
-            return MatchResult::NoMatch;
-        }
-        if let Some(to) = time_to
-            && ts >= *to
-        {
-            return MatchResult::PastTimeTo;
-        }
+    if let Some(from) = time_from
+        && event.timestamp < *from
+    {
+        return MatchResult::NoMatch;
+    }
+    if let Some(to) = time_to
+        && event.timestamp >= *to
+    {
+        return MatchResult::PastTimeTo;
     }
 
-    // Key=value filtering: each filter key must match the corresponding top-level field
-    for (key, expected_value) in filters {
-        match obj.get(key) {
-            Some(serde_json::Value::String(s)) => {
-                if s.as_str() != expected_value {
-                    return MatchResult::NoMatch;
-                }
-            }
-            _ => {
-                return MatchResult::NoMatch;
-            }
-        }
+    // Key=value filtering with exhaustive destructuring so that adding a new
+    // field to AuditEvent causes a compile error here until it is handled.
+    if !filters.is_empty() && !matches_filters(event, filters) {
+        return MatchResult::NoMatch;
     }
 
     MatchResult::Match
 }
 
+/// Check whether every filter key=value pair matches the corresponding field
+/// on `event`. Destructures `AuditEvent` exhaustively so new fields produce
+/// a compile error until handled.
+fn matches_filters(event: &AuditEvent, filters: &HashMap<String, String>) -> bool {
+    filters
+        .iter()
+        .all(|(key, expected)| event_field_matches(event, key, expected).unwrap_or(false))
+}
+
+/// Return whether the named field on `event` equals `expected`.
+/// Returns `None` for unknown field names.
+fn event_field_matches(event: &AuditEvent, key: &str, expected: &str) -> Option<bool> {
+    let AuditEvent {
+        timestamp: _, // filtered separately via time_from/time_to
+        method,
+        auth_type,
+        subject,
+        remote,
+        collection,
+        tracing_id,
+        result,
+        error,
+    } = event;
+
+    match key {
+        "method" => Some(method == expected),
+        "auth_type" => {
+            // Compare against the serde-serialized form of the enum variant.
+            let serialized = serde_json::to_value(auth_type).ok()?;
+            Some(serialized.as_str() == Some(expected))
+        }
+        "result" => {
+            let serialized = serde_json::to_value(result).ok()?;
+            Some(serialized.as_str() == Some(expected))
+        }
+        "subject" => Some(subject.as_deref() == Some(expected)),
+        "remote" => Some(remote.as_deref() == Some(expected)),
+        "collection" => Some(collection.as_deref() == Some(expected)),
+        "tracing_id" => Some(tracing_id.as_deref() == Some(expected)),
+        "error" => Some(error.as_deref() == Some(expected)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audit::AuditResult;
+    use crate::rbac::AuthType;
 
-    fn matches_query(json_line: &str, query: &AuditLogQuery) -> bool {
-        matches!(matches_query_result(json_line, query), MatchResult::Match)
+    fn make_event() -> AuditEvent {
+        AuditEvent {
+            timestamp: "2024-06-15T10:30:00Z".parse().unwrap(),
+            method: "upsert_points".to_string(),
+            auth_type: AuthType::ApiKey,
+            subject: None,
+            remote: None,
+            collection: None,
+            tracing_id: None,
+            result: AuditResult::Ok,
+            error: None,
+        }
     }
 
     #[test]
@@ -332,14 +367,17 @@ mod tests {
 
     #[test]
     fn test_matches_query_filters() {
-        let line = r#"{"timestamp":"2024-06-15T10:30:00Z","method":"upsert_points","result":"ok","auth_type":"ApiKey"}"#;
+        let event = make_event();
         let query = AuditLogQuery::new(
             None,
             None,
             HashMap::from([("method".to_string(), "upsert_points".to_string())]),
             None,
         );
-        assert!(matches_query(line, &query));
+        assert!(matches!(
+            matches_query_result(&event, &query),
+            MatchResult::Match
+        ));
 
         let query2 = AuditLogQuery::new(
             None,
@@ -347,19 +385,25 @@ mod tests {
             HashMap::from([("method".to_string(), "delete_points".to_string())]),
             None,
         );
-        assert!(!matches_query(line, &query2));
+        assert!(matches!(
+            matches_query_result(&event, &query2),
+            MatchResult::NoMatch
+        ));
     }
 
     #[test]
     fn test_matches_query_time_range() {
-        let line = r#"{"timestamp":"2024-06-15T10:30:00Z","method":"upsert_points","result":"ok"}"#;
+        let event = make_event();
         let query = AuditLogQuery::new(
             Some("2024-06-15T00:00:00Z".parse().unwrap()),
             Some("2024-06-16T00:00:00Z".parse().unwrap()),
             HashMap::new(),
             None,
         );
-        assert!(matches_query(line, &query));
+        assert!(matches!(
+            matches_query_result(&event, &query),
+            MatchResult::Match
+        ));
 
         let query_before = AuditLogQuery::new(
             Some("2024-06-16T00:00:00Z".parse().unwrap()),
@@ -367,6 +411,20 @@ mod tests {
             HashMap::new(),
             None,
         );
-        assert!(!matches_query(line, &query_before));
+        assert!(matches!(
+            matches_query_result(&event, &query_before),
+            MatchResult::NoMatch
+        ));
+    }
+
+    #[test]
+    fn test_roundtrip_serialization() {
+        let event = make_event();
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: AuditEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.method, event.method);
+        assert_eq!(deserialized.timestamp, event.timestamp);
+        assert_eq!(deserialized.auth_type, event.auth_type);
+        assert_eq!(deserialized.result, event.result);
     }
 }

@@ -7,7 +7,7 @@ use api::grpc::transport_channel_pool::DEFAULT_GRPC_TIMEOUT;
 use chrono::{DateTime, Utc};
 use collection::operations::verification::new_unchecked_verification_pass;
 use serde::{Deserialize, Serialize};
-use storage::audit::AuditConfig;
+use storage::audit::{AuditConfig, AuditEvent};
 use storage::audit_reader::AuditLogQuery;
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
@@ -41,9 +41,7 @@ pub struct AuditLogRequest {
 
 #[derive(Debug, Serialize)]
 pub struct AuditLogResponse {
-    pub entries: Vec<serde_json::Value>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub missing_peers: Vec<u64>,
+    pub entries: Vec<AuditEvent>,
 }
 
 #[post("/audit/logs")]
@@ -89,10 +87,7 @@ async fn get_audit_logs(
                 .unwrap_or(DEFAULT_GRPC_TIMEOUT.as_secs()),
         );
 
-        let AuditLogResult {
-            entries,
-            missing_peers,
-        } = fetch_cluster_audit_logs(
+        let AuditLogResult { entries } = fetch_cluster_audit_logs(
             audit_config,
             &query,
             toc.get_channel_service(),
@@ -101,10 +96,7 @@ async fn get_audit_logs(
         )
         .await?;
 
-        Ok(AuditLogResponse {
-            entries,
-            missing_peers,
-        })
+        Ok(AuditLogResponse { entries })
     })
     .await
 }
