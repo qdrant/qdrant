@@ -6,7 +6,9 @@ pub mod file_ops;
 pub mod io_uring;
 pub mod local_file_ops;
 pub mod mmap;
+pub mod mmap_universal;
 pub mod read;
+pub mod read_only;
 pub mod write;
 
 use std::path::Path;
@@ -18,12 +20,15 @@ pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::*;
 pub use self::mmap::*;
+pub use self::mmap_universal::*;
 pub use self::read::UniversalRead;
+pub use self::read_only::*;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
 
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
+    pub writeable: bool,
     pub need_sequential: bool,
     /// How many parallel requests to the disk we can do.
     /// If `None`, then use implementation-specific default.
@@ -37,6 +42,7 @@ pub struct OpenOptions {
 impl Default for OpenOptions {
     fn default() -> Self {
         Self {
+            writeable: true,
             need_sequential: true,
             disk_parallel: None,
             populate: None,
@@ -70,6 +76,7 @@ where
     T: DeserializeOwned,
 {
     let options = OpenOptions {
+        writeable: false,
         need_sequential: false,
         disk_parallel: None,
         populate: Some(false),

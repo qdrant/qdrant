@@ -58,6 +58,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
     pub fn attach_page(&mut self, path: &Path) -> Result<()> {
         let options = OpenOptions {
+            writeable: true,
             need_sequential: true,
             disk_parallel: None,
             populate: Some(false),

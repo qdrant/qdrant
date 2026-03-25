@@ -8,7 +8,7 @@ mod pages;
 mod tracker;
 
 pub use blob::Blob;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::MmapUniversal;
 pub use gridstore::{Gridstore, GridstoreReader, GridstoreView};
 
 use crate::error::GridstoreError;

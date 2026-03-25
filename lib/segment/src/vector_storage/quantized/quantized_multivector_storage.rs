@@ -6,7 +6,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::MmapUniversal;
 use fs_err as fs;
 use memmap2::MmapMut;
 use quantization::EncodedVectors;
@@ -18,7 +18,18 @@ use crate::types::{MultiVectorComparator, MultiVectorConfig};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Deserialize,
+    Serialize,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
+#[repr(C)]
 pub struct MultivectorOffset {
     pub start: PointOffsetType,
     pub count: PointOffsetType,
