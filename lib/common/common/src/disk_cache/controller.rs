@@ -24,6 +24,7 @@ const UNUSED_BLOCKS_MARGIN: u64 = 16;
 #[derive(Debug)]
 pub struct CacheController {
     /// Mapping from the assigned file id, to its file descriptor
+    // TODO: use nested `impl UniversalRead` instead
     files: RwLock<HashMap<FileId, fs::File>>,
 
     /// Used to assign file ids on new files.
