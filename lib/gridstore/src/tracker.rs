@@ -592,14 +592,14 @@ mod tests {
 
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_from_u8;
-    use common::universal_io::MmapUniversal;
+    use common::universal_io::MmapFile;
     use rstest::rstest;
     use tempfile::Builder;
 
     use super::{PointerUpdates, Tracker, ValuePointer};
     use crate::tracker::{BlockOffset, Optional, PageId};
 
-    type TestTracker = Tracker<MmapUniversal<u8>>;
+    type TestTracker = Tracker<MmapFile>;
 
     #[test]
     fn test_file_name() {

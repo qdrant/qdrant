@@ -380,7 +380,7 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::MmapUniversal;
+    use common::universal_io::MmapFile;
     use itertools::Itertools;
     use tempfile::Builder;
 
@@ -432,7 +432,7 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        StoredPointToValues::<str, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<str, MmapFile>::from_iter(
             dir.path(),
             values
                 .iter()
@@ -441,7 +441,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            StoredPointToValues::<str, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
+            StoredPointToValues::<str, MmapFile>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let v = point_to_values
@@ -492,7 +492,7 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<GeoPoint, MmapFile>::from_iter(
             dir.path(),
             values
                 .iter()
@@ -501,7 +501,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
+            StoredPointToValues::<GeoPoint, MmapFile>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values

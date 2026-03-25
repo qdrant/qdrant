@@ -10,7 +10,7 @@ use common::fs::clear_disk_cache;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapUniversal, UniversalRead};
+use common::universal_io::{MmapFile, UniversalRead};
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
 
@@ -35,7 +35,7 @@ const DELETED_PATH: &str = "deleted.dat";
 ///
 /// Mem-mapped storage can only be constructed from another storage
 #[derive(Debug)]
-pub struct DenseVectorStorageImpl<T, S = MmapUniversal<T>>
+pub struct DenseVectorStorageImpl<T, S = MmapFile>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<T>,

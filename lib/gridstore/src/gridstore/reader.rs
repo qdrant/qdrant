@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{MmapUniversal, MmapUniversalRo, read_json_via};
+use common::universal_io::{MmapFile, read_json_via};
 
 use super::view::GridstoreView;
 use crate::blob::Blob;
@@ -24,14 +24,14 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 pub struct GridstoreReader<V> {
     pub(super) config: StorageConfig,
     pub(super) tracker: Tracker,
-    pub(super) pages: Pages<MmapUniversal<u8>>,
+    pub(super) pages: Pages<MmapFile>,
     pub(super) base_path: PathBuf,
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
 impl<V: Blob> GridstoreReader<V> {
     /// Create a [`GridstoreView`] borrowing this reader's data.
-    pub fn view(&self) -> GridstoreView<'_, V, MmapUniversal<u8>> {
+    pub fn view(&self) -> GridstoreView<'_, V, MmapFile> {
         GridstoreView::new(&self.config, &self.tracker, &self.pages)
     }
 
@@ -61,7 +61,7 @@ impl<V: Blob> GridstoreReader<V> {
     pub fn open(base_path: PathBuf) -> Result<Self> {
         let (config, tracker) = read_config_and_tracker(&base_path)?;
 
-        let pages = Pages::<MmapUniversal<u8>>::open(&base_path)?;
+        let pages = Pages::<MmapFile>::open(&base_path)?;
 
         Ok(Self {
             tracker,
@@ -154,12 +154,12 @@ pub(super) fn read_config_and_tracker(
     base_path: &std::path::Path,
 ) -> Result<(StorageConfig, Tracker)> {
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config: StorageConfig = read_json_via::<MmapUniversalRo<u8>, StorageConfig>(&config_path)
-        .map_err(|err| {
-        GridstoreError::service_error(format!(
-            "Failed to read config from '{config_path:?}': {err}"
-        ))
-    })?;
+    let config: StorageConfig =
+        read_json_via::<MmapFile, StorageConfig>(&config_path).map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to read config from '{config_path:?}': {err}"
+            ))
+        })?;
 
     let tracker = Tracker::open(base_path)?;
 

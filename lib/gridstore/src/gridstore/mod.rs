@@ -14,7 +14,7 @@ use common::fs::atomic_save_json;
 use common::generic_consts::{AccessPattern, Random};
 use common::is_alive_lock::IsAliveLock;
 use common::mmap::create_and_ensure_length;
-use common::universal_io::MmapUniversal;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -40,7 +40,7 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 pub struct Gridstore<V> {
     pub(super) config: StorageConfig,
     pub(super) tracker: Arc<RwLock<Tracker>>,
-    pub(super) pages: Arc<RwLock<Pages<MmapUniversal<u8>>>>,
+    pub(super) pages: Arc<RwLock<Pages<MmapFile>>>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
@@ -53,7 +53,7 @@ pub struct Gridstore<V> {
 
 impl<V: Blob> Gridstore<V> {
     /// Create a [`GridstoreView`] by locking pages and tracker, then call `f` with the view.
-    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, MmapUniversal<u8>>) -> R) -> R {
+    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, MmapFile>) -> R) -> R {
         let pages = self.pages.read();
         let tracker = self.tracker.read();
         f(GridstoreView::new(&self.config, &tracker, &pages))

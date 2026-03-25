@@ -9,7 +9,7 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapUniversal, OpenOptions, UniversalRead};
+use common::universal_io::{MmapFile, OpenOptions, UniversalRead};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue + 'static> {
     path: PathBuf,
-    pub(super) storage: Storage<T, MmapUniversal<u8>>,
+    pub(super) storage: Storage<T, MmapFile>,
     histogram: Histogram<T>,
     deleted_count: usize,
     max_values_per_point: usize,
@@ -111,7 +111,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
 
         in_memory_index.histogram.save(path)?;
 
-        StoredPointToValues::<T, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<T, MmapFile>::from_iter(
             path,
             in_memory_index
                 .point_to_values
