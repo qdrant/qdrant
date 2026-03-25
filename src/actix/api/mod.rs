@@ -1,3 +1,4 @@
+use collection::shards::shard::ShardId;
 use common::validation::{validate_collection_name, validate_collection_name_legacy};
 use serde::Deserialize;
 use validator::Validate;
@@ -48,4 +49,38 @@ struct CollectionPath {
         custom(function = "validate_collection_name_legacy")
     )]
     collection_name: String,
+}
+
+/// Collection + snapshot name path with basic collection name validation.
+#[derive(Deserialize, Validate)]
+struct CollectionSnapshotPath {
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "validate_collection_name_legacy")
+    )]
+    collection_name: String,
+    snapshot_name: String,
+}
+
+/// Collection + shard path with basic collection name validation.
+#[derive(Deserialize, Validate)]
+struct CollectionShardPath {
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "validate_collection_name_legacy")
+    )]
+    collection_name: String,
+    shard: ShardId,
+}
+
+/// Collection + shard + snapshot path with basic collection name validation.
+#[derive(Deserialize, Validate)]
+struct CollectionShardSnapshotPath {
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "validate_collection_name_legacy")
+    )]
+    collection_name: String,
+    shard: ShardId,
+    snapshot: String,
 }
