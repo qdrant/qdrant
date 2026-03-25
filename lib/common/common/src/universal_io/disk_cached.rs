@@ -32,10 +32,7 @@ impl<T> UniversalReadFileOps for CachedSlice<T> {
 }
 
 impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
-    fn open(path: impl AsRef<std::path::Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized,
-    {
+    fn open(path: impl AsRef<std::path::Path>, options: OpenOptions) -> Result<Self> {
         let Some(controller) = disk_cache::CacheController::global() else {
             return Err(UniversalIoError::uninitialized(
                 "Disk cache was not initialized when trying to register a file",
