@@ -5,8 +5,7 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::controller::CacheRead;
-use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, FileId};
+use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, CacheRead, FileId};
 
 /// Typed view over a cached file, simulating a `&[T]` backed by the block cache.
 ///
@@ -162,7 +161,6 @@ fn blocks_for_range_in_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::disk_cache::BLOCK_SIZE;
 
     #[test]
     fn test_block_request_calculation() {

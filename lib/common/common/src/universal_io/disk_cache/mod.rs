@@ -1,14 +1,57 @@
 use std::borrow::Cow;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use fs_err as fs;
 
-use crate::disk_cache::{CacheController, CachedSlice};
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
     local_file_ops,
 };
+
+mod cached_slice;
+mod controller;
+#[cfg(test)]
+mod tests;
+
+pub use cached_slice::CachedSlice;
+use controller::{CacheController, CacheRead};
+
+/// We cache data in blocks of this size.
+/// Should be multiple of filesystem block size (usually 4 KiB).
+const BLOCK_SIZE: usize = 16 * 1024;
+
+/// Internal identifier of a cold file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct FileId(u32);
+
+/// Offset within a file, in blocks.
+///
+/// `u32` with 16 KiB blocks covers up to 70 TiB worth of data
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct BlockOffset(u32);
+
+impl BlockOffset {
+    /// The same offset but in bytes instead of blocks.
+    fn bytes(self) -> usize {
+        self.0 as usize * BLOCK_SIZE
+    }
+}
+
+/// This pair uniquely identifies a block in a cold file.
+/// Acts as a cache key.
+#[derive(Copy, Hash, PartialEq, Eq, Clone, Debug)]
+struct BlockId {
+    file_id: FileId,
+    offset: BlockOffset,
+}
+
+/// A request for a range of bytes inside of a block
+struct BlockRequest {
+    key: BlockId,
+    range: Range<usize>,
+}
 
 impl<T> UniversalReadFileOps for CachedSlice<T> {
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
