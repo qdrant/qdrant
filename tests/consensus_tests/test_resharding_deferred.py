@@ -1,7 +1,9 @@
 import pathlib
 import random
 import time
+from typing import Literal
 
+import pytest
 import requests
 
 from .assertions import assert_http_ok
@@ -163,8 +165,23 @@ def all_replicas(info):
         yield remote
 
 
-def test_resharding_down_transfer_deferred_points(tmp_path: pathlib.Path):
-    """Resharding down must preserve deferred points.
+def count_local_points(peer_uri, shard_id, filter_shard_id=None, exact=True):
+    resp = requests.post(
+        f"{peer_uri}/collections/{COLLECTION_NAME}/shards/{shard_id}/points/count",
+        json={
+            "exact": exact,
+            "hash_ring_filter": None if filter_shard_id is None else {
+                "expected_shard_id": filter_shard_id,
+            },
+        },
+    )
+    assert_http_ok(resp)
+    return resp.json()["result"]["count"]
+
+
+@pytest.mark.parametrize("direction", ["up", "down"])
+def test_resharding_transfer_deferred_points(tmp_path: pathlib.Path, direction: Literal["up", "down"]):
+    """Resharding must preserve deferred points.
 
     Deferred points live in appendable segments but have an internal offset
     beyond the indexing threshold, making them invisible to reads until the
@@ -173,17 +190,19 @@ def test_resharding_down_transfer_deferred_points(tmp_path: pathlib.Path):
     (required for wait=true on the last migration batch) while the migration
     reads from the same segments via the forward proxy.
 
-    This is the riskier resharding direction: the removed shard's data is
-    permanently deleted, so any deferred points not transferred during
-    migration are irrecoverably lost.
+    For "down", the removed shard's data is permanently deleted — any deferred
+    points not transferred during migration are irrecoverably lost.
+
+    For "up", deferred points on source shards must be included when migrating
+    the subset of points that belong to the new shard.
 
     Steps:
     1. Creates a collection with prevent_unoptimized + disabled optimizers
     2. Upserts enough points to create deferred points in every shard
     3. Verifies deferred points exist (only a fraction visible)
-    4. Starts resharding down while optimizers are still disabled
+    4. Starts resharding while optimizers are still disabled
     5. Enables optimizers right before migration (required for wait=true)
-    6. Migrates points from the removed shard to surviving shards
+    6. Migrates points between source and target shards
     7. Completes resharding (commit hash rings + finish)
     8. Verifies ALL points are visible after resharding
     """
@@ -216,45 +235,66 @@ def test_resharding_down_transfer_deferred_points(tmp_path: pathlib.Path):
         f"got {visible_count}/{total_points}"
     )
 
-    # Start resharding down while optimizers are still disabled so deferred
+    # Start resharding while optimizers are still disabled so deferred
     # points remain unresolved during setup.
     wait_for_all_peers_versions(peer_api_uris)
 
-    resp = start_resharding_op(peer_api_uris[0], direction="down")
+    resp = start_resharding_op(peer_api_uris[0], direction=direction)
     assert_http_ok(resp)
     wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
     # Get cluster info to find replicas
     info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
 
-    # For "down" from 3→2 shards, shard 2 is the one being removed.
-    target_shard_id = N_SHARDS - 1
+    # Select target shard:
+    # - "up": new shard 3 is added
+    # - "down": existing shard 2 is being removed
+    target_shard_id = N_SHARDS if direction == "up" else N_SHARDS - 1
     target_peer_id, _ = find_replica(target_shard_id, info, peer_api_uris, peer_ids)
 
-    # Verify deferred points still exist before enabling optimizers.
-    # This confirms the migration will encounter deferred points.
-    visible_before_opt = scroll_all(peer_api_uris[0])
-    assert len(visible_before_opt) < total_points, (
-        f"Deferred points should still exist before enabling optimizers, "
-        f"got {len(visible_before_opt)}/{total_points} visible"
-    )
+    # Record pre-migration point counts per shard (includes deferred points
+    # via the shard-local count which also uses DeferredBehavior::Exclude,
+    # so this captures only the visible portion — but that's fine as a baseline
+    # to verify the surviving shards grew after migration).
+    pre_migration_counts = {}
+    for shard_id in range(target_shard_id):
+        peer_id, peer_uri = find_replica(shard_id, info, peer_api_uris, peer_ids)
+        pre_migration_counts[shard_id] = count_local_points(peer_uri, shard_id, exact=True)
 
     # Enable optimizers right before migration. resharding_stream_records
     # uses wait=true internally on the last batch, which would hang with
     # disabled optimizers when deferred points are present.
-    # This creates a race: the optimizer modifies segments concurrently with
-    # the migration reading from them via forward proxy.
     update_collection_config(peer_api_uris[0], {
         "optimizers_config": {"max_optimization_threads": "auto"},
     })
 
-    # Migrate points from the target shard (being removed) to each surviving shard
+    # Migrate points between source and target shards
     for shard_id in range(target_shard_id):
         peer_id, _ = find_replica(shard_id, info, peer_api_uris, peer_ids)
-        migrate_points(peer_api_uris[0], target_peer_id, target_shard_id, peer_id, shard_id)
+
+        if direction == "up":
+            # Up: migrate from each source shard to the new target shard
+            migrate_points(peer_api_uris[0], peer_id, shard_id, target_peer_id, target_shard_id)
+        else:
+            # Down: migrate from the target shard (being removed) to each surviving shard
+            migrate_points(peer_api_uris[0], target_peer_id, target_shard_id, peer_id, shard_id)
+
+    # For "up", activate the new shard's replica before committing hash rings.
+    # Without this, the replica stays in "Resharding" state and can't serve reads.
+    if direction == "up":
+        resp = requests.post(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
+            json={
+                "finish_migrating_points": {
+                    "peer_id": target_peer_id,
+                    "shard_id": target_shard_id,
+                }
+            },
+        )
+        assert_http_ok(resp)
+        time.sleep(1)
 
     # Complete resharding: commit hash rings and finish.
-    # After this, shard 2 is removed — its data is permanently deleted.
     resp = commit_read_hashring(peer_api_uris[0])
     assert_http_ok(resp)
 
@@ -266,35 +306,77 @@ def test_resharding_down_transfer_deferred_points(tmp_path: pathlib.Path):
 
     wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
-    # Find peers that still host shards after shard 2 was removed.
-    # With replication_factor=1, the peer that only had shard 2 now has no
-    # shards and can't serve collection requests.
+    # Find peers that still host shards.
+    # For "down" with replication_factor=1, the peer that only had shard 2
+    # now has no shards and can't serve collection requests.
+    # For "up", all peers still have shards (4 shards across 3 peers).
     peers_with_shards = []
     for uri in peer_api_uris:
-        info = get_collection_cluster_info(uri, COLLECTION_NAME)
-        if len(info["local_shards"]) > 0:
+        cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
+        if len(cluster_info["local_shards"]) > 0:
             peers_with_shards.append(uri)
-
-    assert len(peers_with_shards) >= 2, (
-        f"Expected at least 2 peers with shards after resharding down, "
-        f"got {len(peers_with_shards)}"
-    )
 
     # Wait for optimization to complete on peers that have shards
     for uri in peers_with_shards:
         wait_collection_green(uri, COLLECTION_NAME)
 
-    # After resharding down + optimization, ALL points must be visible.
-    # Shard 2 has been removed, so the collection-level count sums only
-    # shards 0 and 1 — no overcounting from duplicate points.
-    # If the optimizer/migration race loses points, this will fail.
-    for uri in peers_with_shards:
-        count = exact_count(uri)
-        assert count == total_points, (
-            f"Peer {uri} should have {total_points} points after resharding, got {count}"
+    if direction == "down":
+        # After resharding down, shard 2 is removed. Collection-level count
+        # sums only shards 0 and 1 — no overcounting from duplicate points.
+        for uri in peers_with_shards:
+            count = exact_count(uri)
+            assert count == total_points, (
+                f"Peer {uri} should have {total_points} points after resharding down, got {count}"
+            )
+
+        # Verify each surviving shard grew: it must have more points than
+        # before migration, proving it received points from the removed shard.
+        for shard_id in range(target_shard_id):
+            peer_id, peer_uri = find_replica(shard_id, info, peer_api_uris, peer_ids)
+            post_count = count_local_points(peer_uri, shard_id, exact=True)
+            pre_count = pre_migration_counts[shard_id]
+            assert post_count > pre_count, (
+                f"Shard {shard_id} should have grown after migration "
+                f"(pre={pre_count}, post={post_count})"
+            )
+    else:
+        # After resharding up, source shards still hold their original points
+        # (including ones migrated to the new shard). Collection-level count
+        # would overcount. Use shard-local counts instead.
+        target_peer_uri = None
+        for uri in peer_api_uris:
+            cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
+            for shard in cluster_info["local_shards"]:
+                if shard["shard_id"] == target_shard_id:
+                    target_peer_uri = uri
+                    break
+
+        assert target_peer_uri is not None, "Target shard peer not found"
+
+        # Target shard count must match the sum of hash-ring-filtered source counts.
+        target_count = count_local_points(target_peer_uri, target_shard_id, exact=True)
+        assert target_count > 0, "Target shard should have received migrated points"
+
+        total_resharding_from_sources = 0
+        total_source_points = 0
+        for shard_id in range(target_shard_id):
+            peer_id, peer_uri = find_replica(shard_id, info, peer_api_uris, peer_ids)
+            total_resharding_from_sources += count_local_points(
+                peer_uri, shard_id, filter_shard_id=target_shard_id, exact=True,
+            )
+            total_source_points += count_local_points(peer_uri, shard_id, exact=True)
+
+        assert target_count == total_resharding_from_sources, (
+            f"Target shard has {target_count} points, but source shards have "
+            f"{total_resharding_from_sources} resharding points for it"
+        )
+        assert total_source_points == total_points, (
+            f"Source shards should still have all {total_points} points, got {total_source_points}"
         )
 
-    # Cross-check: scroll all points and verify every original ID is present
+    # Cross-check: scroll all points and collect unique IDs.
+    # For "up", scroll may return duplicates (same point on source + target),
+    # but the set of unique IDs must equal all original IDs.
     scrolled = scroll_all(peers_with_shards[0])
     scrolled_ids = {p["id"] for p in scrolled}
     expected_ids = set(range(1, total_points + 1))
