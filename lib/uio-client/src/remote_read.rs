@@ -330,7 +330,7 @@ impl<T: Copy + 'static> UniversalRead<T> for RemoteUniversalRead<T> {
 }
 
 /// Reinterpret raw bytes as a `Vec<T>`.
-fn bytes_to_elements<T: Copy + 'static>(bytes: &[u8]) -> Vec<T> {
+pub(crate) fn bytes_to_elements<T: Copy + 'static>(bytes: &[u8]) -> Vec<T> {
     let element_size = std::mem::size_of::<T>();
     if element_size == 0 {
         return Vec::new();
