@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
@@ -39,7 +39,10 @@ impl AuditLogQuery {
 
 /// Read audit log entries from local files, applying time range and field filters.
 ///
-/// Returns matching entries as raw JSON strings.
+/// Returns matching entries as raw JSON strings in **descending** chronological
+/// order (newest first). Files are iterated from newest to oldest; within each
+/// file a sliding window keeps only the last (newest) `remaining` matches so
+/// memory stays O(limit) regardless of file size.
 pub fn read_local_audit_logs(
     config: &AuditConfig,
     query: &AuditLogQuery,
@@ -57,7 +60,18 @@ pub fn read_local_audit_logs(
     }
 
     let mut log_files = list_audit_files(dir)?;
-    log_files.sort();
+
+    // Sort newest-first: `audit.log` (current, no date) comes first,
+    // then dated files in reverse chronological order.
+    log_files.sort_by(|a, b| {
+        let a_is_current = parse_file_date(a).is_none();
+        let b_is_current = parse_file_date(b).is_none();
+        match (a_is_current, b_is_current) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => b.cmp(a),
+        }
+    });
 
     let log_files = filter_files_by_time_range(&log_files, query);
 
@@ -70,9 +84,12 @@ pub fn read_local_audit_logs(
 
         let remaining = query.limit - results.len();
         let mut entries = read_entries_from_file(file_path, query, remaining, cancel)?;
+        // Entries come out ascending from the file; reverse to newest-first.
+        entries.reverse();
         results.append(&mut entries);
     }
 
+    results.truncate(query.limit);
     Ok(results)
 }
 
@@ -173,6 +190,9 @@ fn filter_files_by_time_range<'a>(files: &'a [PathBuf], query: &AuditLogQuery) -
 }
 
 /// Read and filter entries from a single audit log file.
+///
+/// Returns the **last** (newest) `remaining` matching entries in ascending order.
+/// Uses a sliding window so memory is O(remaining), not O(file_size).
 fn read_entries_from_file(
     path: &Path,
     query: &AuditLogQuery,
@@ -182,10 +202,10 @@ fn read_entries_from_file(
     let file = fs_err::File::open(path).map_err(|e| StorageError::service_error(e.to_string()))?;
     let reader = BufReader::new(file);
 
-    let mut results = Vec::new();
+    let mut window: VecDeque<String> = VecDeque::with_capacity(remaining);
 
     for line in reader.lines() {
-        if cancel.is_cancelled() || results.len() >= remaining {
+        if cancel.is_cancelled() {
             break;
         }
 
@@ -195,22 +215,39 @@ fn read_entries_from_file(
             continue;
         }
 
-        if matches_query(trimmed, query) {
-            results.push(trimmed.to_string());
+        match matches_query_result(trimmed, query) {
+            MatchResult::Match => {
+                if window.len() >= remaining {
+                    window.pop_front();
+                }
+                window.push_back(trimmed.to_string());
+            }
+            MatchResult::NoMatch => {}
+            // Entries are chronological; once we exceed time_to, all
+            // subsequent entries will too.
+            MatchResult::PastTimeTo => break,
         }
     }
 
-    Ok(results)
+    Ok(Vec::from(window))
+}
+
+enum MatchResult {
+    Match,
+    NoMatch,
+    /// Entry timestamp >= time_to; all subsequent entries in this file will
+    /// also exceed the bound (entries are chronological).
+    PastTimeTo,
 }
 
 /// Check if a JSON line matches the query filters and time range.
-fn matches_query(json_line: &str, query: &AuditLogQuery) -> bool {
+fn matches_query_result(json_line: &str, query: &AuditLogQuery) -> MatchResult {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json_line) else {
-        return false;
+        return MatchResult::NoMatch;
     };
 
     let Some(obj) = value.as_object() else {
-        return false;
+        return MatchResult::NoMatch;
     };
 
     let AuditLogQuery {
@@ -223,20 +260,20 @@ fn matches_query(json_line: &str, query: &AuditLogQuery) -> bool {
     // Time range check
     if time_from.is_some() || time_to.is_some() {
         let Some(ts_val) = obj.get(TIMESTAMP_KEY).and_then(|v| v.as_str()) else {
-            return false;
+            return MatchResult::NoMatch;
         };
         let Ok(ts) = ts_val.parse::<DateTime<Utc>>() else {
-            return false;
+            return MatchResult::NoMatch;
         };
         if let Some(from) = time_from
             && ts < *from
         {
-            return false;
+            return MatchResult::NoMatch;
         }
         if let Some(to) = time_to
             && ts >= *to
         {
-            return false;
+            return MatchResult::PastTimeTo;
         }
     }
 
@@ -245,21 +282,25 @@ fn matches_query(json_line: &str, query: &AuditLogQuery) -> bool {
         match obj.get(key) {
             Some(serde_json::Value::String(s)) => {
                 if s.as_str() != expected_value {
-                    return false;
+                    return MatchResult::NoMatch;
                 }
             }
             _ => {
-                return false;
+                return MatchResult::NoMatch;
             }
         }
     }
 
-    true
+    MatchResult::Match
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn matches_query(json_line: &str, query: &AuditLogQuery) -> bool {
+        matches!(matches_query_result(json_line, query), MatchResult::Match)
+    }
 
     #[test]
     fn test_parse_file_date_daily() {
