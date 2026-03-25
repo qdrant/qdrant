@@ -73,6 +73,7 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
 
         // Disk-cache is backed by a single file
         let OpenOptions {
+            writeable: _,
             need_sequential: _,
             disk_parallel: _,
             populate: _,
