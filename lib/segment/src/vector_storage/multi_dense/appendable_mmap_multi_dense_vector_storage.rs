@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::MmapUniversal;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -44,8 +44,8 @@ pub struct MultivectorMmapOffset {
 
 #[derive(Debug)]
 pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
-    vectors: ChunkedVectors<T, MmapUniversal<T>>,
-    offsets: ChunkedVectors<MultivectorMmapOffset, MmapUniversal<MultivectorMmapOffset>>,
+    vectors: ChunkedVectors<T, MmapFile>,
+    offsets: ChunkedVectors<MultivectorMmapOffset, MmapFile>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not

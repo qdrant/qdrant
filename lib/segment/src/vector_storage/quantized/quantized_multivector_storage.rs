@@ -6,7 +6,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::MmapUniversal;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 use memmap2::MmapMut;
 use quantization::EncodedVectors;
@@ -193,7 +193,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
 }
 
 pub struct MultivectorOffsetsStorageChunkedMmap {
-    data: ChunkedVectors<MultivectorOffset, MmapUniversal<MultivectorOffset>>,
+    data: ChunkedVectors<MultivectorOffset, MmapFile>,
 }
 
 impl MultivectorOffsetsStorageChunkedMmap {

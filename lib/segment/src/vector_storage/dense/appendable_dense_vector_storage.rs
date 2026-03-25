@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::MmapUniversal;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -29,7 +29,7 @@ const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Debug)]
 pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
-    vectors: ChunkedVectors<T, MmapUniversal<T>>,
+    vectors: ChunkedVectors<T, MmapFile>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
