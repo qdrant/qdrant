@@ -13295,6 +13295,34 @@ pub struct WaitOnConsensusCommitResponse {
     #[prost(bool, tag = "1")]
     pub ok: bool,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetAuditLogRequest {
+    /// ISO-8601 start time (inclusive), omit for no lower bound
+    #[prost(string, optional, tag = "1")]
+    pub time_from: ::core::option::Option<::prost::alloc::string::String>,
+    /// ISO-8601 end time (exclusive), omit for no upper bound
+    #[prost(string, optional, tag = "2")]
+    pub time_to: ::core::option::Option<::prost::alloc::string::String>,
+    /// Key=value filters applied to every JSON field
+    #[prost(map = "string, string", tag = "3")]
+    pub filters: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    /// Maximum number of entries to return
+    #[prost(uint64, tag = "4")]
+    pub limit: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetAuditLogResponse {
+    /// Audit log entries as raw JSON strings (one per entry)
+    #[prost(string, repeated, tag = "1")]
+    pub entries: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
 /// Generated client implementations.
 pub mod qdrant_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -13460,6 +13488,32 @@ pub mod qdrant_internal_client {
                 .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetTelemetry"));
             self.inner.unary(req, path, codec).await
         }
+        /// Get audit log entries from this peer
+        pub async fn get_audit_log(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetAuditLogRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAuditLogResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/GetAuditLog",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetAuditLog"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -13491,6 +13545,14 @@ pub mod qdrant_internal_server {
             request: tonic::Request<super::GetTelemetryRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetTelemetryResponse>,
+            tonic::Status,
+        >;
+        /// Get audit log entries from this peer
+        async fn get_audit_log(
+            &self,
+            request: tonic::Request<super::GetAuditLogRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAuditLogResponse>,
             tonic::Status,
         >;
     }
@@ -13701,6 +13763,52 @@ pub mod qdrant_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetTelemetrySvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.QdrantInternal/GetAuditLog" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetAuditLogSvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::GetAuditLogRequest>
+                    for GetAuditLogSvc<T> {
+                        type Response = super::GetAuditLogResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetAuditLogRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::get_audit_log(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetAuditLogSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

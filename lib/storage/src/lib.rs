@@ -11,6 +11,7 @@ use content_manager::toc::TableOfContent;
 use types::ClusterStatus;
 
 pub mod audit;
+pub mod audit_reader;
 mod common;
 pub mod content_manager;
 pub mod dispatcher;

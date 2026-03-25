@@ -16,6 +16,9 @@ service QdrantInternal {
 
   // Get telemetry
   rpc GetTelemetry(GetTelemetryRequest) returns (GetTelemetryResponse) {}
+
+  // Get audit log entries from this peer
+  rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse) {}
 }
 
 message GetConsensusCommitRequest {}
@@ -39,4 +42,20 @@ message WaitOnConsensusCommitRequest {
 message WaitOnConsensusCommitResponse {
   // False if commit/term is diverged and never reached or if timed out.
   bool ok = 1;
+}
+
+message GetAuditLogRequest {
+  // ISO-8601 start time (inclusive), omit for no lower bound
+  optional string time_from = 1;
+  // ISO-8601 end time (exclusive), omit for no upper bound
+  optional string time_to = 2;
+  // Key=value filters applied to every JSON field
+  map<string, string> filters = 3;
+  // Maximum number of entries to return
+  uint64 limit = 4;
+}
+
+message GetAuditLogResponse {
+  // Audit log entries as raw JSON strings (one per entry)
+  repeated string entries = 1;
 }
