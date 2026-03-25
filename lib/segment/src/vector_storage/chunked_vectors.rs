@@ -14,7 +14,7 @@ use common::mmap::{
     open_write_mmap,
 };
 use common::universal_io::{
-    MmapUniversalRo, OpenOptions, ReadRange, UniversalIoError, UniversalWrite, read_json_via,
+    MmapFile, OpenOptions, ReadRange, UniversalIoError, UniversalWrite, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -107,7 +107,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     }
 
     fn load_config(config_file: &Path) -> OperationResult<Option<ChunkedVectorsConfig>> {
-        match read_json_via::<MmapUniversalRo<u8>, ChunkedVectorsConfig>(config_file) {
+        match read_json_via::<MmapFile, ChunkedVectorsConfig>(config_file) {
             Ok(config) => Ok(Some(config)),
             Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),
@@ -487,7 +487,7 @@ pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
 mod tests {
     use std::iter::zip;
 
-    use common::universal_io::MmapUniversal;
+    use common::universal_io::MmapFile;
     use rand::SeedableRng;
     use rand::prelude::StdRng;
     use tempfile::Builder;
@@ -510,10 +510,8 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedVectors<
-                VectorElementType,
-                MmapUniversal<VectorElementType>,
-            > = ChunkedVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true)).unwrap();
+            let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> =
+                ChunkedVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true)).unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec, &hw_counter).unwrap();

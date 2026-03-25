@@ -11,7 +11,7 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapUniversal, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, UniversalRead,
+    MmapFile, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, UniversalRead,
 };
 use fs_err::{File, OpenOptions};
 
@@ -27,7 +27,7 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Immutable storage for dense vectors.
 #[derive(Debug)]
-pub struct ImmutableDenseVectors<T, S = MmapUniversal<T>>
+pub struct ImmutableDenseVectors<T, S = MmapFile>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<T>,

@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapUniversal, OpenOptions};
+use common::universal_io::{MmapFile, OpenOptions};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -75,7 +75,7 @@ pub(super) struct Storage {
     /// A storage of associations between geo-hashes and point ids. (See the diagram above)
     pub(super) points_map_ids: MmapSlice<PointOffsetType>,
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
-    pub(super) point_to_values: StoredPointToValues<GeoPoint, MmapUniversal<u8>>,
+    pub(super) point_to_values: StoredPointToValues<GeoPoint, MmapFile>,
     /// Deleted flags for each PointOffsetType
     pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
 }
@@ -101,7 +101,7 @@ impl MmapGeoMapIndex {
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
         // Create the point-to-value mapping and persist in the mmap file
-        StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<GeoPoint, MmapFile>::from_iter(
             path,
             dynamic_index
                 .point_to_values
