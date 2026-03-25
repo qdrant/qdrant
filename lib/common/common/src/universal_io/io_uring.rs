@@ -52,7 +52,7 @@ pub struct IoUringFile {
     /// than requested.
     ///
     /// This is because `O_DIRECT` can only read in aligned blocks of data, so reads at EOF might not
-    /// be aligned with O_DIRECT aligment, but it is not possible to request less than one block.
+    /// be aligned with O_DIRECT alignment, but it is not possible to request less than one block.
     uses_o_direct: bool,
 }
 
@@ -83,7 +83,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
             disk_parallel: _,
             populate: _,
             advice: _,
-            prevent_caching
+            prevent_caching,
         } = options;
 
         let mut opts = fs::OpenOptions::new();
