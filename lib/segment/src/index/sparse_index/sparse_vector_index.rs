@@ -53,6 +53,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
     scores_memory_pool: ScoresMemoryPool,
+    deferred_internal_id: Option<PointOffsetType>,
 }
 
 /// Getters for internals, used for testing.
@@ -87,6 +88,7 @@ pub struct SparseVectorIndexOpenArgs<'a, F: FnMut()> {
     pub path: &'a Path,
     pub stopped: &'a AtomicBool,
     pub tick_progress: F,
+    pub deferred_internal_id: Option<PointOffsetType>,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -100,6 +102,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             path,
             stopped,
             tick_progress,
+            deferred_internal_id,
         } = args;
 
         let config_path = SparseIndexConfig::get_config_path(path);
@@ -162,6 +165,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             searches_telemetry,
             indices_tracker,
             scores_memory_pool,
+            deferred_internal_id,
         })
     }
 
@@ -398,7 +402,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             memory_handle,
             &is_stopped,
             &hw_counter,
-            vector_query_context.deferred_internal_id(),
         );
         let search_result = search_context.plain_search(&ids);
         Ok(search_result)
@@ -442,7 +445,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             memory_handle,
             &is_stopped,
             &hw_counter,
-            vector_query_context.deferred_internal_id(),
         );
 
         match filter {
@@ -572,6 +574,13 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
+
+        debug_assert_eq!(
+            self.deferred_internal_id,
+            query_context.deferred_internal_id(),
+            "SparseIndex and VectorQueryContext deferred_internal_id consistency violated."
+        );
+
         for vector in vectors {
             check_process_stopped(&query_context.is_stopped())?;
 
@@ -681,11 +690,19 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
             ));
         }
 
+        let point_is_deferred = self
+            .deferred_internal_id
+            .is_some_and(|deferred| id >= deferred);
+
+        if point_is_deferred {
+            return Ok(());
+        }
+
         let vector = SparseVector::try_from(new_vector)?;
         let old_vector: Option<SparseVector> =
             old_vector.map(SparseVector::try_from).transpose()?;
 
-        // do not upsert empty vectors into the index
+        // do not upsert empty or deferred vectors into the index
         if !vector.is_empty() {
             self.indices_tracker.register_indices(&vector);
             let vector = self.indices_tracker.remap_vector(vector);
@@ -698,6 +715,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
                 self.inverted_index.remove(id, old_vector);
             }
         }
+
         Ok(())
     }
 }

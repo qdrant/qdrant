@@ -34,7 +34,6 @@ pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
     pooled: PooledScoresHandle<'b>,         // handle to pooled scores
     use_pruning: bool,
     hardware_counter: &'a HardwareCounterCell,
-    deferred_internal_id: Option<PointOffsetType>,
 }
 
 impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
@@ -45,7 +44,6 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
         hardware_counter: &'a HardwareCounterCell,
-        deferred_internal_id: Option<PointOffsetType>,
     ) -> SearchContext<'a, 'b, T> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
@@ -92,7 +90,6 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             pooled,
             use_pruning,
             hardware_counter,
-            deferred_internal_id,
         }
     }
 
@@ -109,12 +106,8 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         let mut indices = Vec::with_capacity(self.query.indices.len());
         let mut values = Vec::with_capacity(self.query.values.len());
         for id in sorted_ids {
-            // Check for cancellation and deferred ID.
-            if self.is_stopped.load(Relaxed)
-                || self
-                    .deferred_internal_id
-                    .is_some_and(|deferred_id| id >= deferred_id)
-            {
+            // check for cancellation
+            if self.is_stopped.load(Relaxed) {
                 break;
             }
 
@@ -204,47 +197,29 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
     fn process_last_posting_list<F: Fn(PointOffsetType) -> bool>(&mut self, filter_condition: &F) {
         debug_assert_eq!(self.postings_iterators.len(), 1);
         let posting = &mut self.postings_iterators[0];
-
-        // Select appropriate last-id by also considering deferred points.
-        let max_point = self
-            .deferred_internal_id
-            .map_or(PointOffsetType::MAX, |deferred_id| {
-                // `for_each_till_id` expects the last ID to be included.
-                // Therefore we have to subtract 1.
-                deferred_id.saturating_sub(1)
-            });
-
-        posting
-            .posting_list_iterator
-            .for_each_till_id(max_point, &mut (), |_, id, weight| {
+        posting.posting_list_iterator.for_each_till_id(
+            PointOffsetType::MAX,
+            &mut (),
+            |_, id, weight| {
                 // do not score if filter condition is not satisfied
                 if !filter_condition(id) {
                     return;
                 }
                 let score = weight * posting.query_weight;
                 self.top_results.push(ScoredPointOffset { score, idx: id });
-            });
+            },
+        );
     }
 
     /// Returns the next min record id from all posting list iterators
     ///
     /// returns None if all posting list iterators are exhausted
-    fn next_min_id(
-        to_inspect: &mut [IndexedPostingListIterator<T>],
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> Option<PointOffsetType> {
+    fn next_min_id(to_inspect: &mut [IndexedPostingListIterator<T>]) -> Option<PointOffsetType> {
         let mut min_record_id = None;
 
         // Iterate to find min record id at the head of the posting lists
         for posting_iterator in to_inspect.iter_mut() {
             if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
-                // Skip deferred points
-                if let Some(deferred_internal_id) = deferred_internal_id
-                    && next_element.record_id >= deferred_internal_id
-                {
-                    continue;
-                }
-
                 match min_record_id {
                     None => min_record_id = Some(next_element.record_id), // first record with matching id
                     Some(min_id_seen) => {
@@ -300,14 +275,6 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             return Vec::new();
         }
 
-        // Apply deferred id directly to max_id.
-        let max_record_id_with_deferred =
-            self.deferred_internal_id
-                .map_or(self.max_record_id, |deferred_id| {
-                    // `max_record_id` is inclusive so we need to subtract 1 from `deferred_internal_id`.
-                    self.max_record_id.min(deferred_id.saturating_sub(1))
-                });
-
         {
             // Measure CPU usage of indexed sparse search.
             // Assume the complexity of the search as total volume of the posting lists
@@ -336,7 +303,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             // compute batch range of contiguous ids for the next batch
             let last_batch_id = min(
                 start_batch_id + ADVANCE_BATCH_SIZE as u32,
-                max_record_id_with_deferred,
+                self.max_record_id,
             );
 
             // advance and score posting lists iterators
@@ -348,8 +315,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             });
 
             // update min_record_id
-            self.min_record_id =
-                Self::next_min_id(&mut self.postings_iterators, self.deferred_internal_id);
+            self.min_record_id = Self::next_min_id(&mut self.postings_iterators);
 
             // check if all posting lists are exhausted
             if self.postings_iterators.is_empty() {
@@ -379,12 +345,10 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
                 let pruned = self.prune_longest_posting_list(new_min_score);
                 if pruned {
                     // update min_record_id
-                    self.min_record_id =
-                        Self::next_min_id(&mut self.postings_iterators, self.deferred_internal_id);
+                    self.min_record_id = Self::next_min_id(&mut self.postings_iterators);
                 }
             }
         }
-
         // posting iterators exhausted, return result queue
         let queue = std::mem::take(&mut self.top_results);
         queue.into_vec()
@@ -401,8 +365,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         let (longest_posting_iterator, rest_iterators) = self.postings_iterators.split_at_mut(1);
         let longest_posting_iterator = &mut longest_posting_iterator[0];
         if let Some(element) = longest_posting_iterator.posting_list_iterator.peek() {
-            let next_min_id_in_others =
-                Self::next_min_id(rest_iterators, self.deferred_internal_id);
+            let next_min_id_in_others = Self::next_min_id(rest_iterators);
             match next_min_id_in_others {
                 Some(next_min_id) => {
                     match next_min_id.cmp(&element.record_id) {

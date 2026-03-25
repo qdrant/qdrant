@@ -227,6 +227,7 @@ fn sparse_vector_index_consistent_with_storage() {
             path: mmap_index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
+            deferred_internal_id: None,
         })
         .unwrap();
 
@@ -253,6 +254,7 @@ fn sparse_vector_index_consistent_with_storage() {
             path: mmap_index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
+            deferred_internal_id: None,
         })
         .unwrap();
 
@@ -689,6 +691,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
             path: inverted_index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
+            deferred_internal_id: None,
         })
         .unwrap()
     };
