@@ -131,19 +131,24 @@ impl StructPayloadIndex {
         &'a self,
         condition: &'a PrimaryCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         match condition {
             PrimaryCondition::Condition(field_condition) => {
                 let field_key = &field_condition.key;
-                let field_indexes = self.field_indexes.get(field_key)?;
+                let Some(field_indexes) = self.field_indexes.get(field_key) else {
+                    return Ok(None);
+                };
                 field_indexes
                     .iter()
-                    .find_map(|field_index| field_index.filter(field_condition, hw_counter))
+                    .find_map(|field_index| {
+                        field_index.filter(field_condition, hw_counter).transpose()
+                    })
+                    .transpose()
             }
             PrimaryCondition::Ids(ids) => {
-                Some(Box::new(ids.resolved_point_offsets.iter().copied()))
+                Ok(Some(Box::new(ids.resolved_point_offsets.iter().copied())))
             }
-            PrimaryCondition::HasVector(_) => None,
+            PrimaryCondition::HasVector(_) => Ok(None),
         }
     }
 
@@ -652,8 +657,8 @@ impl StructPayloadIndex {
             let primary_clause_iterators: Option<Vec<_>> = query_cardinality
                 .primary_clauses
                 .iter()
-                .map(move |clause| self.query_field(clause, hw_counter))
-                .collect();
+                .map(|clause| self.query_field(clause, hw_counter))
+                .collect::<OperationResult<_>>()?;
 
             if let Some(primary_iterators) = primary_clause_iterators {
                 let all_conditions_are_primary = filter
