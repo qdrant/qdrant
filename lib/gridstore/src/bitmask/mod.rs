@@ -8,7 +8,7 @@ use common::bitvec::BitSlice;
 use common::fs::clear_disk_cache;
 use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{OpenOptions, UniversalWrite};
+use common::universal_io::{MmapFile, OpenOptions, UniversalWrite};
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
 
@@ -30,23 +30,26 @@ const OPEN_OPTIONS: OpenOptions = OpenOptions {
 type RegionId = u32;
 
 /// Concrete bitmask type using memory-mapped storage.
-pub type MmapBitmask = Bitmask<MmapUniversalRw<RegionGaps>, MmapUniversalRw<u64>>;
+pub type MmapBitmask = Bitmask<MmapFile>;
+
+pub trait BitmaskStorage: UniversalWrite<RegionGaps> + UniversalWrite<u64> {}
+impl<T> BitmaskStorage for T where T: UniversalWrite<RegionGaps> + UniversalWrite<u64> {}
 
 #[derive(Debug)]
-pub struct Bitmask<GapsStore, BitSliceStore> {
+pub struct Bitmask<S> {
     config: StorageConfig,
 
     /// A summary of every 1KB (8_192 bits) of contiguous zeros in the bitmask, or less if it is the last region.
-    regions_gaps: BitmaskGaps<GapsStore>,
+    regions_gaps: BitmaskGaps<S>,
 
     /// The actual bitmask. Each bit represents a block. A 1 means the block is used, a 0 means it is free.
-    bitslice: StoredBitSlice<BitSliceStore>,
+    bitslice: StoredBitSlice<S>,
 
     /// The path to the file containing the bitmask.
     path: PathBuf,
 }
 
-impl<G: UniversalWrite<RegionGaps>, B: UniversalWrite<u64>> Bitmask<G, B> {
+impl<S: BitmaskStorage> Bitmask<S> {
     pub fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone(), self.regions_gaps.path()]
     }
@@ -142,7 +145,7 @@ impl<G: UniversalWrite<RegionGaps>, B: UniversalWrite<u64>> Bitmask<G, B> {
         dir.join(BITMASK_NAME)
     }
 
-    pub fn flusher(&self) -> impl FnOnce() -> Result<()> + Send + use<G, B> {
+    pub fn flusher(&self) -> impl FnOnce() -> Result<()> + Send + use<S> {
         let bitslice_flusher = self.bitslice.flusher();
         let gaps_flusher = self.regions_gaps.flusher();
         move || {

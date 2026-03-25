@@ -14,7 +14,8 @@ use bitvec::order::Lsb0;
 use crate::bitvec::BitVec;
 use crate::generic_consts::Random;
 use crate::universal_io::{
-    Flusher, MmapFile, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalWrite
+    Flusher, MmapFile, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead,
+    UniversalWrite,
 };
 
 /// Number of bits per `BitStore` element.
@@ -297,9 +298,9 @@ mod tests {
     use std::io::Write;
 
     use tempfile::NamedTempFile;
-    use crate::universal_io::mmap::MmapFile;
 
     use super::*;
+    use crate::universal_io::mmap::MmapFile;
 
     impl StoredBitSlice<MmapFile> {
         /// Read-modify-write a single bit. Returns the previous value.
