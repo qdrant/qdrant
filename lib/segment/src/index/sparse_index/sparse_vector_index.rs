@@ -575,7 +575,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
 
-        assert_eq!(
+        debug_assert_eq!(
             self.deferred_internal_id,
             query_context.deferred_internal_id(),
             "SparseIndex and VectorQueryContext deferred_internal_id consistency violated."
