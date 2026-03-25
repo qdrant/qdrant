@@ -11,6 +11,7 @@ use crate::segment_holder::SegmentHolder;
 /// semantic meaning: while this guard is held, no concurrent update operations can proceed.
 /// This is used during critical sections like segment optimization finalization and snapshot
 /// operations to ensure consistency.
+#[must_use = "dropping this guard immediately releases the updates lock"]
 #[allow(dead_code)] // Field is held for its RAII Drop behavior, not for reading
 pub struct UpdatesGuard<'a>(parking_lot::MutexGuard<'a, ()>);
 

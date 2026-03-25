@@ -139,7 +139,6 @@ impl TableOfContent {
     /// Returns `ScopeCounterGuard` to measure the scope of snapshot creation.
     /// Therefore this must always be bound to a variable in order to correctly account for the whole scope.
     /// For more information see [`ScopeTracker`] and [`ScopeTrackerGuard`].
-    #[must_use]
     pub fn count_snapshot_creation(&self, collection_name: &str) -> ScopeTrackerGuard {
         // Increment current running counter.
         let running_snapshots_guard = self

@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+#[must_use = "dropping this handle detaches the task"]
 pub struct CancellableAsyncTaskHandle<T: Clone> {
     pub join_handle: JoinHandle<T>,
     result_holder: Arc<Mutex<Option<T>>>,

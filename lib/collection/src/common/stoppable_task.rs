@@ -8,6 +8,7 @@ use tokio_util::task::AbortOnDropHandle;
 ///
 /// If this future is dropped the blocking task may be aborted prematurely if it has not started
 /// yet.
+#[must_use = "dropping this handle may abort the task"]
 pub struct StoppableTaskHandle<T> {
     pub join_handle: AbortOnDropHandle<Option<T>>,
     started: Arc<AtomicBool>,
