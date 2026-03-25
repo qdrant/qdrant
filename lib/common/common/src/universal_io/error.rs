@@ -9,6 +9,9 @@ pub enum UniversalIoError {
     #[error(transparent)]
     Mmap(#[from] crate::mmap::Error),
 
+    #[error("Bytemuck cast error: {0:?}")]
+    BytemuckCast(bytemuck::PodCastError),
+
     #[error(transparent)]
     IoUringNotSupported(io::Error),
 
@@ -27,6 +30,8 @@ pub enum UniversalIoError {
     /// Source id is not valid for this multi-source storage.
     #[error("invalid file index {file_index} during multi-file operation, {files} files provided")]
     InvalidFileIndex { file_index: usize, files: usize },
+    #[error("Resource was not initialized: {description}")]
+    Uninitialized { description: String },
 }
 
 impl UniversalIoError {
@@ -36,10 +41,21 @@ impl UniversalIoError {
             _ => Self::Io(err),
         }
     }
+    pub fn uninitialized(description: impl Into<String>) -> Self {
+        Self::Uninitialized {
+            description: description.into(),
+        }
+    }
 }
 
 impl From<serde_json::Error> for UniversalIoError {
     fn from(err: serde_json::Error) -> Self {
         Self::from(io::Error::from(err))
+    }
+}
+
+impl From<bytemuck::PodCastError> for UniversalIoError {
+    fn from(err: bytemuck::PodCastError) -> Self {
+        Self::BytemuckCast(err)
     }
 }

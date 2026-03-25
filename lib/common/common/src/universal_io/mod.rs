@@ -1,3 +1,5 @@
+#[cfg(not(target_os = "windows"))]
+pub mod disk_cache;
 pub mod error;
 pub mod file_ops;
 #[cfg(target_os = "linux")]
