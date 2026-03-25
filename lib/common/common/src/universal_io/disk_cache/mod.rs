@@ -113,8 +113,7 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
     }
 
     fn populate(&self) -> Result<()> {
-        // TODO: read all content of this file to make sure it is in the cache file.
-        Ok(())
+        Ok(self.populate()?)
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
