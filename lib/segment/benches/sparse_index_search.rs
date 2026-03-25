@@ -113,6 +113,7 @@ fn sparse_vector_index_search_benchmark_impl(
             path: mmap_index_dir.path(),
             stopped: &stopped,
             tick_progress: || pb.inc(1),
+            deferred_internal_id: None,
         })
         .unwrap();
     pb.finish_and_clear();

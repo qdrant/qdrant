@@ -31,7 +31,6 @@ use uuid::Uuid;
 use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
-use crate::entry::ReadSegmentEntry;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 #[cfg(feature = "rocksdb")]
@@ -485,6 +484,9 @@ fn create_segment(
 
     let appendable_flag = config.is_appendable();
 
+    // Limit deferred segment feature to appendable segments.
+    let deferred_internal_id = deferred_internal_id.filter(|_| appendable_flag);
+
     let use_mutable_id_tracker =
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
     let started = Instant::now();
@@ -645,6 +647,7 @@ fn create_segment(
             path: &vector_index_path,
             stopped,
             tick_progress: || (),
+            deferred_internal_id,
         })?);
         log_load_timing(
             segment_path,
@@ -691,9 +694,7 @@ fn create_segment(
         deferred_point_status: None,
     };
 
-    if let Some(deferred_internal_id) = deferred_internal_id
-        && segment.is_appendable()
-    {
+    if let Some(deferred_internal_id) = deferred_internal_id {
         segment.deferred_point_status = Some(DeferredPointStatus {
             deferred_internal_id,
             deferred_deleted_count: segment.calculate_deleted_deferred_point_count(),

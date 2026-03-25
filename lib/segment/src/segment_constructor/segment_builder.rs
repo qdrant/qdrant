@@ -675,6 +675,8 @@ impl SegmentBuilder {
                     path: &vector_index_path,
                     stopped,
                     tick_progress: || (),
+                    // We don't use the `index` returned here so we always set deferred to `None`. It's been loaded properly later.
+                    deferred_internal_id: None,
                 })?;
 
                 if sparse_vector_config.storage_type.is_on_disk() {
@@ -686,6 +688,9 @@ impl SegmentBuilder {
                 if sparse_vector_config.index.index_type.is_on_disk() {
                     index.clear_cache()?;
                 }
+
+                // Ensure we don't use the sparse vector index in future because it's missing proper setup of deferred points.
+                drop(index);
             }
             drop(progress_sparse_vector_index);
 
