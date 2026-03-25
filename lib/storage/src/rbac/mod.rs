@@ -14,7 +14,7 @@ mod ops_checks;
 pub use auth::Auth;
 
 /// How the request was authenticated.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AuthType {
     Jwt,
     ApiKey,
