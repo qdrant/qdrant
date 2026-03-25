@@ -249,6 +249,15 @@ impl ChannelService {
         Ok(url)
     }
 
+    pub fn other_peers(&self, this_peer_id: PeerId) -> Vec<PeerId> {
+        self.id_to_address
+            .read()
+            .keys()
+            .filter(|id| **id != this_peer_id)
+            .copied()
+            .collect()
+    }
+
     pub fn request_timeout(&self) -> Duration {
         self.channel_pool.request_timeout()
     }

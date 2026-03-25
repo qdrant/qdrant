@@ -100,8 +100,14 @@ async fn get_audit_logs(
         let AuditLogResult {
             entries,
             missing_peers,
-        } = fetch_cluster_audit_logs(audit_config, &query, toc.get_channel_service(), timeout)
-            .await?;
+        } = fetch_cluster_audit_logs(
+            audit_config,
+            &query,
+            toc.get_channel_service(),
+            toc.this_peer_id,
+            timeout,
+        )
+        .await?;
 
         Ok(AuditLogResponse {
             entries,

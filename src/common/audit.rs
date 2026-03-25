@@ -4,6 +4,7 @@ use api::grpc;
 use collection::shards::channel_service::ChannelService;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
+use shard::PeerId;
 pub use storage::audit::*;
 use storage::audit_reader::{AuditLogQuery, TIMESTAMP_KEY, read_local_audit_logs};
 use storage::content_manager::errors::StorageError;
@@ -18,6 +19,7 @@ pub async fn fetch_cluster_audit_logs(
     audit_config: &AuditConfig,
     query: &AuditLogQuery,
     channel_service: &ChannelService,
+    this_peer_id: PeerId,
     timeout: Duration,
 ) -> Result<AuditLogResult, StorageError> {
     let config = audit_config.clone();
@@ -26,8 +28,7 @@ pub async fn fetch_cluster_audit_logs(
         read_local_audit_logs(&config, &query_clone, &cancel)
     })
     .await
-    .map_err(|e| StorageError::service_error(format!("Failed to read local audit logs: {e}")))?
-    .unwrap_or_default();
+    .map_err(|e| StorageError::service_error(format!("Failed to read local audit logs: {e}")))??;
 
     let grpc_request = grpc::GetAuditLogRequest {
         time_from: query.time_from.map(|dt| dt.to_rfc3339()),
@@ -36,12 +37,7 @@ pub async fn fetch_cluster_audit_logs(
         limit: query.limit as u64,
     };
 
-    let all_peers: Vec<_> = channel_service
-        .id_to_address
-        .read()
-        .keys()
-        .copied()
-        .collect();
+    let all_peers: Vec<_> = channel_service.other_peers(this_peer_id);
 
     let mut futures = all_peers
         .into_iter()
