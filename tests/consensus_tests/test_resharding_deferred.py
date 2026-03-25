@@ -294,18 +294,20 @@ def test_resharding_transfer_deferred_points(tmp_path: pathlib.Path, direction: 
         assert_http_ok(resp)
         time.sleep(1)
 
-        # Clean up source shards: delete points that were migrated to the new
-        # shard and no longer belong on the source under the new hash ring.
+    # Complete resharding: commit hash rings and finish.
+    resp = commit_read_hashring(peer_api_uris[0])
+    assert_http_ok(resp)
+
+    if direction == "up":
+        # Clean up source shards between read and write hash ring commits:
+        # delete points that were migrated to the new shard and no longer
+        # belong on the source under the new hash ring.
         for shard_id in range(target_shard_id):
             peer_id, peer_uri = find_replica(shard_id, info, peer_api_uris, peer_ids)
             resp = requests.post(
                 f"{peer_uri}/collections/{COLLECTION_NAME}/shards/{shard_id}/cleanup?wait=true",
             )
             assert_http_ok(resp)
-
-    # Complete resharding: commit hash rings and finish.
-    resp = commit_read_hashring(peer_api_uris[0])
-    assert_http_ok(resp)
 
     resp = commit_write_hashring(peer_api_uris[0])
     assert_http_ok(resp)
