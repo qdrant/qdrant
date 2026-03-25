@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use actix_web::{HttpResponse, get, web};
-use actix_web_validator::Query;
+use actix_web::{HttpResponse, post, web};
+use actix_web_validator::{Json, Query};
 use api::grpc::transport_channel_pool::DEFAULT_GRPC_TIMEOUT;
 use chrono::{DateTime, Utc};
 use collection::operations::verification::new_unchecked_verification_pass;
@@ -19,7 +19,14 @@ use crate::actix::helpers;
 use crate::common::audit::{AuditLogResult, fetch_cluster_audit_logs};
 
 #[derive(Debug, Deserialize, Validate)]
-pub struct AuditLogParams {
+pub struct AuditLogQueryParams {
+    /// Timeout in seconds for cross-peer requests
+    #[validate(range(min = 1))]
+    pub timeout: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct AuditLogRequest {
     /// ISO-8601 start time (inclusive)
     pub time_from: Option<DateTime<Utc>>,
     /// ISO-8601 end time (exclusive)
@@ -27,9 +34,9 @@ pub struct AuditLogParams {
     /// Maximum number of entries to return (default: 100, max: 10000)
     #[validate(range(min = 1, max = 10000))]
     pub limit: Option<usize>,
-    /// Timeout in seconds for cross-peer requests
-    #[validate(range(min = 1))]
-    pub timeout: Option<u64>,
+    /// Key-value filters applied to audit log fields, e.g. `{"method": "upsert_points"}`
+    #[serde(default)]
+    pub filters: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -39,30 +46,13 @@ pub struct AuditLogResponse {
     pub missing_peers: Vec<u64>,
 }
 
-/// Parse `filter=key=value` pairs from the raw query string.
-///
-/// Supports multiple `filter` parameters, e.g.:
-/// `?filter=method=upsert_points&filter=result=ok`
-fn parse_filters(query_string: &str) -> HashMap<String, String> {
-    let mut filters = HashMap::new();
-    for part in query_string.split('&') {
-        if let Some(value) = part.strip_prefix("filter=") {
-            let decoded = urlencoding::decode(value).unwrap_or_default();
-            if let Some((k, v)) = decoded.split_once('=') {
-                filters.insert(k.to_string(), v.to_string());
-            }
-        }
-    }
-    filters
-}
-
-#[get("/audit/logs")]
+#[post("/audit/logs")]
 async fn get_audit_logs(
     dispatcher: web::Data<Dispatcher>,
     audit_config: web::Data<Option<AuditConfig>>,
     ActixAuth(auth): ActixAuth,
-    params: Query<AuditLogParams>,
-    req: actix_web::HttpRequest,
+    query_params: Query<AuditLogQueryParams>,
+    body: Json<AuditLogRequest>,
 ) -> HttpResponse {
     helpers::time(async move {
         auth.check_global_access(AccessRequirements::new().manage(), "get_audit_logs")?;
@@ -84,18 +74,20 @@ async fn get_audit_logs(
             });
         }
 
-        let filters = parse_filters(req.query_string());
-
-        let AuditLogParams {
+        let AuditLogRequest {
             time_from,
             time_to,
             limit,
-            timeout,
-        } = params.into_inner();
+            filters,
+        } = body.into_inner();
 
         let query = AuditLogQuery::new(time_from, time_to, filters, limit);
 
-        let timeout = Duration::from_secs(timeout.unwrap_or(DEFAULT_GRPC_TIMEOUT.as_secs()));
+        let timeout = Duration::from_secs(
+            query_params
+                .timeout
+                .unwrap_or(DEFAULT_GRPC_TIMEOUT.as_secs()),
+        );
 
         let AuditLogResult {
             entries,
