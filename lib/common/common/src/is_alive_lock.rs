@@ -72,6 +72,7 @@ impl IsAliveHandle {
 }
 
 /// Guards a `true` boolean
+#[must_use = "dropping this guard immediately releases the liveness lock"]
 pub struct IsAliveGuard(#[expect(dead_code)] ArcMutexGuard<RawMutex, bool>);
 
 #[cfg(test)]
