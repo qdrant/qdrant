@@ -107,7 +107,7 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
                 key: BlockId {
                     file_id: self.file_id,
                     offset: BlockOffset(
-                        u32::try_from(block_idx).expect("file too large for block cache (>70 TiB)"),
+                        u32::try_from(block_idx).expect("file too large disk cache"),
                     ),
                 },
                 // Request a single byte — enough to trigger caching the whole block.
@@ -116,7 +116,7 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
 
             // We only care about the side-effect of populating the cache.
             // The no-op closure avoids allocating anything on miss.
-            self.controller.get_from_cache(req, |_| ())?.is_miss();
+            self.controller.get_from_cache(req, |_| ())?;
         }
 
         Ok(())
