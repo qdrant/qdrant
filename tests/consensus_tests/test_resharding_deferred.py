@@ -169,12 +169,13 @@ def test_resharding_down_transfer_deferred_points(tmp_path: pathlib.Path):
     Deferred points live in appendable segments but have an internal offset
     beyond the indexing threshold, making them invisible to reads until the
     segment is optimized. The resharding_stream_records transfer uses
-    DeferredBehavior::IncludeAll to read them, but the concurrent optimizer
-    (required for wait=true on the last batch) races with the migration over
-    the same segments — causing data loss.
+    DeferredBehavior::IncludeAll to read them. The optimizer runs concurrently
+    (required for wait=true on the last migration batch) while the migration
+    reads from the same segments via the forward proxy.
 
-    This test demonstrates the race: deferred points exist during the migration,
-    the optimizer is enabled to unblock wait=true, and points are lost.
+    This is the riskier resharding direction: the removed shard's data is
+    permanently deleted, so any deferred points not transferred during
+    migration are irrecoverably lost.
 
     Steps:
     1. Creates a collection with prevent_unoptimized + disabled optimizers
@@ -229,6 +230,14 @@ def test_resharding_down_transfer_deferred_points(tmp_path: pathlib.Path):
     # For "down" from 3→2 shards, shard 2 is the one being removed.
     target_shard_id = N_SHARDS - 1
     target_peer_id, _ = find_replica(target_shard_id, info, peer_api_uris, peer_ids)
+
+    # Verify deferred points still exist before enabling optimizers.
+    # This confirms the migration will encounter deferred points.
+    visible_before_opt = scroll_all(peer_api_uris[0])
+    assert len(visible_before_opt) < total_points, (
+        f"Deferred points should still exist before enabling optimizers, "
+        f"got {len(visible_before_opt)}/{total_points} visible"
+    )
 
     # Enable optimizers right before migration. resharding_stream_records
     # uses wait=true internally on the last batch, which would hang with
