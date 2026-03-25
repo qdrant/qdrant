@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use fs_err as fs;
 
@@ -10,16 +9,6 @@ use crate::universal_io::{
     OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
     local_file_ops,
 };
-
-pub fn with_global<U>(f: impl FnOnce(&Arc<CacheController>) -> Result<U>) -> Result<U> {
-    let Some(global) = CacheController::global() else {
-        return Err(UniversalIoError::uninitialized(
-            "Disk cache was not initialized when trying to use it",
-        ));
-    };
-
-    f(global)
-}
 
 impl<T> UniversalReadFileOps for CachedSlice<T> {
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
