@@ -61,13 +61,6 @@ type StorageBackend = common::universal_io::io_uring::IoUringFile;
 #[cfg(not(target_os = "linux"))]
 type StorageBackend = common::universal_io::mmap::MmapFile;
 
-// Compile-time storage backend selection for StorageRead gRPC service.
-// On Linux, uses io_uring for optimal async I/O; falls back to mmap elsewhere.
-#[cfg(target_os = "linux")]
-type StorageBackend = common::universal_io::io_uring::IoUringFile;
-#[cfg(not(target_os = "linux"))]
-type StorageBackend = common::universal_io::mmap::MmapUniversal<u8>;
-
 #[derive(Default)]
 pub struct QdrantService {}
 
