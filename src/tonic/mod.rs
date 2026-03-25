@@ -49,10 +49,10 @@ use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use crate::tonic::api::qdrant_internal_api::QdrantInternalService;
 use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
+use crate::tonic::api::storage_read_api::StorageReadService;
 use crate::tonic::api::telemetry_wrapper::{
     PointsTelemetryWrapper, ShardSnapshotsTelemetryWrapper, SnapshotsTelemetryWrapper,
 };
-use crate::tonic::api::storage_read_api::StorageReadService;
 
 // Compile-time storage backend selection for StorageRead gRPC service.
 // On Linux, uses io_uring for optimal async I/O; falls back to mmap elsewhere.

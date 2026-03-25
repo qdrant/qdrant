@@ -5,8 +5,8 @@ pub mod points_internal_api;
 pub mod qdrant_internal_api;
 pub mod raft_api;
 pub mod snapshots_api;
-pub mod telemetry_wrapper;
 pub mod storage_read_api;
+pub mod telemetry_wrapper;
 
 mod collections_common;
 mod query_common;
