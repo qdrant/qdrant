@@ -28,7 +28,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         auth: &storage::rbac::Auth,
         collection_name: &str,
         method: &str,
-    ) -> Result<(String, PathBuf), Status> {
+    ) -> Result<PathBuf, Status> {
         let pass = auth
             .check_collection_access(collection_name, AccessRequirements::new(), method)
             .map_err(Status::from)?;
@@ -40,11 +40,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
             Err(_) => collection_name.to_string(),
         };
 
-        let base = toc
+        Ok(toc
             .storage_path()
             .join(COLLECTIONS_DIR)
-            .join(&resolved_name);
-        Ok((resolved_name, base))
+            .join(&resolved_name))
     }
 
     /// Resolve a collection-scoped relative path to an absolute path,
@@ -64,11 +63,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
     ///   /data/collections/my_col          → canonical matches, OK
     ///   /data/collections/evil -> /tmp     → canonical is /tmp ≠ /data/collections/evil, DENIED
     ///   /data/collections/col/../../etc    → rejected earlier by component check
-    pub fn resolve_path(
-        &self,
-        collection_base: &Path,
-        relative_path: &str,
-    ) -> Result<PathBuf, Status> {
+    pub fn resolve_path(collection_base: &Path, relative_path: &str) -> Result<PathBuf, Status> {
         let collection_name = collection_base
             .file_name()
             .expect("collection base path always has a file name");
