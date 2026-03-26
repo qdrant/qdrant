@@ -35,6 +35,13 @@ pub struct PointMappings {
     // Having two separate maps allows us iterating only over one type at a time without having to filter.
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
+
+    /// Points with internal id >= this value are hidden from reads.
+    /// Only used for appendable segments with deferred points.
+    deferred_internal_id: Option<PointOffsetType>,
+
+    /// Amount of deleted deferred points.
+    deferred_deleted_count: usize,
 }
 
 impl PointMappings {
@@ -49,6 +56,8 @@ impl PointMappings {
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
+            deferred_internal_id: None,
+            deferred_deleted_count: 0,
         }
     }
 
@@ -268,6 +277,32 @@ impl PointMappings {
         self.internal_to_external.len()
     }
 
+    pub(crate) fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.deferred_internal_id
+    }
+
+    pub(crate) fn deferred_deleted_count(&self) -> usize {
+        self.deferred_deleted_count
+    }
+
+    pub(crate) fn increment_deferred_deleted_count(&mut self) {
+        self.deferred_deleted_count += 1;
+    }
+
+    pub(crate) fn set_deferred_point_status(
+        &mut self,
+        deferred_internal_id: PointOffsetType,
+        deferred_deleted_count: usize,
+    ) {
+        self.deferred_internal_id = Some(deferred_internal_id);
+        self.deferred_deleted_count = deferred_deleted_count;
+    }
+
+    pub(crate) fn clear_deferred_point_status(&mut self) {
+        self.deferred_internal_id = None;
+        self.deferred_deleted_count = 0;
+    }
+
     /// Generate a random [`PointMappings`].
     #[cfg(test)]
     pub fn random(rand: &mut StdRng, total_size: u32) -> Self {
@@ -326,6 +361,8 @@ impl PointMappings {
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
+            deferred_internal_id: None,
+            deferred_deleted_count: 0,
         }
     }
 
