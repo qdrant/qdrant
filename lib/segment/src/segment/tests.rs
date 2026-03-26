@@ -30,7 +30,6 @@ use crate::entry::entry_point::{
 };
 use crate::entry::{SnapshotEntry as _, StorageSegmentEntry as _};
 use crate::id_tracker::IdTracker;
-use crate::id_tracker::id_tracker_base::calculate_deleted_deferred_count;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::JsonPath;
 use crate::segment_constructor::simple_segment_constructor::{
@@ -1471,13 +1470,7 @@ fn test_deleted_deferred_point_count() {
                 n_deferred.checked_sub(deleted_count).unwrap()
             );
             assert_eq!(
-                {
-                    let id_tracker = segment.id_tracker.borrow();
-                    calculate_deleted_deferred_count(
-                        &*id_tracker,
-                        id_tracker.deferred_internal_id().unwrap(),
-                    )
-                },
+                segment.id_tracker.borrow().deferred_deleted_count(),
                 deleted_count,
             );
 
@@ -1492,13 +1485,7 @@ fn test_deleted_deferred_point_count() {
             );
 
             assert_eq!(
-                {
-                    let id_tracker = segment.id_tracker.borrow();
-                    calculate_deleted_deferred_count(
-                        &*id_tracker,
-                        id_tracker.deferred_internal_id().unwrap(),
-                    )
-                },
+                segment.id_tracker.borrow().deferred_deleted_count(),
                 deleted_count
             );
 
@@ -1508,13 +1495,7 @@ fn test_deleted_deferred_point_count() {
         // We delete all deferred points in the segment.
         assert_eq!(segment.deferred_point_count(), 0);
         assert_eq!(
-            {
-                let id_tracker = segment.id_tracker.borrow();
-                calculate_deleted_deferred_count(
-                    &*id_tracker,
-                    id_tracker.deferred_internal_id().unwrap(),
-                )
-            },
+            segment.id_tracker.borrow().deferred_deleted_count(),
             n_deferred
         );
         assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);

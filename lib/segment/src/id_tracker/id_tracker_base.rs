@@ -196,19 +196,6 @@ pub trait IdTracker: fmt::Debug {
     fn increment_deferred_deleted_count(&mut self) {}
 }
 
-/// Calculate the count of deleted deferred points by iterating the deletion bitslice.
-///
-/// This can be expensive and should only be run once during segment creation/load.
-pub fn calculate_deleted_deferred_count(
-    tracker: &dyn IdTracker,
-    deferred_from: PointOffsetType,
-) -> usize {
-    let total_points = tracker.total_point_count();
-    if total_points < deferred_from as usize {
-        return 0;
-    }
-    tracker.deleted_point_bitslice()[deferred_from as usize..total_points].count_ones()
-}
 
 /// Enum holding a reference to point mappings from an ID tracker.
 ///
