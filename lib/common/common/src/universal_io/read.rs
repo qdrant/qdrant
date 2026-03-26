@@ -45,7 +45,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn clear_ram_cache(&self) -> Result<()>;
 
     /// Read from multiple files in a single operation.
-    fn wread_multi<P: AccessPattern>(
+    fn read_multi<P: AccessPattern>(
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
