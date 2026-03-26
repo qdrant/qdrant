@@ -3,8 +3,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use collection::operations::verification::new_unchecked_verification_pass;
-use common::generic_consts::{Random, Sequential};
-use common::universal_io::{FileIndex, ReadRange, UniversalIoError, UniversalRead};
+use common::universal_io::{ReadRange, UniversalIoError, UniversalRead};
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
 use tonic::Status;
@@ -182,47 +181,5 @@ pub fn io_error_to_status(e: UniversalIoError) -> Status {
         UniversalIoError::IoUringNotSupported(e) => {
             Status::internal(format!("IoUring not supported: {e}"))
         }
-    }
-}
-
-/// Dispatch a read call on `MmapU8` based on a runtime `sequential` flag.
-/// Needed because `UniversalRead::read` uses a const generic parameter.
-pub fn dispatch_read<S: UniversalRead<u8>>(
-    storage: &S,
-    range: ReadRange,
-    sequential: bool,
-) -> common::universal_io::Result<std::borrow::Cow<'_, [u8]>> {
-    if sequential {
-        storage.read::<Sequential>(range)
-    } else {
-        storage.read::<Random>(range)
-    }
-}
-
-/// Dispatch a read_batch call based on a runtime `sequential` flag.
-pub fn dispatch_read_batch<S: UniversalRead<u8>>(
-    storage: &S,
-    ranges: impl IntoIterator<Item = ReadRange>,
-    sequential: bool,
-    callback: impl FnMut(usize, &[u8]) -> common::universal_io::Result<()>,
-) -> common::universal_io::Result<()> {
-    if sequential {
-        storage.read_batch::<Sequential>(ranges, callback)
-    } else {
-        storage.read_batch::<Random>(ranges, callback)
-    }
-}
-
-/// Dispatch a read_multi call based on a runtime `sequential` flag.
-pub fn dispatch_read_multi<S: UniversalRead<u8>>(
-    files: &[S],
-    reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
-    sequential: bool,
-    callback: impl FnMut(usize, FileIndex, &[u8]) -> common::universal_io::Result<()>,
-) -> common::universal_io::Result<()> {
-    if sequential {
-        S::read_multi::<Sequential>(files, reads, callback)
-    } else {
-        S::read_multi::<Random>(files, reads, callback)
     }
 }

@@ -4,6 +4,11 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::tonic::api::storage_read_api::helpers::{
+    io_error_to_status, validate_range,
+};
+use crate::tonic::api::validate;
+use crate::tonic::auth::extract_auth;
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
     FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesRequest,
@@ -15,13 +20,8 @@ use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{FileIndex, OpenOptions, ReadRange, UniversalIoError, UniversalRead};
 use futures::Stream;
 use storage::dispatcher::Dispatcher;
-use tonic::{Request, Response, Status, async_trait};
-
-use crate::tonic::api::storage_read_api::helpers::{
-    dispatch_read, dispatch_read_batch, dispatch_read_multi, io_error_to_status, validate_range,
-};
-use crate::tonic::api::validate;
-use crate::tonic::auth::extract_auth;
+use tonic::{async_trait, Request, Response, Status};
+use common::generic_consts::Random;
 
 mod helpers;
 #[cfg(test)]
@@ -144,15 +144,12 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
-            let cow = dispatch_read(
-                &storage,
-                ReadRange {
+            let cow = storage
+                .read::<Random>(ReadRange {
                     byte_offset: offset,
                     length,
-                },
-                open_options.need_sequential,
-            )
-            .map_err(io_error_to_status)?;
+                })
+                .map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
         .await
@@ -181,7 +178,6 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
         let path = self.resolve_path(&auth, &collection_name, &path)?;
         let open_options = OpenOptions::default();
-        let sequential = open_options.need_sequential;
         let range = ReadRange {
             byte_offset: offset,
             length,
@@ -208,16 +204,13 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 let storage_for_read = Arc::clone(&storage);
 
                 let data = tokio::task::spawn_blocking(move || {
-                    dispatch_read(
-                        &*storage_for_read,
-                        ReadRange {
+                    storage_for_read
+                        .read::<Random>(ReadRange {
                             byte_offset: current_offset,
                             length: chunk_size,
-                        },
-                        sequential,
-                    )
-                    .map(|cow| cow.into_owned())
-                    .map_err(io_error_to_status)
+                        })
+                        .map(|cow| cow.into_owned())
+                        .map_err(io_error_to_status)
                 })
                 .await
                 .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
@@ -283,16 +276,12 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
-            dispatch_read_batch(
-                &storage,
-                ranges,
-                open_options.need_sequential,
-                |idx, chunk| {
+            storage
+                .read_batch::<Random>(ranges, |idx, chunk| {
                     results[idx].extend_from_slice(chunk);
                     Ok(())
-                },
-            )
-            .map_err(io_error_to_status)?;
+                })
+                .map_err(io_error_to_status)?;
 
             Ok::<_, Status>(results)
         })
@@ -344,16 +333,11 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 .collect::<common::universal_io::Result<Vec<_>>>()
                 .map_err(io_error_to_status)?;
 
-            let mut results = reads_.iter().map(|_| Vec::new()).collect::<Vec<_>>();
-            dispatch_read_multi(
-                &files,
-                reads_,
-                open_options.need_sequential,
-                |op_idx, _, chunk| {
-                    results[op_idx].extend_from_slice(chunk);
-                    Ok(())
-                },
-            )
+            let mut results = vec![Vec::new(); reads_.len()];
+            S::read_multi::<Random>(&files, reads_, |op_idx, _, chunk| {
+                results[op_idx].extend_from_slice(chunk);
+                Ok(())
+            })
             .map_err(io_error_to_status)?;
             Ok::<Vec<Vec<u8>>, Status>(results)
         })
