@@ -64,6 +64,7 @@ paths:
             If timeout is reached - request will return with service error.
           schema:
             type: integer
+            minimum: 1
         - name: force
           in: query
           description: If true - removes peer even if it has shards/replicas on it.
