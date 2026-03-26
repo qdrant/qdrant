@@ -31,4 +31,6 @@ pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
 
         Ok(())
     }
+
+    // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }

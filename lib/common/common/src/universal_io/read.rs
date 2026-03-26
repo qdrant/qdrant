@@ -7,6 +7,7 @@ use crate::universal_io::file_ops::UniversalReadFileOps;
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
+#[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
@@ -32,10 +33,6 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     ) -> Result<()>;
 
     fn len(&self) -> Result<u64>;
-
-    fn is_empty(&self) -> Result<bool> {
-        Ok(self.len()? == 0)
-    }
 
     /// Fill RAM cache with related data, if applicable for this implementation.
     ///
@@ -67,4 +64,6 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
 
         Ok(())
     }
+
+    // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }
