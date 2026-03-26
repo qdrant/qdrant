@@ -160,6 +160,14 @@ impl IdTracker for InMemoryIdTracker {
         debug_assert!(false, "InMemoryIdTracker should not be persisted");
         vec![]
     }
+
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.mappings.deferred_internal_id()
+    }
+
+    fn deferred_deleted_count(&self) -> usize {
+        self.mappings.deferred_deleted_count()
+    }
 }
 
 #[cfg(test)]

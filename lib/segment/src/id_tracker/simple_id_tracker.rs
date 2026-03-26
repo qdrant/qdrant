@@ -297,6 +297,14 @@ impl IdTracker for SimpleIdTracker {
     fn files(&self) -> Vec<PathBuf> {
         vec![]
     }
+
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.mappings.deferred_internal_id()
+    }
+
+    fn deferred_deleted_count(&self) -> usize {
+        self.mappings.deferred_deleted_count()
+    }
 }
 
 impl From<&ExtendedPointId> for StoredPointId {
