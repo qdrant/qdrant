@@ -100,7 +100,7 @@ async fn batch_search_points(
         &dispatcher,
         &auth,
     )
-        .await
+    .await
     {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now(), None),
