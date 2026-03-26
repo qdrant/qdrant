@@ -313,19 +313,7 @@ impl Segment {
 
         let mut id_tracker = self.id_tracker.borrow_mut();
 
-        let is_point_already_deleted = id_tracker.is_deleted_point(internal_id);
-
         id_tracker.drop_internal(internal_id)?;
-
-        // Increase counter for deleted deferred points.
-        if id_tracker
-            .deferred_internal_id()
-            .is_some_and(|deferred_from| internal_id >= deferred_from)
-            // Don't count the deletion of the same point twice
-            && !is_point_already_deleted
-        {
-            id_tracker.increment_deferred_deleted_count();
-        }
 
         // Before, we propagated point deletions to also delete its vectors. This turns
         // out to be problematic because this sometimes makes us lose vector data

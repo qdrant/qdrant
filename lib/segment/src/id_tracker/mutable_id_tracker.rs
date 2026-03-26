@@ -417,10 +417,6 @@ impl IdTracker for MutableIdTracker {
     fn deferred_deleted_count(&self) -> usize {
         self.mappings.deferred_deleted_count()
     }
-
-    fn increment_deferred_deleted_count(&mut self) {
-        self.mappings.increment_deferred_deleted_count();
-    }
 }
 
 pub(crate) fn mappings_path(segment_path: &Path) -> PathBuf {

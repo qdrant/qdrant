@@ -191,11 +191,7 @@ pub trait IdTracker: fmt::Debug {
     fn deferred_deleted_count(&self) -> usize {
         0
     }
-
-    /// Increment the deleted deferred point counter by one.
-    fn increment_deferred_deleted_count(&mut self) {}
 }
-
 
 /// Enum holding a reference to point mappings from an ID tracker.
 ///
@@ -578,24 +574,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
-        }
-    }
-
-    fn increment_deferred_deleted_count(&mut self) {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => {
-                id_tracker.increment_deferred_deleted_count()
-            }
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                id_tracker.increment_deferred_deleted_count()
-            }
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
-                id_tracker.increment_deferred_deleted_count()
-            }
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
-                id_tracker.increment_deferred_deleted_count()
-            }
         }
     }
 }

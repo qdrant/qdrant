@@ -129,7 +129,17 @@ impl PointMappings {
         }
 
         if let Some(internal_id) = &internal_id {
+            let was_already_deleted = self.deleted[*internal_id as usize];
             self.deleted.set(*internal_id as usize, true);
+
+            // Track deletion of deferred points.
+            if !was_already_deleted
+                && self
+                    .deferred_internal_id
+                    .is_some_and(|deferred_from| *internal_id >= deferred_from)
+            {
+                self.deferred_deleted_count += 1;
+            }
         }
 
         internal_id
@@ -294,10 +304,6 @@ impl PointMappings {
 
     pub(crate) fn deferred_deleted_count(&self) -> usize {
         self.deferred_deleted_count
-    }
-
-    pub(crate) fn increment_deferred_deleted_count(&mut self) {
-        self.deferred_deleted_count += 1;
     }
 
     /// Generate a random [`PointMappings`].
