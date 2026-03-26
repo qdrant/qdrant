@@ -47,7 +47,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             collection_name,
             path,
         } = request.into_inner();
-        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let (_collection_name, base) = self
+            .check_and_resolve_collection(&auth, &collection_name, "file_exists")
+            .await?;
+        let path = self.resolve_path(&base, &path)?;
 
         let exists = tokio::task::spawn_blocking(move || match S::exists(&path) {
             Ok(exists) => Ok(exists),
@@ -73,8 +76,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             collection_name,
             prefix_path,
         } = request.into_inner();
-        let base = self.collection_base_path(&auth, &collection_name);
-        let prefix_path = self.resolve_path(&auth, &collection_name, &prefix_path)?;
+        let (_collection_name, base) = self
+            .check_and_resolve_collection(&auth, &collection_name, "list_files")
+            .await?;
+        let prefix_path = self.resolve_path(&base, &prefix_path)?;
 
         let paths = tokio::task::spawn_blocking(move || S::list_files(&prefix_path))
             .await
@@ -111,7 +116,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             collection_name,
             path,
         } = request.into_inner();
-        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let (_collection_name, base) = self
+            .check_and_resolve_collection(&auth, &collection_name, "file_length")
+            .await?;
+        let path = self.resolve_path(&base, &path)?;
 
         let open_options = OpenOptions::default();
         let length = tokio::task::spawn_blocking(move || {
@@ -134,18 +142,21 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let ReadBytesRequest {
             collection_name,
             path,
-            offset,
+            byte_offset,
             length,
         } = request.into_inner();
 
-        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let (_collection_name, base) = self
+            .check_and_resolve_collection(&auth, &collection_name, "read_bytes")
+            .await?;
+        let path = self.resolve_path(&base, &path)?;
         let open_options = OpenOptions::default();
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             let cow = storage
                 .read::<Random>(ReadRange {
-                    byte_offset: offset,
+                    byte_offset,
                     length,
                 })
                 .map_err(io_error_to_status)?;
@@ -171,14 +182,17 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let ReadBytesStreamRequest {
             collection_name,
             path,
-            offset,
+            byte_offset,
             length,
         } = request.into_inner();
 
-        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let (_collection_name, base) = self
+            .check_and_resolve_collection(&auth, &collection_name, "read_bytes_stream")
+            .await?;
+        let path = self.resolve_path(&base, &path)?;
         let open_options = OpenOptions::default();
         let range = ReadRange {
-            byte_offset: offset,
+            byte_offset,
             length,
         };
         let (storage, range) = tokio::task::spawn_blocking(move || {
@@ -235,7 +249,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             collection_name,
             path,
         } = request.into_inner();
-        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let (_collection_name, base) = self
+            .check_and_resolve_collection(&auth, &collection_name, "read_whole")
+            .await?;
+        let path = self.resolve_path(&base, &path)?;
         let open_options = OpenOptions::default();
 
         let data = tokio::task::spawn_blocking(move || {
@@ -261,13 +278,16 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             path,
             ranges,
         } = request.into_inner();
-        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let (_collection_name, base) = self
+            .check_and_resolve_collection(&auth, &collection_name, "read_batch")
+            .await?;
+        let path = self.resolve_path(&base, &path)?;
 
         let open_options = OpenOptions::default();
         let ranges = ranges
             .iter()
             .map(|r| ReadRange {
-                byte_offset: r.offset,
+                byte_offset: r.byte_offset,
                 length: r.length,
             })
             .collect::<Vec<_>>();
@@ -302,6 +322,9 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             collection_name,
             reads,
         } = request.into_inner();
+        let (_collection_name, base) = self
+            .check_and_resolve_collection(&auth, &collection_name, "read_multi")
+            .await?;
         let open_options = OpenOptions::default();
 
         // Resolve all paths and deduplicate into a file index.
@@ -310,7 +333,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let mut reads_ = Vec::<(FileIndex, _)>::with_capacity(reads.len());
 
         for entry in &reads {
-            let resolved = self.resolve_path(&auth, &collection_name, &entry.path)?;
+            let resolved = self.resolve_path(&base, &entry.path)?;
             let file_index = *path_to_index.entry(resolved.clone()).or_insert_with(|| {
                 let idx = unique_paths.len();
                 unique_paths.push(resolved);
@@ -319,7 +342,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             reads_.push((
                 file_index,
                 ReadRange {
-                    byte_offset: entry.offset,
+                    byte_offset: entry.byte_offset,
                     length: entry.length,
                 },
             ));

@@ -13,6 +13,10 @@ use common::mmap;
 use futures::StreamExt as _;
 use segment::types::{HnswConfig, HnswGlobalConfig};
 use storage::content_manager::toc::{COLLECTIONS_DIR, TableOfContent};
+use storage::rbac::auth::Auth;
+use storage::rbac::{
+    Access, AuthType, CollectionAccess, CollectionAccessList, CollectionAccessMode,
+};
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::TempDir;
 use tonic::Code;
@@ -110,6 +114,20 @@ fn create_service() -> (StorageReadService<MmapUniversal<u8>>, TempDir, PathBuf)
     let service = StorageReadService::new(dispatcher);
 
     (service, storage_dir, collection_dir)
+}
+
+/// Create a request with auth restricted to a single collection.
+fn request_with_access<T>(inner: T, allowed_collection: &str) -> Request<T> {
+    #[expect(deprecated)]
+    let access = Access::Collection(CollectionAccessList(vec![CollectionAccess {
+        collection: allowed_collection.to_string(),
+        access: CollectionAccessMode::Read,
+        payload: None,
+    }]));
+    let auth = Auth::new(access, None, None, AuthType::None, None);
+    let mut req = Request::new(inner);
+    req.extensions_mut().insert(auth);
+    req
 }
 
 fn write_collection_file(collection_dir: &Path, relative_path: &str, contents: &[u8]) -> PathBuf {
@@ -297,7 +315,7 @@ async fn read_bytes_returns_requested_range() {
         .read_bytes(Request::new(ReadBytesRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "bytes/data.bin".to_string(),
-            offset: 3,
+            byte_offset: 3,
             length: 4,
         }))
         .await
@@ -318,7 +336,7 @@ async fn read_bytes_out_of_bounds_returns_error() {
         .read_bytes(Request::new(ReadBytesRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "oob/data.bin".to_string(),
-            offset: 0,
+            byte_offset: 0,
             length: 9999,
         }))
         .await
@@ -342,7 +360,7 @@ async fn read_bytes_stream_splits_large_reads_into_chunks() {
         .read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "stream/data.bin".to_string(),
-            offset: 0,
+            byte_offset: 0,
             length: total_len as u64,
         }))
         .await
@@ -378,7 +396,7 @@ async fn read_bytes_stream_returns_empty_stream_for_zero_length() {
         .read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "stream/zero.bin".to_string(),
-            offset: 0,
+            byte_offset: 0,
             length: 0,
         }))
         .await
@@ -398,7 +416,7 @@ async fn read_bytes_stream_zero_length_checks_file_exists() {
         .read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "stream/missing.bin".to_string(),
-            offset: 0,
+            byte_offset: 0,
             length: 0,
         }))
         .await
@@ -421,7 +439,7 @@ async fn read_bytes_stream_out_of_bounds_returns_error() {
         .read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             path: "stream/clamp.bin".to_string(),
-            offset: 0,
+            byte_offset: 0,
             length: 999999,
         }))
         .await
@@ -465,15 +483,15 @@ async fn read_batch_returns_each_requested_slice() {
             path: "batch/data.bin".to_string(),
             ranges: vec![
                 ReadBatchRange {
-                    offset: 0,
+                    byte_offset: 0,
                     length: 2,
                 },
                 ReadBatchRange {
-                    offset: 4,
+                    byte_offset: 4,
                     length: 3,
                 },
                 ReadBatchRange {
-                    offset: 9,
+                    byte_offset: 9,
                     length: 1,
                 },
             ],
@@ -502,17 +520,17 @@ async fn read_multi_reads_ranges_in_request_order() {
             reads: vec![
                 ReadMultiEntry {
                     path: "segments/a.bin".to_string(),
-                    offset: 1,
+                    byte_offset: 1,
                     length: 3,
                 },
                 ReadMultiEntry {
                     path: "segments/b.bin".to_string(),
-                    offset: 2,
+                    byte_offset: 2,
                     length: 4,
                 },
                 ReadMultiEntry {
                     path: "segments/a.bin".to_string(),
-                    offset: 6,
+                    byte_offset: 6,
                     length: 2,
                 },
             ],
@@ -538,9 +556,102 @@ async fn read_multi_rejects_empty_entry_path() {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             reads: vec![ReadMultiEntry {
                 path: "".to_string(),
-                offset: 0,
+                byte_offset: 0,
                 length: 1,
             }],
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), Code::InvalidArgument);
+    drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn access_denied_for_wrong_collection() {
+    let (service, storage_dir, collection_dir) = create_service_async().await;
+    write_collection_file(&collection_dir, "secret.bin", b"data");
+
+    let err = service
+        .file_exists(request_with_access(
+            FileExistsRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "secret.bin".to_string(),
+            },
+            "some-other-collection",
+        ))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), Code::PermissionDenied);
+
+    drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn access_granted_for_matching_collection() {
+    let (service, storage_dir, collection_dir) = create_service_async().await;
+    write_collection_file(&collection_dir, "data.bin", b"hello");
+
+    let response = service
+        .file_exists(request_with_access(
+            FileExistsRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "data.bin".to_string(),
+            },
+            TEST_COLLECTION_NAME,
+        ))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert!(response.exists);
+
+    drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn nonexistent_collection_returns_not_found() {
+    let (service, storage_dir, _collection_dir) = create_service_async().await;
+
+    let err = service
+        .file_length(Request::new(FileLengthRequest {
+            collection_name: "no-such-collection".to_string(),
+            path: "file.bin".to_string(),
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), Code::NotFound);
+
+    drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn dot_path_is_rejected() {
+    let (service, storage_dir, _collection_dir) = create_service_async().await;
+
+    let err = service
+        .file_exists(Request::new(FileExistsRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            path: ".".to_string(),
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), Code::InvalidArgument);
+
+    drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn dot_slash_path_is_rejected() {
+    let (service, storage_dir, _collection_dir) = create_service_async().await;
+
+    let err = service
+        .file_exists(Request::new(FileExistsRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            path: "./file.bin".to_string(),
         }))
         .await
         .unwrap_err();

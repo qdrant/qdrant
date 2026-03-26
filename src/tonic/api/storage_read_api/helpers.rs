@@ -6,6 +6,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use common::universal_io::{ReadRange, UniversalIoError, UniversalRead};
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::AccessRequirements;
 use tonic::Status;
 
 use crate::tonic::api::storage_read_api::StorageReadService;
@@ -18,41 +19,72 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         }
     }
 
-    /// Return the root directory that contains all collections.
-    fn collections_base_path(&self, auth: &storage::rbac::Auth) -> PathBuf {
-        let pass = new_unchecked_verification_pass();
-        let toc = self.dispatcher.toc(auth, &pass);
-        toc.storage_path().join(COLLECTIONS_DIR)
-    }
-
-    /// Return the base directory for a collection.
-    pub fn collection_base_path(
+    /// Verify at least read access to the collection and resolve a potential
+    /// alias to the real collection name.
+    ///
+    /// Returns the resolved collection name and its base directory path.
+    pub async fn check_and_resolve_collection(
         &self,
         auth: &storage::rbac::Auth,
         collection_name: &str,
-    ) -> PathBuf {
-        self.collections_base_path(auth).join(collection_name)
+        method: &str,
+    ) -> Result<(String, PathBuf), Status> {
+        let pass = auth
+            .check_collection_access(collection_name, AccessRequirements::new(), method)
+            .map_err(Status::from)?;
+
+        let verification_pass = new_unchecked_verification_pass();
+        let toc = self.dispatcher.toc(auth, &verification_pass);
+        let resolved_name = match toc.get_collection(&pass).await {
+            Ok(collection) => collection.name().to_string(),
+            Err(_) => collection_name.to_string(),
+        };
+
+        let base = toc
+            .storage_path()
+            .join(COLLECTIONS_DIR)
+            .join(&resolved_name);
+        Ok((resolved_name, base))
     }
 
     /// Resolve a collection-scoped relative path to an absolute path,
     /// rejecting any traversal attempts.
+    ///
+    /// `collection_base` is the absolute path to the collection directory
+    /// (as returned by [`check_and_resolve_collection`]).
+    ///
+    /// The `collections_root` (derived via `collection_base.parent()`) is needed
+    /// to detect symlink escapes at the collection directory level. We
+    /// canonicalize both the root and the collection dir independently, then
+    /// verify that `canonicalize(collection_base) == canonicalize(root) / name`.
+    /// If the collection dir is a symlink pointing elsewhere the two will
+    /// diverge and the request is rejected.
+    ///
+    /// Examples (given `root = /data/collections`):
+    ///   /data/collections/my_col          → canonical matches, OK
+    ///   /data/collections/evil -> /tmp     → canonical is /tmp ≠ /data/collections/evil, DENIED
+    ///   /data/collections/col/../../etc    → rejected earlier by component check
     pub fn resolve_path(
         &self,
-        auth: &storage::rbac::Auth,
-        collection_name: &str,
+        collection_base: &Path,
         relative_path: &str,
     ) -> Result<PathBuf, Status> {
-        let collections_root = self.collections_base_path(auth);
-        let base = self.collection_base_path(auth, collection_name);
-        let canonical_collections_root = fs_err::canonicalize(&collections_root).map_err(|e| {
+        let collection_name = collection_base
+            .file_name()
+            .expect("collection base path always has a file name");
+        let collections_root = collection_base
+            .parent()
+            .expect("collection base path always has a parent");
+        let canonical_collections_root = fs_err::canonicalize(collections_root).map_err(|e| {
             Status::internal(format!("Failed to canonicalize collections root: {e}"))
         })?;
         let expected_canonical_base = canonical_collections_root.join(collection_name);
-        let canonical_base = match fs_err::canonicalize(&base) {
+        let canonical_base = match fs_err::canonicalize(collection_base) {
             Ok(canonical) => {
                 if canonical != expected_canonical_base {
                     return Err(Status::permission_denied(format!(
-                        "Collection '{collection_name}' resolves outside its directory",
+                        "Collection '{}' resolves outside its directory",
+                        collection_name.to_string_lossy(),
                     )));
                 }
                 Some(canonical)
@@ -77,7 +109,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
             }
         }
 
-        let full = base.join(rel);
+        let full = collection_base.join(rel);
 
         // Try to canonicalize and verify the path is under the collection base.
         // If the file doesn't exist yet (e.g. for an exists check), the component
