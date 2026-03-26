@@ -53,7 +53,6 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
     scores_memory_pool: ScoresMemoryPool,
-    deferred_internal_id: Option<PointOffsetType>,
 }
 
 /// Getters for internals, used for testing.
@@ -88,7 +87,6 @@ pub struct SparseVectorIndexOpenArgs<'a, F: FnMut()> {
     pub path: &'a Path,
     pub stopped: &'a AtomicBool,
     pub tick_progress: F,
-    pub deferred_internal_id: Option<PointOffsetType>,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -102,7 +100,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             path,
             stopped,
             tick_progress,
-            deferred_internal_id,
         } = args;
 
         let config_path = SparseIndexConfig::get_config_path(path);
@@ -165,7 +162,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             searches_telemetry,
             indices_tracker,
             scores_memory_pool,
-            deferred_internal_id,
         })
     }
 
@@ -576,7 +572,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         let mut prefiltered_points = None;
 
         debug_assert_eq!(
-            self.deferred_internal_id,
+            self.id_tracker.borrow().deferred_internal_id(),
             query_context.deferred_internal_id(),
             "SparseIndex and VectorQueryContext deferred_internal_id consistency violated."
         );
@@ -691,7 +687,9 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         }
 
         let point_is_deferred = self
-            .deferred_internal_id
+            .id_tracker
+            .borrow()
+            .deferred_internal_id()
             .is_some_and(|deferred| id >= deferred);
 
         if point_is_deferred {

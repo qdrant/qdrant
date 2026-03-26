@@ -675,8 +675,6 @@ impl SegmentBuilder {
                     path: &vector_index_path,
                     stopped,
                     tick_progress: || (),
-                    // We don't use the `index` returned here so we always set deferred to `None`. It's been loaded properly later.
-                    deferred_internal_id: None,
                 })?;
 
                 if sparse_vector_config.storage_type.is_on_disk() {

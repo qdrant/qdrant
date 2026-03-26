@@ -119,6 +119,13 @@ pub struct MutableIdTracker {
     /// If we have more bytes on disk it probably indicates a partial flush. If we have less bytes
     /// on disk we hit some kind of a bug.
     mappings_expected_len: Arc<AtomicU64>,
+
+    /// Points with internal id >= this value are hidden from reads.
+    /// Only used for appendable segments with deferred points.
+    deferred_internal_id: Option<PointOffsetType>,
+
+    /// Amount of deleted deferred points.
+    deferred_deleted_count: usize,
 }
 
 impl MutableIdTracker {
@@ -185,6 +192,8 @@ impl MutableIdTracker {
             pending_mappings: Default::default(),
             is_alive_lock: IsAliveLock::new(),
             mappings_expected_len: Arc::new(AtomicU64::new(mappings_expected_len)),
+            deferred_internal_id: None,
+            deferred_deleted_count: 0,
         })
     }
 
@@ -398,6 +407,32 @@ impl IdTracker for MutableIdTracker {
     #[inline]
     fn files(&self) -> Vec<PathBuf> {
         Self::segment_files(&self.segment_path)
+    }
+
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.deferred_internal_id
+    }
+
+    fn deferred_deleted_count(&self) -> usize {
+        self.deferred_deleted_count
+    }
+
+    fn increment_deferred_deleted_count(&mut self) {
+        self.deferred_deleted_count += 1;
+    }
+
+    fn set_deferred_point_status(
+        &mut self,
+        deferred_internal_id: PointOffsetType,
+        deferred_deleted_count: usize,
+    ) {
+        self.deferred_internal_id = Some(deferred_internal_id);
+        self.deferred_deleted_count = deferred_deleted_count;
+    }
+
+    fn clear_deferred_point_status(&mut self) {
+        self.deferred_internal_id = None;
+        self.deferred_deleted_count = 0;
     }
 }
 

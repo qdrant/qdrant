@@ -31,6 +31,7 @@ use uuid::Uuid;
 use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
+use crate::id_tracker::id_tracker_base::calculate_deleted_deferred_count;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 #[cfg(feature = "rocksdb")]
@@ -51,9 +52,7 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 #[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::segment::{
-    DeferredPointStatus, SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData,
-};
+use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 #[cfg(feature = "rocksdb")]
 use crate::types::MultiVectorConfig;
 use crate::types::{
@@ -647,7 +646,6 @@ fn create_segment(
             path: &vector_index_path,
             stopped,
             tick_progress: || (),
-            deferred_internal_id,
         })?);
         log_load_timing(
             segment_path,
@@ -673,7 +671,7 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    let mut segment = Segment {
+    let segment = Segment {
         uuid,
         initial_version,
         version,
@@ -691,14 +689,12 @@ fn create_segment(
         error_status: None,
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
-        deferred_point_status: None,
     };
 
     if let Some(deferred_internal_id) = deferred_internal_id {
-        segment.deferred_point_status = Some(DeferredPointStatus {
-            deferred_internal_id,
-            deferred_deleted_count: segment.calculate_deleted_deferred_point_count(),
-        });
+        let mut id_tracker = segment.id_tracker.borrow_mut();
+        let deleted_count = calculate_deleted_deferred_count(&*id_tracker, deferred_internal_id);
+        id_tracker.set_deferred_point_status(deferred_internal_id, deleted_count);
     }
 
     Ok(segment)

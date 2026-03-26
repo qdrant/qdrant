@@ -40,7 +40,7 @@ impl Segment {
 
         let start_from = order_by.start_from();
 
-        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
+        let effective_deferred_id = deferred_behavior.apply(id_tracker.deferred_internal_id());
 
         let point_mappings = id_tracker.point_mappings();
         let values_ids_iterator = payload_index
@@ -111,20 +111,21 @@ impl Segment {
                 key: order_by.key.to_string(),
             })?;
 
+        let id_tracker = self.id_tracker.borrow();
+        let deferred_internal_id = id_tracker.deferred_internal_id();
+
         let range_iter = numeric_index
             .stream_range(&order_by.as_range())
             // We can't early stop the iterator for deferred points because the items are sorted lexicographically by type `(T, internalID)`.
-            .filter(|&(_, internal_id)| {
+            .filter(move |&(_, internal_id)| {
                 deferred_behavior.include_all_points()
-                    || internal_id < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
+                    || internal_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
             });
 
         let directed_range_iter = match order_by.direction() {
             Direction::Asc => Either::Left(range_iter),
             Direction::Desc => Either::Right(range_iter.rev()),
         };
-
-        let id_tracker = self.id_tracker.borrow();
 
         let filtered_iter = match filter {
             None => Either::Left(directed_range_iter),

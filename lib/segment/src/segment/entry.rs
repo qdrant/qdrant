@@ -74,8 +74,9 @@ impl ReadSegmentEntry for Segment {
             .vector_data
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+        let deferred_internal_id = self.id_tracker.borrow().deferred_internal_id();
         let vector_query_context =
-            query_context.get_vector_context(vector_name, self.deferred_internal_id());
+            query_context.get_vector_context(vector_name, deferred_internal_id);
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,
@@ -521,7 +522,7 @@ impl ReadSegmentEntry for Segment {
             num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deferred_points: Some(self.deferred_point_count()),
-            num_deleted_deferred_points: Some(self.deferred_deleted_count().unwrap_or_default()),
+            num_deleted_deferred_points: Some(self.id_tracker.borrow().deferred_deleted_count()),
             num_deleted_vectors: self.deleted_point_count(),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
@@ -530,7 +531,7 @@ impl ReadSegmentEntry for Segment {
             is_appendable: self.appendable_flag,
             index_schema: HashMap::new(),
             vector_data: vector_data_info,
-            deferred_internal_id: self.deferred_internal_id(),
+            deferred_internal_id: self.id_tracker.borrow().deferred_internal_id(),
         }
     }
 
@@ -618,8 +619,9 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        if let Some(deferred_from) = self.deferred_internal_id()
-            && let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id)
+        let id_tracker = self.id_tracker.borrow();
+        if let Some(deferred_from) = id_tracker.deferred_internal_id()
+            && let Some(internal_id) = id_tracker.internal_id(point_id)
         {
             return self.is_appendable() && internal_id >= deferred_from;
         };
@@ -627,14 +629,18 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let Some(deferred_from) = self.deferred_internal_id() else {
+        let id_tracker = self.id_tracker.borrow();
+        let Some(deferred_from) = id_tracker.deferred_internal_id() else {
             return vec![];
         };
-        if self.deferred_point_count() == 0 {
+        let deferred_count = id_tracker
+            .total_point_count()
+            .saturating_sub(deferred_from as usize)
+            .saturating_sub(id_tracker.deferred_deleted_count());
+        if deferred_count == 0 {
             return vec![];
         }
 
-        let id_tracker = self.id_tracker.borrow();
         id_tracker
             .point_mappings()
             .iter_internal()
@@ -644,25 +650,33 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn available_point_count_without_deferred(&self) -> usize {
-        self.id_tracker
-            .borrow()
+        let id_tracker = self.id_tracker.borrow();
+        let deferred_count = match id_tracker.deferred_internal_id() {
+            Some(deferred_from) => id_tracker
+                .total_point_count()
+                .saturating_sub(deferred_from as usize)
+                .saturating_sub(id_tracker.deferred_deleted_count()),
+            None => 0,
+        };
+        id_tracker
             .available_point_count()
-            .saturating_sub(self.deferred_point_count())
+            .saturating_sub(deferred_count)
     }
 
     fn has_deferred_points(&self) -> bool {
-        self.deferred_internal_id()
-            .is_some_and(|deferred_from| self.total_point_count() > deferred_from as usize)
+        let id_tracker = self.id_tracker.borrow();
+        id_tracker
+            .deferred_internal_id()
+            .is_some_and(|deferred_from| id_tracker.total_point_count() > deferred_from as usize)
     }
 
     fn deferred_point_count(&self) -> usize {
-        match self.deferred_internal_id() {
-            Some(internal_id) => self
-                .id_tracker
-                .borrow()
+        let id_tracker = self.id_tracker.borrow();
+        match id_tracker.deferred_internal_id() {
+            Some(deferred_from) => id_tracker
                 .total_point_count()
-                .saturating_sub(internal_id as usize)
-                .saturating_sub(self.deferred_deleted_count().unwrap_or_default()),
+                .saturating_sub(deferred_from as usize)
+                .saturating_sub(id_tracker.deferred_deleted_count()),
             None => 0,
         }
     }
