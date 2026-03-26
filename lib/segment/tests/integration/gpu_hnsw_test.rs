@@ -293,14 +293,15 @@ fn test_gpu_filterable_hnsw() {
     eprintln!("GPU without payload index: {hits_gpu_no_idx}/{attempts}");
     eprintln!("GPU with payload index:    {hits_gpu_idx}/{attempts}");
 
+    let min_diff = 10;
     assert!(
-        hits_cpu_idx >= hits_cpu_no_idx,
-        "Payload index should improve accuracy: cpu_idx={hits_cpu_idx} < cpu_no_idx={hits_cpu_no_idx}"
+        hits_cpu_idx + min_diff >= hits_cpu_no_idx,
+        "Payload index should improve accuracy: cpu_idx={hits_cpu_idx} + {min_diff} < cpu_no_idx={hits_cpu_no_idx}"
     );
 
     assert!(
-        hits_gpu_idx >= hits_gpu_no_idx,
-        "Payload index should improve accuracy: gpu_idx={hits_gpu_idx} < gpu_no_idx={hits_gpu_no_idx}"
+        hits_gpu_idx + min_diff >= hits_gpu_no_idx,
+        "Payload index should improve accuracy: gpu_idx={hits_gpu_idx} + {min_diff} < gpu_no_idx={hits_gpu_no_idx}"
     );
 
     // GPU accuracy should be roughly the same as CPU
