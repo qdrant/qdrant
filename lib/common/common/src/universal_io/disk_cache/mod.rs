@@ -78,6 +78,7 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
             disk_parallel: _,
             populate: _,
             advice: _,
+            prevent_caching: _, // This is cached in disk, backed by a mmap
         } = options;
 
         debug_assert!(!writeable);

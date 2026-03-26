@@ -63,6 +63,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
             disk_parallel: None,
             populate: Some(false),
             advice: None,
+            prevent_caching: None,
         };
 
         let page = S::open(path, options)?;
