@@ -7807,6 +7807,13 @@
             "minimum": 0,
             "nullable": true
           },
+          "search_max_batchsize": {
+            "description": "Max batchsize when searching",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "max_collection_vector_size_bytes": {
             "description": "Max size of a collections vector storage in bytes, ignoring replicas.",
             "type": "integer",
@@ -10446,6 +10453,13 @@
           },
           "upsert_max_batchsize": {
             "description": "Max batchsize when upserting",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "search_max_batchsize": {
+            "description": "Max batchsize when searching",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
