@@ -1,10 +1,16 @@
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use super::super::*;
+use bytemuck::TransparentWrapper;
+
+use super::super::{
+    FileIndex, OpenOptions, ReadRange, Result, UniversalRead, UniversalReadFileOps,
+};
 use crate::generic_consts::AccessPattern;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug, TransparentWrapper)]
+#[repr(transparent)]
+#[transparent(S)]
 pub struct ReadOnly<S>(S);
 
 impl<S> UniversalReadFileOps for ReadOnly<S>
@@ -40,6 +46,11 @@ where
     }
 
     #[inline]
+    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
+        self.0.read_whole()
+    }
+
+    #[inline]
     fn read_batch<P: AccessPattern>(
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
@@ -61,5 +72,14 @@ where
     #[inline]
     fn clear_ram_cache(&self) -> Result<()> {
         self.0.clear_ram_cache()
+    }
+
+    #[inline]
+    fn read_multi<P: AccessPattern>(
+        files: &[Self],
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
+        callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
+    ) -> Result<()> {
+        S::read_multi::<P>(Self::peel_slice(files), reads, callback)
     }
 }
