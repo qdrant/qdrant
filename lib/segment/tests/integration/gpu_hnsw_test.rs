@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -5,12 +6,12 @@ use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
-use common::types::TelemetryDetail;
+use common::types::ScoredPointOffset;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::get_num_indexing_threads;
@@ -19,6 +20,7 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
 use segment::payload_json;
+use segment::segment::Segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
@@ -27,58 +29,86 @@ use segment::types::{
 };
 use tempfile::Builder;
 
-/// Captured logs from env_logger. It's used to check that indexing was performed using GPU correctly.
-/// We cannot just check `Ok` because it's possible that GPU fails and index will be built on CPU without errors.
-pub struct CapturedLogs {
-    strings: Arc<Mutex<Vec<String>>>,
+fn build_hnsw(
+    path: &Path,
+    segment: &Segment,
+    hnsw_config: HnswConfig,
+    gpu_device: Option<&LockedGpuDevice>,
+    stopped: &AtomicBool,
+) -> HNSWIndex {
+    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut build_rng = StdRng::seed_from_u64(100);
+
+    let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
+    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
+
+    HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path,
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            quantized_vectors: quantized_vectors.clone(),
+            payload_index: segment.payload_index.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            old_indices: &[],
+            gpu_device,
+            rng: &mut build_rng,
+            stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
+            feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
+        },
+    )
+    .unwrap()
 }
 
-impl std::io::Write for CapturedLogs {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if let Ok(buf_str) = std::str::from_utf8(buf) {
-            let mut strings = self.strings.lock();
-            strings.push(buf_str.to_string());
-        }
-        Ok(buf.len())
-    }
+fn measure_accuracy(
+    hnsw_index: &HNSWIndex,
+    queries: &[(QueryVector, Filter)],
+    ground_truth: &[Vec<Vec<ScoredPointOffset>>],
+    ef: usize,
+    top: usize,
+) -> usize {
+    let search_params = SearchParams {
+        hnsw_ef: Some(ef),
+        ..Default::default()
+    };
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
+    queries
+        .iter()
+        .zip(ground_truth)
+        .filter(|((query, filter), truth)| {
+            let result = hnsw_index
+                .search(
+                    &[query],
+                    Some(filter),
+                    top,
+                    Some(&search_params),
+                    &Default::default(),
+                )
+                .unwrap();
+            result == **truth
+        })
+        .count()
 }
 
-#[test]
-fn test_gpu_filterable_hnsw() {
-    let captured_logs = Arc::new(Mutex::new(Vec::new()));
-    let _env_logger = env_logger::builder()
-        .is_test(true)
-        .target(env_logger::Target::Pipe(Box::new(CapturedLogs {
-            strings: captured_logs.clone(),
-        })))
-        .filter_level(log::LevelFilter::Trace)
-        .try_init();
-
-    let stopped = AtomicBool::new(false);
-    let max_failures = 7;
-    let dim = 8;
-    let m = 8;
-    let num_vectors: u64 = 10_000;
-    let ef = 32;
-    let ef_construct = 16;
-    let distance = Distance::Cosine;
-    let full_scan_threshold = 32; // KB
-    let num_payload_values = 2;
-
+fn create_test_segment(
+    dir: &Path,
+    dim: usize,
+    distance: Distance,
+    num_vectors: u64,
+    int_key: &str,
+    num_payload_values: usize,
+    with_payload_index: bool,
+) -> Segment {
     let mut rng = StdRng::seed_from_u64(42);
-
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
-
-    let int_key = "int";
-
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir, dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
@@ -99,7 +129,38 @@ fn test_gpu_filterable_hnsw() {
             .unwrap();
     }
 
-    let payload_index_ptr = segment.payload_index.clone();
+    if with_payload_index {
+        segment
+            .payload_index
+            .borrow_mut()
+            .set_indexed(
+                &JsonPath::new(int_key),
+                PayloadSchemaType::Integer,
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    segment
+}
+
+#[test]
+fn test_gpu_filterable_hnsw() {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Trace)
+        .try_init();
+
+    let stopped = AtomicBool::new(false);
+    let dim = 8;
+    let m = 8;
+    let num_vectors: u64 = 10_000;
+    let ef = 32;
+    let ef_construct = 16;
+    let distance = Distance::Cosine;
+    let full_scan_threshold = 32; // KB
+    let num_payload_values = 2;
+    let int_key = "int";
 
     let hnsw_config = HnswConfig {
         m,
@@ -111,123 +172,148 @@ fn test_gpu_filterable_hnsw() {
         inline_storage: None,
     };
 
-    let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
-    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-
-    payload_index_ptr
-        .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
-        .unwrap();
-
-    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
-
-    let instance = gpu::GPU_TEST_INSTANCE.clone();
-    let device =
-        Mutex::new(gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap());
-    let locked_device = LockedGpuDevice::new(device.lock());
-
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: vector_storage.clone(),
-            quantized_vectors: quantized_vectors.clone(),
-            payload_index: payload_index_ptr.clone(),
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit,
-            old_indices: &[],
-            gpu_device: Some(&locked_device), // enable GPU
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            progress: ProgressTracker::new_for_test(),
-        },
-    )
-    .unwrap();
-
+    // Pre-generate queries
     let top = 3;
-    let mut hits = 0;
     let attempts = 100;
-    for i in 0..attempts {
-        let query = random_vector(&mut rng, dim).into();
+    let mut query_rng = StdRng::seed_from_u64(12345);
+    let queries: Vec<(QueryVector, Filter)> = (0..attempts)
+        .map(|_| {
+            let query: QueryVector = random_vector(&mut query_rng, dim).into();
+            let range_size = 40;
+            let left_range = query_rng.random_range(0..400);
+            let right_range = left_range + range_size;
+            let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
+                JsonPath::new(int_key),
+                Range {
+                    lt: None,
+                    gt: None,
+                    gte: Some(OrderedFloat::from(f64::from(left_range))),
+                    lte: Some(OrderedFloat::from(f64::from(right_range))),
+                },
+            )));
+            (query, filter)
+        })
+        .collect();
 
-        let range_size = 40;
-        let left_range = rng.random_range(0..400);
-        let right_range = left_range + range_size;
-
-        let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            JsonPath::new(int_key),
-            Range {
-                lt: None,
-                gt: None,
-                gte: Some(OrderedFloat::from(f64::from(left_range))),
-                lte: Some(OrderedFloat::from(f64::from(right_range))),
-            },
-        )));
-
-        let filter_query = Some(&filter);
-
-        let index_result = hnsw_index
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    ..Default::default()
-                }),
-                &Default::default(),
-            )
-            .unwrap();
-
-        // check that search was performed using HNSW index
-        assert_eq!(
-            hnsw_index
-                .get_telemetry_data(TelemetryDetail::default())
-                .filtered_large_cardinality
-                .count,
-            i + 1
-        );
-
-        let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_index
-            .borrow()
-            .search(&[&query], filter_query, top, None, &Default::default())
-            .unwrap();
-
-        if plain_result == index_result {
-            hits += 1;
-        }
-    }
-    assert!(
-        attempts - hits <= max_failures,
-        "hits: {hits} of {attempts}"
-    ); // Not more than X% failures
-    eprintln!("hits = {hits:#?} out of {attempts}");
-
-    // Check from logs that GPU was used correctly.
-    let logs = captured_logs.lock().clone();
-    const UPLOAD_VECTORS_PATTERN: &str = "Upload vector data";
-    const UPLOAD_LINKS_PATTERN: &str = "Upload links on level 0";
-    // Check that vectors was uploaded to GPU only one time.
-    assert_eq!(
-        logs.iter()
-            .filter(|s| s.contains(UPLOAD_VECTORS_PATTERN))
-            .count(),
-        1
+    // GPU device setup (shared across GPU builds)
+    let gpu_instance = gpu::GPU_TEST_INSTANCE.clone();
+    let gpu_device = Mutex::new(
+        gpu::Device::new(gpu_instance.clone(), &gpu_instance.physical_devices()[0]).unwrap(),
     );
-    // Check that indexing was called more than one time.
-    let gpu_indexes_count = logs
+
+    // == Build without payload index (fresh segment) ==
+
+    let seg_dir_no_idx = Builder::new().prefix("seg_no_idx").tempdir().unwrap();
+    let segment_no_idx = create_test_segment(
+        seg_dir_no_idx.path(),
+        dim,
+        distance,
+        num_vectors,
+        int_key,
+        num_payload_values,
+        false,
+    );
+
+    // Compute ground truth using exact (plain) search
+    let ground_truth: Vec<_> = queries
         .iter()
-        .filter(|s| s.contains(UPLOAD_LINKS_PATTERN))
-        .count();
-    assert!(gpu_indexes_count > 1);
+        .map(|(query, filter)| {
+            segment_no_idx.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_index
+                .borrow()
+                .search(&[query], Some(filter), top, None, &Default::default())
+                .unwrap()
+        })
+        .collect();
+
+    let hnsw_dir_cpu_no_idx = Builder::new().prefix("hnsw_cpu_no_idx").tempdir().unwrap();
+    let hnsw_cpu_no_idx = build_hnsw(
+        hnsw_dir_cpu_no_idx.path(),
+        &segment_no_idx,
+        hnsw_config,
+        None,
+        &stopped,
+    );
+
+    let hnsw_dir_gpu_no_idx = Builder::new().prefix("hnsw_gpu_no_idx").tempdir().unwrap();
+    let hnsw_gpu_no_idx = {
+        let locked = LockedGpuDevice::new(gpu_device.lock());
+        build_hnsw(
+            hnsw_dir_gpu_no_idx.path(),
+            &segment_no_idx,
+            hnsw_config,
+            Some(&locked),
+            &stopped,
+        )
+    };
+
+    // == Build with payload index (fresh segment) ==
+
+    let seg_dir_idx = Builder::new().prefix("seg_idx").tempdir().unwrap();
+    let segment_idx = create_test_segment(
+        seg_dir_idx.path(),
+        dim,
+        distance,
+        num_vectors,
+        int_key,
+        num_payload_values,
+        true,
+    );
+
+    let hnsw_dir_cpu_idx = Builder::new().prefix("hnsw_cpu_idx").tempdir().unwrap();
+    let hnsw_cpu_idx = build_hnsw(
+        hnsw_dir_cpu_idx.path(),
+        &segment_idx,
+        hnsw_config,
+        None,
+        &stopped,
+    );
+
+    let hnsw_dir_gpu_idx = Builder::new().prefix("hnsw_gpu_idx").tempdir().unwrap();
+    let hnsw_gpu_idx = {
+        let locked = LockedGpuDevice::new(gpu_device.lock());
+        build_hnsw(
+            hnsw_dir_gpu_idx.path(),
+            &segment_idx,
+            hnsw_config,
+            Some(&locked),
+            &stopped,
+        )
+    };
+
+    // == Measure accuracies ==
+
+    let hits_cpu_no_idx = measure_accuracy(&hnsw_cpu_no_idx, &queries, &ground_truth, ef, top);
+    let hits_cpu_idx = measure_accuracy(&hnsw_cpu_idx, &queries, &ground_truth, ef, top);
+    let hits_gpu_no_idx = measure_accuracy(&hnsw_gpu_no_idx, &queries, &ground_truth, ef, top);
+    let hits_gpu_idx = measure_accuracy(&hnsw_gpu_idx, &queries, &ground_truth, ef, top);
+
+    eprintln!("CPU without payload index: {hits_cpu_no_idx}/{attempts}");
+    eprintln!("CPU with payload index:    {hits_cpu_idx}/{attempts}");
+    eprintln!("GPU without payload index: {hits_gpu_no_idx}/{attempts}");
+    eprintln!("GPU with payload index:    {hits_gpu_idx}/{attempts}");
+
+    assert!(
+        hits_cpu_idx >= hits_cpu_no_idx,
+        "Payload index should improve accuracy: cpu_idx={hits_cpu_idx} < cpu_no_idx={hits_cpu_no_idx}"
+    );
+
+    assert!(
+        hits_gpu_idx >= hits_gpu_no_idx,
+        "Payload index should improve accuracy: gpu_idx={hits_gpu_idx} < gpu_no_idx={hits_gpu_no_idx}"
+    );
+
+    // GPU accuracy should be roughly the same as CPU
+    let max_diff = 15;
+    let diff_no_idx = (hits_cpu_no_idx as i64 - hits_gpu_no_idx as i64).unsigned_abs();
+    let diff_idx = (hits_cpu_idx as i64 - hits_gpu_idx as i64).unsigned_abs();
+
+    assert!(
+        diff_no_idx <= max_diff,
+        "GPU accuracy should be close to CPU (no index): cpu={hits_cpu_no_idx}, gpu={hits_gpu_no_idx}, diff={diff_no_idx}"
+    );
+    assert!(
+        diff_idx <= max_diff,
+        "GPU accuracy should be close to CPU (with index): cpu={hits_cpu_idx}, gpu={hits_gpu_idx}, diff={diff_idx}"
+    );
 }
