@@ -69,7 +69,8 @@ where
     }
 
     fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let items = self.read_impl::<_, P>(range)?;
+        let mmap = self.as_bytes::<P>();
+        let items = read(mmap, range)?;
         Ok(Cow::Borrowed(items))
     }
 
@@ -78,8 +79,10 @@ where
         ranges: impl IntoIterator<Item = ReadRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
+        let mmap = self.as_bytes::<P>();
+
         for (idx, range) in ranges.into_iter().enumerate() {
-            let items = self.read_impl::<_, P>(range)?;
+            let items = read(mmap, range)?;
             callback(idx, items)?;
         }
 
@@ -107,7 +110,8 @@ where
     T: bytemuck::Pod,
 {
     fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
-        self.write_impl(byte_offset, items)?;
+        let mmap = self.as_bytes_mut();
+        write(mmap, byte_offset, items)?;
         Ok(())
     }
 
@@ -115,8 +119,10 @@ where
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
+        let mmap = self.as_bytes_mut();
+
         for (byte_offset, items) in offset_data {
-            self.write_impl(byte_offset, items)?;
+            write(mmap, byte_offset, items)?;
         }
 
         Ok(())
@@ -175,54 +181,54 @@ impl MmapFile {
     fn as_bytes_mut(&mut self) -> &mut [u8] {
         unsafe { slice::from_raw_parts_mut(self.mmap.as_mut_ptr(), self.mmap.len()) }
     }
+}
 
-    fn read_impl<T, P>(&self, range: ReadRange) -> Result<&[T]>
-    where
-        T: bytemuck::Pod,
-        P: AccessPattern,
-    {
-        let ReadRange {
-            byte_offset,
-            length: items,
-        } = range;
+#[inline]
+fn read<T>(bytes: &[u8], range: ReadRange) -> Result<&[T]>
+where
+    T: bytemuck::Pod,
+{
+    let ReadRange {
+        byte_offset,
+        length: items,
+    } = range;
 
-        let start = byte_offset as usize;
-        let end = start + size_of::<T>() * items as usize;
+    let start = byte_offset as usize;
+    let end = start + size_of::<T>() * items as usize;
 
-        let bytes =
-            self.as_bytes::<P>()
-                .get(start..end)
-                .ok_or_else(|| UniversalIoError::OutOfBounds {
-                    start: start as _,
-                    end: end as _,
-                    elements: self.mmap.len() / size_of::<T>(),
-                })?;
-
-        // `bytemuck::cast_slice` checks that `bytes` size and alignment match `T` requirements
-        let items = bytemuck::cast_slice(bytes);
-        Ok(items)
-    }
-
-    fn write_impl<T>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()>
-    where
-        T: bytemuck::Pod,
-    {
-        let start = byte_offset as usize;
-        let end = start + size_of_val(items);
-
-        let mmap_len_bytes = self.mmap.len();
-
-        let mmap = self.as_bytes_mut().get_mut(start..end).ok_or_else(|| {
-            UniversalIoError::OutOfBounds {
-                start: start as _,
-                end: end as _,
-                elements: mmap_len_bytes / size_of::<T>(),
-            }
+    let bytes = bytes
+        .get(start..end)
+        .ok_or_else(|| UniversalIoError::OutOfBounds {
+            start: start as _,
+            end: end as _,
+            elements: bytes.len() / size_of::<T>(),
         })?;
 
-        let bytes = bytemuck::cast_slice(items);
-        mmap.copy_from_slice(bytes);
+    // `bytemuck::cast_slice` checks that `bytes` size and alignment match `T` requirements
+    let items = bytemuck::cast_slice(bytes);
+    Ok(items)
+}
 
-        Ok(())
-    }
+#[inline]
+fn write<T>(mmap: &mut [u8], byte_offset: ByteOffset, items: &[T]) -> Result<()>
+where
+    T: bytemuck::Pod,
+{
+    let start = byte_offset as usize;
+    let end = start + size_of_val(items);
+
+    let mmap_len_bytes = mmap.len();
+
+    let mmap = mmap
+        .get_mut(start..end)
+        .ok_or_else(|| UniversalIoError::OutOfBounds {
+            start: start as _,
+            end: end as _,
+            elements: mmap_len_bytes / size_of::<T>(),
+        })?;
+
+    let bytes = bytemuck::cast_slice(items);
+    mmap.copy_from_slice(bytes);
+
+    Ok(())
 }
