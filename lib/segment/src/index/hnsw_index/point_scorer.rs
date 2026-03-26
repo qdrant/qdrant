@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use common::bitvec::BitSlice;
+use common::bitvec::{AtomicBitSlice, BitSlice};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
@@ -62,8 +62,8 @@ pub struct ScorerFilters<'a> {
     /// Point deleted flags should be explicitly present as `false`
     /// for each existing point in the segment.
     /// If there are no flags for some points, they are considered deleted.
-    /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
-    point_deleted: &'a BitSlice,
+    /// [`AtomicBitSlice`] defining flags for deleted points (and thus these vectors).
+    point_deleted: &'a AtomicBitSlice,
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
     vec_deleted: &'a BitSlice,
 }
@@ -120,7 +120,7 @@ impl<'a> FilteredScorer<'a> {
         vectors: &'a VectorStorageEnum,
         quantized_vectors: Option<&'a QuantizedVectors>,
         filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
-        point_deleted: &'a BitSlice,
+        point_deleted: &'a AtomicBitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self> {
         let raw_scorer = match quantized_vectors {
@@ -143,7 +143,7 @@ impl<'a> FilteredScorer<'a> {
         vectors: &'a VectorStorageEnum,
         quantized_vectors: Option<&'a QuantizedVectors>,
         filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
-        point_deleted: &'a BitSlice,
+        point_deleted: &'a AtomicBitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self> {
         // This is a fallback function, which is used if quantized vector storage
@@ -184,7 +184,7 @@ impl<'a> FilteredScorer<'a> {
     pub fn new_for_test(
         vector: QueryVector,
         vector_storage: &'a VectorStorageEnum,
-        point_deleted: &'a BitSlice,
+        point_deleted: &'a AtomicBitSlice,
     ) -> Self {
         FilteredScorer {
             raw_scorer: new_raw_scorer(vector, vector_storage, HardwareCounterCell::new()).unwrap(),
@@ -281,7 +281,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         quantized_vectors: Option<&'a QuantizedVectors>,
         filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
         top: usize,
-        point_deleted: &'a BitSlice,
+        point_deleted: &'a AtomicBitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self> {
         let scorer_batch = queries
@@ -319,7 +319,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     pub fn new_for_test(
         vectors: &[QueryVector],
         vector_storage: &'a VectorStorageEnum,
-        point_deleted: &'a BitSlice,
+        point_deleted: &'a AtomicBitSlice,
         top: usize,
     ) -> Self {
         let scorer_batch = vectors

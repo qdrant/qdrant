@@ -75,9 +75,9 @@ impl ReadSegmentEntry for ProxySegment {
             // If we are wrapping a segment with deleted points,
             // we can make this hack of replacing deleted_points of the wrapped_segment
             // with our proxied deleted_points, do avoid additional filter creation
-            if let Some(deleted_points) = self.deleted_mask.as_ref() {
+            if let Some(deleted_mask) = self.deleted_mask.as_ref() {
                 let query_context_with_deleted =
-                    query_context.fork().with_deleted_points(deleted_points);
+                    query_context.fork().with_deleted_points(deleted_mask.as_atomic_bitslice());
 
                 let res = self.wrapped_segment.get().read().search_batch(
                     vector_name,

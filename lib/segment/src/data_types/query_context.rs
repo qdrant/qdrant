@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::bitvec::BitSlice;
+use common::bitvec::AtomicBitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::SimpleCow;
@@ -133,7 +133,7 @@ impl Default for QueryContext {
 #[derive(Debug)]
 pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
-    deleted_points: Option<&'a BitSlice>,
+    deleted_points: Option<&'a AtomicBitSlice>,
     hardware_counter: HardwareCounterCell,
 }
 
@@ -163,7 +163,7 @@ impl<'a> SegmentQueryContext<'a> {
         }
     }
 
-    pub fn with_deleted_points(mut self, deleted_points: &'a BitSlice) -> Self {
+    pub fn with_deleted_points(mut self, deleted_points: &'a AtomicBitSlice) -> Self {
         self.deleted_points = Some(deleted_points);
         self
     }
@@ -194,7 +194,7 @@ pub struct VectorQueryContext<'a> {
 
     indexed_vectors: Option<usize>,
 
-    deleted_points: Option<&'a BitSlice>,
+    deleted_points: Option<&'a AtomicBitSlice>,
 
     hardware_counter: HardwareCounterCell,
 
@@ -210,7 +210,7 @@ impl VectorQueryContext<'_> {
         self.search_optimized_threshold_kb
     }
 
-    pub fn deleted_points(&self) -> Option<&BitSlice> {
+    pub fn deleted_points(&self) -> Option<&AtomicBitSlice> {
         self.deleted_points
     }
 

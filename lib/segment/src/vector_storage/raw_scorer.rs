@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::bitvec::{AtomicBitSlice, BitSlice, BitSliceExt as _};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
@@ -454,12 +454,11 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
 pub fn check_deleted_condition(
     point: PointOffsetType,
     vec_deleted: &BitSlice,
-    point_deleted: &BitSlice,
+    point_deleted: &AtomicBitSlice,
 ) -> bool {
     // Deleted points propagate to vectors; check vector deletion for possible early return
     // Default to not deleted if our deleted flags failed grow
     !vec_deleted.get_bit(point as usize).unwrap_or(false)
         // Additionally check point deletion for integrity if delete propagation to vector failed
-        // Default to deleted if the point mapping was removed from the ID tracker
-        && !point_deleted.get_bit(point as usize).unwrap_or(true)
+        && !point_deleted.get_bit(point as usize).unwrap_or(false)
 }

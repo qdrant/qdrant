@@ -1,4 +1,4 @@
-use common::bitvec::BitSlice;
+use common::bitvec::AtomicBitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
@@ -47,7 +47,7 @@ pub fn get_oversampled_top(
 #[allow(clippy::too_many_arguments)]
 pub fn postprocess_search_result(
     mut search_result: Vec<ScoredPointOffset>,
-    point_deleted: &BitSlice,
+    point_deleted: &AtomicBitSlice,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: Option<&QuantizedVectors>,
     vector: &QueryVector,

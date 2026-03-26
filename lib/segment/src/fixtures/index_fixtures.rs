@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use common::bitvec::BitVec;
+use common::atomic_bitmask::AtomicBitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::{Rng, RngExt};
@@ -21,7 +21,7 @@ pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVect
 
 pub struct TestRawScorerProducer {
     storage: VectorStorageEnum,
-    deleted_points: BitVec,
+    deleted_points: AtomicBitVec,
     quantized_vectors: Option<QuantizedVectors>,
 }
 
@@ -67,7 +67,7 @@ impl TestRawScorerProducer {
 
         TestRawScorerProducer {
             storage,
-            deleted_points: BitVec::repeat(false, num_vectors),
+            deleted_points: AtomicBitVec::with_fill(num_vectors, false),
             quantized_vectors,
         }
     }
@@ -90,7 +90,7 @@ impl TestRawScorerProducer {
             &self.storage,
             self.quantized_vectors.as_ref(),
             None,
-            &self.deleted_points,
+            self.deleted_points.as_atomic_bitslice(),
             HardwareCounterCell::new(),
         )
         .unwrap()
@@ -102,7 +102,7 @@ impl TestRawScorerProducer {
             &self.storage,
             self.quantized_vectors.as_ref(),
             None,
-            &self.deleted_points,
+            self.deleted_points.as_atomic_bitslice(),
             HardwareCounterCell::new(),
         )
         .unwrap()

@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use common::bitvec::{BitSlice, BitVec};
+use common::atomic_bitmask::AtomicBitVec;
+use common::bitvec::AtomicBitSlice;
 use common::fs::OneshotFile;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
@@ -376,7 +377,7 @@ impl IdTracker for MutableIdTracker {
         self.mappings.is_deleted_point(key)
     }
 
-    fn deleted_point_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self) -> &AtomicBitSlice {
         self.mappings.deleted()
     }
 
@@ -588,7 +589,7 @@ fn read_mappings<R>(reader: R) -> OperationResult<PointMappings>
 where
     R: Read + Seek,
 {
-    let mut deleted = BitVec::new();
+    let mut deleted = AtomicBitVec::new();
     let mut internal_to_external: Vec<PointIdType> = Default::default();
     let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
     let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
@@ -630,7 +631,7 @@ where
                 if internal_id as usize >= deleted.len() {
                     deleted.resize(internal_id as usize + 1, true);
                 }
-                deleted.set(internal_id as usize, false);
+                deleted.replace_concurrent(internal_id as usize, false);
 
                 // Set external to internal mapping
                 match external_id {
@@ -661,7 +662,7 @@ where
                 if internal_id as usize >= deleted.len() {
                     deleted.resize(internal_id as usize + 1, true);
                 }
-                deleted.set(internal_id as usize, true);
+                deleted.replace_concurrent(internal_id as usize, true);
             }
         }
     }

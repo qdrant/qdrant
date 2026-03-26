@@ -5,9 +5,10 @@ use std::collections::btree_map::Entry;
 use std::iter;
 
 use byteorder::LittleEndian;
+use common::atomic_bitmask::AtomicBitVec;
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
-use common::bitvec::{BitSlice, BitVec};
+use common::bitvec::{AtomicBitSlice, BitVec};
 use common::types::PointOffsetType;
 use itertools::Itertools;
 #[cfg(test)]
@@ -32,7 +33,7 @@ pub type FileEndianess = LittleEndian;
 pub struct CompressedPointMappings {
     /// `deleted` specifies which points of internal_to_external was deleted.
     /// Its size is exactly the same as `internal_to_external`.
-    deleted: BitVec,
+    deleted: AtomicBitVec,
     internal_to_external: CompressedInternalToExternal,
 
     // Having two separate maps allows us iterating only over one type at a time without having to filter.
@@ -41,13 +42,19 @@ pub struct CompressedPointMappings {
 
 impl CompressedPointMappings {
     pub fn new(
-        mut deleted: BitVec,
+        deleted_bv: BitVec,
         internal_to_external: CompressedInternalToExternal,
         external_to_internal: CompressedExternalToInternal,
     ) -> Self {
         // Resize deleted to have the same number of elements as internal_to_external
         // Not all structures we may source this from enforce the same size
-        deleted.resize(internal_to_external.len(), false);
+        let target_len = internal_to_external.len();
+        let raw = deleted_bv.as_raw_slice();
+        let mut deleted = AtomicBitVec::from_slice(raw);
+        // Truncate or extend to the exact target length
+        if deleted.len() != target_len {
+            deleted.resize(target_len, false);
+        }
 
         Self {
             deleted,
@@ -57,7 +64,7 @@ impl CompressedPointMappings {
     }
 
     pub fn from_mappings(mapping: PointMappings) -> Self {
-        let (deleted, internal_to_external, external_to_internal_num, external_to_internal_uuid) =
+        let (deleted_bv, internal_to_external, external_to_internal_num, external_to_internal_uuid) =
             mapping.deconstruct();
 
         let compressed_internal_to_external =
@@ -67,6 +74,14 @@ impl CompressedPointMappings {
             external_to_internal_num,
             external_to_internal_uuid,
         );
+
+        let len = deleted_bv.len();
+        let raw = deleted_bv.as_raw_slice();
+        let mut deleted = AtomicBitVec::from_slice(raw);
+        if deleted.len() > len {
+            deleted.resize(len, false);
+        }
+
         Self {
             deleted,
             internal_to_external: compressed_internal_to_external,
@@ -79,8 +94,8 @@ impl CompressedPointMappings {
         self.external_to_internal.len()
     }
 
-    pub(crate) fn deleted(&self) -> &BitSlice {
-        &self.deleted
+    pub(crate) fn deleted(&self) -> &AtomicBitSlice {
+        self.deleted.as_atomic_bitslice()
     }
 
     pub(crate) fn internal_id(&self, external_id: &PointIdType) -> Option<PointOffsetType> {
@@ -88,7 +103,7 @@ impl CompressedPointMappings {
     }
 
     pub(crate) fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        if *self.deleted.get(internal_id as usize)? {
+        if self.deleted.get(internal_id as usize)? {
             return None;
         }
 
@@ -99,7 +114,7 @@ impl CompressedPointMappings {
         let internal_id = self.external_to_internal.remove(&external_id);
 
         if let Some(internal_id) = &internal_id {
-            self.deleted.set(*internal_id as usize, true);
+            self.deleted.replace_concurrent(*internal_id as usize, true);
         }
 
         internal_id
@@ -123,7 +138,7 @@ impl CompressedPointMappings {
             .unique()
             .take(max_internal)
             .filter_map(move |i| {
-                if self.deleted[i] {
+                if self.deleted.get(i).unwrap_or(false) {
                     None
                 } else {
                     let point_offset = i as PointOffsetType;
@@ -158,7 +173,7 @@ impl CompressedPointMappings {
     pub(crate) fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         Box::new(
             (0..self.internal_to_external.len() as PointOffsetType)
-                .filter(move |i| !self.deleted[*i as usize]),
+                .filter(move |i| !self.deleted.get(*i as usize).unwrap_or(false)),
         )
     }
 
@@ -172,11 +187,7 @@ impl CompressedPointMappings {
     }
 
     pub(crate) fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        let key = key as usize;
-        if key >= self.deleted.len() {
-            return true;
-        }
-        self.deleted[key]
+        self.deleted.get(key as usize).unwrap_or(false)
     }
 
     pub(crate) fn total_point_count(&self) -> usize {
@@ -217,9 +228,9 @@ impl CompressedPointMappings {
         internal_ids.shuffle(rand);
         internal_ids.truncate(preserved_size as usize);
 
-        let mut deleted = BitVec::repeat(true, total_size as usize);
+        let deleted = AtomicBitVec::with_fill(total_size as usize, true);
         for id in &internal_ids {
-            deleted.set(*id as usize, false);
+            deleted.replace_concurrent(*id as usize, false);
         }
 
         let internal_to_external: Vec<_> = (0..total_size)

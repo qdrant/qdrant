@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
+#[cfg(feature = "gpu")]
+use common::bitvec::BitSlice;
+use common::bitvec::{AtomicBitSlice, BitSliceExt as _, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 #[cfg(target_os = "linux")]
@@ -1348,7 +1350,7 @@ impl HNSWIndex {
         vector: &QueryVector,
         vector_storage: &'a VectorStorageEnum,
         quantized_storage: Option<&'a QuantizedVectors>,
-        deleted_points: &'a BitSlice,
+        deleted_points: &'a AtomicBitSlice,
         params: Option<&SearchParams>,
         hardware_counter: HardwareCounterCell,
         filter_context: Option<Box<dyn FilterContext + 'a>>,
@@ -1370,7 +1372,7 @@ impl HNSWIndex {
         vector_storage: &'a VectorStorageEnum,
         quantized_storage: Option<&'a QuantizedVectors>,
         top: usize,
-        deleted_points: &'a BitSlice,
+        deleted_points: &'a AtomicBitSlice,
         params: Option<&SearchParams>,
         hardware_counter: HardwareCounterCell,
         filter_context: Option<Box<dyn FilterContext + 'a>>,
