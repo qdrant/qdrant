@@ -13,27 +13,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           components: llvm-tools-preview
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
           fetch-depth: 0
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install nextest
-        uses: taiki-e/install-action@nextest
+        uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
       - name: Install llvm-cov
         run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Run unit tests with coverage
         run: RUN_PER_PACKAGE=true tools/unit-test-coverage.sh
       - name: Upload unit test coverage artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: unit-test-coverage
           path: unit-test-coverage.lcov
@@ -43,26 +43,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           components: llvm-tools-preview
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
           fetch-depth: 0
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install nextest
-        uses: taiki-e/install-action@nextest
+        uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
       - name: Install llvm-cov
         run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Install dependencies
         run: sudo apt-get install clang
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.13'
       - name: Install uv and Python dependencies
@@ -74,7 +74,7 @@ jobs:
       - name: Run integration tests with coverage
         run: tools/integration-test-coverage.sh
       - name: Upload integration test coverage artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: integration-test-coverage
           path: integration-test-coverage.lcov
@@ -84,7 +84,7 @@ jobs:
     needs: [unit-coverage, integration-coverage]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
@@ -92,17 +92,17 @@ jobs:
       - name: Install lcov
         run: sudo apt install -y lcov
       - name: Download unit test coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: unit-test-coverage
       - name: Download integration test coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: integration-test-coverage
       - name: Merge coverage reports
         run: lcov -a unit-test-coverage.lcov -a integration-test-coverage.lcov -o merged.lcov
       - name: Upload coverage data to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad # v5.5.3
         with:
           files: merged.lcov
           override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
