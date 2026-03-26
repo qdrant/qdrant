@@ -82,3 +82,7 @@ harness = false
 [[bench]]
 name = "atomic_stop"
 harness = false
+
+[[bench]]
+name = "bitmask_bench"
+harness = false
