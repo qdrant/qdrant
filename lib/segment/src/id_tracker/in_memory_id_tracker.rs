@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::bitvec::AtomicBitSlice;
+use common::atomic_bitvec::AtomicBitSlice;
 use common::types::PointOffsetType;
 #[cfg(test)]
 use rand::RngExt;

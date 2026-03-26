@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
-use common::bitvec::{AtomicBitSlice, BitSlice};
+use common::atomic_bitvec::AtomicBitSlice;
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;

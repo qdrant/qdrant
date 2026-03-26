@@ -6,8 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use common::atomic_bitmask::AtomicBitVec;
-use common::bitvec::AtomicBitSlice;
+use common::atomic_bitvec::{AtomicBitSlice, AtomicBitVec};
 use common::fs::OneshotFile;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;

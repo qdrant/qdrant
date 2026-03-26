@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use bitvec::slice::BitSlice;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use common::bitvec::{AtomicBitSlice, BitOrdering, BitSliceExt as _, BitVec};
+use common::atomic_bitvec::AtomicBitSlice;
+use common::bitvec::{BitOrdering, BitSliceExt as _, BitVec};
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;

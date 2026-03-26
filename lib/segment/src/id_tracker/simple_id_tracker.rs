@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bincode;
-use common::atomic_bitmask::AtomicBitVec;
-use common::bitvec::AtomicBitSlice;
+use common::atomic_bitvec::{AtomicBitSlice, AtomicBitVec};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;

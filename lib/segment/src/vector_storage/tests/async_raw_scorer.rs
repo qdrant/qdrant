@@ -1,4 +1,4 @@
-use common::bitvec::AtomicBitSlice;
+use common::atomic_bitvec::AtomicBitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;

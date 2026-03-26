@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use common::atomic_bitmask::AtomicBitVec;
+use common::atomic_bitvec::AtomicBitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::{Rng, RngExt};

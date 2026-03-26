@@ -1,4 +1,4 @@
-pub mod atomic_bitmask;
+pub mod atomic_bitvec;
 pub mod bitpacking;
 pub mod bitpacking_links;
 pub mod bitpacking_ordered;

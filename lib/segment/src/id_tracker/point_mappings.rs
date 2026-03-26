@@ -4,10 +4,10 @@ use std::collections::btree_map::Entry;
 use std::iter;
 
 use byteorder::LittleEndian;
-use common::atomic_bitmask::AtomicBitVec;
+use common::atomic_bitvec::{AtomicBitSlice, AtomicBitVec};
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
-use common::bitvec::{AtomicBitSlice, BitVec};
+use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use std::hint::black_box;
 
-use common::atomic_bitmask::AtomicBitVec;
+use common::atomic_bitvec::AtomicBitVec;
 use common::bitvec::BitVec;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;

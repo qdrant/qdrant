@@ -2,7 +2,8 @@ use std::fmt;
 use std::path::PathBuf;
 
 use atomic_refcell::AtomicRef;
-use common::bitvec::{AtomicBitSlice, BitSlice, BitSliceExt as _};
+use common::atomic_bitvec::AtomicBitSlice;
+use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
