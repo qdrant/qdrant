@@ -110,6 +110,7 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
         let pass = check_strict_mode_batch(
             requests.iter().map(conv),
             timeout,
+            Some(requests.len()),
             collection_name,
             self.dispatcher,
             auth,
@@ -159,6 +160,7 @@ impl CheckedTocProvider for StrictModeCheckedInternalTocProvider<'_> {
         check_strict_mode_toc_batch(
             requests.iter().map(conv),
             timeout,
+            Some(requests.len()),
             collection_name,
             self.toc,
             auth,

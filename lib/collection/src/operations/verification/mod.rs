@@ -208,6 +208,17 @@ pub fn check_timeout(
     check_limit_opt(Some(timeout), strict_mode_config.max_timeout, "timeout")
 }
 
+pub fn check_search_batch_size(
+    batch_size: usize,
+    strict_mode_config: &StrictModeConfig,
+) -> CollectionResult<()> {
+    check_limit_opt(
+        Some(batch_size),
+        strict_mode_config.search_max_batchsize,
+        "search batch size",
+    )
+}
+
 pub(crate) fn check_bool_opt(
     value: Option<bool>,
     allowed: Option<bool>,

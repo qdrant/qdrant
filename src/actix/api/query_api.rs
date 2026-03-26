@@ -157,6 +157,7 @@ async fn query_points_batch(
         let pass = check_strict_mode_batch(
             batch.iter().map(|i| &i.0),
             params.timeout_as_secs(),
+            Some(batch.len()),
             &collection.collection_name,
             &dispatcher,
             &auth,
