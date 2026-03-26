@@ -55,6 +55,12 @@ impl StrictModeVerification for SearchRequestBatch {
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
+        super::check_limit_opt(
+            Some(self.searches.len()),
+            strict_mode_config.search_max_batchsize,
+            "search batch size",
+        )?;
+
         for search_request in &self.searches {
             search_request
                 .search_request

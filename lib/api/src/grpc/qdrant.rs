@@ -1055,6 +1055,9 @@ pub struct StrictModeConfig {
     /// Max batchsize when upserting
     #[prost(uint64, optional, tag = "9")]
     pub upsert_max_batchsize: ::core::option::Option<u64>,
+    /// Max batchsize when searching
+    #[prost(uint64, optional, tag = "20")]
+    pub search_max_batchsize: ::core::option::Option<u64>,
     /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[prost(uint64, optional, tag = "10")]
     pub max_collection_vector_size_bytes: ::core::option::Option<u64>,

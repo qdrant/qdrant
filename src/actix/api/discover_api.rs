@@ -93,6 +93,7 @@ async fn discover_batch_points(
     let pass = match check_strict_mode_batch(
         request.searches.iter().map(|i| &i.discover_request),
         params.timeout_as_secs(),
+        Some(request.searches.len()),
         &collection.collection_name,
         &dispatcher,
         &auth,

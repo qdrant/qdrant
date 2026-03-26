@@ -406,6 +406,8 @@ message StrictModeConfig {
   optional float search_max_oversampling = 8;
   // Max batchsize when upserting
   optional uint64 upsert_max_batchsize = 9;
+  // Max batchsize when searching
+  optional uint64 search_max_batchsize = 20;
   // Max size of a collections vector storage in bytes, ignoring replicas.
   optional uint64 max_collection_vector_size_bytes = 10;
   // Max number of read operations per minute per replica
