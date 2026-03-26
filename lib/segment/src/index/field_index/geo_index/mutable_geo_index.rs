@@ -494,9 +494,7 @@ impl InMemoryGeoMapIndex {
                 encode_max_precision(removed_geo_point.lon.0, removed_geo_point.lat.0).map_err(
                     |e| OperationError::service_error(format!("Malformed geo points: {e}")),
                 )?;
-            let already_seen = removed_geo_hashes.insert(removed_geo_hash);
-
-            if already_seen {
+            if !removed_geo_hashes.insert(removed_geo_hash) {
                 continue;
             }
 
