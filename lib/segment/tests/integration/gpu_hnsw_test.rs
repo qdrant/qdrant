@@ -16,6 +16,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
+use segment::index::hnsw_index::gpu::set_gpu_groups_count;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
@@ -161,6 +162,7 @@ fn test_gpu_filterable_hnsw() {
     let full_scan_threshold = 32; // KB
     let num_payload_values = 2;
     let int_key = "int";
+    let gpu_groups = 64; // limit gpu parallelism for small data
 
     let hnsw_config = HnswConfig {
         m,
@@ -200,6 +202,8 @@ fn test_gpu_filterable_hnsw() {
     let gpu_device = Mutex::new(
         gpu::Device::new(gpu_instance.clone(), &gpu_instance.physical_devices()[0]).unwrap(),
     );
+
+    set_gpu_groups_count(Some(gpu_groups));
 
     // == Build without payload index (fresh segment) ==
 
@@ -293,7 +297,7 @@ fn test_gpu_filterable_hnsw() {
     eprintln!("GPU without payload index: {hits_gpu_no_idx}/{attempts}");
     eprintln!("GPU with payload index:    {hits_gpu_idx}/{attempts}");
 
-    let min_diff = 10;
+    let min_diff = 5;
     assert!(
         hits_cpu_idx + min_diff >= hits_cpu_no_idx,
         "Payload index should improve accuracy: cpu_idx={hits_cpu_idx} + {min_diff} < cpu_no_idx={hits_cpu_no_idx}"
@@ -305,7 +309,7 @@ fn test_gpu_filterable_hnsw() {
     );
 
     // GPU accuracy should be roughly the same as CPU
-    let max_diff = 15;
+    let max_diff = 5;
     let diff_no_idx = (hits_cpu_no_idx as i64 - hits_gpu_no_idx as i64).unsigned_abs();
     let diff_idx = (hits_cpu_idx as i64 - hits_gpu_idx as i64).unsigned_abs();
 
