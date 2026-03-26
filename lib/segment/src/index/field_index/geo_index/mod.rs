@@ -1802,6 +1802,7 @@ mod tests {
         let results = index
             .filter(&field_condition, &hw_counter)
             .unwrap()
+            .unwrap()
             .collect_vec();
         assert_eq!(results, vec![1]);
 
@@ -1857,6 +1858,7 @@ mod tests {
         let hw_counter = hw_acc.get_counter_cell();
         let results = index
             .filter(&field_condition, &hw_counter)
+            .unwrap()
             .unwrap()
             .collect_vec();
         assert_eq!(results, vec![0]);
