@@ -15,4 +15,6 @@ pub trait UniversalReadFileOps: Sized {
 
     /// Check if a file exists at the given path.
     fn exists(path: &Path) -> Result<bool>;
+
+    // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }
