@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use super::*;
+use super::super::*;
 use crate::generic_consts::AccessPattern;
 
 #[derive(Copy, Clone, Debug)]

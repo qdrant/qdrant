@@ -7,7 +7,7 @@ pub mod io_uring;
 pub mod local_file_ops;
 pub mod mmap;
 pub mod read;
-pub mod read_only;
+mod wrappers;
 pub mod write;
 
 use std::path::Path;
@@ -20,7 +20,7 @@ pub use self::file_ops::UniversalReadFileOps;
 pub use self::io_uring::*;
 pub use self::mmap::*;
 pub use self::read::UniversalRead;
-pub use self::read_only::*;
+pub use self::wrappers::*;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
 
