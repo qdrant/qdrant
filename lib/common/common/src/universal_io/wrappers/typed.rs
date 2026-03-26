@@ -10,7 +10,13 @@ use super::super::{
 };
 use crate::generic_consts::AccessPattern;
 
-/// A wrapper around [`UniversalRead`] / [`UniversalWrite`] that binds `T` to a specific type.
+/// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds `T` to a
+/// specific type.
+///
+/// This wrapper is not needed for code with a single universal io trait bound,
+/// (e.g. `where S: UniversalRead<f32>`), but it helps the compiler to
+/// distinguish when more than one bound is used, e.g.
+/// `where S: UniversalRead<f32> + UniversalRead<PointOffsetType> + …`.
 #[derive(Debug, TransparentWrapper)]
 #[repr(transparent)]
 #[transparent(S)]
