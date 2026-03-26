@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Delete dev branch containers older than a month
-        uses: snok/container-retention-policy@v2
+        uses: snok/container-retention-policy@b56f4ff7539c1f94f01e5dc726671cd619aa8072 # v2.2.1
         with:
           image-names: qdrant
           cut-off: A month ago UTC
