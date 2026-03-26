@@ -348,7 +348,8 @@ impl ImmutableIdTracker {
         )?;
         internal_to_version_file.write(0, internal_to_version)?;
 
-        let internal_to_version = CompressedVersions::from_slice(internal_to_version);
+        let internal_to_version =
+            CompressedVersions::from_slice(&internal_to_version_file.read_whole()?);
 
         debug_assert_eq!(internal_to_version.len(), mappings.total_point_count());
 
