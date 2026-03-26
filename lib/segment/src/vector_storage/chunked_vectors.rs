@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::cmp::max;
-use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
@@ -14,7 +13,8 @@ use common::mmap::{
     open_write_mmap,
 };
 use common::universal_io::{
-    MmapFile, OpenOptions, ReadRange, UniversalIoError, UniversalWrite, read_json_via,
+    MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalWrite, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -51,9 +51,8 @@ struct ChunkedVectorsConfig {
 pub struct ChunkedVectors<T: Copy + Sized + 'static, S: UniversalWrite<T>> {
     config: ChunkedVectorsConfig,
     status: MmapType<Status>,
-    chunks: Vec<S>,
+    chunks: Vec<TypedStorage<S, T>>,
     directory: PathBuf,
-    _vector_element_type: PhantomData<T>,
 }
 
 impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
@@ -157,7 +156,6 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             config,
             chunks,
             directory: directory.to_owned(),
-            _vector_element_type: PhantomData,
         };
         Ok(vectors)
     }
@@ -414,7 +412,7 @@ pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
     directory: &Path,
     advice: AdviceSetting,
     populate: bool,
-) -> Result<Vec<S>, common::universal_io::UniversalIoError> {
+) -> Result<Vec<TypedStorage<S, T>>, common::universal_io::UniversalIoError> {
     let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
@@ -441,7 +439,7 @@ pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
             ))
         })?;
 
-        let chunk = S::open(
+        let chunk = TypedStorage::open(
             &chunk_path,
             OpenOptions {
                 writeable: true,
@@ -467,11 +465,11 @@ pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-) -> Result<S, UniversalIoError> {
+) -> Result<TypedStorage<S, T>, UniversalIoError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
 
-    S::open(
+    TypedStorage::open(
         &chunk_file_path,
         OpenOptions {
             writeable: true,

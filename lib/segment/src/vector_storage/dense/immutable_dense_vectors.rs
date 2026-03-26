@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::io::Write;
-use std::marker::PhantomData;
 use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
@@ -11,7 +10,7 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, UniversalRead,
+    MmapFile, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, TypedStorage, UniversalRead,
 };
 use fs_err::{File, OpenOptions};
 
@@ -35,12 +34,11 @@ where
     pub dim: usize,
     pub num_vectors: usize,
     /// Vector data storage, providing read access via [`UniversalRead<T>`].
-    storage: ReadOnly<S>,
+    storage: TypedStorage<ReadOnly<S>, T>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
-    _phantom: PhantomData<T>,
 }
 
 impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S> {
@@ -64,7 +62,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             populate: Some(populate),
             advice: None,
         };
-        let storage = ReadOnly::open(vectors_path, options).map_err(|e| {
+        let storage = TypedStorage::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(
                 "Failed to open vector mmap at {}: {e}",
                 vectors_path.display()
@@ -94,7 +92,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             storage,
             deleted,
             deleted_count,
-            _phantom: PhantomData,
         })
     }
 
