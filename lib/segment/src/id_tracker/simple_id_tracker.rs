@@ -115,6 +115,7 @@ impl SimpleIdTracker {
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
+            None,
         );
 
         #[cfg(debug_assertions)]

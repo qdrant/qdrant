@@ -50,14 +50,25 @@ impl PointMappings {
         internal_to_external: Vec<PointIdType>,
         external_to_internal_num: BTreeMap<u64, PointOffsetType>,
         external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> Self {
+        let deferred_deleted_count = deferred_internal_id
+            .map(|deferred_from| {
+                let total = deleted.len();
+                if total < deferred_from as usize {
+                    0
+                } else {
+                    deleted[deferred_from as usize..total].count_ones()
+                }
+            })
+            .unwrap_or(0);
         Self {
             deleted,
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
-            deferred_internal_id: None,
-            deferred_deleted_count: 0,
+            deferred_internal_id,
+            deferred_deleted_count,
         }
     }
 
@@ -287,20 +298,6 @@ impl PointMappings {
 
     pub(crate) fn increment_deferred_deleted_count(&mut self) {
         self.deferred_deleted_count += 1;
-    }
-
-    pub(crate) fn set_deferred_point_status(
-        &mut self,
-        deferred_internal_id: PointOffsetType,
-        deferred_deleted_count: usize,
-    ) {
-        self.deferred_internal_id = Some(deferred_internal_id);
-        self.deferred_deleted_count = deferred_deleted_count;
-    }
-
-    pub(crate) fn clear_deferred_point_status(&mut self) {
-        self.deferred_internal_id = None;
-        self.deferred_deleted_count = 0;
     }
 
     /// Generate a random [`PointMappings`].

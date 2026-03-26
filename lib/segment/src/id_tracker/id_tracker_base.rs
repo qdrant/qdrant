@@ -194,17 +194,6 @@ pub trait IdTracker: fmt::Debug {
 
     /// Increment the deleted deferred point counter by one.
     fn increment_deferred_deleted_count(&mut self) {}
-
-    /// Set the deferred point status (threshold and deleted count).
-    fn set_deferred_point_status(
-        &mut self,
-        _deferred_internal_id: PointOffsetType,
-        _deferred_deleted_count: usize,
-    ) {
-    }
-
-    /// Clear the deferred point status.
-    fn clear_deferred_point_status(&mut self) {}
 }
 
 /// Calculate the count of deleted deferred points by iterating the deletion bitslice.
@@ -620,42 +609,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
                 id_tracker.increment_deferred_deleted_count()
             }
-        }
-    }
-
-    fn set_deferred_point_status(
-        &mut self,
-        deferred_internal_id: PointOffsetType,
-        deferred_deleted_count: usize,
-    ) {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => {
-                id_tracker.set_deferred_point_status(deferred_internal_id, deferred_deleted_count)
-            }
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                id_tracker.set_deferred_point_status(deferred_internal_id, deferred_deleted_count)
-            }
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
-                id_tracker.set_deferred_point_status(deferred_internal_id, deferred_deleted_count)
-            }
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
-                id_tracker.set_deferred_point_status(deferred_internal_id, deferred_deleted_count)
-            }
-        }
-    }
-
-    fn clear_deferred_point_status(&mut self) {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.clear_deferred_point_status(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                id_tracker.clear_deferred_point_status()
-            }
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
-                id_tracker.clear_deferred_point_status()
-            }
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.clear_deferred_point_status(),
         }
     }
 }

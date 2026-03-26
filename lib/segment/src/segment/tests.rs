@@ -1082,7 +1082,6 @@ fn test_deferred_point_read_operations() {
         },
         |i| i.id,
         true,
-        false,
     );
 
     // Read filtered (count API)
@@ -1102,7 +1101,6 @@ fn test_deferred_point_read_operations() {
         },
         |i| *i,
         true,
-        false,
     );
 
     // Read filtered ordered (scroll)
@@ -1126,7 +1124,6 @@ fn test_deferred_point_read_operations() {
         },
         |i| i.1,
         true,
-        false,
     );
 
     // Read random filtered (random scroll)
@@ -1139,7 +1136,6 @@ fn test_deferred_point_read_operations() {
         },
         |i| *i,
         true,
-        false,
     );
 
     // Retrieve API
@@ -1165,7 +1161,6 @@ fn test_deferred_point_read_operations() {
                 .collect::<Vec<_>>()
         },
         |i| *i,
-        false,
         false,
     );
 }
@@ -1219,7 +1214,6 @@ fn test_deferred_point_sparse() {
                 },
                 |i| i.id,
                 true,
-                true,
             );
 
             // Search feedback
@@ -1244,7 +1238,6 @@ fn test_deferred_point_sparse() {
                         .unwrap()
                 },
                 |i| i.id,
-                true,
                 true,
             );
         }
@@ -1287,24 +1280,15 @@ fn test_deferred_point_facets() {
                     .facet(&request, &AtomicBool::new(false), &hw_counter)
                     .unwrap();
 
-                let old_deferred_id = segment.id_tracker.borrow().deferred_internal_id();
-                let old_deferred_deleted = segment.id_tracker.borrow().deferred_deleted_count();
                 if n_deferred > 0 {
-                    assert!(old_deferred_id.is_some());
+                    assert!(segment.id_tracker.borrow().deferred_internal_id().is_some());
                 }
-                segment
-                    .id_tracker
-                    .borrow_mut()
-                    .clear_deferred_point_status();
-                let facet_res = segment
+                let dir2 = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
+                let segment_no_deferred =
+                    create_deferred_segment(&dir2, 5, N_POINTS + n_deferred, 0);
+                let facet_res = segment_no_deferred
                     .facet(&request, &AtomicBool::new(false), &hw_counter)
                     .unwrap();
-                if let Some(deferred_id) = old_deferred_id {
-                    segment
-                        .id_tracker
-                        .borrow_mut()
-                        .set_deferred_point_status(deferred_id, old_deferred_deleted);
-                }
 
                 let expected_deferred = if filter.is_some() {
                     n_deferred.div_ceil(3)
@@ -1353,7 +1337,6 @@ fn assert_deferred_points_excluded<F, R, T>(
     operation: F,
     to_external_id: R,
     test_with_filter: bool,
-    need_rebuilt_segment: bool,
 ) where
     F: Fn(&Segment, Option<&Filter>) -> Vec<T>,
     R: Fn(&T) -> ExtendedPointId,
@@ -1424,7 +1407,7 @@ fn assert_deferred_points_excluded<F, R, T>(
             log::debug!("  => deferred points = {n_deferred}; filter-set ID = {filter_set_id}",);
 
             let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-            let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+            let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
             // Search with deferred mode
             let search_res_deferred = operation(&segment, filter_set.filter.as_ref());
@@ -1437,24 +1420,16 @@ fn assert_deferred_points_excluded<F, R, T>(
                 assert!(!segment.point_is_deferred(external_id));
             }
 
-            // Disable deferred points and search again.
-            if need_rebuilt_segment {
-                // Don't run this on windows because this test is already extremely slow (~100s).
-                // Recreating the segment here would double that time.
-                if cfg!(target_os = "windows") {
-                    drop(segment);
-                    dir.close().unwrap();
-                    continue;
-                }
-
-                let dir = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
-                segment = create_deferred_segment(&dir, 5, N_POINTS + n_deferred, 0);
-            } else {
-                segment
-                    .id_tracker
-                    .borrow_mut()
-                    .clear_deferred_point_status();
+            // Create a segment with all points visible (none deferred) and search again.
+            // Don't run this on windows because this test is already extremely slow (~100s).
+            if cfg!(target_os = "windows") {
+                drop(segment);
+                dir.close().unwrap();
+                continue;
             }
+
+            let dir2 = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
+            let segment = create_deferred_segment(&dir2, 5, N_POINTS + n_deferred, 0);
 
             let search_res_normal = operation(&segment, filter_set.filter.as_ref());
             assert_eq!(

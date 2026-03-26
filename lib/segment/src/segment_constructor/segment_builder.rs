@@ -88,7 +88,7 @@ impl SegmentBuilder {
         let temp_dir = create_temp_dir(temp_dir)?;
 
         let id_tracker = if segment_config.is_appendable() {
-            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(temp_dir.path())?)
+            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(temp_dir.path(), None)?)
         } else {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
