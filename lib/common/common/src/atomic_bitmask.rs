@@ -36,7 +36,7 @@ const BITS_PER_WORD: usize = u64::BITS as usize;
 /// Acquire `AtomicBitSlice` via [`AtomicBitVec::as_slice`]. Every
 /// `replace_concurrent` call automatically keeps the owning
 /// [`AtomicBitVec`]'s popcount cache up-to-date via the borrowed reference.
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct AtomicBitSlice<'a> {
     data: &'a [AtomicU64],
     /// Logical number of bits (≤ `data.len() * BITS_PER_WORD`).
@@ -64,14 +64,6 @@ impl<'a> AtomicBitSlice<'a> {
     #[inline]
     pub fn as_raw_slice(&self) -> &'a [AtomicU64] {
         self.data
-    }
-
-    /// View the bits as a [`crate::bitvec::AtomicBitSlice`].
-    ///
-    /// The returned slice covers exactly `self.len()` bits.
-    pub fn as_atomic_bitslice(&self) -> &'a crate::bitvec::AtomicBitSlice {
-        &bitvec::slice::BitSlice::<AtomicU64, bitvec::order::Lsb0>::from_slice(self.data)
-            [..self.bit_len]
     }
 }
 
@@ -147,7 +139,7 @@ impl AtomicBitSlice<'_> {
         let old = (old_word >> bit_idx) & 1 == 1;
         if old != value {
             let delta: i64 = if value { 1 } else { -1 };
-            self.popcount.fetch_add(delta, Ordering::Relaxed);
+            self.popcount.fetch_add(delta, Ordering::Release);
         }
         old
     }
@@ -188,6 +180,20 @@ impl AtomicBitSlice<'_> {
         self.iter_with_ordering(Ordering::Acquire)
     }
 
+    /// Iterate over true bits positions using `Acquire` ordering.
+    pub fn iter_ones(&self) -> impl Iterator<Item = usize> + '_ {
+        self.iter_with_ordering(Ordering::Acquire)
+            .enumerate()
+            .filter_map(|(idx, flag)| if flag { Some(idx) } else { None })
+    }
+
+    /// Iterate over false bits positions using `Acquire` ordering.
+    pub fn iter_zeros(&self) -> impl Iterator<Item = usize> + '_ {
+        self.iter_with_ordering(Ordering::Acquire)
+            .enumerate()
+            .filter_map(|(idx, flag)| if flag { None } else { Some(idx) })
+    }
+
     /// Iterate over all bits using the given `ordering`.
     pub fn iter_with_ordering(&self, ordering: Ordering) -> AtomicBitSliceIter<'_> {
         AtomicBitSliceIter {
@@ -195,6 +201,71 @@ impl AtomicBitSlice<'_> {
             idx: 0,
             ordering,
         }
+    }
+
+    /// Iterate over all bits starting from `start` (inclusive) using the given `Aquire` ordering.
+    pub fn iter_from(&self, start: usize) -> AtomicBitSliceIter<'_> {
+        self.iter_with_ordering_from(start, Ordering::Acquire)
+    }
+
+    /// Iterate over all bits starting from `start` (inclusive) using the given `ordering`.
+    pub fn iter_with_ordering_from(
+        &self,
+        start: usize,
+        ordering: Ordering,
+    ) -> AtomicBitSliceIter<'_> {
+        AtomicBitSliceIter {
+            slice: *self,
+            idx: start,
+            ordering,
+        }
+    }
+
+    /// Count set bits in `[start, end)`.
+    pub fn count_bits_in_range(&self, start: usize, end: usize) -> usize {
+        let end = end.min(self.bit_len);
+        if start >= end {
+            return 0;
+        }
+
+        let first_word = start / BITS_PER_WORD;
+        let last_word = (end - 1) / BITS_PER_WORD;
+
+        if first_word == last_word {
+            let word = self.data[first_word].load(Ordering::Relaxed);
+            let sb = start % BITS_PER_WORD;
+            let eb = end % BITS_PER_WORD;
+            let eb = if eb == 0 { BITS_PER_WORD } else { eb };
+            let mask = if eb == BITS_PER_WORD {
+                u64::MAX << sb
+            } else {
+                ((1u64 << eb) - 1) & (u64::MAX << sb)
+            };
+            return (word & mask).count_ones() as usize;
+        }
+
+        let sb = start % BITS_PER_WORD;
+        let first_mask = u64::MAX << sb;
+        let mut count =
+            (self.data[first_word].load(Ordering::Relaxed) & first_mask).count_ones() as usize;
+
+        for w in (first_word + 1)..last_word {
+            count += self.data[w].load(Ordering::Relaxed).count_ones() as usize;
+        }
+
+        let eb = end % BITS_PER_WORD;
+        let last_mask = if eb == 0 { u64::MAX } else { (1u64 << eb) - 1 };
+        count += (self.data[last_word].load(Ordering::Relaxed) & last_mask).count_ones() as usize;
+
+        count
+    }
+
+    #[inline]
+    pub fn popcount(&self) -> usize {
+        self.popcount
+            .load(Ordering::Relaxed)
+            .try_into()
+            .unwrap_or(0)
     }
 }
 
@@ -235,7 +306,7 @@ impl Clone for AtomicBitVec {
             .iter()
             .map(|w| {
                 let val = w.load(Ordering::Acquire);
-                popcount += i64::from(val.count_ones());
+                popcount += val.count_ones() as i64;
                 AtomicU64::new(val)
             })
             .collect();
@@ -286,9 +357,7 @@ impl AtomicBitVec {
     pub fn with_fill(len: usize, fill: bool) -> Self {
         let word_count = len.div_ceil(BITS_PER_WORD);
         let fill_word: u64 = if fill { u64::MAX } else { 0 };
-        let mut data: Vec<AtomicU64> = (0..word_count)
-            .map(|_| AtomicU64::new(fill_word))
-            .collect();
+        let mut data: Vec<AtomicU64> = (0..word_count).map(|_| AtomicU64::new(fill_word)).collect();
 
         // Clear out-of-range trailing bits in the last word.
         if fill && !data.is_empty() && !len.is_multiple_of(BITS_PER_WORD) {
@@ -368,11 +437,6 @@ impl AtomicBitVec {
         &self.data
     }
 
-    /// View the bits as a [`crate::bitvec::AtomicBitSlice`].
-    pub fn as_atomic_bitslice(&self) -> &crate::bitvec::AtomicBitSlice {
-        self.as_slice().as_atomic_bitslice()
-    }
-
     /// Get the bit at `idx` using `Acquire` ordering.
     #[inline]
     pub fn get(&self, idx: usize) -> Option<bool> {
@@ -436,7 +500,10 @@ impl AtomicBitVec {
     /// Transient negative values caused by concurrent races are clamped to `0`.
     #[inline]
     pub fn popcount(&self) -> usize {
-        self.popcount.load(Ordering::Relaxed).max(0) as usize
+        self.popcount
+            .load(Ordering::Relaxed)
+            .try_into()
+            .unwrap_or(0)
     }
 }
 
@@ -488,7 +555,7 @@ impl AtomicBitVec {
             }
         } else {
             // ── Shrinking ────────────────────────────────────────────────
-            let removed = self.count_bits_in_range(new_len, old_len) as i64;
+            let removed = self.as_slice().count_bits_in_range(new_len, old_len) as i64;
 
             self.data.truncate(new_word_count);
 
@@ -504,46 +571,6 @@ impl AtomicBitVec {
         }
 
         self.len = new_len;
-    }
-
-    /// Count set bits in `[start, end)`.
-    fn count_bits_in_range(&self, start: usize, end: usize) -> usize {
-        let end = end.min(self.len);
-        if start >= end {
-            return 0;
-        }
-
-        let first_word = start / BITS_PER_WORD;
-        let last_word = (end - 1) / BITS_PER_WORD;
-
-        if first_word == last_word {
-            let word = self.data[first_word].load(Ordering::Relaxed);
-            let sb = start % BITS_PER_WORD;
-            let eb = end % BITS_PER_WORD;
-            let eb = if eb == 0 { BITS_PER_WORD } else { eb };
-            let mask = if eb == BITS_PER_WORD {
-                u64::MAX << sb
-            } else {
-                ((1u64 << eb) - 1) & (u64::MAX << sb)
-            };
-            return (word & mask).count_ones() as usize;
-        }
-
-        let sb = start % BITS_PER_WORD;
-        let first_mask = u64::MAX << sb;
-        let mut count =
-            (self.data[first_word].load(Ordering::Relaxed) & first_mask).count_ones() as usize;
-
-        for w in (first_word + 1)..last_word {
-            count += self.data[w].load(Ordering::Relaxed).count_ones() as usize;
-        }
-
-        let eb = end % BITS_PER_WORD;
-        let last_mask = if eb == 0 { u64::MAX } else { (1u64 << eb) - 1 };
-        count +=
-            (self.data[last_word].load(Ordering::Relaxed) & last_mask).count_ones() as usize;
-
-        count
     }
 }
 
@@ -587,19 +614,6 @@ mod tests {
         let from_iter: Vec<bool> = sl.iter().collect();
         let from_get: Vec<bool> = (0..50).map(|i| sl.get(i).unwrap()).collect();
         assert_eq!(from_iter, from_get);
-    }
-
-    #[test]
-    fn test_slice_as_atomic_bitslice() {
-        let bv = AtomicBitVec::with_fill(70, false);
-        bv.replace_concurrent(0, true);
-        bv.replace_concurrent(69, true);
-
-        let bs = bv.as_slice().as_atomic_bitslice();
-        assert_eq!(bs.len(), 70);
-        assert!(bs[0]);
-        assert!(!bs[1]);
-        assert!(bs[69]);
     }
 
     #[test]
@@ -785,22 +799,6 @@ mod tests {
             "trailing bits in last word must be zero"
         );
     }
-
-    // ── as_atomic_bitslice ────────────────────────────────────────────────
-
-    #[test]
-    fn test_as_atomic_bitslice_length_and_values() {
-        let bv = AtomicBitVec::with_fill(70, false);
-        bv.replace_concurrent(0, true);
-        bv.replace_concurrent(69, true);
-
-        let bs = bv.as_atomic_bitslice();
-        assert_eq!(bs.len(), 70);
-        assert!(bs[0]);
-        assert!(!bs[1]);
-        assert!(bs[69]);
-    }
-
     // ── iter ─────────────────────────────────────────────────────────────
 
     #[test]
@@ -925,7 +923,11 @@ mod tests {
                 let bitmask = Arc::clone(&bitmask);
                 std::thread::spawn(move || {
                     let start = t * CHUNK;
-                    let end = if t + 1 == N_THREADS { N_BITS } else { start + CHUNK };
+                    let end = if t + 1 == N_THREADS {
+                        N_BITS
+                    } else {
+                        start + CHUNK
+                    };
                     for idx in start..end {
                         bitmask.replace_concurrent(idx, true);
                     }

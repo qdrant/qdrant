@@ -93,7 +93,7 @@ fn test_random_score(
     mut rng: impl rand::RngExt,
     dim: usize,
     storage: &VectorStorageEnum,
-    deleted_points: &AtomicBitSlice,
+    deleted_points: AtomicBitSlice<'_>,
 ) -> Result<()> {
     let query: QueryVector = sampler(&mut rng).take(dim).collect_vec().into();
 

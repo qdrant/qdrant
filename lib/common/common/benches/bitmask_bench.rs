@@ -61,19 +61,13 @@ pub fn bench_atomic_bitvec(c: &mut Criterion) {
     let mut group = c.benchmark_group("atomic_bitvec");
 
     group.bench_function("count_ones", |b| {
-        b.iter(|| black_box(av.as_atomic_bitslice()).count_ones())
+        b.iter(|| black_box(av.as_slice()).popcount())
     });
 
     group.bench_function("popcount_cached", |b| b.iter(|| black_box(&av).popcount()));
 
     group.bench_function("iter_count", |b| {
-        b.iter(|| {
-            black_box(av.as_atomic_bitslice())
-                .iter()
-                .by_vals()
-                .filter(|&v| v)
-                .count()
-        })
+        b.iter(|| black_box(av.as_slice()).iter().filter(|&v| v).count())
     });
 
     group.bench_function("get", |b| {

@@ -454,11 +454,11 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
 pub fn check_deleted_condition(
     point: PointOffsetType,
     vec_deleted: &BitSlice,
-    point_deleted: &AtomicBitSlice,
+    point_deleted: AtomicBitSlice<'_>,
 ) -> bool {
     // Deleted points propagate to vectors; check vector deletion for possible early return
     // Default to not deleted if our deleted flags failed grow
     !vec_deleted.get_bit(point as usize).unwrap_or(false)
         // Additionally check point deletion for integrity if delete propagation to vector failed
-        && !point_deleted.get_bit(point as usize).unwrap_or(false)
+        && !point_deleted.get(point as usize).unwrap_or(false)
 }

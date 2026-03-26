@@ -133,7 +133,7 @@ impl IdTracker for InMemoryIdTracker {
         self.total_point_count() - self.available_point_count()
     }
 
-    fn deleted_point_bitslice(&self) -> &AtomicBitSlice {
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_> {
         self.mappings.deleted()
     }
 

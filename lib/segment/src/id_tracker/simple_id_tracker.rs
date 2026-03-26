@@ -275,7 +275,7 @@ impl IdTracker for SimpleIdTracker {
         self.mappings.is_deleted_point(key)
     }
 
-    fn deleted_point_bitslice(&self) -> &AtomicBitSlice {
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_> {
         self.mappings.deleted()
     }
 

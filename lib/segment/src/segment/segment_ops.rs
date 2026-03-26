@@ -353,11 +353,7 @@ impl Segment {
 
     pub fn get_deleted_points_bitvec(&self) -> BitVec {
         let id_tracker = self.id_tracker.borrow();
-        id_tracker
-            .deleted_point_bitslice()
-            .iter()
-            .by_vals()
-            .collect()
+        id_tracker.deleted_point_bitslice().iter().collect()
     }
 
     pub(super) fn lookup_internal_id(
@@ -685,11 +681,14 @@ impl Segment {
         let id_tracker = self.id_tracker.borrow();
         let total_points = id_tracker.total_point_count();
 
-        if total_points < deferred_from as usize {
+        let deferred_from = deferred_from as usize;
+        if total_points < deferred_from {
             return 0;
         }
 
-        id_tracker.deleted_point_bitslice()[deferred_from as usize..total_points].count_ones()
+        id_tracker
+            .deleted_point_bitslice()
+            .count_bits_in_range(deferred_from, total_points)
     }
 
     pub(crate) fn deferred_internal_id(&self) -> Option<PointOffsetType> {

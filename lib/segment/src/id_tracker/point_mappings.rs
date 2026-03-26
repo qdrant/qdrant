@@ -4,9 +4,9 @@ use std::collections::btree_map::Entry;
 use std::iter;
 
 use byteorder::LittleEndian;
+use common::atomic_bitmask::AtomicBitVec;
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
-use common::atomic_bitmask::AtomicBitVec;
 use common::bitvec::{AtomicBitSlice, BitVec};
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -75,8 +75,8 @@ impl PointMappings {
         self.external_to_internal_num.len() + self.external_to_internal_uuid.len()
     }
 
-    pub(crate) fn deleted(&self) -> &AtomicBitSlice {
-        self.deleted.as_atomic_bitslice()
+    pub(crate) fn deleted(&self) -> AtomicBitSlice<'_> {
+        self.deleted.as_slice()
     }
 
     pub(crate) fn internal_id(&self, external_id: &PointIdType) -> Option<PointOffsetType> {

@@ -95,7 +95,7 @@ pub trait IdTracker: fmt::Debug {
     ///
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
-    fn deleted_point_bitslice(&self) -> &AtomicBitSlice;
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_>;
 
     /// Check whether the given point is soft deleted
     fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
@@ -470,7 +470,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn deleted_point_bitslice(&self) -> &AtomicBitSlice {
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),

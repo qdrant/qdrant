@@ -63,7 +63,7 @@ pub struct ScorerFilters<'a> {
     /// for each existing point in the segment.
     /// If there are no flags for some points, they are considered deleted.
     /// [`AtomicBitSlice`] defining flags for deleted points (and thus these vectors).
-    point_deleted: &'a AtomicBitSlice,
+    point_deleted: AtomicBitSlice<'a>,
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
     vec_deleted: &'a BitSlice,
 }
@@ -120,7 +120,7 @@ impl<'a> FilteredScorer<'a> {
         vectors: &'a VectorStorageEnum,
         quantized_vectors: Option<&'a QuantizedVectors>,
         filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
-        point_deleted: &'a AtomicBitSlice,
+        point_deleted: AtomicBitSlice<'a>,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self> {
         let raw_scorer = match quantized_vectors {
@@ -143,7 +143,7 @@ impl<'a> FilteredScorer<'a> {
         vectors: &'a VectorStorageEnum,
         quantized_vectors: Option<&'a QuantizedVectors>,
         filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
-        point_deleted: &'a AtomicBitSlice,
+        point_deleted: AtomicBitSlice<'a>,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self> {
         // This is a fallback function, which is used if quantized vector storage
@@ -184,7 +184,7 @@ impl<'a> FilteredScorer<'a> {
     pub fn new_for_test(
         vector: QueryVector,
         vector_storage: &'a VectorStorageEnum,
-        point_deleted: &'a AtomicBitSlice,
+        point_deleted: AtomicBitSlice<'a>,
     ) -> Self {
         FilteredScorer {
             raw_scorer: new_raw_scorer(vector, vector_storage, HardwareCounterCell::new()).unwrap(),
@@ -281,7 +281,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         quantized_vectors: Option<&'a QuantizedVectors>,
         filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
         top: usize,
-        point_deleted: &'a AtomicBitSlice,
+        point_deleted: AtomicBitSlice<'a>,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self> {
         let scorer_batch = queries
@@ -319,7 +319,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     pub fn new_for_test(
         vectors: &[QueryVector],
         vector_storage: &'a VectorStorageEnum,
-        point_deleted: &'a AtomicBitSlice,
+        point_deleted: AtomicBitSlice<'a>,
         top: usize,
     ) -> Self {
         let scorer_batch = vectors
@@ -352,9 +352,8 @@ impl<'a> BatchFilteredSearcher<'a> {
         is_stopped: &AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
-        let iter = self
-            .filters
-            .point_deleted
+        let point_deleted = self.filters.point_deleted;
+        let iter = point_deleted
             .iter_zeros()
             .map(|p| p as PointOffsetType)
             .take_while(|&point_id| {

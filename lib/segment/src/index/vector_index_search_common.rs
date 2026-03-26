@@ -47,7 +47,7 @@ pub fn get_oversampled_top(
 #[allow(clippy::too_many_arguments)]
 pub fn postprocess_search_result(
     mut search_result: Vec<ScoredPointOffset>,
-    point_deleted: &AtomicBitSlice,
+    point_deleted: AtomicBitSlice<'_>,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: Option<&QuantizedVectors>,
     vector: &QueryVector,

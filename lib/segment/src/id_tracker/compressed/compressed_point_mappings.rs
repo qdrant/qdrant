@@ -94,8 +94,8 @@ impl CompressedPointMappings {
         self.external_to_internal.len()
     }
 
-    pub(crate) fn deleted(&self) -> &AtomicBitSlice {
-        self.deleted.as_atomic_bitslice()
+    pub(crate) fn deleted(&self) -> AtomicBitSlice<'_> {
+        self.deleted.as_slice()
     }
 
     pub(crate) fn internal_id(&self, external_id: &PointIdType) -> Option<PointOffsetType> {

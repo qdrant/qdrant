@@ -90,7 +90,7 @@ impl TestRawScorerProducer {
             &self.storage,
             self.quantized_vectors.as_ref(),
             None,
-            self.deleted_points.as_atomic_bitslice(),
+            self.deleted_points.as_slice(),
             HardwareCounterCell::new(),
         )
         .unwrap()
@@ -102,7 +102,7 @@ impl TestRawScorerProducer {
             &self.storage,
             self.quantized_vectors.as_ref(),
             None,
-            self.deleted_points.as_atomic_bitslice(),
+            self.deleted_points.as_slice(),
             HardwareCounterCell::new(),
         )
         .unwrap()
