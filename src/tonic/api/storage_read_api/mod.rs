@@ -12,7 +12,7 @@ use api::grpc::qdrant::{
     ReadWholeRequest, ReadWholeResponse,
 };
 use common::generic_consts::Random;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::mmap::MmapFile;
 use common::universal_io::{FileIndex, OpenOptions, ReadRange, UniversalIoError, UniversalRead};
 use futures::Stream;
 use storage::dispatcher::Dispatcher;
@@ -29,7 +29,7 @@ mod tests;
 /// Chunk size for streaming reads (~1 MB).
 const STREAM_CHUNK_SIZE: u64 = 1024 * 1024;
 
-pub struct StorageReadService<S: UniversalRead<u8> + Send + Sync + 'static = MmapUniversal<u8>> {
+pub struct StorageReadService<S: UniversalRead<u8> + Send + Sync + 'static = MmapFile> {
     dispatcher: Arc<Dispatcher>,
     _marker: PhantomData<S>,
 }

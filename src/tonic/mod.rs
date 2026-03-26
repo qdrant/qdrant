@@ -59,7 +59,7 @@ use crate::tonic::api::telemetry_wrapper::{
 #[cfg(target_os = "linux")]
 type StorageBackend = common::universal_io::io_uring::IoUringFile;
 #[cfg(not(target_os = "linux"))]
-type StorageBackend = common::universal_io::mmap::MmapUniversal<u8>;
+type StorageBackend = common::universal_io::mmap::MmapFile;
 
 #[derive(Default)]
 pub struct QdrantService {}

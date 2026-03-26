@@ -213,5 +213,9 @@ pub fn io_error_to_status(e: UniversalIoError) -> Status {
         UniversalIoError::IoUringNotSupported(e) => {
             Status::internal(format!("IoUring not supported: {e}"))
         }
+        UniversalIoError::Uninitialized { description } => {
+            Status::internal(format!("Uninitialized: {description}"))
+        }
+        UniversalIoError::BytemuckCast(e) => Status::internal(format!("Bytemuck cast error: {e}")),
     }
 }

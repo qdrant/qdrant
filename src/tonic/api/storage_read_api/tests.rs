@@ -79,19 +79,19 @@ fn test_storage_config(storage_path: &Path) -> StorageConfig {
 /// Create service on a blocking thread to avoid nested-runtime panics.
 /// `TableOfContent::new` internally calls `block_on`, and dropping the
 /// `Runtime` instances it owns also requires a non-async context.
-async fn create_service_async() -> (StorageReadService<MmapUniversal<u8>>, TempDir, PathBuf) {
+async fn create_service_async() -> (StorageReadService<MmapFile>, TempDir, PathBuf) {
     tokio::task::spawn_blocking(create_service).await.unwrap()
 }
 
 /// Drop service (and its `TempDir`) on a blocking thread so the `Runtime`
 /// instances inside `TableOfContent` are not dropped from async context.
-async fn drop_service(service: StorageReadService<MmapUniversal<u8>>, storage_dir: TempDir) {
+async fn drop_service(service: StorageReadService<MmapFile>, storage_dir: TempDir) {
     tokio::task::spawn_blocking(move || drop((service, storage_dir)))
         .await
         .unwrap();
 }
 
-fn create_service() -> (StorageReadService<MmapUniversal<u8>>, TempDir, PathBuf) {
+fn create_service() -> (StorageReadService<MmapFile>, TempDir, PathBuf) {
     let storage_dir = tempfile::tempdir().unwrap();
     let config = test_storage_config(storage_dir.path());
     let toc = Arc::new(TableOfContent::new(
