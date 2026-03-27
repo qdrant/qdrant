@@ -80,10 +80,10 @@ runs:
         fi
 
         # Prepare feature flags
-        FEATURES="rocksdb"
+        FEATURES=""
         if [ "${{ inputs.staging-build }}" = "true" ]; then
           echo "Staging feature enabled"
-          FEATURES="${FEATURES},staging"
+          FEATURES="${FEATURES:+$FEATURES,}staging"
         fi
         FEATURES_ARG="--build-arg FEATURES=${FEATURES}"
 
