@@ -629,17 +629,14 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
+        if self.deferred_point_count() == 0 {
+            return vec![];
+        }
+
         let id_tracker = self.id_tracker.borrow();
         let Some(deferred_from) = id_tracker.deferred_internal_id() else {
             return vec![];
         };
-        let deferred_count = id_tracker
-            .total_point_count()
-            .saturating_sub(deferred_from as usize)
-            .saturating_sub(id_tracker.deferred_deleted_count());
-        if deferred_count == 0 {
-            return vec![];
-        }
 
         id_tracker
             .point_mappings()
@@ -650,17 +647,8 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn available_point_count_without_deferred(&self) -> usize {
-        let id_tracker = self.id_tracker.borrow();
-        let deferred_count = match id_tracker.deferred_internal_id() {
-            Some(deferred_from) => id_tracker
-                .total_point_count()
-                .saturating_sub(deferred_from as usize)
-                .saturating_sub(id_tracker.deferred_deleted_count()),
-            None => 0,
-        };
-        id_tracker
-            .available_point_count()
-            .saturating_sub(deferred_count)
+        let available_point_count = self.id_tracker.borrow().available_point_count();
+        available_point_count.saturating_sub(self.deferred_point_count())
     }
 
     fn has_deferred_points(&self) -> bool {
