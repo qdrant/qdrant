@@ -58,7 +58,7 @@ impl SimpleIdTracker {
 
             let replaced_id = internal_to_external[internal_id as usize];
             internal_to_external[internal_id as usize] = external_id;
-            if !deleted.get(internal_id as usize).unwrap_or(false) {
+            if !deleted.get(internal_id as usize) {
                 // Fixing corrupted mapping - this id should be recovered from WAL
                 // This should not happen in normal operation, but it can happen if
                 // the database is corrupted.

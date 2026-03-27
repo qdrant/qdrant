@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::path::Path;
 
-use common::bitvec::BitVec;
+use common::atomic_bitvec::AtomicBitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::Random;
@@ -351,9 +351,9 @@ impl Segment {
         self.id_tracker.borrow().internal_id(point_id)
     }
 
-    pub fn get_deleted_points_bitvec(&self) -> BitVec {
+    pub fn get_deleted_points_bitvec(&self) -> AtomicBitVec {
         let id_tracker = self.id_tracker.borrow();
-        id_tracker.deleted_point_bitslice().iter().collect()
+        id_tracker.deleted_point_bitslice().to_owned()
     }
 
     pub(super) fn lookup_internal_id(

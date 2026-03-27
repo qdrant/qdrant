@@ -17,7 +17,7 @@
 //! [`AtomicBitVec`] keeps a separate [`AtomicI64`] popcount cache. Because
 //! the bit-word update and the popcount update are two distinct atomic
 //! operations, the counter can transiently dip below zero under concurrent
-//! use. [`AtomicBitVec::popcount`] clamps negative values to `0`.
+//! use. [`AtomicBitVec::count_ones`] clamps negative values to `0`.
 
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
@@ -65,24 +65,57 @@ impl<'a> AtomicBitSlice<'a> {
     pub fn as_raw_slice(&self) -> &'a [AtomicU64] {
         self.data
     }
+
+    #[inline]
+    pub fn to_owned(&self) -> AtomicBitVec {
+        // Copy words and count ones in a single pass to avoid a TOCTOU race:
+        // reading the atomic counter separately could observe mutations that
+        // happened after the word snapshot was taken.
+        let mut popcount: i64 = 0;
+        let data: Vec<AtomicU64> = self
+            .data
+            .iter()
+            .map(|w| {
+                let val = w.load(Ordering::Acquire);
+                popcount += i64::from(val.count_ones());
+                AtomicU64::new(val)
+            })
+            .collect();
+        AtomicBitVec {
+            data,
+            len: self.bit_len,
+            popcount: AtomicI64::new(popcount),
+        }
+    }
 }
 
 // ── Read operations ───────────────────────────────────────────────────────
 
+// TODO: implementing it similar to `&BitSlice` requires implementing own slice fat pointer.
 impl AtomicBitSlice<'_> {
     /// Return the bit at `idx` using `Acquire` ordering.
     ///
-    /// Returns `None` when `idx >= self.len()`.
+    /// Panics `None` when `idx >= self.len()`.
     #[inline]
-    pub fn get(&self, idx: usize) -> Option<bool> {
-        self.get_with_ordering(idx, Ordering::Acquire)
+    pub fn get_checked(&self, idx: usize) -> Option<bool> {
+        self.get_checked_with_ordering(idx, Ordering::Acquire)
+    }
+
+    /// Return the bit at `idx` using `Acquire` ordering.
+    ///
+    /// Panics `None` when `idx >= self.len()`.
+    // TODO: implementing `Index` requires implementing own fat pointer to bit
+    #[inline]
+    pub fn get(&self, idx: usize) -> bool {
+        self.get_checked(idx)
+            .unwrap_or_else(|| panic!("the len is {} but the index is {}", self.bit_len, idx))
     }
 
     /// Return the bit at `idx` using `ordering`.
     ///
     /// Returns `None` when `idx >= self.len()`.
     #[inline]
-    pub fn get_with_ordering(&self, idx: usize, ordering: Ordering) -> Option<bool> {
+    pub fn get_checked_with_ordering(&self, idx: usize, ordering: Ordering) -> Option<bool> {
         if idx >= self.bit_len {
             return None;
         }
@@ -160,7 +193,9 @@ impl Iterator for AtomicBitSliceIter<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<bool> {
-        let val = self.slice.get_with_ordering(self.idx, self.ordering)?;
+        let val = self
+            .slice
+            .get_checked_with_ordering(self.idx, self.ordering)?;
         self.idx += 1;
         Some(val)
     }
@@ -261,9 +296,9 @@ impl AtomicBitSlice<'_> {
     }
 
     #[inline]
-    pub fn popcount(&self) -> usize {
+    pub fn count_ones(&self) -> usize {
         self.popcount
-            .load(Ordering::Relaxed)
+            .load(Ordering::Acquire)
             .try_into()
             .unwrap_or(0)
     }
@@ -277,8 +312,9 @@ impl AtomicBitSlice<'_> {
 /// all slice-level operations through [`as_slice`][AtomicBitVec::as_slice].
 ///
 /// Keeps an [`AtomicI64`] popcount cache that may transiently be negative
-/// under concurrent workloads; [`popcount`][AtomicBitVec::popcount] clamps
+/// under concurrent workloads; [`count_ones`][AtomicBitVec::count_ones] clamps
 /// negative values to `0`.
+// TODO bit ordering parameter like `BitVec` does.
 pub struct AtomicBitVec {
     data: Vec<AtomicU64>,
     /// Logical number of bits (may be < `data.len() * BITS_PER_WORD`).
@@ -297,24 +333,7 @@ impl Default for AtomicBitVec {
 
 impl Clone for AtomicBitVec {
     fn clone(&self) -> Self {
-        // Copy words and count ones in a single pass to avoid a TOCTOU race:
-        // reading the atomic counter separately could observe mutations that
-        // happened after the word snapshot was taken.
-        let mut popcount: i64 = 0;
-        let data: Vec<AtomicU64> = self
-            .data
-            .iter()
-            .map(|w| {
-                let val = w.load(Ordering::Acquire);
-                popcount += val.count_ones() as i64;
-                AtomicU64::new(val)
-            })
-            .collect();
-        Self {
-            data,
-            len: self.len,
-            popcount: AtomicI64::new(popcount),
-        }
+        self.as_slice().to_owned()
     }
 }
 
@@ -336,7 +355,7 @@ impl std::fmt::Debug for AtomicBitVec {
             f,
             "AtomicBitVec {{ len: {}, popcount: {} }}",
             self.len,
-            self.popcount()
+            self.count_ones()
         )
     }
 }
@@ -354,7 +373,7 @@ impl AtomicBitVec {
     }
 
     /// Create a bit vector of `len` bits all set to `fill`.
-    pub fn with_fill(len: usize, fill: bool) -> Self {
+    pub fn repeat(fill: bool, len: usize) -> Self {
         let word_count = len.div_ceil(BITS_PER_WORD);
         let fill_word: u64 = if fill { u64::MAX } else { 0 };
         let mut data: Vec<AtomicU64> = (0..word_count).map(|_| AtomicU64::new(fill_word)).collect();
@@ -439,14 +458,20 @@ impl AtomicBitVec {
 
     /// Get the bit at `idx` using `Acquire` ordering.
     #[inline]
-    pub fn get(&self, idx: usize) -> Option<bool> {
+    pub fn get(&self, idx: usize) -> bool {
         self.as_slice().get(idx)
+    }
+
+    /// Get the bit at `idx` using `Acquire` ordering.
+    #[inline]
+    pub fn get_checked(&self, idx: usize) -> Option<bool> {
+        self.as_slice().get_checked(idx)
     }
 
     /// Get the bit at `idx` using `ordering`.
     #[inline]
-    pub fn get_with_ordering(&self, idx: usize, ordering: Ordering) -> Option<bool> {
-        self.as_slice().get_with_ordering(idx, ordering)
+    pub fn get_checked_with_ordering(&self, idx: usize, ordering: Ordering) -> Option<bool> {
+        self.as_slice().get_checked_with_ordering(idx, ordering)
     }
 
     /// Atomically replace the bit at `idx` with `value` using `AcqRel`.
@@ -499,9 +524,9 @@ impl AtomicBitVec {
     ///
     /// Transient negative values caused by concurrent races are clamped to `0`.
     #[inline]
-    pub fn popcount(&self) -> usize {
+    pub fn count_ones(&self) -> usize {
         self.popcount
-            .load(Ordering::Relaxed)
+            .load(Ordering::Acquire)
             .try_into()
             .unwrap_or(0)
     }
@@ -590,35 +615,37 @@ mod tests {
     // ── AtomicBitSlice ────────────────────────────────────────────────────
 
     #[test]
-    fn test_slice_get_and_replace() {
-        let bv = AtomicBitVec::with_fill(10, false);
+    fn test_slice_get_checked_and_replace() {
+        let bv = AtomicBitVec::repeat(false, 10);
         let sl = bv.as_slice();
 
         assert_eq!(sl.len(), 10);
         assert!(!sl.is_empty());
-        assert_eq!(sl.get(0), Some(false));
-        assert_eq!(sl.get(10), None);
+        assert_eq!(sl.get_checked(0), Some(false));
+        assert_eq!(sl.get_checked(10), None);
 
         let old = sl.replace_concurrent(3, true);
         assert!(!old);
-        assert_eq!(sl.get(3), Some(true));
+        assert_eq!(sl.get_checked(3), Some(true));
     }
 
     #[test]
-    fn test_slice_iter_matches_get() {
-        let bv = AtomicBitVec::with_fill(50, false);
+    fn test_slice_iter_matches_get_checked() {
+        let bv = AtomicBitVec::repeat(false, 50);
         let sl = bv.as_slice();
         for i in (0..50).step_by(3) {
             sl.replace_concurrent(i, true);
         }
         let from_iter: Vec<bool> = sl.iter().collect();
-        let from_get: Vec<bool> = (0..50).map(|i| sl.get(i).unwrap()).collect();
+        let from_get_checked: Vec<bool> = (0..50).map(|i| sl.get_checked(i).unwrap()).collect();
+        let from_get: Vec<bool> = (0..50).map(|i| sl.get(i)).collect();
+        assert_eq!(from_iter, from_get_checked);
         assert_eq!(from_iter, from_get);
     }
 
     #[test]
     fn test_slice_replace_panics_oob() {
-        let bv = AtomicBitVec::with_fill(8, false);
+        let bv = AtomicBitVec::repeat(false, 8);
         let result = std::panic::catch_unwind(|| bv.as_slice().replace_concurrent(8, true));
         assert!(result.is_err(), "must panic on out-of-bounds index");
     }
@@ -630,39 +657,39 @@ mod tests {
         let bv = AtomicBitVec::new();
         assert_eq!(bv.len(), 0);
         assert!(bv.is_empty());
-        assert_eq!(bv.popcount(), 0);
-        assert_eq!(bv.get(0), None);
+        assert_eq!(bv.count_ones(), 0);
+        assert_eq!(bv.get_checked(0), None);
     }
 
     #[test]
-    fn test_with_fill_false() {
-        let bv = AtomicBitVec::with_fill(130, false);
+    fn test_repeat_false() {
+        let bv = AtomicBitVec::repeat(false, 130);
         assert_eq!(bv.len(), 130);
-        assert_eq!(bv.popcount(), 0);
+        assert_eq!(bv.count_ones(), 0);
         for i in 0..130 {
-            assert_eq!(bv.get(i), Some(false), "bit {i}");
+            assert_eq!(bv.get_checked(i), Some(false), "bit {i}");
         }
-        assert_eq!(bv.get(130), None);
+        assert_eq!(bv.get_checked(130), None);
     }
 
     #[test]
-    fn test_with_fill_true() {
-        let bv = AtomicBitVec::with_fill(130, true);
+    fn test_repeat_true() {
+        let bv = AtomicBitVec::repeat(true, 130);
         assert_eq!(bv.len(), 130);
-        assert_eq!(bv.popcount(), 130);
+        assert_eq!(bv.count_ones(), 130);
         for i in 0..130 {
-            assert_eq!(bv.get(i), Some(true), "bit {i}");
+            assert_eq!(bv.get_checked(i), Some(true), "bit {i}");
         }
-        assert_eq!(bv.get(130), None);
+        assert_eq!(bv.get_checked(130), None);
     }
 
     #[test]
-    fn test_with_fill_exact_word_boundaries() {
+    fn test_repeat_exact_word_boundaries() {
         for len in [64, 128, 192] {
-            let bv_f = AtomicBitVec::with_fill(len, false);
-            let bv_t = AtomicBitVec::with_fill(len, true);
-            assert_eq!(bv_f.popcount(), 0);
-            assert_eq!(bv_t.popcount(), len);
+            let bv_f = AtomicBitVec::repeat(false, len);
+            let bv_t = AtomicBitVec::repeat(true, len);
+            assert_eq!(bv_f.count_ones(), 0);
+            assert_eq!(bv_t.count_ones(), len);
         }
     }
 
@@ -677,119 +704,126 @@ mod tests {
         assert_eq!(bv.as_raw_slice()[1].load(Ordering::Relaxed), words[1]);
     }
 
-    // ── get / get_with_ordering ───────────────────────────────────────────
+    // ── get / get_checked / get_checked_with_ordering ───────────────────────────────────────────
 
     #[test]
-    fn test_get_out_of_bounds_returns_none() {
-        let bv = AtomicBitVec::with_fill(64, true);
-        assert_eq!(bv.get(63), Some(true));
-        assert_eq!(bv.get(64), None);
+    #[should_panic]
+    fn test_get_out_of_bounds_panics() {
+        let bv = AtomicBitVec::repeat(true, 64);
+        let _ = bv.get(64);
+    }
+
+    #[test]
+    fn test_get_checked_out_of_bounds_returns_none() {
+        let bv = AtomicBitVec::repeat(true, 64);
+        assert_eq!(bv.get_checked(63), Some(true));
+        assert_eq!(bv.get_checked(64), None);
     }
 
     // ── replace_concurrent ────────────────────────────────────────────────
 
     #[test]
     fn test_replace_concurrent_basic() {
-        let bv = AtomicBitVec::with_fill(10, false);
+        let bv = AtomicBitVec::repeat(false, 10);
 
         assert!(!bv.replace_concurrent(5, true));
-        assert_eq!(bv.get(5), Some(true));
-        assert_eq!(bv.popcount(), 1);
+        assert_eq!(bv.get_checked(5), Some(true));
+        assert_eq!(bv.count_ones(), 1);
 
         assert!(bv.replace_concurrent(5, true)); // already true
-        assert_eq!(bv.popcount(), 1);
+        assert_eq!(bv.count_ones(), 1);
 
         assert!(bv.replace_concurrent(5, false));
-        assert_eq!(bv.get(5), Some(false));
-        assert_eq!(bv.popcount(), 0);
+        assert_eq!(bv.get_checked(5), Some(false));
+        assert_eq!(bv.count_ones(), 0);
     }
 
     #[test]
     #[should_panic(expected = "out of bounds")]
     fn test_replace_concurrent_panics_oob() {
-        let bv = AtomicBitVec::with_fill(8, false);
+        let bv = AtomicBitVec::repeat(false, 8);
         bv.replace_concurrent(8, true);
     }
 
     #[test]
     fn test_replace_concurrent_across_word_boundaries() {
-        let bv = AtomicBitVec::with_fill(200, false);
+        let bv = AtomicBitVec::repeat(false, 200);
         for i in [0, 63, 64, 65, 127, 128, 199] {
             assert!(!bv.replace_concurrent(i, true), "bit {i}");
         }
-        assert_eq!(bv.popcount(), 7);
+        assert_eq!(bv.count_ones(), 7);
         for i in [0, 63, 64, 65, 127, 128, 199] {
             assert!(bv.replace_concurrent(i, false), "bit {i}");
         }
-        assert_eq!(bv.popcount(), 0);
+        assert_eq!(bv.count_ones(), 0);
     }
 
     // ── resize ────────────────────────────────────────────────────────────
 
     #[test]
     fn test_resize_grow_false() {
-        let mut bv = AtomicBitVec::with_fill(10, true);
+        let mut bv = AtomicBitVec::repeat(true, 10);
         bv.resize(20, false);
         assert_eq!(bv.len(), 20);
         for i in 0..10 {
-            assert_eq!(bv.get(i), Some(true), "old bit {i}");
+            assert_eq!(bv.get_checked(i), Some(true), "old bit {i}");
         }
         for i in 10..20 {
-            assert_eq!(bv.get(i), Some(false), "new bit {i}");
+            assert_eq!(bv.get_checked(i), Some(false), "new bit {i}");
         }
-        assert_eq!(bv.popcount(), 10);
+        assert_eq!(bv.count_ones(), 10);
     }
 
     #[test]
     fn test_resize_grow_true() {
-        let mut bv = AtomicBitVec::with_fill(10, false);
+        let mut bv = AtomicBitVec::repeat(false, 10);
         bv.resize(20, true);
         assert_eq!(bv.len(), 20);
         for i in 0..10 {
-            assert_eq!(bv.get(i), Some(false), "old bit {i}");
+            assert_eq!(bv.get_checked(i), Some(false), "old bit {i}");
         }
         for i in 10..20 {
-            assert_eq!(bv.get(i), Some(true), "new bit {i}");
+            assert_eq!(bv.get_checked(i), Some(true), "new bit {i}");
         }
-        assert_eq!(bv.popcount(), 10);
+        assert_eq!(bv.count_ones(), 10);
     }
 
     #[test]
     fn test_resize_shrink() {
-        let mut bv = AtomicBitVec::with_fill(100, true);
+        let mut bv = AtomicBitVec::repeat(true, 100);
         bv.resize(50, false);
         assert_eq!(bv.len(), 50);
-        assert_eq!(bv.popcount(), 50);
+        assert_eq!(bv.count_ones(), 50);
         for i in 0..50 {
-            assert_eq!(bv.get(i), Some(true), "bit {i}");
+            assert_eq!(bv.get_checked(i), Some(true), "bit {i}");
         }
-        assert_eq!(bv.get(50), None);
+        assert_eq!(bv.get_checked(50), None);
     }
 
     #[test]
     fn test_resize_across_word_boundaries() {
-        let mut bv = AtomicBitVec::with_fill(65, true);
-        assert_eq!(bv.popcount(), 65);
+        let mut bv = AtomicBitVec::repeat(true, 65);
+        assert_eq!(bv.count_ones(), 65);
 
         bv.resize(130, true);
         assert_eq!(bv.len(), 130);
-        assert_eq!(bv.popcount(), 130);
+        assert_eq!(bv.count_ones(), 130);
         for i in 0..130 {
-            assert_eq!(bv.get(i), Some(true), "bit {i}");
+            assert_eq!(bv.get_checked(i), Some(true), "bit {i}");
         }
 
         bv.resize(65, false);
         assert_eq!(bv.len(), 65);
-        assert_eq!(bv.popcount(), 65);
+        assert_eq!(bv.count_ones(), 65);
         for i in 0..65 {
-            assert_eq!(bv.get(i), Some(true), "bit {i}");
+            assert_eq!(bv.get_checked(i), Some(true), "bit {i}");
         }
     }
 
     #[test]
     fn test_resize_no_trailing_bits_leak() {
         // After resize from 100 to 65 bits, trailing bits in last word = 0.
-        let mut bv = AtomicBitVec::with_fill(100, true);
+        let mut bv = AtomicBitVec::repeat(true, 100);
         bv.resize(65, false);
         // bit 64 = bit 0 of word 1; bits 1..63 of word 1 must be zero.
         let last_word = bv.as_raw_slice()[1].load(Ordering::Relaxed);
@@ -802,19 +836,19 @@ mod tests {
     // ── iter ─────────────────────────────────────────────────────────────
 
     #[test]
-    fn test_iter_matches_get() {
-        let bv = AtomicBitVec::with_fill(50, false);
+    fn test_iter_matches_get_checked() {
+        let bv = AtomicBitVec::repeat(false, 50);
         for i in (0..50).step_by(3) {
             bv.replace_concurrent(i, true);
         }
         let from_iter: Vec<bool> = bv.iter().collect();
-        let from_get: Vec<bool> = (0..50).map(|i| bv.get(i).unwrap()).collect();
+        let from_get: Vec<bool> = (0..50).map(|i| bv.get_checked(i).unwrap()).collect();
         assert_eq!(from_iter, from_get);
     }
 
     #[test]
     fn test_iter_exact_size() {
-        let bv = AtomicBitVec::with_fill(37, true);
+        let bv = AtomicBitVec::repeat(true, 37);
         let mut it = bv.iter();
         assert_eq!(it.len(), 37);
         it.next();
@@ -825,15 +859,15 @@ mod tests {
 
     #[test]
     fn test_clone_is_independent() {
-        let bv1 = AtomicBitVec::with_fill(10, false);
+        let bv1 = AtomicBitVec::repeat(false, 10);
         let bv2 = bv1.clone();
         bv1.replace_concurrent(0, true);
-        assert_eq!(bv2.get(0), Some(false), "clone must be independent");
+        assert_eq!(bv2.get_checked(0), Some(false), "clone must be independent");
     }
 
     #[test]
     fn test_partial_eq() {
-        let bv1 = AtomicBitVec::with_fill(10, false);
+        let bv1 = AtomicBitVec::repeat(false, 10);
         let bv2 = bv1.clone();
         assert_eq!(bv1, bv2);
         bv1.replace_concurrent(0, true);
@@ -843,25 +877,25 @@ mod tests {
     // ── popcount ─────────────────────────────────────────────────────────
 
     #[test]
-    fn test_popcount_tracks_changes() {
-        let bv = AtomicBitVec::with_fill(100, false);
-        assert_eq!(bv.popcount(), 0);
+    fn test_count_ones_tracks_changes() {
+        let bv = AtomicBitVec::repeat(false, 100);
+        assert_eq!(bv.count_ones(), 0);
         bv.replace_concurrent(0, true);
-        assert_eq!(bv.popcount(), 1);
+        assert_eq!(bv.count_ones(), 1);
         bv.replace_concurrent(0, true); // no-op
-        assert_eq!(bv.popcount(), 1);
+        assert_eq!(bv.count_ones(), 1);
         bv.replace_concurrent(0, false);
-        assert_eq!(bv.popcount(), 0);
+        assert_eq!(bv.count_ones(), 0);
     }
 
     #[test]
-    fn test_popcount_after_resize() {
-        let mut bv = AtomicBitVec::with_fill(64, true);
-        assert_eq!(bv.popcount(), 64);
+    fn test_count_ones_after_resize() {
+        let mut bv = AtomicBitVec::repeat(true, 64);
+        assert_eq!(bv.count_ones(), 64);
         bv.resize(128, true);
-        assert_eq!(bv.popcount(), 128);
+        assert_eq!(bv.count_ones(), 128);
         bv.resize(32, false);
-        assert_eq!(bv.popcount(), 32);
+        assert_eq!(bv.count_ones(), 32);
     }
 
     // ── Concurrent replace correctness ────────────────────────────────────
@@ -874,7 +908,7 @@ mod tests {
         const N_BITS: usize = 10_000;
         const N_THREADS: usize = 4;
 
-        let bitmask = Arc::new(AtomicBitVec::with_fill(N_BITS, false));
+        let bitmask = Arc::new(AtomicBitVec::repeat(false, N_BITS));
         let counter = Arc::new(AtomicUsize::new(0));
 
         let handles: Vec<_> = (0..N_THREADS)
@@ -906,7 +940,7 @@ mod tests {
             N_BITS,
             "each bit must be set from false to true exactly once"
         );
-        assert_eq!(bitmask.popcount(), N_BITS);
+        assert_eq!(bitmask.count_ones(), N_BITS);
     }
 
     /// Concurrent writes to *disjoint* bit ranges must not interfere.
@@ -916,7 +950,7 @@ mod tests {
         const N_THREADS: usize = 4;
         const CHUNK: usize = N_BITS / N_THREADS;
 
-        let bitmask = Arc::new(AtomicBitVec::with_fill(N_BITS, false));
+        let bitmask = Arc::new(AtomicBitVec::repeat(false, N_BITS));
 
         let handles: Vec<_> = (0..N_THREADS)
             .map(|t| {
@@ -939,9 +973,23 @@ mod tests {
             h.join().unwrap();
         }
 
-        assert_eq!(bitmask.popcount(), N_BITS);
+        assert_eq!(bitmask.count_ones(), N_BITS);
         for i in 0..N_BITS {
-            assert_eq!(bitmask.get(i), Some(true), "bit {i}");
+            assert_eq!(bitmask.get_checked(i), Some(true), "bit {i}");
         }
+    }
+
+    // Bit ordering compatiblity with BitVec
+    #[test]
+    fn test_bitvec_bit_ordering() {
+        let mut bv = BitVec::repeat(false, 64);
+        bv.replace(0, true);
+        assert_eq!(bv[0], true);
+        assert_eq!(bv[63], false);
+
+        let av = AtomicBitVec::from_slice(bv.as_raw_slice());
+        assert_eq!(av.len(), 64);
+        assert_eq!(av.get(0), true);
+        assert_eq!(av.get(63), false);
     }
 }

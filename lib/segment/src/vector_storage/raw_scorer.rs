@@ -461,5 +461,6 @@ pub fn check_deleted_condition(
     // Default to not deleted if our deleted flags failed grow
     !vec_deleted.get_bit(point as usize).unwrap_or(false)
         // Additionally check point deletion for integrity if delete propagation to vector failed
-        && !point_deleted.get(point as usize).unwrap_or(false)
+        // Default to deleted if the point mapping was removed from the ID tracker
+        && !point_deleted.get_checked(point as usize).unwrap_or(true)
 }

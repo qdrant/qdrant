@@ -103,7 +103,7 @@ impl CompressedPointMappings {
     }
 
     pub(crate) fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        if self.deleted.get(internal_id as usize)? {
+        if self.deleted.get_checked(internal_id as usize)? {
             return None;
         }
 
@@ -138,7 +138,7 @@ impl CompressedPointMappings {
             .unique()
             .take(max_internal)
             .filter_map(move |i| {
-                if self.deleted.get(i).unwrap_or(false) {
+                if self.deleted.get(i) {
                     None
                 } else {
                     let point_offset = i as PointOffsetType;
@@ -173,7 +173,7 @@ impl CompressedPointMappings {
     pub(crate) fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         Box::new(
             (0..self.internal_to_external.len() as PointOffsetType)
-                .filter(move |i| !self.deleted.get(*i as usize).unwrap_or(false)),
+                .filter(move |i| !self.deleted.get(*i as usize)),
         )
     }
 
@@ -187,7 +187,7 @@ impl CompressedPointMappings {
     }
 
     pub(crate) fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key as usize).unwrap_or(false)
+        self.deleted.get_checked(key as usize).unwrap_or(true)
     }
 
     pub(crate) fn total_point_count(&self) -> usize {
@@ -228,7 +228,7 @@ impl CompressedPointMappings {
         internal_ids.shuffle(rand);
         internal_ids.truncate(preserved_size as usize);
 
-        let deleted = AtomicBitVec::with_fill(total_size as usize, true);
+        let deleted = AtomicBitVec::repeat(true, total_size as usize);
         for id in &internal_ids {
             deleted.replace_concurrent(*id as usize, false);
         }

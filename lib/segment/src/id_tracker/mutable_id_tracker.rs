@@ -606,7 +606,7 @@ where
 
                 // If point already exists, drop existing mapping
                 if deleted
-                    .get(internal_id as usize)
+                    .get_checked(internal_id as usize)
                     .is_some_and(|deleted| !deleted)
                 {
                     // Fixing corrupted mapping - this id should be recovered from WAL

@@ -67,7 +67,7 @@ impl TestRawScorerProducer {
 
         TestRawScorerProducer {
             storage,
-            deleted_points: AtomicBitVec::with_fill(num_vectors, false),
+            deleted_points: AtomicBitVec::repeat(false, num_vectors),
             quantized_vectors,
         }
     }

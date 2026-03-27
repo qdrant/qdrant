@@ -46,10 +46,7 @@ impl ProxySegment {
             LockedSegment::Original(raw_segment) => {
                 let raw_segment_guard = raw_segment.read();
                 let already_deleted = raw_segment_guard.get_deleted_points_bitvec();
-                let len = already_deleted.len();
-                let mut av = AtomicBitVec::from_slice(already_deleted.as_raw_slice());
-                av.resize(len, false);
-                Some(av)
+                Some(already_deleted)
             }
             LockedSegment::Proxy(_) => {
                 log::debug!("Double proxy segment creation");
