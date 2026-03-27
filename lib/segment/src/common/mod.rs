@@ -7,12 +7,6 @@ pub mod mmap_slice_buffered_update_wrapper;
 pub mod operation_error;
 pub mod operation_time_statistics;
 pub mod reciprocal_rank_fusion;
-#[cfg(feature = "rocksdb")]
-pub mod rocksdb_buffered_delete_wrapper;
-#[cfg(feature = "rocksdb")]
-pub mod rocksdb_buffered_update_wrapper;
-#[cfg(feature = "rocksdb")]
-pub mod rocksdb_wrapper;
 pub mod score_fusion;
 pub mod stored_bitslice;
 pub mod utils;

@@ -384,18 +384,6 @@ impl GpuVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         match vector_storage {
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimple(vector_storage) => {
-                Self::new_dense_f32(device, vector_storage, force_half_precision, stopped)
-            }
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleByte(vector_storage) => {
-                Self::new_dense(device, vector_storage, stopped)
-            }
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleHalf(vector_storage) => {
-                Self::new_dense_f16(device, vector_storage, stopped)
-            }
             VectorStorageEnum::DenseVolatile(vector_storage) => {
                 Self::new_dense_f32(device, vector_storage, force_half_precision, stopped)
             }
@@ -446,31 +434,12 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseAppendableMemmapHalf(vector_storage) => {
                 Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
             }
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::SparseSimple(_) => Err(OperationError::from(
-                gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
-            )),
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::from(
                 gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
             )),
             VectorStorageEnum::SparseMmap(_) => Err(OperationError::from(
                 gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
             )),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimple(vector_storage) => Self::new_multi_f32(
-                device.clone(),
-                vector_storage,
-                force_half_precision,
-                stopped,
-            ),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleByte(vector_storage) => {
-                Self::new_multi(device, vector_storage, stopped)
-            }
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleHalf(vector_storage) => {
-                Self::new_multi_f16(device, vector_storage, stopped)
-            }
             VectorStorageEnum::MultiDenseVolatile(vector_storage) => Self::new_multi_f32(
                 device.clone(),
                 vector_storage,

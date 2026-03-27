@@ -141,16 +141,6 @@ pub struct CollectionParams {
 
 impl CollectionParams {
     pub fn payload_storage_type(&self) -> PayloadStorageType {
-        #[cfg(feature = "rocksdb")]
-        if self.on_disk_payload {
-            PayloadStorageType::Mmap
-        } else if common::flags::feature_flags().payload_storage_skip_rocksdb {
-            PayloadStorageType::InRamMmap
-        } else {
-            PayloadStorageType::InMemory
-        }
-
-        #[cfg(not(feature = "rocksdb"))]
         PayloadStorageType::from_on_disk_payload(self.on_disk_payload)
     }
 

@@ -2,8 +2,6 @@ use common::types::PointOffsetType;
 
 use super::InvertedIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
-#[cfg(feature = "rocksdb")]
-use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::{Document, TokenSet};
 
 pub struct MutableInvertedIndexBuilder {
@@ -41,19 +39,6 @@ impl MutableInvertedIndexBuilder {
         // insert as tokenset
         let tokens_set = TokenSet::from_iter(tokens);
         self.index.point_to_tokens[idx as usize] = Some(tokens_set);
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn add_iter(
-        &mut self,
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, Vec<String>)>>,
-        // TODO(phrase-index): add param for including phrase field
-    ) -> OperationResult<()> {
-        for item in iter {
-            let (idx, str_tokens) = item?;
-            self.add(idx, str_tokens);
-        }
-        Ok(())
     }
 
     /// Consumes the builder and returns a MutableInvertedIndex

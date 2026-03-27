@@ -1,15 +1,9 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -20,10 +14,6 @@ use super::mutable_text_index::MutableFullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::{
@@ -41,28 +31,6 @@ pub enum FullTextIndex {
 }
 
 impl FullTextIndex {
-    #[cfg(feature = "rocksdb")]
-    pub fn new_rocksdb(
-        db: Arc<RwLock<DB>>,
-        config: TextIndexParams,
-        field: &str,
-        is_appendable: bool,
-        create_if_missing: bool,
-    ) -> OperationResult<Option<Self>> {
-        let store_cf_name = Self::storage_cf_name(field);
-        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
-            db,
-            &store_cf_name,
-        ));
-        let index = if is_appendable {
-            MutableFullTextIndex::open_rocksdb(db_wrapper, config, create_if_missing)?
-                .map(Self::Mutable)
-        } else {
-            ImmutableFullTextIndex::open_rocksdb(db_wrapper, config)?.map(Self::Immutable)
-        };
-        Ok(index)
-    }
-
     pub fn new_mmap(
         path: PathBuf,
         config: TextIndexParams,
@@ -106,16 +74,6 @@ impl FullTextIndex {
         }
     }
 
-    #[cfg(feature = "rocksdb")]
-    pub fn builder_rocksdb(
-        db: Arc<RwLock<DB>>,
-        config: TextIndexParams,
-        field: &str,
-        keep_appendable: bool,
-    ) -> OperationResult<FullTextIndexRocksDbBuilder> {
-        FullTextIndexRocksDbBuilder::new(db, config, field, keep_appendable)
-    }
-
     pub fn builder_mmap(
         path: PathBuf,
         config: TextIndexParams,
@@ -129,11 +87,6 @@ impl FullTextIndex {
         config: TextIndexParams,
     ) -> FullTextGridstoreIndexBuilder {
         FullTextGridstoreIndexBuilder::new(dir, config)
-    }
-
-    #[cfg(feature = "rocksdb")]
-    fn storage_cf_name(field: &str) -> String {
-        format!("{field}_fts")
     }
 
     pub(super) fn points_count(&self) -> usize {
@@ -229,16 +182,6 @@ impl FullTextIndex {
             Self::Immutable(index) => index.inverted_index.values_is_empty(point_id),
             Self::Mmap(index) => index.inverted_index.values_is_empty(point_id),
         }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub(super) fn store_key(id: PointOffsetType) -> Vec<u8> {
-        bincode::serialize(&id).unwrap()
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub(super) fn restore_key(data: &[u8]) -> PointOffsetType {
-        bincode::deserialize(data).unwrap()
     }
 
     pub(super) fn serialize_document(tokens: Vec<Cow<str>>) -> OperationResult<Vec<u8>> {
@@ -407,15 +350,6 @@ impl FullTextIndex {
         }
     }
 
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self {
-            FullTextIndex::Mutable(index) => index.is_rocksdb(),
-            FullTextIndex::Immutable(index) => index.is_rocksdb(),
-            FullTextIndex::Mmap(_) => false,
-        }
-    }
-
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -454,66 +388,6 @@ impl FullTextIndex {
                 is_on_disk: index.is_on_disk(),
             },
         }
-    }
-}
-
-#[cfg(feature = "rocksdb")]
-pub struct FullTextIndexRocksDbBuilder {
-    mutable_index: MutableFullTextIndex,
-    keep_appendable: bool,
-}
-
-#[cfg(feature = "rocksdb")]
-impl FullTextIndexRocksDbBuilder {
-    pub fn new(
-        db: Arc<RwLock<DB>>,
-        config: TextIndexParams,
-        field: &str,
-        keep_appendable: bool,
-    ) -> OperationResult<Self> {
-        let store_cf_name = FullTextIndex::storage_cf_name(field);
-        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
-            db,
-            &store_cf_name,
-        ));
-        let mutable_index = MutableFullTextIndex::open_rocksdb(db_wrapper, config, true)?
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "Failed to create and open mutable full text index for field: {field}"
-                ))
-            })?;
-        Ok(FullTextIndexRocksDbBuilder {
-            mutable_index,
-            keep_appendable,
-        })
-    }
-}
-
-#[cfg(feature = "rocksdb")]
-impl FieldIndexBuilderTrait for FullTextIndexRocksDbBuilder {
-    type FieldIndexType = FullTextIndex;
-
-    fn init(&mut self) -> OperationResult<()> {
-        self.mutable_index.init()
-    }
-
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.mutable_index.add_point(id, payload, hw_counter)
-    }
-
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        if self.keep_appendable {
-            return Ok(FullTextIndex::Mutable(self.mutable_index));
-        }
-
-        Ok(FullTextIndex::Immutable(
-            ImmutableFullTextIndex::from_rocksdb_mutable(self.mutable_index),
-        ))
     }
 }
 

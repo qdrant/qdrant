@@ -760,24 +760,6 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
 }
 
 fn unpack_snapshot(segment_path: &Path) -> OperationResult<()> {
-    #[cfg(feature = "rocksdb")]
-    {
-        use super::{DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH};
-        use crate::index::struct_payload_index::StructPayloadIndex;
-
-        let db_backup_path = segment_path.join(DB_BACKUP_PATH);
-        if db_backup_path.is_dir() {
-            crate::rocksdb_backup::restore(&db_backup_path, segment_path)?;
-            fs::remove_dir_all(&db_backup_path)?;
-        }
-
-        let payload_index_db_backup = segment_path.join(PAYLOAD_DB_BACKUP_PATH);
-        if payload_index_db_backup.is_dir() {
-            StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, segment_path)?;
-            fs::remove_dir_all(&payload_index_db_backup)?;
-        }
-    }
-
     let files_path = segment_path.join(SNAPSHOT_FILES_PATH);
     utils::fs::move_all(&files_path, segment_path)?;
     fs::remove_dir(&files_path)?;

@@ -7,16 +7,12 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use tempfile::Builder;
 
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage_full;
-#[cfg(feature = "rocksdb")]
-use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_full_vector_storage;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
@@ -378,123 +374,6 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         let orig = scorer_orig.score_internal(0, i);
         assert!((orig - quant).abs() < 0.15);
     }
-}
-
-#[test]
-#[cfg(feature = "rocksdb")]
-fn test_delete_points_in_simple_vector_storages() {
-    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-
-    {
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage = open_simple_dense_full_vector_storage(
-            db,
-            DB_VECTOR_CF,
-            4,
-            Distance::Dot,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        do_test_delete_points(&mut storage);
-        storage.flusher()().unwrap();
-    }
-
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage = open_simple_dense_full_vector_storage(
-        db,
-        DB_VECTOR_CF,
-        4,
-        Distance::Dot,
-        &AtomicBool::new(false),
-    )
-    .unwrap();
-}
-
-#[test]
-#[cfg(feature = "rocksdb")]
-fn test_update_from_delete_points_simple_vector_storages() {
-    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    {
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage = open_simple_dense_full_vector_storage(
-            db,
-            DB_VECTOR_CF,
-            4,
-            Distance::Dot,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        do_test_update_from_delete_points(&mut storage);
-        storage.flusher()().unwrap();
-    }
-
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage = open_simple_dense_full_vector_storage(
-        db,
-        DB_VECTOR_CF,
-        4,
-        Distance::Dot,
-        &AtomicBool::new(false),
-    )
-    .unwrap();
-}
-
-#[test]
-#[cfg(feature = "rocksdb")]
-fn test_score_points_in_simple_vector_storages() {
-    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    {
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage = open_simple_dense_full_vector_storage(
-            db,
-            DB_VECTOR_CF,
-            4,
-            Distance::Dot,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        do_test_score_points(&mut storage);
-        storage.flusher()().unwrap();
-    }
-
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage = open_simple_dense_full_vector_storage(
-        db,
-        DB_VECTOR_CF,
-        4,
-        Distance::Dot,
-        &AtomicBool::new(false),
-    )
-    .unwrap();
-}
-
-#[test]
-#[cfg(feature = "rocksdb")]
-fn test_score_quantized_points_simple_vector_storages() {
-    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    {
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage = open_simple_dense_full_vector_storage(
-            db,
-            DB_VECTOR_CF,
-            4,
-            Distance::Dot,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        test_score_quantized_points(&mut storage);
-        storage.flusher()().unwrap();
-    }
-
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage = open_simple_dense_full_vector_storage(
-        db,
-        DB_VECTOR_CF,
-        4,
-        Distance::Dot,
-        &AtomicBool::new(false),
-    )
-    .unwrap();
 }
 
 // ----------------------------------------------

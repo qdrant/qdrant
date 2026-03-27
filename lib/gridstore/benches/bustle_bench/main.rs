@@ -1,6 +1,4 @@
 //! Implements Bustle traits for comparing performance against other kv stores.
-#[cfg(feature = "rocksdb")]
-use ::rocksdb::DB;
 use bustle::{Mix, Workload};
 use fixture::ArcStorage;
 use gridstore::Gridstore;
@@ -8,8 +6,6 @@ use gridstore::fixtures::Payload;
 
 mod fixture;
 mod payload_storage;
-#[cfg(feature = "rocksdb")]
-mod rocksdb;
 
 type PayloadStorage = Gridstore<Payload>;
 
@@ -28,11 +24,6 @@ fn main() {
         println!("ValueStorage:");
         workload.run::<ArcStorage<PayloadStorage>>();
 
-        #[cfg(feature = "rocksdb")]
-        {
-            println!("RocksDB:");
-            workload.run::<ArcStorage<DB>>();
-        }
         println!(" ");
 
         // Insert heavy
@@ -43,11 +34,6 @@ fn main() {
         println!("ValueStorage:");
         workload.run::<ArcStorage<PayloadStorage>>();
 
-        #[cfg(feature = "rocksdb")]
-        {
-            println!("RocksDB:");
-            workload.run::<ArcStorage<DB>>();
-        }
         println!(" ");
 
         // Update heavy
@@ -58,11 +44,6 @@ fn main() {
         println!("ValueStorage:");
         workload.run::<ArcStorage<PayloadStorage>>();
 
-        #[cfg(feature = "rocksdb")]
-        {
-            println!("RocksDB:");
-            workload.run::<ArcStorage<DB>>();
-        }
         println!(" ");
     }
 }

@@ -56,12 +56,6 @@ pub fn new_raw_scorer<'a>(
     hc: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage {
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::DenseSimple(vs) => raw_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::DenseSimpleByte(vs) => raw_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::DenseSimpleHalf(vs) => raw_scorer_impl(query, vs, hc),
         VectorStorageEnum::DenseVolatile(vs) => raw_scorer_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileByte(vs) => raw_scorer_impl(query, vs, hc),
@@ -82,16 +76,8 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::SparseSimple(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::MultiDenseSimple(vs) => raw_multi_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::MultiDenseSimpleByte(vs) => raw_multi_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::MultiDenseSimpleHalf(vs) => raw_multi_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::MultiDenseVolatileByte(vs) => raw_multi_scorer_impl(query, vs, hc),

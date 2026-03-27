@@ -1363,11 +1363,7 @@ impl Default for Indexes {
 #[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
-    #[cfg(feature = "rocksdb")]
-    InMemory,
     // Store payload on disk only, read each time it is requested
-    #[cfg(feature = "rocksdb")]
-    OnDisk,
     // Store payload on disk and in memory, read from memory if possible
     Mmap,
     // Store payload on disk and in memory, populate on load
@@ -1391,10 +1387,6 @@ impl PayloadStorageType {
 
     pub fn is_on_disk(&self) -> bool {
         match self {
-            #[cfg(feature = "rocksdb")]
-            PayloadStorageType::InMemory => false,
-            #[cfg(feature = "rocksdb")]
-            PayloadStorageType::OnDisk => true,
             PayloadStorageType::Mmap => true,
             PayloadStorageType::InRamMmap => false,
         }
@@ -1733,9 +1725,6 @@ impl VectorDataConfig {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum SparseVectorStorageType {
-    /// Storage on disk (rocksdb storage)
-    #[cfg(feature = "rocksdb")]
-    OnDisk,
     /// Storage in memory maps (gridstore storage)
     #[default]
     Mmap,
@@ -1747,8 +1736,6 @@ impl SparseVectorStorageType {
         match self {
             // Both options are on disk, but we keep it explicit for the case if someone adds a new
             // storage type in the future
-            #[cfg(feature = "rocksdb")]
-            Self::OnDisk => true,
             Self::Mmap => true,
         }
     }
@@ -1775,14 +1762,7 @@ pub struct SparseVectorDataConfig {
 
 /// If the storage type is not in config, it means it is the OnDisk variant
 fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorageType {
-    #[cfg(feature = "rocksdb")]
-    {
-        SparseVectorStorageType::OnDisk
-    }
-    #[cfg(not(feature = "rocksdb"))]
-    {
-        SparseVectorStorageType::default()
-    }
+    { SparseVectorStorageType::default() }
 }
 
 impl SparseVectorDataConfig {

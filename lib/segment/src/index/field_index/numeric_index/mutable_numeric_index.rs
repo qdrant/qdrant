@@ -2,27 +2,17 @@ use std::collections::BTreeSet;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::path::PathBuf;
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 
 use super::mmap_numeric_index::MmapNumericIndex;
 use super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::payload_config::StorageType;
@@ -54,8 +44,6 @@ enum Storage<T: Encodable + Numericable>
 where
     Vec<T>: Blob,
 {
-    #[cfg(feature = "rocksdb")]
-    RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Gridstore(Gridstore<Vec<T>>),
 }
 
@@ -247,60 +235,6 @@ impl<T: Encodable + Numericable + Send + Sync + Default> MutableNumericIndex<T>
 where
     Vec<T>: Blob,
 {
-    /// Open and load mutable numeric index from RocksDB storage
-    #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb(
-        db: Arc<RwLock<DB>>,
-        field: &str,
-        create_if_missing: bool,
-    ) -> OperationResult<Option<Self>> {
-        let store_cf_name = super::numeric_index_storage_cf_name(field);
-        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
-            db,
-            &store_cf_name,
-        ));
-        Self::open_rocksdb_db_wrapper(db_wrapper, create_if_missing)
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb_db_wrapper(
-        db_wrapper: DatabaseColumnScheduledDeleteWrapper,
-        create_if_missing: bool,
-    ) -> OperationResult<Option<Self>> {
-        if !db_wrapper.has_column_family()? {
-            if create_if_missing {
-                db_wrapper.recreate_column_family()?;
-            } else {
-                // Column family doesn't exist, cannot load
-                return Ok(None);
-            }
-        };
-
-        // Load in-memory index from RocksDB
-        let in_memory_index = db_wrapper
-            .lock_db()
-            .iter()?
-            .map(|(key, value)| {
-                let value_idx =
-                    u32::from_be_bytes(value.as_ref().try_into().map_err(|_| {
-                        OperationError::service_error("incorrect numeric index value")
-                    })?);
-                let (idx, value) = T::decode_key(&key);
-                if idx != value_idx {
-                    return Err(OperationError::service_error(
-                        "incorrect numeric index key-value pair",
-                    ));
-                }
-                Ok((idx, value))
-            })
-            .collect::<Result<InMemoryNumericIndex<_>, OperationError>>()?;
-
-        Ok(Some(Self {
-            storage: Storage::RocksDb(db_wrapper),
-            in_memory_index,
-        }))
-    }
-
     /// Open and load mutable numeric index from Gridstore storage
     ///
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
@@ -350,20 +284,9 @@ where
         self.in_memory_index
     }
 
-    #[cfg(all(test, feature = "rocksdb"))]
-    pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => Some(db_wrapper),
-            Storage::Gridstore(_) => None,
-        }
-    }
-
     #[inline]
     pub(super) fn clear(&mut self) -> OperationResult<()> {
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Gridstore(store) => store.clear().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable numeric index: {err}",
@@ -375,8 +298,6 @@ where
     #[inline]
     pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
             Storage::Gridstore(store) => store.wipe().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to wipe mutable numeric index: {err}",
@@ -391,8 +312,6 @@ where
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => Ok(()),
             Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable numeric index gridstore cache: {err}"
@@ -404,8 +323,6 @@ where
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Gridstore(store) => store.files(),
         }
     }
@@ -413,8 +330,6 @@ where
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
                 let storage_flusher = store.flusher();
                 Box::new(move || {
@@ -436,17 +351,6 @@ where
     ) -> OperationResult<()> {
         // Update persisted storage
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => {
-                let mut hw_cell_wb = hw_counter
-                    .payload_index_io_write_counter()
-                    .write_back_counter();
-                for value in &values {
-                    let key = value.encode_key(idx);
-                    db_wrapper.put(&key, idx.to_be_bytes())?;
-                    hw_cell_wb.incr_delta(size_of_val(&key) + size_of_val(&idx));
-                }
-            }
             // We cannot store empty value, then delete instead
             Storage::Gridstore(store) if values.is_empty() => {
                 store.delete_value(idx)?;
@@ -470,18 +374,6 @@ where
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => {
-                self.in_memory_index
-                    .get_values(idx)
-                    .map(|mut values| {
-                        values.try_for_each(|value| {
-                            let key = value.encode_key(idx);
-                            db_wrapper.remove(key)
-                        })
-                    })
-                    .transpose()?;
-            }
             Storage::Gridstore(store) => {
                 store.delete_value(idx)?;
             }
@@ -551,17 +443,7 @@ where
 
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Gridstore(_) => StorageType::Gridstore,
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self.storage {
-            Storage::RocksDb(_) => true,
-            Storage::Gridstore(_) => false,
         }
     }
 }
