@@ -32,7 +32,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -204,7 +205,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -876,7 +878,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           },
           {
@@ -1127,7 +1130,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -1222,7 +1226,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -1307,7 +1312,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -1394,7 +1400,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -1879,7 +1886,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],

@@ -27,6 +27,7 @@ paths:
             If timeout is reached - request will return with service error.
           schema:
             type: integer
+            minimum: 1
       responses: #@ response(type("boolean"))
     get:
       tags:
@@ -67,4 +68,5 @@ paths:
             If timeout is reached - request will return with service error.
           schema:
             type: integer
+            minimum: 1
       responses: #@ response(type("boolean"))
