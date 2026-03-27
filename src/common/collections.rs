@@ -17,8 +17,10 @@ use collection::operations::cluster_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
+use collection::operations::health_check::analyze_collection_health;
 use collection::operations::types::{
-    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
+    AliasDescription, CollectionClusterInfo, CollectionHealthReport, CollectionInfo,
+    CollectionsAliasesResponse,
 };
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set;
@@ -80,6 +82,16 @@ pub async fn do_get_collection(
     };
 
     Ok(collection.info(&shard_selection).await?)
+}
+
+/// Retrieve collection info and analyze it for health recommendations.
+pub async fn do_get_collection_health(
+    toc: &TableOfContent,
+    auth: &Auth,
+    name: &str,
+) -> Result<CollectionHealthReport, StorageError> {
+    let info = do_get_collection(toc, auth, name, None).await?;
+    Ok(analyze_collection_health(name, &info))
 }
 
 pub async fn do_list_collections(

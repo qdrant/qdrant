@@ -133,6 +133,62 @@ pub struct CollectionWarning {
     pub message: String,
 }
 
+/// Severity level of a health recommendation
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendationSeverity {
+    Info,
+    Warning,
+    Critical,
+}
+
+/// Category of a health recommendation
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendationCategory {
+    Indexing,
+    Segmentation,
+    Memory,
+    HnswConfig,
+    WalConfig,
+    PayloadIndex,
+}
+
+/// A single actionable health recommendation
+#[derive(Debug, Serialize, JsonSchema, Clone)]
+pub struct HealthRecommendation {
+    /// Severity level
+    pub severity: RecommendationSeverity,
+    /// Category of the recommendation
+    pub category: RecommendationCategory,
+    /// Human-readable description of the issue
+    pub message: String,
+    /// Suggested action to resolve the issue
+    pub suggestion: String,
+}
+
+/// Summary counts by severity
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct HealthSummary {
+    /// Number of critical recommendations
+    pub critical: usize,
+    /// Number of warning recommendations
+    pub warning: usize,
+    /// Number of informational recommendations
+    pub info: usize,
+}
+
+/// Response for the collection health recommendations endpoint
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CollectionHealthReport {
+    /// Collection name
+    pub collection_name: String,
+    /// List of actionable recommendations
+    pub recommendations: Vec<HealthRecommendation>,
+    /// Summary counts by severity
+    pub summary: HealthSummary,
+}
+
 #[derive(Debug, Clone, Serialize, JsonSchema, Default, Anonymize)]
 pub struct ShardUpdateQueueInfo {
     /// Number of elements in the queue
