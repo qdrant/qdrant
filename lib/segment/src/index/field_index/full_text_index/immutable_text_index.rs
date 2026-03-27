@@ -7,12 +7,10 @@ use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::mmap_text_index::MmapFullTextIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::payload_config::StorageType;
 
 pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,
-    pub(super) tokenizer: Tokenizer,
     // Backing storage, source of state, persists deletions
     pub(super) storage: Storage,
 }
@@ -26,10 +24,6 @@ impl ImmutableFullTextIndex {
     pub fn open_mmap(index: MmapFullTextIndex) -> Self {
         let inverted_index = ImmutableInvertedIndex::from(&index.inverted_index);
 
-        // ToDo(rocksdb): this is a duplication of tokenizer,
-        // ToDo(rocksdb): But once the RocksDB is removed, we can always use the tokenizer from the index.
-        let tokenizer = index.tokenizer.clone();
-
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
             log::warn!("Failed to clear mmap cache of ram mmap full text index: {err}");
@@ -38,7 +32,6 @@ impl ImmutableFullTextIndex {
         Self {
             inverted_index,
             storage: Storage::Mmap(Box::new(index)),
-            tokenizer,
         }
     }
 

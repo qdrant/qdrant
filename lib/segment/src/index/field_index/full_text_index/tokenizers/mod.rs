@@ -153,7 +153,7 @@ fn truncate_cow_ref<'a>(inp: &Cow<'a, str>, len: usize) -> Cow<'a, str> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Tokenizer {
     tokenizer_type: TokenizerType,
     tokens_processor: TokensProcessor,

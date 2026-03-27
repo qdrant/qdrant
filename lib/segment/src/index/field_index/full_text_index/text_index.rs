@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::immutable_text_index::ImmutableFullTextIndex;
+use super::immutable_text_index::{ImmutableFullTextIndex, Storage};
 use super::inverted_index::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use super::mmap_text_index::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
@@ -125,7 +125,9 @@ impl FullTextIndex {
     fn get_tokenizer(&self) -> &Tokenizer {
         match self {
             Self::Mutable(index) => &index.tokenizer,
-            Self::Immutable(index) => &index.tokenizer,
+            Self::Immutable(index) => match &index.storage {
+                Storage::Mmap(mmap_index) => &mmap_index.tokenizer,
+            },
             Self::Mmap(index) => &index.tokenizer,
         }
     }
