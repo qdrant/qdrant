@@ -134,26 +134,45 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     }
 
     pub fn read(&self, from: u64) -> impl DoubleEndedIterator<Item = Result<(u64, R)>> + '_ {
+        self.read_with_size(from)
+            .map(|result| result.map(|(idx, _size, record)| (idx, record)))
+    }
+
+    /// Read records from the WAL starting at `from`, including the serialized byte size of each
+    /// entry. Returns an iterator of `(index, serialized_byte_size, record)` tuples.
+    pub fn read_with_size(
+        &self,
+        from: u64,
+    ) -> impl DoubleEndedIterator<Item = Result<(u64, usize, R)>> + '_ {
         // We have to explicitly do `from..self.first_index() + self.len(false)`, instead of more
         // concise `from..=self.last_index()`, because if the WAL is empty, `Wal::last_index`
         // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
 
         let to = self.first_index() + self.len(false);
-        self.read_range(from..to)
+        self.read_range_with_size(from..to)
     }
 
     pub fn read_range(
         &self,
         range: Range<u64>,
     ) -> impl DoubleEndedIterator<Item = Result<(u64, R)>> + '_ {
+        self.read_range_with_size(range)
+            .map(|result| result.map(|(idx, _size, record)| (idx, record)))
+    }
+
+    pub fn read_range_with_size(
+        &self,
+        range: Range<u64>,
+    ) -> impl DoubleEndedIterator<Item = Result<(u64, usize, R)>> + '_ {
         range.map(move |idx| {
             let record_bin = self.wal.entry(idx).ok_or_else(|| {
                 WalError::ReadWalError(format!("Can't read entry {idx} from WAL"))
             })?;
 
+            let size = record_bin.len();
             let record: R = WalRawRecord::deserialize_from(&record_bin)?;
 
-            Ok((idx, record))
+            Ok((idx, size, record))
         })
     }
 
@@ -428,6 +447,133 @@ mod tests {
                 assert_eq!(x.a, 12);
                 assert_eq!(x.b, 13);
             }
+        }
+    }
+
+    #[test]
+    fn test_read_with_size() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            segment_capacity: 32 * 1024 * 1024,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
+
+        // Write records of different sizes
+        let small_record = TestRecord::Struct1(TestInternalStruct1 { data: 1 });
+        let large_record = TestRecord::Struct2(TestInternalStruct2 { a: 42, b: 99 });
+
+        serde_wal
+            .write(&WalRawRecord::new(&small_record).unwrap())
+            .unwrap();
+        serde_wal
+            .write(&WalRawRecord::new(&large_record).unwrap())
+            .unwrap();
+
+        // read_with_size returns correct indices, non-zero sizes, and matching records
+        let entries: Vec<_> = serde_wal
+            .read_with_size(0)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(entries.len(), 2);
+
+        let (idx0, size0, record0) = &entries[0];
+        let (idx1, size1, record1) = &entries[1];
+
+        assert_eq!(*idx0, 0);
+        assert_eq!(*idx1, 1);
+        assert!(*size0 > 0);
+        assert!(*size1 > 0);
+        assert_eq!(record0, &small_record);
+        assert_eq!(record1, &large_record);
+
+        // Sizes should reflect the actual serialized CBOR byte size
+        let expected_size0 = serde_cbor::to_vec(&small_record).unwrap().len();
+        let expected_size1 = serde_cbor::to_vec(&large_record).unwrap().len();
+        assert_eq!(*size0, expected_size0);
+        assert_eq!(*size1, expected_size1);
+    }
+
+    #[test]
+    fn test_read_with_size_from_offset() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            segment_capacity: 32 * 1024 * 1024,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
+
+        for i in 0..5 {
+            let record = TestRecord::Struct1(TestInternalStruct1 { data: i });
+            serde_wal
+                .write(&WalRawRecord::new(&record).unwrap())
+                .unwrap();
+        }
+
+        // Reading from offset 3 should yield entries 3 and 4
+        let entries: Vec<_> = serde_wal
+            .read_with_size(3)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, 3);
+        assert_eq!(entries[1].0, 4);
+    }
+
+    #[test]
+    fn test_read_with_size_empty_wal() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            segment_capacity: 32 * 1024 * 1024,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        let serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
+
+        let entries: Vec<_> = serde_wal
+            .read_with_size(0)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_read_with_size_matches_read() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            segment_capacity: 32 * 1024 * 1024,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
+
+        for i in 0..10 {
+            let record = TestRecord::Struct1(TestInternalStruct1 { data: i });
+            serde_wal
+                .write(&WalRawRecord::new(&record).unwrap())
+                .unwrap();
+        }
+
+        // read_with_size and read should return the same indices and records
+        let with_size: Vec<_> = serde_wal
+            .read_with_size(0)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        let without_size: Vec<_> = serde_wal.read(0).collect::<Result<Vec<_>>>().unwrap();
+
+        assert_eq!(with_size.len(), without_size.len());
+        for ((idx_s, _size, record_s), (idx, record)) in with_size.iter().zip(without_size.iter()) {
+            assert_eq!(idx_s, idx);
+            assert_eq!(record_s, record);
         }
     }
 
