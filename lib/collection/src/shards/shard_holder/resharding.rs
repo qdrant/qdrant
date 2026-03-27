@@ -698,3 +698,200 @@ fn shard_key_fmt(key: &Option<ShardKey>) -> &dyn fmt::Display {
         None => &"default",
     }
 }
+
+/// Resharding consensus operations must be idempotent.
+///
+/// The consensus apply loop (`apply_entries` in `consensus_manager.rs`) silently
+/// swallows all non-`ServiceError` results and marks the entry as applied. Since
+/// resharding check functions return `bad_request` (`StorageError::BadRequest`,
+/// not `ServiceError`), any validation failure is silently swallowed.
+///
+/// If local state on a peer diverges for any reason (crash during partial apply,
+/// prior swallowed error), the same committed Raft entry produces different
+/// outcomes on different peers — succeeding on some, silently swallowed on
+/// others — causing permanent resharding state divergence despite identical
+/// consensus term and commit.
+///
+/// These tests verify that resharding operations return `Ok` when the desired
+/// post-condition is already met or the operation is inapplicable, rather than
+/// returning `bad_request` errors that get silently swallowed.
+#[cfg(test)]
+mod tests {
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn make_reshard_key(shard_id: ShardId) -> ReshardKey {
+        ReshardKey {
+            uuid: Uuid::new_v4(),
+            direction: ReshardingDirection::Up,
+            peer_id: 1,
+            shard_id,
+            shard_key: None,
+        }
+    }
+
+    fn make_holder() -> (tempfile::TempDir, ShardHolder) {
+        let dir = tempfile::tempdir().unwrap();
+        let holder = ShardHolder::new(dir.path(), ShardingMethod::Auto).unwrap();
+        (dir, holder)
+    }
+
+    // ------------------------------------------------------------------
+    // check_abort_resharding idempotency
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_abort_check_idempotent_when_no_resharding_active() {
+        let (_dir, holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        // No resharding is in progress. This happens when:
+        // - The abort was already applied on this node (crash recovery replay)
+        // - The start was never applied on this node (prior swallowed error)
+        //
+        // Returning bad_request here causes silent state divergence: the error
+        // is swallowed by apply_entries, the entry is marked as applied, but
+        // resharding state is not cleared on this peer while it IS cleared on
+        // peers where the operation succeeded.
+        let result = holder.check_abort_resharding(&key);
+        assert!(
+            result.is_ok(),
+            "check_abort_resharding must return Ok when no resharding is active \
+             (idempotent: already aborted or never started), got error: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_abort_check_idempotent_when_different_resharding_active() {
+        let (_dir, holder) = make_holder();
+
+        // Set up resharding state for shard 1
+        let active_key = make_reshard_key(1);
+        holder
+            .resharding_state
+            .write(|state| {
+                *state = Some(ReshardState::new(
+                    active_key.uuid,
+                    active_key.direction,
+                    active_key.peer_id,
+                    active_key.shard_id,
+                    active_key.shard_key.clone(),
+                ));
+            })
+            .unwrap();
+
+        // Try to abort a DIFFERENT resharding (shard 2). This can happen when
+        // the original resharding was already aborted and a new one was started.
+        let other_key = make_reshard_key(2);
+        let result = holder.check_abort_resharding(&other_key);
+        assert!(
+            result.is_ok(),
+            "check_abort_resharding must return Ok when a different resharding is active \
+             (the one we're aborting was already handled), got error: {result:?}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // commit_read_hashring idempotency
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_commit_read_idempotent_when_no_resharding_active() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        // No resharding is in progress. commit_read should be a no-op, not an
+        // error that gets silently swallowed causing state divergence.
+        let result = holder.commit_read_hashring(&key);
+        assert!(
+            result.is_ok(),
+            "commit_read_hashring must return Ok when no resharding is active \
+             (idempotent), got error: {result:?}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // commit_write_hashring idempotency
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_commit_write_idempotent_when_no_resharding_active() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        let result = holder.commit_write_hashring(&key);
+        assert!(
+            result.is_ok(),
+            "commit_write_hashring must return Ok when no resharding is active \
+             (idempotent), got error: {result:?}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // check_finish_resharding idempotency
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_finish_check_idempotent_when_no_resharding_active() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        let result = holder.check_finish_resharding(&key);
+        assert!(
+            result.is_ok(),
+            "check_finish_resharding must return Ok when no resharding is active \
+             (idempotent: already finished), got error: {result:?}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Divergence scenario: proves the bug end-to-end
+    // ------------------------------------------------------------------
+
+    /// Simulates two peers processing the same sequence of committed Raft
+    /// entries, where peer B missed the initial "start" due to a silently
+    /// swallowed error. Every subsequent operation must succeed on BOTH peers
+    /// to prevent permanent resharding state divergence.
+    #[test]
+    fn test_resharding_ops_do_not_cause_divergence_between_peers() {
+        let (_dir_a, holder_a) = make_holder();
+        let (_dir_b, holder_b) = make_holder();
+        let key = make_reshard_key(1);
+
+        // Simulate: "start resharding" was applied on peer A but silently
+        // swallowed on peer B (e.g. due to shard already existing from a
+        // crashed previous attempt).
+        holder_a
+            .resharding_state
+            .write(|state| {
+                *state = Some(ReshardState::new(
+                    key.uuid,
+                    key.direction,
+                    key.peer_id,
+                    key.shard_id,
+                    key.shard_key.clone(),
+                ));
+            })
+            .unwrap();
+        // peer B has no resharding state (start was swallowed)
+
+        // Now an "abort resharding" consensus entry is committed.
+        // Both peers must return Ok. If peer B returns bad_request, the error
+        // is silently swallowed, state is not modified, and peer A clears its
+        // resharding state while peer B remains without it — but a future
+        // resharding start would diverge because peer A is clean while peer B
+        // might have leftover state from other operations.
+        let result_a = holder_a.check_abort_resharding(&key);
+        let result_b = holder_b.check_abort_resharding(&key);
+
+        assert!(
+            result_a.is_ok(),
+            "Peer A (has resharding state) must succeed: {result_a:?}"
+        );
+        assert!(
+            result_b.is_ok(),
+            "Peer B (no resharding state) must also succeed to prevent divergence: {result_b:?}"
+        );
+    }
+}
