@@ -20,4 +20,5 @@ tonic = { workspace = true }
 futures = { workspace = true }
 
 [build-dependencies]
+fs-err = { workspace = true }
 tonic-build = { workspace = true }
