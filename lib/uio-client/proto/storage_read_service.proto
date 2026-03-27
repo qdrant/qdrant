@@ -54,7 +54,7 @@ message FileLengthResponse {
 message ReadBytesRequest {
   string collection_name = 1;
   string path = 2;
-  uint64 offset = 3;
+  uint64 byte_offset = 3;
   uint64 length = 4;
 }
 
@@ -65,7 +65,7 @@ message ReadBytesResponse {
 message ReadBytesStreamRequest {
   string collection_name = 1;
   string path = 2;
-  uint64 offset = 3;
+  uint64 byte_offset = 3;
   uint64 length = 4;
 }
 
@@ -84,7 +84,7 @@ message ReadWholeResponse {
 
 // ReadBatch: multiple ranges from a single file (maps to UniversalRead::read_batch).
 message ReadBatchRange {
-  uint64 offset = 1;
+  uint64 byte_offset = 1;
   uint64 length = 2;
 }
 
@@ -101,7 +101,7 @@ message ReadBatchResponse {
 // ReadMulti: ranges across multiple files (maps to UniversalRead::read_multi).
 message ReadMultiEntry {
   string path = 1;
-  uint64 offset = 2;
+  uint64 byte_offset = 2;
   uint64 length = 3;
 }
 

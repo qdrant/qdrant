@@ -8557,6 +8557,7 @@ name = "uio-client"
 version = "0.1.0"
 dependencies = [
  "common",
+ "futures",
  "prost 0.12.6",
  "tokio",
  "tonic 0.11.0",

@@ -6,22 +6,12 @@ fn main() -> std::io::Result<()> {
 
     println!("cargo:rerun-if-changed={local}");
 
-    // When building inside the qdrant workspace, verify that the local copy
-    // is in sync with the source of truth in the api crate.
-    // When built from crates.io the source path won't exist — just use the local copy.
+    // When building inside the qdrant workspace, copy the proto from the api
+    // crate (source of truth) into the local directory.  The copy is tracked
+    // by git so that the crate also builds standalone (e.g. from crates.io).
     if source.exists() {
         println!("cargo:rerun-if-changed={}", source.display());
-
-        let source_contents = std::fs::read_to_string(source)?;
-        let local_contents = std::fs::read_to_string(local)?;
-
-        assert_eq!(
-            source_contents,
-            local_contents,
-            "proto out of sync: local `{local}` differs from `{}`. \
-             Update the local copy to match the api crate.",
-            source.display(),
-        );
+        std::fs::copy(source, local)?;
     }
 
     tonic_build::configure()
