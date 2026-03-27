@@ -55,6 +55,11 @@ impl<'py> IntoPyObject<'py> for PyQuantizationConfig {
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
                 PyBinaryQuantizationConfig(binary).into_bound_py_any(py)
             }
+            QuantizationConfig::Polar(_) => {
+                Err(PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>(
+                    "PolarQuantization is not yet supported in Python bindings",
+                ))
+            }
         }
     }
 }
@@ -70,6 +75,9 @@ impl Repr for PyQuantizationConfig {
             }
             QuantizationConfig::Binary(binary) => {
                 PyBinaryQuantizationConfig::wrap_ref(&binary.binary).fmt(f)
+            }
+            QuantizationConfig::Polar(_) => {
+                write!(f, "PolarQuantization()")
             }
         }
     }

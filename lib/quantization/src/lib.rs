@@ -1,6 +1,7 @@
 pub mod encoded_storage;
 pub mod encoded_vectors;
 pub mod encoded_vectors_binary;
+pub mod encoded_vectors_polar;
 pub mod encoded_vectors_pq;
 pub mod encoded_vectors_u8;
 pub mod kmeans;
@@ -13,6 +14,7 @@ use std::sync::{Arc, Condvar, Mutex};
 
 pub use encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 pub use encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+pub use encoded_vectors_polar::{EncodedQueryPolar, EncodedVectorsPolar};
 pub use encoded_vectors_pq::{EncodedQueryPQ, EncodedVectorsPQ};
 pub use encoded_vectors_u8::{EncodedQueryU8, EncodedVectorsU8};
 

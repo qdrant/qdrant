@@ -530,6 +530,9 @@ impl CollectionParams {
                     QuantizationConfigDiff::Binary(binary) => {
                         Some(QuantizationConfig::Binary(binary))
                     }
+                    QuantizationConfigDiff::Polar(polar) => {
+                        Some(QuantizationConfig::Polar(polar))
+                    }
                     QuantizationConfigDiff::Disabled(_) => None,
                 }
             }

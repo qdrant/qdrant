@@ -51,7 +51,7 @@ use crate::grpc::qdrant::{
     ListCollectionsResponse, ListShardKeysResponse, Match, MinShould, NamedVectors,
     NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams,
     PayloadSchemaInfo, PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
-    PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
+    PolarQuantization, PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
     QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
     ScalarQuantization, ScoredPoint, SearchParams, ShardKey, ShardKeyDescription, StopwordsSet,
     StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
@@ -1342,6 +1342,30 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
     }
 }
 
+impl From<segment::types::PolarQuantization> for PolarQuantization {
+    fn from(value: segment::types::PolarQuantization) -> Self {
+        let segment::types::PolarQuantization { polar } = value;
+        PolarQuantization {
+            levels: polar.levels.map(|l| l as u32),
+            always_ram: polar.always_ram,
+        }
+    }
+}
+
+impl TryFrom<PolarQuantization> for segment::types::PolarQuantization {
+    type Error = Status;
+
+    fn try_from(value: PolarQuantization) -> Result<Self, Self::Error> {
+        let PolarQuantization { levels, always_ram } = value;
+        Ok(segment::types::PolarQuantization {
+            polar: segment::types::PolarQuantizationConfig {
+                levels: levels.map(|l| l as u8),
+                always_ram,
+            },
+        })
+    }
+}
+
 impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
@@ -1358,6 +1382,11 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
             segment::types::QuantizationConfig::Binary(binary) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Binary(
                     binary.into(),
+                )),
+            },
+            segment::types::QuantizationConfig::Polar(polar) => Self {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Polar(
+                    polar.into(),
                 )),
             },
         }
@@ -1380,6 +1409,9 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             ),
             super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
                 segment::types::QuantizationConfig::Binary(config.try_into()?),
+            ),
+            super::qdrant::quantization_config::Quantization::Polar(config) => Ok(
+                segment::types::QuantizationConfig::Polar(config.try_into()?),
             ),
         }
     }
