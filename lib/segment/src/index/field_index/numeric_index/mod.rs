@@ -245,13 +245,11 @@ where
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(index) => index.remove_point(idx),
+            NumericIndexInner::Mutable(index) => index.remove_point(idx)?,
             NumericIndexInner::Immutable(index) => index.remove_point(idx),
-            NumericIndexInner::Mmap(index) => {
-                index.remove_point(idx);
-                Ok(())
-            }
+            NumericIndexInner::Mmap(index) => index.remove_point(idx),
         }
+        Ok(())
     }
 
     pub fn check_values_any(

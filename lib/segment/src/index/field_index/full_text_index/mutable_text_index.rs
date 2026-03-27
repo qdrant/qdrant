@@ -215,7 +215,6 @@ impl MutableFullTextIndex {
         Ok(())
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
         match &mut self.storage {

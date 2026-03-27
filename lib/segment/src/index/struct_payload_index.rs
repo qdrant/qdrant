@@ -156,9 +156,8 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    #[allow(clippy::needless_pass_by_ref_mut)] // FIXME(rocksdb): leftover after removing rocksdb
     fn load_from_db(
-        &mut self,
+        &self,
         field: PayloadKeyTypeRef,
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
