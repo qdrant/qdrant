@@ -238,7 +238,7 @@ impl AtomicBitSlice<'_> {
         }
     }
 
-    /// Iterate over all bits starting from `start` (inclusive) using the given `Aquire` ordering.
+    /// Iterate over all bits starting from `start` (inclusive) using the given `Acquire` ordering.
     pub fn iter_from(&self, start: usize) -> AtomicBitSliceIter<'_> {
         self.iter_with_ordering_from(start, Ordering::Acquire)
     }
@@ -979,7 +979,7 @@ mod tests {
         }
     }
 
-    // Bit ordering compatiblity with BitVec
+    // Bit ordering compatibility with BitVec
     #[test]
     fn test_bitvec_bit_ordering() {
         let mut bv = BitVec::repeat(false, 64);
