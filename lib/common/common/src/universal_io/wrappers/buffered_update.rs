@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 
 use crate::is_alive_lock::IsAliveLock;
@@ -54,9 +53,10 @@ where
     }
 }
 
-impl<S: UniversalWrite<T> + Send + Sync + 'static, T: Copy> SliceBufferedUpdateWrapper<S, T>
+impl<S, T> SliceBufferedUpdateWrapper<S, T>
 where
-    T: 'static + Sync + Send + Clone + PartialEq,
+    S: UniversalWrite<T> + Send + Sync + 'static,
+    T: Sync + Send + Copy + Clone + PartialEq + 'static,
 {
     pub fn flusher(&self) -> Flusher {
         let updates = {
@@ -82,38 +82,24 @@ where
 
             let mut slice_guard = slice.write();
 
-            // Coalesce consecutive indices into the same run
-            let mut prev_element: Option<u32> = None;
-            let mut run_start = 0u32;
-            let runs =
-                updates
-                    .iter()
-                    .sorted_by_key(|(index, _)| *index)
-                    .chunk_by(move |(index, _)| {
-                        let index = **index;
-                        if prev_element.is_none_or(|prev| index != prev + 1) {
-                            run_start = index;
-                        }
-                        prev_element = Some(index);
-                        run_start
-                    });
+            // Coalesce contiguous updates into the same write
+            let mut items: Vec<(PointOffsetType, T)> =
+                updates.iter().map(|(k, v)| (*k, *v)).collect();
+            items.sort_by_key(|(index, _)| *index);
 
-            // Write runs in batch
-            let offset_data = runs
-                .into_iter()
-                .map(|(run_start, run_iter)| {
-                    let byte_start = u64::from(run_start) * std::mem::size_of::<T>() as u64;
-                    let values = run_iter.map(|(_, &value)| value).collect_vec();
+            let all_values: Vec<T> = items.iter().map(|(_, value)| *value).collect();
 
-                    (byte_start, values)
-                })
-                .collect_vec();
-            // Unfortunately, we need to collect again so that the values are taken as a slice for write_batch
-            let offset_data_refs: Vec<(u64, &[T])> = offset_data
-                .iter()
-                .map(|(offset, values)| (*offset, values.as_slice()))
-                .collect();
-            slice_guard.write_batch(offset_data_refs)?;
+            // Batch writes
+            let mut remaining_values: &[T] = &all_values[..];
+            let it = items.chunk_by(|(a, _), (b, _)| *a + 1 == *b).map(|chunk| {
+                let elem_start: PointOffsetType = chunk[0].0;
+                let byte_start = u64::from(elem_start) * size_of::<T>() as u64;
+                let chunk_values = remaining_values
+                    .split_off(..chunk.len())
+                    .expect("`chunk.len()` is sourced from the same slice as `remaining_values`");
+                (byte_start, chunk_values)
+            });
+            slice_guard.write_batch(it)?;
 
             slice_guard.flusher()()?;
 
