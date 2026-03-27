@@ -202,7 +202,7 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::KeywordMmapIndex,
                     FieldIndexBuilder::KeywordGridstoreIndex,
-                )?]
+                )]
             }
             PayloadSchemaParams::Integer(integer_params) => {
                 let use_lookup = integer_params.lookup.unwrap_or(true);
@@ -213,7 +213,7 @@ impl IndexSelector<'_> {
                         field,
                         FieldIndexBuilder::IntMapMmapIndex,
                         FieldIndexBuilder::IntMapGridstoreIndex,
-                    )?)
+                    ))
                 } else {
                     None
                 };
@@ -223,7 +223,7 @@ impl IndexSelector<'_> {
                         field,
                         FieldIndexBuilder::IntMmapIndex,
                         FieldIndexBuilder::IntGridstoreIndex,
-                    )?)
+                    ))
                 } else {
                     None
                 };
@@ -235,17 +235,17 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::FloatMmapIndex,
                     FieldIndexBuilder::FloatGridstoreIndex,
-                )?]
+                )]
             }
             PayloadSchemaParams::Geo(_) => {
                 vec![self.geo_builder(
                     field,
                     FieldIndexBuilder::GeoMmapIndex,
                     FieldIndexBuilder::GeoGridstoreIndex,
-                )?]
+                )]
             }
             PayloadSchemaParams::Text(text_index_params) => {
-                vec![self.text_builder(field, text_index_params.clone())?]
+                vec![self.text_builder(field, text_index_params.clone())]
             }
             PayloadSchemaParams::Bool(_) => {
                 vec![self.bool_builder(field)?]
@@ -255,14 +255,14 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::DatetimeMmapIndex,
                     FieldIndexBuilder::DatetimeGridstoreIndex,
-                )?]
+                )]
             }
             PayloadSchemaParams::Uuid(_) => {
                 vec![self.map_builder(
                     field,
                     FieldIndexBuilder::UuidMmapIndex,
                     FieldIndexBuilder::UuidGridstoreIndex,
-                )?]
+                )]
             }
         };
 
@@ -287,24 +287,23 @@ impl IndexSelector<'_> {
         })
     }
 
-    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
     fn map_builder<N: MapIndexKey + ?Sized>(
         &self,
         field: &JsonPath,
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
         make_gridstore: fn(MapIndexGridstoreBuilder<N>) -> FieldIndexBuilder,
-    ) -> OperationResult<FieldIndexBuilder>
+    ) -> FieldIndexBuilder
     where
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
-        Ok(match self {
+        match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(MapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 make_gridstore(MapIndex::builder_gridstore(map_dir(dir, field)))
             }
-        })
+        }
     }
 
     fn numeric_new<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
@@ -325,24 +324,23 @@ impl IndexSelector<'_> {
         })
     }
 
-    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
     fn numeric_builder<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
         make_mmap: fn(NumericIndexMmapBuilder<T, P>) -> FieldIndexBuilder,
         make_gridstore: fn(NumericIndexGridstoreBuilder<T, P>) -> FieldIndexBuilder,
-    ) -> OperationResult<FieldIndexBuilder>
+    ) -> FieldIndexBuilder
     where
         NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
         Vec<T>: Blob,
     {
         match self {
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => Ok(make_mmap(
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => make_mmap(
                 NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk),
-            )),
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => Ok(make_gridstore(
-                NumericIndex::builder_gridstore(numeric_dir(dir, field)),
-            )),
+            ),
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
+                make_gridstore(NumericIndex::builder_gridstore(numeric_dir(dir, field)))
+            }
         }
     }
 
@@ -361,21 +359,20 @@ impl IndexSelector<'_> {
         })
     }
 
-    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
     fn geo_builder(
         &self,
         field: &JsonPath,
         make_mmap: fn(GeoMapIndexMmapBuilder) -> FieldIndexBuilder,
         make_gridstore: fn(GeoMapIndexGridstoreBuilder) -> FieldIndexBuilder,
-    ) -> OperationResult<FieldIndexBuilder> {
-        Ok(match self {
+    ) -> FieldIndexBuilder {
+        match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(GeoMapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 make_gridstore(GeoMapIndex::builder_gridstore(map_dir(dir, field)))
             }
-        })
+        }
     }
 
     pub fn null_builder(dir: &Path, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
@@ -414,13 +411,8 @@ impl IndexSelector<'_> {
         })
     }
 
-    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
-    fn text_builder(
-        &self,
-        field: &JsonPath,
-        config: TextIndexParams,
-    ) -> OperationResult<FieldIndexBuilder> {
-        Ok(match self {
+    fn text_builder(&self, field: &JsonPath, config: TextIndexParams) -> FieldIndexBuilder {
+        match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
                     text_dir(dir, field),
@@ -434,7 +426,7 @@ impl IndexSelector<'_> {
                     config,
                 ))
             }
-        })
+        }
     }
 
     fn bool_builder(&self, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {

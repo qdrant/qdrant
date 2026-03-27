@@ -265,8 +265,7 @@ where
             .map(|Point { val, idx, .. }| (val, idx))
     }
 
-    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
-    pub(super) fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+    pub(super) fn remove_point(&mut self, idx: PointOffsetType) {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
             let mut removed_count = 0;
             for value in removed_values {
@@ -287,7 +286,6 @@ where
             }
         }
         self.point_to_values.remove_point(idx);
-        Ok(())
     }
 
     pub(super) fn get_histogram(&self) -> &Histogram<T> {

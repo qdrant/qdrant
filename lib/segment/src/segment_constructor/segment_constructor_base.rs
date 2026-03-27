@@ -715,12 +715,10 @@ pub fn load_segment(
     }
 
     let started = Instant::now();
-    #[expect(unused_mut)] // FIXME(rocksdb): leftover after removing rocksdb
-    let mut segment_state = Segment::load_state(path)?;
+    let segment_state = Segment::load_state(path)?;
     log_load_timing(path, "load_state", started);
 
-    #[expect(unused_mut)] // FIXME(rocksdb): leftover after removing rocksdb
-    let mut segment = create_segment(
+    let segment = create_segment(
         segment_state.initial_version,
         segment_state.version,
         path,

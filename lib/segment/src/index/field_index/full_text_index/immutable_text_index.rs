@@ -42,16 +42,12 @@ impl ImmutableFullTextIndex {
         }
     }
 
-    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
-    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(&mut self, id: PointOffsetType) {
         if self.inverted_index.remove(id) {
             match self.storage {
-                Storage::Mmap(ref mut index) => {
-                    index.remove_point(id);
-                }
+                Storage::Mmap(ref mut index) => index.remove_point(id),
             }
         }
-        Ok(())
     }
 
     pub fn wipe(self) -> OperationResult<()> {
