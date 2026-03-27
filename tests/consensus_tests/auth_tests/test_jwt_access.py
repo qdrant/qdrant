@@ -1985,7 +1985,7 @@ def test_storage_read_read_bytes():
         grpc_request={
             "collection_name": COLL_NAME,
             "path": STORAGE_READ_TEST_PATH,
-            "offset": 0,
+            "byteOffset": 0,
             "length": 1,
         },
     )
@@ -1997,7 +1997,7 @@ def test_storage_read_read_bytes_stream():
         grpc_request={
             "collection_name": COLL_NAME,
             "path": STORAGE_READ_TEST_PATH,
-            "offset": 0,
+            "byteOffset": 0,
             "length": 1,
         },
     )
@@ -2016,7 +2016,7 @@ def test_storage_read_read_batch():
         grpc_request={
             "collection_name": COLL_NAME,
             "path": STORAGE_READ_TEST_PATH,
-            "ranges": [{"offset": 0, "length": 1}],
+            "ranges": [{"byteOffset": 0, "length": 1}],
         },
     )
 
@@ -2026,6 +2026,6 @@ def test_storage_read_read_multi():
         "storage_read_read_multi",
         grpc_request={
             "collection_name": COLL_NAME,
-            "reads": [{"path": STORAGE_READ_TEST_PATH, "offset": 0, "length": 1}],
+            "reads": [{"path": STORAGE_READ_TEST_PATH, "byteOffset": 0, "length": 1}],
         },
     )
