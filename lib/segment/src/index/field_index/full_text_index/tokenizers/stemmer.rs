@@ -6,10 +6,7 @@ use rust_stemmers::Algorithm;
 
 use crate::data_types::index::{SnowballLanguage, SnowballParams, StemmingAlgorithm};
 
-/// Abstraction to handle different stemming libraries and algorithms with a clean API.
-#[derive(Clone)]
 pub enum Stemmer {
-    // TODO(rocksdb): Remove `Clone` and this Arc once rocksdb has been removed!
     Snowball(Arc<rust_stemmers::Stemmer>),
 }
 
