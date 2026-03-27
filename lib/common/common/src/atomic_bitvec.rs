@@ -981,6 +981,7 @@ mod tests {
 
     // Bit ordering compatibility with BitVec
     #[test]
+    #[allow(clippy::bool_assert_comparison)] // bools are values here
     fn test_bitvec_bit_ordering() {
         let mut bv = BitVec::repeat(false, 64);
         bv.replace(0, true);
