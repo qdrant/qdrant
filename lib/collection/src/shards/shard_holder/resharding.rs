@@ -93,9 +93,16 @@ impl ShardHolder {
         match resharding_key.direction {
             ReshardingDirection::Up => {
                 if has_shard {
-                    return Err(CollectionError::bad_request(format!(
-                        "shard holder already contains shard {shard_id} replica set",
-                    )));
+                    // Allow re-application: the shard may exist as a leftover from a
+                    // previous incomplete start attempt (e.g. crash after key_mapping
+                    // was persisted but before resharding_state was written).
+                    // create_shard_dir will clean up the stale directory and add_shard
+                    // will evict the old entry.
+                    log::warn!(
+                        "Shard {shard_id} already exists during resharding start, \
+                         likely a leftover from a previous incomplete attempt, \
+                         it will be recreated"
+                    );
                 }
             }
             ReshardingDirection::Down => {
@@ -165,6 +172,30 @@ impl ShardHolder {
     }
 
     pub fn commit_read_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        // Idempotent: if no resharding is active, or the stage is already at/past
+        // ReadHashRingCommitted, this entry was already applied. Return Ok to
+        // prevent silent state divergence via apply_entries error swallowing.
+        match self.resharding_state.read().deref() {
+            None => {
+                log::warn!(
+                    "commit_read_hashring: no resharding in progress for {resharding_key}, \
+                     treating as already committed (idempotent)"
+                );
+                return Ok(());
+            }
+            Some(state)
+                if state.matches(resharding_key)
+                    && state.stage >= ReshardingStage::ReadHashRingCommitted =>
+            {
+                log::warn!(
+                    "commit_read_hashring: read hashring already committed for \
+                     {resharding_key}, skipping (idempotent)"
+                );
+                return Ok(());
+            }
+            _ => {}
+        }
+
         self.check_resharding(
             resharding_key,
             check_stage(ReshardingStage::MigratingPoints),
@@ -182,6 +213,29 @@ impl ShardHolder {
     }
 
     pub fn commit_write_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        // Idempotent: if no resharding is active, or the stage is already at/past
+        // WriteHashRingCommitted, this entry was already applied.
+        match self.resharding_state.read().deref() {
+            None => {
+                log::warn!(
+                    "commit_write_hashring: no resharding in progress for {resharding_key}, \
+                     treating as already committed (idempotent)"
+                );
+                return Ok(());
+            }
+            Some(state)
+                if state.matches(resharding_key)
+                    && state.stage >= ReshardingStage::WriteHashRingCommitted =>
+            {
+                log::warn!(
+                    "commit_write_hashring: write hashring already committed for \
+                     {resharding_key}, skipping (idempotent)"
+                );
+                return Ok(());
+            }
+            _ => {}
+        }
+
         self.check_resharding(
             resharding_key,
             check_stage(ReshardingStage::ReadHashRingCommitted),
@@ -202,6 +256,15 @@ impl ShardHolder {
     }
 
     pub fn check_finish_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        // Idempotent: if no resharding is active, finish was already applied.
+        if self.resharding_state.read().is_none() {
+            log::warn!(
+                "check_finish_resharding: no resharding in progress for {resharding_key}, \
+                 treating as already finished (idempotent)"
+            );
+            return Ok(());
+        }
+
         self.check_resharding(
             resharding_key,
             check_stage(ReshardingStage::WriteHashRingCommitted),
@@ -266,28 +329,33 @@ impl ShardHolder {
     pub fn check_abort_resharding(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let state = self.resharding_state.read();
 
-        // - do not abort if no resharding operation is ongoing
         let Some(state) = state.deref() else {
-            return Err(CollectionError::bad_request(format!(
-                "can't abort resharding {resharding_key}, no resharding operation in progress",
-            )));
+            // Idempotent: no resharding in progress means the abort (or finish)
+            // was already applied, or the start was never applied on this node.
+            // Returning an error here would be silently swallowed by apply_entries,
+            // causing permanent state divergence between peers.
+            log::warn!(
+                "check_abort_resharding: no resharding in progress for {resharding_key}, \
+                 treating as already aborted (idempotent)"
+            );
+            return Ok(());
         };
 
-        // - do not abort if there is no active resharding operation with that key
         if !state.matches(resharding_key) {
-            return Err(CollectionError::bad_request(format!(
-                "can't abort resharding {resharding_key}, \
-                 resharding operation in progress has key {}",
+            // Idempotent: a different resharding is active, so the one we're
+            // trying to abort was already handled. Same reasoning as above.
+            log::warn!(
+                "check_abort_resharding: resharding {resharding_key} not found, \
+                 current resharding has key {}, treating as already aborted (idempotent)",
                 state.key(),
-            )));
+            );
+            return Ok(());
         }
 
-        // - it's safe to run, if read hash ring was not committed yet
         if state.stage < ReshardingStage::ReadHashRingCommitted {
             return Ok(());
         }
 
-        // - but resharding can't be aborted, after read hash ring has been committed
         Err(CollectionError::bad_request(format!(
             "can't abort resharding {resharding_key}, \
              because read hash ring has been committed already, \

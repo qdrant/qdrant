@@ -8,7 +8,7 @@ use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
-use crate::shards::resharding::{ReshardKey, ReshardState};
+use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use crate::shards::transfer::ShardTransferConsensus;
 
 impl Collection {
@@ -39,6 +39,20 @@ impl Collection {
     {
         {
             let mut shard_holder = self.shards_holder.write().await;
+
+            // Idempotent: if the same resharding is already in progress, this is a
+            // re-application of an already-applied consensus entry (e.g. after crash
+            // recovery). Skip without error so we don't silently diverge from peers
+            // that applied it successfully on the first attempt.
+            if let Some(state) = shard_holder.resharding_state() {
+                if state.matches(&resharding_key) {
+                    log::warn!(
+                        "Resharding {resharding_key} is already in progress, \
+                         skipping start (idempotent re-apply)"
+                    );
+                    return Ok(());
+                }
+            }
 
             shard_holder.check_start_resharding(&resharding_key)?;
 
@@ -96,6 +110,29 @@ impl Collection {
     pub async fn commit_read_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let mut shards_holder = self.shards_holder.write().await;
 
+        // Idempotent: skip if no resharding or already past this stage
+        match shards_holder.resharding_state() {
+            None => {
+                log::warn!(
+                    "commit_read_hashring: no resharding in progress, \
+                     skipping (idempotent)"
+                );
+                return Ok(());
+            }
+            Some(state)
+                if state.matches(resharding_key)
+                    && state.stage >= ReshardingStage::ReadHashRingCommitted =>
+            {
+                log::warn!(
+                    "commit_read_hashring: already at stage {:?}, \
+                     skipping (idempotent)",
+                    state.stage,
+                );
+                return Ok(());
+            }
+            _ => {}
+        }
+
         shards_holder.commit_read_hashring(resharding_key)?;
 
         // Invalidate clean state for shards we copied points out of
@@ -127,6 +164,32 @@ impl Collection {
     }
 
     pub async fn commit_write_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        let shards_holder = self.shards_holder.read().await;
+
+        // Idempotent: skip if no resharding or already past this stage
+        match shards_holder.resharding_state() {
+            None => {
+                log::warn!(
+                    "commit_write_hashring: no resharding in progress, \
+                     skipping (idempotent)"
+                );
+                return Ok(());
+            }
+            Some(state)
+                if state.matches(resharding_key)
+                    && state.stage >= ReshardingStage::WriteHashRingCommitted =>
+            {
+                log::warn!(
+                    "commit_write_hashring: already at stage {:?}, \
+                     skipping (idempotent)",
+                    state.stage,
+                );
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        drop(shards_holder);
         self.shards_holder
             .write()
             .await
@@ -135,6 +198,15 @@ impl Collection {
 
     pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
         let mut shard_holder = self.shards_holder.write().await;
+
+        // Idempotent: if no resharding is in progress, finish was already applied
+        if shard_holder.resharding_state().is_none() {
+            log::warn!(
+                "finish_resharding: no resharding in progress, \
+                 skipping (idempotent)"
+            );
+            return Ok(());
+        }
 
         shard_holder.check_finish_resharding(&resharding_key)?;
         shard_holder.finish_resharding_unchecked(&resharding_key)?;
@@ -188,6 +260,15 @@ impl Collection {
         );
 
         let shard_holder = self.shards_holder.read().await;
+
+        // Idempotent: if no resharding is in progress, abort was already applied
+        if shard_holder.resharding_state().is_none() {
+            log::warn!(
+                "abort_resharding: no resharding in progress, \
+                 skipping (idempotent)"
+            );
+            return Ok(());
+        }
 
         if !force {
             shard_holder.check_abort_resharding(&resharding_key)?;
