@@ -280,8 +280,9 @@ pub(crate) fn create_mutable_id_tracker(
 #[cfg(feature = "rocksdb")]
 pub(crate) fn create_rocksdb_id_tracker(
     database: Arc<RwLock<DB>>,
+    deferred_internal_id: Option<PointOffsetType>,
 ) -> OperationResult<SimpleIdTracker> {
-    SimpleIdTracker::open(database)
+    SimpleIdTracker::open(database, deferred_internal_id)
 }
 
 pub(crate) fn create_immutable_id_tracker(
@@ -737,7 +738,8 @@ fn create_segment_id_tracker(
         };
 
         if use_rocksdb_mutable_tracker {
-            let id_tracker = create_rocksdb_id_tracker(db_builder.require()?)?;
+            let id_tracker =
+                create_rocksdb_id_tracker(db_builder.require()?, deferred_internal_id)?;
 
             // Actively migrate RocksDB based ID tracker into mutable ID tracker
             if common::flags::feature_flags().migrate_rocksdb_id_tracker {
@@ -1053,7 +1055,8 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         segment_path: &Path,
     ) -> OperationResult<MutableIdTracker> {
         // Construct mutable ID tracker
-        let mut new_id_tracker = create_mutable_id_tracker(segment_path, None)?;
+        let mut new_id_tracker =
+            create_mutable_id_tracker(segment_path, old_id_tracker.deferred_internal_id())?;
         debug_assert_eq!(
             new_id_tracker.total_point_count(),
             0,

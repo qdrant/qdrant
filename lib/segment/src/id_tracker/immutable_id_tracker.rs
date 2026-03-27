@@ -914,7 +914,7 @@ pub(super) mod test {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
         let mut id_tracker = InMemoryIdTracker::new();
-        let mut simple_id_tracker = SimpleIdTracker::open(db).unwrap();
+        let mut simple_id_tracker = SimpleIdTracker::open(db, None).unwrap();
 
         // Insert 100 random points into id_tracker
 
