@@ -8,7 +8,7 @@ use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap::{self, AdviceSetting, MmapBitSlice, create_and_ensure_length};
+use common::mmap::create_and_ensure_length;
 use common::persisted_hashmap::keys::Key;
 use common::persisted_hashmap::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;

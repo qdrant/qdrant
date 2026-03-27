@@ -6,8 +6,9 @@ use std::path::Path;
 use ph::fmph::Function;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+use crate::generic_consts::{Random, Sequential};
 use crate::persisted_hashmap::keys::Key;
-use crate::universal_io::{ElementsRange, OpenOptions, UniversalRead};
+use crate::universal_io::{OpenOptions, ReadRange, UniversalRead};
 
 type ValuesLen = u32;
 type BucketOffset = u64;
@@ -75,8 +76,8 @@ impl<
 
         // 1. Read header.
         let header_bytes = reader
-            .read::<true>(ElementsRange {
-                start: 0,
+            .read::<Sequential>(ReadRange {
+                byte_offset: 0,
                 length: size_of::<Header>() as u64,
             })
             .map_err(io_err)?;
@@ -101,8 +102,8 @@ impl<
                 io::Error::new(io::ErrorKind::InvalidData, "buckets_pos before header end")
             })?;
         let phf_bytes = reader
-            .read::<true>(ElementsRange {
-                start: phf_region_start,
+            .read::<Sequential>(ReadRange {
+                byte_offset: phf_region_start,
                 length: phf_region_len,
             })
             .map_err(io_err)?;
@@ -150,8 +151,8 @@ impl<
 
         let entry_header = self
             .reader
-            .read::<false>(ElementsRange {
-                start: entry_start,
+            .read::<Random>(ReadRange {
+                byte_offset: entry_start,
                 length: header_size as u64,
             })
             .map_err(io_err)?;
@@ -169,8 +170,8 @@ impl<
         let values_start = entry_start + header_size as u64;
         let values_bytes = self
             .reader
-            .read::<false>(ElementsRange {
-                start: values_start,
+            .read::<Random>(ReadRange {
+                byte_offset: values_start,
                 length: u64::from(values_len) * Self::VALUE_SIZE as u64,
             })
             .map_err(io_err)?;
@@ -198,8 +199,8 @@ impl<
 
         let entry_header = self
             .reader
-            .read::<false>(ElementsRange {
-                start: entry_start,
+            .read::<Random>(ReadRange {
+                byte_offset: entry_start,
                 length: header_size as u64,
             })
             .map_err(io_err)?;
@@ -227,8 +228,8 @@ impl<
         // Read all bucket offsets at once.
         let buckets_bytes = self
             .reader
-            .read::<true>(ElementsRange {
-                start: self.header.buckets_pos,
+            .read::<Sequential>(ReadRange {
+                byte_offset: self.header.buckets_pos,
                 length: (bucket_count * size_of::<BucketOffset>()) as u64,
             })
             .map_err(io_err)?;
@@ -241,8 +242,8 @@ impl<
         }
         let entries_data = self
             .reader
-            .read::<true>(ElementsRange {
-                start: self.entries_start,
+            .read::<Sequential>(ReadRange {
+                byte_offset: self.entries_start,
                 length: entries_len,
             })
             .map_err(io_err)?;
@@ -300,8 +301,8 @@ impl<
         // 1. Read all bucket offsets at once.
         let buckets_bytes = self
             .reader
-            .read::<true>(ElementsRange {
-                start: self.header.buckets_pos,
+            .read::<Sequential>(ReadRange {
+                byte_offset: self.header.buckets_pos,
                 length: (bucket_count * size_of::<BucketOffset>()) as u64,
             })
             .map_err(io_err)?;
@@ -332,8 +333,8 @@ impl<
                 .copied()
                 .unwrap_or(entries_region_len);
             let available = next_entry - offset;
-            ElementsRange {
-                start: self.entries_start + offset,
+            ReadRange {
+                byte_offset: self.entries_start + offset,
                 length: available.min(KEY_READ_CAP),
             }
         });
@@ -342,7 +343,7 @@ impl<
         let mut retry_indices: Vec<usize> = Vec::new();
 
         self.reader
-            .read_batch::<true>(ranges, |idx, data| {
+            .read_batch::<Sequential>(ranges, |idx, data| {
                 match K::from_bytes(data) {
                     Some(key) => f(key),
                     None => retry_indices.push(idx),
@@ -359,14 +360,14 @@ impl<
                     .get(idx + 1)
                     .copied()
                     .unwrap_or(entries_region_len);
-                ElementsRange {
-                    start: self.entries_start + offset,
+                ReadRange {
+                    byte_offset: self.entries_start + offset,
                     length: next_entry - offset,
                 }
             });
 
             self.reader
-                .read_batch::<false>(retry_ranges, |_idx, data| {
+                .read_batch::<Random>(retry_ranges, |_idx, data| {
                     if let Some(key) = K::from_bytes(data) {
                         f(key);
                     } else {
@@ -400,8 +401,8 @@ impl<
             self.header.buckets_pos + (index as u64) * size_of::<BucketOffset>() as u64;
         let bytes = self
             .reader
-            .read::<false>(ElementsRange {
-                start: byte_offset,
+            .read::<Random>(ReadRange {
+                byte_offset,
                 length: size_of::<BucketOffset>() as u64,
             })
             .map_err(io_err)?;

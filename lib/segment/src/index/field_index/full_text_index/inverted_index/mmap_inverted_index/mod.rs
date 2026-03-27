@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
-use common::mmap::{self, AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length};
+use common::mmap::{self, AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::persisted_hashmap::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;
