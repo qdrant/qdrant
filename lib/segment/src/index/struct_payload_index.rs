@@ -50,8 +50,6 @@ enum StorageType {
     GridstoreNonAppendable,
 }
 
-impl StorageType {}
-
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 #[derive(Debug)]
 pub struct StructPayloadIndex {
@@ -232,8 +230,7 @@ impl StructPayloadIndex {
                 .collect::<OperationResult<Vec<_>>>()?
         };
 
-        // Actively migrate away from RocksDB indices
-        // Naively implemented by just rebuilding the indices from scratch
+        // TODO(rocksdb): review leftover code in this function
 
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
@@ -265,16 +262,14 @@ impl StructPayloadIndex {
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
         } else {
-            { PayloadConfig::default() }
+            PayloadConfig::default()
         };
 
         let storage_type = if is_appendable {
-            { StorageType::GridstoreAppendable }
+            StorageType::GridstoreAppendable
         } else {
-            { StorageType::GridstoreNonAppendable }
+            StorageType::GridstoreNonAppendable
         };
-
-        // Also prematurely open RocksDB if any index is still using it
 
         let mut index = StructPayloadIndex {
             payload,
@@ -293,8 +288,6 @@ impl StructPayloadIndex {
         }
 
         index.load_all_fields(create)?;
-
-        // If we have a RocksDB instance, but no index using it, completely delete it here
 
         Ok(index)
     }

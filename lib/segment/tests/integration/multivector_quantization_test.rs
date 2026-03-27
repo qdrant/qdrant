@@ -202,7 +202,7 @@ fn test_multivector_quantization_hnsw(
     let storage_type = if on_disk {
         VectorStorageType::ChunkedMmap
     } else {
-        { VectorStorageType::InRamChunkedMmap }
+        VectorStorageType::InRamChunkedMmap
     };
     let config = SegmentConfig {
         vector_data: HashMap::from([(

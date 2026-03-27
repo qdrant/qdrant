@@ -86,7 +86,6 @@ impl BoolIndex {
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            // Not a mmap
             BoolIndex::Mmap(index) => index.populate()?,
         }
         Ok(())
@@ -95,7 +94,6 @@ impl BoolIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            // Not a mmap
             BoolIndex::Mmap(index) => index.clear_cache()?,
         }
         Ok(())

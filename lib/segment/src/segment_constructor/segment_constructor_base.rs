@@ -165,8 +165,6 @@ pub(crate) fn open_vector_storage(
             "Failed to load 'Memory' storage type, RocksDB disabled in this Qdrant version",
         )),
 
-        // In memory - RocksDB enabled
-
         // Mmap on disk, not appendable
         VectorStorageType::Mmap => open_mmap_vector_storage(
             vector_storage_path,
@@ -603,9 +601,6 @@ fn create_segment_id_tracker(
             create_immutable_id_tracker(segment_path)?,
         )));
     }
-
-    // Determine whether we use the new (file based) or old (RocksDB) mutable ID tracker
-    // Decide based on the feature flag and state on disk
 
     Ok(sp(IdTrackerEnum::MutableIdTracker(
         create_mutable_id_tracker(segment_path)?,
