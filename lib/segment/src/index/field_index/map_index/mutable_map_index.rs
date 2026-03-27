@@ -2,29 +2,17 @@ use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 use std::iter;
 use std::path::PathBuf;
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
 use roaring::RoaringBitmap;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 
-#[cfg(feature = "rocksdb")]
-use super::MapIndex;
 use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::payload_config::StorageType;
 
 /// Default options for Gridstore storage
@@ -54,8 +42,6 @@ enum Storage<T>
 where
     Vec<T>: Blob + Send + Sync,
 {
-    #[cfg(feature = "rocksdb")]
-    RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Gridstore(Gridstore<Vec<T>>),
 }
 
@@ -63,69 +49,6 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    /// Open mutable map index from RocksDB storage
-    #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb(
-        db: Arc<RwLock<DB>>,
-        field_name: &str,
-        create_if_missing: bool,
-    ) -> OperationResult<Option<Self>> {
-        let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
-        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
-            db,
-            &store_cf_name,
-        ));
-        Self::open_rocksdb_db_wrapper(db_wrapper, create_if_missing)
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb_db_wrapper(
-        db_wrapper: DatabaseColumnScheduledDeleteWrapper,
-        create_if_missing: bool,
-    ) -> OperationResult<Option<Self>> {
-        if !db_wrapper.has_column_family()? {
-            if create_if_missing {
-                db_wrapper.recreate_column_family()?;
-            } else {
-                // Column family doesn't exist, cannot load
-                return Ok(None);
-            }
-        };
-
-        // Load in-memory index from RocksDB
-        let mut map = HashMap::<_, RoaringBitmap>::new();
-        let mut point_to_values = Vec::new();
-        let mut indexed_points = 0;
-        let mut values_count = 0;
-        for (record, _) in db_wrapper.lock_db().iter()? {
-            let record = std::str::from_utf8(&record).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
-            let (value, idx) = MapIndex::<N>::decode_db_record(record)?;
-
-            if point_to_values.len() <= idx as usize {
-                point_to_values.resize_with(idx as usize + 1, Vec::new)
-            }
-            let point_values = &mut point_to_values[idx as usize];
-
-            if point_values.is_empty() {
-                indexed_points += 1;
-            }
-            values_count += 1;
-
-            point_values.push(value.clone());
-            map.entry(value).or_default().insert(idx);
-        }
-
-        Ok(Some(Self {
-            map,
-            point_to_values,
-            indexed_points,
-            values_count,
-            storage: Storage::RocksDb(db_wrapper),
-        }))
-    }
-
     /// Open and load mutable map index from Gridstore storage
     ///
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
@@ -213,21 +136,6 @@ where
         self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
 
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => {
-                let mut hw_cell_wb = hw_counter
-                    .payload_index_io_write_counter()
-                    .write_back_counter();
-
-                for value in values {
-                    let entry = self.map.entry(value.into());
-                    self.point_to_values[idx as usize].push(entry.key().clone());
-                    let db_record = MapIndex::encode_db_record(entry.key().borrow(), idx);
-                    entry.or_default().insert(idx);
-                    hw_cell_wb.incr_delta(db_record.len());
-                    db_wrapper.put(db_record, [])?;
-                }
-            }
             Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
@@ -271,13 +179,6 @@ where
         }
 
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => {
-                for value in &removed_values {
-                    let key = MapIndex::encode_db_record(value.borrow(), idx);
-                    db_wrapper.remove(key)?;
-                }
-            }
             Storage::Gridstore(store) => {
                 store.delete_value(idx)?;
             }
@@ -289,8 +190,6 @@ where
     #[inline]
     pub(super) fn clear(&mut self) -> OperationResult<()> {
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Gridstore(store) => store.clear().map_err(|err| {
                 OperationError::service_error(format!("Failed to clear mutable map index: {err}",))
             }),
@@ -300,8 +199,6 @@ where
     #[inline]
     pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
             Storage::Gridstore(store) => store.wipe().map_err(|err| {
                 OperationError::service_error(format!("Failed to wipe mutable map index: {err}",))
             }),
@@ -314,8 +211,6 @@ where
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => Ok(()),
             Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable map index gridstore cache: {err}"
@@ -327,8 +222,6 @@ where
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Gridstore(store) => store.files(),
         }
     }
@@ -336,8 +229,6 @@ where
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
                 let storage_flusher = store.flusher();
                 Box::new(move || {
@@ -424,17 +315,7 @@ where
 
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Gridstore(_) => StorageType::Gridstore,
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self.storage {
-            Storage::RocksDb(_) => true,
-            Storage::Gridstore(_) => false,
         }
     }
 }

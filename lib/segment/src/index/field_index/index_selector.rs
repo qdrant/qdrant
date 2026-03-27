@@ -1,13 +1,9 @@
 use std::path::{Path, PathBuf};
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 
 use gridstore::Blob;
 
 use super::bool_index::BoolIndex;
 use super::bool_index::mutable_bool_index::MutableBoolIndex;
-#[cfg(feature = "rocksdb")]
-use super::bool_index::simple_bool_index::SimpleBoolIndex;
 use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder};
@@ -30,20 +26,10 @@ use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 /// Selects index and index builder types based on field type.
 #[derive(Copy, Clone)]
 pub enum IndexSelector<'a> {
-    /// In-memory index on RocksDB, appendable or non-appendable
-    #[cfg(feature = "rocksdb")]
-    RocksDb(IndexSelectorRocksDb<'a>),
     /// On disk or in-memory index on mmaps, non-appendable
     Mmap(IndexSelectorMmap<'a>),
     /// In-memory index on gridstore, appendable
     Gridstore(IndexSelectorGridstore<'a>),
-}
-
-#[cfg(feature = "rocksdb")]
-#[derive(Copy, Clone)]
-pub struct IndexSelectorRocksDb<'a> {
-    pub db: &'a Arc<parking_lot::RwLock<rocksdb::DB>>,
-    pub is_appendable: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -227,8 +213,6 @@ impl IndexSelector<'_> {
                 let lookup = if use_lookup {
                     Some(self.map_builder(
                         field,
-                        #[cfg(feature = "rocksdb")]
-                        FieldIndexBuilder::IntMapIndex,
                         FieldIndexBuilder::IntMapMmapIndex,
                         FieldIndexBuilder::IntMapGridstoreIndex,
                     )?)
@@ -239,8 +223,6 @@ impl IndexSelector<'_> {
                 let range = if use_range {
                     Some(self.numeric_builder(
                         field,
-                        #[cfg(feature = "rocksdb")]
-                        FieldIndexBuilder::IntIndex,
                         FieldIndexBuilder::IntMmapIndex,
                         FieldIndexBuilder::IntGridstoreIndex,
                     )?)
@@ -306,15 +288,6 @@ impl IndexSelector<'_> {
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                MapIndex::new_rocksdb(
-                    Arc::clone(db),
-                    &field.to_string(),
-                    *is_appendable,
-                    create_if_missing,
-                )?
-            }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
@@ -324,13 +297,10 @@ impl IndexSelector<'_> {
         })
     }
 
-    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
+    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
     fn map_builder<N: MapIndexKey + ?Sized>(
         &self,
         field: &JsonPath,
-        #[cfg(feature = "rocksdb")] make_rocksdb: fn(
-            super::map_index::MapIndexBuilder<N>,
-        ) -> FieldIndexBuilder,
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
         make_gridstore: fn(MapIndexGridstoreBuilder<N>) -> FieldIndexBuilder,
     ) -> OperationResult<FieldIndexBuilder>
@@ -338,10 +308,6 @@ impl IndexSelector<'_> {
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => make_rocksdb(
-                MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string())?,
-            ),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(MapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
@@ -360,15 +326,6 @@ impl IndexSelector<'_> {
         Vec<T>: Blob,
     {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                NumericIndex::new_rocksdb(
-                    Arc::clone(db),
-                    &field.to_string(),
-                    *is_appendable,
-                    create_if_missing,
-                )?
-            }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
             }
@@ -378,13 +335,10 @@ impl IndexSelector<'_> {
         })
     }
 
-    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
+    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
     fn numeric_builder<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
-        #[cfg(feature = "rocksdb")] make_rocksdb: fn(
-            super::numeric_index::NumericIndexBuilder<T, P>,
-        ) -> FieldIndexBuilder,
         make_mmap: fn(NumericIndexMmapBuilder<T, P>) -> FieldIndexBuilder,
         make_gridstore: fn(NumericIndexGridstoreBuilder<T, P>) -> FieldIndexBuilder,
     ) -> OperationResult<FieldIndexBuilder>
@@ -393,14 +347,6 @@ impl IndexSelector<'_> {
         Vec<T>: Blob,
     {
         match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb {
-                db,
-                is_appendable: _,
-            }) => Ok(make_rocksdb(NumericIndex::builder_rocksdb(
-                Arc::clone(db),
-                &field.to_string(),
-            )?)),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => Ok(make_mmap(
                 NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk),
             )),
@@ -416,15 +362,6 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
     ) -> OperationResult<Option<GeoMapIndex>> {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                GeoMapIndex::new_memory(
-                    Arc::clone(db),
-                    &field.to_string(),
-                    *is_appendable,
-                    create_if_missing,
-                )?
-            }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 GeoMapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
@@ -434,21 +371,14 @@ impl IndexSelector<'_> {
         })
     }
 
-    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
+    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
     fn geo_builder(
         &self,
         field: &JsonPath,
-        #[cfg(feature = "rocksdb")] make_rocksdb: fn(
-            super::geo_index::GeoMapIndexBuilder,
-        ) -> FieldIndexBuilder,
         make_mmap: fn(GeoMapIndexMmapBuilder) -> FieldIndexBuilder,
         make_gridstore: fn(GeoMapIndexGridstoreBuilder) -> FieldIndexBuilder,
     ) -> OperationResult<FieldIndexBuilder> {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
-                make_rocksdb(GeoMapIndex::builder(Arc::clone(db), &field.to_string())?)
-            }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(GeoMapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
@@ -485,16 +415,6 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
     ) -> OperationResult<Option<FullTextIndex>> {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                FullTextIndex::new_rocksdb(
-                    Arc::clone(db),
-                    config,
-                    &field.to_string(),
-                    *is_appendable,
-                    create_if_missing,
-                )?
-            }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
             }
@@ -504,22 +424,13 @@ impl IndexSelector<'_> {
         })
     }
 
-    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
+    #[expect(clippy::unnecessary_wraps)] // FIXME(rocksdb): leftover after removing rocksdb
     fn text_builder(
         &self,
         field: &JsonPath,
         config: TextIndexParams,
     ) -> OperationResult<FieldIndexBuilder> {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                FieldIndexBuilder::FullTextIndex(FullTextIndex::builder_rocksdb(
-                    Arc::clone(db),
-                    config,
-                    &field.to_string(),
-                    *is_appendable,
-                )?)
-            }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
                     text_dir(dir, field),
@@ -538,14 +449,6 @@ impl IndexSelector<'_> {
 
     fn bool_builder(&self, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb {
-                db,
-                is_appendable: _,
-            }) => Ok(FieldIndexBuilder::BoolIndex(SimpleBoolIndex::builder(
-                Arc::clone(db),
-                &field.to_string(),
-            )?)),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
                 let dir = bool_dir(dir, field);
                 Ok(FieldIndexBuilder::BoolMmapIndex(MutableBoolIndex::builder(
@@ -568,12 +471,6 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
     ) -> OperationResult<Option<BoolIndex>> {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb {
-                db,
-                is_appendable: _,
-            }) => SimpleBoolIndex::new(Arc::clone(db), &field.to_string(), create_if_missing)?
-                .map(BoolIndex::Simple),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
                 let dir = bool_dir(dir, field);
                 MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mmap)

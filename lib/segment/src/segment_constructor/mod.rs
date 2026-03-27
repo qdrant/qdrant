@@ -1,6 +1,4 @@
 mod batched_reader;
-#[cfg(feature = "rocksdb")]
-mod rocksdb_builder;
 pub mod segment_builder;
 mod segment_constructor_base;
 #[cfg(any(test, feature = "testing"))]

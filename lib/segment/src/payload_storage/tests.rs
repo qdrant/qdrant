@@ -5,12 +5,6 @@ use rstest::rstest;
 
 use super::PayloadStorage;
 use super::mmap_payload_storage::MmapPayloadStorage;
-#[cfg(feature = "rocksdb")]
-use super::on_disk_payload_storage::OnDiskPayloadStorage;
-#[cfg(feature = "rocksdb")]
-use super::simple_payload_storage::SimplePayloadStorage;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::open_db;
 use crate::payload_json;
 
 fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
@@ -130,27 +124,9 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     assert!(storage.get_storage_size_bytes().unwrap() > 0);
 }
 
-#[test]
-#[cfg(feature = "rocksdb")]
-fn test_in_memory_storage() {
-    test_trait_impl(|path| {
-        let db = open_db(path, &[""]).unwrap();
-        SimplePayloadStorage::open(db).unwrap()
-    });
-}
-
 #[rstest]
 fn test_mmap_storage(#[values(false, true)] populate: bool) {
     test_trait_impl(|path| {
         MmapPayloadStorage::open_or_create(path.to_path_buf(), populate).unwrap()
-    });
-}
-
-#[test]
-#[cfg(feature = "rocksdb")]
-fn test_on_disk_storage() {
-    test_trait_impl(|path| {
-        let db = open_db(path, &[""]).unwrap();
-        OnDiskPayloadStorage::open(db).unwrap()
     });
 }

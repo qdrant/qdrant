@@ -3,28 +3,16 @@ use std::collections::HashMap;
 use std::iter;
 use std::ops::Range;
 use std::path::PathBuf;
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 
 use common::bitvec::BitVec;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
 use gridstore::Blob;
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 
-#[cfg(feature = "rocksdb")]
-use super::MapIndex;
 use super::mmap_map_index::MmapMapIndex;
 use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::payload_config::StorageType;
 
@@ -43,8 +31,6 @@ pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
 }
 
 enum Storage<N: MapIndexKey + Key + ?Sized> {
-    #[cfg(feature = "rocksdb")]
-    RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Mmap(Box<MmapMapIndex<N>>),
 }
 
@@ -59,83 +45,6 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    /// Open and load immutable numeric index from RocksDB storage
-    #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> OperationResult<Option<Self>> {
-        use crate::index::field_index::map_index::mutable_map_index::MutableMapIndex;
-
-        let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
-        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
-            db,
-            &store_cf_name,
-        ));
-
-        // To avoid code duplication, use `MutableMapIndex` to load data from db
-        // and convert to immutable state
-
-        let Some(mutable) =
-            MutableMapIndex::<N>::open_rocksdb_db_wrapper(db_wrapper.clone(), false)?
-        else {
-            // Column family doesn't exist, cannot load
-            return Ok(None);
-        };
-        let MutableMapIndex::<N> {
-            map,
-            point_to_values,
-            indexed_points,
-            values_count,
-            ..
-        } = mutable;
-
-        let mut value_to_points = HashMap::new();
-        let mut value_to_points_container = Vec::with_capacity(values_count);
-
-        // flatten values-to-points map
-        for (value, points) in map {
-            let points = points.into_iter().collect::<Vec<_>>();
-            let container_len = value_to_points_container.len() as u32;
-            let range = container_len..container_len + points.len() as u32;
-            value_to_points.insert(
-                value,
-                ContainerSegment {
-                    count: range.len() as u32,
-                    range,
-                },
-            );
-            value_to_points_container.extend(points);
-        }
-
-        value_to_points.shrink_to_fit();
-
-        // Sort IDs in each slice of points
-        // This is very important because we binary search
-        for value in value_to_points.keys() {
-            if let Some((slice, _offset)) = Self::get_mut_point_ids_slice(
-                &value_to_points,
-                &mut value_to_points_container,
-                value.borrow(),
-            ) {
-                slice.sort_unstable();
-            } else {
-                debug_assert!(
-                    false,
-                    "value {} not found in value_to_points",
-                    value.borrow(),
-                );
-            }
-        }
-
-        Ok(Some(Self {
-            value_to_points,
-            value_to_points_container,
-            deleted_value_to_points_container: BitVec::new(),
-            point_to_values: ImmutablePointToValues::new(point_to_values),
-            indexed_points,
-            values_count,
-            storage: Storage::RocksDb(db_wrapper),
-        }))
-    }
-
     /// Open and load immutable numeric index from mmap storage
     pub(super) fn open_mmap(index: MmapMapIndex<N>) -> Self {
         // Construct intermediate values to points map from backing storage
@@ -331,11 +240,6 @@ where
 
                 // Update persisted storage
                 match self.storage {
-                    #[cfg(feature = "rocksdb")]
-                    Storage::RocksDb(ref db_wrapper) => {
-                        let key = MapIndex::encode_db_record(value.borrow(), idx);
-                        db_wrapper.remove(key)?;
-                    }
                     Storage::Mmap(ref mut index) => {
                         index.remove_point(idx);
                     }
@@ -352,20 +256,9 @@ where
         Ok(())
     }
 
-    #[cfg(all(test, feature = "rocksdb"))]
-    pub fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
-            Storage::Mmap(_) => None,
-        }
-    }
-
     #[inline]
     pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
             Storage::Mmap(index) => index.wipe(),
         }
     }
@@ -376,8 +269,6 @@ where
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => Ok(()),
             Storage::Mmap(ref index) => index.clear_cache(),
         }
     }
@@ -385,8 +276,6 @@ where
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Mmap(ref index) => index.files(),
         }
     }
@@ -394,8 +283,6 @@ where
     #[inline]
     pub(super) fn immutable_files(&self) -> Vec<PathBuf> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Mmap(index) => index.immutable_files(),
         }
     }
@@ -403,8 +290,6 @@ where
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
             Storage::Mmap(ref index) => index.flusher(),
         }
     }
@@ -491,19 +376,9 @@ where
 
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self.storage {
-            Storage::RocksDb(_) => true,
-            Storage::Mmap(_) => false,
         }
     }
 }

@@ -34,18 +34,6 @@ impl MutableInvertedIndex {
         }
     }
 
-    #[cfg(feature = "rocksdb")]
-    pub fn build_index(
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, Vec<String>)>>,
-        phrase_matching: bool,
-    ) -> OperationResult<Self> {
-        let mut builder = super::mutable_inverted_index_builder::MutableInvertedIndexBuilder::new(
-            phrase_matching,
-        );
-        builder.add_iter(iter)?;
-        Ok(builder.build())
-    }
-
     fn get_tokens(&self, idx: PointOffsetType) -> Option<&TokenSet> {
         self.point_to_tokens.get(idx as usize)?.as_ref()
     }
