@@ -95,7 +95,7 @@ impl<'a> AtomicBitSlice<'a> {
 impl AtomicBitSlice<'_> {
     /// Return the bit at `idx` using `Acquire` ordering.
     ///
-    /// Panics `None` when `idx >= self.len()`.
+    /// Returns `None` when `idx >= self.len()`.
     #[inline]
     pub fn get_checked(&self, idx: usize) -> Option<bool> {
         self.get_checked_with_ordering(idx, Ordering::Acquire)
@@ -103,7 +103,7 @@ impl AtomicBitSlice<'_> {
 
     /// Return the bit at `idx` using `Acquire` ordering.
     ///
-    /// Panics `None` when `idx >= self.len()`.
+    /// Panics when `idx >= self.len()`.
     // TODO: implementing `Index` requires implementing own fat pointer to bit
     #[inline]
     pub fn get(&self, idx: usize) -> bool {
