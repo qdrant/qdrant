@@ -1,0 +1,12 @@
+id: remove-rocksdb-gated-field-initializers
+language: rust
+rule:
+  all:
+    - kind: field_initializer
+    - has:
+        pattern: '#[cfg(feature = "rocksdb")]'
+        stopBy: end
+fix:
+  template: ''
+  expandEnd:
+    regex: ','

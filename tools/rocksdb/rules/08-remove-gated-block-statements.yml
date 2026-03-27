@@ -1,0 +1,20 @@
+id: remove-rocksdb-gated-block-statements
+language: rust
+utils:
+  cfg-following-block-statement:
+    all:
+      - kind: expression_statement
+      - has:
+          kind: block
+          stopBy: end
+rule:
+  all:
+    - pattern: '#[cfg(feature = "rocksdb")]'
+    - precedes:
+        matches: cfg-following-block-statement
+        stopBy: end
+fix:
+  template: ""
+  expandEnd:
+    matches: cfg-following-block-statement
+    stopBy: end

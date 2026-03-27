@@ -1,0 +1,57 @@
+id: unwrap-cfg-any-with-leading-rocksdb-feature
+language: rust
+rule:
+  pattern: '#[cfg(any(feature = "rocksdb", $ATTR))]'
+fix: '#[cfg($ATTR)]'
+---
+id: unwrap-cfg-any-with-trailing-rocksdb-feature
+language: rust
+rule:
+  pattern: '#[cfg(any($ATTR, feature = "rocksdb"))]'
+fix: '#[cfg($ATTR)]'
+---
+
+id: unwrap-cfg-any-with-leading-rocksdb-feature
+language: rust
+rule:
+  pattern: '#[cfg(all(feature = "rocksdb", $_))]'
+fix: '#[cfg(feature = "rocksdb")]'
+---
+id: unwrap-cfg-any-with-trailing-rocksdb-feature
+language: rust
+rule:
+  pattern: '#[cfg(all($_, feature = "rocksdb"))]'
+fix: '#[cfg(feature = "rocksdb")]'
+---
+
+id: remove-cfg-attr-rocksdb-case
+language: rust
+rule:
+  pattern: '#[cfg_attr(feature = "rocksdb", $$$ATTR)]'
+fix: ""
+---
+id: unwrap-cfg-attr-not-rocksdb-allow-expect
+language: rust
+rule:
+  pattern: '#[cfg_attr(not(feature = "rocksdb"), $ATTR($$$ARGS))]'
+constraints:
+  ATTR:
+    regex: "^(allow|expect)$"
+fix: '#[$ATTR($$$ARGS)] // FIXME(rocksdb): leftover after removing rocksdb'
+---
+id: unwrap-cfg-attr-not-rocksdb-other
+language: rust
+rule:
+  pattern: '#[cfg_attr(not(feature = "rocksdb"), $ATTR($$$ARGS))]'
+constraints:
+  ATTR:
+    not:
+      regex: "^(allow|expect)$"
+fix: '#[$ATTR($$$ARGS)]'
+---
+
+id: remove-cfg-not-rocksdb
+language: rust
+rule:
+  pattern: '#[cfg(not(feature = "rocksdb"))]'
+fix: ""
