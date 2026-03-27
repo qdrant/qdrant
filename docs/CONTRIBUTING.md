@@ -7,7 +7,7 @@ We love your input! We want to make contributing to this project as easy and tra
 - Proposing new features
 
 ## We Develop with GitHub
-We use github to host code, to track issues and feature requests, as well as accept pull requests.
+We use GitHub to host code, track issues and feature requests, and accept pull requests.
 
 ## We Use [GitHub Flow](https://guides.github.com/introduction/flow/index.html), So All Code Changes Happen Through Pull Requests
 Pull requests are the best way to propose changes to the codebase (we use [GitHub Flow](https://docs.github.com/en/get-started/quickstart/github-flow)). We actively welcome your pull requests:
@@ -41,7 +41,7 @@ We use GitHub issues to track public bugs. Report a bug by [opening a new issue]
 
 If you are modifying Rust code, make sure it has no warnings from Cargo and follow [Rust code style](https://doc.rust-lang.org/1.0.0/style/).
 The project uses [rustfmt](https://github.com/rust-lang/rustfmt) formatter. Please ensure to run it using the
-```cargo +nightly fmt --all``` command. The project also use [clippy](https://github.com/rust-lang/rust-clippy) lint collection,
+```cargo +nightly fmt --all``` command. The project also uses the [clippy](https://github.com/rust-lang/rust-clippy) lint collection,
 so please ensure running ``cargo clippy --workspace --all-features`` before submitting the PR.
 
 ## Contributing with AI
