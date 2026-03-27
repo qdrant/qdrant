@@ -313,7 +313,6 @@ pub enum IdTrackerEnum {
     MutableIdTracker(MutableIdTracker),
     ImmutableIdTracker(ImmutableIdTracker),
     InMemoryIdTracker(InMemoryIdTracker),
-    // Deprecated since Qdrant 1.14
 }
 
 impl IdTracker for IdTrackerEnum {

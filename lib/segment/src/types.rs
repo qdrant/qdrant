@@ -1362,8 +1362,6 @@ impl Default for Indexes {
 #[derive(Anonymize, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
-    // Store payload in memory and use persistence storage only if vectors are changed
-    // Store payload on disk only, read each time it is requested
     // Store payload on disk and in memory, read from memory if possible
     Mmap,
     // Store payload on disk and in memory, populate on load
@@ -1762,7 +1760,7 @@ pub struct SparseVectorDataConfig {
 
 /// If the storage type is not in config, it means it is the OnDisk variant
 fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorageType {
-    { SparseVectorStorageType::default() }
+    SparseVectorStorageType::default()
 }
 
 impl SparseVectorDataConfig {

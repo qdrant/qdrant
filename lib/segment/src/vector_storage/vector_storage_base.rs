@@ -411,9 +411,6 @@ impl VectorStorageEnum {
 
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            // Can't populate as it is not mmap
-            // Can't populate as it is not mmap
-            // Can't populate as it is not mmap
             VectorStorageEnum::DenseVolatile(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::DenseVolatileByte(_) => {} // Can't populate as it is not mmap
@@ -433,12 +430,8 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.populate()?,
-            // Can't populate as it is not mmap
             VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::SparseMmap(vs) => vs.populate()?,
-            // Can't populate as it is not mmap
-            // Can't populate as it is not mmap
-            // Can't populate as it is not mmap
             VectorStorageEnum::MultiDenseVolatile(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatileByte(_) => {} // Can't populate as it is not mmap
@@ -453,9 +446,6 @@ impl VectorStorageEnum {
 
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            // Can't populate as it is not mmap
-            // Can't populate as it is not mmap
-            // Can't populate as it is not mmap
             VectorStorageEnum::DenseVolatile(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::DenseVolatileByte(_) => {} // Can't populate as it is not mmap
@@ -475,12 +465,8 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.clear_cache()?,
-            // Can't populate as it is not mmap
             VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::SparseMmap(vs) => vs.clear_cache()?,
-            // Can't populate as it is not mmap
-            // Can't populate as it is not mmap
-            // Can't populate as it is not mmap
             VectorStorageEnum::MultiDenseVolatile(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatileByte(_) => {} // Can't populate as it is not mmap

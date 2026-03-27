@@ -200,8 +200,6 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Keyword(_) => {
                 vec![self.map_builder(
                     field,
-                    #[cfg(feature = "rocksdb")]
-                    FieldIndexBuilder::KeywordIndex,
                     FieldIndexBuilder::KeywordMmapIndex,
                     FieldIndexBuilder::KeywordGridstoreIndex,
                 )?]
@@ -235,8 +233,6 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Float(_) => {
                 vec![self.numeric_builder(
                     field,
-                    #[cfg(feature = "rocksdb")]
-                    FieldIndexBuilder::FloatIndex,
                     FieldIndexBuilder::FloatMmapIndex,
                     FieldIndexBuilder::FloatGridstoreIndex,
                 )?]
@@ -244,8 +240,6 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Geo(_) => {
                 vec![self.geo_builder(
                     field,
-                    #[cfg(feature = "rocksdb")]
-                    FieldIndexBuilder::GeoIndex,
                     FieldIndexBuilder::GeoMmapIndex,
                     FieldIndexBuilder::GeoGridstoreIndex,
                 )?]
@@ -259,8 +253,6 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Datetime(_) => {
                 vec![self.numeric_builder(
                     field,
-                    #[cfg(feature = "rocksdb")]
-                    FieldIndexBuilder::DatetimeIndex,
                     FieldIndexBuilder::DatetimeMmapIndex,
                     FieldIndexBuilder::DatetimeGridstoreIndex,
                 )?]
@@ -268,8 +260,6 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Uuid(_) => {
                 vec![self.map_builder(
                     field,
-                    #[cfg(feature = "rocksdb")]
-                    FieldIndexBuilder::UuidIndex,
                     FieldIndexBuilder::UuidMmapIndex,
                     FieldIndexBuilder::UuidGridstoreIndex,
                 )?]
