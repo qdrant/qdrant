@@ -44,14 +44,14 @@ impl Collection {
             // re-application of an already-applied consensus entry (e.g. after crash
             // recovery). Skip without error so we don't silently diverge from peers
             // that applied it successfully on the first attempt.
-            if let Some(state) = shard_holder.resharding_state() {
-                if state.matches(&resharding_key) {
-                    log::warn!(
-                        "Resharding {resharding_key} is already in progress, \
+            if let Some(state) = shard_holder.resharding_state()
+                && state.matches(&resharding_key)
+            {
+                log::warn!(
+                    "Resharding {resharding_key} is already in progress, \
                          skipping start (idempotent re-apply)"
-                    );
-                    return Ok(());
-                }
+                );
+                return Ok(());
             }
 
             shard_holder.check_start_resharding(&resharding_key)?;
