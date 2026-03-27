@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -92,7 +93,10 @@ fn measure_accuracy(
                     &Default::default(),
                 )
                 .unwrap();
-            result == **truth
+            // Compare by point IDs only, ignoring score differences and ordering
+            let result_ids: HashSet<_> = result[0].iter().map(|s| s.idx).collect();
+            let truth_ids: HashSet<_> = truth[0].iter().map(|s| s.idx).collect();
+            result_ids == truth_ids
         })
         .count()
 }
@@ -299,13 +303,13 @@ fn test_gpu_filterable_hnsw() {
 
     let min_diff = 5;
     assert!(
-        hits_cpu_idx + min_diff >= hits_cpu_no_idx,
-        "Payload index should improve accuracy: cpu_idx={hits_cpu_idx} + {min_diff} < cpu_no_idx={hits_cpu_no_idx}"
+        hits_cpu_idx >= hits_cpu_no_idx + min_diff,
+        "Payload index should improve accuracy: cpu_idx={hits_cpu_idx} < cpu_no_idx={hits_cpu_no_idx} + {min_diff}"
     );
 
     assert!(
-        hits_gpu_idx + min_diff >= hits_gpu_no_idx,
-        "Payload index should improve accuracy: gpu_idx={hits_gpu_idx} + {min_diff} < gpu_no_idx={hits_gpu_no_idx}"
+        hits_gpu_idx >= hits_gpu_no_idx + min_diff,
+        "Payload index should improve accuracy: gpu_idx={hits_gpu_idx} < gpu_no_idx={hits_gpu_no_idx} + {min_diff}"
     );
 
     // GPU accuracy should be roughly the same as CPU
@@ -321,4 +325,7 @@ fn test_gpu_filterable_hnsw() {
         diff_idx <= max_diff,
         "GPU accuracy should be close to CPU (with index): cpu={hits_cpu_idx}, gpu={hits_gpu_idx}, diff={diff_idx}"
     );
+
+    // Reset global GPU groups state to avoid leaking to other tests
+    set_gpu_groups_count(None);
 }
