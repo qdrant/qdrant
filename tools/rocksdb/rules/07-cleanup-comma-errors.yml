@@ -1,0 +1,7 @@
+id: cleanup-rocksdb-lone-commas
+language: rust
+rule:
+  all:
+    - kind: ERROR
+    - regex: '^\s*,\s*$'
+fix: ""

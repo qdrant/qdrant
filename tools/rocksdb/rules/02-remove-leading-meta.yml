@@ -1,0 +1,19 @@
+id: remove-rocksdb-leading-meta
+language: rust
+rule:
+  all:
+    - any:
+        - kind: attribute_item
+        - all:
+            - kind: line_comment
+            - has:
+                kind: outer_doc_comment_marker
+                stopBy: end
+    - precedes:
+        pattern: '#[cfg(feature = "rocksdb")]'
+        stopBy:
+          not:
+            any:
+              - kind: attribute_item
+              - kind: line_comment
+fix: ""
