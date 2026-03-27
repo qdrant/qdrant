@@ -160,9 +160,8 @@ pub(crate) fn open_vector_storage(
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
     match vector_config.storage_type {
-        // In memory - RocksDB disabled
         VectorStorageType::Memory => Err(OperationError::service_error(
-            "Failed to load 'Memory' storage type, RocksDB disabled in this Qdrant version",
+            "Failed to load 'Memory' storage type, RocksDB is not supported in this Qdrant version",
         )),
 
         // Mmap on disk, not appendable
