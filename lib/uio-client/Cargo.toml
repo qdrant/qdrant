@@ -16,5 +16,8 @@ prost = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
 
+[dev-dependencies]
+futures = { workspace = true }
+
 [build-dependencies]
 tonic-build = { workspace = true }

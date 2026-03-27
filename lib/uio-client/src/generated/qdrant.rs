@@ -50,7 +50,7 @@ pub struct ReadBytesRequest {
     #[prost(string, tag = "2")]
     pub path: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
-    pub offset: u64,
+    pub byte_offset: u64,
     #[prost(uint64, tag = "4")]
     pub length: u64,
 }
@@ -68,7 +68,7 @@ pub struct ReadBytesStreamRequest {
     #[prost(string, tag = "2")]
     pub path: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
-    pub offset: u64,
+    pub byte_offset: u64,
     #[prost(uint64, tag = "4")]
     pub length: u64,
 }
@@ -97,7 +97,7 @@ pub struct ReadWholeResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadBatchRange {
     #[prost(uint64, tag = "1")]
-    pub offset: u64,
+    pub byte_offset: u64,
     #[prost(uint64, tag = "2")]
     pub length: u64,
 }
@@ -124,7 +124,7 @@ pub struct ReadMultiEntry {
     #[prost(string, tag = "1")]
     pub path: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
-    pub offset: u64,
+    pub byte_offset: u64,
     #[prost(uint64, tag = "3")]
     pub length: u64,
 }
