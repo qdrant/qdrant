@@ -173,6 +173,52 @@ impl<
         Ok(Some(values_len as usize))
     }
 
+    // ── Batch lookup ────────────────────────────────────────────────────
+
+    /// Look up multiple keys at once, returning results in the same order as the input.
+    ///
+    /// This is more efficient than calling [`get_with`](Self::get_with) in a loop because
+    /// IO reads are sorted by file position and batched for sequential access.
+    ///
+    /// Three batched IO phases are performed:
+    /// 1. Read bucket offsets (sorted by bucket index).
+    /// 2. Read entry headers (sorted by entry offset) and verify keys.
+    /// 3. Read values for matched entries (sorted by entry offset).
+    ///
+    /// Look up multiple keys at once, returning results in the same order as the input.
+    ///
+    /// This is more efficient than calling [`get_with`](Self::get_with) in a loop because
+    /// IO reads are sorted by file position and batched for sequential access.
+    ///
+    /// Three batched IO phases are performed:
+    /// 1. Read bucket offsets (sorted by bucket index).
+    /// 2. Read entry headers (sorted by entry offset) and verify keys.
+    /// 3. Read values for matched entries (sorted by entry offset).
+    pub fn get_with_batch<'k, T>(
+        &self,
+        keys: &[&'k K],
+        mut f: impl FnMut(&K, &[V]) -> T,
+    ) -> io::Result<Vec<Option<T>>>
+    where
+        K: 'k,
+    {
+        let (idx_mapping, bucket_ids): (Vec<_>, Vec<_>) = keys
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, key)| self.phf.get(key).map(|bucket_id| (idx, bucket_id)))
+            .unzip();
+
+        let entry_offsets = self.batch_resolve_bucket_offsets(bucket_ids)?;
+
+        let (idx_mapping, values_offsets, values_lens) =
+            self.batch_read_entry_headers(keys, idx_mapping, &entry_offsets)?;
+
+        let results =
+            self.batch_read_values(keys, idx_mapping, values_offsets, values_lens, &mut f)?;
+
+        Ok(results)
+    }
+
     // ── Iteration ───────────────────────────────────────────────────────
 
     /// Iterate over all entries, calling `f` for each `(key, values)` pair.
@@ -453,6 +499,127 @@ impl<
             })
             .collect()
     }
+
+    // ── Batch-lookup helpers ───────────────────────────────────────────
+
+    /// Phase 1: resolve bucket index → entry offset for each lookup.
+    fn batch_resolve_bucket_offsets(&self, bucket_ids: Vec<u64>) -> io::Result<Vec<u64>> {
+        let mut entry_offsets: Vec<u64> = vec![0; bucket_ids.len()];
+
+        let ranges = bucket_ids.into_iter().map(|bucket_idx| ReadRange {
+            byte_offset: self.header.buckets_pos + bucket_idx * size_of::<BucketOffset>() as u64,
+            length: size_of::<BucketOffset>() as u64,
+        });
+
+        self.reader
+            .read_batch::<Random>(ranges, |idx, data| {
+                let (offset, _) = BucketOffset::read_from_prefix(data)
+                    .map_err(|e| uio_data_err(e.to_string()))?;
+                entry_offsets[idx] = offset;
+                Ok(())
+            })
+            .map_err(io_err)?;
+
+        Ok(entry_offsets)
+    }
+
+    /// Phase 2: read entry headers, verify keys, and parse values_len.
+    fn batch_read_entry_headers(
+        &self,
+        keys: &[&K],
+        idx_mapping: Vec<usize>,
+        entry_offsets: &[u64],
+    ) -> io::Result<(Vec<usize>, Vec<u64>, Vec<u32>)> {
+        let mut new_idx_mapping = Vec::with_capacity(entry_offsets.len());
+        let mut values_offsets = Vec::with_capacity(entry_offsets.len());
+        let mut values_lens = Vec::with_capacity(entry_offsets.len());
+
+        let ranges = entry_offsets.iter().enumerate().map(|(idx, entry_offset)| {
+            let key = keys[idx_mapping[idx]];
+            let header_size =
+                Self::key_size_with_padding(key) + Self::values_len_size_with_padding();
+            ReadRange {
+                byte_offset: self.entries_start + *entry_offset,
+                length: header_size as u64,
+            }
+        });
+
+        self.reader
+            .read_batch::<Random>(ranges, |idx, data| {
+                let key_id = idx_mapping[idx];
+                let key = keys[key_id];
+                let header_size =
+                    Self::key_size_with_padding(key) + Self::values_len_size_with_padding();
+                let entry_offset = entry_offsets[idx];
+
+                if !key.matches(data) {
+                    return Ok(());
+                }
+                let key_pad = Self::key_size_with_padding(key);
+                let vl_bytes = data
+                    .get(key_pad..)
+                    .ok_or_else(|| uio_data_err("Entry too short for values_len"))?;
+                let (vl, _) = ValuesLen::read_from_prefix(vl_bytes)
+                    .map_err(|e| uio_data_err(e.to_string()))?;
+
+                let values_offset = self.entries_start + entry_offset + header_size as u64;
+
+                values_offsets.push(values_offset);
+                values_lens.push(vl);
+                new_idx_mapping.push(key_id);
+                Ok(())
+            })
+            .map_err(io_err)?;
+
+        Ok((new_idx_mapping, values_offsets, values_lens))
+    }
+
+    /// Phase 3: read values for matched entries and populate results.
+    fn batch_read_values<T>(
+        &self,
+        keys: &[&K],
+        idx_mapping: Vec<usize>,
+        values_offsets: Vec<u64>,
+        values_lens: Vec<u32>,
+        f: &mut impl FnMut(&K, &[V]) -> T,
+    ) -> io::Result<Vec<Option<T>>> {
+        let mut results: Vec<Option<T>> = Vec::with_capacity(idx_mapping.len());
+        results.resize_with(idx_mapping.len(), || None);
+
+        // Handle zero-length value matches.
+        for (idx, &values_len) in values_lens.iter().enumerate() {
+            if values_len == 0 {
+                let orig_idx = idx_mapping[idx];
+                results[orig_idx] = Some(f(keys[orig_idx], &[]));
+            }
+        }
+
+        if values_lens.is_empty() {
+            return Ok(results);
+        }
+
+        let ranges =
+            values_offsets
+                .into_iter()
+                .zip(values_lens)
+                .map(|(values_offset, values_len)| ReadRange {
+                    byte_offset: values_offset,
+                    length: u64::from(values_len) * Self::VALUE_SIZE as u64,
+                });
+
+        self.reader
+            .read_batch::<Sequential>(ranges, |idx, data| {
+                let key_id = idx_mapping[idx];
+                let key = keys[key_id];
+                Self::with_values(data, |values| {
+                    results[key_id] = Some(f(key, values));
+                })
+                .map_err(crate::universal_io::UniversalIoError::Io)
+            })
+            .map_err(io_err)?;
+
+        Ok(results)
+    }
 }
 
 fn io_err(e: crate::universal_io::UniversalIoError) -> io::Error {
@@ -460,4 +627,10 @@ fn io_err(e: crate::universal_io::UniversalIoError) -> io::Error {
         crate::universal_io::UniversalIoError::Io(e) => e,
         other => io::Error::other(other),
     }
+}
+
+fn uio_data_err(
+    msg: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+) -> crate::universal_io::UniversalIoError {
+    crate::universal_io::UniversalIoError::Io(io::Error::new(io::ErrorKind::InvalidData, msg))
 }

@@ -374,3 +374,202 @@ fn test_for_each_entry_exceeds_batch_size() {
         assert_eq!(visited[k], expected);
     }
 }
+
+// ── get_with_batch ─────────────────────────────────────────────────────
+
+fn test_get_with_batch_impl<K: Key + ?Sized, K1: Ord + Hash + Clone>(
+    generator: impl Clone + Fn(&mut StdRng) -> K1,
+    as_ref: impl Fn(&K1) -> &K,
+    count: usize,
+) {
+    let mut rng = StdRng::seed_from_u64(42);
+    let map = gen_map(&mut rng, generator.clone(), count);
+    let (_tmpdir, umap) = write_and_open(&map, &as_ref);
+
+    // Batch lookup of all existing keys.
+    let all_keys: Vec<&K> = map.keys().map(&as_ref).collect();
+    let results = umap
+        .get_with_batch(&all_keys, |_, vals| vals.to_vec())
+        .unwrap();
+    assert_eq!(results.len(), map.len());
+    for ((_k, v), result) in map.iter().zip(results.iter()) {
+        let expected: Vec<u32> = v.iter().copied().collect();
+        assert_eq!(result.as_ref().unwrap(), &expected);
+    }
+
+    // Batch lookup with mix of existing and non-existing keys.
+    let existing: Vec<K1> = map.keys().take(5).cloned().collect();
+    let mut missing: Vec<K1> = Vec::new();
+    for _ in 0..5 {
+        missing.push(repeat_until(
+            || generator(&mut rng),
+            |key| !map.contains_key(key),
+        ));
+    }
+    // Interleave existing and missing.
+    let mixed: Vec<&K> = existing
+        .iter()
+        .map(|k| as_ref(k))
+        .zip(missing.iter().map(|k| as_ref(k)))
+        .flat_map(|(a, b)| [a, b])
+        .collect();
+
+    let results = umap
+        .get_with_batch(&mixed, |_, vals| vals.to_vec())
+        .unwrap();
+    assert_eq!(results.len(), mixed.len());
+    for (i, result) in results.iter().enumerate() {
+        if i % 2 == 0 {
+            assert!(result.is_some(), "Expected Some for existing key at {i}");
+        } else {
+            assert!(result.is_none(), "Expected None for missing key at {i}");
+        }
+    }
+}
+
+#[test]
+fn test_get_with_batch_str() {
+    test_get_with_batch_impl(gen_ident, |s| s.as_str(), 200);
+}
+
+#[test]
+fn test_get_with_batch_i64() {
+    test_get_with_batch_impl(|rng| rng.random::<i64>(), |i| i, 200);
+}
+
+#[test]
+fn test_get_with_batch_u128() {
+    test_get_with_batch_impl(|rng| rng.random::<u128>(), |i| i, 200);
+}
+
+#[test]
+fn test_get_with_batch_empty_keys() {
+    let mut rng = StdRng::seed_from_u64(42);
+    let map = gen_map(&mut rng, |rng| rng.random::<i64>(), 50);
+    let (_tmpdir, umap) = write_and_open::<i64, u32, _>(&map, |k| k);
+
+    let keys: &[&i64] = &[];
+    let results = umap
+        .get_with_batch(keys, |_, vals| vals.to_vec())
+        .unwrap();
+    assert!(results.is_empty());
+}
+
+#[test]
+fn test_get_with_batch_empty_map() {
+    let map: BTreeMap<i64, BTreeSet<u32>> = BTreeMap::new();
+    let (_tmpdir, umap) = write_and_open::<i64, u32, _>(&map, |k| k);
+
+    let keys: Vec<&i64> = vec![&1, &2, &3];
+
+    let results = umap
+        .get_with_batch(&keys,|_, vals| vals.to_vec())
+        .unwrap();
+    assert_eq!(results.len(), 3);
+    assert!(results.iter().all(|r| r.is_none()));
+}
+
+#[test]
+fn test_get_with_batch_single_value_per_key() {
+    let mut map: BTreeMap<i64, BTreeSet<u32>> = BTreeMap::new();
+    for i in 0..50 {
+        let mut s = BTreeSet::new();
+        s.insert(i as u32);
+        map.insert(i, s);
+    }
+
+    let (_tmpdir, umap) = write_and_open::<i64, u32, _>(&map, |k| k);
+
+    let keys: Vec<&i64> = map.keys().collect();
+
+    let results = umap
+        .get_with_batch(&keys,|_, vals| vals.len())
+        .unwrap();
+    assert!(results.iter().all(|r| *r == Some(1)));
+}
+
+#[test]
+fn test_get_with_batch_many_values() {
+    let mut rng = StdRng::seed_from_u64(22);
+    let mut map: BTreeMap<i64, BTreeSet<u32>> = BTreeMap::new();
+    for i in 0..10 {
+        map.insert(
+            i,
+            (0..1000).map(|_| rng.random_range(0..=100_000)).collect(),
+        );
+    }
+
+    let (_tmpdir, umap) = write_and_open::<i64, u32, _>(&map, |k| k);
+
+    let keys: Vec<&i64> = map.keys().collect();
+
+    let results = umap
+        .get_with_batch(&keys,|_, vals| vals.to_vec())
+        .unwrap();
+    for (k, result) in map.keys().zip(results.iter()) {
+        let expected: Vec<u32> = map[k].iter().copied().collect();
+        assert_eq!(result.as_ref().unwrap(), &expected);
+    }
+}
+
+#[test]
+fn test_get_with_batch_u64_values() {
+    let mut rng = StdRng::seed_from_u64(88);
+    let mut map: BTreeMap<i64, BTreeSet<u64>> = BTreeMap::new();
+    for key in 0..30i64 {
+        map.insert(
+            key,
+            (0..rng.random_range(1..=50))
+                .map(|_| rng.random())
+                .collect(),
+        );
+    }
+
+    let (_tmpdir, umap) = write_and_open::<i64, u64, _>(&map, |k| k);
+
+    let keys: Vec<&i64> = map.keys().collect();
+
+    let results = umap
+        .get_with_batch(&keys,|_, vals| vals.to_vec())
+        .unwrap();
+    for (k, result) in map.keys().zip(results.iter()) {
+        let expected: Vec<u64> = map[k].iter().copied().collect();
+        assert_eq!(result.as_ref().unwrap(), &expected);
+    }
+}
+
+#[test]
+fn test_get_with_batch_preserves_order() {
+    let mut rng = StdRng::seed_from_u64(99);
+    let map = gen_map(&mut rng, |rng| rng.random::<i64>(), 100);
+    let (_tmpdir, umap) = write_and_open::<i64, u32, _>(&map, |k| k);
+
+    // Query keys in reverse order; results must still match input order.
+    let keys: Vec<&i64> = map.keys().rev().collect();
+
+    let results = umap
+        .get_with_batch(&keys,|_, vals| vals.to_vec())
+        .unwrap();
+    for (key, result) in keys.iter().zip(results.iter()) {
+        let expected: Vec<u32> = map[*key].iter().copied().collect();
+        assert_eq!(result.as_ref().unwrap(), &expected);
+    }
+}
+
+#[test]
+fn test_get_with_batch_repeated_calls() {
+    let mut rng = StdRng::seed_from_u64(42);
+    let map = gen_map(&mut rng, |rng| rng.random::<i64>(), 100);
+    let (_tmpdir, umap) = write_and_open::<i64, u32, _>(&map, |k| k);
+
+    let keys: Vec<&i64> = map.keys().collect();
+
+    let results1 = umap
+        .get_with_batch(&keys, |_, vals| vals.to_vec())
+        .unwrap();
+    let results2 = umap
+        .get_with_batch(&keys, |_, vals| vals.to_vec())
+        .unwrap();
+
+    assert_eq!(results1, results2);
+}
