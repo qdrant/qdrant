@@ -195,9 +195,10 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
     except requests.exceptions.ReadTimeout:
         pass  # Expected: server blocks forever, client times out
 
-    # Enable optimizers to resolve deferred points.
     # This must happen before the transfer because stream_records uses wait=true
     # internally on the last batch, which would hang with disabled optimizers.
+    # For snapshot, the update worker must also not be blocked on deferred points
+    # for the snapshot to proceed.
     update_collection_config(source_uri, {
         "optimizers_config": {"max_optimization_threads": "auto"},
     })
@@ -232,13 +233,22 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
     )
 
     # Verify deferred points were transferred: target should have hidden points.
-    # For snapshot, the target gets a raw segment copy — deferred state is preserved exactly.
+    # For snapshot, the target gets a raw segment copy preserving deferred state.
+    # The optimizer is enabled before the transfer (required to unblock the plunger
+    # and for stream_records' internal wait=true), so the exact visible count may
+    # differ from the pre-optimizer measurement due to the optimizer racing with
+    # the snapshot. The key invariant is that the target still has deferred points
+    # (not all points are visible yet).
     # For stream_records, points are re-inserted on the target and may not be deferred.
     target_visible = scroll_all(target_uri)
     target_visible_count = len(target_visible)
     if transfer_method == "snapshot":
-        assert target_visible_count == visible_count, (
-            f"Snapshot transfer should preserve deferred state: "
+        assert target_visible_count < total_points, (
+            f"Snapshot transfer should preserve deferred state (not all points visible): "
+            f"target visible={target_visible_count}, total={total_points}"
+        )
+        assert target_visible_count >= visible_count, (
+            f"Target should have at least as many visible points as source had before optimizer: "
             f"target visible={target_visible_count}, source visible={visible_count}"
         )
     else:
