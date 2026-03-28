@@ -3039,6 +3039,7 @@ dependencies = [
  "ahash",
  "bitvec",
  "bustle",
+ "bytemuck",
  "common",
  "criterion",
  "csv",

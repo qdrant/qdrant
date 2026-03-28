@@ -14,7 +14,6 @@ pub mod rocksdb_buffered_update_wrapper;
 #[cfg(feature = "rocksdb")]
 pub mod rocksdb_wrapper;
 pub mod score_fusion;
-pub mod stored_bitslice;
 pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;

@@ -1,17 +1,16 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use common::fs::clear_disk_cache;
-use common::mmap::{
-    Advice, AdviceSetting, MmapFlusher, MmapSlice, create_and_ensure_length, open_write_mmap,
-};
+use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
+use common::universal_io::{Flusher, OpenOptions, UniversalWrite};
 use itertools::Itertools;
 
 use super::{RegionId, StorageConfig};
 use crate::Result;
 
 /// Gaps of contiguous zeros in a bitmask region.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct RegionGaps {
     pub max: u16,
@@ -75,121 +74,148 @@ impl RegionGaps {
     }
 }
 
-/// An overview of contiguous free blocks covered by the bitmask.
-#[derive(Debug)]
-pub(super) struct BitmaskGaps {
-    pub path: PathBuf,
-    config: StorageConfig,
-    mmap_slice: MmapSlice<RegionGaps>,
+fn gaps_file_path(dir: &Path) -> PathBuf {
+    dir.join("gaps.dat")
 }
 
-impl BitmaskGaps {
-    fn file_path(dir: &Path) -> PathBuf {
-        dir.join("gaps.dat")
-    }
+/// An overview of contiguous free blocks covered by the bitmask.
+#[derive(Debug)]
+pub(super) struct BitmaskGaps<S> {
+    path: PathBuf,
+    config: StorageConfig,
+    slice_store: S,
+}
 
+impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
     pub fn path(&self) -> PathBuf {
         self.path.clone()
     }
 
     pub fn create(
         dir: &Path,
-        mut iter: impl ExactSizeIterator<Item = RegionGaps>,
+        iter: impl ExactSizeIterator<Item = RegionGaps>,
         config: StorageConfig,
-    ) -> Self {
-        let path = Self::file_path(dir);
+    ) -> Result<Self> {
+        let path = gaps_file_path(dir);
 
-        let length_in_bytes = iter.len() * size_of::<RegionGaps>();
-        create_and_ensure_length(&path, length_in_bytes).unwrap();
+        let data: Vec<RegionGaps> = iter.collect();
+        let length_in_bytes = data.len() * size_of::<RegionGaps>();
+        create_and_ensure_length(&path, length_in_bytes)?;
 
-        let mmap = open_write_mmap(&path, AdviceSetting::from(Advice::Normal), true).unwrap();
-        let mut mmap_slice = unsafe { MmapSlice::from(mmap) };
+        let options = OpenOptions {
+            need_sequential: false,
+            writeable: true,
+            disk_parallel: None,
+            populate: Some(true),
+            advice: None,
+        };
+        let mut slice_store = S::open(&path, options)?;
 
-        debug_assert_eq!(mmap_slice.len(), iter.len());
+        debug_assert_eq!(slice_store.len()? as usize, data.len());
 
-        mmap_slice.fill_with(|| iter.next().unwrap());
-
-        Self {
-            path,
-            config,
-            mmap_slice,
-        }
-    }
-
-    pub fn open(dir: &Path, config: StorageConfig) -> Result<Self> {
-        let path = Self::file_path(dir);
-        let mmap = open_write_mmap(&path, AdviceSetting::from(Advice::Normal), false)?;
-        let mmap_slice = unsafe { MmapSlice::try_from(mmap) }?;
+        slice_store.write(0, &data)?;
 
         Ok(Self {
             path,
             config,
-            mmap_slice,
+            slice_store,
         })
     }
 
-    pub fn flusher(&self) -> MmapFlusher {
-        self.mmap_slice.flusher()
+    pub fn open(dir: &Path, config: StorageConfig) -> Result<Self> {
+        let path = gaps_file_path(dir);
+        let options = OpenOptions {
+            writeable: true,
+            need_sequential: false,
+            disk_parallel: None,
+            populate: Some(false),
+            advice: Some(AdviceSetting::Advice(Advice::Normal)),
+        };
+        let slice_store = S::open(&path, options)?;
+
+        Ok(Self {
+            path,
+            config,
+            slice_store,
+        })
     }
 
-    /// Extends the mmap file to fit the new regions
-    pub fn extend(&mut self, mut iter: impl ExactSizeIterator<Item = RegionGaps>) -> Result<()> {
-        if iter.len() == 0 {
+    pub fn flusher(&self) -> Flusher {
+        self.slice_store.flusher()
+    }
+
+    /// Extends the file to fit the new regions
+    pub fn extend(&mut self, iter: impl ExactSizeIterator<Item = RegionGaps>) -> Result<()> {
+        let data: Vec<RegionGaps> = iter.collect();
+        if data.is_empty() {
             return Ok(());
         }
 
         // reopen the file with a larger size
-        let prev_len = self.mmap_slice.len();
-        let new_slice_len = prev_len + iter.len();
+        let prev_len = self.len()?;
+        let new_slice_len = prev_len + data.len();
         let new_length_in_bytes = new_slice_len * size_of::<RegionGaps>();
 
-        create_and_ensure_length(&self.path, new_length_in_bytes).unwrap();
+        create_and_ensure_length(&self.path, new_length_in_bytes)?;
 
-        let mmap = open_write_mmap(&self.path, AdviceSetting::from(Advice::Normal), false)?;
+        let options = OpenOptions {
+            writeable: true,
+            need_sequential: false,
+            disk_parallel: None,
+            populate: Some(false),
+            advice: Some(AdviceSetting::Advice(Advice::Normal)),
+        };
+        self.slice_store = S::open(&self.path, options)?;
 
-        self.mmap_slice = unsafe { MmapSlice::try_from(mmap) }?;
+        debug_assert_eq!(self.len()? - prev_len, data.len());
 
-        debug_assert_eq!(self.mmap_slice[prev_len..].len(), iter.len());
-
-        self.mmap_slice[prev_len..].fill_with(|| iter.next().unwrap());
+        let byte_offset = (prev_len * size_of::<RegionGaps>()) as u64;
+        self.slice_store.write(byte_offset, &data)?;
 
         Ok(())
     }
 
-    pub fn trailing_free_blocks(&self) -> u32 {
-        self.mmap_slice
+    pub fn trailing_free_blocks(&self) -> Result<u32> {
+        let slice = self.as_slice()?;
+        Ok(slice
             .iter()
             .rev()
             .take_while_inclusive(|gap| gap.trailing == self.config.region_size_blocks as u16)
             .map(|gap| u32::from(gap.trailing))
-            .sum()
+            .sum())
     }
 
-    pub fn len(&self) -> usize {
-        self.mmap_slice.len()
+    pub fn len(&self) -> Result<usize> {
+        Ok(self.slice_store.len()? as usize)
     }
 
-    pub fn get(&self, idx: usize) -> Option<&RegionGaps> {
-        self.mmap_slice.get(idx)
+    #[cfg(test)]
+    pub fn get(&self, idx: usize) -> Result<Option<RegionGaps>> {
+        let slice = self.as_slice()?;
+        Ok(slice.get(idx).copied())
     }
 
-    pub fn get_mut(&mut self, idx: usize) -> &mut RegionGaps {
-        &mut self.mmap_slice[idx]
+    pub fn set(&mut self, idx: usize, value: RegionGaps) -> Result<()> {
+        let byte_offset = (idx * size_of::<RegionGaps>()) as u64;
+        self.slice_store.write(byte_offset, &[value])?;
+        Ok(())
     }
 
-    pub fn as_slice(&self) -> &[RegionGaps] {
-        &self.mmap_slice
+    pub fn as_slice(&self) -> Result<Cow<'_, [RegionGaps]>> {
+        Ok(self.slice_store.read_whole()?)
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
     /// Returns the range of regions where the gap is.
-    pub fn find_fitting_gap(&self, num_blocks: u32) -> Option<Range<RegionId>> {
-        if self.mmap_slice.len() == 1 {
-            return if self.get(0).unwrap().max as usize >= num_blocks as usize {
+    pub fn find_fitting_gap(&self, num_blocks: u32) -> Result<Option<Range<RegionId>>> {
+        let slice = self.as_slice()?;
+
+        if slice.len() == 1 {
+            return Ok(if slice[0].max as usize >= num_blocks as usize {
                 Some(0..1)
             } else {
                 None
-            };
+            });
         }
 
         // try to find gap in the minimum regions needed
@@ -198,36 +224,50 @@ impl BitmaskGaps {
         let fits_in_min_regions = match regions_needed {
             0 => unreachable!("num_blocks should be at least 1"),
             // we might not need to merge any regions, just check the `max` field
-            1 => self
-                .as_slice()
-                .iter()
-                .enumerate()
-                .find_map(|(region_id, gap)| {
-                    if gap.max as usize >= num_blocks as usize {
-                        Some(region_id as RegionId..(region_id + 1) as RegionId)
-                    } else {
-                        None
-                    }
-                }),
+            1 => slice.iter().enumerate().find_map(|(region_id, gap)| {
+                if gap.max as usize >= num_blocks as usize {
+                    Some(region_id as RegionId..(region_id + 1) as RegionId)
+                } else {
+                    None
+                }
+            }),
             // we need to merge at least 2 regions
-            window_size => self.find_merged_gap(window_size, num_blocks),
+            window_size => self.find_merged_gap(&slice, window_size, num_blocks),
         };
 
         if fits_in_min_regions.is_some() {
-            return fits_in_min_regions;
+            return Ok(fits_in_min_regions);
         }
 
         // try to find gap by merging one more region (which is the maximum regions we may need for the value)
         let window_size = regions_needed + 1;
 
-        self.find_merged_gap(window_size, num_blocks)
+        Ok(self.find_merged_gap(&slice, window_size, num_blocks))
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> Result<()> {
+        self.slice_store.populate()?;
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> Result<()> {
+        self.slice_store.clear_ram_cache()?;
+        Ok(())
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks, in a merged window of regions.
-    fn find_merged_gap(&self, window_size: usize, num_blocks: u32) -> Option<Range<RegionId>> {
+    fn find_merged_gap(
+        &self,
+        slice: &[RegionGaps],
+        window_size: usize,
+        num_blocks: u32,
+    ) -> Option<Range<RegionId>> {
         debug_assert!(window_size >= 2, "window size must be at least 2");
 
-        self.as_slice()
+        slice
             .windows(window_size)
             .enumerate()
             .find_map(|(start_region_id, gaps)| {
@@ -251,29 +291,19 @@ impl BitmaskGaps {
                 }
             })
     }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> std::io::Result<()> {
-        self.mmap_slice.populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> std::io::Result<()> {
-        clear_disk_cache(&self.path)?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 #[cfg(debug_assertions)]
 mod tests {
+    use common::universal_io::MmapFile;
     use proptest::prelude::*;
     use tempfile::tempdir;
 
     use super::*;
     use crate::config::{DEFAULT_REGION_SIZE_BLOCKS, StorageOptions};
+
+    pub type MmapBitmaskGaps = BitmaskGaps<MmapFile>;
 
     prop_compose! {
         fn arbitrary_region_gaps(region_size_blocks: u16)(
@@ -352,14 +382,14 @@ mod tests {
         ) {
             let temp_dir = tempdir().unwrap();
             let config = StorageOptions::default().try_into().unwrap();
-            let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+            let bitmask_gaps: MmapBitmaskGaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config).unwrap();
 
             let bitvec = regions_gaps_to_bitvec(&gaps, DEFAULT_REGION_SIZE_BLOCKS);
 
-            if let Some(range) = bitmask_gaps.find_fitting_gap(num_blocks) {
+            if let Some(range) = bitmask_gaps.find_fitting_gap(num_blocks).unwrap() {
                 // Range should be within bounds
-                prop_assert!(range.start <= bitmask_gaps.len() as u32);
-                prop_assert!(range.end <= bitmask_gaps.len() as u32);
+                prop_assert!(range.start <= bitmask_gaps.len().unwrap() as u32);
+                prop_assert!(range.end <= bitmask_gaps.len().unwrap() as u32);
                 prop_assert!(range.start <= range.end);
 
                 // check that range is as constrained as possible
@@ -403,14 +433,14 @@ mod tests {
 
         let temp_dir = tempdir().unwrap();
         let config = StorageOptions::default().try_into().unwrap();
-        let mut bitmask_gaps =
-            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
-        assert!(bitmask_gaps.mmap_slice.len() >= 3);
-        bitmask_gaps.mmap_slice[0..3].clone_from_slice(&gaps[..]);
+        let bitmask_gaps: MmapBitmaskGaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.into_iter(), config).unwrap();
+        assert!(bitmask_gaps.len().unwrap() >= 3);
 
         assert!(
             bitmask_gaps
                 .find_fitting_gap(large_value_blocks as u32)
+                .unwrap()
                 .is_some(),
         );
     }
@@ -428,15 +458,21 @@ mod tests {
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
         ];
-        let bitmask_gaps =
-            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone());
+        let bitmask_gaps: MmapBitmaskGaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone()).unwrap();
 
         // Find space for blocks covering up to 2 regions
-        assert!(bitmask_gaps.find_fitting_gap(1).is_some());
-        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps.find_fitting_gap(1).unwrap().is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS)
+                .unwrap()
+                .is_some()
+        );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
+                .unwrap()
                 .is_some(),
         );
 
@@ -444,11 +480,13 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
+                .unwrap()
                 .is_some(),
         );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 3)
+                .unwrap()
                 .is_some(),
         );
 
@@ -456,6 +494,7 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 4)
+                .unwrap()
                 .is_none(),
         );
 
@@ -469,14 +508,20 @@ mod tests {
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
         ];
-        let bitmask_gaps =
-            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone());
+        let bitmask_gaps: MmapBitmaskGaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone()).unwrap();
 
         // Find space for blocks covering up to 2 regions
-        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS)
+                .unwrap()
+                .is_some()
+        );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
+                .unwrap()
                 .is_some(),
         );
 
@@ -484,11 +529,13 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
+                .unwrap()
                 .is_some(),
         );
         assert!(
             bitmask_gaps
                 .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2))
+                .unwrap()
                 .is_some(),
         );
 
@@ -496,6 +543,7 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2) + 1)
+                .unwrap()
                 .is_none(),
         );
 
@@ -513,18 +561,26 @@ mod tests {
             },
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
         ];
-        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+        let bitmask_gaps: MmapBitmaskGaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config).unwrap();
 
         // Find space for blocks covering more than 1 to 1.5 regions
-        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS)
+                .unwrap()
+                .is_some()
+        );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
+                .unwrap()
                 .is_some(),
         );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 2))
+                .unwrap()
                 .is_some(),
         );
 
@@ -532,6 +588,7 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
+                .unwrap()
                 .is_none(),
         );
     }
@@ -564,18 +621,26 @@ mod tests {
                 trailing: 0,
             },
         ];
-        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+        let bitmask_gaps: MmapBitmaskGaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config).unwrap();
 
         // Find space for blocks covering up to 1.5 region
-        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS)
+                .unwrap()
+                .is_some()
+        );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
+                .unwrap()
                 .is_some(),
         );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2)
+                .unwrap()
                 .is_some(),
         );
 
@@ -583,6 +648,7 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
+                .unwrap()
                 .is_none(),
         );
     }
@@ -606,20 +672,21 @@ mod tests {
         // Create RegionGaps and write gaps
         {
             let config = StorageOptions::default().try_into().unwrap();
-            let region_gaps = BitmaskGaps::create(dir_path, gaps.clone().into_iter(), config);
-            assert_eq!(region_gaps.len(), gaps.len());
+            let region_gaps: MmapBitmaskGaps =
+                BitmaskGaps::create(dir_path, gaps.clone().into_iter(), config).unwrap();
+            assert_eq!(region_gaps.len().unwrap(), gaps.len());
             for (i, gap) in gaps.iter().enumerate() {
-                assert_eq!(region_gaps.get(i).unwrap(), gap);
+                assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
         }
 
         // Reopen RegionGaps and verify gaps
         {
             let config = StorageOptions::default().try_into().unwrap();
-            let region_gaps = BitmaskGaps::open(dir_path, config).unwrap();
-            assert_eq!(region_gaps.len(), gaps.len());
+            let region_gaps: MmapBitmaskGaps = BitmaskGaps::open(dir_path, config).unwrap();
+            assert_eq!(region_gaps.len().unwrap(), gaps.len());
             for (i, gap) in gaps.iter().enumerate() {
-                assert_eq!(region_gaps.get(i).unwrap(), gap);
+                assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
         }
 
@@ -631,25 +698,25 @@ mod tests {
 
         {
             let config = StorageOptions::default().try_into().unwrap();
-            let mut region_gaps = BitmaskGaps::open(dir_path, config).unwrap();
+            let mut region_gaps: MmapBitmaskGaps = BitmaskGaps::open(dir_path, config).unwrap();
             region_gaps.extend(more_gaps.clone().into_iter()).unwrap();
-            assert_eq!(region_gaps.len(), gaps.len() + more_gaps.len());
+            assert_eq!(region_gaps.len().unwrap(), gaps.len() + more_gaps.len());
             for (i, gap) in gaps.iter().chain(more_gaps.iter()).enumerate() {
-                assert_eq!(region_gaps.get(i).unwrap(), gap);
+                assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
         }
 
         // Reopen RegionGaps and verify all gaps
         {
             let config = StorageOptions::default().try_into().unwrap();
-            let region_gaps = BitmaskGaps::open(dir_path, config).unwrap();
-            assert_eq!(region_gaps.len(), gaps.len() + more_gaps.len());
+            let region_gaps: MmapBitmaskGaps = BitmaskGaps::open(dir_path, config).unwrap();
+            assert_eq!(region_gaps.len().unwrap(), gaps.len() + more_gaps.len());
             for (i, gap) in gaps.iter().chain(more_gaps.iter()).enumerate() {
-                assert_eq!(region_gaps.get(i).unwrap(), gap);
+                assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
         }
 
         // Clean up
-        fs::remove_file(BitmaskGaps::file_path(dir_path)).unwrap();
+        fs::remove_file(gaps_file_path(dir_path)).unwrap();
     }
 }

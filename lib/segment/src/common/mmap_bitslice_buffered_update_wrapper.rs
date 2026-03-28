@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::stored_bitslice::MmapBitSlice;
 use itertools::Itertools;
 use parking_lot::RwLock;
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationError;
-use crate::common::stored_bitslice::MmapBitSlice;
 
 /// A wrapper around [`MmapBitSliceStorage`] that delays writing changes to the underlying file
 /// until they get flushed manually.
