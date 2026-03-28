@@ -48,12 +48,6 @@ pub async fn create_shard_snapshot(
         .create_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
         .await?;
 
-    for temp_path in snapshot.temp_paths.iter() {
-        temp_path
-            .keep()
-            .map_err(|err| StorageError::from(err.error))?;
-    }
-
     Ok(snapshot)
 }
 

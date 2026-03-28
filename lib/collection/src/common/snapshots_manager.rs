@@ -286,12 +286,12 @@ impl SnapshotStorageLocalFS {
         // So we copy to the final location with a temporary name and then rename atomically.
         let target_path_tmp = TempPath::try_from_path(target_path.with_extension("tmp"))?;
 
-        // compute and store the file's checksum before the final snapshot file is saved
-        // to avoid making snapshot available without checksum
+        // Write checksum to a temporary path first. We only promote it to the
+        // final checksum path after the snapshot itself is persisted.
         let checksum_path = get_checksum_path(target_path);
+        let checksum_path_tmp = TempPath::try_from_path(checksum_path.with_extension("tmp"))?;
         let checksum = hash_file(source_path).await?;
-        let checksum_file = TempPath::try_from_path(&checksum_path)?;
-        let mut file = tokio_fs::File::create(checksum_path.as_path()).await?;
+        let mut file = tokio_fs::File::create(&checksum_path_tmp).await?;
         file.write_all(checksum.as_bytes()).await?;
         file.flush().await?;
         drop(file);
@@ -299,7 +299,12 @@ impl SnapshotStorageLocalFS {
         move_file(&source_path, &target_path_tmp).await?;
         target_path_tmp.persist(target_path).map_err(|e| e.error)?;
 
-        checksum_file.keep()?;
+        if let Err(err) = checksum_path_tmp.persist(&checksum_path) {
+            // Snapshot persisted but checksum promotion failed: rollback to
+            // avoid leaving partial state.
+            let _ = tokio_fs::remove_file(target_path).await;
+            return Err(err.error.into());
+        }
         get_snapshot_description(target_path).await
     }
 
