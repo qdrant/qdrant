@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -72,7 +73,7 @@ impl<
     /// Open the hash map from a file previously created by
     /// [`MmapHashMap::create`](super::mmap_hashmap::MmapHashMap::create).
     pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
-        let reader = R::open(path, options).map_err(io_err)?;
+        let reader: R = UniversalRead::<u8>::open(path, options).map_err(io_err)?;
 
         // 1. Read header.
         let header_bytes = reader
@@ -137,36 +138,14 @@ impl<
     ///
     /// Three IO reads are performed: bucket offset, entry header, and values.
     pub fn get_with<T>(&self, key: &K, f: impl FnOnce(&[V]) -> T) -> io::Result<Option<T>> {
-        let Some(hash) = self.phf.get(key) else {
+        let Some((entry_start, header_size, values_len)) = self.lookup_entry_header(key)? else {
             return Ok(None);
         };
 
-        // 1. Bucket offset → entry position.
-        let entry_offset = self.read_bucket_offset(hash as usize)?;
-
-        // 2. Entry header: key (with padding) + values_len (with padding).
-        let entry_start = self.entries_start + entry_offset;
-        let key_size_with_padding = Self::key_size_with_padding(key);
-        let header_size = key_size_with_padding + Self::values_len_size_with_padding();
-
-        let entry_header = self
-            .reader
-            .read::<Random>(ReadRange {
-                byte_offset: entry_start,
-                length: header_size as u64,
-            })
-            .map_err(io_err)?;
-
-        if !key.matches(&entry_header) {
-            return Ok(None);
-        }
-
-        let values_len = Self::parse_values_len(&entry_header[key_size_with_padding..])?;
         if values_len == 0 {
             return Ok(Some(f(&[])));
         }
 
-        // 3. Values.
         let values_start = entry_start + header_size as u64;
         let values_bytes = self
             .reader
@@ -188,28 +167,9 @@ impl<
     ///
     /// Only two IO reads are performed: bucket offset and entry header.
     pub fn get_values_count(&self, key: &K) -> io::Result<Option<usize>> {
-        let Some(hash) = self.phf.get(key) else {
+        let Some((_entry_start, _header_size, values_len)) = self.lookup_entry_header(key)? else {
             return Ok(None);
         };
-
-        let entry_offset = self.read_bucket_offset(hash as usize)?;
-        let entry_start = self.entries_start + entry_offset;
-        let key_size_with_padding = Self::key_size_with_padding(key);
-        let header_size = key_size_with_padding + Self::values_len_size_with_padding();
-
-        let entry_header = self
-            .reader
-            .read::<Random>(ReadRange {
-                byte_offset: entry_start,
-                length: header_size as u64,
-            })
-            .map_err(io_err)?;
-
-        if !key.matches(&entry_header) {
-            return Ok(None);
-        }
-
-        let values_len = Self::parse_values_len(&entry_header[key_size_with_padding..])?;
         Ok(Some(values_len as usize))
     }
 
@@ -225,14 +185,7 @@ impl<
             return Ok(());
         }
 
-        // Read all bucket offsets at once.
-        let buckets_bytes = self
-            .reader
-            .read::<Sequential>(ReadRange {
-                byte_offset: self.header.buckets_pos,
-                length: (bucket_count * size_of::<BucketOffset>()) as u64,
-            })
-            .map_err(io_err)?;
+        let buckets_bytes = self.read_all_bucket_offsets()?;
 
         // Read the entire entries region.
         let file_len = self.reader.len().map_err(io_err)?;
@@ -299,13 +252,7 @@ impl<
         }
 
         // 1. Read all bucket offsets at once.
-        let buckets_bytes = self
-            .reader
-            .read::<Sequential>(ReadRange {
-                byte_offset: self.header.buckets_pos,
-                length: (bucket_count * size_of::<BucketOffset>()) as u64,
-            })
-            .map_err(io_err)?;
+        let buckets_bytes = self.read_all_bucket_offsets()?;
 
         // Parse offsets and sort by file position for sequential IO.
         let file_len = self.reader.len().map_err(io_err)?;
@@ -396,6 +343,48 @@ impl<
 
     // ── Private helpers ─────────────────────────────────────────────────
 
+    /// Hash `key`, read the bucket offset and entry header, verify the key matches,
+    /// and return `(entry_start, header_size, values_len)`.
+    ///
+    /// Returns `Ok(None)` if the PHF has no mapping or the stored key doesn't match.
+    /// Two IO reads are performed: bucket offset and entry header.
+    fn lookup_entry_header(&self, key: &K) -> io::Result<Option<(u64, usize, u32)>> {
+        let Some(hash) = self.phf.get(key) else {
+            return Ok(None);
+        };
+
+        let entry_offset = self.read_bucket_offset(hash as usize)?;
+        let entry_start = self.entries_start + entry_offset;
+        let key_size_with_padding = Self::key_size_with_padding(key);
+        let header_size = key_size_with_padding + Self::values_len_size_with_padding();
+
+        let entry_header = self
+            .reader
+            .read::<Random>(ReadRange {
+                byte_offset: entry_start,
+                length: header_size as u64,
+            })
+            .map_err(io_err)?;
+
+        if !key.matches(&entry_header) {
+            return Ok(None);
+        }
+
+        let values_len = Self::parse_values_len(&entry_header[key_size_with_padding..])?;
+        Ok(Some((entry_start, header_size, values_len)))
+    }
+
+    /// Read all bucket offsets in one sequential IO.
+    fn read_all_bucket_offsets(&self) -> io::Result<Cow<'_, [u8]>> {
+        let bucket_count = self.header.buckets_count as usize;
+        self.reader
+            .read::<Sequential>(ReadRange {
+                byte_offset: self.header.buckets_pos,
+                length: (bucket_count * size_of::<BucketOffset>()) as u64,
+            })
+            .map_err(io_err)
+    }
+
     fn read_bucket_offset(&self, index: usize) -> io::Result<u64> {
         let byte_offset =
             self.header.buckets_pos + (index as u64) * size_of::<BucketOffset>() as u64;
@@ -433,6 +422,7 @@ impl<
         if let Ok(values) = <[V]>::ref_from_bytes(bytes) {
             return Ok(f(values));
         }
+        debug_assert!(false, "Values bytes not aligned for zero-copy; falling back to copy");
         let values = Self::copy_values_from_bytes(bytes)?;
         Ok(f(&values))
     }
