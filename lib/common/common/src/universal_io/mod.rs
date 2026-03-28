@@ -60,6 +60,36 @@ pub struct ReadRange {
     pub length: u64,
 }
 
+impl ReadRange {
+    pub fn one(byte_offset: u64) -> ReadRange {
+        ReadRange {
+            byte_offset,
+            length: 1,
+        }
+    }
+
+    /// Split the range into a consecutive sequence of smaller ranges of
+    /// reasonable size. Takes `T` as a hint for element size in bytes.
+    fn iter_autochunks<T>(self) -> (impl Iterator<Item = ReadRange>, u64) {
+        // TODO: align chunks. Perhaps this method and `blocks_for_range_in_file`
+        // can be unified.
+        const MAX_CHUNK_BYTES: u64 = 16 * 1024;
+        let chunk_len = (MAX_CHUNK_BYTES / size_of::<T>() as u64).max(1);
+        let Self {
+            byte_offset,
+            length,
+        } = self;
+        let iter = (0..)
+            .map(move |i| i * chunk_len)
+            .take_while(move |&start| start < length)
+            .map(move |start| ReadRange {
+                byte_offset: byte_offset + start * size_of::<T>() as u64,
+                length: std::cmp::min(chunk_len, length - start),
+            });
+        (iter, chunk_len)
+    }
+}
+
 pub type ByteOffset = u64;
 
 pub type FileIndex = usize;

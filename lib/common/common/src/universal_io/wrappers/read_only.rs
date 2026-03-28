@@ -82,4 +82,18 @@ where
     ) -> Result<()> {
         S::read_multi::<P>(Self::peel_slice(files), reads, callback)
     }
+
+    #[inline]
+    fn read_batch_autochunks(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+        callback: impl FnMut(T),
+    ) -> Result<()> {
+        self.0.read_batch_autochunks(ranges, callback)
+    }
+
+    #[inline]
+    fn for_each(&self, callback: impl FnMut(u64, T)) -> Result<()> {
+        self.0.for_each(callback)
+    }
 }
