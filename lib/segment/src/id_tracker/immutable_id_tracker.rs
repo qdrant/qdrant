@@ -2,8 +2,10 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
+use bitvec::slice::BitSlice;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
+use common::atomic_bitvec::AtomicBitSlice;
+use common::bitvec::{BitOrdering, BitSliceExt as _, BitVec};
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;
@@ -301,7 +303,10 @@ impl ImmutableIdTracker {
         let mut deleted_storage = MmapBitSlice::open(&deleted_filepath, OpenOptions::default())?;
 
         // Set bits for deleted points from the mappings,
-        deleted_storage.write_bitslice(mappings.deleted())?;
+        // The `mappings` is owned, so nothing can write to it, and `bitvec` reading with `Relaxed` ordering is OK.
+        deleted_storage.write_bitslice(BitSlice::<_, BitOrdering>::from_slice(
+            mappings.deleted().as_raw_slice(),
+        ))?;
         // plus any trailing points beyond mappings.deleted().len() are also marked deleted.
         deleted_storage.set_ascending_bits_batch(
             (mappings.deleted().len()..mappings.total_point_count()).map(|i| (i as u64, true)),
@@ -472,7 +477,7 @@ impl IdTracker for ImmutableIdTracker {
         self.total_point_count() - self.available_point_count()
     }
 
-    fn deleted_point_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_> {
         self.mappings.deleted()
     }
 

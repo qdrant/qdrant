@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::bitvec::BitSlice;
+use common::atomic_bitvec::AtomicBitSlice;
 use common::types::PointOffsetType;
 #[cfg(test)]
 use rand::RngExt;
@@ -133,7 +133,7 @@ impl IdTracker for InMemoryIdTracker {
         self.total_point_count() - self.available_point_count()
     }
 
-    fn deleted_point_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_> {
         self.mappings.deleted()
     }
 

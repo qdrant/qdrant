@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use atomic_refcell::AtomicRef;
+use common::atomic_bitvec::AtomicBitSlice;
 use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
@@ -91,11 +92,11 @@ pub trait IdTracker: fmt::Debug {
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
 
-    /// Get [`BitSlice`] representation for deleted points with deletion flags
+    /// Get [`AtomicBitSlice`] representation for deleted points with deletion flags
     ///
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
-    fn deleted_point_bitslice(&self) -> &BitSlice;
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_>;
 
     /// Check whether the given point is soft deleted
     fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
@@ -470,7 +471,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn deleted_point_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),

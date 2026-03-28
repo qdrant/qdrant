@@ -1,4 +1,4 @@
-use common::bitvec::BitSlice;
+use common::atomic_bitvec::AtomicBitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
@@ -93,7 +93,7 @@ fn test_random_score(
     mut rng: impl rand::RngExt,
     dim: usize,
     storage: &VectorStorageEnum,
-    deleted_points: &BitSlice,
+    deleted_points: AtomicBitSlice<'_>,
 ) -> Result<()> {
     let query: QueryVector = sampler(&mut rng).take(dim).collect_vec().into();
 

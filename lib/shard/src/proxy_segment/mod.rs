@@ -5,7 +5,7 @@ pub mod snapshot_entry;
 mod tests;
 
 use ahash::AHashMap;
-use common::bitvec::BitVec;
+use common::atomic_bitvec::AtomicBitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools as _;
@@ -26,7 +26,7 @@ pub struct ProxySegment {
     /// Internal mask of deleted points, specific to the wrapped segment
     /// Present if the wrapped segment is a plain segment
     /// Used for faster deletion checks
-    deleted_mask: Option<BitVec>,
+    deleted_mask: Option<AtomicBitVec>,
     changed_indexes: ProxyIndexChanges,
     /// Points which should no longer used from wrapped_segment
     /// May contain points which are not in wrapped_segment,
@@ -122,7 +122,7 @@ impl ProxySegment {
                 if deleted_mask.len() <= point_offset as usize {
                     deleted_mask.resize(point_offset as usize + 1, false);
                 }
-                deleted_mask.set(point_offset as usize, true);
+                deleted_mask.replace_concurrent(point_offset as usize, true);
                 true
             }
             _ => false,

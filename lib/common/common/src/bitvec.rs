@@ -3,8 +3,9 @@ use bitvec::store::BitStore;
 
 use crate::types::PointOffsetType;
 
-pub type BitVec = bitvec::vec::BitVec<u64, Lsb0>;
-pub type BitSlice = bitvec::slice::BitSlice<u64, Lsb0>;
+pub type BitOrdering = Lsb0;
+pub type BitVec = bitvec::vec::BitVec<u64, BitOrdering>;
+pub type BitSlice = bitvec::slice::BitSlice<u64, BitOrdering>;
 
 /// Set deleted state in given bitvec.
 ///

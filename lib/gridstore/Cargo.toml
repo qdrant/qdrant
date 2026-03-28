@@ -54,10 +54,6 @@ name = "real_data_bench"
 harness = false
 
 [[bench]]
-name = "bitmask_bench"
-harness = false
-
-[[bench]]
 name = "bustle_bench"
 harness = false
 
