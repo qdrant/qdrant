@@ -918,6 +918,7 @@ pub mod binary_quantization_query_encoding {
         Binary = 1,
         Scalar4Bits = 2,
         Scalar8Bits = 3,
+        Uncompressed = 4,
     }
     impl Setting {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -930,6 +931,7 @@ pub mod binary_quantization_query_encoding {
                 Setting::Binary => "Binary",
                 Setting::Scalar4Bits => "Scalar4Bits",
                 Setting::Scalar8Bits => "Scalar8Bits",
+                Setting::Uncompressed => "Uncompressed",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -939,6 +941,7 @@ pub mod binary_quantization_query_encoding {
                 "Binary" => Some(Self::Binary),
                 "Scalar4Bits" => Some(Self::Scalar4Bits),
                 "Scalar8Bits" => Some(Self::Scalar8Bits),
+                "Uncompressed" => Some(Self::Uncompressed),
                 _ => None,
             }
         }

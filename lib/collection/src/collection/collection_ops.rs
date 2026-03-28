@@ -142,6 +142,9 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
+            quantization_config_diff
+                .validate_compatibility(&config.params, config.quantization_config.as_ref())?;
+
             match quantization_config_diff {
                 QuantizationConfigDiff::Scalar(scalar) => {
                     config
