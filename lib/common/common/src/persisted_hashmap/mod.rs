@@ -1,3 +1,4 @@
+mod bucket_offsets;
 pub mod keys;
 pub mod mmap_hashmap;
 pub mod universal_hashmap;

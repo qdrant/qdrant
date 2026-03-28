@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -7,6 +6,7 @@ use std::path::Path;
 use ph::fmph::Function;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+use super::bucket_offsets::BucketOffsets;
 use crate::generic_consts::{Random, Sequential};
 use crate::persisted_hashmap::keys::Key;
 use crate::universal_io::{OpenOptions, ReadRange, UniversalRead};
@@ -202,11 +202,7 @@ impl<
             .map_err(io_err)?;
 
         for i in 0..bucket_count {
-            let offset_start = i * size_of::<BucketOffset>();
-            let (offset, _) = BucketOffset::read_from_prefix(&buckets_bytes[offset_start..])
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Can't read bucket offset")
-                })?;
+            let offset = buckets_bytes.get(i)?;
 
             let entry = entries_data.get(offset as usize..).ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "Entry offset out of bounds")
@@ -252,21 +248,13 @@ impl<
         }
 
         // 1. Read all bucket offsets at once.
-        let buckets_bytes = self.read_all_bucket_offsets()?;
+        let buckets = self.read_all_bucket_offsets()?;
 
-        // Parse offsets and sort by file position for sequential IO.
+        // Sort offsets by file position for sequential IO.
         let file_len = self.reader.len().map_err(io_err)?;
         let entries_region_len = file_len - self.entries_start;
 
-        let mut sorted_offsets: Vec<u64> = (0..bucket_count)
-            .map(|i| {
-                let start = i * size_of::<BucketOffset>();
-                let (offset, _) = BucketOffset::read_from_prefix(&buckets_bytes[start..])
-                    .expect("bucket offset out of range");
-                offset
-            })
-            .collect();
-        sorted_offsets.sort_unstable();
+        let sorted_offsets = buckets.to_sorted_vec();
 
         // 2. Build capped read ranges — read just enough for the key header.
         //
@@ -375,14 +363,16 @@ impl<
     }
 
     /// Read all bucket offsets in one sequential IO.
-    fn read_all_bucket_offsets(&self) -> io::Result<Cow<'_, [u8]>> {
+    fn read_all_bucket_offsets(&self) -> io::Result<BucketOffsets<'_>> {
         let bucket_count = self.header.buckets_count as usize;
-        self.reader
+        let bytes = self
+            .reader
             .read::<Sequential>(ReadRange {
                 byte_offset: self.header.buckets_pos,
                 length: (bucket_count * size_of::<BucketOffset>()) as u64,
             })
-            .map_err(io_err)
+            .map_err(io_err)?;
+        Ok(BucketOffsets::new(bytes))
     }
 
     fn read_bucket_offset(&self, index: usize) -> io::Result<u64> {
@@ -422,7 +412,10 @@ impl<
         if let Ok(values) = <[V]>::ref_from_bytes(bytes) {
             return Ok(f(values));
         }
-        debug_assert!(false, "Values bytes not aligned for zero-copy; falling back to copy");
+        debug_assert!(
+            false,
+            "Values bytes not aligned for zero-copy; falling back to copy"
+        );
         let values = Self::copy_values_from_bytes(bytes)?;
         Ok(f(&values))
     }
