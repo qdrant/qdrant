@@ -15,6 +15,7 @@ mod histogram;
 mod immutable_point_to_values;
 pub mod index_selector;
 pub mod map_index;
+pub mod nested_element_index;
 pub mod null_index;
 pub mod numeric_index;
 mod stat_tools;
