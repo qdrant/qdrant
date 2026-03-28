@@ -1,4 +1,4 @@
-use common::mmap_hashmap::{MmapHashMap, gen_ident, gen_map};
+use common::persisted_hashmap::mmap_hashmap::{MmapHashMap, gen_ident, gen_map};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
