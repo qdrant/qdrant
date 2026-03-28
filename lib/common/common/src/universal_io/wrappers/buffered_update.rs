@@ -1,41 +1,42 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::is_alive_lock::IsAliveLock;
-use common::mmap::MmapSlice;
-use common::types::PointOffsetType;
 use parking_lot::{Mutex, RwLock};
 
-use crate::common::Flusher;
+use crate::is_alive_lock::IsAliveLock;
+use crate::types::PointOffsetType;
+use crate::universal_io::{
+    Flusher, TypedStorage, UniversalIoError, UniversalRead as _, UniversalWrite,
+};
 
-/// A wrapper around `MmapSlice` that delays writing changes to the underlying file until they get
+/// A wrapper around `TypedStorage<S, T>` that delays writing changes to the underlying file until they get
 /// flushed manually.
-/// This expects the underlying MmapSlice not to grow in size.
+/// This expects the underlying storage not to grow in size.
 ///
 /// WARN: this structure is expected to be write-only.
 #[derive(Debug)]
-pub struct MmapSliceBufferedUpdateWrapper<T>
+pub struct SliceBufferedUpdateWrapper<S: UniversalWrite<T>, T: Copy>
 where
     T: 'static,
 {
-    mmap_slice: Arc<RwLock<MmapSlice<T>>>,
-    len: usize,
+    slice: Arc<RwLock<TypedStorage<S, T>>>,
+    len: u64,
     pending_updates: Arc<Mutex<AHashMap<PointOffsetType, T>>>,
     is_alive_lock: IsAliveLock,
 }
 
-impl<T> MmapSliceBufferedUpdateWrapper<T>
+impl<S: UniversalWrite<T>, T: Copy> SliceBufferedUpdateWrapper<S, T>
 where
     T: 'static,
 {
-    pub fn new(mmap_slice: MmapSlice<T>) -> Self {
-        let len = mmap_slice.len();
-        Self {
-            mmap_slice: Arc::new(RwLock::new(mmap_slice)),
+    pub fn new(slice_storage: TypedStorage<S, T>) -> Result<Self, UniversalIoError> {
+        let len = slice_storage.len()?;
+        Ok(Self {
+            slice: Arc::new(RwLock::new(slice_storage)),
             len,
             pending_updates: Arc::new(Mutex::new(AHashMap::new())),
             is_alive_lock: IsAliveLock::new(),
-        }
+        })
     }
 
     /// Sets the item at `index` to `value` buffered.
@@ -44,7 +45,7 @@ where
     /// Panics if the index is out of bounds.
     pub fn set(&self, index: PointOffsetType, value: T) {
         assert!(
-            (index as usize) < self.len,
+            u64::from(index) < self.len,
             "index {index} out of range: {}",
             self.len
         );
@@ -52,9 +53,10 @@ where
     }
 }
 
-impl<T> MmapSliceBufferedUpdateWrapper<T>
+impl<S, T> SliceBufferedUpdateWrapper<S, T>
 where
-    T: 'static + Sync + Send + Clone + PartialEq,
+    S: UniversalWrite<T> + Send + Sync + 'static,
+    T: Sync + Send + Copy + Clone + PartialEq + 'static,
 {
     pub fn flusher(&self) -> Flusher {
         let updates = {
@@ -66,7 +68,7 @@ where
         };
 
         let pending_updates_weak = Arc::downgrade(&self.pending_updates);
-        let slice = Arc::downgrade(&self.mmap_slice);
+        let slice = Arc::downgrade(&self.slice);
         let is_alive_handle = self.is_alive_lock.handle();
         Box::new(move || {
             let (Some(is_alive_guard), Some(pending_updates_arc), Some(slice)) = (
@@ -74,17 +76,32 @@ where
                 pending_updates_weak.upgrade(),
                 slice.upgrade(),
             ) else {
-                log::debug!(
-                    "Aborted flushing on a dropped MmapSliceBufferedUpdateWrapper instance"
-                );
+                log::debug!("Aborted flushing on a dropped SliceBufferedUpdateWrapper instance");
                 return Ok(());
             };
 
-            let mut mmap_slice_write = slice.write();
-            for (&index, value) in &updates {
-                mmap_slice_write[index as usize] = value.clone();
-            }
-            mmap_slice_write.flusher()()?;
+            let mut slice_guard = slice.write();
+
+            // Coalesce contiguous updates into the same write
+            let mut items: Vec<(PointOffsetType, T)> =
+                updates.iter().map(|(k, v)| (*k, *v)).collect();
+            items.sort_by_key(|(index, _)| *index);
+
+            let all_values: Vec<T> = items.iter().map(|(_, value)| *value).collect();
+
+            // Batch writes
+            let mut remaining_values: &[T] = &all_values[..];
+            let it = items.chunk_by(|(a, _), (b, _)| *a + 1 == *b).map(|chunk| {
+                let elem_start: PointOffsetType = chunk[0].0;
+                let byte_start = u64::from(elem_start) * size_of::<T>() as u64;
+                let chunk_values = remaining_values
+                    .split_off(..chunk.len())
+                    .expect("`chunk.len()` is sourced from the same slice as `remaining_values`");
+                (byte_start, chunk_values)
+            });
+            slice_guard.write_batch(it)?;
+
+            slice_guard.flusher()()?;
 
             // Keep the guard till here to prevent concurrent drop/flushes
             // We don't touch files from here on and can drop the alive guard
