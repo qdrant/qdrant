@@ -131,6 +131,15 @@ pub type ChangePeerFromState = Arc<dyn Fn(PeerId, ShardId, Option<ReplicaState>)
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
+fn is_storage_full_load_error(err: &CollectionError) -> bool {
+    let text = err.to_string().to_ascii_lowercase();
+    text.contains("no space left on device")
+        || text.contains("os error 28")
+        || text.contains("storage full")
+        || text.contains("disk full")
+        || text.contains("not enough space")
+}
+
 impl ShardReplicaSet {
     /// Create a new fresh replica set, no previous state is expected.
     #[allow(clippy::too_many_arguments)]
@@ -317,17 +326,28 @@ impl ShardReplicaSet {
                 match res {
                     Ok(shard) => Shard::Local(shard),
                     Err(err) => {
-                        if !shared_storage_config.handle_collection_load_errors {
+                        let is_storage_full = is_storage_full_load_error(&err);
+                        let tolerate_load_error =
+                            shared_storage_config.handle_collection_load_errors || is_storage_full;
+                        if !tolerate_load_error {
                             panic!("Failed to load local shard {shard_path:?}: {err}")
                         }
 
                         local_load_failure = true;
 
-                        log::error!(
-                            "Failed to load local shard {shard_path:?}, \
-                             initializing \"dummy\" shard instead: \
-                             {err}"
-                        );
+                        if is_storage_full {
+                            log::error!(
+                                "Failed to load local shard {shard_path:?} due to storage-full condition, \
+                                 initializing \"dummy\" shard instead to avoid restart loop: \
+                                 {err}"
+                            );
+                        } else {
+                            log::error!(
+                                "Failed to load local shard {shard_path:?}, \
+                                 initializing \"dummy\" shard instead: \
+                                 {err}"
+                            );
+                        }
 
                         Shard::Dummy(DummyShard::new(format!(
                             "Failed to load local shard {shard_path:?}: {err}"
@@ -1549,4 +1569,28 @@ impl ShardReplicaSet {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {
     Remove(ShardId, PeerId),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn storage_full_load_error_detection_positive_cases() {
+        let err1 = CollectionError::service_error("No space left on device (os error 28)");
+        let err2 = CollectionError::service_error("failed write: disk full while flushing");
+        let err3 = CollectionError::service_error("storage full");
+        let err4 = CollectionError::service_error("There is not enough space on the disk");
+
+        assert!(is_storage_full_load_error(&err1));
+        assert!(is_storage_full_load_error(&err2));
+        assert!(is_storage_full_load_error(&err3));
+        assert!(is_storage_full_load_error(&err4));
+    }
+
+    #[test]
+    fn storage_full_load_error_detection_negative_case() {
+        let err = CollectionError::service_error("Permission denied while opening file");
+        assert!(!is_storage_full_load_error(&err));
+    }
 }
