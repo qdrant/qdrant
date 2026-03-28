@@ -88,7 +88,7 @@ impl SegmentBuilder {
         let temp_dir = create_temp_dir(temp_dir)?;
 
         let id_tracker = if segment_config.is_appendable() {
-            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(temp_dir.path())?)
+            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(temp_dir.path(), None)?)
         } else {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
@@ -675,8 +675,6 @@ impl SegmentBuilder {
                     path: &vector_index_path,
                     stopped,
                     tick_progress: || (),
-                    // We don't use the `index` returned here so we always set deferred to `None`. It's been loaded properly later.
-                    deferred_internal_id: None,
                 })?;
 
                 if sparse_vector_config.storage_type.is_on_disk() {

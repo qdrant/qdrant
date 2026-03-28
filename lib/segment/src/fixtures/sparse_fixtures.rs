@@ -83,7 +83,6 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
             path: index_dir,
             stopped: &stopped,
             tick_progress: || (),
-            deferred_internal_id: None,
         })?;
 
     assert_eq!(

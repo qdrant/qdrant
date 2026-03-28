@@ -180,6 +180,17 @@ pub trait IdTracker: fmt::Debug {
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new()
     }
+
+    /// Returns the deferred internal ID threshold.
+    /// Points with internal id >= this value are hidden from reads.
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        None
+    }
+
+    /// Returns the count of deleted deferred points.
+    fn deferred_deleted_count(&self) -> usize {
+        0
+    }
 }
 
 /// Enum holding a reference to point mappings from an ID tracker.
@@ -543,6 +554,26 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.immutable_files(),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.immutable_files(),
+        }
+    }
+
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
+        }
+    }
+
+    fn deferred_deleted_count(&self) -> usize {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
         }
     }
 }

@@ -31,7 +31,7 @@ impl Segment {
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
-                self.deferred_internal_id(),
+                id_tracker.deferred_internal_id(),
             )?
             .filter_map(|internal_id| id_tracker.external_id(internal_id));
 
@@ -51,11 +51,10 @@ impl Segment {
     ) -> OperationResult<Vec<PointIdType>> {
         let payload_index = self.payload_index.borrow();
         let filter_context = payload_index.filter_context(condition, hw_counter)?;
-        Ok(self
-            .id_tracker
-            .borrow()
+        let id_tracker = self.id_tracker.borrow();
+        Ok(id_tracker
             .point_mappings()
-            .iter_random_visible(self.deferred_internal_id())
+            .iter_random_visible(id_tracker.deferred_internal_id())
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
@@ -64,10 +63,10 @@ impl Segment {
     }
 
     pub(super) fn read_by_random_id(&self, limit: usize) -> Vec<PointIdType> {
-        self.id_tracker
-            .borrow()
+        let id_tracker = self.id_tracker.borrow();
+        id_tracker
             .point_mappings()
-            .iter_random_visible(self.deferred_internal_id())
+            .iter_random_visible(id_tracker.deferred_internal_id())
             .map(|x| x.0)
             .take(limit)
             .collect()

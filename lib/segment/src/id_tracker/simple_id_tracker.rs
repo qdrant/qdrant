@@ -36,7 +36,10 @@ pub struct SimpleIdTracker {
 }
 
 impl SimpleIdTracker {
-    pub fn open(store: Arc<RwLock<DB>>) -> OperationResult<Self> {
+    pub fn open(
+        store: Arc<RwLock<DB>>,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<Self> {
         let mut deleted = BitVec::new();
         let mut internal_to_external: Vec<PointIdType> = Default::default();
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
@@ -115,6 +118,7 @@ impl SimpleIdTracker {
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
+            deferred_internal_id,
         );
 
         #[cfg(debug_assertions)]
@@ -296,6 +300,14 @@ impl IdTracker for SimpleIdTracker {
     fn files(&self) -> Vec<PathBuf> {
         vec![]
     }
+
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.mappings.deferred_internal_id()
+    }
+
+    fn deferred_deleted_count(&self) -> usize {
+        self.mappings.deferred_deleted_count()
+    }
 }
 
 impl From<&ExtendedPointId> for StoredPointId {
@@ -393,7 +405,7 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_MAPPING_CF, DB_VERSIONS_CF]).unwrap();
 
-        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
+        let mut id_tracker = SimpleIdTracker::open(db, None).unwrap();
 
         id_tracker.set_link(200.into(), 0).unwrap();
         id_tracker.set_link(100.into(), 1).unwrap();
@@ -427,7 +439,7 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_MAPPING_CF, DB_VERSIONS_CF]).unwrap();
 
-        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
+        let mut id_tracker = SimpleIdTracker::open(db, None).unwrap();
 
         let mut values: Vec<PointIdType> = vec![
             100.into(),
@@ -471,7 +483,7 @@ mod tests {
         let db = open_db(db_dir.path(), &[DB_MAPPING_CF, DB_VERSIONS_CF]).unwrap();
 
         // Create RocksDB ID tracker and insert test points
-        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
+        let mut id_tracker = SimpleIdTracker::open(db, None).unwrap();
         for value in TEST_POINTS.iter() {
             let internal_id = id_tracker.total_point_count() as PointOffsetType;
             id_tracker.set_link(*value, internal_id).unwrap();
