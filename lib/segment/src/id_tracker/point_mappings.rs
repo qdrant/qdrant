@@ -26,9 +26,8 @@ pub type FileEndianess = LittleEndian;
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct PointMappings {
     /// `deleted` specifies which points of internal_to_external was deleted.
-    /// It is possible that `deleted` can be longer or shorter than `internal_to_external`.
-    /// - if `deleted` is longer, then extra bits should be set to `false` and ignored.
-    /// - if `deleted` is shorter, then extra indices are as if the bits were set to `true`.
+    /// It is possible that `deleted` can be longer than `internal_to_external`.
+    /// If `deleted` is longer, then extra bits should be set to `false` and ignored.
     deleted: BitVec,
     internal_to_external: Vec<PointIdType>,
 
@@ -39,11 +38,16 @@ pub struct PointMappings {
 
 impl PointMappings {
     pub fn new(
-        deleted: BitVec,
+        mut deleted: BitVec,
         internal_to_external: Vec<PointIdType>,
         external_to_internal_num: BTreeMap<u64, PointOffsetType>,
         external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
     ) -> Self {
+        // Resize deleted to be at least as long as internal_to_external, otherwise
+        // we wouldn't be able to remove points in non-appendable segments without a lock for reallocation.
+        if deleted.len() < internal_to_external.len() {
+            deleted.resize(internal_to_external.len(), false);
+        }
         Self {
             deleted,
             internal_to_external,

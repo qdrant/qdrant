@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::bitvec::{BitSlice, BitVec};
@@ -20,7 +20,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
-use crate::types::{PointIdType, SeqNumberType};
+use crate::types::{AtomicSeqNumberType, PointIdType, SeqNumberType};
 
 const FILE_MAPPINGS: &str = "mutable_id_tracker.mappings";
 const FILE_VERSIONS: &str = "mutable_id_tracker.versions";
@@ -100,7 +100,7 @@ impl MappingChangeType {
 #[derive(Debug)]
 pub struct MutableIdTracker {
     segment_path: PathBuf,
-    internal_to_version: Vec<SeqNumberType>,
+    internal_to_version: Vec<AtomicSeqNumberType>,
     pub(super) mappings: PointMappings,
 
     /// List of point versions pending to be persisted, will be persisted on flush
@@ -194,11 +194,22 @@ impl MutableIdTracker {
             .filter(|path| path.is_file())
             .collect()
     }
+
+    fn set_internal_version_deleted(&self, internal_id: PointOffsetType) {
+        let version = DELETED_POINT_VERSION;
+        if self.external_id(internal_id).is_some()
+            && let Some(internal_version_cell) = self.internal_to_version.get(internal_id as usize)
+        {
+            internal_version_cell.store(version, AtomicOrdering::Release);
+        }
+    }
 }
 
 impl IdTracker for MutableIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        self.internal_to_version.get(internal_id as usize).copied()
+        self.internal_to_version
+            .get(internal_id as usize)
+            .map(|cell| cell.load(AtomicOrdering::Acquire))
     }
 
     fn set_internal_version(
@@ -217,9 +228,10 @@ impl IdTracker for MutableIdTracker {
                     );
                 }
             }
-            self.internal_to_version.resize(internal_id as usize + 1, 0);
+            self.internal_to_version
+                .resize_with(internal_id as usize + 1, Default::default);
         }
-        self.internal_to_version[internal_id as usize] = version;
+        self.internal_to_version[internal_id as usize].store(version, AtomicOrdering::Release);
         self.pending_versions.lock().insert(internal_id, version);
         Ok(())
     }
@@ -250,7 +262,7 @@ impl IdTracker for MutableIdTracker {
             .lock()
             .push(MappingChange::Delete(external_id));
         if let Some(internal_id) = internal_id {
-            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+            self.set_internal_version_deleted(internal_id);
         }
         Ok(())
     }
@@ -263,7 +275,7 @@ impl IdTracker for MutableIdTracker {
                 .push(MappingChange::Delete(external_id));
         }
 
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        self.set_internal_version_deleted(internal_id);
 
         Ok(())
     }
@@ -316,7 +328,7 @@ impl IdTracker for MutableIdTracker {
             // in an best effort to get rid of partially persisted mappings. We can safely ignore
             // truncate errors because load should properly handle partial entries as well.
             if let Err(err) = stored {
-                let expected_len = mappings_expected_len.load(std::sync::atomic::Ordering::Relaxed);
+                let expected_len = mappings_expected_len.load(AtomicOrdering::Relaxed);
                 let truncate_result = File::options()
                     .write(true)
                     .open(&mappings_path)
@@ -387,7 +399,7 @@ impl IdTracker for MutableIdTracker {
             self.internal_to_version
                 .iter()
                 .enumerate()
-                .map(|(i, version)| (i as PointOffsetType, *version)),
+                .map(|(i, version)| (i as PointOffsetType, version.load(AtomicOrdering::Acquire))),
         )
     }
 
@@ -430,7 +442,7 @@ fn store_mapping_changes(
             ))
         })?
         .len();
-    let file_start_appending = persisted_mappings_size.load(std::sync::atomic::Ordering::Relaxed);
+    let file_start_appending = persisted_mappings_size.load(AtomicOrdering::Relaxed);
     match file_len.cmp(&file_start_appending) {
         // File size is what we expect, continue normally
         Ordering::Equal => {}
@@ -483,7 +495,7 @@ fn store_mapping_changes(
     })?;
 
     // Update persisted mappings size.
-    persisted_mappings_size.store(new_persisted_size, std::sync::atomic::Ordering::Relaxed);
+    persisted_mappings_size.store(new_persisted_size, AtomicOrdering::Relaxed);
 
     Ok(())
 }
@@ -767,7 +779,7 @@ fn write_entry<W: Write>(mut writer: W, change: MappingChange) -> OperationResul
     Ok(())
 }
 
-fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
+fn load_versions(versions_path: &Path) -> OperationResult<Vec<AtomicSeqNumberType>> {
     let file = File::open(versions_path)?;
 
     let file_len = file.metadata()?.len();
@@ -782,7 +794,11 @@ fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
     let mut reader = BufReader::new(file);
 
     Ok((0..version_count)
-        .map(|_| reader.read_u64::<FileEndianess>())
+        .map(|_| {
+            reader
+                .read_u64::<FileEndianess>()
+                .map(AtomicSeqNumberType::new)
+        })
         .collect::<Result<_, _>>()?)
 }
 
@@ -1017,8 +1033,13 @@ pub(super) mod tests {
         );
         for i in 0..old_versions.len() {
             assert_eq!(
-                old_versions.get(i),
-                loaded_id_tracker.internal_to_version.get(i),
+                old_versions
+                    .get(i)
+                    .map(|cell| cell.load(AtomicOrdering::Relaxed)),
+                loaded_id_tracker
+                    .internal_to_version
+                    .get(i)
+                    .map(|cell| cell.load(AtomicOrdering::Relaxed)),
                 "Version mismatch at index {i}",
             );
         }
@@ -1545,6 +1566,10 @@ pub(super) mod tests {
         assert_eq!(fs::metadata(&path).unwrap().len(), 29);
 
         let versions = load_versions(&path).unwrap();
+        let versions = versions
+            .into_iter()
+            .map(|cell| cell.load(AtomicOrdering::Relaxed))
+            .collect_vec();
         assert_eq!(versions, vec![10, 20, 30]);
 
         // File must NOT be truncated by load (read-only operation)
@@ -1577,6 +1602,10 @@ pub(super) mod tests {
         assert_eq!(file_len % VERSION_ELEMENT_SIZE, 0);
 
         let versions = load_versions(&path).unwrap();
+        let versions = versions
+            .into_iter()
+            .map(|cell| cell.load(AtomicOrdering::Relaxed))
+            .collect_vec();
         assert_eq!(versions.len(), 2);
         assert_eq!(versions[0], 10); // untouched
         assert_eq!(versions[1], 99); // updated
@@ -1596,6 +1625,10 @@ pub(super) mod tests {
         store_version_changes(&path, &changes).unwrap();
 
         let versions = load_versions(&path).unwrap();
+        let versions = versions
+            .into_iter()
+            .map(|cell| cell.load(AtomicOrdering::Relaxed))
+            .collect_vec();
         assert_eq!(versions, vec![100, 200]);
 
         // Now write at internal_id=5, leaving a gap at 2,3,4
@@ -1604,6 +1637,10 @@ pub(super) mod tests {
         store_version_changes(&path, &changes).unwrap();
 
         let versions = load_versions(&path).unwrap();
+        let versions = versions
+            .into_iter()
+            .map(|cell| cell.load(AtomicOrdering::Relaxed))
+            .collect_vec();
         assert_eq!(versions.len(), 6);
         assert_eq!(versions[0], 100);
         assert_eq!(versions[1], 200);
