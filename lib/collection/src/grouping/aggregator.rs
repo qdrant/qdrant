@@ -23,6 +23,10 @@ pub(super) struct GroupsAggregator {
     order: Option<Order>,
 }
 
+/// Maximum capacity to allocate for hash maps/sets to prevent panics from
+/// hash table capacity overflow when user provides extremely large values.
+const MAX_CAPACITY: usize = 1024;
+
 impl GroupsAggregator {
     pub(super) fn new(
         groups: usize,
@@ -30,14 +34,18 @@ impl GroupsAggregator {
         grouped_by: JsonPath,
         order: Option<Order>,
     ) -> Self {
+        // Cap capacity to prevent allocation panics with large user-provided values
+        let groups_capacity = groups.min(MAX_CAPACITY);
+        let all_ids_capacity = (groups.saturating_mul(group_size)).min(MAX_CAPACITY);
+
         Self {
-            groups: AHashMap::with_capacity(groups),
+            groups: AHashMap::with_capacity(groups_capacity),
             max_group_size: group_size,
             grouped_by,
             max_groups: groups,
-            full_groups: AHashSet::with_capacity(groups),
-            group_best_scores: AHashMap::with_capacity(groups),
-            all_ids: AHashSet::with_capacity(groups * group_size),
+            full_groups: AHashSet::with_capacity(groups_capacity),
+            group_best_scores: AHashMap::with_capacity(groups_capacity),
+            all_ids: AHashSet::with_capacity(all_ids_capacity),
             order,
         }
     }
@@ -69,7 +77,7 @@ impl GroupsAggregator {
             let group = self
                 .groups
                 .entry(group_key.clone())
-                .or_insert_with(|| AHashMap::with_capacity(self.max_group_size));
+                .or_insert_with(|| AHashMap::with_capacity(self.max_group_size.min(MAX_CAPACITY)));
 
             let entry = group.entry(point.id);
 
