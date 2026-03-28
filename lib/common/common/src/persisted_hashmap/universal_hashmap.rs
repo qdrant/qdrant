@@ -184,16 +184,6 @@ impl<
     /// 1. Read bucket offsets (sorted by bucket index).
     /// 2. Read entry headers (sorted by entry offset) and verify keys.
     /// 3. Read values for matched entries (sorted by entry offset).
-    ///
-    /// Look up multiple keys at once, returning results in the same order as the input.
-    ///
-    /// This is more efficient than calling [`get_with`](Self::get_with) in a loop because
-    /// IO reads are sorted by file position and batched for sequential access.
-    ///
-    /// Three batched IO phases are performed:
-    /// 1. Read bucket offsets (sorted by bucket index).
-    /// 2. Read entry headers (sorted by entry offset) and verify keys.
-    /// 3. Read values for matched entries (sorted by entry offset).
     pub fn get_with_batch<'k, T>(
         &self,
         keys: &[&'k K],
@@ -583,8 +573,8 @@ impl<
         values_lens: Vec<u32>,
         f: &mut impl FnMut(&K, &[V]) -> T,
     ) -> io::Result<Vec<Option<T>>> {
-        let mut results: Vec<Option<T>> = Vec::with_capacity(idx_mapping.len());
-        results.resize_with(idx_mapping.len(), || None);
+        let mut results: Vec<Option<T>> = Vec::with_capacity(keys.len());
+        results.resize_with(keys.len(), || None);
 
         // Handle zero-length value matches.
         for (idx, &values_len) in values_lens.iter().enumerate() {
