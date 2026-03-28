@@ -216,6 +216,30 @@ impl SnapshotStorageManager {
     }
 }
 
+/// Resolves and validates that `snapshot_name` is a file that lives inside `snapshots_path`.
+fn resolve_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> CollectionResult<PathBuf> {
+    let absolute_snapshot_dir = fs::canonicalize(snapshots_path).map_err(|_| {
+        CollectionError::not_found(format!("Snapshot directory: {}", snapshots_path.display()))
+    })?;
+
+    let absolute_snapshot_path = fs::canonicalize(absolute_snapshot_dir.join(snapshot_name))
+        .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
+
+    if !absolute_snapshot_path.starts_with(&absolute_snapshot_dir) {
+        return Err(CollectionError::not_found(format!(
+            "Snapshot {snapshot_name}"
+        )));
+    }
+
+    if !absolute_snapshot_path.is_file() {
+        return Err(CollectionError::not_found(format!(
+            "Snapshot {snapshot_name}"
+        )));
+    }
+
+    Ok(absolute_snapshot_path)
+}
+
 impl SnapshotStorageLocalFS {
     async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
         let checksum_path = get_checksum_path(snapshot_path);
@@ -327,52 +351,14 @@ impl SnapshotStorageLocalFS {
         snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
-        let absolute_snapshot_dir = fs::canonicalize(snapshots_path).map_err(|_| {
-            CollectionError::not_found(format!("Snapshot directory: {}", snapshots_path.display()))
-        })?;
-
-        let absolute_snapshot_path = fs::canonicalize(absolute_snapshot_dir.join(snapshot_name))
-            .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
-
-        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-            return Err(CollectionError::not_found(format!(
-                "Snapshot {snapshot_name}"
-            )));
-        }
-
-        if !absolute_snapshot_path.is_file() {
-            return Err(CollectionError::not_found(format!(
-                "Snapshot {snapshot_name}"
-            )));
-        }
-
-        Ok(absolute_snapshot_path)
+        resolve_snapshot_path(snapshots_path, snapshot_name)
     }
 
     /// Get absolute file path for a collection snapshot by name
     ///
     /// This enforces the file to be inside the snapshots directory
     fn get_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> CollectionResult<PathBuf> {
-        let absolute_snapshot_dir = fs::canonicalize(snapshots_path).map_err(|_| {
-            CollectionError::not_found(format!("Snapshot directory: {}", snapshots_path.display()))
-        })?;
-
-        let absolute_snapshot_path = fs::canonicalize(absolute_snapshot_dir.join(snapshot_name))
-            .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
-
-        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-            return Err(CollectionError::not_found(format!(
-                "Snapshot {snapshot_name}"
-            )));
-        }
-
-        if !absolute_snapshot_path.is_file() {
-            return Err(CollectionError::not_found(format!(
-                "Snapshot {snapshot_name}"
-            )));
-        }
-
-        Ok(absolute_snapshot_path)
+        resolve_snapshot_path(snapshots_path, snapshot_name)
     }
 
     fn get_snapshot_file(
