@@ -5,3 +5,5 @@ pub mod universal_hashmap;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod universal_hashmap_tests;
