@@ -177,57 +177,67 @@ impl<
 
     /// Iterate over all entries, calling `f` for each `(key, values)` pair.
     ///
-    /// Performs two bulk IO reads (bucket offsets + full entries region), then iterates
-    /// in-memory.
+    /// Reads bucket offsets in bulk, sorts them for sequential access, then reads
+    /// entries in batches of [`ENTRY_BATCH_SIZE`] to bound memory usage.
     pub fn for_each_entry(&self, mut f: impl FnMut(&K, &[V])) -> io::Result<()> {
         let bucket_count = self.header.buckets_count as usize;
         if bucket_count == 0 {
             return Ok(());
         }
 
-        let buckets_bytes = self.read_all_bucket_offsets()?;
+        let buckets = self.read_all_bucket_offsets()?;
+        let sorted_offsets = buckets.to_sorted_vec();
 
-        // Read the entire entries region.
         let file_len = self.reader.len().map_err(io_err)?;
-        let entries_len = file_len - self.entries_start;
-        if entries_len == 0 {
-            return Ok(());
-        }
-        let entries_data = self
-            .reader
-            .read::<Sequential>(ReadRange {
-                byte_offset: self.entries_start,
-                length: entries_len,
-            })
-            .map_err(io_err)?;
+        let entries_region_len = file_len - self.entries_start;
 
-        for i in 0..bucket_count {
-            let offset = buckets_bytes.get(i)?;
+        const ENTRY_BATCH_SIZE: usize = 64;
 
-            let entry = entries_data.get(offset as usize..).ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidData, "Entry offset out of bounds")
-            })?;
+        for chunk_start in (0..sorted_offsets.len()).step_by(ENTRY_BATCH_SIZE) {
+            let chunk_end = (chunk_start + ENTRY_BATCH_SIZE).min(sorted_offsets.len());
 
-            let Some(key) = K::from_bytes(entry) else {
-                debug_assert!(false, "Error reading key for bucket {i}");
-                log::error!("Error reading key for bucket {i}");
-                continue;
-            };
+            let range_start = sorted_offsets[chunk_start];
+            let range_end = sorted_offsets
+                .get(chunk_end)
+                .copied()
+                .unwrap_or(entries_region_len);
 
-            let key_size_with_padding = Self::key_size_with_padding(key);
-            let values_len =
-                Self::parse_values_len(entry.get(key_size_with_padding..).ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Entry too short for values_len")
-                })?)?;
+            let chunk_data = self
+                .reader
+                .read::<Sequential>(ReadRange {
+                    byte_offset: self.entries_start + range_start,
+                    length: range_end - range_start,
+                })
+                .map_err(io_err)?;
 
-            let values_from = key_size_with_padding + Self::values_len_size_with_padding();
-            let values_to = values_from + values_len as usize * Self::VALUE_SIZE;
+            for &offset in &sorted_offsets[chunk_start..chunk_end] {
+                let local_offset = (offset - range_start) as usize;
+                let entry = chunk_data.get(local_offset..).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "Entry offset out of bounds")
+                })?;
 
-            let values_bytes = entry.get(values_from..values_to).ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidData, "Values region out of bounds")
-            })?;
+                let Some(key) = K::from_bytes(entry) else {
+                    debug_assert!(false, "Error reading key");
+                    log::error!("Error reading key");
+                    continue;
+                };
 
-            Self::with_values(values_bytes, |values| f(key, values))?;
+                let key_size_with_padding = Self::key_size_with_padding(key);
+                let values_len = Self::parse_values_len(
+                    entry.get(key_size_with_padding..).ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Entry too short for values_len")
+                    })?,
+                )?;
+
+                let values_from = key_size_with_padding + Self::values_len_size_with_padding();
+                let values_to = values_from + values_len as usize * Self::VALUE_SIZE;
+
+                let values_bytes = entry.get(values_from..values_to).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "Values region out of bounds")
+                })?;
+
+                Self::with_values(values_bytes, |values| f(key, values))?;
+            }
         }
 
         Ok(())
@@ -262,6 +272,8 @@ impl<
         // use KEY_READ_CAP bytes; any entry whose key is longer will be retried.
         const KEY_READ_CAP: u64 = 512;
 
+        let key_size = K::fixed_size().unwrap_or(KEY_READ_CAP);
+
         let ranges = sorted_offsets.iter().enumerate().map(|(i, &offset)| {
             let next_entry = sorted_offsets
                 .get(i + 1)
@@ -270,7 +282,7 @@ impl<
             let available = next_entry - offset;
             ReadRange {
                 byte_offset: self.entries_start + offset,
-                length: available.min(KEY_READ_CAP),
+                length: available.min(key_size),
             }
         });
 
@@ -278,7 +290,7 @@ impl<
         let mut retry_indices: Vec<usize> = Vec::new();
 
         self.reader
-            .read_batch::<Sequential>(ranges, |idx, data| {
+            .read_batch::<Random>(ranges, |idx, data| {
                 match K::from_bytes(data) {
                     Some(key) => f(key),
                     None => retry_indices.push(idx),

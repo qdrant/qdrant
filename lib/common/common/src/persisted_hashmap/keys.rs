@@ -21,6 +21,8 @@ pub trait Key: Sync + Hash {
 
     /// Try to read the key from `buf`.
     fn from_bytes(buf: &[u8]) -> Option<&Self>;
+
+    fn fixed_size() -> Option<u64>;
 }
 
 impl Key for str {
@@ -72,6 +74,10 @@ impl Key for str {
         let len = buf.iter().position(|&b| b == 0xFF)?;
         str::from_utf8(&buf[..len]).ok()
     }
+
+    fn fixed_size() -> Option<u64> {
+        None
+    }
 }
 
 impl Key for i64 {
@@ -93,6 +99,10 @@ impl Key for i64 {
 
     fn from_bytes(buf: &[u8]) -> Option<&Self> {
         Some(i64::ref_from_prefix(buf).ok()?.0)
+    }
+
+    fn fixed_size() -> Option<u64> {
+        Some(size_of::<i64>() as u64)
     }
 }
 
@@ -122,5 +132,9 @@ impl Key for u128 {
                 None
             }
         }
+    }
+
+    fn fixed_size() -> Option<u64> {
+        Some(size_of::<u128>() as u64)
     }
 }
