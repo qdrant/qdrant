@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::VectorStructInternal;
@@ -64,6 +64,7 @@ async fn build_shard(
         current_runtime,
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap()

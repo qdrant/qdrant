@@ -141,6 +141,7 @@ impl Collection {
                     self.search_runtime.clone(),
                     self.optimizer_resource_budget.clone(),
                     effective_optimizers_config,
+                    to_replica_set.hw_shared_drain.clone(),
                 )
                 .await?;
 

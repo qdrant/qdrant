@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use ordered_float::OrderedFloat;
 use segment::json_path::JsonPath;
@@ -46,6 +46,7 @@ async fn test_payload_missing_index_check() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();

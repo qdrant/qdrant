@@ -13,6 +13,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwSharedDrain;
 use segment::types::Distance;
 
 /// Test collections for this upper bound of shards.
@@ -110,6 +111,7 @@ pub async fn new_local_collection(
         None,
         ResourceBudget::default(),
         None,
+        Arc::new(HwSharedDrain::default()),
     )
     .await;
 
@@ -145,6 +147,7 @@ pub async fn load_local_collection(
         None,
         ResourceBudget::default(),
         None,
+        Arc::new(HwSharedDrain::default()),
     )
     .await
 }

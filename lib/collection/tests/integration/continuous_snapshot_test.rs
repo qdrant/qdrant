@@ -19,7 +19,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::flags::{FeatureFlags, init_feature_flags};
 use segment::payload_json;
 use segment::types::{Distance, WithVector};
@@ -88,6 +88,7 @@ async fn test_continuous_snapshot() {
         None,
         ResourceBudget::default(),
         None,
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use rand::{RngExt, rng};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
@@ -93,6 +93,7 @@ async fn fixture() -> Collection {
         None,
         ResourceBudget::default(),
         None,
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();

@@ -117,6 +117,8 @@ impl TableOfContent {
             fs::read_dir(&collections_path).expect("Can't read Collections directory");
         let is_distributed = consensus_proposal_sender.is_some();
 
+        let collection_hw_metrics: DashMap<CollectionId, Arc<HwSharedDrain>> = DashMap::new();
+
         // Collect valid collection paths for loading
         let mut collection_load_tasks = Vec::new();
         for entry in collection_paths {
@@ -148,6 +150,10 @@ impl TableOfContent {
             let search_runtime_handle = search_runtime.handle().clone();
             let update_runtime_handle = update_runtime.handle().clone();
             let optimizer_resource_budget = optimizer_resource_budget.clone();
+            let hw_shared_drain = collection_hw_metrics
+                .entry(collection_name.clone())
+                .or_default()
+                .clone();
 
             collection_load_tasks.push(async move {
                 log::info!("Loading collection: {collection_name}");
@@ -177,6 +183,7 @@ impl TableOfContent {
                     Some(update_runtime_handle),
                     optimizer_resource_budget,
                     storage_config.optimizers_overwrite.clone(),
+                    hw_shared_drain,
                 )
                 .await;
                 (collection_name.clone(), collection)
@@ -240,7 +247,7 @@ impl TableOfContent {
             toc_dispatcher: Default::default(),
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
-            collection_hw_metrics: DashMap::new(),
+            collection_hw_metrics,
             telemetry,
         }
     }
