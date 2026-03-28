@@ -920,8 +920,6 @@ pub(super) mod tests {
 
     use fs_err as fs;
     use itertools::Itertools;
-    #[cfg(feature = "rocksdb")]
-    use rand::Rng;
     use rand::prelude::*;
     use tempfile::Builder;
     use uuid::Uuid;
@@ -929,8 +927,6 @@ pub(super) mod tests {
     use super::*;
     use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
     use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-    #[cfg(feature = "rocksdb")]
-    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;
     const DEFAULT_VERSION: SeqNumberType = 42;
@@ -1438,94 +1434,6 @@ pub(super) mod tests {
                 mutable_id_tracker.external_id(internal),
             );
         }
-    }
-
-    #[test]
-    #[cfg(feature = "rocksdb")]
-    fn simple_id_tracker_vs_mutable_tracker_congruence() {
-        use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
-
-        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let db = open_db(segment_dir.path(), &[DB_VECTOR_CF]).unwrap();
-
-        let mut mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
-        let mut simple_id_tracker = SimpleIdTracker::open(db).unwrap();
-
-        // Insert 100 random points into id_tracker
-
-        let num_points = 200;
-        let mut rng = StdRng::seed_from_u64(RAND_SEED);
-
-        for _ in 0..num_points {
-            // Generate num id in range from 0 to 100
-
-            let point_id = PointIdType::NumId(rng.random_range(0..num_points as u64));
-
-            let version = rng.random_range(0..1000);
-
-            let internal_id_mmap = mutable_id_tracker.total_point_count() as PointOffsetType;
-            let internal_id_simple = simple_id_tracker.total_point_count() as PointOffsetType;
-
-            assert_eq!(internal_id_mmap, internal_id_simple);
-
-            if mutable_id_tracker.internal_id(point_id).is_some() {
-                mutable_id_tracker.drop(point_id).unwrap();
-            }
-            mutable_id_tracker
-                .set_link(point_id, internal_id_mmap)
-                .unwrap();
-            mutable_id_tracker
-                .set_internal_version(internal_id_mmap, version)
-                .unwrap();
-
-            if simple_id_tracker.internal_id(point_id).is_some() {
-                simple_id_tracker.drop(point_id).unwrap();
-            }
-            simple_id_tracker
-                .set_link(point_id, internal_id_simple)
-                .unwrap();
-            simple_id_tracker
-                .set_internal_version(internal_id_simple, version)
-                .unwrap();
-        }
-
-        fn check_trackers(a: &SimpleIdTracker, b: &MutableIdTracker) {
-            for (external_id, internal_id) in a.point_mappings().iter_from(None) {
-                assert_eq!(
-                    a.internal_version(internal_id).unwrap(),
-                    b.internal_version(internal_id).unwrap()
-                );
-                assert_eq!(a.external_id(internal_id), b.external_id(internal_id));
-                assert_eq!(external_id, b.external_id(internal_id).unwrap());
-                assert_eq!(
-                    a.external_id(internal_id).unwrap(),
-                    b.external_id(internal_id).unwrap()
-                );
-            }
-
-            for (external_id, internal_id) in b.point_mappings().iter_from(None) {
-                assert_eq!(
-                    a.internal_version(internal_id).unwrap(),
-                    b.internal_version(internal_id).unwrap()
-                );
-                assert_eq!(a.external_id(internal_id), b.external_id(internal_id));
-                assert_eq!(external_id, a.external_id(internal_id).unwrap());
-                assert_eq!(
-                    a.external_id(internal_id).unwrap(),
-                    b.external_id(internal_id).unwrap()
-                );
-            }
-        }
-
-        check_trackers(&simple_id_tracker, &mutable_id_tracker);
-
-        // Persist and reload mutable tracker and test again
-        mutable_id_tracker.mapping_flusher()().unwrap();
-        mutable_id_tracker.versions_flusher()().unwrap();
-        drop(mutable_id_tracker);
-        let mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
-
-        check_trackers(&simple_id_tracker, &mutable_id_tracker);
     }
 
     /// Loading versions with a partial trailing entry should ignore the incomplete bytes

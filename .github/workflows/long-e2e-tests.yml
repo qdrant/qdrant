@@ -40,7 +40,7 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
-            FEATURES=data-consistency-check,rocksdb,staging
+            FEATURES=data-consistency-check,staging
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests

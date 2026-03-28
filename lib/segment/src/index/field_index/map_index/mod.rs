@@ -5,8 +5,6 @@ use std::hash::{BuildHasher, Hash};
 use std::iter;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 
 use ahash::HashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -17,10 +15,6 @@ use gridstore::Blob;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mmap_map_index::MmapMapIndex;
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -109,21 +103,6 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    #[cfg(feature = "rocksdb")]
-    pub fn new_rocksdb(
-        db: Arc<RwLock<DB>>,
-        field_name: &str,
-        is_appendable: bool,
-        create_if_missing: bool,
-    ) -> OperationResult<Option<Self>> {
-        let index = if is_appendable {
-            MutableMapIndex::open_rocksdb(db, field_name, create_if_missing)?.map(MapIndex::Mutable)
-        } else {
-            ImmutableMapIndex::open_rocksdb(db, field_name)?.map(MapIndex::Immutable)
-        };
-        Ok(index)
-    }
-
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
         let Some(mmap_index) = MmapMapIndex::open(path, is_on_disk)? else {
@@ -144,20 +123,6 @@ where
     pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let index = MutableMapIndex::open_gridstore(dir, create_if_missing)?;
         Ok(index.map(MapIndex::Mutable))
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn builder_rocksdb(
-        db: Arc<RwLock<DB>>,
-        field_name: &str,
-    ) -> OperationResult<MapIndexBuilder<N>> {
-        Ok(MapIndexBuilder(MapIndex::Mutable(
-            MutableMapIndex::open_rocksdb(db, field_name, true)?.ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "Failed to create and load mutable map index builder for field '{field_name}'",
-                ))
-            })?,
-        )))
     }
 
     pub fn builder_mmap(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
@@ -520,15 +485,6 @@ where
             MapIndex::Mutable(_) => false,
             MapIndex::Immutable(_) => false,
             MapIndex::Mmap(index) => index.is_on_disk(),
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self {
-            MapIndex::Mutable(index) => index.is_rocksdb(),
-            MapIndex::Immutable(index) => index.is_rocksdb(),
-            MapIndex::Mmap(_) => false,
         }
     }
 
@@ -1378,19 +1334,10 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    #[cfg(feature = "rocksdb")]
-    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-
-    #[cfg(feature = "rocksdb")]
-    const FIELD_NAME: &str = "test";
 
     #[derive(Clone, Copy)]
     enum IndexType {
-        #[cfg(feature = "rocksdb")]
-        Mutable,
         MutableGridstore,
-        #[cfg(feature = "rocksdb")]
-        Immutable,
         Mmap,
         RamMmap,
     }
@@ -1409,23 +1356,6 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         match index_type {
-            #[cfg(feature = "rocksdb")]
-            IndexType::Mutable | IndexType::Immutable => {
-                let mut builder = MapIndex::<N>::builder_rocksdb(
-                    open_db_with_existing_cf(path).unwrap(),
-                    FIELD_NAME,
-                )
-                .unwrap();
-                builder.init().unwrap();
-                for (idx, values) in data.iter().enumerate() {
-                    let values: Vec<Value> = values.iter().map(&into_value).collect();
-                    let values: Vec<_> = values.iter().collect();
-                    builder
-                        .add_point(idx as PointOffsetType, &values, &hw_counter)
-                        .unwrap();
-                }
-                builder.finalize().unwrap();
-            }
             IndexType::MutableGridstore => {
                 let mut builder = MapIndex::<N>::builder_gridstore(path.to_path_buf());
                 builder.init().unwrap();
@@ -1462,27 +1392,9 @@ mod tests {
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         let index = match index_type {
-            #[cfg(feature = "rocksdb")]
-            IndexType::Mutable => MapIndex::<N>::new_rocksdb(
-                open_db_with_existing_cf(path).unwrap(),
-                FIELD_NAME,
-                true,
-                true,
-            )
-            .unwrap()
-            .unwrap(),
             IndexType::MutableGridstore => MapIndex::<N>::new_gridstore(path.to_path_buf(), true)
                 .unwrap()
                 .unwrap(),
-            #[cfg(feature = "rocksdb")]
-            IndexType::Immutable => MapIndex::<N>::new_rocksdb(
-                open_db_with_existing_cf(path).unwrap(),
-                FIELD_NAME,
-                false,
-                true,
-            )
-            .unwrap()
-            .unwrap(),
             IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap().unwrap(),
             IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap().unwrap(),
         };
@@ -1555,9 +1467,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_int_disk_map_index(#[case] index_type: IndexType) {
@@ -1584,9 +1494,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_string_disk_map_index(#[case] index_type: IndexType) {
@@ -1629,9 +1537,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_empty_index(#[case] index_type: IndexType) {

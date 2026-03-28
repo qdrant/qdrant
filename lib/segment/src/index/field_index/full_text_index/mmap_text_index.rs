@@ -205,7 +205,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,
-            tokenizer: tokenizer.clone(),
+            tokenizer,
         };
 
         let text_index = if is_on_disk {
@@ -213,7 +213,6 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         } else {
             FullTextIndex::Immutable(ImmutableFullTextIndex {
                 inverted_index: immutable,
-                tokenizer,
                 storage: Storage::Mmap(Box::new(mmap_index)),
             })
         };

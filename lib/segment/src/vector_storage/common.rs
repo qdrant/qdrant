@@ -1,8 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(feature = "rocksdb")]
-use serde::{Deserialize, Serialize};
-
 static ASYNC_SCORER: AtomicBool = AtomicBool::new(false);
 
 pub fn set_async_scorer(async_scorer: bool) {
@@ -11,14 +8,6 @@ pub fn set_async_scorer(async_scorer: bool) {
 
 pub fn get_async_scorer() -> bool {
     ASYNC_SCORER.load(Ordering::Relaxed)
-}
-
-/// Storage type for RocksDB based storage
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[cfg(feature = "rocksdb")]
-pub struct StoredRecord<T> {
-    pub deleted: bool,
-    pub vector: T,
 }
 
 /// Minimal number of bytes we read from disk in one go

@@ -4,8 +4,7 @@ use std::sync::Arc;
 use super::stemmer::Stemmer;
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 
-// TODO(rocksdb): Remove `Clone` once rocksdb has been removed!
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct TokensProcessor {
     pub lowercase: bool,
     pub ascii_folding: bool,

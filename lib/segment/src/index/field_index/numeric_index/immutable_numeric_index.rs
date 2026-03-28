@@ -1,26 +1,16 @@
 use std::collections::BTreeSet;
 use std::ops::Bound;
 use std::path::PathBuf;
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 
 use common::bitvec::{BitSliceExt as _, BitVec};
 use common::types::PointOffsetType;
 use gridstore::Blob;
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 
 use super::Encodable;
 use super::mmap_numeric_index::MmapNumericIndex;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::field_index::stored_point_to_values::StoredValue;
@@ -37,8 +27,6 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + StoredValue + Defa
 }
 
 enum Storage<T: Encodable + Numericable + StoredValue + Default> {
-    #[cfg(feature = "rocksdb")]
-    RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Mmap(Box<MmapNumericIndex<T>>),
 }
 
@@ -160,43 +148,6 @@ impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> Immutable
 where
     Vec<T>: Blob,
 {
-    /// Open and load immutable numeric index from RocksDB storage
-    #[cfg(feature = "rocksdb")]
-    pub(super) fn open_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> OperationResult<Option<Self>> {
-        use crate::index::field_index::numeric_index::mutable_numeric_index::MutableNumericIndex;
-
-        let store_cf_name = super::numeric_index_storage_cf_name(field);
-        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
-            db,
-            &store_cf_name,
-        ));
-
-        // Load through mutable numeric index structure
-        let Some(mutable) =
-            MutableNumericIndex::<T>::open_rocksdb_db_wrapper(db_wrapper.clone(), false)?
-        else {
-            // Column family doesn't exist, cannot load
-            return Ok(None);
-        };
-
-        let InMemoryNumericIndex {
-            map,
-            histogram,
-            points_count,
-            max_values_per_point,
-            point_to_values,
-        } = mutable.into_in_memory_index();
-
-        Ok(Some(Self {
-            map: NumericKeySortedVec::from_btree_set(map),
-            histogram,
-            points_count,
-            max_values_per_point,
-            point_to_values: ImmutablePointToValues::new(point_to_values),
-            storage: Storage::RocksDb(db_wrapper),
-        }))
-    }
-
     /// Open and load immutable numeric index from mmap storage
     pub(super) fn open_mmap(index: MmapNumericIndex<T>) -> Self {
         // Load in-memory index from mmap storage
@@ -223,20 +174,9 @@ where
         }
     }
 
-    #[cfg(all(test, feature = "rocksdb"))]
-    pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => Some(db_wrapper),
-            Storage::Mmap(_) => None,
-        }
-    }
-
     #[inline]
     pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Mmap(index) => index.wipe(),
         }
     }
@@ -247,8 +187,6 @@ where
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => Ok(()),
             Storage::Mmap(index) => index.clear_cache(),
         }
     }
@@ -256,8 +194,6 @@ where
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Mmap(index) => index.files(),
         }
     }
@@ -265,8 +201,6 @@ where
     #[inline]
     pub(super) fn immutable_files(&self) -> Vec<PathBuf> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Mmap(index) => index.immutable_files(),
         }
     }
@@ -274,8 +208,6 @@ where
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Mmap(index) => index.flusher(),
         }
     }
@@ -333,8 +265,7 @@ where
             .map(|Point { val, idx, .. }| (val, idx))
     }
 
-    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
-    pub(super) fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+    pub(super) fn remove_point(&mut self, idx: PointOffsetType) {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
             let mut removed_count = 0;
             for value in removed_values {
@@ -343,11 +274,6 @@ where
 
                 // Update persisted storage
                 match &mut self.storage {
-                    #[cfg(feature = "rocksdb")]
-                    Storage::RocksDb(db_wrapper) => {
-                        let encoded = value.encode_key(idx);
-                        db_wrapper.remove(encoded)?;
-                    }
                     Storage::Mmap(index) => {
                         index.remove_point(idx);
                     }
@@ -360,7 +286,6 @@ where
             }
         }
         self.point_to_values.remove_point(idx);
-        Ok(())
     }
 
     pub(super) fn get_histogram(&self) -> &Histogram<T> {
@@ -407,19 +332,9 @@ where
 
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self.storage {
-            Storage::RocksDb(_) => true,
-            Storage::Mmap(_) => false,
         }
     }
 }
