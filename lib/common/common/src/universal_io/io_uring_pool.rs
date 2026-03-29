@@ -48,14 +48,12 @@ impl IoUringPool {
             .map_err(|err| super::io_uring::io_error_context(err, "failed to setup io_uring"))?;
 
         let mut probe = Probe::new();
-        ring.submitter()
-            .register_probe(&mut probe)
-            .map_err(|err| {
-                super::io_uring::io_error_context(
-                    err,
-                    "failed to probe io_uring for supported operations",
-                )
-            })?;
+        ring.submitter().register_probe(&mut probe).map_err(|err| {
+            super::io_uring::io_error_context(
+                err,
+                "failed to probe io_uring for supported operations",
+            )
+        })?;
 
         let ok = probe.is_supported(opcode::Read::CODE) && probe.is_supported(opcode::Write::CODE);
         self.supported = Some(ok);
