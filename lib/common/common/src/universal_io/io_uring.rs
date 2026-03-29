@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::{VecDeque, hash_map};
 use std::io::{self, Read as _, Seek as _};
 use std::marker::PhantomData;
@@ -9,42 +8,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ::io_uring::types::Fd;
-use ::io_uring::{IoUring, Probe, opcode, squeue};
+use ::io_uring::{IoUring, opcode, squeue};
 use ahash::AHashMap;
 use fs_err as fs;
 use fs_err::os::unix::fs::OpenOptionsExt;
 
+use super::io_uring_pool::{self, IO_URING_QUEUE_LENGTH, IoUringGuard};
 use super::*;
 use crate::generic_consts::AccessPattern;
 use crate::maybe_uninit::assume_init_vec;
-
-thread_local! {
-    static IO_URING: io::Result<RefCell<IoUring>> = init_io_uring().map(RefCell::new);
-}
-
-const IO_URING_QUEUE_LENGTH: u32 = 16;
-
-fn init_io_uring() -> io::Result<IoUring> {
-    let io_uring = IoUring::new(IO_URING_QUEUE_LENGTH)
-        .map_err(|err| io_error_context(err, "failed to setup io_uring"))?;
-
-    let mut probe = Probe::new();
-
-    io_uring
-        .submitter()
-        .register_probe(&mut probe)
-        .map_err(|err| {
-            io_error_context(err, "failed to probe io_uring for supported operations")
-        })?;
-
-    if probe.is_supported(opcode::Read::CODE) && probe.is_supported(opcode::Write::CODE) {
-        Ok(io_uring)
-    } else {
-        Err(io::Error::other(
-            "io_uring does not support required operations",
-        ))
-    }
-}
 
 #[derive(Debug)]
 pub struct IoUringFile {
@@ -75,8 +47,9 @@ impl UniversalReadFileOps for IoUringFile {
 
 impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        // Check that `io_uring` was successfully initialized
-        with_uring_runtime::<u8, _, _>(|_| ())?;
+        // Check that io_uring is supported on this system.
+        io_uring_pool::check_io_uring_supported()
+            .map_err(UniversalIoError::IoUringNotSupported)?;
 
         let OpenOptions {
             writeable,
@@ -135,7 +108,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
     ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
-        IoUringReadIter::new(self, ranges)
+        match IoUringReadIter::new(self, ranges) {
+            Ok(iter) => itertools::Either::Left(iter),
+            Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+        }
     }
 
     fn read_multi<P: AccessPattern>(
@@ -305,24 +281,29 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
 /// borrows the thread-local [`IoUring`] ring to submit and reap.
 struct IoUringReadIter<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = ReadRange>> {
     file: &'a IoUringFile,
+    /// Exclusive `IoUring` instance taken from the pool — returned on drop.
+    guard: IoUringGuard,
     ranges: std::iter::Enumerate<I>,
     buffer: VecDeque<(usize, Vec<T>)>,
     state: IoUringState<'static, T>,
     in_progress: usize,
-    /// `!Send + !Sync` — the iterator is tied to the thread whose io_uring ring it uses.
+    /// `!Send + !Sync` — the iterator is tied to the thread whose pool it uses.
     _not_send: PhantomData<*const ()>,
 }
 
 impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = ReadRange>> IoUringReadIter<'a, T, I> {
-    fn new(file: &'a IoUringFile, ranges: impl IntoIterator<IntoIter = I>) -> Self {
-        Self {
+    fn new(file: &'a IoUringFile, ranges: impl IntoIterator<IntoIter = I>) -> Result<Self> {
+        let guard =
+            io_uring_pool::take_io_uring().map_err(UniversalIoError::IoUringNotSupported)?;
+        Ok(Self {
             file,
+            guard,
             ranges: ranges.into_iter().enumerate(),
             buffer: VecDeque::new(),
             state: IoUringState::new(),
             in_progress: 0,
             _not_send: PhantomData,
-        }
+        })
     }
 
     /// Refill the submission queue, submit, and collect completions.
@@ -332,68 +313,61 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = ReadRange>> IoUringReadI
     ///
     /// Returns `true` if there is (or may be) more work, `false` if fully exhausted.
     fn step(&mut self, wait: bool) -> Result<bool> {
-        IO_URING.with(|io_uring_cell| {
-            let io_uring_cell = io_uring_cell
-                .as_ref()
-                .map_err(io_error_clone)
-                .map_err(UniversalIoError::IoUringNotSupported)?;
-            let mut io_uring = io_uring_cell.borrow_mut();
+        let io_uring = self.guard.io_uring();
+        let fd = self.file.fd();
+        let uses_o_direct = self.file.uses_o_direct;
 
-            let fd = self.file.fd();
-            let uses_o_direct = self.file.uses_o_direct;
+        // Fill every free slot in the submission queue with a new read.
+        let mut newly_queued = 0usize;
+        {
+            let mut sqe = io_uring.submission();
+            while self.in_progress + sqe.len() < IO_URING_QUEUE_LENGTH as usize {
+                let Some((id, range)) = self.ranges.next() else {
+                    break;
+                };
+                let entry = self.state.read(id as _, fd, range, uses_o_direct)?;
+                unsafe { sqe.push(&entry).expect("SQE is not full") };
+                newly_queued += 1;
+            }
+            // SubmissionQueue::drop syncs the tail pointer.
+        }
 
-            // Fill every free slot in the submission queue with a new read.
-            let mut newly_queued = 0usize;
-            {
-                let mut sqe = io_uring.submission();
-                while self.in_progress + sqe.len() < IO_URING_QUEUE_LENGTH as usize {
-                    let Some((id, range)) = self.ranges.next() else {
-                        break;
-                    };
-                    let entry = self.state.read(id as _, fd, range, uses_o_direct)?;
-                    unsafe { sqe.push(&entry).expect("SQE is not full") };
-                    newly_queued += 1;
-                }
-                // SubmissionQueue::drop syncs the tail pointer.
+        // Nothing queued AND nothing in flight → exhausted.
+        if self.in_progress == 0 && newly_queued == 0 {
+            return Ok(false);
+        }
+
+        // Submit pending SQEs, optionally waiting for at least one completion.
+        let want = if wait { 1 } else { 0 };
+        self.in_progress += io_uring
+            .submit_and_wait(want)
+            .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
+
+        // Reap all available completions.
+        let cqes: Vec<_> = io_uring
+            .completion()
+            .map(|cqe: ::io_uring::cqueue::Entry| (cqe.user_data(), cqe.result()))
+            .collect();
+
+        for (id, result) in cqes {
+            self.in_progress -= 1;
+
+            if result < 0 {
+                self.state.abort(id);
+                return Err(io_error_context(
+                    io::Error::from_raw_os_error(-result),
+                    format!("io_uring operation {id} failed"),
+                )
+                .into());
             }
 
-            // Nothing queued AND nothing in flight → exhausted.
-            if self.in_progress == 0 && newly_queued == 0 {
-                return Ok(false);
-            }
+            let length = result as _;
+            let resp = self.state.finalize(id, length)?;
+            let items = resp.expect_read();
+            self.buffer.push_back((id as usize, items));
+        }
 
-            // Submit pending SQEs, optionally waiting for at least one completion.
-            let want = if wait { 1 } else { 0 };
-            self.in_progress += io_uring
-                .submit_and_wait(want)
-                .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
-
-            // Reap all available completions.
-            let cqes: Vec<_> = io_uring
-                .completion()
-                .map(|cqe| (cqe.user_data(), cqe.result()))
-                .collect();
-
-            for (id, result) in cqes {
-                self.in_progress -= 1;
-
-                if result < 0 {
-                    self.state.abort(id);
-                    return Err(io_error_context(
-                        io::Error::from_raw_os_error(-result),
-                        format!("io_uring operation {id} failed"),
-                    )
-                    .into());
-                }
-
-                let length = result as _;
-                let resp = self.state.finalize(id, length)?;
-                let items = resp.expect_read();
-                self.buffer.push_back((id as usize, items));
-            }
-
-            Ok(true)
-        })
+        Ok(true)
     }
 }
 
@@ -425,35 +399,28 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = ReadRange>> Drop
         if self.in_progress == 0 {
             return;
         }
-        IO_URING.with(|io_uring_cell| {
-            let Ok(io_uring_cell) = io_uring_cell.as_ref() else {
-                return;
-            };
-            let Ok(mut io_uring) = io_uring_cell.try_borrow_mut() else {
-                return;
-            };
-            while self.in_progress > 0 {
-                if io_uring.submit_and_wait(self.in_progress).is_err() {
-                    break;
-                }
-                let cqes: Vec<_> = io_uring
-                    .completion()
-                    .map(|cqe| (cqe.user_data(), cqe.result()))
-                    .collect();
-                for (id, result) in cqes {
-                    self.in_progress -= 1;
-                    if result < 0 {
-                        self.state.abort(id);
-                    } else {
-                        let _ = self.state.finalize(id, result as _);
-                    }
+        let io_uring = self.guard.io_uring();
+        while self.in_progress > 0 {
+            if io_uring.submit_and_wait(self.in_progress).is_err() {
+                break;
+            }
+            let cqes: Vec<_> = io_uring
+                .completion()
+                .map(|cqe: ::io_uring::cqueue::Entry| (cqe.user_data(), cqe.result()))
+                .collect();
+            for (id, result) in cqes {
+                self.in_progress -= 1;
+                if result < 0 {
+                    self.state.abort(id);
+                } else {
+                    let _ = self.state.finalize(id, result as _);
                 }
             }
-        });
+        }
     }
 }
 
-/// Run a closure with access to the thread-local io_uring runtime.
+/// Run a closure with exclusive access to an `IoUring` instance from the pool.
 ///
 /// `'data` is the lifetime of any write buffers that will be submitted to io_uring.
 /// The compiler enforces that write data outlives all in-flight operations, because
@@ -465,17 +432,11 @@ fn with_uring_runtime<'data, T: 'data, Out, F>(with_uring: F) -> Result<Out>
 where
     F: for<'uring> FnOnce(IoUringRuntime<'uring, 'data, T>) -> Out,
 {
-    IO_URING.with(|io_uring| {
-        let io_uring = io_uring
-            .as_ref()
-            .map_err(io_error_clone)
-            .map_err(UniversalIoError::IoUringNotSupported)?;
-
-        let mut io_uring = io_uring.borrow_mut();
-        let rt = IoUringRuntime::new(&mut io_uring);
-        let output = with_uring(rt);
-        Ok(output)
-    })
+    let mut guard =
+        io_uring_pool::take_io_uring().map_err(UniversalIoError::IoUringNotSupported)?;
+    let rt = IoUringRuntime::new(guard.io_uring());
+    let output = with_uring(rt);
+    Ok(output)
 }
 
 struct IoUringRuntime<'uring, 'data, T> {
@@ -767,11 +728,7 @@ impl<T> IoUringResponse<T> {
     }
 }
 
-fn io_error_clone(err: &io::Error) -> io::Error {
-    io::Error::new(err.kind(), err.to_string())
-}
-
-fn io_error_context(err: io::Error, context: impl Into<String>) -> io::Error {
+pub(super) fn io_error_context(err: io::Error, context: impl Into<String>) -> io::Error {
     io::Error::new(err.kind(), IoErrorContext::new(err, context))
 }
 
@@ -924,14 +881,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Expensive test, require direct IO"]
     fn test_io_uring_concurrent_read_iter() -> Result<()> {
         let dir = tempfile::tempdir().unwrap();
         let elem = size_of::<u64>() as u64;
 
-        // Large files so many reads span multiple io_uring batches.
-        const NUM_ELEMENTS: u64 = 1_000_000;
-        const NUM_RANGES: u64 = 10_000;
+        // Large enough to span many io_uring batches (64 ranges, queue depth 16).
+        const NUM_ELEMENTS: u64 = 6400;
+        const NUM_RANGES: u64 = 64;
         const CHUNK: u64 = NUM_ELEMENTS / NUM_RANGES; // 100 elements per range
 
         // File A: 0..NUM_ELEMENTS
@@ -939,13 +895,13 @@ mod tests {
         let data_a: Vec<u64> = (0..NUM_ELEMENTS).collect();
         fs_err::write(&path_a, bytemuck::cast_slice(&data_a)).unwrap();
 
-        // File B: offset by 1_000_000_000 so values never overlap with A.
+        // File B: offset so values never overlap with A.
         let path_b = dir.path().join("b.bin");
-        let data_b: Vec<u64> = (1_000_000_000..1_000_000_000 + NUM_ELEMENTS).collect();
+        let data_b: Vec<u64> = (1_000_000..1_000_000 + NUM_ELEMENTS).collect();
         fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
         let opts = OpenOptions {
-            prevent_caching: Some(true),
+            prevent_caching: Some(false), // should be true
             ..Default::default()
         };
         let file_a = TypedStorage::<IoUringFile, u64>::open(&path_a, opts)?;
