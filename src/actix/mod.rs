@@ -185,6 +185,10 @@ pub fn init(
             settings.service.http_client_disconnect_timeout_sec,
         ))
         .workers(max_web_workers(&settings));
+        if let Some(keep_alive) = settings.service.http_keep_alive_sec {
+            log::info!("Applying actix keep-alive interval: {keep_alive}s");
+            server = server.keep_alive(Duration::from_secs(keep_alive));
+        }
 
         log::info!(
             "REST transport settings: keep_alive={}s, client_request_timeout={}s, client_disconnect_timeout={}s",
