@@ -49,23 +49,12 @@ fn test_io_uring_read_batch() -> Result<()> {
     let elem = size_of::<u64>() as u64;
 
     // Non-contiguous ranges across the file.
+    #[rustfmt::skip]
     let ranges = vec![
-        ReadRange {
-            byte_offset: 0,
-            length: 10,
-        }, // [0..10]
-        ReadRange {
-            byte_offset: 50 * elem,
-            length: 20,
-        }, // [50..70]
-        ReadRange {
-            byte_offset: 100 * elem,
-            length: 5,
-        }, // [100..105]
-        ReadRange {
-            byte_offset: 200 * elem,
-            length: 56,
-        }, // [200..256]
+        ReadRange { byte_offset: 0,          length: 10 }, // [0..10]
+        ReadRange { byte_offset: 50 * elem,  length: 20 }, // [50..70]
+        ReadRange { byte_offset: 100 * elem, length: 5  }, // [100..105]
+        ReadRange { byte_offset: 200 * elem, length: 56 }, // [200..256]
     ];
 
     let expected: Vec<&[u64]> = vec![
@@ -218,11 +207,12 @@ fn test_io_uring_read_multi_iter_basic() -> Result<()> {
     let files = [file_0, file_1];
 
     // Interleaved reads across both files.
+    #[rustfmt::skip]
     let reads = vec![
-        (0, ReadRange { byte_offset: 0, length: 10 }),             // f0[0..10]
-        (1, ReadRange { byte_offset: 20 * elem, length: 5 }),      // f1[20..25]
-        (0, ReadRange { byte_offset: 50 * elem, length: 20 }),     // f0[50..70]
-        (1, ReadRange { byte_offset: 0, length: 10 }),             // f1[0..10]
+        (0, ReadRange { byte_offset: 0,         length: 10 }), // f0[0..10]
+        (1, ReadRange { byte_offset: 20 * elem,  length: 5 }),  // f1[20..25]
+        (0, ReadRange { byte_offset: 50 * elem, length: 20 }), // f0[50..70]
+        (1, ReadRange { byte_offset: 0,         length: 10 }), // f1[0..10]
     ];
 
     let expected: Vec<(FileIndex, &[u64])> = vec![
@@ -331,12 +321,13 @@ fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
     let file_b: IoUringFile = UniversalRead::<u64>::open(&path_b, opts)?;
     let files = [file_a, file_b];
 
+    #[rustfmt::skip]
     let reads: Vec<(FileIndex, ReadRange)> = vec![
-        (0, ReadRange { byte_offset: 0, length: 50 }),
-        (1, ReadRange { byte_offset: 10 * elem, length: 30 }),
-        (0, ReadRange { byte_offset: 100 * elem, length: 50 }),
-        (1, ReadRange { byte_offset: 0, length: 100 }),
-        (0, ReadRange { byte_offset: 150 * elem, length: 50 }),
+        (0, ReadRange { byte_offset: 0,           length: 50  }),
+        (1, ReadRange { byte_offset: 10 * elem,   length: 30  }),
+        (0, ReadRange { byte_offset: 100 * elem,  length: 50  }),
+        (1, ReadRange { byte_offset: 0,           length: 100 }),
+        (0, ReadRange { byte_offset: 150 * elem,  length: 50  }),
     ];
 
     // Collect via callback.

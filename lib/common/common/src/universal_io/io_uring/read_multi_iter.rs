@@ -5,10 +5,10 @@ use std::marker::PhantomData;
 
 use ahash::AHashMap;
 
+use super::super::*;
 use super::IoUringFile;
 use super::pool::{self, IO_URING_QUEUE_LENGTH, IoUringGuard};
 use super::runtime::{IoUringState, RequestId, io_error_context};
-use super::super::*;
 
 /// Lazy, pipelined iterator over io_uring read results from multiple files.
 ///
@@ -41,10 +41,7 @@ pub(super) struct IoUringReadMultiIter<
 impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
     IoUringReadMultiIter<'a, T, I>
 {
-    pub fn new(
-        files: &'a [IoUringFile],
-        reads: impl IntoIterator<IntoIter = I>,
-    ) -> Result<Self> {
+    pub fn new(files: &'a [IoUringFile], reads: impl IntoIterator<IntoIter = I>) -> Result<Self> {
         let guard = pool::take_io_uring().map_err(UniversalIoError::IoUringNotSupported)?;
         Ok(Self {
             files,
@@ -85,9 +82,9 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
 
                 self.file_indices.insert(id as RequestId, file_index);
 
-                let entry =
-                    self.state
-                        .read(id as _, file.fd(), range, file.uses_o_direct)?;
+                let entry = self
+                    .state
+                    .read(id as _, file.fd(), range, file.uses_o_direct)?;
                 unsafe { sqe.push(&entry).expect("SQE is not full") };
                 newly_queued += 1;
             }
