@@ -3,9 +3,11 @@ use std::collections::VecDeque;
 use std::io;
 use std::marker::PhantomData;
 
+use ahash::AHashMap;
+
 use super::IoUringFile;
 use super::pool::{self, IO_URING_QUEUE_LENGTH, IoUringGuard};
-use super::runtime::{IoUringState, io_error_context};
+use super::runtime::{IoUringState, RequestId, io_error_context};
 use super::super::*;
 
 /// Lazy, pipelined iterator over io_uring read results from multiple files.
@@ -26,8 +28,10 @@ pub(super) struct IoUringReadMultiIter<
     guard: IoUringGuard,
     reads: std::iter::Enumerate<I>,
     buffer: VecDeque<(usize, FileIndex, Vec<T>)>,
-    /// Maps request id → file index so we can report it on completion.
-    file_indices: Vec<FileIndex>,
+    /// Maps in-flight request id → file index. Entries are inserted on
+    /// submission and removed on completion/abort, so the map stays bounded
+    /// by the io_uring queue depth.
+    file_indices: AHashMap<RequestId, FileIndex>,
     state: IoUringState<'static, T>,
     in_progress: usize,
     /// `!Send + !Sync` — the iterator is tied to the thread whose pool it uses.
@@ -47,7 +51,7 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
             guard,
             reads: reads.into_iter().enumerate(),
             buffer: VecDeque::new(),
-            file_indices: Vec::new(),
+            file_indices: AHashMap::new(),
             state: IoUringState::new(),
             in_progress: 0,
             _not_send: PhantomData,
@@ -79,7 +83,7 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
                     }
                 })?;
 
-                self.file_indices.push(file_index);
+                self.file_indices.insert(id as RequestId, file_index);
 
                 let entry =
                     self.state
@@ -112,6 +116,7 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
 
             if result < 0 {
                 self.state.abort(id);
+                self.file_indices.remove(&id);
                 return Err(io_error_context(
                     io::Error::from_raw_os_error(-result),
                     format!("io_uring operation {id} failed"),
@@ -121,8 +126,7 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
 
             let file_idx = self
                 .file_indices
-                .get(id as usize)
-                .copied()
+                .remove(&id)
                 .expect("file index is tracked");
 
             let length = result as _;
@@ -174,6 +178,7 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
                 .collect();
             for (id, result) in cqes {
                 self.in_progress -= 1;
+                self.file_indices.remove(&id);
                 if result < 0 {
                     self.state.abort(id);
                 } else {
