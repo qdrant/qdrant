@@ -4,8 +4,6 @@ pub mod error;
 pub mod file_ops;
 #[cfg(target_os = "linux")]
 pub mod io_uring;
-#[cfg(target_os = "linux")]
-mod io_uring_pool;
 pub mod local_file_ops;
 pub mod mmap;
 pub mod read;

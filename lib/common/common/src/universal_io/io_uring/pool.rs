@@ -3,6 +3,8 @@ use std::io;
 
 use ::io_uring::{IoUring, Probe, opcode};
 
+use super::runtime::io_error_context;
+
 /// Default number of idle `IoUring` instances kept in the thread-local pool.
 const POOL_SIZE: usize = 2;
 
@@ -45,14 +47,11 @@ impl IoUringPool {
 
         // First call — probe once.
         let ring = IoUring::new(IO_URING_QUEUE_LENGTH)
-            .map_err(|err| super::io_uring::io_error_context(err, "failed to setup io_uring"))?;
+            .map_err(|err| io_error_context(err, "failed to setup io_uring"))?;
 
         let mut probe = Probe::new();
         ring.submitter().register_probe(&mut probe).map_err(|err| {
-            super::io_uring::io_error_context(
-                err,
-                "failed to probe io_uring for supported operations",
-            )
+            io_error_context(err, "failed to probe io_uring for supported operations")
         })?;
 
         let ok = probe.is_supported(opcode::Read::CODE) && probe.is_supported(opcode::Write::CODE);
@@ -76,7 +75,7 @@ impl IoUringPool {
             Ok(ring)
         } else {
             IoUring::new(IO_URING_QUEUE_LENGTH)
-                .map_err(|err| super::io_uring::io_error_context(err, "failed to setup io_uring"))
+                .map_err(|err| io_error_context(err, "failed to setup io_uring"))
         }
     }
 
@@ -90,7 +89,7 @@ impl IoUringPool {
 
 /// RAII guard that owns an `IoUring` instance and returns it to the
 /// thread-local pool on drop.
-pub(super) struct IoUringGuard {
+pub(crate) struct IoUringGuard {
     ring: Option<IoUring>,
 }
 
@@ -118,7 +117,7 @@ impl Drop for IoUringGuard {
 ///
 /// Returns an error if io_uring is not supported on this system.
 /// The instance is automatically returned to the pool when the guard is dropped.
-pub(super) fn take_io_uring() -> io::Result<IoUringGuard> {
+pub(crate) fn take_io_uring() -> io::Result<IoUringGuard> {
     POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
         let ring = pool.take()?;
@@ -127,6 +126,6 @@ pub(super) fn take_io_uring() -> io::Result<IoUringGuard> {
 }
 
 /// Check that io_uring is supported without taking an instance.
-pub(super) fn check_io_uring_supported() -> io::Result<()> {
+pub(crate) fn check_io_uring_supported() -> io::Result<()> {
     POOL.with(|pool| pool.borrow_mut().check_supported())
 }
