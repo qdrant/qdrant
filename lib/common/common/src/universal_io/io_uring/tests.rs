@@ -140,7 +140,8 @@ fn test_io_uring_concurrent_read_iter() -> Result<()> {
     fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
     let opts = OpenOptions {
-        prevent_caching: Some(false), // should be true
+        // TODO: should use O_DIRECT (Some(true)), but it hangs - needs separate investigation
+        prevent_caching: Some(false),
         ..Default::default()
     };
     let file_a = TypedStorage::<IoUringFile, u64>::open(&path_a, opts)?;
