@@ -32,6 +32,18 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()>;
 
+    /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator instead of
+    /// accepting a callback.
+    fn read_iter<P: AccessPattern>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+    ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
+        ranges
+            .into_iter()
+            .enumerate()
+            .map(move |(idx, range)| self.read::<P>(range).map(|data| (idx, data)))
+    }
+
     fn len(&self) -> Result<u64>;
 
     /// Fill RAM cache with related data, if applicable for this implementation.

@@ -60,6 +60,14 @@ where
     }
 
     #[inline]
+    fn read_iter<P: AccessPattern>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+    ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
+        self.0.read_iter::<P>(ranges)
+    }
+
+    #[inline]
     fn len(&self) -> Result<u64> {
         self.0.len()
     }

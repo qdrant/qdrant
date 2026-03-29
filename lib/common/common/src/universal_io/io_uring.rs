@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::hash_map;
+use std::collections::{VecDeque, hash_map};
 use std::io::{self, Read as _, Seek as _};
+use std::marker::PhantomData;
 use std::mem::{self, MaybeUninit};
 use std::os::fd::AsRawFd as _;
 use std::path::PathBuf;
@@ -123,30 +124,18 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         ranges: impl IntoIterator<Item = ReadRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
-        with_uring_runtime(|mut rt| {
-            let mut ranges = ranges.into_iter().enumerate().peekable();
+        for record in self.read_iter::<P>(ranges) {
+            let (idx, data) = record?;
+            callback(idx, &data)?;
+        }
+        Ok(())
+    }
 
-            while ranges.peek().is_some() || rt.in_progress > 0 {
-                rt.enqueue(|state| {
-                    let Some((id, range)) = ranges.next() else {
-                        return Ok(None);
-                    };
-
-                    let entry = state.read(id as _, self.fd(), range, self.uses_o_direct)?;
-                    Ok(Some(entry))
-                })?;
-
-                rt.submit_and_wait(1)?;
-
-                for result in rt.completed() {
-                    let (id, resp) = result?;
-                    let items = resp.expect_read();
-                    callback(id as _, &items)?;
-                }
-            }
-
-            Ok(())
-        })?
+    fn read_iter<P: AccessPattern>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+    ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
+        IoUringReadIter::new(self, ranges)
     }
 
     fn read_multi<P: AccessPattern>(
@@ -302,6 +291,165 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     fn flusher(&self) -> Flusher {
         let file = self.file.clone();
         Box::new(move || Ok(file.sync_all()?))
+    }
+}
+
+/// Lazy, pipelined iterator over io_uring read results.
+///
+/// Keeps the io_uring submission queue continuously full: on every [`next()`] call it
+/// refills free queue slots with new reads before waiting for completions. This means
+/// the kernel always has work queued, maximising I/O parallelism.
+///
+/// The iterator holds its own [`IoUringState`] (request tracking / buffers) and
+/// `in_progress` counter that persist across calls. On each [`next()`] it temporarily
+/// borrows the thread-local [`IoUring`] ring to submit and reap.
+struct IoUringReadIter<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = ReadRange>> {
+    file: &'a IoUringFile,
+    ranges: std::iter::Enumerate<I>,
+    buffer: VecDeque<(usize, Vec<T>)>,
+    state: IoUringState<'static, T>,
+    in_progress: usize,
+    /// `!Send + !Sync` — the iterator is tied to the thread whose io_uring ring it uses.
+    _not_send: PhantomData<*const ()>,
+}
+
+impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = ReadRange>> IoUringReadIter<'a, T, I> {
+    fn new(file: &'a IoUringFile, ranges: impl IntoIterator<IntoIter = I>) -> Self {
+        Self {
+            file,
+            ranges: ranges.into_iter().enumerate(),
+            buffer: VecDeque::new(),
+            state: IoUringState::new(),
+            in_progress: 0,
+            _not_send: PhantomData,
+        }
+    }
+
+    /// Refill the submission queue, submit, and collect completions.
+    ///
+    /// When `wait` is `true`, blocks until at least one completion is available.
+    /// When `false`, submits new reads and reaps only already-available completions.
+    ///
+    /// Returns `true` if there is (or may be) more work, `false` if fully exhausted.
+    fn step(&mut self, wait: bool) -> Result<bool> {
+        IO_URING.with(|io_uring_cell| {
+            let io_uring_cell = io_uring_cell
+                .as_ref()
+                .map_err(io_error_clone)
+                .map_err(UniversalIoError::IoUringNotSupported)?;
+            let mut io_uring = io_uring_cell.borrow_mut();
+
+            let fd = self.file.fd();
+            let uses_o_direct = self.file.uses_o_direct;
+
+            // Fill every free slot in the submission queue with a new read.
+            let mut newly_queued = 0usize;
+            {
+                let mut sqe = io_uring.submission();
+                while self.in_progress + sqe.len() < IO_URING_QUEUE_LENGTH as usize {
+                    let Some((id, range)) = self.ranges.next() else {
+                        break;
+                    };
+                    let entry = self.state.read(id as _, fd, range, uses_o_direct)?;
+                    unsafe { sqe.push(&entry).expect("SQE is not full") };
+                    newly_queued += 1;
+                }
+                // SubmissionQueue::drop syncs the tail pointer.
+            }
+
+            // Nothing queued AND nothing in flight → exhausted.
+            if self.in_progress == 0 && newly_queued == 0 {
+                return Ok(false);
+            }
+
+            // Submit pending SQEs, optionally waiting for at least one completion.
+            let want = if wait { 1 } else { 0 };
+            self.in_progress += io_uring
+                .submit_and_wait(want)
+                .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
+
+            // Reap all available completions.
+            let cqes: Vec<_> = io_uring
+                .completion()
+                .map(|cqe| (cqe.user_data(), cqe.result()))
+                .collect();
+
+            for (id, result) in cqes {
+                self.in_progress -= 1;
+
+                if result < 0 {
+                    self.state.abort(id);
+                    return Err(io_error_context(
+                        io::Error::from_raw_os_error(-result),
+                        format!("io_uring operation {id} failed"),
+                    )
+                    .into());
+                }
+
+                let length = result as _;
+                let resp = self.state.finalize(id, length)?;
+                let items = resp.expect_read();
+                self.buffer.push_back((id as usize, items));
+            }
+
+            Ok(true)
+        })
+    }
+}
+
+impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = ReadRange>> Iterator
+    for IoUringReadIter<'a, T, I>
+{
+    type Item = Result<(usize, Cow<'a, [T]>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Always try to refill the submission queue and reap completions.
+        // If the buffer is empty we must block-wait; otherwise just submit new
+        // reads and opportunistically collect anything already done.
+        let wait = self.buffer.is_empty();
+        match self.step(wait) {
+            Ok(false) if wait => return None,
+            Err(e) => return Some(Err(e)),
+            _ => {}
+        }
+
+        let (idx, data) = self.buffer.pop_front()?;
+        Some(Ok((idx, Cow::Owned(data))))
+    }
+}
+
+impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = ReadRange>> Drop
+    for IoUringReadIter<'a, T, I>
+{
+    fn drop(&mut self) {
+        if self.in_progress == 0 {
+            return;
+        }
+        IO_URING.with(|io_uring_cell| {
+            let Ok(io_uring_cell) = io_uring_cell.as_ref() else {
+                return;
+            };
+            let Ok(mut io_uring) = io_uring_cell.try_borrow_mut() else {
+                return;
+            };
+            while self.in_progress > 0 {
+                if io_uring.submit_and_wait(self.in_progress).is_err() {
+                    break;
+                }
+                let cqes: Vec<_> = io_uring
+                    .completion()
+                    .map(|cqe| (cqe.user_data(), cqe.result()))
+                    .collect();
+                for (id, result) in cqes {
+                    self.in_progress -= 1;
+                    if result < 0 {
+                        self.state.abort(id);
+                    } else {
+                        let _ = self.state.finalize(id, result as _);
+                    }
+                }
+            }
+        });
     }
 }
 
@@ -678,6 +826,167 @@ mod tests {
         // Verify len()
         let len = file.len()?;
         assert_eq!(len, 128);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_io_uring_read_batch() -> Result<()> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_batch.bin");
+
+        let data: Vec<u64> = (0..256).collect();
+        fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
+
+        let file = TypedStorage::<IoUringFile, u64>::open(&path, OpenOptions::default())?;
+        let elem = size_of::<u64>() as u64;
+
+        // Non-contiguous ranges across the file.
+        let ranges = vec![
+            ReadRange {
+                byte_offset: 0,
+                length: 10,
+            }, // [0..10]
+            ReadRange {
+                byte_offset: 50 * elem,
+                length: 20,
+            }, // [50..70]
+            ReadRange {
+                byte_offset: 100 * elem,
+                length: 5,
+            }, // [100..105]
+            ReadRange {
+                byte_offset: 200 * elem,
+                length: 56,
+            }, // [200..256]
+        ];
+
+        let expected: Vec<&[u64]> = vec![
+            &data[0..10],
+            &data[50..70],
+            &data[100..105],
+            &data[200..256],
+        ];
+
+        // --- read_batch (callback API) ---
+        let mut batch_results: Vec<(usize, Vec<u64>)> = Vec::new();
+        file.read_batch::<Sequential>(ranges.clone(), |idx, slice| {
+            batch_results.push((idx, slice.to_vec()));
+            Ok(())
+        })?;
+
+        batch_results.sort_by_key(|(idx, _)| *idx);
+        for (idx, items) in &batch_results {
+            assert_eq!(
+                items.as_slice(),
+                expected[*idx],
+                "read_batch mismatch at index {idx}"
+            );
+        }
+
+        // --- read_iter (iterator API) ---
+        let mut iter_results: Vec<(usize, Vec<u64>)> = Vec::new();
+        for record in file.read_iter::<Sequential>(ranges.clone()) {
+            let (idx, cow) = record?;
+            iter_results.push((idx, cow.into_owned()));
+        }
+
+        iter_results.sort_by_key(|(idx, _)| *idx);
+        for (idx, items) in &iter_results {
+            assert_eq!(
+                items.as_slice(),
+                expected[*idx],
+                "read_iter mismatch at index {idx}"
+            );
+        }
+
+        // --- read_iter with more ranges than the io_uring queue depth (64 > 16) ---
+        let many_ranges: Vec<ReadRange> = (0..64)
+            .map(|i| ReadRange {
+                byte_offset: i * elem,
+                length: 1,
+            })
+            .collect();
+
+        let mut count = 0;
+        for record in file.read_iter::<Sequential>(many_ranges) {
+            let (idx, cow) = record?;
+            assert_eq!(
+                cow.as_ref(),
+                &[data[idx]],
+                "many-ranges mismatch at index {idx}"
+            );
+            count += 1;
+        }
+        assert_eq!(count, 64);
+
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Expensive test, require direct IO"]
+    fn test_io_uring_concurrent_read_iter() -> Result<()> {
+        let dir = tempfile::tempdir().unwrap();
+        let elem = size_of::<u64>() as u64;
+
+        // Large files so many reads span multiple io_uring batches.
+        const NUM_ELEMENTS: u64 = 1_000_000;
+        const NUM_RANGES: u64 = 10_000;
+        const CHUNK: u64 = NUM_ELEMENTS / NUM_RANGES; // 100 elements per range
+
+        // File A: 0..NUM_ELEMENTS
+        let path_a = dir.path().join("a.bin");
+        let data_a: Vec<u64> = (0..NUM_ELEMENTS).collect();
+        fs_err::write(&path_a, bytemuck::cast_slice(&data_a)).unwrap();
+
+        // File B: offset by 1_000_000_000 so values never overlap with A.
+        let path_b = dir.path().join("b.bin");
+        let data_b: Vec<u64> = (1_000_000_000..1_000_000_000 + NUM_ELEMENTS).collect();
+        fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
+
+        let opts = OpenOptions {
+            prevent_caching: Some(true),
+            ..Default::default()
+        };
+        let file_a = TypedStorage::<IoUringFile, u64>::open(&path_a, opts)?;
+        let file_b = TypedStorage::<IoUringFile, u64>::open(&path_b, opts)?;
+
+        // NUM_RANGES ranges, each reading CHUNK elements — well over the queue depth.
+        let ranges_a: Vec<ReadRange> = (0..NUM_RANGES)
+            .map(|i| ReadRange {
+                byte_offset: i * CHUNK * elem,
+                length: CHUNK,
+            })
+            .collect();
+        let ranges_b: Vec<ReadRange> = ranges_a.clone();
+
+        let iter_a = file_a.read_iter::<Sequential>(ranges_a);
+        let iter_b = file_b.read_iter::<Sequential>(ranges_b);
+
+        // Zip alternates next() calls between the two iterators on the same
+        // thread-local io_uring ring. With in-flight operations left across
+        // next() calls, one iterator can reap the other's CQEs.
+        let mut count = 0u64;
+        for (rec_a, rec_b) in iter_a.zip(iter_b) {
+            let (idx_a, cow_a) = rec_a?;
+            let (idx_b, cow_b) = rec_b?;
+
+            let start_a = idx_a as u64 * CHUNK;
+            assert_eq!(
+                cow_a.as_ref(),
+                &data_a[start_a as usize..(start_a + CHUNK) as usize],
+                "file A mismatch at range index {idx_a}"
+            );
+
+            let start_b = idx_b as u64 * CHUNK;
+            assert_eq!(
+                cow_b.as_ref(),
+                &data_b[start_b as usize..(start_b + CHUNK) as usize],
+                "file B mismatch at range index {idx_b}"
+            );
+            count += 1;
+        }
+        assert_eq!(count, NUM_RANGES);
 
         Ok(())
     }

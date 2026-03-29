@@ -66,6 +66,14 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     }
 
     #[inline]
+    fn read_iter<P: AccessPattern>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+    ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
+        self.inner.read_iter::<P>(ranges)
+    }
+
+    #[inline]
     fn len(&self) -> Result<u64> {
         self.inner.len()
     }
