@@ -1,5 +1,6 @@
 mod pool;
 mod read_iter;
+mod read_multi_iter;
 mod runtime;
 #[cfg(test)]
 mod tests;
@@ -15,6 +16,7 @@ use fs_err as fs;
 use fs_err::os::unix::fs::OpenOptionsExt;
 
 use self::read_iter::IoUringReadIter;
+use self::read_multi_iter::IoUringReadMultiIter;
 use self::runtime::with_uring_runtime;
 use super::*;
 use crate::generic_consts::AccessPattern;
@@ -119,46 +121,21 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
     ) -> Result<()> {
-        with_uring_runtime(|mut rt| {
-            let mut reads = reads.into_iter().enumerate().peekable();
-            let mut file_indices = Vec::new();
+        for record in Self::read_multi_iter::<P>(files, reads) {
+            let (idx, file_idx, data) = record?;
+            callback(idx, file_idx, &data)?;
+        }
+        Ok(())
+    }
 
-            while reads.peek().is_some() || rt.in_progress > 0 {
-                rt.enqueue(|state| {
-                    let Some((id, (file_index, range))) = reads.next() else {
-                        return Ok(None);
-                    };
-
-                    let file = files.get(file_index).ok_or({
-                        UniversalIoError::InvalidFileIndex {
-                            file_index,
-                            files: files.len(),
-                        }
-                    })?;
-
-                    file_indices.push(file_index);
-
-                    let entry = state.read(id as _, file.fd(), range, file.uses_o_direct)?;
-                    Ok(Some(entry))
-                })?;
-
-                rt.submit_and_wait(1)?;
-
-                for result in rt.completed() {
-                    let (id, resp) = result?;
-
-                    let file_idx = file_indices
-                        .get(id as usize)
-                        .copied()
-                        .expect("file index is tracked");
-
-                    let items = resp.expect_read();
-                    callback(id as _, file_idx, &items)?;
-                }
-            }
-
-            Ok(())
-        })?
+    fn read_multi_iter<P: AccessPattern>(
+        files: &[Self],
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
+        match IoUringReadMultiIter::new(files, reads) {
+            Ok(iter) => itertools::Either::Left(iter),
+            Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+        }
     }
 
     fn len(&self) -> Result<u64> {

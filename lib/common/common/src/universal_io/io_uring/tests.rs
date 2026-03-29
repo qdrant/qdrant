@@ -1,6 +1,7 @@
 use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
+use crate::universal_io::read::UniversalRead;
 
 #[test]
 fn test_io_uring_file_for_u64() -> Result<()> {
@@ -192,6 +193,175 @@ fn test_io_uring_concurrent_read_iter() -> Result<()> {
         count += 1;
     }
     assert_eq!(count, NUM_RANGES);
+
+    Ok(())
+}
+
+#[test]
+fn test_io_uring_read_multi_iter_basic() -> Result<()> {
+    let dir = tempfile::tempdir().unwrap();
+    let elem = size_of::<u64>() as u64;
+
+    // File 0: 0..128
+    let path_0 = dir.path().join("f0.bin");
+    let data_0: Vec<u64> = (0..128).collect();
+    fs_err::write(&path_0, bytemuck::cast_slice(&data_0)).unwrap();
+
+    // File 1: 1000..1128
+    let path_1 = dir.path().join("f1.bin");
+    let data_1: Vec<u64> = (1000..1128).collect();
+    fs_err::write(&path_1, bytemuck::cast_slice(&data_1)).unwrap();
+
+    let opts = OpenOptions::default();
+    let file_0 = <IoUringFile as UniversalRead<u64>>::open(&path_0, opts)?;
+    let file_1 = <IoUringFile as UniversalRead<u64>>::open(&path_1, opts)?;
+    let files = [file_0, file_1];
+
+    // Interleaved reads across both files.
+    let reads = vec![
+        (0, ReadRange { byte_offset: 0, length: 10 }),             // f0[0..10]
+        (1, ReadRange { byte_offset: 20 * elem, length: 5 }),      // f1[20..25]
+        (0, ReadRange { byte_offset: 50 * elem, length: 20 }),     // f0[50..70]
+        (1, ReadRange { byte_offset: 0, length: 10 }),             // f1[0..10]
+    ];
+
+    let expected: Vec<(FileIndex, &[u64])> = vec![
+        (0, &data_0[0..10]),
+        (1, &data_1[20..25]),
+        (0, &data_0[50..70]),
+        (1, &data_1[0..10]),
+    ];
+
+    let mut results: Vec<(usize, FileIndex, Vec<u64>)> = Vec::new();
+    for record in IoUringFile::read_multi_iter::<Sequential>(&files, reads) {
+        let (idx, file_idx, cow) = record?;
+        results.push((idx, file_idx, cow.into_owned()));
+    }
+
+    results.sort_by_key(|(idx, _, _)| *idx);
+    for (idx, file_idx, items) in &results {
+        let (expected_file, expected_data) = expected[*idx];
+        assert_eq!(*file_idx, expected_file, "file index mismatch at op {idx}");
+        assert_eq!(items.as_slice(), expected_data, "data mismatch at op {idx}");
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
+    let dir = tempfile::tempdir().unwrap();
+    let elem = size_of::<u64>() as u64;
+
+    const NUM_FILES: usize = 4;
+    const ELEMENTS_PER_FILE: u64 = 256;
+    const RANGES_PER_FILE: u64 = 20; // 80 total > queue depth of 16
+
+    let mut all_data: Vec<Vec<u64>> = Vec::new();
+    let mut files: Vec<IoUringFile> = Vec::new();
+
+    for i in 0..NUM_FILES {
+        let base = (i as u64) * 10_000;
+        let data: Vec<u64> = (base..base + ELEMENTS_PER_FILE).collect();
+        let path = dir.path().join(format!("f{i}.bin"));
+        fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
+
+        let file = <IoUringFile as UniversalRead<u64>>::open(&path, OpenOptions::default())?;
+        files.push(file);
+        all_data.push(data);
+    }
+
+    // Generate reads: round-robin across files, each reading a small chunk.
+    let reads: Vec<(FileIndex, ReadRange)> = (0..NUM_FILES as u64 * RANGES_PER_FILE)
+        .map(|i| {
+            let file_idx = (i as usize) % NUM_FILES;
+            let range_idx = i / NUM_FILES as u64;
+            let offset = range_idx * 10; // non-overlapping chunks of 10
+            (
+                file_idx,
+                ReadRange {
+                    byte_offset: offset * elem,
+                    length: 10,
+                },
+            )
+        })
+        .collect();
+
+    let mut results: Vec<(usize, FileIndex, Vec<u64>)> = Vec::new();
+    for record in IoUringFile::read_multi_iter::<Sequential>(&files, reads.clone()) {
+        let (idx, file_idx, cow) = record?;
+        results.push((idx, file_idx, cow.into_owned()));
+    }
+
+    assert_eq!(results.len(), reads.len());
+
+    results.sort_by_key(|(idx, _, _)| *idx);
+    for (idx, file_idx, items) in &results {
+        let (expected_file, expected_range) = &reads[*idx];
+        assert_eq!(file_idx, expected_file);
+        let start = (expected_range.byte_offset / elem) as usize;
+        let end = start + expected_range.length as usize;
+        assert_eq!(
+            items.as_slice(),
+            &all_data[*file_idx][start..end],
+            "data mismatch at op {idx}, file {file_idx}"
+        );
+    }
+
+    Ok(())
+}
+
+/// Verify that `read_multi` (callback API) and `read_multi_iter` produce identical
+/// results, confirming the callback version correctly delegates to the iterator.
+#[test]
+fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
+    let dir = tempfile::tempdir().unwrap();
+    let elem = size_of::<u64>() as u64;
+
+    let path_a = dir.path().join("a.bin");
+    let data_a: Vec<u64> = (0..200).collect();
+    fs_err::write(&path_a, bytemuck::cast_slice(&data_a)).unwrap();
+
+    let path_b = dir.path().join("b.bin");
+    let data_b: Vec<u64> = (5000..5200).collect();
+    fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
+
+    let opts = OpenOptions::default();
+    let file_a: IoUringFile = UniversalRead::<u64>::open(&path_a, opts)?;
+    let file_b: IoUringFile = UniversalRead::<u64>::open(&path_b, opts)?;
+    let files = [file_a, file_b];
+
+    let reads: Vec<(FileIndex, ReadRange)> = vec![
+        (0, ReadRange { byte_offset: 0, length: 50 }),
+        (1, ReadRange { byte_offset: 10 * elem, length: 30 }),
+        (0, ReadRange { byte_offset: 100 * elem, length: 50 }),
+        (1, ReadRange { byte_offset: 0, length: 100 }),
+        (0, ReadRange { byte_offset: 150 * elem, length: 50 }),
+    ];
+
+    // Collect via callback.
+    let mut callback_results: Vec<(usize, FileIndex, Vec<u64>)> = Vec::new();
+    IoUringFile::read_multi::<Sequential>(&files, reads.clone(), |idx, file_idx, data| {
+        callback_results.push((idx, file_idx, data.to_vec()));
+        Ok(())
+    })?;
+
+    // Collect via iterator.
+    let mut iter_results: Vec<(usize, FileIndex, Vec<u64>)> = Vec::new();
+    for record in IoUringFile::read_multi_iter::<Sequential>(&files, reads) {
+        let (idx, file_idx, cow) = record?;
+        iter_results.push((idx, file_idx, cow.into_owned()));
+    }
+
+    callback_results.sort_by_key(|(idx, _, _)| *idx);
+    iter_results.sort_by_key(|(idx, _, _)| *idx);
+
+    assert_eq!(callback_results.len(), iter_results.len());
+    for (cb, it) in callback_results.iter().zip(iter_results.iter()) {
+        assert_eq!(cb.0, it.0, "operation index mismatch");
+        assert_eq!(cb.1, it.1, "file index mismatch");
+        assert_eq!(cb.2, it.2, "data mismatch at op {}", cb.0);
+    }
 
     Ok(())
 }

@@ -77,5 +77,27 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         Ok(())
     }
 
+    /// Like [`read_multi`](Self::read_multi), but returns a fallible iterator instead of
+    /// accepting a callback.
+    fn read_multi_iter<P: AccessPattern>(
+        files: &[Self],
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
+        reads
+            .into_iter()
+            .enumerate()
+            .map(move |(idx, (file_index, range))| {
+                let file = files
+                    .get(file_index)
+                    .ok_or(UniversalIoError::InvalidFileIndex {
+                        file_index,
+                        files: files.len(),
+                    })?;
+
+                let data = file.read::<P>(range)?;
+                Ok((idx, file_index, data))
+            })
+    }
+
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }

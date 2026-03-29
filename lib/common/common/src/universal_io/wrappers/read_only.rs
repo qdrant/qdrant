@@ -90,4 +90,12 @@ where
     ) -> Result<()> {
         S::read_multi::<P>(Self::peel_slice(files), reads, callback)
     }
+
+    #[inline]
+    fn read_multi_iter<P: AccessPattern>(
+        files: &[Self],
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
+        S::read_multi_iter::<P>(Self::peel_slice(files), reads)
+    }
 }

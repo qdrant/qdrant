@@ -96,6 +96,14 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     ) -> Result<()> {
         S::read_multi::<P>(Self::peel_slice(files), reads, callback)
     }
+
+    #[inline]
+    fn read_multi_iter<P: AccessPattern>(
+        files: &[Self],
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
+        S::read_multi_iter::<P>(Self::peel_slice(files), reads)
+    }
 }
 
 impl<S: UniversalWrite<T>, T: Copy + 'static> UniversalWrite<T> for TypedStorage<S, T> {
