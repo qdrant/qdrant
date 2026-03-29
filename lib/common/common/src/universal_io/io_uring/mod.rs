@@ -148,6 +148,12 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     }
 
     fn populate(&self) -> Result<()> {
+        if self.uses_o_direct {
+            // O_DIRECT bypasses the page cache, so reading the file
+            // would not warm it — skip.
+            return Ok(());
+        }
+
         let mut file = self.file.as_ref();
         file.seek(io::SeekFrom::Start(0))?;
 
