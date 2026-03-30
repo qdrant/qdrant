@@ -8,9 +8,9 @@ use quantization::encoded_vectors_pq::EncodedVectorsPQ;
 use rand::RngExt;
 
 fn encode_bench(c: &mut Criterion) {
-    let mut group = c.benchmark_group("encode");
+    let mut group = c.benchmark_group("pq");
 
-    let vectors_count = 100_000;
+    let vectors_count = 5_000;
     let vector_dim = 1024;
     let mut rng = rand::rng();
     let mut list: Vec<f32> = Vec::new();

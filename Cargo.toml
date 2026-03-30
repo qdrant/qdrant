@@ -297,6 +297,7 @@ tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
+turboquant = { git = "https://github.com/aisar-labs/turboquant-rs" }
 uuid = { version = "1.22", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
 zerocopy = { version = "0.8.47", features = ["derive"] }

@@ -10,6 +10,8 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
+use turboquant::turbo_mse::MseQuantized;
+use turboquant::turbo_prod::{ProdQuantized, TurboProd};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
@@ -17,22 +19,117 @@ use crate::{DistanceType, EncodingError};
 
 pub const DEFAULT_TURBO_QUANT_LEVELS: usize = 4;
 
+const DEFAULT_SEED: u64 = 42;
+
+/// Pack indices into a byte buffer using `bit_width` bits per index.
+fn pack_indices(indices: &[u8], bit_width: u8) -> Vec<u8> {
+    let total_bits = indices.len() * bit_width as usize;
+    let num_bytes = total_bits.div_ceil(8);
+    let mut packed = vec![0u8; num_bytes];
+    for (i, &idx) in indices.iter().enumerate() {
+        let bit_offset = i * bit_width as usize;
+        let byte_offset = bit_offset / 8;
+        let bit_shift = bit_offset % 8;
+        packed[byte_offset] |= idx << bit_shift;
+        if bit_shift + bit_width as usize > 8 {
+            packed[byte_offset + 1] |= idx >> (8 - bit_shift);
+        }
+    }
+    packed
+}
+
+/// Unpack indices from a byte buffer, reading `bit_width` bits per index.
+fn unpack_indices(packed: &[u8], dim: usize, bit_width: u8) -> Vec<u8> {
+    let mask = (1u16 << bit_width) - 1;
+    let mut indices = Vec::with_capacity(dim);
+    for i in 0..dim {
+        let bit_offset = i * bit_width as usize;
+        let byte_offset = bit_offset / 8;
+        let bit_shift = bit_offset % 8;
+        let mut val = u16::from(packed[byte_offset]) >> bit_shift;
+        if bit_shift + bit_width as usize > 8 {
+            val |= u16::from(packed[byte_offset + 1]) << (8 - bit_shift);
+        }
+        indices.push((val & mask) as u8);
+    }
+    indices
+}
+
+/// Number of bytes needed to store `dim` indices at `levels` bits each.
+fn packed_indices_size(dim: usize, levels: usize) -> usize {
+    (dim * levels).div_ceil(8)
+}
+
+/// Pack i8 signs (+1/-1) into bits: +1 → 1, -1 → 0.
+fn pack_signs(signs: &[i8]) -> Vec<u8> {
+    let num_bytes = signs.len().div_ceil(8);
+    let mut packed = vec![0u8; num_bytes];
+    for (i, &sign) in signs.iter().enumerate() {
+        if sign > 0 {
+            packed[i / 8] |= 1 << (i % 8);
+        }
+    }
+    packed
+}
+
+/// Unpack bits into i8 signs: 1 → +1, 0 → -1.
+fn unpack_signs(packed: &[u8], count: usize) -> Vec<i8> {
+    let mut signs = Vec::with_capacity(count);
+    for i in 0..count {
+        let bit = (packed[i / 8] >> (i % 8)) & 1;
+        signs.push(if bit == 1 { 1 } else { -1 });
+    }
+    signs
+}
+
+/// Number of bytes needed to store `count` sign bits.
+fn packed_signs_size(count: usize) -> usize {
+    count.div_ceil(8)
+}
+
+/// Compute the QJL projection S * y, pre-scaled by √(π/2) / d.
+/// Avoids depending on nalgebra directly — accesses the DMatrix column-major data.
+fn qjl_project_prescaled(qjl: &turboquant::qjl::Qjl, y: &[f64]) -> Vec<f64> {
+    let d = qjl.d;
+    let scale = (std::f64::consts::PI / 2.0).sqrt() / d as f64;
+    let s = qjl.projection.as_slice(); // column-major d×d
+    let mut result = vec![0.0f64; d];
+    // S is column-major: S[row, col] = s[row + col * d]
+    // (S * y)[row] = Σ_col S[row, col] * y[col]
+    for (col, &y_col) in y.iter().enumerate().take(d) {
+        let col_offset = col * d;
+        for row in 0..d {
+            result[row] += s[col_offset + row] * y_col;
+        }
+    }
+    for v in &mut result {
+        *v *= scale;
+    }
+    result
+}
+
 pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
+    turbo_prod: TurboProd,
 }
 
-/// Encoded query type.
-/// Just original vector as example.
+/// Encoded query type - stores precomputed rotated and projected query vectors
+/// so that per-vector scoring is O(d) instead of O(d²).
 pub struct EncodedQueryTQ {
-    query: Vec<f32>,
+    /// R * y — the query rotated into MSE codebook space.
+    rotated_query: Vec<f64>,
+    /// (√(π/2) / d) * S * y — the query projected into QJL space, pre-scaled.
+    projected_query: Vec<f64>,
+    query_norm_sq: f64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Metadata {
     pub vector_parameters: VectorParameters,
     pub levels: usize,
+    pub seed: u64,
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
@@ -40,16 +137,20 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         &self.encoded_vectors
     }
 
-    /// Encode vector data
+    /// Encode vector data using TurboQuant MSE quantization.
     ///
     /// # Arguments
     /// * `data` - iterator over original vector data
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `count` - number of vectors in `data` iterator, used for progress bar
-    /// * `levels` - number of recursive polar decomposition levels (default: 4, range: 1-6)
+    /// * `levels` - bit width per coordinate for TurboQuant quantization (default: 4, range: 2-4)
     /// * `meta_path` - optional path to save metadata, if `None`, metadata will not be saved
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
+    ///
+    /// # Panics
+    /// Panics if L1 distance type is used (not supported by TurboQuant).
+    /// Panics if `levels` < 2 (TurboProd requires at least 2 bits).
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
@@ -62,27 +163,51 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
+        if vector_parameters.distance_type == DistanceType::L1 {
+            panic!("TurboQuant does not support L1 distance metric");
+        }
+        assert!(
+            levels >= 2,
+            "TurboProd requires at least 2 quantization levels"
+        );
+
+        let seed = DEFAULT_SEED;
+        let bit_width = levels as u8;
+        let mse_bit_width = bit_width - 1;
+        let turbo_prod = TurboProd::new(vector_parameters.dim, bit_width, Some(seed));
+
         for vector in data {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector: Vec<u8> = Self::encode_vector(vector.as_ref());
+            let vector_f64: Vec<f64> = vector.as_ref().iter().map(|&x| f64::from(x)).collect();
+            let quantized = turbo_prod.quantize(&vector_f64);
 
-            storage_builder
-                .push_vector_data(&encoded_vector)
-                .map_err(|e| {
-                    EncodingError::EncodingError(format!("Failed to push encoded vector: {e}",))
-                })?;
+            // Layout: mse_norm (f64) + residual_norm (f64) + packed MSE indices + packed QJL signs
+            let packed_indices = pack_indices(&quantized.mse_part.indices, mse_bit_width);
+            let packed_signs = pack_signs(&quantized.qjl_signs);
+            let mut encoded = Vec::with_capacity(
+                2 * std::mem::size_of::<f64>() + packed_indices.len() + packed_signs.len(),
+            );
+            encoded.extend_from_slice(&quantized.mse_part.norm.to_ne_bytes());
+            encoded.extend_from_slice(&quantized.residual_norm.to_ne_bytes());
+            encoded.extend_from_slice(&packed_indices);
+            encoded.extend_from_slice(&packed_signs);
+
+            storage_builder.push_vector_data(&encoded).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to push encoded vector: {e}"))
+            })?;
         }
 
         let encoded_vectors = storage_builder
             .build()
-            .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
+            .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}")))?;
 
         let metadata = Metadata {
             vector_parameters: vector_parameters.clone(),
             levels,
+            seed,
         };
         if let Some(meta_path) = meta_path {
             meta_path
@@ -100,7 +225,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                     ))
                 })?;
             atomic_save_json(meta_path, &metadata).map_err(|e| {
-                EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+                EncodingError::EncodingError(format!("Failed to save metadata: {e}"))
             })?;
         }
 
@@ -108,57 +233,105 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             encoded_vectors,
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
+            turbo_prod,
         })
     }
 
     pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
         let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
-        let result = Self {
+        let turbo_prod = TurboProd::new(
+            metadata.vector_parameters.dim,
+            metadata.levels as u8,
+            Some(metadata.seed),
+        );
+        Ok(Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
-        };
-        Ok(result)
+            turbo_prod,
+        })
     }
 
-    // Get quantized vector size in bytes
-    pub fn get_quantized_vector_size(
-        vector_parameters: &VectorParameters,
-        _levels: usize,
-    ) -> usize {
-        vector_parameters.dim * std::mem::size_of::<f32>()
+    /// Get quantized vector size in bytes: two f64 values + bit-packed MSE indices + packed QJL signs.
+    pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, levels: usize) -> usize {
+        2 * std::mem::size_of::<f64>()
+            + packed_indices_size(vector_parameters.dim, levels - 1)
+            + packed_signs_size(vector_parameters.dim)
     }
 
-    /// Encode single vector from `&[f32]` into `&[u8]`.
-    fn encode_vector(vector_data: &[f32]) -> Vec<u8> {
-        // Just convert vector data into bytes using ne_bytes:
-        vector_data.iter().flat_map(|&x| x.to_ne_bytes()).collect()
-    }
-
-    fn score_point_simple(&self, query: &EncodedQueryTQ, vector: &[u8]) -> f32 {
-        let mut result = 0f32;
-
-        for (q, v) in query
-            .query
-            .iter()
-            .zip(vector.chunks_exact(std::mem::size_of::<f32>()))
-        {
-            let v = f32::from_ne_bytes(v.try_into().unwrap());
-
-            match self.metadata.vector_parameters.distance_type {
-                DistanceType::Dot => {
-                    result += q * v;
-                }
-                DistanceType::L1 => {
-                    result += (q - v).abs();
-                }
-                DistanceType::L2 => {
-                    let diff = q - v;
-                    result += diff * diff;
-                }
-            }
+    /// Deserialize stored bytes into a ProdQuantized struct.
+    fn deserialize_prod_quantized(&self, bytes: &[u8]) -> ProdQuantized {
+        let mse_bit_width = (self.metadata.levels - 1) as u8;
+        let dim = self.metadata.vector_parameters.dim;
+        let mse_norm = f64::from_ne_bytes(bytes[..8].try_into().unwrap());
+        let residual_norm = f64::from_ne_bytes(bytes[8..16].try_into().unwrap());
+        let mse_packed_size = packed_indices_size(dim, self.metadata.levels - 1);
+        let indices = unpack_indices(&bytes[16..16 + mse_packed_size], dim, mse_bit_width);
+        let signs = unpack_signs(&bytes[16 + mse_packed_size..], dim);
+        ProdQuantized {
+            mse_part: MseQuantized {
+                indices,
+                bit_width: mse_bit_width,
+                norm: mse_norm,
+            },
+            qjl_signs: signs,
+            residual_norm,
         }
+    }
+
+    /// Dequantize a stored vector (MSE part only) from its byte representation.
+    fn dequantize_bytes(&self, bytes: &[u8]) -> Vec<f64> {
+        let prod = self.deserialize_prod_quantized(bytes);
+        self.turbo_prod.turbo_mse.dequantize(&prod.mse_part)
+    }
+
+    fn score_point_simple(&self, query: &EncodedQueryTQ, vector_bytes: &[u8]) -> f32 {
+        let mse_bit_width = (self.metadata.levels - 1) as u8;
+        let dim = self.metadata.vector_parameters.dim;
+        let mse_norm = f64::from_ne_bytes(vector_bytes[..8].try_into().unwrap());
+        let residual_norm = f64::from_ne_bytes(vector_bytes[8..16].try_into().unwrap());
+        let mse_packed_size = packed_indices_size(dim, self.metadata.levels - 1);
+        let indices_bytes = &vector_bytes[16..16 + mse_packed_size];
+        let signs_bytes = &vector_bytes[16 + mse_packed_size..];
+
+        let centroids = &self.turbo_prod.turbo_mse.codebook.centroids;
+        let mask = (1u16 << mse_bit_width) - 1;
+
+        // MSE part: mse_norm * Σ rotated_query[i] * centroid[index[i]]
+        let mut ip_mse = 0.0f64;
+        for i in 0..dim {
+            let bit_offset = i * mse_bit_width as usize;
+            let byte_offset = bit_offset / 8;
+            let bit_shift = bit_offset % 8;
+            let mut val = u16::from(indices_bytes[byte_offset]) >> bit_shift;
+            if bit_shift + mse_bit_width as usize > 8 {
+                val |= u16::from(indices_bytes[byte_offset + 1]) << (8 - bit_shift);
+            }
+            let idx = (val & mask) as usize;
+            ip_mse += query.rotated_query[i] * centroids[idx];
+        }
+        ip_mse *= mse_norm;
+
+        // QJL part: residual_norm * Σ projected_query[i] * sign[i]
+        let mut ip_qjl = 0.0f64;
+        for i in 0..dim {
+            let bit = (signs_bytes[i / 8] >> (i % 8)) & 1;
+            let sign = if bit == 1 { 1.0 } else { -1.0 };
+            ip_qjl += query.projected_query[i] * sign;
+        }
+        ip_qjl *= residual_norm;
+
+        let ip = ip_mse + ip_qjl;
+
+        let result = match self.metadata.vector_parameters.distance_type {
+            DistanceType::Dot => ip,
+            DistanceType::L1 => panic!("TurboQuant does not support L1 distance metric"),
+            DistanceType::L2 => {
+                let vec_norm_sq = mse_norm * mse_norm;
+                query.query_norm_sq - 2.0 * ip + vec_norm_sq
+            }
+        } as f32;
 
         if self.metadata.vector_parameters.invert {
             -result
@@ -172,7 +345,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     }
 
     pub fn layout(&self) -> Layout {
-        Layout::from_size_align(self.quantized_vector_size(), align_of::<f32>()).unwrap()
+        Layout::from_size_align(self.quantized_vector_size(), align_of::<f64>()).unwrap()
     }
 
     pub fn get_metadata(&self) -> &Metadata {
@@ -188,8 +361,20 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
+        let query_f64: Vec<f64> = query.iter().map(|&x| f64::from(x)).collect();
+        let query_norm_sq = query_f64.iter().map(|&x| x * x).sum();
+
+        // Precompute R * y (rotate query into MSE codebook space)
+        let rotated_query =
+            turboquant::rotation::rotate(&self.turbo_prod.turbo_mse.rotation, &query_f64);
+
+        // Precompute (√(π/2) / d) * S * y (project query into QJL space, pre-scaled)
+        let projected_query = qjl_project_prescaled(&self.turbo_prod.qjl, &query_f64);
+
         EncodedQueryTQ {
-            query: query.to_vec(),
+            rotated_query,
+            projected_query,
+            query_norm_sq,
         }
     }
 
@@ -199,59 +384,49 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let centroids = self.encoded_vectors.get_vector_data(i);
-
-        self.score_bytes(True, query, &centroids, hw_counter)
+        let vector_data = self.encoded_vectors.get_vector_data(i);
+        self.score_bytes(True, query, &vector_data, hw_counter)
     }
 
-    /// Score two points inside endoded data by their indexes
     fn score_internal(
         &self,
         i: PointOffsetType,
         j: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let mut result = 0f32;
+        let v1_bytes = self.encoded_vectors.get_vector_data(i);
+        let v2_bytes = self.encoded_vectors.get_vector_data(j);
 
-        let v1 = self.encoded_vectors.get_vector_data(i);
-        let v2 = self.encoded_vectors.get_vector_data(j);
+        hw_counter
+            .vector_io_read()
+            .incr_delta(v1_bytes.len() + v2_bytes.len());
 
-        hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
+        // Dequantize v1 and build a precomputed query from it
+        let v1_deq = self.dequantize_bytes(&v1_bytes);
+        let v1_norm_sq: f64 = v1_deq.iter().map(|&x| x * x).sum();
+        let rotated_query =
+            turboquant::rotation::rotate(&self.turbo_prod.turbo_mse.rotation, &v1_deq);
+        let projected_query = qjl_project_prescaled(&self.turbo_prod.qjl, &v1_deq);
 
-        for (v1, v2) in v1
-            .chunks_exact(std::mem::size_of::<f32>())
-            .zip(v2.chunks_exact(std::mem::size_of::<f32>()))
-        {
-            let v1 = f32::from_ne_bytes(v1.try_into().unwrap());
-            let v2 = f32::from_ne_bytes(v2.try_into().unwrap());
+        let query = EncodedQueryTQ {
+            rotated_query,
+            projected_query,
+            query_norm_sq: v1_norm_sq,
+        };
 
-            match self.metadata.vector_parameters.distance_type {
-                DistanceType::Dot => {
-                    result += v1 * v2;
-                }
-                DistanceType::L1 => {
-                    result += (v1 - v2).abs();
-                }
-                DistanceType::L2 => {
-                    let diff = v1 - v2;
-                    result += diff * diff;
-                }
-            }
-        }
-
-        if self.metadata.vector_parameters.invert {
-            -result
-        } else {
-            result
-        }
+        self.score_point_simple(&query, &v2_bytes)
     }
 
     fn quantized_vector_size(&self) -> usize {
-        self.metadata.vector_parameters.dim * std::mem::size_of::<f32>()
+        2 * std::mem::size_of::<f64>()
+            + packed_indices_size(
+                self.metadata.vector_parameters.dim,
+                self.metadata.levels - 1,
+            )
+            + packed_signs_size(self.metadata.vector_parameters.dim)
     }
 
     fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {
-        // Keep here just `None`, for prototype it's OK
         None
     }
 
@@ -261,7 +436,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         _vector: &[f32],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        debug_assert!(false, "TurboQuant does not support upsert_vector",);
+        debug_assert!(false, "TurboQuant does not support upsert_vector");
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "TurboQuant does not support upsert_vector",
@@ -269,7 +444,6 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     fn vectors_count(&self) -> usize {
-        // `vector_division` size is equal to quantized vector size because each chunk is replaced by one `u8` centroid index.
         self.encoded_vectors.vectors_count()
     }
 
@@ -302,7 +476,6 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
         hw_counter.cpu_counter().incr_delta(bytes.len());
-
         self.score_point_simple(query, bytes)
     }
 }
