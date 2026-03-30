@@ -361,11 +361,19 @@ message BinaryQuantization {
   optional BinaryQuantizationQueryEncoding query_encoding = 3;
 }
 
+message TurboQuantization {
+  // Number of recursive polar decomposition levels 
+  optional uint32 levels = 1;
+  // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+  optional bool always_ram = 2;
+}
+
 message QuantizationConfig {
   oneof quantization {
     ScalarQuantization scalar = 1;
     ProductQuantization product = 2;
     BinaryQuantization binary = 3;
+    TurboQuantization turbo = 4;
   }
 }
 
@@ -377,6 +385,7 @@ message QuantizationConfigDiff {
     ProductQuantization product = 2;
     Disabled disabled = 3;
     BinaryQuantization binary = 4;
+    TurboQuantization turbo = 5;
   }
 }
 

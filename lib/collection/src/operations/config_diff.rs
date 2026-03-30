@@ -8,6 +8,7 @@ use api::rest::MaxOptimizationThreads;
 use schemars::JsonSchema;
 use segment::types::{
     BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, StrictModeConfig,
+    TurboQuantQuantization,
 };
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
@@ -484,6 +485,7 @@ pub enum QuantizationConfigDiff {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
     Binary(BinaryQuantization),
+    TurboQuant(TurboQuantQuantization),
     Disabled(Disabled),
 }
 
@@ -499,6 +501,7 @@ impl Validate for QuantizationConfigDiff {
             QuantizationConfigDiff::Scalar(scalar) => scalar.validate(),
             QuantizationConfigDiff::Product(product) => product.validate(),
             QuantizationConfigDiff::Binary(binary) => binary.validate(),
+            QuantizationConfigDiff::TurboQuant(turbo) => turbo.validate(),
             QuantizationConfigDiff::Disabled(_) => Ok(()),
         }
     }

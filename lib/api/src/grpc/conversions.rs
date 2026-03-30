@@ -60,7 +60,7 @@ use crate::grpc::qdrant::{
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
-    DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
+    DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression, TurboQuantization,
 };
 use crate::rest::models::{CollectionsResponse, ShardKeysResponse, VersionInfo};
 use crate::rest::schema as rest;
@@ -1342,6 +1342,31 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
     }
 }
 
+impl From<segment::types::TurboQuantQuantization> for TurboQuantization {
+    fn from(value: segment::types::TurboQuantQuantization) -> Self {
+        let segment::types::TurboQuantQuantization { turbo_quant } = value;
+        let segment::types::TurboQuantQuantizationConfig { levels, always_ram } = turbo_quant;
+        TurboQuantization {
+            levels: levels.map(|l| l as u32),
+            always_ram,
+        }
+    }
+}
+
+impl TryFrom<TurboQuantization> for segment::types::TurboQuantQuantization {
+    type Error = Status;
+
+    fn try_from(value: TurboQuantization) -> Result<Self, Self::Error> {
+        let TurboQuantization { levels, always_ram } = value;
+        Ok(segment::types::TurboQuantQuantization {
+            turbo_quant: segment::types::TurboQuantQuantizationConfig {
+                levels: levels.map(|l| l as usize),
+                always_ram,
+            },
+        })
+    }
+}
+
 impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
@@ -1358,6 +1383,11 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
             segment::types::QuantizationConfig::Binary(binary) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Binary(
                     binary.into(),
+                )),
+            },
+            segment::types::QuantizationConfig::TurboQuant(turbo_quant) => Self {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Turbo(
+                    turbo_quant.into(),
                 )),
             },
         }
@@ -1380,6 +1410,9 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             ),
             super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
                 segment::types::QuantizationConfig::Binary(config.try_into()?),
+            ),
+            super::qdrant::quantization_config::Quantization::Turbo(config) => Ok(
+                segment::types::QuantizationConfig::TurboQuant(config.try_into()?),
             ),
         }
     }

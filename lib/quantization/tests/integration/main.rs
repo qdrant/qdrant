@@ -18,3 +18,5 @@ pub mod test_pq;
 pub mod test_simple;
 #[cfg(test)]
 pub mod test_sse;
+#[cfg(test)]
+pub mod test_tq;

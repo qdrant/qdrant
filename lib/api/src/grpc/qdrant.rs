@@ -972,8 +972,21 @@ pub struct BinaryQuantization {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TurboQuantization {
+    /// Number of recursive polar decomposition levels
+    #[prost(uint32, optional, tag = "1")]
+    #[validate(range(min = 1, max = 6))]
+    pub levels: ::core::option::Option<u32>,
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "2")]
+    pub always_ram: ::core::option::Option<bool>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
-    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3")]
+    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3, 4")]
     #[validate(nested)]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
@@ -989,6 +1002,8 @@ pub mod quantization_config {
         Product(super::ProductQuantization),
         #[prost(message, tag = "3")]
         Binary(super::BinaryQuantization),
+        #[prost(message, tag = "4")]
+        Turbo(super::TurboQuantization),
     }
 }
 #[derive(validator::Validate)]
@@ -1001,7 +1016,7 @@ pub struct Disabled {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfigDiff {
-    #[prost(oneof = "quantization_config_diff::Quantization", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "quantization_config_diff::Quantization", tags = "1, 2, 3, 4, 5")]
     #[validate(nested)]
     pub quantization: ::core::option::Option<quantization_config_diff::Quantization>,
 }
@@ -1019,6 +1034,8 @@ pub mod quantization_config_diff {
         Disabled(super::Disabled),
         #[prost(message, tag = "4")]
         Binary(super::BinaryQuantization),
+        #[prost(message, tag = "5")]
+        Turbo(super::TurboQuantization),
     }
 }
 #[derive(validator::Validate)]

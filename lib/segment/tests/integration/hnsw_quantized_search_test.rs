@@ -26,7 +26,7 @@ use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
     CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
     Indexes, ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
-    ScalarQuantizationConfig, SearchParams,
+    ScalarQuantizationConfig, SearchParams, TurboQuantQuantizationConfig,
 };
 use segment::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
@@ -408,6 +408,51 @@ fn hnsw_product_quantization_manhattan_test() {
         }
         .into(),
         false,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quant_search_cosine_test() {
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        5003,
+        131,
+        TurboQuantQuantizationConfig {
+            levels: None,
+            always_ram: None,
+        }
+        .into(),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quant_search_euclid_test() {
+    hnsw_quantized_search_test(
+        Distance::Euclid,
+        5003,
+        131,
+        TurboQuantQuantizationConfig {
+            levels: None,
+            always_ram: None,
+        }
+        .into(),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quant_search_manhattan_test() {
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
+        5003,
+        131,
+        TurboQuantQuantizationConfig {
+            levels: None,
+            always_ram: None,
+        }
+        .into(),
+        true,
     );
 }
 
