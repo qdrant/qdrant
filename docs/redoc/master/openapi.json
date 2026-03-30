@@ -7476,7 +7476,7 @@
             ]
           },
           "query_encoding": {
-            "description": "Asymmetric quantization configuration allows a query to have different quantization than stored vectors. It can increase the accuracy of search at the cost of performance.",
+            "description": "Asymmetric quantization configuration allows a query to have different quantization than stored vectors. It can increase the accuracy of search at the cost of performance. Note: `unquantized` is only supported with `distance=Dot` and `encoding=one_bit`.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/BinaryQuantizationQueryEncoding"
