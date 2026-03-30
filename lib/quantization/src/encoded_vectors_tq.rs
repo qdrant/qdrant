@@ -87,6 +87,27 @@ fn packed_signs_size(count: usize) -> usize {
     count.div_ceil(8)
 }
 
+/// Compute the QJL projection S * y, pre-scaled by √(π/2) / d.
+/// Avoids depending on nalgebra directly — accesses the DMatrix column-major data.
+fn qjl_project_prescaled(qjl: &turboquant::qjl::Qjl, y: &[f64]) -> Vec<f64> {
+    let d = qjl.d;
+    let scale = (std::f64::consts::PI / 2.0).sqrt() / d as f64;
+    let s = qjl.projection.as_slice(); // column-major d×d
+    let mut result = vec![0.0f64; d];
+    // S is column-major: S[row, col] = s[row + col * d]
+    // (S * y)[row] = Σ_col S[row, col] * y[col]
+    for (col, &y_col) in y.iter().enumerate().take(d) {
+        let col_offset = col * d;
+        for row in 0..d {
+            result[row] += s[col_offset + row] * y_col;
+        }
+    }
+    for v in &mut result {
+        *v *= scale;
+    }
+    result
+}
+
 pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
@@ -94,9 +115,13 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     turbo_prod: TurboProd,
 }
 
-/// Encoded query type - stores the original query vector.
+/// Encoded query type - stores precomputed rotated and projected query vectors
+/// so that per-vector scoring is O(d) instead of O(d²).
 pub struct EncodedQueryTQ {
-    query_f64: Vec<f64>,
+    /// R * y — the query rotated into MSE codebook space.
+    rotated_query: Vec<f64>,
+    /// (√(π/2) / d) * S * y — the query projected into QJL space, pre-scaled.
+    projected_query: Vec<f64>,
     query_norm_sq: f64,
 }
 
@@ -262,16 +287,48 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     }
 
     fn score_point_simple(&self, query: &EncodedQueryTQ, vector_bytes: &[u8]) -> f32 {
-        let prod_quantized = self.deserialize_prod_quantized(vector_bytes);
-        let ip = self
-            .turbo_prod
-            .estimate_inner_product(&query.query_f64, &prod_quantized);
+        let mse_bit_width = (self.metadata.levels - 1) as u8;
+        let dim = self.metadata.vector_parameters.dim;
+        let mse_norm = f64::from_ne_bytes(vector_bytes[..8].try_into().unwrap());
+        let residual_norm = f64::from_ne_bytes(vector_bytes[8..16].try_into().unwrap());
+        let mse_packed_size = packed_indices_size(dim, self.metadata.levels - 1);
+        let indices_bytes = &vector_bytes[16..16 + mse_packed_size];
+        let signs_bytes = &vector_bytes[16 + mse_packed_size..];
+
+        let centroids = &self.turbo_prod.turbo_mse.codebook.centroids;
+        let mask = (1u16 << mse_bit_width) - 1;
+
+        // MSE part: mse_norm * Σ rotated_query[i] * centroid[index[i]]
+        let mut ip_mse = 0.0f64;
+        for i in 0..dim {
+            let bit_offset = i * mse_bit_width as usize;
+            let byte_offset = bit_offset / 8;
+            let bit_shift = bit_offset % 8;
+            let mut val = u16::from(indices_bytes[byte_offset]) >> bit_shift;
+            if bit_shift + mse_bit_width as usize > 8 {
+                val |= u16::from(indices_bytes[byte_offset + 1]) << (8 - bit_shift);
+            }
+            let idx = (val & mask) as usize;
+            ip_mse += query.rotated_query[i] * centroids[idx];
+        }
+        ip_mse *= mse_norm;
+
+        // QJL part: residual_norm * Σ projected_query[i] * sign[i]
+        let mut ip_qjl = 0.0f64;
+        for i in 0..dim {
+            let bit = (signs_bytes[i / 8] >> (i % 8)) & 1;
+            let sign = if bit == 1 { 1.0 } else { -1.0 };
+            ip_qjl += query.projected_query[i] * sign;
+        }
+        ip_qjl *= residual_norm;
+
+        let ip = ip_mse + ip_qjl;
 
         let result = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot => ip,
             DistanceType::L1 => panic!("TurboQuant does not support L1 distance metric"),
             DistanceType::L2 => {
-                let vec_norm_sq = prod_quantized.mse_part.norm * prod_quantized.mse_part.norm;
+                let vec_norm_sq = mse_norm * mse_norm;
                 query.query_norm_sq - 2.0 * ip + vec_norm_sq
             }
         } as f32;
@@ -306,8 +363,17 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
         let query_f64: Vec<f64> = query.iter().map(|&x| f64::from(x)).collect();
         let query_norm_sq = query_f64.iter().map(|&x| x * x).sum();
+
+        // Precompute R * y (rotate query into MSE codebook space)
+        let rotated_query =
+            turboquant::rotation::rotate(&self.turbo_prod.turbo_mse.rotation, &query_f64);
+
+        // Precompute (√(π/2) / d) * S * y (project query into QJL space, pre-scaled)
+        let projected_query = qjl_project_prescaled(&self.turbo_prod.qjl, &query_f64);
+
         EncodedQueryTQ {
-            query_f64,
+            rotated_query,
+            projected_query,
             query_norm_sq,
         }
     }
@@ -335,25 +401,20 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             .vector_io_read()
             .incr_delta(v1_bytes.len() + v2_bytes.len());
 
+        // Dequantize v1 and build a precomputed query from it
         let v1_deq = self.dequantize_bytes(&v1_bytes);
-        let v2_prod = self.deserialize_prod_quantized(&v2_bytes);
-        let ip = self.turbo_prod.estimate_inner_product(&v1_deq, &v2_prod);
+        let v1_norm_sq: f64 = v1_deq.iter().map(|&x| x * x).sum();
+        let rotated_query =
+            turboquant::rotation::rotate(&self.turbo_prod.turbo_mse.rotation, &v1_deq);
+        let projected_query = qjl_project_prescaled(&self.turbo_prod.qjl, &v1_deq);
 
-        let result = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot => ip,
-            DistanceType::L1 => panic!("TurboQuant does not support L1 distance metric"),
-            DistanceType::L2 => {
-                let v1_norm_sq: f64 = v1_deq.iter().map(|&x| x * x).sum();
-                let v2_norm_sq = v2_prod.mse_part.norm * v2_prod.mse_part.norm;
-                v1_norm_sq - 2.0 * ip + v2_norm_sq
-            }
-        } as f32;
+        let query = EncodedQueryTQ {
+            rotated_query,
+            projected_query,
+            query_norm_sq: v1_norm_sq,
+        };
 
-        if self.metadata.vector_parameters.invert {
-            -result
-        } else {
-            result
-        }
+        self.score_point_simple(&query, &v2_bytes)
     }
 
     fn quantized_vector_size(&self) -> usize {

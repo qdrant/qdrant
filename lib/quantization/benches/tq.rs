@@ -8,9 +8,9 @@ use quantization::encoded_vectors_tq::{DEFAULT_TURBO_QUANT_LEVELS, EncodedVector
 use rand::RngExt;
 
 fn encode_bench(c: &mut Criterion) {
-    let mut group = c.benchmark_group("encode");
+    let mut group = c.benchmark_group("tq");
 
-    let vectors_count = 100_000;
+    let vectors_count = 5_000;
     let vector_dim = 1024;
     let mut rng = rand::rng();
     let mut list: Vec<f32> = Vec::new();
