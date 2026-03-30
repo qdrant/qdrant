@@ -24,7 +24,7 @@ const DEFAULT_SEED: u64 = 42;
 /// Pack indices into a byte buffer using `bit_width` bits per index.
 fn pack_indices(indices: &[u8], bit_width: u8) -> Vec<u8> {
     let total_bits = indices.len() * bit_width as usize;
-    let num_bytes = (total_bits + 7) / 8;
+    let num_bytes = total_bits.div_ceil(8);
     let mut packed = vec![0u8; num_bytes];
     for (i, &idx) in indices.iter().enumerate() {
         let bit_offset = i * bit_width as usize;
@@ -46,9 +46,9 @@ fn unpack_indices(packed: &[u8], dim: usize, bit_width: u8) -> Vec<u8> {
         let bit_offset = i * bit_width as usize;
         let byte_offset = bit_offset / 8;
         let bit_shift = bit_offset % 8;
-        let mut val = packed[byte_offset] as u16 >> bit_shift;
+        let mut val = u16::from(packed[byte_offset]) >> bit_shift;
         if bit_shift + bit_width as usize > 8 {
-            val |= (packed[byte_offset + 1] as u16) << (8 - bit_shift);
+            val |= u16::from(packed[byte_offset + 1]) << (8 - bit_shift);
         }
         indices.push((val & mask) as u8);
     }
@@ -57,12 +57,12 @@ fn unpack_indices(packed: &[u8], dim: usize, bit_width: u8) -> Vec<u8> {
 
 /// Number of bytes needed to store `dim` indices at `levels` bits each.
 fn packed_indices_size(dim: usize, levels: usize) -> usize {
-    (dim * levels + 7) / 8
+    (dim * levels).div_ceil(8)
 }
 
 /// Pack i8 signs (+1/-1) into bits: +1 → 1, -1 → 0.
 fn pack_signs(signs: &[i8]) -> Vec<u8> {
-    let num_bytes = (signs.len() + 7) / 8;
+    let num_bytes = signs.len().div_ceil(8);
     let mut packed = vec![0u8; num_bytes];
     for (i, &sign) in signs.iter().enumerate() {
         if sign > 0 {
@@ -84,7 +84,7 @@ fn unpack_signs(packed: &[u8], count: usize) -> Vec<i8> {
 
 /// Number of bytes needed to store `count` sign bits.
 fn packed_signs_size(count: usize) -> usize {
-    (count + 7) / 8
+    count.div_ceil(8)
 }
 
 pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
@@ -141,7 +141,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         if vector_parameters.distance_type == DistanceType::L1 {
             panic!("TurboQuant does not support L1 distance metric");
         }
-        assert!(levels >= 2, "TurboProd requires at least 2 quantization levels");
+        assert!(
+            levels >= 2,
+            "TurboProd requires at least 2 quantization levels"
+        );
 
         let seed = DEFAULT_SEED;
         let bit_width = levels as u8;
@@ -167,11 +170,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             encoded.extend_from_slice(&packed_indices);
             encoded.extend_from_slice(&packed_signs);
 
-            storage_builder
-                .push_vector_data(&encoded)
-                .map_err(|e| {
-                    EncodingError::EncodingError(format!("Failed to push encoded vector: {e}"))
-                })?;
+            storage_builder.push_vector_data(&encoded).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to push encoded vector: {e}"))
+            })?;
         }
 
         let encoded_vectors = storage_builder
@@ -228,10 +229,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     }
 
     /// Get quantized vector size in bytes: two f64 values + bit-packed MSE indices + packed QJL signs.
-    pub fn get_quantized_vector_size(
-        vector_parameters: &VectorParameters,
-        levels: usize,
-    ) -> usize {
+    pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, levels: usize) -> usize {
         2 * std::mem::size_of::<f64>()
             + packed_indices_size(vector_parameters.dim, levels - 1)
             + packed_signs_size(vector_parameters.dim)
@@ -339,9 +337,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
         let v1_deq = self.dequantize_bytes(&v1_bytes);
         let v2_prod = self.deserialize_prod_quantized(&v2_bytes);
-        let ip = self
-            .turbo_prod
-            .estimate_inner_product(&v1_deq, &v2_prod);
+        let ip = self.turbo_prod.estimate_inner_product(&v1_deq, &v2_prod);
 
         let result = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot => ip,
