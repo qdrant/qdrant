@@ -99,7 +99,6 @@ impl EdgeShard {
             .try_into()
             .expect("single batched search result");
 
-
         let distance = {
             let config = self.config.read();
             if let Some(dense) = config.vectors.get(&vector_name) {
