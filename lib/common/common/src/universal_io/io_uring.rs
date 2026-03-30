@@ -110,7 +110,11 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         with_uring_runtime(|mut rt| {
             let entry = rt.state.read(0, self.fd(), range, self.uses_o_direct)?;
             rt.enqueue_single(entry)?;
-            rt.submit_and_wait(1)?;
+            // Loop because `submit_and_wait` may return before completions are
+            // available on older kernels.
+            while rt.completion_is_empty() {
+                rt.submit_and_wait(1)?;
+            }
 
             let (_, resp) = rt.completed().next().expect("read operation completed")?;
             let items = resp.expect_read();
@@ -226,7 +230,11 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
         with_uring_runtime(|mut rt| {
             let entry = rt.state.write(0, self.fd(), byte_offset, items)?;
             rt.enqueue_single(entry)?;
-            rt.submit_and_wait(1)?;
+            // Loop because `submit_and_wait` may return before completions are
+            // available on older kernels.
+            while rt.completion_is_empty() {
+                rt.submit_and_wait(1)?;
+            }
 
             let (_, resp) = rt.completed().next().expect("write operation completed")?;
             resp.expect_write();
@@ -375,6 +383,10 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
         }
 
         Ok(())
+    }
+
+    fn completion_is_empty(&mut self) -> bool {
+        self.io_uring.completion().is_empty()
     }
 
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
