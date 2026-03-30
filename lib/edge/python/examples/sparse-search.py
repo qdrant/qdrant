@@ -29,11 +29,13 @@ shard.update(UpdateOperation.upsert_points([
 shard.optimize()
 print(f"Info: {shard.info()}")  # Shows indexed_vectors_count=3
 
-# Dense search - works fine
+# Dense search
 r = shard.query(QueryRequest(limit=3, query=Query.Nearest([0.5, 0.5, 0.3, 0.1]), with_payload=True))
-print(f"Dense: {len(r)} results")  # OK: 3 results
+print(f"Dense: {len(r)} results")
+assert len(r) == 3, f"Dense query should return 3 results, got {len(r)}"
 
-# Sparse search - panics
+# Sparse search
 sv = SparseVector(indices=[1, 2], values=[1.0, 0.5])
 r = shard.query(QueryRequest(limit=3, query=Query.Nearest(sv, using="sparse"), with_payload=True))
 print(f"Sparse: {len(r)} results")
+assert len(r) == 3, f"Sparse query should return 3 results, got {len(r)}"

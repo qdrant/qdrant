@@ -106,7 +106,11 @@ impl EdgeShard {
             } else if config.sparse_vectors.contains_key(&vector_name) {
                 segment::types::Distance::Dot
             } else {
-                panic!("vector config for '{vector_name}' does not exist")
+                return Err(
+                    segment::common::operation_error::OperationError::service_error(format!(
+                        "vector config for '{vector_name}' does not exist"
+                    )),
+                );
             }
         };
 
