@@ -337,22 +337,22 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             .vector_io_read()
             .incr_delta(v1_bytes.len() + v2_bytes.len());
 
-        let v1 = self.dequantize_bytes(&v1_bytes);
-        let v2 = self.dequantize_bytes(&v2_bytes);
+        let v1_deq = self.dequantize_bytes(&v1_bytes);
+        let v2_prod = self.deserialize_prod_quantized(&v2_bytes);
+        let ip = self
+            .turbo_prod
+            .estimate_inner_product(&v1_deq, &v2_prod);
 
-        let mut result = 0f64;
-        for (&a, &b) in v1.iter().zip(v2.iter()) {
-            match self.metadata.vector_parameters.distance_type {
-                DistanceType::Dot => result += a * b,
-                DistanceType::L1 => panic!("TurboQuant does not support L1 distance metric"),
-                DistanceType::L2 => {
-                    let diff = a - b;
-                    result += diff * diff;
-                }
+        let result = match self.metadata.vector_parameters.distance_type {
+            DistanceType::Dot => ip,
+            DistanceType::L1 => panic!("TurboQuant does not support L1 distance metric"),
+            DistanceType::L2 => {
+                let v1_norm_sq: f64 = v1_deq.iter().map(|&x| x * x).sum();
+                let v2_norm_sq = v2_prod.mse_part.norm * v2_prod.mse_part.norm;
+                v1_norm_sq - 2.0 * ip + v2_norm_sq
             }
-        }
+        } as f32;
 
-        let result = result as f32;
         if self.metadata.vector_parameters.invert {
             -result
         } else {

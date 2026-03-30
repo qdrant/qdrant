@@ -14,7 +14,7 @@ mod tests {
     const VECTOR_DIM: usize = 65;
     const DOT_ERROR: f32 = VECTOR_DIM as f32 * 0.05;
     const L2_ERROR: f32 = VECTOR_DIM as f32 * 0.15;
-    const INTERNAL_ERROR: f32 = VECTOR_DIM as f32 * 0.15;
+    const INTERNAL_ERROR: f32 = VECTOR_DIM as f32 * 0.10;
 
     #[test]
     fn test_tq_dot() {
