@@ -157,8 +157,6 @@ impl From<SegmentStateV5> for SegmentState {
 
 #[cfg(test)]
 mod tests {
-    use common::panic;
-
     use super::*;
     use crate::types::{ScalarQuantization, ScalarQuantizationConfig};
 
@@ -329,7 +327,7 @@ mod tests {
                 QuantizationConfig::Binary(_) => {
                     panic!("expected scalar quantization")
                 }
-                QuantizationConfig::TurboQuant(turbo_quant) => {
+                QuantizationConfig::TurboQuant(_) => {
                     panic!("expected scalar quantization")
                 }
             },
