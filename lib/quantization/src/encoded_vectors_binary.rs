@@ -66,13 +66,13 @@ impl QueryEncoding {
     ) -> Result<(), String> {
         match self {
             QueryEncoding::Uncompressed => {
-                if !matches!(distance_type, DistanceType::Dot) {
+                if distance_type != DistanceType::Dot {
                     return Err(format!(
                         "Uncompressed query encoding is only supported for dot product distance, \
                          but got {distance_type:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
                     ));
                 }
-                if !matches!(encoding, Encoding::OneBit) {
+                if encoding != Encoding::OneBit {
                     return Err(format!(
                         "Uncompressed query encoding is only supported with OneBit storage encoding, \
                          but got {encoding:?}. Use Binary or Scalar query encoding for {encoding:?} storage encoding.",
@@ -80,7 +80,9 @@ impl QueryEncoding {
                 }
                 Ok(())
             }
-            _ => Ok(()),
+            QueryEncoding::SameAsStorage
+            | QueryEncoding::Scalar4bits
+            | QueryEncoding::Scalar8bits => Ok(()),
         }
     }
 }
@@ -710,7 +712,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             ),
             QueryEncoding::Uncompressed => {
                 // Uncompressed queries are only supported for dot product distance for now
-                // Validation will happen in encode_query() where vector_parameters are available
+                // Validation happens in encode() where vector_parameters are available
                 EncodedQueryBQ::Uncompressed(query.to_vec())
             }
         }

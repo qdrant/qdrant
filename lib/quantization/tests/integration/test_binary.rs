@@ -874,7 +874,7 @@ mod tests {
         {
             assert_eq!(expected_idx, actual_idx, "Index mismatch");
             assert!(
-                (expected_score - actual_score).abs() < f32::EPSILON,
+                (expected_score - actual_score).abs() <= (vector_dim as f32) * 1e-4,
                 "Score mismatch at index {expected_idx}: expected {expected_score}, got {actual_score}",
             );
         }

@@ -505,15 +505,12 @@ impl QuantizationConfigDiff {
         // We only need to validate Binary quantization with Uncompressed query encoding
         if let QuantizationConfigDiff::Binary(binary) = self
             && let Some(query_encoding) = &binary.binary.query_encoding
-            && matches!(
-                query_encoding,
-                BinaryQuantizationQueryEncoding::Uncompressed
-            )
+            && *query_encoding == BinaryQuantizationQueryEncoding::Uncompressed
         {
             // Check distance type for all vectors - uncompressed queries only work with dot product
             for (vector_name, _) in collection_params.vectors.params_iter() {
                 let distance_type = collection_params.get_distance(vector_name)?;
-                if !matches!(distance_type, Distance::Dot) {
+                if distance_type != Distance::Dot {
                     return Err(CollectionError::bad_input(format!(
                         "Uncompressed query encoding is only supported for dot product distance, \
                          but vector '{vector_name}' uses {distance_type:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
