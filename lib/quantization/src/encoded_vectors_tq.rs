@@ -10,7 +10,8 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
-use turboquant::turbo_mse::{MseQuantized, TurboMse};
+use turboquant::turbo_mse::MseQuantized;
+use turboquant::turbo_prod::{ProdQuantized, TurboProd};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
@@ -59,16 +60,44 @@ fn packed_indices_size(dim: usize, levels: usize) -> usize {
     (dim * levels + 7) / 8
 }
 
+/// Pack i8 signs (+1/-1) into bits: +1 → 1, -1 → 0.
+fn pack_signs(signs: &[i8]) -> Vec<u8> {
+    let num_bytes = (signs.len() + 7) / 8;
+    let mut packed = vec![0u8; num_bytes];
+    for (i, &sign) in signs.iter().enumerate() {
+        if sign > 0 {
+            packed[i / 8] |= 1 << (i % 8);
+        }
+    }
+    packed
+}
+
+/// Unpack bits into i8 signs: 1 → +1, 0 → -1.
+fn unpack_signs(packed: &[u8], count: usize) -> Vec<i8> {
+    let mut signs = Vec::with_capacity(count);
+    for i in 0..count {
+        let bit = (packed[i / 8] >> (i % 8)) & 1;
+        signs.push(if bit == 1 { 1 } else { -1 });
+    }
+    signs
+}
+
+/// Number of bytes needed to store `count` sign bits.
+fn packed_signs_size(count: usize) -> usize {
+    (count + 7) / 8
+}
+
 pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
-    turbo_mse: TurboMse,
+    turbo_prod: TurboProd,
 }
 
 /// Encoded query type - stores the original query vector.
 pub struct EncodedQueryTQ {
-    query: Vec<f32>,
+    query_f64: Vec<f64>,
+    query_norm_sq: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -90,12 +119,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `count` - number of vectors in `data` iterator, used for progress bar
-    /// * `levels` - bit width per coordinate for TurboQuant quantization (default: 4, range: 1-4)
+    /// * `levels` - bit width per coordinate for TurboQuant quantization (default: 4, range: 2-4)
     /// * `meta_path` - optional path to save metadata, if `None`, metadata will not be saved
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     ///
     /// # Panics
     /// Panics if L1 distance type is used (not supported by TurboQuant).
+    /// Panics if `levels` < 2 (TurboProd requires at least 2 bits).
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
@@ -111,10 +141,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         if vector_parameters.distance_type == DistanceType::L1 {
             panic!("TurboQuant does not support L1 distance metric");
         }
+        assert!(levels >= 2, "TurboProd requires at least 2 quantization levels");
 
         let seed = DEFAULT_SEED;
         let bit_width = levels as u8;
-        let turbo_mse = TurboMse::new(vector_parameters.dim, bit_width, Some(seed));
+        let mse_bit_width = bit_width - 1;
+        let turbo_prod = TurboProd::new(vector_parameters.dim, bit_width, Some(seed));
 
         for vector in data {
             if stopped.load(Ordering::Relaxed) {
@@ -122,13 +154,18 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             }
 
             let vector_f64: Vec<f64> = vector.as_ref().iter().map(|&x| f64::from(x)).collect();
-            let quantized = turbo_mse.quantize(&vector_f64);
+            let quantized = turbo_prod.quantize(&vector_f64);
 
-            // Layout: norm (8 bytes as f64) + bit-packed indices (levels bits per coordinate)
-            let packed = pack_indices(&quantized.indices, bit_width);
-            let mut encoded = Vec::with_capacity(std::mem::size_of::<f64>() + packed.len());
-            encoded.extend_from_slice(&quantized.norm.to_ne_bytes());
-            encoded.extend_from_slice(&packed);
+            // Layout: mse_norm (f64) + residual_norm (f64) + packed MSE indices + packed QJL signs
+            let packed_indices = pack_indices(&quantized.mse_part.indices, mse_bit_width);
+            let packed_signs = pack_signs(&quantized.qjl_signs);
+            let mut encoded = Vec::with_capacity(
+                2 * std::mem::size_of::<f64>() + packed_indices.len() + packed_signs.len(),
+            );
+            encoded.extend_from_slice(&quantized.mse_part.norm.to_ne_bytes());
+            encoded.extend_from_slice(&quantized.residual_norm.to_ne_bytes());
+            encoded.extend_from_slice(&packed_indices);
+            encoded.extend_from_slice(&packed_signs);
 
             storage_builder
                 .push_vector_data(&encoded)
@@ -170,14 +207,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             encoded_vectors,
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
-            turbo_mse,
+            turbo_prod,
         })
     }
 
     pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
         let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
-        let turbo_mse = TurboMse::new(
+        let turbo_prod = TurboProd::new(
             metadata.vector_parameters.dim,
             metadata.levels as u8,
             Some(metadata.seed),
@@ -186,49 +223,61 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
-            turbo_mse,
+            turbo_prod,
         })
     }
 
-    /// Get quantized vector size in bytes: f64 norm + bit-packed indices.
+    /// Get quantized vector size in bytes: two f64 values + bit-packed MSE indices + packed QJL signs.
     pub fn get_quantized_vector_size(
         vector_parameters: &VectorParameters,
         levels: usize,
     ) -> usize {
-        std::mem::size_of::<f64>() + packed_indices_size(vector_parameters.dim, levels)
+        2 * std::mem::size_of::<f64>()
+            + packed_indices_size(vector_parameters.dim, levels - 1)
+            + packed_signs_size(vector_parameters.dim)
     }
 
-    /// Dequantize a stored vector from its byte representation.
-    fn dequantize_bytes(&self, bytes: &[u8]) -> Vec<f64> {
-        let bit_width = self.metadata.levels as u8;
+    /// Deserialize stored bytes into a ProdQuantized struct.
+    fn deserialize_prod_quantized(&self, bytes: &[u8]) -> ProdQuantized {
+        let mse_bit_width = (self.metadata.levels - 1) as u8;
         let dim = self.metadata.vector_parameters.dim;
-        let norm = f64::from_ne_bytes(bytes[..8].try_into().unwrap());
-        let indices = unpack_indices(&bytes[8..], dim, bit_width);
-        let quantized = MseQuantized {
-            indices,
-            bit_width,
-            norm,
-        };
-        self.turbo_mse.dequantize(&quantized)
+        let mse_norm = f64::from_ne_bytes(bytes[..8].try_into().unwrap());
+        let residual_norm = f64::from_ne_bytes(bytes[8..16].try_into().unwrap());
+        let mse_packed_size = packed_indices_size(dim, self.metadata.levels - 1);
+        let indices = unpack_indices(&bytes[16..16 + mse_packed_size], dim, mse_bit_width);
+        let signs = unpack_signs(&bytes[16 + mse_packed_size..], dim);
+        ProdQuantized {
+            mse_part: MseQuantized {
+                indices,
+                bit_width: mse_bit_width,
+                norm: mse_norm,
+            },
+            qjl_signs: signs,
+            residual_norm,
+        }
+    }
+
+    /// Dequantize a stored vector (MSE part only) from its byte representation.
+    fn dequantize_bytes(&self, bytes: &[u8]) -> Vec<f64> {
+        let prod = self.deserialize_prod_quantized(bytes);
+        self.turbo_prod.turbo_mse.dequantize(&prod.mse_part)
     }
 
     fn score_point_simple(&self, query: &EncodedQueryTQ, vector_bytes: &[u8]) -> f32 {
-        let dequantized = self.dequantize_bytes(vector_bytes);
+        let prod_quantized = self.deserialize_prod_quantized(vector_bytes);
+        let ip = self
+            .turbo_prod
+            .estimate_inner_product(&query.query_f64, &prod_quantized);
 
-        let mut result = 0f64;
-        for (&q, &v) in query.query.iter().zip(dequantized.iter()) {
-            let q = f64::from(q);
-            match self.metadata.vector_parameters.distance_type {
-                DistanceType::Dot => result += q * v,
-                DistanceType::L1 => panic!("TurboQuant does not support L1 distance metric"),
-                DistanceType::L2 => {
-                    let diff = q - v;
-                    result += diff * diff;
-                }
+        let result = match self.metadata.vector_parameters.distance_type {
+            DistanceType::Dot => ip,
+            DistanceType::L1 => panic!("TurboQuant does not support L1 distance metric"),
+            DistanceType::L2 => {
+                let vec_norm_sq = prod_quantized.mse_part.norm * prod_quantized.mse_part.norm;
+                query.query_norm_sq - 2.0 * ip + vec_norm_sq
             }
-        }
+        } as f32;
 
-        let result = result as f32;
         if self.metadata.vector_parameters.invert {
             -result
         } else {
@@ -257,8 +306,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
+        let query_f64: Vec<f64> = query.iter().map(|&x| f64::from(x)).collect();
+        let query_norm_sq = query_f64.iter().map(|&x| x * x).sum();
         EncodedQueryTQ {
-            query: query.to_vec(),
+            query_f64,
+            query_norm_sq,
         }
     }
 
@@ -309,8 +361,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     fn quantized_vector_size(&self) -> usize {
-        std::mem::size_of::<f64>()
-            + packed_indices_size(self.metadata.vector_parameters.dim, self.metadata.levels)
+        2 * std::mem::size_of::<f64>()
+            + packed_indices_size(
+                self.metadata.vector_parameters.dim,
+                self.metadata.levels - 1,
+            )
+            + packed_signs_size(self.metadata.vector_parameters.dim)
     }
 
     fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {

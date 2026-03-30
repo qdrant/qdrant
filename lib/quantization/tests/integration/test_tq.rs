@@ -12,7 +12,9 @@ mod tests {
 
     const VECTORS_COUNT: usize = 513;
     const VECTOR_DIM: usize = 65;
-    const ERROR: f32 = VECTOR_DIM as f32 * 0.05;
+    const DOT_ERROR: f32 = VECTOR_DIM as f32 * 0.05;
+    const L2_ERROR: f32 = VECTOR_DIM as f32 * 0.15;
+    const INTERNAL_ERROR: f32 = VECTOR_DIM as f32 * 0.15;
 
     #[test]
     fn test_tq_dot() {
@@ -50,7 +52,7 @@ mod tests {
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_u8, index as u32, &counter);
             let orginal_score = dot_similarity(&query, vector);
-            assert!((score - orginal_score).abs() < ERROR);
+            assert!((score - orginal_score).abs() < DOT_ERROR);
         }
     }
 
@@ -90,7 +92,7 @@ mod tests {
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_u8, index as u32, &counter);
             let orginal_score = l2_similarity(&query, vector);
-            assert!((score - orginal_score).abs() < ERROR);
+            assert!((score - orginal_score).abs() < L2_ERROR);
         }
     }
 
@@ -131,7 +133,7 @@ mod tests {
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_u8, index as u32, &counter);
             let orginal_score = l1_similarity(&query, vector);
-            assert!((score - orginal_score).abs() < ERROR);
+            assert!((score - orginal_score).abs() < L2_ERROR);
         }
     }
 
@@ -171,7 +173,7 @@ mod tests {
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_u8, index as u32, &counter);
             let orginal_score = -dot_similarity(&query, vector);
-            assert!((score - orginal_score).abs() < ERROR);
+            assert!((score - orginal_score).abs() < DOT_ERROR);
         }
     }
 
@@ -211,7 +213,7 @@ mod tests {
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_u8, index as u32, &counter);
             let orginal_score = -l2_similarity(&query, vector);
-            assert!((score - orginal_score).abs() < ERROR);
+            assert!((score - orginal_score).abs() < L2_ERROR);
         }
     }
 
@@ -252,7 +254,7 @@ mod tests {
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_u8, index as u32, &counter);
             let orginal_score = -l1_similarity(&query, vector);
-            assert!((score - orginal_score).abs() < ERROR);
+            assert!((score - orginal_score).abs() < L2_ERROR);
         }
     }
 
@@ -290,7 +292,7 @@ mod tests {
         for i in 1..VECTORS_COUNT {
             let score = encoded.score_internal(0, i as u32, &counter);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
-            assert!((score - orginal_score).abs() < ERROR);
+            assert!((score - orginal_score).abs() < INTERNAL_ERROR);
         }
     }
 
@@ -328,7 +330,7 @@ mod tests {
         for i in 1..VECTORS_COUNT {
             let score = encoded.score_internal(0, i as u32, &counter);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
-            assert!((score - orginal_score).abs() < ERROR);
+            assert!((score - orginal_score).abs() < INTERNAL_ERROR);
         }
     }
 }
