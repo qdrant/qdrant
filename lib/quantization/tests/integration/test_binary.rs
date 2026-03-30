@@ -768,15 +768,15 @@ mod tests {
     }
 
     #[test]
-    fn test_uncompressed_query_dot_product() {
-        test_uncompressed_query_dot_product_impl::<u8>(8);
-        test_uncompressed_query_dot_product_impl::<u8>(16);
-        test_uncompressed_query_dot_product_impl::<u8>(33);
-        test_uncompressed_query_dot_product_impl::<u128>(16);
-        test_uncompressed_query_dot_product_impl::<u128>(128);
+    fn test_unquantized_query_dot_product() {
+        test_unquantized_query_dot_product_impl::<u8>(8);
+        test_unquantized_query_dot_product_impl::<u8>(16);
+        test_unquantized_query_dot_product_impl::<u8>(33);
+        test_unquantized_query_dot_product_impl::<u128>(16);
+        test_unquantized_query_dot_product_impl::<u128>(128);
     }
 
-    fn test_uncompressed_query_dot_product_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
+    fn test_unquantized_query_dot_product_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 32;
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
@@ -800,13 +800,13 @@ mod tests {
             invert: false,
         };
 
-        // Create encoder with uncompressed query encoding
-        let encoded_uncompressed = EncodedVectorsBin::<TBitsStoreType, _>::encode(
+        // Create encoder with unquantized query encoding
+        let encoded_unquantized = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter().map(|v| v.as_slice()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             Encoding::OneBit,
-            QueryEncoding::Uncompressed,
+            QueryEncoding::Unquantized,
             None,
             &AtomicBool::new(false),
         )
@@ -825,14 +825,14 @@ mod tests {
         .unwrap();
 
         let query = generate_continuous_vector(vector_dim, &mut rng);
-        let encoded_query_uncompressed = encoded_uncompressed.encode_query(&query);
+        let encoded_query_unquantized = encoded_unquantized.encode_query(&query);
         let encoded_query_binary = encoded_binary.encode_query(&query);
 
         let hw_counter = HardwareCounterCell::default();
 
-        // Compute expected scores: dot product between uncompressed query and quantized vectors.
+        // Compute expected scores: dot product between unquantized query and quantized vectors.
         // Binary quantization encodes values > 0 as +1.0, values <= 0 as -1.0.
-        // This is what calculate_dot_product_uncompressed computes.
+        // This is what calculate_dot_product_unquantized computes.
         let quantize_to_sign = |v: f32| if v > 0.0 { 1.0 } else { -1.0 };
         let expected_scores: Vec<(f32, usize)> = vector_data
             .iter()
@@ -847,11 +847,11 @@ mod tests {
             })
             .collect();
 
-        // Compute actual scores using uncompressed query encoding
-        let uncompressed_scores: Vec<(f32, usize)> = (0..vectors_count)
+        // Compute actual scores using unquantized query encoding
+        let unquantized_scores: Vec<(f32, usize)> = (0..vectors_count)
             .map(|i| {
-                let score = encoded_uncompressed.score_point(
-                    &encoded_query_uncompressed,
+                let score = encoded_unquantized.score_point(
+                    &encoded_query_unquantized,
                     i as u32,
                     &hw_counter,
                 );
@@ -868,9 +868,9 @@ mod tests {
             })
             .collect();
 
-        // Verify that uncompressed scores match the expected quantized dot products exactly
+        // Verify that unquantized scores match the expected quantized dot products exactly
         for ((expected_score, expected_idx), (actual_score, actual_idx)) in
-            expected_scores.iter().zip(uncompressed_scores.iter())
+            expected_scores.iter().zip(unquantized_scores.iter())
         {
             assert_eq!(expected_idx, actual_idx, "Index mismatch");
             assert!(
@@ -879,23 +879,23 @@ mod tests {
             );
         }
 
-        // Verify that uncompressed query scores are DIFFERENT from binary query scores.
-        // This ensures the uncompressed query feature actually makes a difference.
+        // Verify that unquantized query scores are DIFFERENT from binary query scores.
+        // This ensures the unquantized query feature actually makes a difference.
         // With continuous float values, quantizing the query loses information, so scores must differ.
-        let scores_differ = uncompressed_scores
+        let scores_differ = unquantized_scores
             .iter()
             .zip(binary_scores.iter())
             .any(|((us, _), (bs, _))| (us - bs).abs() > f32::EPSILON);
 
         assert!(
             scores_differ,
-            "Uncompressed and binary query scores should differ for continuous float vectors. \
-             Uncompressed: {uncompressed_scores:?}, Binary: {binary_scores:?}",
+            "Unquantized and binary query scores should differ for continuous float vectors. \
+             Unquantized: {unquantized_scores:?}, Binary: {binary_scores:?}",
         );
     }
 
     #[test]
-    fn test_uncompressed_query_l1_l2_distance_returns_error() {
+    fn test_unquantized_query_l1_l2_distance_returns_error() {
         let vector_dim = 16;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let vector_data = [generate_vector(vector_dim, &mut rng)];
@@ -917,7 +917,7 @@ mod tests {
                     invert: false,
                 },
                 Encoding::OneBit,
-                QueryEncoding::Uncompressed,
+                QueryEncoding::Unquantized,
                 None,
                 &AtomicBool::new(false),
             );
@@ -926,7 +926,7 @@ mod tests {
             match result {
                 Err(EncodingError::ArgumentsError(msg)) => {
                     assert!(msg.contains(
-                        "Uncompressed query encoding is only supported for dot product distance"
+                        "Unquantized query encoding is only supported for dot product distance"
                     ));
                     assert!(msg.contains(&format!("{distance_type:?}")));
                 }

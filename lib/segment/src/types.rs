@@ -921,7 +921,7 @@ pub enum BinaryQuantizationQueryEncoding {
     Binary,
     Scalar4Bits,
     Scalar8Bits,
-    Uncompressed,
+    Unquantized,
 }
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {

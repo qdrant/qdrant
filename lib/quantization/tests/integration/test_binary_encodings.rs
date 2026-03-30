@@ -172,9 +172,9 @@ mod tests {
 
         let encoded: Vec<_> = QueryEncoding::iter()
             .filter_map(|query_encoding| {
-                // Skip Uncompressed query encoding if storage encoding is not OneBit
-                // Uncompressed queries are only supported with OneBit storage encoding
-                if query_encoding == QueryEncoding::Uncompressed && encoding != Encoding::OneBit {
+                // Skip Unquantized query encoding if storage encoding is not OneBit
+                // Unquantized queries are only supported with OneBit storage encoding
+                if query_encoding == QueryEncoding::Unquantized && encoding != Encoding::OneBit {
                     return None;
                 }
 

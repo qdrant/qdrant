@@ -7503,7 +7503,7 @@
           "binary",
           "scalar4bits",
           "scalar8bits",
-          "uncompressed"
+          "unquantized"
         ]
       },
       "Datatype": {

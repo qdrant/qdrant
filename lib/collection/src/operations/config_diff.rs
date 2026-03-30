@@ -496,23 +496,23 @@ impl QuantizationConfigDiff {
 
     /// Validate that the quantization config is compatible with the collection parameters.
     ///
-    /// Returns an error if incompatible (e.g., uncompressed query encoding with non-dot distance).
+    /// Returns an error if incompatible (e.g., unquantized query encoding with non-dot distance).
     pub fn validate_compatibility(
         &self,
         collection_params: &CollectionParams,
         existing_quantization: Option<&QuantizationConfig>,
     ) -> CollectionResult<()> {
-        // We only need to validate Binary quantization with Uncompressed query encoding
+        // We only need to validate Binary quantization with Unquantized query encoding
         if let QuantizationConfigDiff::Binary(binary) = self
             && let Some(query_encoding) = &binary.binary.query_encoding
-            && *query_encoding == BinaryQuantizationQueryEncoding::Uncompressed
+            && *query_encoding == BinaryQuantizationQueryEncoding::Unquantized
         {
-            // Check distance type for all vectors - uncompressed queries only work with dot product
+            // Check distance type for all vectors - unquantized queries only work with dot product
             for (vector_name, _) in collection_params.vectors.params_iter() {
                 let distance_type = collection_params.get_distance(vector_name)?;
                 if distance_type != Distance::Dot {
                     return Err(CollectionError::bad_input(format!(
-                        "Uncompressed query encoding is only supported for dot product distance, \
+                        "Unquantized query encoding is only supported for dot product distance, \
                          but vector '{vector_name}' uses {distance_type:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
                     )));
                 }
@@ -528,10 +528,10 @@ impl QuantizationConfigDiff {
                 })
             });
 
-            // Check encoding - uncompressed queries only work with OneBit
+            // Check encoding - unquantized queries only work with OneBit
             if effective_encoding != Some(BinaryQuantizationEncoding::OneBit) {
                 return Err(CollectionError::bad_input(format!(
-                    "Uncompressed query encoding is only supported with OneBit storage encoding, \
+                    "Unquantized query encoding is only supported with OneBit storage encoding, \
                      but got {effective_encoding:?}. Use Binary or Scalar query encoding for {effective_encoding:?} storage encoding.",
                 )));
             }

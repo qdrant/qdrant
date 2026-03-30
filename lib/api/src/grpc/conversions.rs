@@ -1412,8 +1412,8 @@ impl TryFrom<BinaryQuantizationQueryEncoding> for segment::types::BinaryQuantiza
                     Setting::Scalar8Bits => {
                         segment::types::BinaryQuantizationQueryEncoding::Scalar8Bits
                     }
-                    Setting::Uncompressed => {
-                        segment::types::BinaryQuantizationQueryEncoding::Uncompressed
+                    Setting::Unquantized => {
+                        segment::types::BinaryQuantizationQueryEncoding::Unquantized
                     }
                 }
             }
@@ -1439,8 +1439,8 @@ impl From<segment::types::BinaryQuantizationQueryEncoding> for BinaryQuantizatio
             segment::types::BinaryQuantizationQueryEncoding::Scalar8Bits => {
                 Variant::Setting(i32::from(Setting::Scalar8Bits))
             }
-            segment::types::BinaryQuantizationQueryEncoding::Uncompressed => {
-                Variant::Setting(i32::from(Setting::Uncompressed))
+            segment::types::BinaryQuantizationQueryEncoding::Unquantized => {
+                Variant::Setting(i32::from(Setting::Unquantized))
             }
         };
 

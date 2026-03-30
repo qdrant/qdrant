@@ -371,7 +371,7 @@ impl From<PyBinaryQuantizationEncoding> for BinaryQuantizationEncoding {
 pub enum PyBinaryQuantizationQueryEncoding {
     Default,
     Binary,
-    Uncompressed,
+    Unquantized,
     Scalar4Bits,
     Scalar8Bits,
 }
@@ -388,7 +388,7 @@ impl Repr for PyBinaryQuantizationQueryEncoding {
         let repr = match self {
             Self::Default => "Default",
             Self::Binary => "Binary",
-            Self::Uncompressed => "Uncompressed",
+            Self::Unquantized => "Unquantized",
             Self::Scalar4Bits => "Scalar4Bits",
             Self::Scalar8Bits => "Scalar8Bits",
         };
@@ -402,8 +402,8 @@ impl From<BinaryQuantizationQueryEncoding> for PyBinaryQuantizationQueryEncoding
         match encoding {
             BinaryQuantizationQueryEncoding::Default => PyBinaryQuantizationQueryEncoding::Default,
             BinaryQuantizationQueryEncoding::Binary => PyBinaryQuantizationQueryEncoding::Binary,
-            BinaryQuantizationQueryEncoding::Uncompressed => {
-                PyBinaryQuantizationQueryEncoding::Uncompressed
+            BinaryQuantizationQueryEncoding::Unquantized => {
+                PyBinaryQuantizationQueryEncoding::Unquantized
             }
             BinaryQuantizationQueryEncoding::Scalar4Bits => {
                 PyBinaryQuantizationQueryEncoding::Scalar4Bits
@@ -420,8 +420,8 @@ impl From<PyBinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding
         match encoding {
             PyBinaryQuantizationQueryEncoding::Default => BinaryQuantizationQueryEncoding::Default,
             PyBinaryQuantizationQueryEncoding::Binary => BinaryQuantizationQueryEncoding::Binary,
-            PyBinaryQuantizationQueryEncoding::Uncompressed => {
-                BinaryQuantizationQueryEncoding::Uncompressed
+            PyBinaryQuantizationQueryEncoding::Unquantized => {
+                BinaryQuantizationQueryEncoding::Unquantized
             }
             PyBinaryQuantizationQueryEncoding::Scalar4Bits => {
                 BinaryQuantizationQueryEncoding::Scalar4Bits
