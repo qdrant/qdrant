@@ -95,6 +95,7 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "TurboQuant does not support L1")]
     fn test_tq_l1() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
@@ -215,6 +216,7 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "TurboQuant does not support L1")]
     fn test_tq_l1_inverted() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
