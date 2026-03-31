@@ -1232,7 +1232,7 @@ impl From<InvalidUri> for CollectionError {
 impl From<tonic::Status> for CollectionError {
     fn from(err: tonic::Status) -> Self {
         match err.code() {
-            tonic::Code::InvalidArgument => Self::bad_input(format!("InvalidArgumen: {err}")),
+            tonic::Code::InvalidArgument => Self::bad_input(format!("InvalidArgument: {err}")),
             tonic::Code::AlreadyExists => Self::bad_input(format!("AlreadyExists: {err}")),
             tonic::Code::NotFound => Self::not_found(format!("{err}")),
             tonic::Code::Internal => Self::service_error(format!("Internal error: {err}")),
