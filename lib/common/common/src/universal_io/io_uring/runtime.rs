@@ -75,6 +75,10 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
         Ok(())
     }
 
+    pub fn completion_is_empty(&mut self) -> bool {
+        self.io_uring.completion().is_empty()
+    }
+
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
         self.in_progress += self
             .io_uring

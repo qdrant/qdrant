@@ -626,16 +626,15 @@ fn main() -> anyhow::Result<()> {
         let handle = thread::Builder::new()
             .name("grpc".to_string())
             .spawn(move || {
-                log_err_if_any(
-                    "gRPC",
+                log_err_if_any("gRPC", {
                     tonic::init(
                         dispatcher_arc,
                         tonic_telemetry_collector,
                         settings,
                         grpc_port,
                         runtime_handle,
-                    ),
-                )
+                    )
+                })
             })
             .unwrap();
         handles.push(handle);
