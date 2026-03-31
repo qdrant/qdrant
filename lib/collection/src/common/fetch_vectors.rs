@@ -261,9 +261,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                             ))
                         }
                         None => {
-                            return Err(CollectionError::NotFound {
-                                what: format!("Collection {name}"),
-                            });
+                            return Err(CollectionError::not_found(format!("Collection {name}")));
                         }
                     }
                 }

@@ -383,9 +383,8 @@ impl Collection {
         let shard_holder_read = self.shards_holder.read().await;
 
         let shard = shard_holder_read.get_shard(shard_id);
-        let replica_set = shard.ok_or_else(|| CollectionError::NotFound {
-            what: format!("Shard {shard_id}"),
-        })?;
+        let replica_set =
+            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
         replica_set.wait_for_local_state(state, timeout).await
     }
@@ -535,9 +534,8 @@ impl Collection {
         let shard_holder_read = self.shards_holder.read().await;
 
         let shard = shard_holder_read.get_shard(shard_id);
-        let replica_set = shard.ok_or_else(|| CollectionError::NotFound {
-            what: format!("Shard {shard_id}"),
-        })?;
+        let replica_set =
+            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
         replica_set.shard_recovery_point().await
     }
@@ -550,9 +548,8 @@ impl Collection {
         let shard_holder_read = self.shards_holder.read().await;
 
         let shard = shard_holder_read.get_shard(shard_id);
-        let replica_set = shard.ok_or_else(|| CollectionError::NotFound {
-            what: format!("Shard {shard_id}"),
-        })?;
+        let replica_set =
+            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
         replica_set.update_shard_cutoff_point(cutoff).await
     }
@@ -565,9 +562,7 @@ impl Collection {
         let shard_holder = self.shards_holder.read().await;
 
         let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-            return Err(CollectionError::NotFound {
-                what: format!("Shard {shard_id}"),
-            });
+            return Err(CollectionError::not_found(format!("Shard {shard_id}")));
         };
 
         replica_set.get_wal_entries(count).await
@@ -584,9 +579,8 @@ impl Collection {
         let shard_holder_read = self.shards_holder.read().await;
 
         let shard = shard_holder_read.get_shard(shard_id);
-        let replica_set = shard.ok_or_else(|| CollectionError::NotFound {
-            what: format!("Shard {shard_id}"),
-        })?;
+        let replica_set =
+            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
         replica_set.local_optimizations(options).await
     }

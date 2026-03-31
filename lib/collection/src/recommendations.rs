@@ -266,18 +266,16 @@ where
         match request.strategy.unwrap_or_default() {
             RecommendStrategy::AverageVector => {
                 if request.positive.is_empty() {
-                    return Err(CollectionError::BadRequest {
-                        description: "At least one positive vector ID required with this strategy"
-                            .to_owned(),
-                    });
+                    return Err(CollectionError::bad_request(
+                        "At least one positive vector ID required with this strategy",
+                    ));
                 }
             }
             RecommendStrategy::BestScore | RecommendStrategy::SumScores => {
                 if request.positive.is_empty() && request.negative.is_empty() {
-                    return Err(CollectionError::BadRequest {
-                        description: "At least one positive or negative vector ID required with this strategy"
-                            .to_owned(),
-                    });
+                    return Err(CollectionError::bad_request(
+                        "At least one positive or negative vector ID required with this strategy",
+                    ));
                 }
             }
         }

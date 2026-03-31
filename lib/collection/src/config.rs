@@ -397,30 +397,22 @@ impl CollectionParams {
         }
 
         if available_names.is_empty() {
-            CollectionError::BadInput {
-                description: "Vectors are not configured in this collection".into(),
-            }
+            CollectionError::bad_input("Vectors are not configured in this collection")
         } else if available_names == vec![DEFAULT_VECTOR_NAME] {
-            CollectionError::BadInput {
-                description: format!(
-                    "Vector with name {vector_name} is not configured in this collection"
-                ),
-            }
+            CollectionError::bad_input(format!(
+                "Vector with name {vector_name} is not configured in this collection"
+            ))
         } else {
             let available_names = available_names.join(", ");
             if vector_name == DEFAULT_VECTOR_NAME {
-                return CollectionError::BadInput {
-                    description: format!(
-                        "Collection requires specified vector name in the request, available names: {available_names}"
-                    ),
-                };
+                return CollectionError::bad_input(format!(
+                    "Collection requires specified vector name in the request, available names: {available_names}"
+                ));
             }
 
-            CollectionError::BadInput {
-                description: format!(
-                    "Vector with name `{vector_name}` is not configured in this collection, available names: {available_names}"
-                ),
-            }
+            CollectionError::bad_input(format!(
+                "Vector with name `{vector_name}` is not configured in this collection, available names: {available_names}"
+            ))
         }
     }
 
@@ -459,15 +451,13 @@ impl CollectionParams {
         &mut self,
         vector_name: &VectorName,
     ) -> CollectionResult<&mut VectorParams> {
-        self.vectors
-            .get_params_mut(vector_name)
-            .ok_or_else(|| CollectionError::BadInput {
-                description: if vector_name == DEFAULT_VECTOR_NAME {
-                    "Default vector params are not specified in config".into()
-                } else {
-                    format!("Vector params for {vector_name} are not specified in config")
-                },
+        self.vectors.get_params_mut(vector_name).ok_or_else(|| {
+            CollectionError::bad_input(if vector_name == DEFAULT_VECTOR_NAME {
+                "Default vector params are not specified in config".into()
+            } else {
+                format!("Vector params for {vector_name} are not specified in config")
             })
+        })
     }
 
     pub fn get_sparse_vector_params_opt(
@@ -485,16 +475,16 @@ impl CollectionParams {
     ) -> CollectionResult<&mut SparseVectorParams> {
         self.sparse_vectors
             .as_mut()
-            .ok_or_else(|| CollectionError::BadInput {
-                description: format!(
+            .ok_or_else(|| {
+                CollectionError::bad_input(format!(
                     "Sparse vector `{vector_name}` is not specified in collection config"
-                ),
+                ))
             })?
             .get_mut(vector_name)
-            .ok_or_else(|| CollectionError::BadInput {
-                description: format!(
+            .ok_or_else(|| {
+                CollectionError::bad_input(format!(
                     "Sparse vector `{vector_name}` is not specified in collection config"
-                ),
+                ))
             })
     }
 
