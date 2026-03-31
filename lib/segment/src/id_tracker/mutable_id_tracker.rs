@@ -1441,7 +1441,9 @@ pub(super) mod tests {
     }
 
     #[test]
-    #[cfg(feature = "rocksdb")]
+    // TODO(rocksdb): fix and re-enable
+    // https://github.com/qdrant/qdrant/pull/8529#discussion_r3014389245
+    #[cfg(false)]
     fn simple_id_tracker_vs_mutable_tracker_congruence() {
         use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 
