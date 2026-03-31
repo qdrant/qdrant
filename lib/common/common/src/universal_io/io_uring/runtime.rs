@@ -43,17 +43,6 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
         }
     }
 
-    pub fn enqueue_single(&mut self, entry: squeue::Entry) -> io::Result<()> {
-        unsafe {
-            self.io_uring
-                .submission()
-                .push(&entry)
-                .map_err(io::Error::other)?;
-        }
-
-        Ok(())
-    }
-
     pub fn enqueue<F>(&mut self, mut entries: F) -> Result<()>
     where
         F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
@@ -73,10 +62,6 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
         }
 
         Ok(())
-    }
-
-    pub fn completion_is_empty(&mut self) -> bool {
-        self.io_uring.completion().is_empty()
     }
 
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {

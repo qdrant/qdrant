@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use ::io_uring::types::Fd;
 use fs_err as fs;
-use fs_err::os::unix::fs::OpenOptionsExt;
+use fs_err::os::unix::fs::{FileExt, OpenOptionsExt};
 
 use self::read_iter::{IoUringReadIter, IoUringReadMultiIter};
 use self::runtime::with_uring_runtime;
@@ -81,19 +81,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     }
 
     fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        with_uring_runtime(|mut rt| {
-            let entry = rt.state.read(0, self.fd(), range, self.uses_o_direct)?;
-            rt.enqueue_single(entry)?;
-            // Loop because `submit_and_wait` may return before completions are
-            // available on older kernels.
-            while rt.completion_is_empty() {
-                rt.submit_and_wait(1)?;
-            }
-
-            let (_, resp) = rt.completed().next().expect("read operation completed")?;
-            let items = resp.expect_read();
-            Ok(Cow::from(items))
-        })?
+        let mut result = vec![T::zeroed(); range.length as usize];
+        self.file
+            .read_exact_at(bytemuck::cast_slice_mut(&mut result), range.byte_offset)?;
+        Ok(Cow::Owned(result))
     }
 
     fn read_batch<P: AccessPattern>(
@@ -173,19 +164,9 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
 impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
-        with_uring_runtime(|mut rt| {
-            let entry = rt.state.write(0, self.fd(), byte_offset, items)?;
-            rt.enqueue_single(entry)?;
-            // Loop because `submit_and_wait` may return before completions are
-            // available on older kernels.
-            while rt.completion_is_empty() {
-                rt.submit_and_wait(1)?;
-            }
-
-            let (_, resp) = rt.completed().next().expect("write operation completed")?;
-            resp.expect_write();
-            Ok(())
-        })?
+        self.file
+            .write_all_at(bytemuck::cast_slice(items), byte_offset)?;
+        Ok(())
     }
 
     fn write_batch<'a>(
