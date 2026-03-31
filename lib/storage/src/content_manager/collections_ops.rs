@@ -13,18 +13,18 @@ pub trait Checker {
 
     fn validate_collection_not_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if self.collection_exists(collection_name) {
-            return Err(StorageError::AlreadyExists {
-                description: format!("Collection `{collection_name}` already exists!"),
-            });
+            return Err(StorageError::already_exists(format!(
+                "Collection `{collection_name}` already exists!"
+            )));
         }
         Ok(())
     }
 
     fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if !self.collection_exists(collection_name) {
-            return Err(StorageError::NotFound {
-                description: format!("Collection `{collection_name}` doesn't exist!"),
-            });
+            return Err(StorageError::not_found(format!(
+                "Collection `{collection_name}` doesn't exist!"
+            )));
         }
         Ok(())
     }

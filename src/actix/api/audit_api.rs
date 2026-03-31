@@ -58,18 +58,14 @@ async fn get_audit_logs(
         let pass = new_unchecked_verification_pass();
         let toc = dispatcher.toc(&auth, &pass);
 
-        let audit_config =
-            audit_config
-                .as_ref()
-                .as_ref()
-                .ok_or_else(|| StorageError::BadRequest {
-                    description: "Audit logging is not configured".to_string(),
-                })?;
+        let audit_config = audit_config.as_ref().as_ref().ok_or_else(|| {
+            StorageError::bad_request("Audit logging is not configured".to_string())
+        })?;
 
         if !audit_config.enabled {
-            return Err(StorageError::BadRequest {
-                description: "Audit logging is not enabled".to_string(),
-            });
+            return Err(StorageError::bad_request(
+                "Audit logging is not enabled".to_string(),
+            ));
         }
 
         let AuditLogRequest {

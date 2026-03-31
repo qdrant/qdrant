@@ -48,9 +48,9 @@ pub fn read_local_audit_logs(
     cancel: &CancellationToken,
 ) -> Result<Vec<AuditEvent>, StorageError> {
     if !config.enabled {
-        return Err(StorageError::BadRequest {
-            description: "Audit logging is not enabled".to_string(),
-        });
+        return Err(StorageError::bad_request(
+            "Audit logging is not enabled".to_string(),
+        ));
     }
 
     let dir = &config.dir;

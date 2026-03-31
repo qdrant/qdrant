@@ -89,9 +89,8 @@ async fn get_point(
     };
 
     let Ok(point_id) = point.id.parse::<PointIdType>() else {
-        let err = StorageError::BadInput {
-            description: format!("Can not recognize \"{}\" as point id", point.id),
-        };
+        let err =
+            StorageError::bad_input(format!("Can not recognize \"{}\" as point id", point.id));
         return process_response_error(err, Instant::now(), None);
     };
 
@@ -114,8 +113,8 @@ async fn get_point(
     )
     .await
     .and_then(|i| {
-        i.ok_or_else(|| StorageError::NotFound {
-            description: format!("Point with id {point_id} does not exists!"),
+        i.ok_or_else(|| {
+            StorageError::not_found(format!("Point with id {point_id} does not exists!"))
         })
     })
     .map(api::rest::Record::from);
