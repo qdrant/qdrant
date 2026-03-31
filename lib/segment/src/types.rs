@@ -2878,12 +2878,12 @@ impl GeoBoundingBox {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
         let longitude_check = if self.top_left.lon > self.bottom_right.lon {
             // Handle antimeridian crossing
-            point.lon > self.top_left.lon || point.lon < self.bottom_right.lon
+            point.lon >= self.top_left.lon || point.lon <= self.bottom_right.lon
         } else {
-            self.top_left.lon < point.lon && point.lon < self.bottom_right.lon
+            self.top_left.lon <= point.lon && point.lon <= self.bottom_right.lon
         };
 
-        let latitude_check = self.bottom_right.lat < point.lat && point.lat < self.top_left.lat;
+        let latitude_check = self.bottom_right.lat <= point.lat && point.lat <= self.top_left.lat;
 
         longitude_check && latitude_check
     }
@@ -4294,6 +4294,24 @@ mod tests {
         // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
         let outside_result = bounding_box.check_point(&GeoPoint::new_unchecked(1.5, 1.5));
         assert!(!outside_result);
+
+        // Boundary points should be included (inclusive bounding box)
+        // Corner: top-left
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(-1.0, 1.0)));
+        // Corner: top-right
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(1.0, 1.0)));
+        // Corner: bottom-left
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(-1.0, -1.0)));
+        // Corner: bottom-right
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(1.0, -1.0)));
+        // Edge: top
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(0.0, 1.0)));
+        // Edge: bottom
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(0.0, -1.0)));
+        // Edge: left
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(-1.0, 0.0)));
+        // Edge: right
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(1.0, 0.0)));
     }
 
     #[test]
@@ -4312,6 +4330,33 @@ mod tests {
         // Test Berlin, which is outside the bounding box
         let outside_result = bounding_box.check_point(&GeoPoint::new_unchecked(13.41053, 52.52437));
         assert!(!outside_result);
+
+        // Boundary points on antimeridian box should be included
+        // Corner: top-left (lon=167, lat=74.071028)
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(167.0, 74.071028)));
+        // Corner: bottom-right (lon=-66.885417, lat=18.7763)
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(-66.885417, 18.7763)));
+        // Edge: top latitude
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(-73.0, 74.071028)));
+        // Edge: bottom latitude
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(-73.0, 18.7763)));
+        // Edge: left longitude
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(167.0, 40.0)));
+        // Edge: right longitude
+        assert!(bounding_box.check_point(&GeoPoint::new_unchecked(-66.885417, 40.0)));
+    }
+
+    #[test]
+    fn test_geo_boundingbox_boundary_from_issue_8539() {
+        // Exact reproduction from GitHub issue #8539:
+        // Point at (lat=90, lon=180) with bbox top_left=(lat=90, lon=158.75),
+        // bottom_right=(lat=69.40, lon=180)
+        let bounding_box = GeoBoundingBox {
+            top_left: GeoPoint::new_unchecked(158.75, 90.0),
+            bottom_right: GeoPoint::new_unchecked(180.0, 69.40),
+        };
+        let point = GeoPoint::new_unchecked(180.0, 90.0);
+        assert!(bounding_box.check_point(&point));
     }
 
     #[test]
