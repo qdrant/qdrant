@@ -210,3 +210,7 @@ harness = false
 [[bench]]
 name = "hnsw_incremental_build"
 harness = false
+
+[[bench]]
+name = "map_index_immutable_vs_mmap"
+harness = false
