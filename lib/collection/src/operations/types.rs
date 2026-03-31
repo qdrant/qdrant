@@ -1109,20 +1109,14 @@ impl CollectionError {
 }
 
 impl From<SystemTimeError> for CollectionError {
-    fn from(error: SystemTimeError) -> CollectionError {
-        CollectionError::ServiceError {
-            error: format!("System time error: {error}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+    fn from(error: SystemTimeError) -> Self {
+        Self::service_error(format!("System time error: {error}"))
     }
 }
 
 impl From<String> for CollectionError {
-    fn from(error: String) -> CollectionError {
-        CollectionError::ServiceError {
-            error,
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+    fn from(error: String) -> Self {
+        Self::service_error(error)
     }
 }
 
@@ -1185,101 +1179,64 @@ impl From<CancelledError> for CollectionError {
 
 impl From<OneshotRecvError> for CollectionError {
     fn from(err: OneshotRecvError) -> Self {
-        Self::ServiceError {
-            error: format!("{err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("{err}"))
     }
 }
 
 impl From<JoinError> for CollectionError {
     fn from(err: JoinError) -> Self {
-        Self::ServiceError {
-            error: format!("{err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("{err}"))
     }
 }
 
 impl From<WalError> for CollectionError {
     fn from(err: WalError) -> Self {
-        Self::ServiceError {
-            error: format!("{err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("{err}"))
     }
 }
 
 impl<T> From<SendError<T>> for CollectionError {
     fn from(err: SendError<T>) -> Self {
-        Self::ServiceError {
-            error: format!("Can't reach one of the workers: {err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("Can't reach one of the workers: {err}"))
     }
 }
 
 impl From<JsonError> for CollectionError {
     fn from(err: JsonError) -> Self {
-        CollectionError::ServiceError {
-            error: format!("Json error: {err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("Json error: {err}"))
     }
 }
 
 impl From<std::io::Error> for CollectionError {
     fn from(err: std::io::Error) -> Self {
-        CollectionError::ServiceError {
-            error: format!("File IO error: {err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("File IO error: {err}"))
     }
 }
 
 impl From<tonic::transport::Error> for CollectionError {
     fn from(err: tonic::transport::Error) -> Self {
-        CollectionError::ServiceError {
-            error: format!("Tonic transport error: {err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("Tonic transport error: {err}"))
     }
 }
 
 impl From<InvalidUri> for CollectionError {
     fn from(err: InvalidUri) -> Self {
-        CollectionError::ServiceError {
-            error: format!("Invalid URI error: {err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("Invalid URI error: {err}"))
     }
 }
 
 impl From<tonic::Status> for CollectionError {
     fn from(err: tonic::Status) -> Self {
         match err.code() {
-            tonic::Code::InvalidArgument => CollectionError::BadInput {
-                description: format!("InvalidArgument: {err}"),
-            },
-            tonic::Code::AlreadyExists => CollectionError::BadInput {
-                description: format!("AlreadyExists: {err}"),
-            },
-            tonic::Code::NotFound => CollectionError::NotFound {
-                what: format!("{err}"),
-            },
-            tonic::Code::Internal => CollectionError::ServiceError {
-                error: format!("Internal error: {err}"),
-                backtrace: Some(Backtrace::force_capture().to_string()),
-            },
-            tonic::Code::DeadlineExceeded => CollectionError::Timeout {
+            tonic::Code::InvalidArgument => Self::bad_input(format!("InvalidArgument: {err}")),
+            tonic::Code::AlreadyExists => Self::bad_input(format!("AlreadyExists: {err}")),
+            tonic::Code::NotFound => Self::not_found(format!("{err}")),
+            tonic::Code::Internal => Self::service_error(format!("Internal error: {err}")),
+            tonic::Code::DeadlineExceeded => Self::Timeout {
                 description: format!("Deadline Exceeded: {err}"),
             },
-            tonic::Code::Cancelled => CollectionError::Cancelled {
-                description: format!("{err}"),
-            },
-            tonic::Code::FailedPrecondition => CollectionError::PreConditionFailed {
-                description: format!("{err}"),
-            },
+            tonic::Code::Cancelled => Self::cancelled(format!("{err}")),
+            tonic::Code::FailedPrecondition => Self::pre_condition_failed(format!("{err}")),
             tonic::Code::ResourceExhausted => {
                 // extract retry-after from metadata
                 // the value is passed as a String containing an integer number of seconds
@@ -1296,7 +1253,7 @@ impl From<tonic::Status> for CollectionError {
                         })
                         .map(Duration::from_secs)
                 });
-                CollectionError::RateLimitExceeded {
+                Self::RateLimitExceeded {
                     description: format!("{err}"),
                     retry_after,
                 }
@@ -1309,20 +1266,16 @@ impl From<tonic::Status> for CollectionError {
             | tonic::Code::Unimplemented
             | tonic::Code::Unavailable
             | tonic::Code::DataLoss
-            | tonic::Code::Unauthenticated => CollectionError::ServiceError {
-                error: format!("Tonic status error: {err}"),
-                backtrace: Some(Backtrace::force_capture().to_string()),
-            },
+            | tonic::Code::Unauthenticated => {
+                Self::service_error(format!("Tonic status error: {err}"))
+            }
         }
     }
 }
 
 impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
     fn from(err: std::sync::PoisonError<Guard>) -> Self {
-        CollectionError::ServiceError {
-            error: format!("Mutex lock poisoned: {err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("Mutex lock poisoned: {err}"))
     }
 }
 
@@ -1349,18 +1302,13 @@ impl From<RequestError<tonic::Status>> for CollectionError {
 
 impl From<save_on_disk::Error> for CollectionError {
     fn from(err: save_on_disk::Error) -> Self {
-        CollectionError::ServiceError {
-            error: err.to_string(),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(err.to_string())
     }
 }
 
 impl From<validator::ValidationErrors> for CollectionError {
     fn from(err: validator::ValidationErrors) -> Self {
-        CollectionError::BadInput {
-            description: format!("{err}"),
-        }
+        Self::bad_input(format!("{err}"))
     }
 }
 
@@ -1368,9 +1316,7 @@ impl From<cancel::Error> for CollectionError {
     fn from(err: cancel::Error) -> Self {
         match err {
             cancel::Error::Join(err) => err.into(),
-            cancel::Error::Cancelled => Self::Cancelled {
-                description: err.to_string(),
-            },
+            cancel::Error::Cancelled => Self::cancelled(err.to_string()),
         }
     }
 }
@@ -1671,22 +1617,18 @@ fn incompatible_vectors_error<'a, 'b>(
     let this_vectors = this.collect::<Vec<_>>().join(", ");
     let other_vectors = other.collect::<Vec<_>>().join(", ");
 
-    CollectionError::BadInput {
-        description: format!(
-            "Vectors configuration is not compatible: \
+    CollectionError::bad_input(format!(
+        "Vectors configuration is not compatible: \
              origin collection have vectors [{this_vectors}], \
              while other vectors [{other_vectors}]"
-        ),
-    }
+    ))
 }
 
 fn missing_vector_error(vector_name: &VectorName) -> CollectionError {
-    CollectionError::BadInput {
-        description: format!(
-            "Vectors configuration is not compatible: \
+    CollectionError::bad_input(format!(
+        "Vectors configuration is not compatible: \
              origin collection have vector {vector_name}, while other collection does not"
-        ),
-    }
+    ))
 }
 
 impl Validate for VectorsConfig {
@@ -1715,23 +1657,19 @@ struct VectorParamsBase {
 impl VectorParamsBase {
     fn check_compatibility(&self, other: &Self, vector_name: &VectorName) -> CollectionResult<()> {
         if self.size != other.size {
-            return Err(CollectionError::BadInput {
-                description: format!(
-                    "Vectors configuration is not compatible: \
+            return Err(CollectionError::bad_input(format!(
+                "Vectors configuration is not compatible: \
                      origin vector {} size: {}, while other vector size: {}",
-                    vector_name, self.size, other.size
-                ),
-            });
+                vector_name, self.size, other.size
+            )));
         }
 
         if self.distance != other.distance {
-            return Err(CollectionError::BadInput {
-                description: format!(
-                    "Vectors configuration is not compatible: \
+            return Err(CollectionError::bad_input(format!(
+                "Vectors configuration is not compatible: \
                      origin vector {} distance: {:?}, while other vector distance: {:?}",
-                    vector_name, self.distance, other.distance
-                ),
-            });
+                vector_name, self.distance, other.distance
+            )));
         }
 
         Ok(())

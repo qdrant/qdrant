@@ -44,8 +44,8 @@ where
 {
     let collection = collection_by_name(request.collection_name.clone())
         .await
-        .ok_or_else(|| CollectionError::NotFound {
-            what: format!("Collection {}", request.collection_name),
+        .ok_or_else(|| {
+            CollectionError::not_found(format!("Collection {}", request.collection_name))
         })?;
 
     let ids = values

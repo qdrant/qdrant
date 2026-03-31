@@ -320,9 +320,7 @@ impl Collection {
             .unwrap_or_else(|| default_request.limit.unwrap());
 
         if limit == 0 {
-            return Err(CollectionError::BadRequest {
-                description: "Limit cannot be 0".to_string(),
-            });
+            return Err(CollectionError::bad_request("Limit cannot be 0"));
         }
 
         let local_only = shard_selection.is_shard_id();

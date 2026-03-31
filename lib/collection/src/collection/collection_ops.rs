@@ -226,28 +226,28 @@ impl Collection {
             };
 
             let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-                return Err(CollectionError::BadRequest {
-                    description: format!("Shard {} of {} not found", shard_id, self.name()),
-                });
+                return Err(CollectionError::bad_request(format!(
+                    "Shard {} of {} not found",
+                    shard_id,
+                    self.name()
+                )));
             };
 
             let peers = replica_set.peers();
 
             if !peers.contains_key(&peer_id) {
-                return Err(CollectionError::BadRequest {
-                    description: format!("Peer {peer_id} has no replica of shard {shard_id}"),
-                });
+                return Err(CollectionError::bad_request(format!(
+                    "Peer {peer_id} has no replica of shard {shard_id}"
+                )));
             }
 
             // Check that we are not removing the *last* replica or the last *active* replica
             //
             // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
             if peers.len() == 1 || replica_set.is_last_source_of_truth_replica(peer_id) {
-                return Err(CollectionError::BadRequest {
-                    description: format!(
-                        "Shard {shard_id} must have at least one active replica after removing {peer_id}",
-                    ),
-                });
+                return Err(CollectionError::bad_request(format!(
+                    "Shard {shard_id} must have at least one active replica after removing {peer_id}",
+                )));
             }
 
             let all_nodes_fixed_cancellation = self
