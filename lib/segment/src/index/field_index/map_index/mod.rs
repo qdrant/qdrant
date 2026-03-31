@@ -1560,4 +1560,50 @@ mod tests {
                 .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }
+
+    /// Test that `get_values` on an on-disk mmap index actually increments the hardware counter.
+    #[test]
+    fn test_mmap_get_values_hw_counter() {
+        let data = vec![vec![1i64, 2, 3], vec![4, 5], vec![6]];
+
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap, |v| (*v).into());
+        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap);
+
+        // Read values with a fresh counter
+        let hw_counter = HardwareCounterCell::new();
+        for idx in 0..data.len() {
+            let _values: Vec<_> = index
+                .get_values(idx as PointOffsetType, &hw_counter)
+                .unwrap()
+                .collect();
+        }
+
+        // On-disk mmap variant should have tracked IO reads
+        assert!(
+            hw_counter.payload_index_io_read_counter().get() > 0,
+            "Expected on-disk mmap get_values to track payload index IO reads, but counter was 0"
+        );
+
+        // Contrast with RamMmap (is_on_disk=false) — counter should remain zero
+        let temp_dir2 = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap, |v| {
+            (*v).into()
+        });
+        let index2 = load_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap);
+
+        let hw_counter2 = HardwareCounterCell::new();
+        for idx in 0..data.len() {
+            let _values: Vec<_> = index2
+                .get_values(idx as PointOffsetType, &hw_counter2)
+                .unwrap()
+                .collect();
+        }
+
+        assert_eq!(
+            hw_counter2.payload_index_io_read_counter().get(),
+            0,
+            "Expected RAM mmap get_values NOT to track IO reads, but counter was non-zero"
+        );
+    }
 }
