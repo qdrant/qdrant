@@ -66,6 +66,14 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     }
 
     #[inline]
+    fn read_iter<P: AccessPattern>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+    ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
+        self.inner.read_iter::<P>(ranges)
+    }
+
+    #[inline]
     fn len(&self) -> Result<u64> {
         self.inner.len()
     }
@@ -87,6 +95,14 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
         callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
     ) -> Result<()> {
         S::read_multi::<P>(Self::peel_slice(files), reads, callback)
+    }
+
+    #[inline]
+    fn read_multi_iter<P: AccessPattern>(
+        files: &[Self],
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
+        S::read_multi_iter::<P>(Self::peel_slice(files), reads)
     }
 }
 
