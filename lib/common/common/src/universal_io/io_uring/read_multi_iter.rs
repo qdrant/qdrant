@@ -102,6 +102,14 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
             .submit_and_wait(want)
             .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
 
+        // `submit_and_wait` may return before completions are available on
+        // older kernels; retry until at least one completion is ready.
+        while wait && io_uring.completion().is_empty() {
+            self.in_progress += io_uring
+                .submit_and_wait(1)
+                .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
+        }
+
         // Reap all available completions.
         let cqes: Vec<_> = io_uring
             .completion()
