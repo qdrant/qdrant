@@ -157,11 +157,12 @@ where
     pub fn get_values(
         &self,
         idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
         match self {
             MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx)?)),
             MapIndex::Immutable(index) => Some(Box::new(index.get_values(idx)?)),
-            MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx)?)),
+            MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
         }
     }
 
@@ -1203,8 +1204,9 @@ where
     fn get_point_values(
         &self,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        MapIndex::get_values(self, point_id)
+        MapIndex::get_values(self, point_id, hw_counter)
             .into_iter()
             .flatten()
             .map(|v| v.into())
@@ -1398,9 +1400,10 @@ mod tests {
             IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap().unwrap(),
             IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap().unwrap(),
         };
+        let hw_counter = HardwareCounterCell::new();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<<N as MapIndexKey>::Owned> = index
-                .get_values(idx as PointOffsetType)
+                .get_values(idx as PointOffsetType, &hw_counter)
                 .unwrap()
                 .map(|v| MapIndexKey::to_owned(v.as_ref()))
                 .collect();
@@ -1456,9 +1459,10 @@ mod tests {
         }
 
         let index = builder.finalize().unwrap();
+        let hw_counter = HardwareCounterCell::new();
         for (idx, values) in data.iter().enumerate().rev() {
             let res: Vec<_> = index
-                .get_values(idx as u32)
+                .get_values(idx as u32, &hw_counter)
                 .unwrap()
                 .map(|i| *i as i32)
                 .collect();

@@ -170,12 +170,16 @@ impl SegmentBuilder {
     ///
     /// Note: This value doesn't guarantee strict ordering in ambiguous cases.
     ///       It should only be used in optimization purposes, not for correctness.
-    fn _get_ordering_value(internal_id: PointOffsetType, indices: &[FieldIndex]) -> u64 {
+    fn _get_ordering_value(
+        internal_id: PointOffsetType,
+        indices: &[FieldIndex],
+        hw_counter: &HardwareCounterCell,
+    ) -> u64 {
         let mut ordering = 0;
         for payload_index in indices {
             match payload_index {
                 FieldIndex::IntMapIndex(index) => {
-                    if let Some(numbers) = index.get_values(internal_id) {
+                    if let Some(numbers) = index.get_values(internal_id, hw_counter) {
                         for number in numbers {
                             ordering = ordering.wrapping_add(*number as u64);
                         }
@@ -183,7 +187,7 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::KeywordIndex(index) => {
-                    if let Some(keywords) = index.get_values(internal_id) {
+                    if let Some(keywords) = index.get_values(internal_id, hw_counter) {
                         for keyword in keywords {
                             let mut hasher = AHasher::default();
                             keyword.hash(&mut hasher);
@@ -227,7 +231,7 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::UuidMapIndex(index) => {
-                    if let Some(ids) = index.get_values(internal_id) {
+                    if let Some(ids) = index.get_values(internal_id, hw_counter) {
                         uuid_hash(&mut ordering, ids.map(Cow::into_owned));
                     }
                     break;
@@ -256,7 +260,12 @@ impl SegmentBuilder {
     ///
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
-    pub fn update(&mut self, segments: &[&Segment], stopped: &AtomicBool) -> OperationResult<bool> {
+    pub fn update(
+        &mut self,
+        segments: &[&Segment],
+        stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         if segments.is_empty() {
             return Ok(true);
         }
@@ -296,6 +305,7 @@ impl SegmentBuilder {
                 point_data.ordering = point_data.ordering.wrapping_add(Self::_get_ordering_value(
                     point_data.internal_id,
                     payload_indices,
+                    hw_counter,
                 ));
             }
         }

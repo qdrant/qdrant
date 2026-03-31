@@ -215,7 +215,13 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     pub fn get_values(
         &self,
         idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
+        // We can account cost of reading `bool`, but it will likely be more expensive, than
+        // actually reading bool itself.
+
         self.storage
             .deleted
             .get(idx as usize)
@@ -223,8 +229,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             .and_then(|_| {
                 self.storage
                     .point_to_values
-                    // TODO: Propagate counter upwards
-                    .values_iter(idx, ConditionedCounter::never())
+                    .values_iter(idx, hw_counter)
                     .ok()?
                     .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = Cow<'_, N>>>)
             })
