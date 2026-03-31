@@ -41,6 +41,8 @@ pub const SEGMENT_STATE_FILE: &str = "segment.json";
 const SNAPSHOT_PATH: &str = "snapshot";
 
 // Sub-directories of `SNAPSHOT_PATH`:
+const DEPRECATED_ROCKSDB_BACKUP_PATH: &str = "db_backup";
+const DEPRECATED_PAYLOAD_ROCKSDB_BACKUP_PATH: &str = "payload_index_db_backup";
 const SNAPSHOT_FILES_PATH: &str = "files";
 
 pub struct SegmentVersion;
