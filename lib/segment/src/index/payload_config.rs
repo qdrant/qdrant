@@ -16,13 +16,6 @@ pub struct PayloadConfig {
     /// Mapping of payload index schemas and types
     #[serde(flatten)]
     pub indices: PayloadIndices,
-
-    /// If true, don't create/initialize RocksDB for payload index
-    /// This is required for migrating away from RocksDB in favor of the
-    /// custom storage engine
-    #[cfg(feature = "rocksdb")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skip_rocksdb: Option<bool>,
 }
 
 impl PayloadConfig {
@@ -54,19 +47,6 @@ impl PayloadIndices {
     /// Returns false if empty.
     pub fn any_has_no_type(&self) -> bool {
         self.fields.values().any(|index| index.types.is_empty())
-    }
-
-    /// Check if any payload field used RocksDB
-    ///
-    /// Returns false if empty.
-    #[cfg(feature = "rocksdb")]
-    pub fn any_is_rocksdb(&self) -> bool {
-        self.fields.values().any(|index| {
-            index
-                .types
-                .iter()
-                .any(|t| t.storage_type == StorageType::RocksDb)
-        })
     }
 
     pub fn to_schemas(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {

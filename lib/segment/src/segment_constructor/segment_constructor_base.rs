@@ -19,22 +19,14 @@ use fs_err as fs;
 use fs_err::File;
 use log::info;
 use parking_lot::Mutex;
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
 use rand::Rng;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
 
-#[cfg(feature = "rocksdb")]
-use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
-#[cfg(feature = "rocksdb")]
-use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::VectorIndexEnum;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
@@ -46,16 +38,10 @@ use crate::index::sparse_index::sparse_vector_index::{
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
-#[cfg(feature = "rocksdb")]
-use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-#[cfg(feature = "rocksdb")]
-use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{
     DeferredPointStatus, SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData,
 };
-#[cfg(feature = "rocksdb")]
-use crate::types::MultiVectorConfig;
 use crate::types::{
     Distance, HnswGlobalConfig, Indexes, PayloadStorageType, SegmentConfig, SegmentState,
     SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
@@ -64,13 +50,9 @@ use crate::types::{
 use crate::vector_storage::dense::dense_vector_storage::{
     open_dense_vector_storage, open_dense_vector_storage_byte, open_dense_vector_storage_half,
 };
-#[cfg(feature = "rocksdb")]
-use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     open_appendable_memmap_multi_vector_storage, open_appendable_memmap_vector_storage,
 };
-#[cfg(feature = "rocksdb")]
-use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -174,48 +156,13 @@ fn open_chunked_mmap_vector_storage(
 }
 
 pub(crate) fn open_vector_storage(
-    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     vector_config: &VectorDataConfig,
-    #[cfg(feature = "rocksdb")] stopped: &AtomicBool,
     vector_storage_path: &Path,
-    #[cfg(feature = "rocksdb")] vector_name: &VectorName,
 ) -> OperationResult<VectorStorageEnum> {
     match vector_config.storage_type {
-        // In memory - RocksDB disabled
-        #[cfg(not(feature = "rocksdb"))]
         VectorStorageType::Memory => Err(OperationError::service_error(
-            "Failed to load 'Memory' storage type, RocksDB disabled in this Qdrant version",
+            "Failed to load 'Memory' storage type, RocksDB is not supported in this Qdrant version",
         )),
-
-        // In memory - RocksDB enabled
-        #[cfg(feature = "rocksdb")]
-        VectorStorageType::Memory => {
-            let storage_element_type = vector_config.datatype.unwrap_or_default();
-            use crate::common::rocksdb_wrapper::DB_VECTOR_CF;
-
-            let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-
-            if let Some(multi_vec_config) = &vector_config.multivector_config {
-                open_simple_multi_dense_vector_storage(
-                    storage_element_type,
-                    db_builder.require()?,
-                    &db_column_name,
-                    vector_config.size,
-                    vector_config.distance,
-                    *multi_vec_config,
-                    stopped,
-                )
-            } else {
-                open_simple_dense_vector_storage(
-                    storage_element_type,
-                    db_builder.require()?,
-                    &db_column_name,
-                    vector_config.size,
-                    vector_config.distance,
-                    stopped,
-                )
-            }
-        }
 
         // Mmap on disk, not appendable
         VectorStorageType::Mmap => open_mmap_vector_storage(
@@ -248,19 +195,10 @@ pub(crate) fn open_vector_storage(
 }
 
 pub(crate) fn create_payload_storage(
-    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
     let payload_storage = match config.payload_storage_type {
-        #[cfg(feature = "rocksdb")]
-        PayloadStorageType::InMemory => {
-            PayloadStorageEnum::from(SimplePayloadStorage::open(db_builder.require()?)?)
-        }
-        #[cfg(feature = "rocksdb")]
-        PayloadStorageType::OnDisk => {
-            PayloadStorageEnum::from(OnDiskPayloadStorage::open(db_builder.require()?)?)
-        }
         PayloadStorageType::Mmap => PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
             segment_path.to_path_buf(),
             false,
@@ -274,13 +212,6 @@ pub(crate) fn create_payload_storage(
 
 pub(crate) fn create_mutable_id_tracker(segment_path: &Path) -> OperationResult<MutableIdTracker> {
     MutableIdTracker::open(segment_path)
-}
-
-#[cfg(feature = "rocksdb")]
-pub(crate) fn create_rocksdb_id_tracker(
-    database: Arc<RwLock<DB>>,
-) -> OperationResult<SimpleIdTracker> {
-    SimpleIdTracker::open(database)
 }
 
 pub(crate) fn create_immutable_id_tracker(
@@ -434,24 +365,10 @@ pub(crate) fn create_sparse_vector_index(
 }
 
 pub(crate) fn create_sparse_vector_storage(
-    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     path: &Path,
-    #[cfg(feature = "rocksdb")] vector_name: &VectorName,
     storage_type: &SparseVectorStorageType,
-    #[cfg(feature = "rocksdb")] stopped: &AtomicBool,
 ) -> OperationResult<VectorStorageEnum> {
     match storage_type {
-        #[cfg(feature = "rocksdb")]
-        SparseVectorStorageType::OnDisk => {
-            use crate::common::rocksdb_wrapper::DB_VECTOR_CF;
-            use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-
-            let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-            let storage =
-                open_simple_sparse_vector_storage(db_builder.require()?, &db_column_name, stopped)?;
-
-            Ok(storage)
-        }
         SparseVectorStorageType::Mmap => {
             let mmap_storage = MmapSparseVectorStorage::open_or_create(path)?;
             Ok(VectorStorageEnum::SparseMmap(mmap_storage))
@@ -470,16 +387,8 @@ fn create_segment(
     stopped: &AtomicBool,
     create: bool,
 ) -> OperationResult<Segment> {
-    #[cfg(feature = "rocksdb")]
-    let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
-
     let started = Instant::now();
-    let payload_storage = sp(create_payload_storage(
-        #[cfg(feature = "rocksdb")]
-        &mut db_builder,
-        segment_path,
-        config,
-    )?);
+    let payload_storage = sp(create_payload_storage(segment_path, config)?);
     log_load_timing(segment_path, "payload_storage", started);
 
     let appendable_flag = config.is_appendable();
@@ -490,12 +399,7 @@ fn create_segment(
     let use_mutable_id_tracker =
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
     let started = Instant::now();
-    let id_tracker = create_segment_id_tracker(
-        use_mutable_id_tracker,
-        segment_path,
-        #[cfg(feature = "rocksdb")]
-        &mut db_builder,
-    )?;
+    let id_tracker = create_segment_id_tracker(use_mutable_id_tracker, segment_path)?;
     log_load_timing(segment_path, "id_tracker", started);
 
     let mut vector_storages = HashMap::new();
@@ -504,16 +408,7 @@ fn create_segment(
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
 
         let started = Instant::now();
-        let vector_storage = sp(open_vector_storage(
-            #[cfg(feature = "rocksdb")]
-            &mut db_builder,
-            vector_config,
-            #[cfg(feature = "rocksdb")]
-            stopped,
-            &vector_storage_path,
-            #[cfg(feature = "rocksdb")]
-            vector_name,
-        )?);
+        let vector_storage = sp(open_vector_storage(vector_config, &vector_storage_path)?);
         log_load_timing(
             segment_path,
             &format!("vector_storage dense '{vector_name}'"),
@@ -528,14 +423,8 @@ fn create_segment(
 
         let started = Instant::now();
         let vector_storage = sp(create_sparse_vector_storage(
-            #[cfg(feature = "rocksdb")]
-            &mut db_builder,
             &vector_storage_path,
-            #[cfg(feature = "rocksdb")]
-            vector_name,
             &sparse_config.storage_type,
-            #[cfg(feature = "rocksdb")]
-            stopped,
         )?);
         log_load_timing(
             segment_path,
@@ -689,8 +578,6 @@ fn create_segment(
         payload_storage,
         segment_config: config.clone(),
         error_status: None,
-        #[cfg(feature = "rocksdb")]
-        database: db_builder.build(),
         deferred_point_status: None,
     };
 
@@ -707,54 +594,11 @@ fn create_segment(
 fn create_segment_id_tracker(
     mutable_id_tracker: bool,
     segment_path: &Path,
-    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
     if !mutable_id_tracker {
         return Ok(sp(IdTrackerEnum::ImmutableIdTracker(
             create_immutable_id_tracker(segment_path)?,
         )));
-    }
-
-    // Determine whether we use the new (file based) or old (RocksDB) mutable ID tracker
-    // Decide based on the feature flag and state on disk
-    #[cfg(feature = "rocksdb")]
-    {
-        use crate::common::rocksdb_wrapper::DB_MAPPING_CF;
-
-        let use_rocksdb_mutable_tracker = if let Some(db) = db_builder.read() {
-            // New ID tracker is enabled by default, but we still use the old tracker if we have
-            // any mappings stored in RocksDB
-            //
-            // TODO(1.15 or later): remove this check and use new mutable ID tracker unconditionally
-            if let Some(cf) = db.cf_handle(DB_MAPPING_CF) {
-                let count = db
-                    .property_int_value_cf(cf, rocksdb::properties::ESTIMATE_NUM_KEYS)
-                    .map_err(|err| {
-                        OperationError::service_error(format!(
-                            "Failed to get estimated number of keys from RocksDB: {err}"
-                        ))
-                    })?
-                    .unwrap_or_default();
-
-                count > 0
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        if use_rocksdb_mutable_tracker {
-            let id_tracker = create_rocksdb_id_tracker(db_builder.require()?)?;
-
-            // Actively migrate RocksDB based ID tracker into mutable ID tracker
-            if common::flags::feature_flags().migrate_rocksdb_id_tracker {
-                let id_tracker = migrate_rocksdb_id_tracker_to_mutable(id_tracker, segment_path)?;
-                return Ok(sp(IdTrackerEnum::MutableIdTracker(id_tracker)));
-            }
-
-            return Ok(sp(IdTrackerEnum::RocksDbIdTracker(id_tracker)));
-        }
     }
 
     Ok(sp(IdTrackerEnum::MutableIdTracker(
@@ -870,12 +714,10 @@ pub fn load_segment(
     }
 
     let started = Instant::now();
-    #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
-    let mut segment_state = Segment::load_state(path)?;
+    let segment_state = Segment::load_state(path)?;
     log_load_timing(path, "load_state", started);
 
-    #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
-    let mut segment = create_segment(
+    let segment = create_segment(
         segment_state.initial_version,
         segment_state.version,
         path,
@@ -885,18 +727,6 @@ pub fn load_segment(
         stopped,
         false,
     )?;
-
-    #[cfg(feature = "rocksdb")]
-    {
-        if common::flags::feature_flags().migrate_rocksdb_vector_storage {
-            migrate_all_rocksdb_dense_vector_storages(path, &mut segment, &mut segment_state)?;
-            migrate_all_rocksdb_sparse_vector_storages(path, &mut segment, &mut segment_state)?;
-        }
-
-        if common::flags::feature_flags().migrate_rocksdb_payload_storage {
-            migrate_rocksdb_payload_storage(path, &mut segment, &mut segment_state)?;
-        }
-    }
 
     log_load_timing(path, "total", total_started);
 
@@ -1039,572 +869,4 @@ fn load_segment_state_v5(segment_path: &Path) -> OperationResult<SegmentState> {
                 err
             ))
         })
-}
-
-/// Migrate a RocksDB based ID tracker into a mutable ID tracker.
-///
-/// Creates a new mutable ID tracker and copies all mappings from the RocksDB based ID tracker into
-/// it. The persisted RocksDB data is deleted so that only the new tracker will be loaded next
-/// time. The new ID tracker is returned.
-#[cfg(feature = "rocksdb")]
-pub fn migrate_rocksdb_id_tracker_to_mutable(
-    old_id_tracker: SimpleIdTracker,
-    segment_path: &Path,
-) -> OperationResult<MutableIdTracker> {
-    log::info!(
-        "Migrating {} points in ID tracker from RocksDB into new format",
-        old_id_tracker.total_point_count(),
-    );
-
-    fn migrate(
-        old_id_tracker: &SimpleIdTracker,
-        segment_path: &Path,
-    ) -> OperationResult<MutableIdTracker> {
-        // Construct mutable ID tracker
-        let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
-        debug_assert_eq!(
-            new_id_tracker.total_point_count(),
-            0,
-            "new mutable ID tracker must be empty",
-        );
-
-        // Set external ID to internal ID mapping
-        for (external_id, internal_id) in old_id_tracker.point_mappings().iter_from(None) {
-            new_id_tracker.set_link(external_id, internal_id)?;
-        }
-
-        // Copy all point versions and set known mappings
-        for (internal_id, version) in old_id_tracker.iter_versions() {
-            new_id_tracker.set_internal_version(internal_id, version)?;
-        }
-
-        // Flush mappings and versions
-        new_id_tracker.mapping_flusher()()?;
-        new_id_tracker.versions_flusher()()?;
-
-        Ok(new_id_tracker)
-    }
-
-    let new_id_tracker = match migrate(&old_id_tracker, segment_path) {
-        Ok(new_id_tracker) => new_id_tracker,
-        // On migration error, clean up and remove all new ID tracker files
-        Err(err) => {
-            for file in MutableIdTracker::segment_files(segment_path) {
-                if let Err(err) = fs::remove_file(&file) {
-                    log::error!(
-                        "ID tracker migration to mutable failed, failed to remove mutable file {} for cleanup: {err}",
-                        file.display(),
-                    );
-                }
-            }
-            return Err(err);
-        }
-    };
-
-    // Destroy persisted RocksDB ID tracker data
-    old_id_tracker.destroy()?;
-
-    Ok(new_id_tracker)
-}
-
-#[cfg(feature = "rocksdb")]
-fn migrate_all_rocksdb_dense_vector_storages(
-    path: &Path,
-    segment: &mut Segment,
-    segment_state: &mut SegmentState,
-) -> OperationResult<()> {
-    use std::ops::Deref;
-
-    for (vector_name, data) in &mut segment.vector_data {
-        // Only convert simple dense and multi dense vector storages
-        if !matches!(
-            data.vector_storage.borrow().deref(),
-            VectorStorageEnum::DenseSimple(_)
-                | VectorStorageEnum::DenseSimpleByte(_)
-                | VectorStorageEnum::DenseSimpleHalf(_)
-                | VectorStorageEnum::MultiDenseSimple(_)
-                | VectorStorageEnum::MultiDenseSimpleByte(_)
-                | VectorStorageEnum::MultiDenseSimpleHalf(_)
-        ) {
-            continue;
-        }
-
-        let vector_storage_path = get_vector_storage_path(path, vector_name);
-        let vector_config = segment_state.config.vector_data.get(vector_name).unwrap();
-        let multivector_config = vector_config.multivector_config;
-
-        // Actively migrate away from RocksDB
-        let new_storage = if let Some(multi_vector_config) = multivector_config {
-            migrate_rocksdb_multi_dense_vector_storage_to_mmap(
-                data.vector_storage.borrow().deref(),
-                vector_config.size,
-                multi_vector_config,
-                &vector_storage_path,
-            )?
-        } else {
-            migrate_rocksdb_dense_vector_storage_to_mmap(
-                data.vector_storage.borrow().deref(),
-                vector_config.size,
-                &vector_storage_path,
-            )?
-        };
-
-        let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
-
-        // Update storage type
-        segment_state
-            .config
-            .vector_data
-            .get_mut(vector_name)
-            .unwrap()
-            .storage_type = VectorStorageType::InRamChunkedMmap;
-        Segment::save_state(segment_state, path)?;
-
-        // Destroy persisted RocksDB dense vector data
-        match old_storage {
-            VectorStorageEnum::DenseSimple(storage) => storage.destroy()?,
-            VectorStorageEnum::DenseSimpleByte(storage) => storage.destroy()?,
-            VectorStorageEnum::DenseSimpleHalf(storage) => storage.destroy()?,
-            VectorStorageEnum::MultiDenseSimple(storage) => storage.destroy()?,
-            VectorStorageEnum::MultiDenseSimpleByte(storage) => storage.destroy()?,
-            VectorStorageEnum::MultiDenseSimpleHalf(storage) => storage.destroy()?,
-            _ => unreachable!("unexpected vector storage type"),
-        }
-
-        // Also update config in already loaded segment
-        segment.segment_config = segment_state.config.clone();
-    }
-
-    Ok(())
-}
-
-/// Migrate a RocksDB based dense vector storage into the mmap format
-///
-/// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
-/// from the RocksDB based storage into it. The new vector storage is returned.
-///
-/// Warning: the old vector storage is not destroyed, so it must be done manually
-#[cfg(feature = "rocksdb")]
-pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
-    old_storage: &VectorStorageEnum,
-    dim: usize,
-    vector_storage_path: &Path,
-) -> OperationResult<VectorStorageEnum> {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::generic_consts::Sequential;
-    use common::types::PointOffsetType;
-
-    use crate::vector_storage::dense::appendable_dense_vector_storage::find_storage_files;
-
-    log::info!(
-        "Migrating {} points in dense vector storage from RocksDB into new format",
-        old_storage.total_vector_count(),
-    );
-
-    fn migrate(
-        old_storage: &VectorStorageEnum,
-        dim: usize,
-        vector_storage_path: &Path,
-    ) -> OperationResult<VectorStorageEnum> {
-        // Construct mmap based dense vector storage
-        let mut new_storage = open_appendable_memmap_vector_storage(
-            old_storage.datatype(),
-            vector_storage_path,
-            dim,
-            old_storage.distance(),
-            AdviceSetting::Global,
-            true,
-        )?;
-        debug_assert_eq!(
-            new_storage.total_vector_count(),
-            0,
-            "new dense vector storage must be empty",
-        );
-
-        // Copy all vectors and deletes into new storage
-        let hw_counter = HardwareCounterCell::disposable();
-        for internal_id in 0..old_storage.total_vector_count() as PointOffsetType {
-            let vector = old_storage.get_vector::<Sequential>(internal_id);
-            new_storage.insert_vector(internal_id, vector.as_vec_ref(), &hw_counter)?;
-
-            let is_deleted = old_storage.is_deleted_vector(internal_id);
-            if is_deleted {
-                new_storage.delete_vector(internal_id)?;
-            }
-        }
-
-        // Flush new storage
-        new_storage.flusher()()?;
-
-        Ok(new_storage)
-    }
-
-    let new_storage = match migrate(old_storage, dim, vector_storage_path) {
-        Ok(new_storage) => new_storage,
-        // On migration error, clean up and remove all new storage files
-        Err(err) => {
-            let files = find_storage_files(vector_storage_path);
-            match files {
-                Ok(files) => {
-                    for file in files {
-                        if let Err(err) = fs::remove_file(&file) {
-                            log::error!(
-                                "Dense vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
-                                file.display(),
-                            );
-                        }
-                    }
-                }
-                Err(err) => {
-                    log::error!(
-                        "Dense vector storage migration to mmap failed, failed to list its storage files, they are left behind: {err}",
-                    );
-                }
-            }
-            return Err(err);
-        }
-    };
-
-    Ok(new_storage)
-}
-
-/// Migrate a RocksDB based multi dense vector storage into the mmap format
-///
-/// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
-/// from the RocksDB based storage into it. The new vector storage is returned.
-///
-/// Warning: the old vector storage is not destroyed, so it must be done manually
-#[cfg(feature = "rocksdb")]
-pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
-    old_storage: &VectorStorageEnum,
-    dim: usize,
-    multi_vector_config: MultiVectorConfig,
-    vector_storage_path: &Path,
-) -> OperationResult<VectorStorageEnum> {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::generic_consts::Sequential;
-    use common::types::PointOffsetType;
-
-    use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::find_storage_files;
-
-    log::info!(
-        "Migrating {} points in multi dense vector storage from RocksDB into new format",
-        old_storage.total_vector_count(),
-    );
-
-    fn migrate(
-        old_storage: &VectorStorageEnum,
-        dim: usize,
-        multi_vector_config: MultiVectorConfig,
-        vector_storage_path: &Path,
-    ) -> OperationResult<VectorStorageEnum> {
-        // Construct mmap based multi dense vector storage
-        let mut new_storage = open_appendable_memmap_multi_vector_storage(
-            old_storage.datatype(),
-            vector_storage_path,
-            dim,
-            old_storage.distance(),
-            multi_vector_config,
-            AdviceSetting::Global,
-            true,
-        )?;
-        debug_assert_eq!(
-            new_storage.total_vector_count(),
-            0,
-            "new multi dense vector storage must be empty",
-        );
-
-        // Copy all vectors and deletes into new storage
-        let hw_counter = HardwareCounterCell::disposable();
-        for internal_id in 0..old_storage.total_vector_count() as PointOffsetType {
-            let vector = old_storage.get_vector::<Sequential>(internal_id);
-            new_storage.insert_vector(internal_id, vector.as_vec_ref(), &hw_counter)?;
-
-            let is_deleted = old_storage.is_deleted_vector(internal_id);
-            if is_deleted {
-                new_storage.delete_vector(internal_id)?;
-            }
-        }
-
-        // Flush new storage
-        new_storage.flusher()()?;
-
-        Ok(new_storage)
-    }
-
-    let new_storage = match migrate(old_storage, dim, multi_vector_config, vector_storage_path) {
-        Ok(new_storage) => new_storage,
-        // On migration error, clean up and remove all new storage files
-        Err(err) => {
-            let files = find_storage_files(vector_storage_path);
-            match files {
-                Ok(files) => {
-                    for file in files {
-                        if let Err(err) = fs::remove_file(&file) {
-                            log::error!(
-                                "Multi dense vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
-                                file.display(),
-                            );
-                        }
-                    }
-                }
-                Err(err) => {
-                    log::error!(
-                        "Multi dense vector storage migration to mmap failed, failed to list its storage files, they are left behind: {err}",
-                    );
-                }
-            }
-            return Err(err);
-        }
-    };
-
-    Ok(new_storage)
-}
-
-#[cfg(feature = "rocksdb")]
-fn migrate_all_rocksdb_sparse_vector_storages(
-    path: &Path,
-    segment: &mut Segment,
-    segment_state: &mut SegmentState,
-) -> OperationResult<()> {
-    use std::ops::Deref;
-
-    for (vector_name, data) in &mut segment.vector_data {
-        // Only convert simple sparse vector storages
-        if !matches!(
-            data.vector_storage.borrow().deref(),
-            VectorStorageEnum::SparseSimple(_),
-        ) {
-            continue;
-        }
-
-        let vector_storage_path = get_vector_storage_path(path, vector_name);
-
-        // Actively migrate away from RocksDB
-        let new_storage = migrate_rocksdb_sparse_vector_storage_to_mmap(
-            data.vector_storage.borrow().deref(),
-            &vector_storage_path,
-        )?;
-
-        let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
-
-        // Update storage type
-        segment_state
-            .config
-            .sparse_vector_data
-            .get_mut(vector_name)
-            .unwrap()
-            .storage_type = SparseVectorStorageType::Mmap;
-        Segment::save_state(segment_state, path)?;
-
-        // Destroy persisted RocksDB sparse vector data
-        match old_storage {
-            VectorStorageEnum::SparseSimple(storage) => storage.destroy()?,
-            _ => unreachable!("unexpected vector storage type"),
-        }
-
-        // Also update config in already loaded segment
-        segment.segment_config = segment_state.config.clone();
-    }
-
-    Ok(())
-}
-
-/// Migrate a RocksDB based sparse vector storage into the mmap format
-///
-/// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
-/// from the RocksDB based storage into it. The new vector storage is returned.
-///
-/// Warning: the old vector storage is not destroyed, so it must be done manually
-#[cfg(feature = "rocksdb")]
-pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
-    old_storage: &VectorStorageEnum,
-    vector_storage_path: &Path,
-) -> OperationResult<VectorStorageEnum> {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::generic_consts::Sequential;
-    use common::types::PointOffsetType;
-
-    use crate::vector_storage::sparse::mmap_sparse_vector_storage::find_storage_files;
-
-    log::info!(
-        "Migrating {} points in sparse vector storage from RocksDB into new format",
-        old_storage.total_vector_count(),
-    );
-
-    fn migrate(
-        old_storage: &VectorStorageEnum,
-        vector_storage_path: &Path,
-    ) -> OperationResult<VectorStorageEnum> {
-        // Construct mmap based sparse vector storage
-        let mut new_storage = VectorStorageEnum::SparseMmap(
-            MmapSparseVectorStorage::open_or_create(vector_storage_path)?,
-        );
-        debug_assert_eq!(
-            new_storage.total_vector_count(),
-            0,
-            "new sparse vector storage must be empty",
-        );
-
-        // Copy all vectors and deletes into new storage
-        let hw_counter = HardwareCounterCell::disposable();
-        for internal_id in 0..old_storage.total_vector_count() as PointOffsetType {
-            let vector = old_storage.get_vector::<Sequential>(internal_id);
-            new_storage.insert_vector(internal_id, vector.as_vec_ref(), &hw_counter)?;
-
-            let is_deleted = old_storage.is_deleted_vector(internal_id);
-            if is_deleted {
-                new_storage.delete_vector(internal_id)?;
-            }
-        }
-
-        // Flush new storage
-        new_storage.flusher()()?;
-
-        Ok(new_storage)
-    }
-
-    let new_storage = match migrate(old_storage, vector_storage_path) {
-        Ok(new_storage) => new_storage,
-        // On migration error, clean up and remove all new storage files
-        Err(err) => {
-            let files = find_storage_files(vector_storage_path);
-            match files {
-                Ok(files) => {
-                    for file in files {
-                        if let Err(err) = fs::remove_file(&file) {
-                            log::error!(
-                                "Sparse vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
-                                file.display(),
-                            );
-                        }
-                    }
-                }
-                Err(err) => {
-                    log::error!(
-                        "Sparse vector storage migration to mmap failed, failed to list its storage files, they are left behind: {err}",
-                    );
-                }
-            }
-            return Err(err);
-        }
-    };
-
-    Ok(new_storage)
-}
-
-#[cfg(feature = "rocksdb")]
-fn migrate_rocksdb_payload_storage(
-    path: &Path,
-    segment: &mut Segment,
-    segment_state: &mut SegmentState,
-) -> OperationResult<()> {
-    use std::ops::Deref;
-
-    use crate::payload_storage::PayloadStorage;
-
-    if !matches!(
-        segment.payload_storage.borrow().deref(),
-        PayloadStorageEnum::SimplePayloadStorage(_) | PayloadStorageEnum::OnDiskPayloadStorage(_),
-    ) {
-        return Ok(());
-    }
-
-    // Actively migrate away from RocksDB
-    let new_storage =
-        migrate_rocksdb_payload_storage_to_mmap(segment.payload_storage.borrow().deref(), path)?;
-
-    let old_storage = std::mem::replace(&mut *segment.payload_storage.borrow_mut(), new_storage);
-
-    // Update storage type
-    segment_state.config.payload_storage_type = if old_storage.is_on_disk() {
-        PayloadStorageType::Mmap
-    } else {
-        PayloadStorageType::InRamMmap
-    };
-    Segment::save_state(segment_state, path)?;
-
-    // Destroy persisted RocksDB payload data
-    match old_storage {
-        PayloadStorageEnum::SimplePayloadStorage(storage) => storage.destroy()?,
-        PayloadStorageEnum::OnDiskPayloadStorage(storage) => storage.destroy()?,
-        PayloadStorageEnum::MmapPayloadStorage(_) => {
-            unreachable!("unexpected payload storage type")
-        }
-        #[cfg(feature = "testing")]
-        PayloadStorageEnum::InMemoryPayloadStorage(_) => {
-            unreachable!("unexpected payload storage type")
-        }
-    }
-
-    // Also update config in already loaded segment
-    segment.segment_config = segment_state.config.clone();
-
-    Ok(())
-}
-
-/// Migrate a RocksDB based payload storage storage into the mmap format
-///
-/// Creates a new payload storage on top of memory maps, and copies all payloads
-/// from the RocksDB based storage into it. The new payload storage is returned.
-///
-/// Warning: the old payload storage is not destroyed, so it must be done manually
-#[cfg(feature = "rocksdb")]
-pub fn migrate_rocksdb_payload_storage_to_mmap(
-    old_storage: &PayloadStorageEnum,
-    segment_path: &Path,
-) -> OperationResult<PayloadStorageEnum> {
-    use common::counter::hardware_counter::HardwareCounterCell;
-
-    use crate::payload_storage::{PayloadStorage, mmap_payload_storage};
-
-    log::info!(
-        "Migrating {} of payload storage from RocksDB into new format",
-        common::bytes::bytes_to_human(old_storage.get_storage_size_bytes().unwrap_or(0)),
-    );
-
-    fn migrate(
-        old_storage: &PayloadStorageEnum,
-        segment_path: &Path,
-    ) -> OperationResult<PayloadStorageEnum> {
-        // Construct mmap based payload storage
-        let mut new_storage = PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
-            segment_path.to_path_buf(),
-            !old_storage.is_on_disk(),
-        )?);
-
-        // Copy all payloads and deletes into new storage
-        let hw_counter = HardwareCounterCell::disposable();
-        old_storage.iter(
-            |internal_id, payload| {
-                new_storage.set(internal_id, payload, &hw_counter)?;
-                Ok(true)
-            },
-            &hw_counter,
-        )?;
-
-        // Flush new storage
-        new_storage.flusher()()?;
-
-        Ok(new_storage)
-    }
-
-    let new_storage = match migrate(old_storage, segment_path) {
-        Ok(new_storage) => new_storage,
-        // On migration error, clean up and remove all new storage files
-        Err(err) => {
-            let storage_dir = mmap_payload_storage::storage_dir(segment_path);
-            if storage_dir.is_dir()
-                && let Err(err) = fs::remove_dir_all(&storage_dir)
-            {
-                log::error!(
-                    "Payload storage migration to mmap failed, failed to remove mmap files in {} for cleanup: {err}",
-                    storage_dir.display(),
-                );
-            }
-            return Err(err);
-        }
-    };
-
-    Ok(new_storage)
 }

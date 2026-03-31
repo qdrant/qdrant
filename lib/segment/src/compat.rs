@@ -76,10 +76,6 @@ impl From<SegmentConfigV5> for SegmentConfig {
 
         // ToDo: remove this whole thing once we drop rocksdb support
 
-        #[cfg(feature = "rocksdb")]
-        let default_storage_type = PayloadStorageType::OnDisk;
-
-        #[cfg(not(feature = "rocksdb"))]
         let default_storage_type = PayloadStorageType::Mmap;
 
         SegmentConfig {

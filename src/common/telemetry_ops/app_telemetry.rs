@@ -87,7 +87,7 @@ impl AppBuildTelemetry {
                 service_debug_feature: cfg!(feature = "service_debug"),
                 recovery_mode: settings.storage.recovery_mode.is_some(),
                 gpu: cfg!(feature = "gpu"),
-                rocksdb: cfg!(feature = "rocksdb"),
+                rocksdb: false,
                 staging: cfg!(feature = "staging"),
             }),
             runtime_features: (detail.level >= DetailsLevel::Level1)

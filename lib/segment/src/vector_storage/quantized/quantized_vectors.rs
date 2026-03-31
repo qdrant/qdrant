@@ -461,33 +461,6 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         match vector_storage {
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimple(v) => Self::create_impl(
-                v,
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleByte(v) => Self::create_impl(
-                v,
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleHalf(v) => Self::create_impl(
-                v,
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
             VectorStorageEnum::DenseVolatile(v) => Self::create_impl(
                 v,
                 quantization_config,
@@ -589,37 +562,8 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseMmap(_) => Err(OperationError::WrongSparse),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimple(v) => Self::create_multi_impl(
-                v,
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleByte(v) => Self::create_multi_impl(
-                v,
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => Self::create_multi_impl(
-                v,
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
             VectorStorageEnum::MultiDenseVolatile(v) => Self::create_multi_impl(
                 v,
                 quantization_config,

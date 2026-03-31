@@ -12285,43 +12285,8 @@
             "default": false,
             "type": "boolean"
           },
-          "payload_index_skip_rocksdb": {
-            "description": "Skip usage of RocksDB in new immutable payload indices.\n\nFirst implemented in Qdrant 1.13.5. Enabled by default in Qdrant 1.14.1.",
-            "default": true,
-            "type": "boolean"
-          },
-          "payload_index_skip_mutable_rocksdb": {
-            "description": "Skip usage of RocksDB in new mutable payload indices.\n\nFirst implemented in Qdrant 1.15.0. Enabled by default in Qdrant 1.16.0.",
-            "default": true,
-            "type": "boolean"
-          },
-          "payload_storage_skip_rocksdb": {
-            "description": "Skip usage of RocksDB in new payload storages.\n\nOn-disk payload storages never use Gridstore.\n\nFirst implemented in Qdrant 1.15.0. Enabled by default in Qdrant 1.16.0.",
-            "default": true,
-            "type": "boolean"
-          },
           "incremental_hnsw_building": {
             "description": "Use incremental HNSW building.\n\nEnabled by default in Qdrant 1.14.1.",
-            "default": true,
-            "type": "boolean"
-          },
-          "migrate_rocksdb_id_tracker": {
-            "description": "Migrate RocksDB based ID trackers into file based ID tracker on start.\n\nEnabled by default in Qdrant 1.15.0.",
-            "default": true,
-            "type": "boolean"
-          },
-          "migrate_rocksdb_vector_storage": {
-            "description": "Migrate RocksDB based vector storages into new format on start.\n\nEnabled by default in Qdrant 1.16.1.",
-            "default": true,
-            "type": "boolean"
-          },
-          "migrate_rocksdb_payload_storage": {
-            "description": "Migrate RocksDB based payload storages into new format on start.\n\nEnabled by default in Qdrant 1.16.1.",
-            "default": true,
-            "type": "boolean"
-          },
-          "migrate_rocksdb_payload_indices": {
-            "description": "Migrate RocksDB based payload indices into new format on start.\n\nRebuilds a new payload index from scratch.\n\nEnabled by default in Qdrant 1.16.1.",
             "default": true,
             "type": "boolean"
           },
@@ -13188,13 +13153,6 @@
       "SparseVectorStorageType": {
         "oneOf": [
           {
-            "description": "Storage on disk (rocksdb storage)",
-            "type": "string",
-            "enum": [
-              "on_disk"
-            ]
-          },
-          {
             "description": "Storage in memory maps (gridstore storage)",
             "type": "string",
             "enum": [
@@ -13206,34 +13164,6 @@
       "PayloadStorageType": {
         "description": "Type of payload storage",
         "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "in_memory"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "on_disk"
-                ]
-              }
-            }
-          },
           {
             "type": "object",
             "required": [

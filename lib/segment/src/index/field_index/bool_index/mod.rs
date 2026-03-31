@@ -1,8 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use mutable_bool_index::MutableBoolIndex;
-#[cfg(feature = "rocksdb")]
-use simple_bool_index::SimpleBoolIndex;
 
 use super::facet_index::FacetIndex;
 use super::map_index::IdIter;
@@ -13,20 +11,14 @@ use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 
 pub mod mutable_bool_index;
-#[cfg(feature = "rocksdb")]
-pub mod simple_bool_index;
 
 pub enum BoolIndex {
-    #[cfg(feature = "rocksdb")]
-    Simple(SimpleBoolIndex),
     Mmap(MutableBoolIndex),
 }
 
 impl BoolIndex {
     pub fn get_point_values(&self, point_id: PointOffsetType) -> Vec<bool> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.get_point_values(point_id),
             BoolIndex::Mmap(index) => index.get_point_values(point_id),
         }
     }
@@ -36,16 +28,12 @@ impl BoolIndex {
         hw_acc: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = (bool, IdIter<'a>)> + 'a> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => Box::new(index.iter_values_map()),
             BoolIndex::Mmap(index) => Box::new(index.iter_values_map(hw_acc)),
         }
     }
 
     pub fn iter_values(&self) -> Box<dyn Iterator<Item = bool> + '_> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => Box::new(index.iter_values()),
             BoolIndex::Mmap(index) => Box::new(index.iter_values()),
         }
     }
@@ -55,24 +43,18 @@ impl BoolIndex {
         deferred_internal_id: Option<PointOffsetType>,
     ) -> Box<dyn Iterator<Item = (bool, usize)> + '_> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => Box::new(index.iter_counts_per_value()),
             BoolIndex::Mmap(index) => Box::new(index.iter_counts_per_value(deferred_internal_id)),
         }
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.get_telemetry_data(),
             BoolIndex::Mmap(index) => index.get_telemetry_data(),
         }
     }
 
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.values_count(point_id),
             BoolIndex::Mmap(index) => index.values_count(point_id),
         }
     }
@@ -84,33 +66,19 @@ impl BoolIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> bool {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.check_values_any(point_id, is_true),
             BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true),
         }
     }
 
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.values_is_empty(point_id),
             BoolIndex::Mmap(index) => index.values_is_empty(point_id),
         }
     }
 
     pub fn is_on_disk(&self) -> bool {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(_) => false,
             BoolIndex::Mmap(index) => index.is_on_disk(),
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self {
-            BoolIndex::Simple(_) => true,
-            BoolIndex::Mmap(_) => false,
         }
     }
 
@@ -118,8 +86,6 @@ impl BoolIndex {
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(_) => {} // Not a mmap
             BoolIndex::Mmap(index) => index.populate()?,
         }
         Ok(())
@@ -128,8 +94,6 @@ impl BoolIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(_) => {} // Not a mmap
             BoolIndex::Mmap(index) => index.clear_cache()?,
         }
         Ok(())
@@ -137,8 +101,6 @@ impl BoolIndex {
 
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(_) => IndexMutability::Mutable,
             // Mmap bool index can be both mutable and immutable, so we pick mutable
             BoolIndex::Mmap(_) => IndexMutability::Mutable,
         }
@@ -146,8 +108,6 @@ impl BoolIndex {
 
     pub fn get_storage_type(&self) -> StorageType {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(_) => crate::index::payload_config::StorageType::RocksDb,
             BoolIndex::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
@@ -158,40 +118,30 @@ impl BoolIndex {
 impl PayloadFieldIndex for BoolIndex {
     fn count_indexed_points(&self) -> usize {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.count_indexed_points(),
             BoolIndex::Mmap(index) => index.count_indexed_points(),
         }
     }
 
     fn wipe(self) -> OperationResult<()> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.wipe(),
             BoolIndex::Mmap(index) => index.wipe(),
         }
     }
 
     fn flusher(&self) -> crate::common::Flusher {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.flusher(),
             BoolIndex::Mmap(index) => index.flusher(),
         }
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.files(),
             BoolIndex::Mmap(index) => index.files(),
         }
     }
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(_) => vec![],
             BoolIndex::Mmap(index) => index.immutable_files(),
         }
     }
@@ -202,8 +152,6 @@ impl PayloadFieldIndex for BoolIndex {
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.filter(condition, hw_counter),
             BoolIndex::Mmap(index) => index.filter(condition, hw_counter),
         }
     }
@@ -214,8 +162,6 @@ impl PayloadFieldIndex for BoolIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<super::CardinalityEstimation>> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.estimate_cardinality(condition, hw_counter),
             BoolIndex::Mmap(index) => index.estimate_cardinality(condition, hw_counter),
         }
     }
@@ -226,8 +172,6 @@ impl PayloadFieldIndex for BoolIndex {
         key: crate::types::PayloadKeyType,
     ) -> Box<dyn Iterator<Item = OperationResult<super::PayloadBlockCondition>> + '_> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.payload_blocks(threshold, key),
             BoolIndex::Mmap(index) => index.payload_blocks(threshold, key),
         }
     }
@@ -277,8 +221,6 @@ impl ValueIndexer for BoolIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.add_many(id, values, hw_counter),
             BoolIndex::Mmap(index) => index.add_many(id, values, hw_counter),
         }
     }
@@ -292,8 +234,6 @@ impl ValueIndexer for BoolIndex {
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.remove_point(id),
             BoolIndex::Mmap(index) => index.remove_point(id),
         }
     }
@@ -312,10 +252,6 @@ mod tests {
 
     use super::BoolIndex;
     use super::mutable_bool_index::MutableBoolIndex;
-    #[cfg(feature = "rocksdb")]
-    use super::simple_bool_index::SimpleBoolIndex;
-    #[cfg(feature = "rocksdb")]
-    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::index::field_index::{FieldIndexBuilderTrait as _, PayloadFieldIndex, ValueIndexer};
     use crate::json_path::JsonPath;
 
@@ -324,17 +260,6 @@ mod tests {
 
     trait OpenIndex {
         fn open_at(path: &Path) -> BoolIndex;
-    }
-
-    #[cfg(feature = "rocksdb")]
-    impl OpenIndex for SimpleBoolIndex {
-        fn open_at(path: &Path) -> BoolIndex {
-            let db = open_db_with_existing_cf(path).unwrap();
-            let index = SimpleBoolIndex::new(db.clone(), FIELD_NAME, true)
-                .unwrap()
-                .unwrap();
-            BoolIndex::Simple(index)
-        }
     }
 
     impl OpenIndex for MutableBoolIndex {
@@ -401,8 +326,6 @@ mod tests {
     #[case(json!([false, false]), 0)]
     #[case(json!([true, true]), 1)]
     fn test_filter_true(#[case] given: serde_json::Value, #[case] expected_count: usize) {
-        #[cfg(feature = "rocksdb")]
-        filter::<SimpleBoolIndex>(given.clone(), true, expected_count);
         filter::<MutableBoolIndex>(given, true, expected_count);
     }
 
@@ -416,15 +339,11 @@ mod tests {
     #[case(json!([false, false]), 1)]
     #[case(json!([true, true]), 0)]
     fn test_filter_false(#[case] given: serde_json::Value, #[case] expected_count: usize) {
-        #[cfg(feature = "rocksdb")]
-        filter::<SimpleBoolIndex>(given.clone(), false, expected_count);
         filter::<MutableBoolIndex>(given, false, expected_count);
     }
 
     #[test]
     fn test_load_from_disk() {
-        #[cfg(feature = "rocksdb")]
-        load_from_disk::<SimpleBoolIndex>();
         load_from_disk::<MutableBoolIndex>();
     }
 
@@ -470,8 +389,6 @@ mod tests {
     #[case(json!(false), json!(true))]
     #[case(json!([false, true]), json!(true))]
     fn test_modify_value(#[case] before: serde_json::Value, #[case] after: serde_json::Value) {
-        #[cfg(feature = "rocksdb")]
-        modify_value::<SimpleBoolIndex>(before.clone(), after.clone());
         modify_value::<MutableBoolIndex>(before, after);
     }
 
@@ -513,8 +430,6 @@ mod tests {
 
     #[test]
     fn test_indexed_count() {
-        #[cfg(feature = "rocksdb")]
-        indexed_count::<SimpleBoolIndex>();
         indexed_count::<MutableBoolIndex>();
     }
 
@@ -536,8 +451,6 @@ mod tests {
 
     #[test]
     fn test_payload_blocks() {
-        #[cfg(feature = "rocksdb")]
-        payload_blocks::<SimpleBoolIndex>();
         payload_blocks::<MutableBoolIndex>();
     }
 
@@ -565,8 +478,6 @@ mod tests {
 
     #[test]
     fn test_estimate_cardinality() {
-        #[cfg(feature = "rocksdb")]
-        estimate_cardinality::<SimpleBoolIndex>();
         estimate_cardinality::<MutableBoolIndex>();
     }
 

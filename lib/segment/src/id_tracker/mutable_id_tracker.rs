@@ -920,8 +920,6 @@ pub(super) mod tests {
 
     use fs_err as fs;
     use itertools::Itertools;
-    #[cfg(feature = "rocksdb")]
-    use rand::Rng;
     use rand::prelude::*;
     use tempfile::Builder;
     use uuid::Uuid;
@@ -929,8 +927,6 @@ pub(super) mod tests {
     use super::*;
     use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
     use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-    #[cfg(feature = "rocksdb")]
-    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;
     const DEFAULT_VERSION: SeqNumberType = 42;
@@ -1441,7 +1437,9 @@ pub(super) mod tests {
     }
 
     #[test]
-    #[cfg(feature = "rocksdb")]
+    // TODO(rocksdb): fix and re-enable
+    // https://github.com/qdrant/qdrant/pull/8529#discussion_r3014389245
+    #[cfg(false)]
     fn simple_id_tracker_vs_mutable_tracker_congruence() {
         use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 

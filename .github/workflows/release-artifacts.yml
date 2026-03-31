@@ -46,14 +46,13 @@ jobs:
         with:
           bin: qdrant
           target: ${{ matrix.target }}
-          features: rocksdb
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Debian Package
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           bash -x tools/sync-web-ui.sh
           cargo install cargo-deb
-          cargo deb --no-strip --features rocksdb --target ${{ matrix.target }}
+          cargo deb --no-strip --target ${{ matrix.target }}
       - name: Upload Debian package
         if: matrix.target == 'x86_64-unknown-linux-musl'
         uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
@@ -107,7 +106,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build
-        run: cargo build --features rocksdb --release --locked
+        run: cargo build --release --locked
 
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@0e34102c043ded9f2ca39f7af5cd99a540c61aff # v1.29.1
@@ -138,7 +137,7 @@ jobs:
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Build release binary
-        run: cargo build --features rocksdb --release --locked
+        run: cargo build --release --locked
 
       - name: Build AppImage
         shell: bash

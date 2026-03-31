@@ -3,18 +3,10 @@ use std::path::PathBuf;
 
 use ahash::AHashSet;
 use common::types::PointOffsetType;
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 
 use super::mmap_geo_index::MmapGeoMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::payload_config::StorageType;
@@ -55,87 +47,10 @@ pub struct ImmutableGeoMapIndex {
 }
 
 enum Storage {
-    #[cfg(feature = "rocksdb")]
-    RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Mmap(Box<MmapGeoMapIndex>),
 }
 
 impl ImmutableGeoMapIndex {
-    /// Open and load immutable geo index from RocksDB storage
-    #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb(
-        db: std::sync::Arc<RwLock<DB>>,
-        store_cf_name: &str,
-    ) -> OperationResult<Option<Self>> {
-        use std::collections::BTreeMap;
-
-        use crate::index::field_index::geo_index::mutable_geo_index::{
-            InMemoryGeoMapIndex, MutableGeoMapIndex,
-        };
-
-        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
-            db,
-            store_cf_name,
-        ));
-
-        let Some(mutable) = MutableGeoMapIndex::open_rocksdb(
-            db_wrapper.get_database(),
-            db_wrapper.get_column_name(),
-            false,
-        )?
-        else {
-            // Column family doesn't exist, cannot load
-            return Ok(None);
-        };
-
-        let InMemoryGeoMapIndex {
-            points_per_hash,
-            values_per_hash,
-            points_map,
-            point_to_values,
-            points_count,
-            points_values_count,
-            max_values_per_point,
-            ..
-        } = mutable.into_in_memory_index();
-
-        let mut counts_per_hash: BTreeMap<GeoHash, Counts> = Default::default();
-        for (hash, points) in points_per_hash {
-            counts_per_hash.insert(
-                hash,
-                Counts {
-                    hash,
-                    points: points as u32,
-                    values: 0,
-                },
-            );
-        }
-        for (hash, values) in values_per_hash {
-            if let Some(counts) = counts_per_hash.get_mut(&hash) {
-                counts.values = values as u32;
-            } else {
-                counts_per_hash.insert(
-                    hash,
-                    Counts {
-                        hash,
-                        points: 0,
-                        values: values as u32,
-                    },
-                );
-            }
-        }
-
-        Ok(Some(Self {
-            counts_per_hash: counts_per_hash.values().cloned().collect(),
-            points_map: points_map.iter().map(|(k, v)| (*k, v.clone())).collect(),
-            point_to_values: ImmutablePointToValues::new(point_to_values),
-            points_count,
-            points_values_count,
-            max_values_per_point,
-            storage: Storage::RocksDb(db_wrapper),
-        }))
-    }
-
     /// Open and load immutable geo index from mmap storage
     pub fn open_mmap(index: MmapGeoMapIndex) -> OperationResult<Self> {
         let counts_per_hash = index
@@ -236,27 +151,14 @@ impl ImmutableGeoMapIndex {
         Ok(index)
     }
 
-    #[cfg(all(test, feature = "rocksdb"))]
-    pub fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
-            Storage::Mmap(_) => None,
-        }
-    }
-
     pub fn files(&self) -> Vec<PathBuf> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Mmap(ref index) => index.files(),
         }
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Mmap(index) => index.immutable_files(),
         }
     }
@@ -267,8 +169,6 @@ impl ImmutableGeoMapIndex {
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => Ok(()),
             Storage::Mmap(index) => index.clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear immutable geo index gridstore cache: {err}"
@@ -279,16 +179,12 @@ impl ImmutableGeoMapIndex {
 
     pub fn wipe(self) -> OperationResult<()> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.remove_column_family(),
             Storage::Mmap(index) => index.wipe(),
         }
     }
 
     pub fn flusher(&self) -> Flusher {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
             Storage::Mmap(ref index) => index.flusher(),
         }
     }
@@ -366,11 +262,6 @@ impl ImmutableGeoMapIndex {
             removed_geo_hashes.push(removed_geo_hash);
 
             match self.storage {
-                #[cfg(feature = "rocksdb")]
-                Storage::RocksDb(ref db_wrapper) => {
-                    let key = super::GeoMapIndex::encode_db_key(removed_geo_hash, idx);
-                    db_wrapper.remove(&key)?;
-                }
                 Storage::Mmap(ref mut index) => {
                     index.remove_point(idx);
                 }
@@ -458,19 +349,9 @@ impl ImmutableGeoMapIndex {
 
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self.storage {
-            Storage::RocksDb(_) => true,
-            Storage::Mmap(_) => false,
         }
     }
 }

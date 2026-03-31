@@ -23,8 +23,6 @@ use rand::Rng;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-#[cfg(feature = "rocksdb")]
-use super::rocksdb_builder::RocksDbBuilder;
 use super::{
     create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
     create_sparse_vector_storage, get_payload_index_path, get_vector_index_path,
@@ -93,30 +91,13 @@ impl SegmentBuilder {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
 
-        #[cfg(feature = "rocksdb")]
-        let mut db_builder = RocksDbBuilder::new(temp_dir.path(), segment_config)?;
-
-        let payload_storage = create_payload_storage(
-            #[cfg(feature = "rocksdb")]
-            &mut db_builder,
-            temp_dir.path(),
-            segment_config,
-        )?;
+        let payload_storage = create_payload_storage(temp_dir.path(), segment_config)?;
 
         let mut vector_data = HashMap::new();
 
         for (vector_name, vector_config) in &segment_config.vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
-            let vector_storage = open_vector_storage(
-                #[cfg(feature = "rocksdb")]
-                &mut db_builder,
-                vector_config,
-                #[cfg(feature = "rocksdb")]
-                &Default::default(),
-                &vector_storage_path,
-                #[cfg(feature = "rocksdb")]
-                vector_name,
-            )?;
+            let vector_storage = open_vector_storage(vector_config, &vector_storage_path)?;
 
             vector_data.insert(
                 vector_name.to_owned(),
@@ -131,14 +112,8 @@ impl SegmentBuilder {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
 
             let vector_storage = create_sparse_vector_storage(
-                #[cfg(feature = "rocksdb")]
-                &mut db_builder,
                 &vector_storage_path,
-                #[cfg(feature = "rocksdb")]
-                vector_name,
                 &sparse_vector_config.storage_type,
-                #[cfg(feature = "rocksdb")]
-                &Default::default(),
             )?;
 
             vector_data.insert(
@@ -532,8 +507,6 @@ impl SegmentBuilder {
                 IdTrackerEnum::ImmutableIdTracker(_) => {
                     unreachable!("ImmutableIdTracker should not be used for building segment")
                 }
-                #[cfg(feature = "rocksdb")]
-                IdTrackerEnum::RocksDbIdTracker(_) => id_tracker,
             };
 
             id_tracker.mapping_flusher()()?;
