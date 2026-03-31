@@ -296,7 +296,7 @@ tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
-uuid = { version = "1.22", features = ["v4", "serde"] }
+uuid = { version = "1.23", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
 zerocopy = { version = "0.8.48", features = ["derive"] }
 atomic_refcell = "0.1.13"
