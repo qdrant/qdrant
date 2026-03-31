@@ -18,13 +18,17 @@ API_KEY_METADATA = [("api-key", SECRET)]
 READ_ONLY_API_KEY_METADATA = [("api-key", READ_ONLY_API_KEY)]
 
 
-def start_jwt_protected_cluster(tmp_path, num_peers=1):
-    extra_env = {
+def start_jwt_protected_cluster(tmp_path, num_peers=1, extra_env=None):
+    base_env = {
         "QDRANT__SERVICE__API_KEY": SECRET,
         "QDRANT__SERVICE__ALT_API_KEY": ALT_SECRET,
         "QDRANT__SERVICE__READ_ONLY_API_KEY": READ_ONLY_API_KEY,
         "QDRANT__SERVICE__JWT_RBAC": "true",
         "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1",  # to speed up snapshot tests
+    }
+    extra_env = {
+        **base_env,
+        **(extra_env or {}),
     }
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(
