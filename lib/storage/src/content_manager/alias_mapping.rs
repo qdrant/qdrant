@@ -98,9 +98,9 @@ impl AliasPersistence {
         new_alias_name: String,
     ) -> Result<(), StorageError> {
         match self.get(old_alias_name) {
-            None => Err(StorageError::NotFound {
-                description: format!("Alias {old_alias_name} does not exists!"),
-            }),
+            None => Err(StorageError::not_found(format!(
+                "Alias {old_alias_name} does not exists!"
+            ))),
             Some(collection_name) => {
                 self.alias_mapping.0.remove(old_alias_name);
                 self.alias_mapping.0.insert(new_alias_name, collection_name);
