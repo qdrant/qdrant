@@ -61,7 +61,7 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
     /// When `false`, submits new reads and reaps only already-available completions.
     ///
     /// Returns `true` if there is (or may be) more work, `false` if fully exhausted.
-    fn step(&mut self, wait: bool) -> Result<bool> {
+    fn step(&mut self) -> Result<bool> {
         let io_uring = self.guard.io_uring();
 
         // Fill every free slot in the submission queue with a new read.
@@ -96,15 +96,7 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
             return Ok(false);
         }
 
-        // Submit pending SQEs, optionally waiting for at least one completion.
-        let want = if wait { 1 } else { 0 };
-        self.in_progress += io_uring
-            .submit_and_wait(want)
-            .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
-
-        // `submit_and_wait` may return before completions are available on
-        // older kernels; retry until at least one completion is ready.
-        while wait && io_uring.completion().is_empty() {
+        while io_uring.completion().is_empty() {
             self.in_progress += io_uring
                 .submit_and_wait(1)
                 .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
@@ -150,14 +142,12 @@ impl<'a, T: bytemuck::Pod + 'static, I: Iterator<Item = (FileIndex, ReadRange)>>
     type Item = Result<(usize, FileIndex, Cow<'a, [T]>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Always try to refill the submission queue and reap completions.
-        // If the buffer is empty we must block-wait; otherwise just submit new
-        // reads and opportunistically collect anything already done.
-        let wait = self.buffer.is_empty();
-        match self.step(wait) {
-            Ok(false) if wait => return None,
-            Err(e) => return Some(Err(e)),
-            _ => {}
+        if self.buffer.is_empty() {
+            match self.step() {
+                Ok(false) => return None,
+                Err(e) => return Some(Err(e)),
+                _ => {}
+            }
         }
 
         let (idx, file_idx, data) = self.buffer.pop_front()?;
