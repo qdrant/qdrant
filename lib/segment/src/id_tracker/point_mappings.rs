@@ -4,9 +4,10 @@ use std::collections::btree_map::Entry;
 use std::iter;
 
 use byteorder::LittleEndian;
+use common::atomic_bitvec::{AtomicBitSlice, AtomicBitVec};
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
-use common::bitvec::{BitSlice, BitVec};
+use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 #[cfg(test)]
@@ -29,7 +30,7 @@ pub struct PointMappings {
     /// It is possible that `deleted` can be longer or shorter than `internal_to_external`.
     /// - if `deleted` is longer, then extra bits should be set to `false` and ignored.
     /// - if `deleted` is shorter, then extra indices are as if the bits were set to `true`.
-    deleted: BitVec,
+    deleted: AtomicBitVec,
     internal_to_external: Vec<PointIdType>,
 
     // Having two separate maps allows us iterating only over one type at a time without having to filter.
@@ -39,7 +40,7 @@ pub struct PointMappings {
 
 impl PointMappings {
     pub fn new(
-        deleted: BitVec,
+        deleted: AtomicBitVec,
         internal_to_external: Vec<PointIdType>,
         external_to_internal_num: BTreeMap<u64, PointOffsetType>,
         external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
@@ -62,7 +63,7 @@ impl PointMappings {
         BTreeMap<Uuid, PointOffsetType>,
     ) {
         (
-            self.deleted,
+            self.deleted.into_bitvec(),
             self.internal_to_external,
             self.external_to_internal_num,
             self.external_to_internal_uuid,
@@ -74,8 +75,8 @@ impl PointMappings {
         self.external_to_internal_num.len() + self.external_to_internal_uuid.len()
     }
 
-    pub(crate) fn deleted(&self) -> &BitSlice {
-        &self.deleted
+    pub(crate) fn deleted(&self) -> AtomicBitSlice<'_> {
+        self.deleted.as_slice()
     }
 
     pub(crate) fn internal_id(&self, external_id: &PointIdType) -> Option<PointOffsetType> {
@@ -86,7 +87,7 @@ impl PointMappings {
     }
 
     pub(crate) fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        if *self.deleted.get(internal_id as usize)? {
+        if self.deleted.get_checked(internal_id as usize)? {
             return None;
         }
 
@@ -109,7 +110,7 @@ impl PointMappings {
         }
 
         if let Some(internal_id) = &internal_id {
-            self.deleted.set(*internal_id as usize, true);
+            self.deleted.replace_concurrent(*internal_id as usize, true);
         }
 
         internal_id
@@ -133,7 +134,7 @@ impl PointMappings {
             .unique()
             .take(max_internal)
             .filter_map(move |i| {
-                if self.deleted[i] {
+                if self.deleted.get(i) {
                     None
                 } else {
                     Some((self.internal_to_external[i], i as PointOffsetType))
@@ -208,7 +209,7 @@ impl PointMappings {
     pub(crate) fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         Box::new(
             (0..self.internal_to_external.len() as PointOffsetType)
-                .filter(move |i| !self.deleted[*i as usize]),
+                .filter(move |i| !self.deleted.get(*i as usize)),
         )
     }
 
@@ -223,11 +224,7 @@ impl PointMappings {
     }
 
     pub(crate) fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        let key = key as usize;
-        if key >= self.deleted.len() {
-            return true;
-        }
-        self.deleted[key]
+        self.deleted.get_checked(key as usize).unwrap_or(true)
     }
 
     /// Sets the link between an external and internal id.
@@ -254,12 +251,12 @@ impl PointMappings {
         if let Some(old_internal_id) = &old_internal_id {
             let old_internal_id = *old_internal_id as usize;
             if old_internal_id != internal_id {
-                self.deleted.set(old_internal_id, true);
+                self.deleted.replace_concurrent(old_internal_id, true);
             }
         }
 
         self.internal_to_external[internal_id] = external_id;
-        self.deleted.set(internal_id, false);
+        self.deleted.replace_concurrent(internal_id, false);
 
         old_internal_id
     }
@@ -296,9 +293,9 @@ impl PointMappings {
         let mut internal_ids = (0..total_size).collect_vec();
         internal_ids.shuffle(rand);
 
-        let mut deleted = BitVec::repeat(true, total_size as usize);
+        let deleted = AtomicBitVec::repeat(true, total_size as usize);
         for id in &internal_ids {
-            deleted.set(*id as usize, false);
+            deleted.replace_concurrent(*id as usize, false);
         }
 
         let internal_to_external = (0..total_size)

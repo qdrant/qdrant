@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bincode;
-use common::bitvec::{BitSlice, BitVec};
+use common::atomic_bitvec::{AtomicBitSlice, AtomicBitVec};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -37,7 +37,7 @@ pub struct SimpleIdTracker {
 
 impl SimpleIdTracker {
     pub fn open(store: Arc<RwLock<DB>>) -> OperationResult<Self> {
-        let mut deleted = BitVec::new();
+        let mut deleted = AtomicBitVec::new();
         let mut internal_to_external: Vec<PointIdType> = Default::default();
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
@@ -58,7 +58,7 @@ impl SimpleIdTracker {
 
             let replaced_id = internal_to_external[internal_id as usize];
             internal_to_external[internal_id as usize] = external_id;
-            if !deleted[internal_id as usize] {
+            if !deleted.get(internal_id as usize) {
                 // Fixing corrupted mapping - this id should be recovered from WAL
                 // This should not happen in normal operation, but it can happen if
                 // the database is corrupted.
@@ -74,7 +74,7 @@ impl SimpleIdTracker {
                     }
                 }
             }
-            deleted.set(internal_id as usize, false);
+            deleted.replace_concurrent(internal_id as usize, false);
 
             match external_id {
                 PointIdType::NumId(idx) => {
@@ -274,7 +274,7 @@ impl IdTracker for SimpleIdTracker {
         self.mappings.is_deleted_point(key)
     }
 
-    fn deleted_point_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self) -> AtomicBitSlice<'_> {
         self.mappings.deleted()
     }
 
