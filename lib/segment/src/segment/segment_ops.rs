@@ -313,20 +313,7 @@ impl Segment {
 
         let mut id_tracker = self.id_tracker.borrow_mut();
 
-        let is_point_already_deleted = id_tracker.is_deleted_point(internal_id);
-
         id_tracker.drop_internal(internal_id)?;
-
-        let deferred_point_status = self.deferred_point_status.as_mut();
-
-        // Increase counter for deleted points.
-        if let Some(deferred_point_status) = deferred_point_status
-            && internal_id >= deferred_point_status.deferred_internal_id
-            // Don't count the deletion of the same point twice
-            && !is_point_already_deleted
-        {
-            deferred_point_status.deferred_deleted_count += 1;
-        }
 
         // Before, we propagated point deletions to also delete its vectors. This turns
         // out to be problematic because this sometimes makes us lose vector data
@@ -668,35 +655,6 @@ impl Segment {
     /// Returns list of IDs without mappings which should be removed from segment
     pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         self.id_tracker.borrow_mut().fix_inconsistencies()
-    }
-
-    /// Calculates the amount of deleted deferred points by iterating over all points in the ID tracker. Therefore this operation
-    /// can be expensive and should only be run once at segment creation.
-    pub(crate) fn calculate_deleted_deferred_point_count(&self) -> usize {
-        let Some(deferred_from) = self.deferred_internal_id() else {
-            return 0;
-        };
-
-        let id_tracker = self.id_tracker.borrow();
-        let total_points = id_tracker.total_point_count();
-
-        if total_points < deferred_from as usize {
-            return 0;
-        }
-
-        id_tracker.deleted_point_bitslice()[deferred_from as usize..total_points].count_ones()
-    }
-
-    pub(crate) fn deferred_internal_id(&self) -> Option<PointOffsetType> {
-        self.deferred_point_status
-            .as_ref()
-            .map(|i| i.deferred_internal_id)
-    }
-
-    pub(crate) fn deferred_deleted_count(&self) -> Option<usize> {
-        self.deferred_point_status
-            .as_ref()
-            .map(|i| i.deferred_deleted_count)
     }
 }
 

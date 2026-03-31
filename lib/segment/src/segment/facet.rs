@@ -34,6 +34,8 @@ impl Segment {
         let facet_index = payload_index.get_facet_index(&request.key)?;
         let context;
 
+        let deferred_internal_id = self.id_tracker.borrow().deferred_internal_id();
+
         let hits_iter = if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
@@ -60,7 +62,7 @@ impl Segment {
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
-                        self.deferred_internal_id(),
+                        deferred_internal_id,
                     )?
                     .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                     .fold(HashMap::new(), |mut map, point_id| {
@@ -100,8 +102,7 @@ impl Segment {
                         let count = iter
                             .dedup()
                             .take_while(|&point_id| {
-                                point_id
-                                    < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
+                                point_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
                             })
                             .filter(|&point_id| context.check(point_id))
                             .count();
@@ -115,7 +116,7 @@ impl Segment {
         } else {
             // just count how many points each value has
             let iter = facet_index
-                .iter_counts_per_value(self.deferred_internal_id())
+                .iter_counts_per_value(deferred_internal_id)
                 .stop_if(is_stopped)
                 .filter(|hit| hit.count > 0);
 
@@ -144,8 +145,10 @@ impl Segment {
 
         let facet_index = payload_index.get_facet_index(key)?;
 
+        let id_tracker = self.id_tracker.borrow();
+        let deferred_internal_id = id_tracker.deferred_internal_id();
+
         let values = if let Some(filter) = filter {
-            let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
             let point_mappings = id_tracker.point_mappings();
 
@@ -157,7 +160,7 @@ impl Segment {
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,
-                    self.deferred_internal_id(),
+                    deferred_internal_id,
                 )?
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(BTreeSet::new(), |mut set, point_id| {
@@ -169,7 +172,7 @@ impl Segment {
                 .collect()
         } else {
             facet_index
-                .iter_values(hw_counter, self.deferred_internal_id())
+                .iter_values(hw_counter, deferred_internal_id)
                 .stop_if(is_stopped)
                 .map(|value_ref| value_ref.to_owned())
                 .collect()

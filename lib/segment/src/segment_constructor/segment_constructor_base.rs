@@ -51,9 +51,7 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 #[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::segment::{
-    DeferredPointStatus, SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData,
-};
+use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 #[cfg(feature = "rocksdb")]
 use crate::types::MultiVectorConfig;
 use crate::types::{
@@ -272,15 +270,19 @@ pub(crate) fn create_payload_storage(
     Ok(payload_storage)
 }
 
-pub(crate) fn create_mutable_id_tracker(segment_path: &Path) -> OperationResult<MutableIdTracker> {
-    MutableIdTracker::open(segment_path)
+pub(crate) fn create_mutable_id_tracker(
+    segment_path: &Path,
+    deferred_internal_id: Option<PointOffsetType>,
+) -> OperationResult<MutableIdTracker> {
+    MutableIdTracker::open(segment_path, deferred_internal_id)
 }
 
 #[cfg(feature = "rocksdb")]
 pub(crate) fn create_rocksdb_id_tracker(
     database: Arc<RwLock<DB>>,
+    deferred_internal_id: Option<PointOffsetType>,
 ) -> OperationResult<SimpleIdTracker> {
-    SimpleIdTracker::open(database)
+    SimpleIdTracker::open(database, deferred_internal_id)
 }
 
 pub(crate) fn create_immutable_id_tracker(
@@ -493,6 +495,7 @@ fn create_segment(
     let id_tracker = create_segment_id_tracker(
         use_mutable_id_tracker,
         segment_path,
+        deferred_internal_id,
         #[cfg(feature = "rocksdb")]
         &mut db_builder,
     )?;
@@ -647,7 +650,6 @@ fn create_segment(
             path: &vector_index_path,
             stopped,
             tick_progress: || (),
-            deferred_internal_id,
         })?);
         log_load_timing(
             segment_path,
@@ -673,7 +675,7 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    let mut segment = Segment {
+    Ok(Segment {
         uuid,
         initial_version,
         version,
@@ -691,22 +693,13 @@ fn create_segment(
         error_status: None,
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
-        deferred_point_status: None,
-    };
-
-    if let Some(deferred_internal_id) = deferred_internal_id {
-        segment.deferred_point_status = Some(DeferredPointStatus {
-            deferred_internal_id,
-            deferred_deleted_count: segment.calculate_deleted_deferred_point_count(),
-        });
-    }
-
-    Ok(segment)
+    })
 }
 
 fn create_segment_id_tracker(
     mutable_id_tracker: bool,
     segment_path: &Path,
+    deferred_internal_id: Option<PointOffsetType>,
     #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
     if !mutable_id_tracker {
@@ -745,7 +738,8 @@ fn create_segment_id_tracker(
         };
 
         if use_rocksdb_mutable_tracker {
-            let id_tracker = create_rocksdb_id_tracker(db_builder.require()?)?;
+            let id_tracker =
+                create_rocksdb_id_tracker(db_builder.require()?, deferred_internal_id)?;
 
             // Actively migrate RocksDB based ID tracker into mutable ID tracker
             if common::flags::feature_flags().migrate_rocksdb_id_tracker {
@@ -758,7 +752,7 @@ fn create_segment_id_tracker(
     }
 
     Ok(sp(IdTrackerEnum::MutableIdTracker(
-        create_mutable_id_tracker(segment_path)?,
+        create_mutable_id_tracker(segment_path, deferred_internal_id)?,
     )))
 }
 
@@ -1061,7 +1055,8 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         segment_path: &Path,
     ) -> OperationResult<MutableIdTracker> {
         // Construct mutable ID tracker
-        let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
+        let mut new_id_tracker =
+            create_mutable_id_tracker(segment_path, old_id_tracker.deferred_internal_id())?;
         debug_assert_eq!(
             new_id_tracker.total_point_count(),
             0,
