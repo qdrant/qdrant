@@ -93,7 +93,8 @@ impl ClusterTelemetry {
     ) -> Option<ClusterTelemetry> {
         let global_access = AccessRequirements::new();
         if auth
-            .check_global_access(global_access, "telemetry_cluster")
+            .unlogged_access()
+            .check_global_access(global_access)
             .is_err()
         {
             return None;

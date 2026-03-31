@@ -37,7 +37,8 @@ impl MemoryTelemetry {
         let required_access = AccessRequirements::new();
         if epoch::advance().is_ok()
             && auth
-                .check_global_access(required_access, "telemetry_memory")
+                .unlogged_access()
+                .check_global_access(required_access)
                 .is_ok()
         {
             Some(MemoryTelemetry {
