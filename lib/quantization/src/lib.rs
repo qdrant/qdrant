@@ -7,6 +7,7 @@ pub mod encoded_vectors_u8;
 pub mod kmeans;
 pub mod p_square;
 pub mod quantile;
+mod turboquant;
 pub mod vector_stats;
 
 use std::fmt::Display;

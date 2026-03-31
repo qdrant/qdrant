@@ -11,9 +11,10 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
+use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
-use crate::{DistanceType, EncodingError};
+use crate::turboquant::TurboQuantizer;
 
 pub const DEFAULT_TURBO_QUANT_BITS: usize = 4;
 
@@ -40,12 +41,13 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
+    turbo_quantizer: TurboQuantizer,
 }
 
 /// Encoded query type.
 /// Just original vector as example.
 pub struct EncodedQueryTQ {
-    query: Vec<f32>,
+    query: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -55,6 +57,7 @@ pub struct Metadata {
     pub correction: TqCorrection,
     pub rotation: TqRotation,
     pub hadamard_chunk: Option<usize>,
+    pub quantized_size: usize,
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
@@ -90,12 +93,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
+        let turbo_quantizer = TurboQuantizer::new(vector_parameters.dim, levels as u8, 42);
+
         for vector in data {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector: Vec<u8> = Self::encode_vector(vector.as_ref());
+            let encoded_vector: Vec<u8> = Self::encode_vector(vector.as_ref(), &turbo_quantizer);
 
             storage_builder
                 .push_vector_data(&encoded_vector)
@@ -114,7 +119,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             correction,
             rotation,
             hadamard_chunk,
+            quantized_size: turbo_quantizer.encoded_size(),
         };
+
         if let Some(meta_path) = meta_path {
             meta_path
                 .parent()
@@ -139,54 +146,41 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             encoded_vectors,
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
+            turbo_quantizer,
         })
     }
 
     pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
         let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
+
+        let turbo_quantizer =
+            TurboQuantizer::new(metadata.vector_parameters.dim, metadata.levels as u8, 42);
+
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
+            turbo_quantizer,
         };
         Ok(result)
     }
 
     // Get quantized vector size in bytes
-    pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, _bits: usize) -> usize {
-        vector_parameters.dim * std::mem::size_of::<f32>()
+    pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, bits: usize) -> usize {
+        TurboQuantizer::new(vector_parameters.dim, bits as _, 42).encoded_size()
     }
 
     /// Encode single vector from `&[f32]` into `&[u8]`.
-    fn encode_vector(vector_data: &[f32]) -> Vec<u8> {
-        // Just convert vector data into bytes using ne_bytes:
-        vector_data.iter().flat_map(|&x| x.to_ne_bytes()).collect()
+    fn encode_vector(vector_data: &[f32], turbo_quantizer: &TurboQuantizer) -> Vec<u8> {
+        turbo_quantizer.quantize(vector_data).encode()
     }
 
     fn score_point_simple(&self, query: &EncodedQueryTQ, vector: &[u8]) -> f32 {
-        let mut result = 0f32;
+        let turbo_query = self.turbo_quantizer.decode(query.query.as_slice()).unwrap();
+        let turbo_vector = self.turbo_quantizer.decode(vector).unwrap();
 
-        for (q, v) in query
-            .query
-            .iter()
-            .zip(vector.chunks_exact(std::mem::size_of::<f32>()))
-        {
-            let v = f32::from_ne_bytes(v.try_into().unwrap());
-
-            match self.metadata.vector_parameters.distance_type {
-                DistanceType::Dot => {
-                    result += q * v;
-                }
-                DistanceType::L1 => {
-                    result += (q - v).abs();
-                }
-                DistanceType::L2 => {
-                    let diff = q - v;
-                    result += diff * diff;
-                }
-            }
-        }
+        let result = self.turbo_quantizer.score_ref(&turbo_query, &turbo_vector);
 
         if self.metadata.vector_parameters.invert {
             -result
@@ -217,7 +211,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
         EncodedQueryTQ {
-            query: query.to_vec(),
+            query: Self::encode_vector(query, &self.turbo_quantizer),
         }
     }
 
@@ -232,40 +226,22 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         self.score_bytes(True, query, &centroids, hw_counter)
     }
 
-    /// Score two points inside endoded data by their indexes
+    /// Score two points inside encoded data by their indexes
     fn score_internal(
         &self,
         i: PointOffsetType,
         j: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let mut result = 0f32;
-
         let v1 = self.encoded_vectors.get_vector_data(i);
         let v2 = self.encoded_vectors.get_vector_data(j);
 
         hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
 
-        for (v1, v2) in v1
-            .chunks_exact(std::mem::size_of::<f32>())
-            .zip(v2.chunks_exact(std::mem::size_of::<f32>()))
-        {
-            let v1 = f32::from_ne_bytes(v1.try_into().unwrap());
-            let v2 = f32::from_ne_bytes(v2.try_into().unwrap());
+        let turbo_query = self.turbo_quantizer.decode(&v1).unwrap();
+        let turbo_vector = self.turbo_quantizer.decode(&v2).unwrap();
 
-            match self.metadata.vector_parameters.distance_type {
-                DistanceType::Dot => {
-                    result += v1 * v2;
-                }
-                DistanceType::L1 => {
-                    result += (v1 - v2).abs();
-                }
-                DistanceType::L2 => {
-                    let diff = v1 - v2;
-                    result += diff * diff;
-                }
-            }
-        }
+        let result = self.turbo_quantizer.score_ref(&turbo_query, &turbo_vector);
 
         if self.metadata.vector_parameters.invert {
             -result
@@ -275,7 +251,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     fn quantized_vector_size(&self) -> usize {
-        self.metadata.vector_parameters.dim * std::mem::size_of::<f32>()
+        self.metadata.quantized_size
     }
 
     fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {
