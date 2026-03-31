@@ -291,7 +291,8 @@ impl RequestsTelemetry {
     ) -> Option<Self> {
         let global_access = AccessRequirements::new();
         if auth
-            .check_global_access(global_access, "telemetry_requests")
+            .unlogged_access()
+            .check_global_access(global_access)
             .is_ok()
         {
             let rest = actix_collector.get_telemetry_data(detail);
