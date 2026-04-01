@@ -114,7 +114,7 @@ pub fn recover_full_snapshot(
         .map(|(collection_name, snapshot_file)| {
             format!(
                 "{}:{collection_name}",
-                snapshot_temp_path.join(snapshot_file).to_str().unwrap(),
+                snapshot_temp_path.join(snapshot_file).display(),
             )
         })
         .collect();
