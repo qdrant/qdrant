@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::io;
+use std::{io, ops};
 
 use ::io_uring::{IoUring, Probe, opcode};
 
@@ -89,27 +89,39 @@ impl IoUringPool {
 
 /// RAII guard that owns an `IoUring` instance and returns it to the
 /// thread-local pool on drop.
-pub(crate) struct IoUringGuard {
-    ring: Option<IoUring>,
+pub struct IoUringGuard {
+    io_uring: Option<IoUring>,
 }
 
-impl IoUringGuard {
-    pub fn io_uring(&mut self) -> &mut IoUring {
-        self.ring.as_mut().expect("IoUringGuard used after drop")
+impl From<IoUring> for IoUringGuard {
+    fn from(io_uring: IoUring) -> Self {
+        Self {
+            io_uring: Some(io_uring),
+        }
+    }
+}
+
+impl ops::Deref for IoUringGuard {
+    type Target = IoUring;
+
+    fn deref(&self) -> &Self::Target {
+        self.io_uring.as_ref().expect("io_uring initialized")
+    }
+}
+
+impl ops::DerefMut for IoUringGuard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.io_uring.as_mut().expect("io_uring initialized")
     }
 }
 
 impl Drop for IoUringGuard {
     fn drop(&mut self) {
-        if let Some(ring) = self.ring.take() {
-            POOL.with(|pool| {
-                if let Ok(mut pool) = pool.try_borrow_mut() {
-                    pool.give_back(ring);
-                }
-                // If the pool RefCell is already borrowed (e.g. panic during
-                // take), just let the ring drop.
-            });
-        }
+        let Some(io_uring) = self.io_uring.take() else {
+            return;
+        };
+
+        POOL.with_borrow_mut(|pool| pool.give_back(io_uring));
     }
 }
 

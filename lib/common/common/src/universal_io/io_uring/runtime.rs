@@ -33,7 +33,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
     where
         F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
     {
-        let mut sqe = self.io_uring.io_uring().submission();
+        let mut sqe = self.io_uring.submission();
 
         if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
             return Ok(());
@@ -51,11 +51,11 @@ impl<'data, T> IoUringRuntime<'data, T> {
     }
 
     pub fn completion_is_empty(&mut self) -> bool {
-        self.io_uring.io_uring().completion().is_empty()
+        self.io_uring.completion().is_empty()
     }
 
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
-        let enqueued = self.io_uring.io_uring().submission().len();
+        let enqueued = self.io_uring.submission().len();
 
         debug_assert!(
             want == 0 || enqueued + self.in_progress >= want,
@@ -66,7 +66,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
 
         self.submit_and_wait_retry_early_wakeup(want)?;
 
-        let remaining = self.io_uring.io_uring().submission().len();
+        let remaining = self.io_uring.submission().len();
         debug_assert!(enqueued == 0 || enqueued > remaining);
         debug_assert_eq!(remaining, 0);
 
@@ -78,16 +78,16 @@ impl<'data, T> IoUringRuntime<'data, T> {
     fn submit_and_wait_retry_early_wakeup(&mut self, want: usize) -> io::Result<()> {
         self.submit_and_wait_retry_eintr(want)?;
 
-        while want > 0 && self.io_uring.io_uring().completion().is_empty() {
+        while want > 0 && self.io_uring.completion().is_empty() {
             self.submit_and_wait_retry_eintr(want)?;
         }
 
         Ok(())
     }
 
-    fn submit_and_wait_retry_eintr(&mut self, want: usize) -> io::Result<()> {
+    fn submit_and_wait_retry_eintr(&self, want: usize) -> io::Result<()> {
         let result = loop {
-            match self.io_uring.io_uring().submit_and_wait(want) {
+            match self.io_uring.submit_and_wait(want) {
                 Err(err) if err.kind() == io::ErrorKind::Interrupted => (),
                 res => break res,
             }
@@ -98,7 +98,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
     }
 
     pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, IoUringResponse<T>)>> {
-        self.io_uring.io_uring().completion().map(|entry| {
+        self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
             let id = entry.user_data();
@@ -122,7 +122,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
 
 impl<'data, T> Drop for IoUringRuntime<'data, T> {
     fn drop(&mut self) {
-        while self.in_progress > 0 || !self.io_uring.io_uring().submission().is_empty() {
+        while self.in_progress > 0 || !self.io_uring.submission().is_empty() {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
 
             // TODO: Implement `wait` (without submit) based on `io_uring::Submitter::enter`?
