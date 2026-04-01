@@ -113,7 +113,7 @@ slog = { version = "2.8.2", features = [
 ] }
 slog-stdlog = "4.1.1"
 prost-for-raft = { workspace = true }
-raft-proto = { version = "0.7.0", features = [
+raft-proto = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a77dfafc5b10e9bc84", features = [
     "prost-codec",
 ], default-features = false }
 
@@ -258,7 +258,7 @@ prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
 prost-wkt-types = "0.5"
 prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost used by raft
-raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
+raft = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a77dfafc5b10e9bc84" ,features = ["prost-codec"], default-features = false }
 rand = "0.10.0"
 rand_distr = "0.6.0"
 rmp-serde = "~1.3"

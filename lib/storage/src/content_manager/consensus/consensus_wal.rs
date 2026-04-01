@@ -3,8 +3,8 @@ use std::path::Path;
 
 use fs_err as fs;
 use prost_for_raft::Message;
-use protobuf::Message as _;
 use raft::eraftpb::Entry as RaftEntry;
+use raft::protocompat::PbMessageExt as _;
 use wal::Wal;
 
 use crate::StorageError;

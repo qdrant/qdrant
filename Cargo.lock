@@ -745,6 +745,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "autotools"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef941527c41b0fc0dd48511a8154cd5fc7e29200a0ff8b7203c5d777dbc795cf"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "aws-lc-rs"
 version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5688,15 +5697,26 @@ checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "protobuf-build"
-version = "0.14.1"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2df9942df2981178a930a72d442de47e2f0df18ad68e50a30f816f1848215ad0"
+checksum = "c852d9625b912c3e50480cdc701f60f49890b5d7ad46198dd583600f15e7c6ec"
 dependencies = [
  "bitflags 1.3.2",
  "proc-macro2",
  "prost-build 0.11.9",
+ "protobuf-src",
  "quote",
+ "regex",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "protobuf-src"
+version = "1.1.0+21.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7ac8852baeb3cc6fb83b93646fb93c0ffe5d14bf138c945ceb4b9948ee0e3c1"
+dependencies = [
+ "autotools",
 ]
 
 [[package]]
@@ -6085,12 +6105,10 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 [[package]]
 name = "raft"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f12688b23a649902762d4c11d854d73c49c9b93138f2de16403ef9f571ad5bae"
+source = "git+https://github.com/tikv/raft-rs?rev=aafb07c7bab439c6139926a77dfafc5b10e9bc84#aafb07c7bab439c6139926a77dfafc5b10e9bc84"
 dependencies = [
  "fxhash",
  "getset",
- "protobuf",
  "raft-proto",
  "rand 0.8.5",
  "slog",
@@ -6100,12 +6118,10 @@ dependencies = [
 [[package]]
 name = "raft-proto"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb6884896294f553e8d5cfbdb55080b9f5f2f43394afff59c9f077e0f4b46d6b"
+source = "git+https://github.com/tikv/raft-rs?rev=aafb07c7bab439c6139926a77dfafc5b10e9bc84#aafb07c7bab439c6139926a77dfafc5b10e9bc84"
 dependencies = [
  "lazy_static",
  "prost 0.11.9",
- "protobuf",
  "protobuf-build",
 ]
 

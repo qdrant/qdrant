@@ -796,7 +796,7 @@ impl Consensus {
             .ok_or_else(|| TryAddOriginError::UriNotFound)?
             .to_string();
 
-        self.node.propose_conf_change(peer_uri.into(), change)?;
+        self.node.propose_conf_change(Vec::from(peer_uri), change)?;
 
         Ok(true)
     }
