@@ -31,7 +31,7 @@ pub struct IoUringFile {
     ///
     /// This is because `O_DIRECT` can only read in aligned blocks of data, so reads at EOF might not
     /// be aligned with O_DIRECT alignment, but it is not possible to request less than one block.
-    uses_o_direct: bool,
+    direct_io: bool,
 }
 
 impl IoUringFile {
@@ -78,7 +78,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
         let file = Self {
             file: Arc::new(file),
-            uses_o_direct: prevent_caching.unwrap_or_default(),
+            direct_io: prevent_caching.unwrap_or_default(),
         };
 
         Ok(file)
@@ -145,7 +145,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     }
 
     fn populate(&self) -> Result<()> {
-        if self.uses_o_direct {
+        if self.direct_io {
             // O_DIRECT bypasses the page cache, so reading the file
             // would not warm it — skip.
             return Ok(());

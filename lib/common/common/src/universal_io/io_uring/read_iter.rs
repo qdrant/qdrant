@@ -38,7 +38,7 @@ where
                     return Ok(None);
                 };
 
-                let entry = state.read(idx as _, self.file.fd(), range, self.file.uses_o_direct)?;
+                let entry = state.read(idx as _, self.file.fd(), range, self.file.direct_io)?;
 
                 Ok(Some(entry))
             })?;
@@ -114,7 +114,7 @@ where
 
                 self.file_indexes.insert(idx, file_index);
 
-                let entry = state.read(idx as _, file.fd(), range, file.uses_o_direct)?;
+                let entry = state.read(idx as _, file.fd(), range, file.direct_io)?;
                 Ok(Some(entry))
             })?;
 
