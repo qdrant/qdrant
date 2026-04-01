@@ -282,9 +282,8 @@ impl<T> TypedMultiDenseVector<T> {
         }
         if !vectors.len().is_multiple_of(dim) || vectors.is_empty() {
             return Err(OperationError::validation_error(format!(
-                "Invalid multi-vector length: {}, expected multiple of {}",
-                vectors.len(),
-                dim
+                "Invalid multi-vector length: {}, expected multiple of {dim}",
+                vectors.len()
             )));
         }
 
