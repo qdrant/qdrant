@@ -18,9 +18,8 @@ fn convert_to_plain_multi_vector(
     let dim = data.len() / vectors_count;
     if dim * vectors_count != data.len() {
         return Err(OperationError::validation_error(format!(
-            "Data length is not divisible by vectors count. Data length: {}, vectors count: {}",
+            "Data length is not divisible by vectors count. Data length: {}, vectors count: {vectors_count}",
             data.len(),
-            vectors_count
         )));
     }
 
