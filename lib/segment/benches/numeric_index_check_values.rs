@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 use segment::common::operation_error::OperationResult;
+use segment::id_tracker::IdTrackerEnum;
 use segment::index::field_index::numeric_index::mmap_numeric_index::MmapNumericIndex;
 use segment::index::field_index::numeric_index::mutable_numeric_index::InMemoryNumericIndex;
 use tempfile::Builder;
@@ -40,6 +44,10 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
 
     let hw_counter = HardwareCounterCell::new();
 
+    let id_tracker = Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+        Default::default(),
+    )));
+
     let mut count = 0;
     group.bench_function("numeric-index", |b| {
         b.iter(|| {
@@ -51,7 +59,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         })
     });
 
-    let mmap_index = MmapNumericIndex::build(mutable_index, dir.path(), false).unwrap();
+    let mmap_index = MmapNumericIndex::build(mutable_index, dir.path(), false, id_tracker).unwrap();
 
     group.bench_function("mmap-numeric-index", |b| {
         b.iter(|| {

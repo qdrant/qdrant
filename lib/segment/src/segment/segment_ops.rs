@@ -309,39 +309,39 @@ impl Segment {
         internal_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // Mark point as deleted, drop mapping
-        self.payload_index
-            .borrow_mut()
-            .clear_payload(internal_id, hw_counter)?;
-
         let mut id_tracker = self.id_tracker.borrow_mut();
-
         let is_point_already_deleted = id_tracker.is_deleted_point(internal_id);
 
-        id_tracker.drop_internal(internal_id)?;
+        if !is_point_already_deleted {
+            id_tracker.drop_internal(internal_id)?;
+            drop(id_tracker);
 
-        let deferred_point_status = self.deferred_point_status.as_mut();
+            // The immutable payload indexes remove is not idempotent, so we must check if the point is already
+            // deleted before calling it.
+            self.payload_index
+                .borrow_mut()
+                .clear_payload(internal_id, hw_counter)?;
+            let deferred_point_status = self.deferred_point_status.as_mut();
 
-        // Increase counter for deleted points.
-        if let Some(deferred_point_status) = deferred_point_status
-            && internal_id >= deferred_point_status.deferred_internal_id
-            // Don't count the deletion of the same point twice
-            && !is_point_already_deleted
-        {
-            deferred_point_status.deferred_deleted_count += 1;
+            // Increase counter for deleted points.
+            if let Some(deferred_point_status) = deferred_point_status
+                && internal_id >= deferred_point_status.deferred_internal_id
+            {
+                deferred_point_status.deferred_deleted_count += 1;
+            }
+
+            // Before, we propagated point deletions to also delete its vectors. This turns
+            // out to be problematic because this sometimes makes us lose vector data
+            // because we cannot control the order of segment flushes.
+            // Disabled until we properly fix it or find a better way to clean up old
+            // vectors.
+            //
+            // // Propagate point deletion to all its vectors
+            // for vector_data in segment.vector_data.values() {
+            //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
+            //     vector_storage.delete_vector(internal_id)?;
+            // }
         }
-
-        // Before, we propagated point deletions to also delete its vectors. This turns
-        // out to be problematic because this sometimes makes us lose vector data
-        // because we cannot control the order of segment flushes.
-        // Disabled until we properly fix it or find a better way to clean up old
-        // vectors.
-        //
-        // // Propagate point deletion to all its vectors
-        // for vector_data in segment.vector_data.values() {
-        //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-        //     vector_storage.delete_vector(internal_id)?;
-        // }
 
         Ok(())
     }
