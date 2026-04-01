@@ -1,3 +1,4 @@
+mod error;
 mod pool;
 mod read_iter;
 mod runtime;
@@ -15,6 +16,7 @@ use ::io_uring::types::Fd;
 use fs_err as fs;
 use fs_err::os::unix::fs::{FileExt, OpenOptionsExt};
 
+use self::error::*;
 use self::pool::*;
 use self::read_iter::*;
 use self::runtime::*;
