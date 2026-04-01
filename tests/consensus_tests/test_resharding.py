@@ -300,8 +300,9 @@ def test_resharding_down_abort_cleanup(tmp_path: pathlib.Path, peers: int):
     resp = abort_resharding(peer_uris[0])
     assert_http_ok(resp)
 
-    # Wait for resharding to abort
-    wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
+    # Wait for resharding to abort on all peers
+    for peer_uri in replica_uris:
+        wait_for_collection_resharding_operations_count(peer_uri, COLLECTION_NAME, 0)
 
     # Assert that all replicas are in `Active` state
     info = get_collection_cluster_info(peer_uris[0], COLLECTION_NAME)
