@@ -94,9 +94,11 @@ fn test_rebuild_with_removed_vectors() {
     )
     .unwrap();
 
-    builder.update(&[&segment1, &segment2], &stopped).unwrap();
-
     let hw_counter = HardwareCounterCell::new();
+
+    builder
+        .update(&[&segment1, &segment2], &stopped, &hw_counter)
+        .unwrap();
 
     let merged_segment = builder.build_for_test(dir.path());
 

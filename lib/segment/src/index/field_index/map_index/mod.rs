@@ -157,11 +157,12 @@ where
     pub fn get_values(
         &self,
         idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
         match self {
             MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx)?)),
             MapIndex::Immutable(index) => Some(Box::new(index.get_values(idx)?)),
-            MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx)?)),
+            MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
         }
     }
 
@@ -1203,8 +1204,9 @@ where
     fn get_point_values(
         &self,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        MapIndex::get_values(self, point_id)
+        MapIndex::get_values(self, point_id, hw_counter)
             .into_iter()
             .flatten()
             .map(|v| v.into())
@@ -1398,9 +1400,10 @@ mod tests {
             IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap().unwrap(),
             IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap().unwrap(),
         };
+        let hw_counter = HardwareCounterCell::new();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<<N as MapIndexKey>::Owned> = index
-                .get_values(idx as PointOffsetType)
+                .get_values(idx as PointOffsetType, &hw_counter)
                 .unwrap()
                 .map(|v| MapIndexKey::to_owned(v.as_ref()))
                 .collect();
@@ -1456,9 +1459,10 @@ mod tests {
         }
 
         let index = builder.finalize().unwrap();
+        let hw_counter = HardwareCounterCell::new();
         for (idx, values) in data.iter().enumerate().rev() {
             let res: Vec<_> = index
-                .get_values(idx as u32)
+                .get_values(idx as u32, &hw_counter)
                 .unwrap()
                 .map(|i| *i as i32)
                 .collect();
@@ -1554,6 +1558,52 @@ mod tests {
             index
                 .except_cardinality(std::iter::empty(), &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0))
+        );
+    }
+
+    /// Test that `get_values` on an on-disk mmap index actually increments the hardware counter.
+    #[test]
+    fn test_mmap_get_values_hw_counter() {
+        let data = vec![vec![1i64, 2, 3], vec![4, 5], vec![6]];
+
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap, |v| (*v).into());
+        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap);
+
+        // Read values with a fresh counter
+        let hw_counter = HardwareCounterCell::new();
+        for idx in 0..data.len() {
+            let _values: Vec<_> = index
+                .get_values(idx as PointOffsetType, &hw_counter)
+                .unwrap()
+                .collect();
+        }
+
+        // On-disk mmap variant should have tracked IO reads
+        assert!(
+            hw_counter.payload_index_io_read_counter().get() > 0,
+            "Expected on-disk mmap get_values to track payload index IO reads, but counter was 0"
+        );
+
+        // Contrast with RamMmap (is_on_disk=false) — counter should remain zero
+        let temp_dir2 = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap, |v| {
+            (*v).into()
+        });
+        let index2 = load_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap);
+
+        let hw_counter2 = HardwareCounterCell::new();
+        for idx in 0..data.len() {
+            let _values: Vec<_> = index2
+                .get_values(idx as PointOffsetType, &hw_counter2)
+                .unwrap()
+                .collect();
+        }
+
+        assert_eq!(
+            hw_counter2.payload_index_io_read_counter().get(),
+            0,
+            "Expected RAM mmap get_values NOT to track IO reads, but counter was non-zero"
         );
     }
 }

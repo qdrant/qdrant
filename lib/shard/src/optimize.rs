@@ -209,6 +209,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         segment_builder.update(
             &segment_guards.iter().map(Deref::deref).collect_vec(),
             stopped,
+            hw_counter,
         )?;
         drop(progress_copy_data);
     }
