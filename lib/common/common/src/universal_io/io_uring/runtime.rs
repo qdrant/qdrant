@@ -122,7 +122,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
 
 impl<'data, T> Drop for IoUringRuntime<'data, T> {
     fn drop(&mut self) {
-        while self.in_progress > 0 {
+        while self.in_progress > 0 || !self.io_uring.io_uring().submission().is_empty() {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
 
             // TODO: Implement `wait` (without submit) based on `io_uring::Submitter::enter`?
