@@ -32,16 +32,16 @@ impl<'data, T> IoUringRuntime<'data, T> {
     where
         F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
     {
-        let mut sqe = self.io_uring.submission();
+        let mut squeue = self.io_uring.submission();
 
-        if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
+        if self.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
             return Ok(());
         }
 
         while let Some(entry) = entries(&mut self.state)? {
-            unsafe { sqe.push(&entry).expect("SQE is not full") };
+            unsafe { squeue.push(&entry).expect("submission queue is not full") };
 
-            if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
+            if self.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
                 break;
             }
         }

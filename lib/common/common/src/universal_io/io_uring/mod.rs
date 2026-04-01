@@ -8,13 +8,14 @@ mod tests;
 
 use std::borrow::Cow;
 use std::io::{self, Read as _, Seek as _};
+use std::iter;
 use std::os::fd::AsRawFd as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use ::io_uring::types::Fd;
 use fs_err as fs;
-use fs_err::os::unix::fs::{FileExt, OpenOptionsExt};
+use fs_err::os::unix::fs::{FileExt as _, OpenOptionsExt as _};
 
 use self::error::*;
 use self::pool::*;
@@ -64,31 +65,30 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
             prevent_caching,
         } = options;
 
-        let mut opts = fs::OpenOptions::new();
-        opts.read(true);
-        opts.write(writeable);
-        opts.create(false);
-        if prevent_caching.unwrap_or_default() {
-            opts.custom_flags(nix::libc::O_DIRECT);
-        }
+        let direct_io = prevent_caching.unwrap_or(false);
+        let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
 
-        let file = opts
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(writeable)
+            .create(false)
+            .custom_flags(direct_io_flags)
             .open(path.as_ref())
             .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
 
         let file = Self {
             file: Arc::new(file),
-            direct_io: prevent_caching.unwrap_or_default(),
+            direct_io,
         };
 
         Ok(file)
     }
 
     fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let mut result = vec![T::zeroed(); range.length as usize];
-        self.file
-            .read_exact_at(bytemuck::cast_slice_mut(&mut result), range.byte_offset)?;
-        Ok(Cow::Owned(result))
+        let mut items = vec![T::zeroed(); range.length as usize];
+        let bytes = bytemuck::cast_slice_mut(&mut items);
+        self.file.read_exact_at(bytes, range.byte_offset)?;
+        Ok(Cow::Owned(items))
     }
 
     fn read_batch<P: AccessPattern>(
@@ -97,9 +97,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
         for record in self.read_iter::<P>(ranges) {
-            let (idx, data) = record?;
-            callback(idx, &data)?;
+            let (idx, items) = record?;
+            callback(idx, &items)?;
         }
+
         Ok(())
     }
 
@@ -109,7 +110,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
         match IoUringReadIter::new(self, ranges.into_iter()) {
             Ok(iter) => itertools::Either::Left(iter),
-            Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+            Err(err) => itertools::Either::Right(iter::once(Err(err))),
         }
     }
 
@@ -119,9 +120,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
     ) -> Result<()> {
         for record in Self::read_multi_iter::<P>(files, reads) {
-            let (idx, file_idx, data) = record?;
-            callback(idx, file_idx, &data)?;
+            let (idx, file_idx, items) = record?;
+            callback(idx, file_idx, &items)?;
         }
+
         Ok(())
     }
 
@@ -131,7 +133,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
         match IoUringReadMultiIter::new(files, reads.into_iter()) {
             Ok(iter) => itertools::Either::Left(iter),
-            Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+            Err(err) => itertools::Either::Right(iter::once(Err(err))),
         }
     }
 
@@ -168,8 +170,8 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
 impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
-        self.file
-            .write_all_at(bytemuck::cast_slice(items), byte_offset)?;
+        let bytes = bytemuck::cast_slice(items);
+        self.file.write_all_at(bytes, byte_offset)?;
         Ok(())
     }
 
