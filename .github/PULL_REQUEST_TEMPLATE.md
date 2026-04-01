@@ -1,7 +1,9 @@
 ### All Submissions:
 
-* [ ] Contributions should target the `dev` branch. Did you create your branch from `dev`?
-* [ ] Have you followed the guidelines in our Contributing document?
+> **⚠️ PRs must target the `dev` branch.** If your PR targets `master`, please change the base branch to `dev` before requesting a review.
+
+* [ ] My PR targets the `dev` branch (not `master`) and my branch was created from `dev`.
+* [ ] Have you followed the guidelines in our [Contributing document](docs/CONTRIBUTING.md)?
 * [ ] Have you checked to ensure there aren't other open [Pull Requests](../../../pulls) for the same update/change?
 
 <!-- You can erase any parts of this template not applicable to your Pull Request. -->
