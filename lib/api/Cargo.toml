@@ -43,5 +43,3 @@ tonic-build = { workspace = true }
 prost-build = { workspace = true }
 common = { path = "../common/common" }
 
-[dev-dependencies]
-tokio = { workspace = true }
