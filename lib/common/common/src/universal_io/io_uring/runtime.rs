@@ -3,51 +3,37 @@ use std::io;
 use std::mem::{self, MaybeUninit};
 
 use ::io_uring::types::Fd;
-use ::io_uring::{IoUring, opcode, squeue};
+use ::io_uring::{opcode, squeue};
 use ahash::AHashMap;
 
 use super::super::*;
-use super::pool::{self, IO_URING_QUEUE_LENGTH};
+use super::pool::{self, IO_URING_QUEUE_LENGTH, IoUringGuard};
 use crate::maybe_uninit::assume_init_vec;
 
-/// Run a closure with exclusive access to an `IoUring` instance from the pool.
-///
-/// `'data` is the lifetime of any write buffers that will be submitted to io_uring.
-/// The compiler enforces that write data outlives all in-flight operations, because
-/// `IoUringState<'data, T>` holds `&'data [T]` references until operations complete.
-///
-/// The io_uring borrow lifetime is handled via HRTB (`for<'uring>`), keeping it
-/// independent from the caller's data lifetime.
-pub(super) fn with_uring_runtime<'data, T: 'data, Out, F>(with_uring: F) -> Result<Out>
-where
-    F: for<'uring> FnOnce(IoUringRuntime<'uring, 'data, T>) -> Out,
-{
-    let mut guard = pool::take_io_uring().map_err(UniversalIoError::IoUringNotSupported)?;
-    let rt = IoUringRuntime::new(guard.io_uring());
-    let output = with_uring(rt);
-    Ok(output)
-}
-
-pub(super) struct IoUringRuntime<'uring, 'data, T> {
-    io_uring: &'uring mut IoUring,
+pub struct IoUringRuntime<'data, T> {
+    io_uring: IoUringGuard,
     pub state: IoUringState<'data, T>,
     pub in_progress: usize,
 }
 
-impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
-    pub fn new(io_uring: &'uring mut IoUring) -> Self {
-        Self {
-            io_uring,
+impl<'data, T> IoUringRuntime<'data, T> {
+    pub fn new() -> Result<Self> {
+        let rt = Self {
+            io_uring: pool::take_io_uring()?,
             state: IoUringState::new(),
             in_progress: 0,
-        }
+        };
+
+        Ok(rt)
     }
 
-    pub fn enqueue<F>(&mut self, mut entries: F) -> Result<()>
+    /// Push entries into Submission Queue while `entries` returns `Ok(Something)`
+    /// or the queue is full.
+    pub fn enqueue_while<F>(&mut self, mut entries: F) -> Result<()>
     where
         F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
     {
-        let mut sqe = self.io_uring.submission();
+        let mut sqe = self.io_uring.io_uring().submission();
 
         if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
             return Ok(());
@@ -64,17 +50,55 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
         Ok(())
     }
 
+    pub fn completion_is_empty(&mut self) -> bool {
+        self.io_uring.io_uring().completion().is_empty()
+    }
+
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
-        self.in_progress += self
-            .io_uring
-            .submit_and_wait(want)
-            .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
+        let enqueued = self.io_uring.io_uring().submission().len();
+
+        debug_assert!(
+            want == 0 || enqueued + self.in_progress >= want,
+            "io_uring would block: \
+             requested to wait for {want} operations to complete, \
+             but not enough operations are enqueued or in-progress"
+        );
+
+        self.submit_and_wait_retry_early_wakeup(want)?;
+
+        let remaining = self.io_uring.io_uring().submission().len();
+        debug_assert!(enqueued == 0 || enqueued > remaining);
+        debug_assert_eq!(remaining, 0);
+
+        self.in_progress += enqueued - remaining;
 
         Ok(())
     }
 
+    fn submit_and_wait_retry_early_wakeup(&mut self, want: usize) -> io::Result<()> {
+        self.submit_and_wait_retry_eintr(want)?;
+
+        while want > 0 && self.io_uring.io_uring().completion().is_empty() {
+            self.submit_and_wait_retry_eintr(want)?;
+        }
+
+        Ok(())
+    }
+
+    fn submit_and_wait_retry_eintr(&mut self, want: usize) -> io::Result<()> {
+        let result = loop {
+            match self.io_uring.io_uring().submit_and_wait(want) {
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => (),
+                res => break res,
+            }
+        };
+
+        result.map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
+        Ok(())
+    }
+
     pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, IoUringResponse<T>)>> {
-        self.io_uring.completion().map(|entry| {
+        self.io_uring.io_uring().completion().map(|entry| {
             self.in_progress -= 1;
 
             let id = entry.user_data();
@@ -96,9 +120,9 @@ impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
     }
 }
 
-impl<'uring, 'data, T> Drop for IoUringRuntime<'uring, 'data, T> {
+impl<'data, T> Drop for IoUringRuntime<'data, T> {
     fn drop(&mut self) {
-        while self.in_progress > 0 {
+        while self.in_progress > 0 || !self.io_uring.io_uring().submission().is_empty() {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
 
             // TODO: Implement `wait` (without submit) based on `io_uring::Submitter::enter`?
@@ -207,7 +231,7 @@ impl<'data, T> IoUringState<'data, T> {
         let req = self
             .requests
             .remove(&id)
-            .ok_or_else(|| io::Error::other("request {id} does not exist"))?;
+            .ok_or_else(|| io::Error::other(format!("request {id} does not exist")))?;
 
         let resp = match req {
             IoUringRequest::Read {

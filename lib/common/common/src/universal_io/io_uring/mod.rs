@@ -15,7 +15,7 @@ use fs_err as fs;
 use fs_err::os::unix::fs::{FileExt, OpenOptionsExt};
 
 use self::read_iter::{IoUringReadIter, IoUringReadMultiIter};
-use self::runtime::with_uring_runtime;
+use self::runtime::IoUringRuntime;
 use super::*;
 use crate::generic_consts::AccessPattern;
 
@@ -103,7 +103,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
     ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
-        match IoUringReadIter::new(self, ranges) {
+        match IoUringReadIter::new(self, ranges.into_iter()) {
             Ok(iter) => itertools::Either::Left(iter),
             Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
         }
@@ -125,7 +125,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
     ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
-        match IoUringReadMultiIter::new(files, reads) {
+        match IoUringReadMultiIter::new(files, reads.into_iter()) {
             Ok(iter) => itertools::Either::Left(iter),
             Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
         }
@@ -173,65 +173,63 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
         &mut self,
         items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
-        with_uring_runtime(|mut rt| {
-            let mut items = items.into_iter().enumerate().peekable();
+        let mut rt = IoUringRuntime::new()?;
+        let mut items = items.into_iter().enumerate().peekable();
 
-            while items.peek().is_some() || rt.in_progress > 0 {
-                rt.enqueue(|state| {
-                    let Some((id, (byte_offset, items))) = items.next() else {
-                        return Ok(None);
-                    };
+        while items.peek().is_some() || rt.in_progress > 0 {
+            rt.enqueue_while(|state| {
+                let Some((id, (byte_offset, items))) = items.next() else {
+                    return Ok(None);
+                };
 
-                    let entry = state.write(id as _, self.fd(), byte_offset, items)?;
-                    Ok(Some(entry))
-                })?;
+                let entry = state.write(id as _, self.fd(), byte_offset, items)?;
+                Ok(Some(entry))
+            })?;
 
-                rt.submit_and_wait(1)?;
+            rt.submit_and_wait(1)?;
 
-                for result in rt.completed() {
-                    let (_, resp) = result?;
-                    resp.expect_write();
-                }
+            for result in rt.completed() {
+                let (_, resp) = result?;
+                resp.expect_write();
             }
+        }
 
-            Ok(())
-        })?
+        Ok(())
     }
 
     fn write_multi<'a>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {
-        with_uring_runtime(|mut rt| {
-            let mut writes = writes.into_iter().enumerate().peekable();
+        let mut rt = IoUringRuntime::new()?;
+        let mut writes = writes.into_iter().enumerate().peekable();
 
-            while writes.peek().is_some() || rt.in_progress > 0 {
-                rt.enqueue(|state| {
-                    let Some((id, (file_index, byte_offset, items))) = writes.next() else {
-                        return Ok(None);
-                    };
+        while writes.peek().is_some() || rt.in_progress > 0 {
+            rt.enqueue_while(|state| {
+                let Some((id, (file_index, byte_offset, items))) = writes.next() else {
+                    return Ok(None);
+                };
 
-                    let file = files.get(file_index).ok_or({
-                        UniversalIoError::InvalidFileIndex {
-                            file_index,
-                            files: files.len(),
-                        }
-                    })?;
-
-                    let entry = state.write(id as _, file.fd(), byte_offset, items)?;
-                    Ok(Some(entry))
+                let file = files.get(file_index).ok_or({
+                    UniversalIoError::InvalidFileIndex {
+                        file_index,
+                        files: files.len(),
+                    }
                 })?;
 
-                rt.submit_and_wait(1)?;
+                let entry = state.write(id as _, file.fd(), byte_offset, items)?;
+                Ok(Some(entry))
+            })?;
 
-                for result in rt.completed() {
-                    let (_, resp) = result?;
-                    resp.expect_write();
-                }
+            rt.submit_and_wait(1)?;
+
+            for result in rt.completed() {
+                let (_, resp) = result?;
+                resp.expect_write();
             }
+        }
 
-            Ok(())
-        })?
+        Ok(())
     }
 
     fn flusher(&self) -> Flusher {
