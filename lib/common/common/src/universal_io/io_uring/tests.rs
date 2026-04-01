@@ -1,3 +1,8 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use nix::libc;
+
 use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
@@ -354,6 +359,112 @@ fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
         assert_eq!(cb.1, it.1, "file index mismatch");
         assert_eq!(cb.2, it.2, "data mismatch at op {}", cb.0);
     }
+
+    Ok(())
+}
+
+extern "C" fn noop_signal_handler(_sig: libc::c_int) {}
+
+/// Asserts that `read_iter` handles `EINTR` transparently by retrying
+/// `submit_and_wait`. Under signal bombardment with cold page cache,
+/// no errors or panics should surface to the caller.
+#[test]
+fn test_io_uring_eintr_handling() -> Result<()> {
+    // Install a no-op SIGUSR1 handler *without* SA_RESTART so that
+    // io_uring_enter() receives EINTR instead of auto-restarting.
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = noop_signal_handler as *const () as usize;
+        sa.sa_flags = 0;
+        libc::sigemptyset(&mut sa.sa_mask);
+        let ret = libc::sigaction(libc::SIGUSR1, &sa, std::ptr::null_mut());
+        assert_eq!(ret, 0, "failed to install SIGUSR1 handler");
+    }
+
+    // 32 MB file — large enough that reads from cold cache block
+    // inside io_uring_enter, giving signals a window to cause EINTR.
+    const NUM_ELEMENTS: u64 = 4 * 1024 * 1024;
+    const RANGES_PER_ROUND: u64 = 128;
+    const TEST_DURATION_SECS: u64 = 10;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("eintr_test.bin");
+    let data: Vec<u64> = (0..NUM_ELEMENTS).collect();
+    fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
+
+    let file = TypedStorage::<IoUringFile, u64>::open(&path, OpenOptions::default())?;
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let signals_sent = Arc::new(AtomicU64::new(0));
+    let target_thread: libc::pthread_t = unsafe { libc::pthread_self() };
+
+    let signal_thread = {
+        let stop = stop.clone();
+        let sent = signals_sent.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                unsafe { libc::pthread_kill(target_thread, libc::SIGUSR1) };
+                sent.fetch_add(1, Ordering::Relaxed);
+                std::thread::sleep(std::time::Duration::from_micros(50));
+            }
+        })
+    };
+
+    let elem = size_of::<u64>() as u64;
+    let chunk_size = NUM_ELEMENTS / RANGES_PER_ROUND;
+    let mut eintr_errors = 0u64;
+    let mut panics = 0u64;
+    let mut rounds = 0u64;
+    let start = std::time::Instant::now();
+
+    while start.elapsed().as_secs() < TEST_DURATION_SECS {
+        rounds += 1;
+
+        // Evict pages so reads actually block in io_uring_enter.
+        file.clear_ram_cache().ok();
+
+        let ranges: Vec<ReadRange> = (0..RANGES_PER_ROUND)
+            .map(|i| ReadRange {
+                byte_offset: i * chunk_size * elem,
+                length: chunk_size,
+            })
+            .collect();
+
+        // catch_unwind: the Drop path has debug_assert!(self.is_empty())
+        // which panics when in-flight requests leak due to EINTR.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut errors = 0u64;
+            for record in file.read_iter::<Sequential>(ranges) {
+                if record.is_err() {
+                    errors += 1;
+                    break;
+                }
+            }
+            errors
+        }));
+
+        match result {
+            Ok(n) => eintr_errors += n,
+            Err(_) => panics += 1,
+        }
+
+        if eintr_errors > 0 || panics > 0 {
+            break;
+        }
+    }
+
+    stop.store(true, Ordering::Relaxed);
+    signal_thread.join().unwrap();
+
+    let total_signals = signals_sent.load(Ordering::Relaxed);
+    let failures = eintr_errors + panics;
+
+    assert_eq!(
+        failures, 0,
+        "io_uring submit_and_wait does not retry on EINTR: \
+         {eintr_errors} errors, {panics} panics in {rounds} rounds ({total_signals} signals). \
+         Fix: retry submit_and_wait when it returns io::ErrorKind::Interrupted."
+    );
 
     Ok(())
 }
