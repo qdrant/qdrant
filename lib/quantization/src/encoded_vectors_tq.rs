@@ -462,6 +462,44 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let (signs1, signs2) = generate_signs(rotation_seed, padded_dim);
         let (codebook, boundaries) = compute_codebook(bits, padded_dim);
 
+        // Coordinate analysis: create a timestamped run directory
+        let analysis_run_dir = crate::coordinate_analysis::create_run_dir();
+
+        // Coordinate analysis: before rotation (raw input vectors)
+        crate::coordinate_analysis::analyse(
+            data.clone(),
+            vector_parameters,
+            _count,
+            &analysis_run_dir,
+            "before_rotation",
+        );
+
+        // Coordinate analysis: after rotation (normalized + WHT-rotated)
+        {
+            let rotated_vectors: Vec<Vec<f32>> = data.clone().map(|v| {
+                let v = v.as_ref();
+                let norm_sq: f32 = v.iter().map(|&x| x * x).sum();
+                let norm = norm_sq.sqrt();
+                let normalized: Vec<f32> = if norm > 0.0 {
+                    v.iter().map(|&x| x / norm).collect()
+                } else {
+                    vec![0.0; v.len()]
+                };
+                apply_rotation(&normalized, &signs1, &signs2, padded_dim)
+            }).collect();
+            let rotated_params = VectorParameters {
+                dim: padded_dim,
+                ..vector_parameters.clone()
+            };
+            crate::coordinate_analysis::analyse(
+                rotated_vectors.iter(),
+                &rotated_params,
+                _count,
+                &analysis_run_dir,
+                "after_rotation",
+            );
+        }
+
         for vector in data {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
