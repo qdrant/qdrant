@@ -49,12 +49,45 @@ impl<'data, T> IoUringRuntime<'data, T> {
     }
 
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
-        self.in_progress += self
-            .io_uring
-            .io_uring()
-            .submit_and_wait(want)
-            .map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
+        let enqueued = self.io_uring.io_uring().submission().len();
 
+        debug_assert!(
+            want == 0 || enqueued + self.in_progress >= want,
+            "io_uring would block: \
+             requested to wait for {want} operations to complete, \
+             but not enough operations are enqueued or in-progress"
+        );
+
+        self.submit_and_wait_retry_early_wakeup(want)?;
+
+        let remaining = self.io_uring.io_uring().submission().len();
+        debug_assert!(enqueued > remaining);
+        debug_assert_eq!(remaining, 0);
+
+        self.in_progress += enqueued - remaining;
+
+        Ok(())
+    }
+
+    fn submit_and_wait_retry_early_wakeup(&mut self, want: usize) -> io::Result<()> {
+        self.submit_and_wait_retry_eintr(want)?;
+
+        while want > 0 && self.io_uring.io_uring().completion().is_empty() {
+            self.submit_and_wait_retry_eintr(want)?;
+        }
+
+        Ok(())
+    }
+
+    fn submit_and_wait_retry_eintr(&mut self, want: usize) -> io::Result<()> {
+        let result = loop {
+            match self.io_uring.io_uring().submit_and_wait(want) {
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => (),
+                res => break res,
+            }
+        };
+
+        result.map_err(|err| io_error_context(err, "failed to submit io_uring operations"))?;
         Ok(())
     }
 
