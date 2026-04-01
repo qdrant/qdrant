@@ -77,17 +77,14 @@ pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(input: &'a str, config: &TokensProce
 
 #[cfg(test)]
 mod test {
-    use std::io::Write;
-
     use sha2::{Digest, Sha512};
 
     use super::*;
 
     #[test]
     fn test_assert_model_integrity() {
-        // Sha512 checksum of model
         let mut sha512 = Sha512::new();
-        sha512.write_all(MODEL).unwrap();
+        sha512.update(MODEL);
         let sum = sha512.finalize();
 
         assert!(
