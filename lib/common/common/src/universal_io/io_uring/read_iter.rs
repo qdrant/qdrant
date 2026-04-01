@@ -96,6 +96,7 @@ where
         Ok(iter)
     }
 
+    #[expect(clippy::type_complexity)]
     fn next_impl(&mut self) -> Result<Option<(usize, FileIndex, Cow<'a, [T]>)>> {
         if self.runtime.completion_is_empty()
             && (self.ranges.peek().is_some() || self.runtime.in_progress > 0)
