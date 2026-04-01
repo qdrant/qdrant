@@ -1,14 +1,13 @@
 use std::collections::hash_map;
 use std::io;
-use std::mem::{self, MaybeUninit};
+use std::mem::MaybeUninit;
 
 use ::io_uring::types::Fd;
 use ::io_uring::{opcode, squeue};
-use ahash::AHashMap;
+use ahash::HashMapExt as _;
 
-use super::super::*;
-use super::pool::{self, IO_URING_QUEUE_LENGTH, IoUringGuard};
-use crate::maybe_uninit::assume_init_vec;
+use super::*;
+use crate::maybe_uninit;
 
 pub struct IoUringRuntime<'data, T> {
     io_uring: IoUringGuard,
@@ -141,13 +140,13 @@ impl<'data, T> Drop for IoUringRuntime<'data, T> {
 
 #[derive(Debug)]
 pub struct IoUringState<'data, T> {
-    requests: AHashMap<RequestId, IoUringRequest<'data, T>>,
+    requests: ahash::HashMap<RequestId, IoUringRequest<'data, T>>,
 }
 
 impl<'data, T> IoUringState<'data, T> {
     pub fn new() -> Self {
         Self {
-            requests: AHashMap::new(),
+            requests: ahash::HashMap::new(),
         }
     }
 
@@ -241,20 +240,20 @@ impl<'data, T> IoUringState<'data, T> {
                 allow_short_read,
             } => {
                 if allow_short_read {
-                    let item_length = byte_length / mem::size_of::<T>();
+                    let item_length = byte_length / size_of::<T>();
                     debug_assert!(item_length <= items.len());
 
                     items.truncate(item_length);
                 } else {
-                    assert_eq!(mem::size_of_val(items.as_slice()), byte_length);
+                    assert_eq!(size_of_val(items.as_slice()), byte_length);
                 }
 
-                let items: Vec<T> = unsafe { assume_init_vec(items) };
+                let items: Vec<T> = unsafe { maybe_uninit::assume_init_vec(items) };
                 IoUringResponse::Read(items)
             }
 
             IoUringRequest::Write(items) => {
-                assert_eq!(mem::size_of_val(items), byte_length);
+                assert_eq!(size_of_val(items), byte_length);
                 IoUringResponse::Write
             }
         };

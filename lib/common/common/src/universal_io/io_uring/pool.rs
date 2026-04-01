@@ -3,7 +3,7 @@ use std::{io, ops};
 
 use ::io_uring::{IoUring, Probe, opcode};
 
-use super::runtime::io_error_context;
+use super::*;
 
 /// Default number of idle `IoUring` instances kept in the thread-local pool.
 const POOL_SIZE: usize = 2;
@@ -129,15 +129,11 @@ impl Drop for IoUringGuard {
 ///
 /// Returns an error if io_uring is not supported on this system.
 /// The instance is automatically returned to the pool when the guard is dropped.
-pub(crate) fn take_io_uring() -> io::Result<IoUringGuard> {
-    POOL.with(|pool| {
-        let mut pool = pool.borrow_mut();
-        let ring = pool.take()?;
-        Ok(IoUringGuard { ring: Some(ring) })
-    })
+pub fn take_io_uring() -> io::Result<IoUringGuard> {
+    POOL.with_borrow_mut(|pool| pool.take().map(IoUringGuard::from))
 }
 
 /// Check that io_uring is supported without taking an instance.
-pub(crate) fn check_io_uring_supported() -> io::Result<()> {
-    POOL.with(|pool| pool.borrow_mut().check_supported())
+pub fn check_io_uring_supported() -> io::Result<()> {
+    POOL.with_borrow_mut(|pool| pool.check_supported())
 }

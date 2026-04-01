@@ -4,8 +4,6 @@ use std::marker::PhantomData;
 
 use ahash::HashMapExt as _;
 
-use super::pool::*;
-use super::runtime::*;
 use super::*;
 
 pub struct IoUringReadIter<'a, T: 'static, I: Iterator> {

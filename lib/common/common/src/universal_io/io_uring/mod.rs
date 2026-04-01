@@ -1,6 +1,7 @@
 mod pool;
 mod read_iter;
 mod runtime;
+
 #[cfg(test)]
 mod tests;
 
@@ -14,8 +15,9 @@ use ::io_uring::types::Fd;
 use fs_err as fs;
 use fs_err::os::unix::fs::{FileExt, OpenOptionsExt};
 
-use self::read_iter::{IoUringReadIter, IoUringReadMultiIter};
-use self::runtime::IoUringRuntime;
+use self::pool::*;
+use self::read_iter::*;
+use self::runtime::*;
 use super::*;
 use crate::generic_consts::AccessPattern;
 
