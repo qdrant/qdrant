@@ -40,7 +40,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
         if: startsWith(matrix.os, 'ubuntu') && contains(matrix.target, '-musl')
-        uses: taiki-e/setup-cross-toolchain-action@20dbac418ca692fd1a9377acf2cec38161169a39 # v1.39.1
+        uses: taiki-e/setup-cross-toolchain-action@d62f33b587e73b0004731caebc7d2d46b18a7567 # v1.39.2
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@0e34102c043ded9f2ca39f7af5cd99a540c61aff # v1.29.1
         with:
