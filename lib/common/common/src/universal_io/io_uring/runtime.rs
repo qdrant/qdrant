@@ -27,7 +27,9 @@ impl<'data, T> IoUringRuntime<'data, T> {
         Ok(rt)
     }
 
-    pub fn enqueue<F>(&mut self, mut entries: F) -> Result<()>
+    /// Push entries into Submission Queue while `entries` returns `Ok(Something)`
+    /// or the queue is full.
+    pub fn enqueue_while<F>(&mut self, mut entries: F) -> Result<()>
     where
         F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
     {

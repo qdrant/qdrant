@@ -177,7 +177,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
         let mut items = items.into_iter().enumerate().peekable();
 
         while items.peek().is_some() || rt.in_progress > 0 {
-            rt.enqueue(|state| {
+            rt.enqueue_while(|state| {
                 let Some((id, (byte_offset, items))) = items.next() else {
                     return Ok(None);
                 };
@@ -205,7 +205,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
         let mut writes = writes.into_iter().enumerate().peekable();
 
         while writes.peek().is_some() || rt.in_progress > 0 {
-            rt.enqueue(|state| {
+            rt.enqueue_while(|state| {
                 let Some((id, (file_index, byte_offset, items))) = writes.next() else {
                     return Ok(None);
                 };

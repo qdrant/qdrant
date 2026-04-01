@@ -35,7 +35,7 @@ where
         if self.runtime.completion_is_empty()
             && (self.ranges.peek().is_some() || self.runtime.in_progress > 0)
         {
-            self.runtime.enqueue(|state| {
+            self.runtime.enqueue_while(|state| {
                 let Some((idx, range)) = self.ranges.next() else {
                     return Ok(None);
                 };
@@ -53,7 +53,7 @@ where
             .completed()
             .next()
             .transpose()?
-            .map(|(idx, resp)| (idx as _, resp.expect_read().into()));
+            .map(|(idx, resp)| (idx as _, Cow::from(resp.expect_read())));
 
         Ok(next)
     }
@@ -73,7 +73,7 @@ where
 
 pub struct IoUringReadMultiIter<'a, T: 'static, I: Iterator> {
     files: &'a [IoUringFile],
-    file_indexes: ahash::HashMap<usize, usize>,
+    file_indexes: ahash::HashMap<usize, FileIndex>,
     ranges: iter::Peekable<iter::Enumerate<I>>,
     runtime: IoUringRuntime<'static, T>,
     _phantom: PhantomData<*const ()>, // `!Send + !Sync`
@@ -101,7 +101,7 @@ where
         if self.runtime.completion_is_empty()
             && (self.ranges.peek().is_some() || self.runtime.in_progress > 0)
         {
-            self.runtime.enqueue(|state| {
+            self.runtime.enqueue_while(|state| {
                 let Some((idx, (file_index, range))) = self.ranges.next() else {
                     return Ok(None);
                 };
@@ -131,7 +131,7 @@ where
             .map(|(idx, resp)| {
                 let idx = idx as _;
                 let file_index = self.file_indexes.remove(&idx).expect("file index tracked");
-                let items = resp.expect_read().into();
+                let items = Cow::from(resp.expect_read());
 
                 (idx, file_index, items)
             });
