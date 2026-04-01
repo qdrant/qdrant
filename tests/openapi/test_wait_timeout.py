@@ -1,8 +1,10 @@
+import http.client
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse, urlencode
 
 import pytest
-import requests
 
 from openapi.helpers.collection_setup import drop_collection
 from openapi.helpers.helpers import (
@@ -14,25 +16,49 @@ from openapi.helpers.helpers import (
 from openapi.helpers.settings import QDRANT_HOST
 
 
+class _HttpResponse:
+    """Minimal wrapper to match the requests.Response interface used in tests."""
+
+    def __init__(self, resp):
+        self.status_code = resp.status
+        self.ok = 200 <= resp.status < 300
+        self._body = resp.read()
+
+    def json(self):
+        return json.loads(self._body)
+
+
 def _request_with_signal(started, **kwargs):
-    started.set()
     api = kwargs["api"]
     path_params = kwargs.get("path_params") or {}
     query_params = kwargs.get("query_params") or {}
     body = kwargs.get("body")
-    return requests.post(
-        url=get_api_string(QDRANT_HOST, api, path_params),
-        params=query_params,
-        json=body,
-        headers=qdrant_host_headers(),
-    )
+
+    url = get_api_string(QDRANT_HOST, api, path_params)
+    parsed = urlparse(url)
+
+    path = parsed.path
+    if query_params:
+        path += "?" + urlencode(query_params)
+
+    headers = {**(qdrant_host_headers() or {}), "Content-Type": "application/json"}
+
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port)
+    # http.client.request() sends the request bytes and returns immediately,
+    # unlike requests.post() which blocks until the full response arrives.
+    # This lets us signal *after* the server received the request but *before*
+    # waiting for the response — ensuring the delay lock is acquired before
+    # the second request is dispatched.
+    conn.request("POST", path, body=json.dumps(body), headers=headers)
+    started.set()
+    return _HttpResponse(conn.getresponse())
 
 
 def run_parallel(first_call, second_call):
     started = threading.Event()
     with ThreadPoolExecutor(max_workers=2) as executor:
         first_future = executor.submit(_request_with_signal, started, **first_call)
-        started.wait(timeout=1)
+        started.wait(timeout=5)
         second_future = executor.submit(request_with_validation, **second_call)
         return first_future.result(), second_future.result()
 
