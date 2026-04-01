@@ -48,6 +48,10 @@ impl<'data, T> IoUringRuntime<'data, T> {
         Ok(())
     }
 
+    pub fn completion_is_empty(&mut self) -> bool {
+        self.io_uring.io_uring().completion().is_empty()
+    }
+
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
         let enqueued = self.io_uring.io_uring().submission().len();
 

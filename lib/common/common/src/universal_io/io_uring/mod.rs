@@ -103,7 +103,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
     ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
-        match IoUringReadIter::new(self, ranges) {
+        match IoUringReadIter::new(self, ranges.into_iter()) {
             Ok(iter) => itertools::Either::Left(iter),
             Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
         }
@@ -125,7 +125,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
     ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
-        match IoUringReadMultiIter::new(files, reads) {
+        match IoUringReadMultiIter::new(files, reads.into_iter()) {
             Ok(iter) => itertools::Either::Left(iter),
             Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
         }
