@@ -157,7 +157,7 @@ impl<'data, T> IoUringState<'data, T> {
         id: RequestId,
         fd: Fd,
         range: ReadRange,
-        allow_short_read: bool,
+        direct_io: bool,
     ) -> io::Result<squeue::Entry>
     where
         T: bytemuck::Pod,
@@ -171,13 +171,7 @@ impl<'data, T> IoUringState<'data, T> {
         items.resize_with(length as _, || MaybeUninit::uninit());
 
         let items = self
-            .init(
-                id,
-                IoUringRequest::Read {
-                    buffer: items,
-                    allow_short_read,
-                },
-            )?
+            .init(id, IoUringRequest::Read { items, direct_io })?
             .expect_read();
 
         let bytes_ptr = items.as_mut_ptr().cast();
@@ -236,10 +230,10 @@ impl<'data, T> IoUringState<'data, T> {
 
         let resp = match req {
             IoUringRequest::Read {
-                buffer: mut items,
-                allow_short_read,
+                mut items,
+                direct_io,
             } => {
-                if allow_short_read {
+                if direct_io {
                     let item_length = byte_length / size_of::<T>();
                     debug_assert!(item_length <= items.len());
 
@@ -277,8 +271,8 @@ pub type RequestId = u64;
 #[derive(Debug)]
 pub enum IoUringRequest<'data, T> {
     Read {
-        buffer: Vec<MaybeUninit<T>>,
-        allow_short_read: bool,
+        items: Vec<MaybeUninit<T>>,
+        direct_io: bool,
     },
 
     Write(&'data [T]),
@@ -288,7 +282,7 @@ impl<'data, T> IoUringRequest<'data, T> {
     pub fn expect_read(&mut self) -> &mut Vec<MaybeUninit<T>> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            IoUringRequest::Read { buffer, .. } => buffer,
+            IoUringRequest::Read { items, .. } => items,
             _ => panic!(),
         }
     }
@@ -296,7 +290,7 @@ impl<'data, T> IoUringRequest<'data, T> {
     pub fn expect_write(&self) -> &'data [T] {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            IoUringRequest::Write(buffer) => buffer,
+            IoUringRequest::Write(items) => items,
             _ => panic!(),
         }
     }
