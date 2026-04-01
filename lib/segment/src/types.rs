@@ -2931,23 +2931,19 @@ pub struct GeoPolygon {
 impl GeoPolygon {
     pub fn validate_line_string(line: &GeoLineString) -> OperationResult<()> {
         if line.points.len() <= 3 {
-            return Err(OperationError::ValidationError {
-                description: format!(
-                    "polygon invalid, the size must be at least 4, got {}",
-                    line.points.len()
-                ),
-            });
+            return Err(OperationError::validation_error(format!(
+                "polygon invalid, the size must be at least 4, got {}",
+                line.points.len()
+            )));
         }
 
         if let (Some(first), Some(last)) = (line.points.first(), line.points.last())
             && ((first.lat - last.lat).abs() > f64::EPSILON
                 || (first.lon - last.lon).abs() > f64::EPSILON)
         {
-            return Err(OperationError::ValidationError {
-                description: String::from(
-                    "polygon invalid, the first and the last points should be the same to form a closed line",
-                ),
-            });
+            return Err(OperationError::validation_error(
+                "polygon invalid, the first and the last points should be the same to form a closed line",
+            ));
         }
 
         Ok(())

@@ -322,11 +322,9 @@ pub(crate) fn create_sparse_vector_index(
         args.config.datatype.unwrap_or_default(),
         sparse_vector_index::USE_COMPRESSED,
     ) {
-        (_, a @ (VectorStorageDatatype::Float16 | VectorStorageDatatype::Uint8), false) => {
-            Err(OperationError::ValidationError {
-                description: format!("{a:?} datatype is not supported"),
-            })?
-        }
+        (_, a @ (VectorStorageDatatype::Float16 | VectorStorageDatatype::Uint8), false) => Err(
+            OperationError::validation_error(format!("{a:?} datatype is not supported")),
+        )?,
 
         (SparseIndexType::MutableRam, _, _) => {
             VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?)

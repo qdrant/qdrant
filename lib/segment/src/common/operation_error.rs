@@ -141,10 +141,7 @@ pub struct SegmentFailedState {
 
 impl From<ThreadPoolBuildError> for OperationError {
     fn from(error: ThreadPoolBuildError) -> Self {
-        OperationError::ServiceError {
-            description: format!("{error}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        Self::service_error(format!("{error}"))
     }
 }
 
@@ -163,36 +160,30 @@ impl From<MmapError> for OperationError {
 impl From<UniversalIoError> for OperationError {
     fn from(err: UniversalIoError) -> Self {
         match err {
-            UniversalIoError::Io(err) => OperationError::from(err),
-            UniversalIoError::Mmap(err) => OperationError::from(err),
+            UniversalIoError::Io(err) => Self::from(err),
+            UniversalIoError::Mmap(err) => Self::from(err),
 
             UniversalIoError::IoUringNotSupported(_)
             | UniversalIoError::NotFound { .. }
             | UniversalIoError::OutOfBounds { .. }
-            | UniversalIoError::InvalidFileIndex { .. } => {
-                OperationError::service_error(err.to_string())
-            }
-            UniversalIoError::BytemuckCast(_) => OperationError::service_error(err.to_string()),
-            UniversalIoError::Uninitialized { .. } => {
-                OperationError::service_error(err.to_string())
-            }
+            | UniversalIoError::InvalidFileIndex { .. } => Self::service_error(err.to_string()),
+            UniversalIoError::BytemuckCast(_) => Self::service_error(err.to_string()),
+            UniversalIoError::Uninitialized { .. } => Self::service_error(err.to_string()),
         }
     }
 }
 
 impl From<serde_cbor::Error> for OperationError {
     fn from(err: serde_cbor::Error) -> Self {
-        OperationError::service_error(format!("Failed to parse data: {err}"))
+        Self::service_error(format!("Failed to parse data: {err}"))
     }
 }
 
 impl<E> From<AtomicIoError<E>> for OperationError {
     fn from(err: AtomicIoError<E>) -> Self {
         match err {
-            AtomicIoError::Internal(io_err) => OperationError::from(io_err),
-            AtomicIoError::User(_user_err) => {
-                OperationError::service_error("Unknown atomic write error")
-            }
+            AtomicIoError::Internal(io_err) => Self::from(io_err),
+            AtomicIoError::User(_user_err) => Self::service_error("Unknown atomic write error"),
         }
     }
 }
@@ -202,31 +193,31 @@ impl From<IoError> for OperationError {
         match err.kind() {
             ErrorKind::OutOfMemory => {
                 let free_memory = Mem::new().available_memory_bytes();
-                OperationError::OutOfMemory {
+                Self::OutOfMemory {
                     description: format!("IO Error: {err}"),
                     free: free_memory,
                 }
             }
-            _ => OperationError::service_error(format!("IO Error: {err}")),
+            _ => Self::service_error(format!("IO Error: {err}")),
         }
     }
 }
 
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
-        OperationError::service_error(format!("Json error: {err}"))
+        Self::service_error(format!("Json error: {err}"))
     }
 }
 
 impl From<fs_extra::error::Error> for OperationError {
     fn from(err: fs_extra::error::Error) -> Self {
-        OperationError::service_error(format!("File system error: {err}"))
+        Self::service_error(format!("File system error: {err}"))
     }
 }
 
 impl From<geohash::GeohashError> for OperationError {
     fn from(err: geohash::GeohashError) -> Self {
-        OperationError::service_error(format!("Geohash error: {err}"))
+        Self::service_error(format!("Geohash error: {err}"))
     }
 }
 
@@ -236,11 +227,11 @@ impl From<quantization::EncodingError> for OperationError {
             quantization::EncodingError::IOError(err)
             | quantization::EncodingError::EncodingError(err)
             | quantization::EncodingError::ArgumentsError(err) => {
-                OperationError::service_error(format!("Quantization encoding error: {err}"))
+                Self::service_error(format!("Quantization encoding error: {err}"))
             }
-            quantization::EncodingError::Stopped => OperationError::Cancelled {
-                description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
-            },
+            quantization::EncodingError::Stopped => {
+                Self::cancelled(PROCESS_CANCELLED_BY_SERVICE_MESSAGE)
+            }
         }
     }
 }
@@ -248,7 +239,7 @@ impl From<quantization::EncodingError> for OperationError {
 impl From<TryReserveError> for OperationError {
     fn from(err: TryReserveError) -> Self {
         let free_memory = Mem::new().available_memory_bytes();
-        OperationError::OutOfMemory {
+        Self::OutOfMemory {
             description: format!("Failed to reserve memory: {err}"),
             free: free_memory,
         }
@@ -261,9 +252,7 @@ impl From<GridstoreError> for OperationError {
             GridstoreError::ServiceError { description } => {
                 Self::service_error(format!("Gridstore error: {description}"))
             }
-            GridstoreError::FlushCancelled => Self::Cancelled {
-                description: "Gridstore flushing was cancelled".to_string(),
-            },
+            GridstoreError::FlushCancelled => Self::cancelled("Gridstore flushing was cancelled"),
             GridstoreError::Io(_) | GridstoreError::Mmap(_) | GridstoreError::SerdeJson(_) => {
                 Self::service_error(err.to_string())
             }
@@ -302,9 +291,7 @@ pub type CancellableResult<T> = Result<T, CancelledError>;
 
 impl From<CancelledError> for OperationError {
     fn from(CancelledError: CancelledError) -> Self {
-        OperationError::Cancelled {
-            description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
-        }
+        Self::cancelled(PROCESS_CANCELLED_BY_SERVICE_MESSAGE)
     }
 }
 

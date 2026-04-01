@@ -1749,9 +1749,7 @@ impl VectorsConfigDiff {
                 .vectors
                 .get_params(vector_name)
                 .map(|_| ())
-                .ok_or_else(|| OperationError::VectorNameNotExists {
-                    received_name: vector_name.clone(),
-                })?;
+                .ok_or_else(|| OperationError::vector_name_not_exists(vector_name.clone()))?;
         }
         Ok(())
     }
