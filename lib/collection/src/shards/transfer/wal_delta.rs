@@ -116,7 +116,7 @@ pub(super) async fn transfer_wal_delta(
     if let Some(wal_delta_version) = wal_delta_version {
         // Queue proxy local shard
         replica_set
-            .queue_proxify_local(remote_shard.clone(), Some(wal_delta_version), progress)
+            .queue_proxify_local(remote_shard.clone(), Some(wal_delta_version), progress.clone())
             .await?;
 
         debug_assert!(
@@ -127,7 +127,17 @@ pub(super) async fn transfer_wal_delta(
         log::trace!("Transfer WAL diff by transferring all current queue proxy updates");
         replica_set.queue_proxy_flush().await?;
     } else {
-        log::trace!("Shard is already up-to-date as WAL diff if zero records");
+        log::trace!(
+            "Shard is already up-to-date as WAL diff if zero records, queue proxying to capture new updates"
+        );
+        replica_set
+            .queue_proxify_local(remote_shard.clone(), None, progress.clone())
+            .await?;
+
+        debug_assert!(
+            replica_set.is_queue_proxy().await,
+            "Local shard must be a queue proxy",
+        );
     }
 
     // Set shard state to Partial
