@@ -116,7 +116,11 @@ pub(super) async fn transfer_wal_delta(
     if let Some(wal_delta_version) = wal_delta_version {
         // Queue proxy local shard
         replica_set
-            .queue_proxify_local(remote_shard.clone(), Some(wal_delta_version), progress.clone())
+            .queue_proxify_local(
+                remote_shard.clone(),
+                Some(wal_delta_version),
+                progress.clone(),
+            )
             .await?;
 
         debug_assert!(
