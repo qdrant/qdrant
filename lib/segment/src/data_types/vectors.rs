@@ -276,18 +276,15 @@ pub struct TypedMultiDenseVector<T> {
 impl<T> TypedMultiDenseVector<T> {
     pub fn try_from_flatten(vectors: Vec<T>, dim: usize) -> Result<Self, OperationError> {
         if dim == 0 {
-            return Err(OperationError::ValidationError {
-                description: "MultiDenseVector cannot have zero dimension".to_string(),
-            });
+            return Err(OperationError::validation_error(
+                "MultiDenseVector cannot have zero dimension",
+            ));
         }
         if !vectors.len().is_multiple_of(dim) || vectors.is_empty() {
-            return Err(OperationError::ValidationError {
-                description: format!(
-                    "Invalid multi-vector length: {}, expected multiple of {}",
-                    vectors.len(),
-                    dim
-                ),
-            });
+            return Err(OperationError::validation_error(format!(
+                "Invalid multi-vector length: {}, expected multiple of {dim}",
+                vectors.len()
+            )));
         }
 
         Ok(TypedMultiDenseVector {
@@ -298,15 +295,15 @@ impl<T> TypedMultiDenseVector<T> {
 
     pub fn try_from_matrix(matrix: Vec<Vec<T>>) -> Result<Self, OperationError> {
         if matrix.is_empty() {
-            return Err(OperationError::ValidationError {
-                description: "MultiDenseVector cannot be empty".to_string(),
-            });
+            return Err(OperationError::validation_error(
+                "MultiDenseVector cannot be empty",
+            ));
         }
         let dim = matrix[0].len();
         if dim == 0 {
-            return Err(OperationError::ValidationError {
-                description: "MultiDenseVector cannot have zero dimension".to_string(),
-            });
+            return Err(OperationError::validation_error(
+                "MultiDenseVector cannot have zero dimension",
+            ));
         }
         // assert all vectors have the same dimension
         if let Some(bad_vec) = matrix.iter().find(|v| v.len() != dim) {

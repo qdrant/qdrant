@@ -232,9 +232,7 @@ fn check_sparse_vector_against_config(
 
 pub fn check_stopped(is_stopped: &AtomicBool) -> OperationResult<()> {
     if is_stopped.load(std::sync::atomic::Ordering::Relaxed) {
-        return Err(OperationError::Cancelled {
-            description: "Operation is stopped externally".to_string(),
-        });
+        return Err(OperationError::cancelled("Operation is stopped externally"));
     }
     Ok(())
 }

@@ -182,11 +182,8 @@ where
             length: std::mem::size_of::<Header>() as u64,
         })?;
 
-        let (header, _) = Header::read_from_prefix(&header_bytes).map_err(|_| {
-            OperationError::InconsistentStorage {
-                description: NOT_ENOUGH_BYTES_ERROR_MESSAGE.to_owned(),
-            }
-        })?;
+        let (header, _) = Header::read_from_prefix(&header_bytes)
+            .map_err(|_| OperationError::inconsistent_storage(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
 
         Ok(Self {
             file_name,

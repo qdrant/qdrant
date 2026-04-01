@@ -109,9 +109,9 @@ pub fn process_payload_operation(
                 set_payload_by_filter(segments, op_num, &payload, &filter, &sp.key, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
-                Err(OperationError::ValidationError {
-                    description: "No points or filter specified".to_string(),
-                })
+                Err(OperationError::validation_error(
+                    "No points or filter specified",
+                ))
             }
         }
         PayloadOps::DeletePayload(dp) => {
@@ -121,9 +121,9 @@ pub fn process_payload_operation(
                 delete_payload_by_filter(segments, op_num, &filter, &dp.keys, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
-                Err(OperationError::ValidationError {
-                    description: "No points or filter specified".to_string(),
-                })
+                Err(OperationError::validation_error(
+                    "No points or filter specified",
+                ))
             }
         }
         PayloadOps::ClearPayload { ref points, .. } => {
@@ -140,9 +140,9 @@ pub fn process_payload_operation(
                 overwrite_payload_by_filter(segments, op_num, &payload, &filter, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
-                Err(OperationError::ValidationError {
-                    description: "No points or filter specified".to_string(),
-                })
+                Err(OperationError::validation_error(
+                    "No points or filter specified",
+                ))
             }
         }
     }
