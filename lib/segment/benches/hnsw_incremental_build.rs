@@ -354,7 +354,11 @@ fn dataset_hash<'a>(
         hasher.update(vector.as_bytes());
     }
 
-    format!("{:x}", hasher.finalize())
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn build_hnsw_index<R: Rng + ?Sized>(

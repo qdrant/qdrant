@@ -115,7 +115,7 @@ impl<R> HashingReader<R> {
     fn finalize(self) -> Option<String> {
         self.hasher.map(|h| {
             let hash = h.finalize();
-            format!("{hash:x}")
+            hash.iter().map(|b| format!("{b:02x}")).collect()
         })
     }
 }
