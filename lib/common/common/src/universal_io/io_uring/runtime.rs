@@ -12,7 +12,7 @@ use crate::maybe_uninit::assume_init_vec;
 
 pub struct IoUringRuntime<'data, T> {
     io_uring: IoUringGuard,
-    pub state: IoUringState<'data, T>,
+    state: IoUringState<'data, T>,
     pub in_progress: usize,
 }
 
@@ -140,7 +140,7 @@ impl<'data, T> Drop for IoUringRuntime<'data, T> {
 }
 
 #[derive(Debug)]
-pub(super) struct IoUringState<'data, T> {
+pub struct IoUringState<'data, T> {
     requests: AHashMap<RequestId, IoUringRequest<'data, T>>,
 }
 
@@ -233,28 +233,28 @@ impl<'data, T> IoUringState<'data, T> {
             .remove(&id)
             .ok_or_else(|| io::Error::other(format!("request {id} does not exist")))?;
 
+        let byte_length = byte_length as usize;
+
         let resp = match req {
             IoUringRequest::Read {
                 buffer: mut items,
                 allow_short_read,
             } => {
                 if allow_short_read {
-                    let actual_items = byte_length as usize / mem::size_of::<T>();
-                    debug_assert!(
-                        actual_items <= items.len(),
-                        "read returned more bytes than requested"
-                    );
-                    // Truncate to the actual number of items read (short read at EOF).
-                    items.truncate(actual_items);
+                    let item_length = byte_length / mem::size_of::<T>();
+                    debug_assert!(item_length <= items.len());
+
+                    items.truncate(item_length);
                 } else {
-                    assert_eq!(mem::size_of_val(items.as_slice()), byte_length as usize);
+                    assert_eq!(mem::size_of_val(items.as_slice()), byte_length);
                 }
+
                 let items: Vec<T> = unsafe { assume_init_vec(items) };
                 IoUringResponse::Read(items)
             }
 
             IoUringRequest::Write(items) => {
-                assert_eq!(mem::size_of_val(items), byte_length as usize);
+                assert_eq!(mem::size_of_val(items), byte_length);
                 IoUringResponse::Write
             }
         };
@@ -265,26 +265,23 @@ impl<'data, T> IoUringState<'data, T> {
     pub fn abort(&mut self, id: RequestId) -> bool {
         self.requests.remove(&id).is_some()
     }
-
-    fn is_empty(&self) -> bool {
-        self.requests.is_empty()
-    }
 }
 
 impl<'data, T> Drop for IoUringState<'data, T> {
     fn drop(&mut self) {
-        debug_assert!(self.is_empty());
+        debug_assert!(self.requests.is_empty());
     }
 }
 
-pub(super) type RequestId = u64;
+pub type RequestId = u64;
 
 #[derive(Debug)]
-enum IoUringRequest<'data, T> {
+pub enum IoUringRequest<'data, T> {
     Read {
         buffer: Vec<MaybeUninit<T>>,
         allow_short_read: bool,
     },
+
     Write(&'data [T]),
 }
 
@@ -307,7 +304,7 @@ impl<'data, T> IoUringRequest<'data, T> {
 }
 
 #[derive(Debug)]
-pub(super) enum IoUringResponse<T> {
+pub enum IoUringResponse<T> {
     Read(Vec<T>),
     Write,
 }
@@ -330,13 +327,13 @@ impl<T> IoUringResponse<T> {
     }
 }
 
-pub(crate) fn io_error_context(err: io::Error, context: impl Into<String>) -> io::Error {
+pub fn io_error_context(err: io::Error, context: impl Into<String>) -> io::Error {
     io::Error::new(err.kind(), IoErrorContext::new(err, context))
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("{context}: {error}")]
-struct IoErrorContext {
+pub struct IoErrorContext {
     context: String,
     error: io::Error,
 }
