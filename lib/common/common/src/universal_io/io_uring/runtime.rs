@@ -67,7 +67,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
         self.submit_and_wait_retry_early_wakeup(want)?;
 
         let remaining = self.io_uring.io_uring().submission().len();
-        debug_assert!(enqueued > remaining);
+        debug_assert!(enqueued == 0 || enqueued > remaining);
         debug_assert_eq!(remaining, 0);
 
         self.in_progress += enqueued - remaining;
