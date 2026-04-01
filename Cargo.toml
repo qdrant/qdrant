@@ -120,7 +120,6 @@ raft-proto = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c61
 common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 issues = { path = "lib/common/issues" }
-macros = { path = "lib/macros" }
 segment = { path = "lib/segment", default-features = false }
 shard = { path = "lib/shard", default-features = false }
 collection = { path = "lib/collection" }

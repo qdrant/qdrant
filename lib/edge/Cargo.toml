@@ -30,7 +30,5 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-anyhow = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
-serde_json = { workspace = true }
 tempfile = { workspace = true }

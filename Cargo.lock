@@ -2162,7 +2162,6 @@ name = "edge"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "anyhow",
  "common",
  "fs-err",
  "itertools 0.14.0",
@@ -5690,12 +5689,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "protobuf"
-version = "2.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
-
-[[package]]
 name = "protobuf-build"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5862,7 +5855,6 @@ dependencies = [
  "itertools 0.14.0",
  "jsonwebtoken",
  "log",
- "macros",
  "mockito",
  "murmur3",
  "nix 0.31.2",
@@ -7384,7 +7376,6 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "api",
- "bitvec",
  "chrono",
  "common",
  "criterion",
@@ -7685,7 +7676,6 @@ dependencies = [
  "parking_lot",
  "proptest",
  "prost 0.11.9",
- "protobuf",
  "raft",
  "rand 0.10.0",
  "reqwest 0.13.2",
