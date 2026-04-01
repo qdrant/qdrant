@@ -54,7 +54,7 @@ impl UniversalReadFileOps for IoUringFile {
 impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         // Check that io_uring is supported on this system.
-        pool::check_io_uring_supported().map_err(UniversalIoError::IoUringNotSupported)?;
+        pool::check_io_uring_support()?;
 
         let OpenOptions {
             writeable,

@@ -18,7 +18,7 @@ pub struct IoUringRuntime<'data, T> {
 impl<'data, T> IoUringRuntime<'data, T> {
     pub fn new() -> Result<Self> {
         let rt = Self {
-            io_uring: pool::take_io_uring()?,
+            io_uring: pool::get_io_uring()?,
             state: IoUringState::new(),
             in_progress: 0,
         };
