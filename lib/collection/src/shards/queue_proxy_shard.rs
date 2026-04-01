@@ -42,7 +42,7 @@ use crate::shards::telemetry::LocalShardTelemetry;
 /// Maximum total serialized byte size of a single transfer batch.
 /// Each WAL operation can vary widely in size (a delete vs an upsert of many high-dimensional
 /// vectors), so we use a byte budget rather than a fixed operation count.
-const MAX_BATCH_BYTES: usize = 16 * 1024 * 1024; // 16 MiB
+const MAX_BATCH_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
 
 /// Maximum number of operations in a single transfer batch.
 /// Caps memory usage and WAL lock duration when operations are small.
