@@ -578,15 +578,13 @@ impl Inner {
                     ))
                 })?;
 
-                // Always include at least one operation per batch
-                if !raw_batch.is_empty()
-                    && (batch_bytes + size > MAX_BATCH_BYTES || raw_batch.len() >= MAX_BATCH_OPS)
-                {
-                    break;
-                }
-
                 batch_bytes += size;
                 raw_batch.push((idx, raw));
+
+                // Always include at least one operation per batch
+                if batch_bytes > MAX_BATCH_BYTES || raw_batch.len() >= MAX_BATCH_OPS {
+                    break;
+                }
             }
 
             let reached_end = raw_batch.len() as u64 >= items_left;
