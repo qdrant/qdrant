@@ -298,8 +298,7 @@ unsafe fn hsum_avx2(v: __m256) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::turboquant::unpack_indices;
-    use crate::turboquant::TurboQuantizer;
+    use crate::{TurboQuantizer, cosine_preprocess, unpack_indices};
 
     /// Verify the scalar fused function matches the original unpack-then-loop
     /// approach for all supported bit widths.
@@ -308,14 +307,15 @@ mod tests {
         // Use the same test helper from lib.rs tests.
         fn random_vector(dim: usize, seed: u64) -> Vec<f32> {
             let mut state = seed.wrapping_add(1);
-            (0..dim)
+            let raw: Vec<f32> = (0..dim)
                 .map(|_| {
                     state ^= state << 13;
                     state ^= state >> 7;
                     state ^= state << 17;
                     (state as i64 as f32) / (i64::MAX as f32)
                 })
-                .collect()
+                .collect();
+            cosine_preprocess(&raw)
         }
 
         for bits in 2..=4u8 {

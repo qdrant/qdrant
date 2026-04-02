@@ -4,7 +4,7 @@
 //! where H_d is the Walsh-Hadamard matrix and signs are random ±1 (Rademacher).
 
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 /// Chunk size for the block-wise Hadamard transform.
 const CHUNK_SIZE: usize = 256;

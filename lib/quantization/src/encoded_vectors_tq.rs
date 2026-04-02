@@ -11,10 +11,10 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{validate_vector_parameters, EncodedVectors, VectorParameters};
-use crate::turboquant::TurboQuantizer;
 use crate::EncodingError;
+use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
+use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::turboquant::TurboQuantizer;
 
 pub const DEFAULT_TURBO_QUANT_BITS: usize = 4;
 
