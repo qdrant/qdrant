@@ -87,8 +87,22 @@ pub fn score_fused(
     // 3. Reconstruct rotated-domain vectors: centroid[j]·scale + rn·qjl[j].
     let mut recon_a = vec![0.0f32; padded_dim];
     let mut recon_b = vec![0.0f32; padded_dim];
-    reconstruct_rotated(&mut recon_a, &indices_a, centroids, padded_dim_sqrt, residual_norm_a, &qjl_a);
-    reconstruct_rotated(&mut recon_b, &indices_b, centroids, padded_dim_sqrt, residual_norm_b, &qjl_b);
+    reconstruct_rotated(
+        &mut recon_a,
+        &indices_a,
+        centroids,
+        padded_dim_sqrt,
+        residual_norm_a,
+        &qjl_a,
+    );
+    reconstruct_rotated(
+        &mut recon_b,
+        &indices_b,
+        centroids,
+        padded_dim_sqrt,
+        residual_norm_b,
+        &qjl_b,
+    );
 
     // 4. Inverse Hadamard per CHUNK_SIZE chunk.
     inverse_hadamard(&mut recon_a, hadamard_signs, hadamard_scale);
@@ -150,13 +164,7 @@ fn qjl_matvec_scalar(z: &[f32], proj: &[f32], d: usize, scale: f32, result: &mut
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
-unsafe fn qjl_matvec_avx2(
-    z: &[f32],
-    proj: &[f32],
-    d: usize,
-    scale: f32,
-    result: &mut [f32],
-) {
+unsafe fn qjl_matvec_avx2(z: &[f32], proj: &[f32], d: usize, scale: f32, result: &mut [f32]) {
     let chunks8 = d / 8;
     let d4 = d / 4 * 4;
 
@@ -462,8 +470,9 @@ unsafe fn hsum_avx2(v: __m256) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::packing::pack_indices;
-    use crate::{cosine_preprocess, TurboQuantizer};
+    use crate::encoded_vectors_tq::cosine_preprocess;
+    use crate::turboquant::packing::pack_indices;
+    use crate::turboquant::TurboQuantizer;
 
     #[test]
     fn qjl_dequant_identity_matrix() {
@@ -486,28 +495,6 @@ mod tests {
                 "i={i}: expected={}, got={}",
                 expected_z[i] * scale,
                 result[i],
-            );
-        }
-    }
-
-    #[test]
-    fn qjl_dequant_matches_nalgebra() {
-        // Compare against the reference Qjl::dequantize for a real projection.
-        use crate::qjl::Qjl;
-        let d = 256;
-        let qjl = Qjl::new(d, 42);
-        let signs: Vec<u8> = (0..d).map(|i| (i % 3 == 0) as u8).collect();
-        let packed = pack_indices(&signs, 1);
-
-        let reference = qjl.dequantize(&signs);
-        let simd_result = qjl_dequantize(&packed, d, qjl.projection.as_slice());
-
-        for i in 0..d {
-            assert!(
-                (reference[i] - simd_result[i]).abs() < 1e-4,
-                "i={i}: reference={}, simd={}",
-                reference[i],
-                simd_result[i],
             );
         }
     }

@@ -13,13 +13,16 @@ mod centroids;
 mod codec;
 mod hadamard;
 mod packing;
+mod qjl;
 mod simd_score;
 
 use centroids::get_centroids;
-pub use codec::{QuantizedHeader, QuantizedRef};
 use hadamard::HadamardTransform;
 use packing::{pack_indices, packed_len, unpack_indices};
 use zerocopy::FromBytes;
+
+use crate::turboquant::qjl::Qjl;
+pub use codec::{QuantizedHeader, QuantizedRef};
 
 pub fn cosine_preprocess(vector: &[f32]) -> Vec<f32> {
     let mut length: f32 = vector.iter().map(|x| x * x).sum();
@@ -68,6 +71,8 @@ pub struct TurboQuantizer {
     bits: u8,
     hadamard: HadamardTransform,
     padded_dim_sqrt: f32,
+
+    qjl: Qjl,
 }
 
 impl TurboQuantizer {
@@ -83,11 +88,13 @@ impl TurboQuantizer {
         assert!((2..=4).contains(&bits), "bits must be 2–4, got {bits}");
         let hadamard = HadamardTransform::new(dim, seed);
         let padded_dim_sqrt = 1.0 / (hadamard.padded_dim() as f32).sqrt();
+        let qjl = Qjl::new(hadamard.padded_dim(), seed);
         Self {
             dim,
             bits,
             hadamard,
             padded_dim_sqrt,
+            qjl,
         }
     }
 
@@ -156,19 +163,26 @@ impl TurboQuantizer {
 
         // QJL residual (Stage 2).
         let mut residual_norm_sq = 0.0f32;
-        let mut qjl_raw = vec![0u8; padded_dim];
+        let mut residual = vec![0.0f32; padded_dim];
+        // let mut qjl_raw = vec![0u8; padded_dim];
         for i in 0..padded_dim {
             let r = rotated[i] - centroids[indices[i] as usize] * scale;
             residual_norm_sq += r * r;
-
-            qjl_raw[i] = u8::from(r >= 0.0);
+            residual[i] = r;
+            // qjl_raw[i] = u8::from(r >= 0.0);
         }
-        let qjl_signs = pack_indices(&qjl_raw, 1);
+
+        // let qjl_signs = pack_indices(&qjl_raw, 1);
+
         let residual_norm = residual_norm_sq.sqrt();
+
+        let r_hat: Vec<f32> = residual.iter().map(|v| v / residual_norm).collect();
+        let qjl_res = self.qjl.quantize(&r_hat);
+        let qjl_packed = pack_indices(&qjl_res, 1);
 
         Quantized {
             packed_indices,
-            qjl_signs,
+            qjl_signs: qjl_packed,
             residual_norm,
         }
     }
@@ -251,6 +265,7 @@ impl TurboQuantizer {
     /// scalar fallback. Produces the same result as [`Self::score`].
     pub fn score_simd(&self, a: &Quantized, b: &Quantized) -> f32 {
         simd_score::score_fused(
+            self.dim,
             self.padded_dim(),
             self.padded_dim_sqrt,
             self.mse_bits(),
@@ -260,6 +275,9 @@ impl TurboQuantizer {
             b.residual_norm,
             &b.packed_indices,
             &b.qjl_signs,
+            self.qjl.projection.as_slice(),
+            self.hadamard.signs(),
+            self.hadamard.scale(),
         )
     }
 
@@ -269,6 +287,7 @@ impl TurboQuantizer {
     /// scalar fallback. Produces the same result as [`Self::score_ref`].
     pub fn score_ref_simd(&self, a: &QuantizedRef<'_>, b: &QuantizedRef<'_>) -> f32 {
         simd_score::score_fused(
+            self.dim,
             self.padded_dim(),
             self.padded_dim_sqrt,
             self.mse_bits(),
@@ -278,6 +297,9 @@ impl TurboQuantizer {
             b.residual_norm(),
             b.packed_indices,
             b.qjl_signs,
+            self.qjl.projection.as_slice(),
+            self.hadamard.signs(),
+            self.hadamard.scale(),
         )
     }
 
@@ -291,35 +313,14 @@ impl TurboQuantizer {
         packed_indices_b: &[u8],
         qjl_signs_b: &[u8],
     ) -> f32 {
-        const FRAC_2_PI_SQRT: f32 = 1.2533141f32;
+        let recon_a = self.dequantize_inner(residual_norm_a, packed_indices_a, qjl_signs_a);
+        let recon_b = self.dequantize_inner(residual_norm_b, packed_indices_b, qjl_signs_b);
 
-        let padded_dim = self.padded_dim();
-        let mse_bits = self.mse_bits();
-        let centroids = get_centroids(mse_bits);
-        let scale = self.padded_dim_sqrt;
-        // let scaled_centroids: Vec<f32> = centroids.iter().map(|&c| c * scale).collect();
-
-        let indices_a = unpack_indices(packed_indices_a, mse_bits, padded_dim);
-        let indices_b = unpack_indices(packed_indices_b, mse_bits, padded_dim);
-        let signs_a = unpack_indices(qjl_signs_a, 1, padded_dim);
-        let signs_b = unpack_indices(qjl_signs_b, 1, padded_dim);
-
-        let qjl_scale = FRAC_2_PI_SQRT / padded_dim as f32;
-
-        // Dot product in rotated space = dot product in original space (Hadamard is orthogonal).
-        let qjl_a = qjl_scale * residual_norm_a;
-        let qjl_b = qjl_scale * residual_norm_b;
-
-        let mut sum = 0.0f32;
-        for j in 0..padded_dim {
-            let ca = centroids[indices_a[j] as usize] * scale;
-            let cb = centroids[indices_b[j] as usize] * scale;
-            let sa = signs_a[j] as f32 * 2.0 - 1.0;
-            let sb = signs_b[j] as f32 * 2.0 - 1.0;
-            sum += (ca + qjl_a * sa) * (cb + qjl_b * sb);
-        }
-
-        sum
+        recon_a
+            .iter()
+            .zip(recon_b.iter())
+            .map(|(&a, &b)| a * b)
+            .sum()
     }
 
     fn dequantize_inner(
@@ -328,7 +329,7 @@ impl TurboQuantizer {
         packed_indices: &[u8],
         qjl_signs: &[u8],
     ) -> Vec<f32> {
-        const FRAC_2_PI_SQRT: f32 = 1.2533141f32;
+        // const FRAC_2_PI_SQRT: f32 = 1.2533141f32;
 
         let padded_dim = self.padded_dim();
         let mse_bits = self.mse_bits();
@@ -339,12 +340,15 @@ impl TurboQuantizer {
 
         // Centroid lookup + QJL correction.
         let signs = unpack_indices(qjl_signs, 1, padded_dim);
-        let qjl_scale = FRAC_2_PI_SQRT / padded_dim as f32;
+        // let qjl_scale = FRAC_2_PI_SQRT / padded_dim as f32;
+
+        let qjl_dequant = self.qjl.dequantize(&signs);
+
         let mut dequant = vec![0.0f32; padded_dim];
+
         for j in 0..padded_dim {
-            let sign = signs[j] as f32 * 2.0 - 1.0;
-            dequant[j] =
-                (centroids[indices[j] as usize] * scale + qjl_scale * residual_norm * sign);
+            let sign = qjl_dequant[j];
+            dequant[j] = centroids[indices[j] as usize] * scale + residual_norm * sign;
         }
 
         // Inverse Hadamard to return to original space, trimmed to original dim.

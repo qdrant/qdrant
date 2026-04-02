@@ -23,15 +23,14 @@ impl Qjl {
     pub fn quantize(&self, r: &[f32]) -> Vec<u8> {
         let r_vec = nalgebra::DVector::from_column_slice(r);
         let z = &self.projection * r_vec;
-        z.iter()
-            .map(|&v| if v >= 0.0 { 1u8 } else { 0 })
-            .collect()
+        z.iter().map(|&v| if v >= 0.0 { 1u8 } else { 0 }).collect()
     }
 
     /// Dequantize: Q_qjl^{-1}(z) = (sqrt(pi/2) / d) * S^T * z
     pub fn dequantize(&self, signs: &[u8]) -> Vec<f32> {
         let scale = (std::f32::consts::PI / 2.0).sqrt() / self.d as f32;
-        let z = nalgebra::DVector::from_iterator(self.d, signs.iter().map(|&s| s as f32 * 2.0 - 1.0));
+        let z =
+            nalgebra::DVector::from_iterator(self.d, signs.iter().map(|&s| s as f32 * 2.0 - 1.0));
         let result = scale * (self.projection.transpose() * z);
         result.as_slice().to_vec()
     }
