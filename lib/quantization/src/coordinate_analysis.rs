@@ -2,6 +2,9 @@ use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
+
 use crate::encoded_vectors::VectorParameters;
 
 const NUM_BINS: usize = 50;
@@ -12,11 +15,14 @@ const MARGIN_R: usize = 20;
 const MARGIN_T: usize = 35;
 const MARGIN_B: usize = 40;
 
-const OUTPUT_DIR: &str = "/Users/pleshkov/qdrant/target/analysis";
+const ANALYSIS_DIR_ENV: &str = "QDRANT_ANALYSIS_DIR";
 
 /// Create a new timestamped run directory under the analysis output folder.
-/// Returns the path like `target/analysis/result_2026-04-01_14-30-05/`.
-pub fn create_run_dir() -> PathBuf {
+/// Returns `None` if the `QDRANT_ANALYSIS_DIR` env variable is not set,
+/// meaning analysis should be skipped.
+pub fn create_run_dir() -> Option<PathBuf> {
+    let output_dir = std::env::var(ANALYSIS_DIR_ENV).ok()?;
+
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap();
@@ -26,9 +32,9 @@ pub fn create_run_dir() -> PathBuf {
     let (y, mo, d, h, mi, s) = epoch_to_utc(secs);
     let name = format!("result_{y:04}-{mo:02}-{d:02}_{h:02}-{mi:02}-{s:02}");
 
-    let dir = Path::new(OUTPUT_DIR).join(name);
+    let dir = Path::new(&output_dir).join(name);
     fs_err::create_dir_all(&dir).expect("Failed to create analysis run directory");
-    dir
+    Some(dir)
 }
 
 fn epoch_to_utc(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
@@ -111,6 +117,11 @@ fn ks_normal(sorted: &[f32], mean: f64, std_dev: f64) -> f32 {
         max_d = max_d.max(d1).max(d2);
     }
     max_d as f32
+}
+
+/// Gaussian PDF with mean=0: f(x) = exp(-x²/(2σ²)) / (σ√(2π))
+fn gaussian_pdf_zero_mean(x: f64, sigma: f64) -> f64 {
+    (-0.5 * (x / sigma).powi(2)).exp() / (sigma * (2.0 * std::f64::consts::PI).sqrt())
 }
 
 fn build_histogram(values: &[f32], coord_idx: usize) -> Histogram {
@@ -323,7 +334,10 @@ fn render_grid(histograms: &[Histogram], sorted_by_distortion: &[usize]) -> Stri
         svg,
         "<svg width=\"{total_w}\" height=\"{total_h}\" xmlns=\"http://www.w3.org/2000/svg\">"
     );
-    let _ = writeln!(svg, "<rect width=\"100%\" height=\"100%\" fill=\"#f8f8f8\"/>");
+    let _ = writeln!(
+        svg,
+        "<rect width=\"100%\" height=\"100%\" fill=\"#f8f8f8\"/>"
+    );
 
     let n = sorted_by_distortion.len();
     if n == 0 {
@@ -358,10 +372,10 @@ fn render_grid(histograms: &[Histogram], sorted_by_distortion: &[usize]) -> Stri
     };
 
     let rows = [
-        pick(sorted_by_distortion, 0),                        // min distortion
-        pick(sorted_by_distortion, n / 2),                    // avg distortion
-        pick(sorted_by_distortion, n.saturating_sub(1)),       // max distortion
-        pick(&sorted_by_ks, n.saturating_sub(1)),              // worst KS
+        pick(sorted_by_distortion, 0),                   // min distortion
+        pick(sorted_by_distortion, n / 2),               // avg distortion
+        pick(sorted_by_distortion, n.saturating_sub(1)), // max distortion
+        pick(&sorted_by_ks, n.saturating_sub(1)),        // worst KS
     ];
 
     for (row_idx, row) in rows.iter().enumerate() {
@@ -370,9 +384,7 @@ fn render_grid(histograms: &[Histogram], sorted_by_distortion: &[usize]) -> Stri
             svg,
             "<text x=\"10\" y=\"{}\" font-size=\"14\" font-family=\"sans-serif\" \
              font-weight=\"bold\" fill=\"{}\">{}</text>",
-            y_base,
-            row_colors[row_idx],
-            row_labels[row_idx],
+            y_base, row_colors[row_idx], row_labels[row_idx],
         );
         for (col_idx, &coord_idx) in row.iter().enumerate() {
             let x_off = col_idx * CHART_W;
@@ -383,6 +395,138 @@ fn render_grid(histograms: &[Histogram], sorted_by_distortion: &[usize]) -> Stri
                 hist.coord_idx, hist.distortion, hist.ks_statistic
             );
             render_histogram_inner(&mut svg, hist, &title, x_off, y_off, row_colors[row_idx]);
+        }
+    }
+
+    let _ = writeln!(svg, "</svg>");
+    svg
+}
+
+fn render_gaussian_grid(histograms: &[Histogram], dim: usize) -> String {
+    let sigma = 1.0 / (dim as f64).sqrt();
+    let (centroids_8, _) = crate::encoded_vectors_tq::compute_codebook(3, dim);
+    let (centroids_16, _) = crate::encoded_vectors_tq::compute_codebook(4, dim);
+
+    let num_coords = histograms.len();
+    let num_cells = 9.min(num_coords);
+
+    // Randomly select coordinates (deterministic seed for reproducibility)
+    let selected: Vec<usize> = if num_coords <= 9 {
+        (0..num_coords).collect()
+    } else {
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut picked = Vec::with_capacity(9);
+        while picked.len() < num_cells {
+            let idx = rng.random_range(0..num_coords);
+            if !picked.contains(&idx) {
+                picked.push(idx);
+            }
+        }
+        picked
+    };
+
+    let cols = 3usize;
+    let actual_rows = (num_cells + cols - 1) / cols;
+    let total_w = CHART_W * cols;
+    let total_h = CHART_H * actual_rows;
+    let plot_w = CHART_W - MARGIN_L - MARGIN_R;
+    let plot_h = CHART_H - MARGIN_T - MARGIN_B;
+
+    let mut svg = String::new();
+    let _ = writeln!(
+        svg,
+        "<svg width=\"{total_w}\" height=\"{total_h}\" xmlns=\"http://www.w3.org/2000/svg\">"
+    );
+    let _ = writeln!(
+        svg,
+        "<rect width=\"100%\" height=\"100%\" fill=\"#f8f8f8\"/>"
+    );
+
+    for (cell_idx, &coord_idx) in selected.iter().enumerate() {
+        let row = cell_idx / cols;
+        let col = cell_idx % cols;
+        let x_off = col * CHART_W;
+        let y_off = row * CHART_H;
+
+        let hist = &histograms[coord_idx];
+        let title = format!("Coord {} (σ={:.4})", hist.coord_idx, hist.distortion);
+
+        // Render histogram bars
+        render_histogram_inner(&mut svg, hist, &title, x_off, y_off, "steelblue");
+
+        // Overlay Gaussian curve and codebook points
+        let range = hist.max_val - hist.min_val;
+        let max_count = *hist.bins.iter().max().unwrap_or(&1).max(&1);
+        if range > 0.0 && max_count > 0 {
+            let n: usize = hist.bins.iter().sum();
+            let bin_width = range as f64 / NUM_BINS as f64;
+
+            let _ = writeln!(svg, "<g transform=\"translate({x_off},{y_off})\">");
+
+            // Gaussian curve as polyline
+            let num_points = 200;
+            let _ = write!(
+                svg,
+                "<polyline fill=\"none\" stroke=\"red\" stroke-width=\"2\" \
+                 opacity=\"0.8\" points=\""
+            );
+            for i in 0..num_points {
+                let frac = i as f64 / (num_points - 1) as f64;
+                let val = hist.min_val as f64 + frac * range as f64;
+                let pdf = gaussian_pdf_zero_mean(val, sigma);
+                let expected = n as f64 * bin_width * pdf;
+                let px_x = MARGIN_L as f64 + frac * plot_w as f64;
+                let px_y = (MARGIN_T as f64 + plot_h as f64
+                    - expected / max_count as f64 * plot_h as f64)
+                    .max(MARGIN_T as f64);
+                if i > 0 {
+                    let _ = write!(svg, " ");
+                }
+                let _ = write!(svg, "{:.1},{:.1}", px_x, px_y);
+            }
+            let _ = writeln!(svg, "\"/>");
+
+            // 16 centroids (levels=4) as smaller pink points
+            for &c in &centroids_16 {
+                let c64 = c as f64;
+                if c64 >= hist.min_val as f64 && c64 <= hist.max_val as f64 {
+                    let frac = (c64 - hist.min_val as f64) / range as f64;
+                    let pdf = gaussian_pdf_zero_mean(c64, sigma);
+                    let expected = n as f64 * bin_width * pdf;
+                    let px_x = MARGIN_L as f64 + frac * plot_w as f64;
+                    let px_y = (MARGIN_T as f64 + plot_h as f64
+                        - expected / max_count as f64 * plot_h as f64)
+                        .max(MARGIN_T as f64);
+                    let _ = writeln!(
+                        svg,
+                        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" \
+                         fill=\"pink\" stroke=\"#c2185b\" stroke-width=\"1\"/>",
+                        px_x, px_y
+                    );
+                }
+            }
+
+            // 8 centroids (levels=3) as larger orange points
+            for &c in &centroids_8 {
+                let c64 = c as f64;
+                if c64 >= hist.min_val as f64 && c64 <= hist.max_val as f64 {
+                    let frac = (c64 - hist.min_val as f64) / range as f64;
+                    let pdf = gaussian_pdf_zero_mean(c64, sigma);
+                    let expected = n as f64 * bin_width * pdf;
+                    let px_x = MARGIN_L as f64 + frac * plot_w as f64;
+                    let px_y = (MARGIN_T as f64 + plot_h as f64
+                        - expected / max_count as f64 * plot_h as f64)
+                        .max(MARGIN_T as f64);
+                    let _ = writeln!(
+                        svg,
+                        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"5\" \
+                         fill=\"#ff6600\" stroke=\"black\" stroke-width=\"1.5\"/>",
+                        px_x, px_y
+                    );
+                }
+            }
+
+            let _ = writeln!(svg, "</g>");
         }
     }
 
@@ -423,11 +567,8 @@ pub fn analyse<'a>(
     let coord_dir = output_dir.join("coord");
     fs_err::create_dir_all(&coord_dir).expect("Failed to create coord output directory");
     for hist in &histograms {
-        let svg = render_single_histogram(
-            hist,
-            &format!("Coordinate {}", hist.coord_idx),
-            "steelblue",
-        );
+        let svg =
+            render_single_histogram(hist, &format!("Coordinate {}", hist.coord_idx), "steelblue");
         let path = coord_dir.join(format!("coord_{}.svg", hist.coord_idx));
         fs_err::write(path, svg).expect("Failed to write histogram SVG");
     }
@@ -444,6 +585,11 @@ pub fn analyse<'a>(
     // 4×4 grid: min σ / avg σ / max σ / worst KS rows
     let grid_svg = render_grid(&histograms, &sorted_indices);
     fs_err::write(output_dir.join("grid_4x4.svg"), grid_svg).expect("Failed to write grid SVG");
+
+    // 3x3 grid: randomly selected coordinates with Gaussian overlay + codebook points
+    let gaussian_grid_svg = render_gaussian_grid(&histograms, dim);
+    fs_err::write(output_dir.join("gaussian_grid_3x3.svg"), gaussian_grid_svg)
+        .expect("Failed to write Gaussian grid SVG");
 
     // Distributions: mean, median, distortion (σ), KS across all coordinates
     let means: Vec<f32> = histograms.iter().map(|h| h.mean_val).collect();
@@ -465,13 +611,138 @@ pub fn analyse<'a>(
     );
     let _ = writeln!(svg, "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>");
     render_histogram_inner(&mut svg, &mean_hist, "Mean (μ) per coordinate", 0, 0, "red");
-    render_histogram_inner(&mut svg, &median_hist, "Median per coordinate", 0, CHART_H, "#9c27b0");
-    render_histogram_inner(&mut svg, &dist_hist, "Distortion (σ) per coordinate", 0, CHART_H * 2, "#ff9800");
-    render_histogram_inner(&mut svg, &ks_hist, "KS statistic per coordinate", 0, CHART_H * 3, "#e65100");
+    render_histogram_inner(
+        &mut svg,
+        &median_hist,
+        "Median per coordinate",
+        0,
+        CHART_H,
+        "#9c27b0",
+    );
+    render_histogram_inner(
+        &mut svg,
+        &dist_hist,
+        "Distortion (σ) per coordinate",
+        0,
+        CHART_H * 2,
+        "#ff9800",
+    );
+    render_histogram_inner(
+        &mut svg,
+        &ks_hist,
+        "KS statistic per coordinate",
+        0,
+        CHART_H * 3,
+        "#e65100",
+    );
     let _ = writeln!(svg, "</svg>");
 
     fs_err::write(output_dir.join("distributions.svg"), svg)
         .expect("Failed to write distributions SVG");
+
+    // Combined histogram of ALL values across ALL coordinates + centroid positions
+    {
+        let all_values: Vec<f32> = coord_values
+            .iter()
+            .flat_map(|v| v.iter().copied())
+            .collect();
+        let all_hist = build_histogram(&all_values, 0);
+
+        let sigma = 1.0 / (dim as f64).sqrt();
+        let (centroids_8, _) = crate::encoded_vectors_tq::compute_codebook(3, dim);
+        let (centroids_16, _) = crate::encoded_vectors_tq::compute_codebook(4, dim);
+
+        let plot_w = CHART_W - MARGIN_L - MARGIN_R;
+        let plot_h = CHART_H - MARGIN_T - MARGIN_B;
+
+        let mut svg = String::new();
+        let _ = writeln!(
+            svg,
+            "<svg width=\"{CHART_W}\" height=\"{CHART_H}\" xmlns=\"http://www.w3.org/2000/svg\">"
+        );
+        render_histogram_inner(
+            &mut svg,
+            &all_hist,
+            "All coordinates combined",
+            0,
+            0,
+            "steelblue",
+        );
+
+        let range = all_hist.max_val - all_hist.min_val;
+        let max_count = *all_hist.bins.iter().max().unwrap_or(&1).max(&1);
+        if range > 0.0 && max_count > 0 {
+            let n: usize = all_hist.bins.iter().sum();
+            let bin_width = range as f64 / NUM_BINS as f64;
+
+            // Gaussian curve
+            let num_points = 200;
+            let _ = write!(
+                svg,
+                "<polyline fill=\"none\" stroke=\"red\" stroke-width=\"2\" \
+                 opacity=\"0.8\" points=\""
+            );
+            for i in 0..num_points {
+                let frac = i as f64 / (num_points - 1) as f64;
+                let val = all_hist.min_val as f64 + frac * range as f64;
+                let pdf = gaussian_pdf_zero_mean(val, sigma);
+                let expected = n as f64 * bin_width * pdf;
+                let px_x = MARGIN_L as f64 + frac * plot_w as f64;
+                let px_y = (MARGIN_T as f64 + plot_h as f64
+                    - expected / max_count as f64 * plot_h as f64)
+                    .max(MARGIN_T as f64);
+                if i > 0 {
+                    let _ = write!(svg, " ");
+                }
+                let _ = write!(svg, "{:.1},{:.1}", px_x, px_y);
+            }
+            let _ = writeln!(svg, "\"/>");
+
+            // 16 centroids (pink, smaller)
+            for &c in &centroids_16 {
+                let c64 = c as f64;
+                if c64 >= all_hist.min_val as f64 && c64 <= all_hist.max_val as f64 {
+                    let frac = (c64 - all_hist.min_val as f64) / range as f64;
+                    let pdf = gaussian_pdf_zero_mean(c64, sigma);
+                    let expected = n as f64 * bin_width * pdf;
+                    let px_x = MARGIN_L as f64 + frac * plot_w as f64;
+                    let px_y = (MARGIN_T as f64 + plot_h as f64
+                        - expected / max_count as f64 * plot_h as f64)
+                        .max(MARGIN_T as f64);
+                    let _ = writeln!(
+                        svg,
+                        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" \
+                         fill=\"pink\" stroke=\"#c2185b\" stroke-width=\"1\"/>",
+                        px_x, px_y
+                    );
+                }
+            }
+
+            // 8 centroids (orange, larger)
+            for &c in &centroids_8 {
+                let c64 = c as f64;
+                if c64 >= all_hist.min_val as f64 && c64 <= all_hist.max_val as f64 {
+                    let frac = (c64 - all_hist.min_val as f64) / range as f64;
+                    let pdf = gaussian_pdf_zero_mean(c64, sigma);
+                    let expected = n as f64 * bin_width * pdf;
+                    let px_x = MARGIN_L as f64 + frac * plot_w as f64;
+                    let px_y = (MARGIN_T as f64 + plot_h as f64
+                        - expected / max_count as f64 * plot_h as f64)
+                        .max(MARGIN_T as f64);
+                    let _ = writeln!(
+                        svg,
+                        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"5\" \
+                         fill=\"#ff6600\" stroke=\"black\" stroke-width=\"1.5\"/>",
+                        px_x, px_y
+                    );
+                }
+            }
+        }
+
+        let _ = writeln!(svg, "</svg>");
+        fs_err::write(output_dir.join("all_values_histogram.svg"), svg)
+            .expect("Failed to write all-values histogram SVG");
+    }
 
     eprintln!(
         "[coordinate_analysis] Saved {} histograms + grid + distributions to {}",

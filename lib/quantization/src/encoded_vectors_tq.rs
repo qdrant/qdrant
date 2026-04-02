@@ -134,7 +134,7 @@ fn gaussian_conditional_expectation(sigma: f64, a: f64, b: f64) -> f64 {
 ///
 /// Returns (centroids, boundaries) where centroids has 2^levels entries and
 /// boundaries has 2^levels − 1 entries (midpoints between consecutive centroids).
-fn compute_codebook(levels: usize, padded_dim: usize) -> (Vec<f32>, Vec<f32>) {
+pub(crate) fn compute_codebook(levels: usize, padded_dim: usize) -> (Vec<f32>, Vec<f32>) {
     let d = padded_dim as f64;
 
     let centroids_f64: Vec<f64> = match levels {
@@ -462,31 +462,30 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let (signs1, signs2) = generate_signs(rotation_seed, padded_dim);
         let (codebook, boundaries) = compute_codebook(bits, padded_dim);
 
-        // Coordinate analysis: create a timestamped run directory
-        let analysis_run_dir = crate::coordinate_analysis::create_run_dir();
+        // Coordinate analysis (only if QDRANT_ANALYSIS_DIR is set)
+        if let Some(analysis_run_dir) = crate::coordinate_analysis::create_run_dir() {
+            crate::coordinate_analysis::analyse(
+                data.clone(),
+                vector_parameters,
+                _count,
+                &analysis_run_dir,
+                "before_rotation",
+            );
 
-        // Coordinate analysis: before rotation (raw input vectors)
-        crate::coordinate_analysis::analyse(
-            data.clone(),
-            vector_parameters,
-            _count,
-            &analysis_run_dir,
-            "before_rotation",
-        );
-
-        // Coordinate analysis: after rotation (normalized + WHT-rotated)
-        {
-            let rotated_vectors: Vec<Vec<f32>> = data.clone().map(|v| {
-                let v = v.as_ref();
-                let norm_sq: f32 = v.iter().map(|&x| x * x).sum();
-                let norm = norm_sq.sqrt();
-                let normalized: Vec<f32> = if norm > 0.0 {
-                    v.iter().map(|&x| x / norm).collect()
-                } else {
-                    vec![0.0; v.len()]
-                };
-                apply_rotation(&normalized, &signs1, &signs2, padded_dim)
-            }).collect();
+            let rotated_vectors: Vec<Vec<f32>> = data
+                .clone()
+                .map(|v| {
+                    let v = v.as_ref();
+                    let norm_sq: f32 = v.iter().map(|&x| x * x).sum();
+                    let norm = norm_sq.sqrt();
+                    let normalized: Vec<f32> = if norm > 0.0 {
+                        v.iter().map(|&x| x / norm).collect()
+                    } else {
+                        vec![0.0; v.len()]
+                    };
+                    apply_rotation(&normalized, &signs1, &signs2, padded_dim)
+                })
+                .collect();
             let rotated_params = VectorParameters {
                 dim: padded_dim,
                 ..vector_parameters.clone()
