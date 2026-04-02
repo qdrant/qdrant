@@ -107,7 +107,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
-        let turbo_quantizer = TurboQuantizer::new(vector_parameters.dim, levels as u8, 42);
+        let turbo_quantizer = TurboQuantizer::new(vector_parameters.dim, bits as u8, 42);
 
         for vector in data {
             let vector = cosine_preprocess(vector.as_ref());
@@ -170,7 +170,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let metadata: Metadata = serde_json::from_str(&contents)?;
 
         let turbo_quantizer =
-            TurboQuantizer::new(metadata.vector_parameters.dim, metadata.levels as u8, 42);
+            TurboQuantizer::new(metadata.vector_parameters.dim, metadata.bits as u8, 42);
 
         let result = Self {
             encoded_vectors,

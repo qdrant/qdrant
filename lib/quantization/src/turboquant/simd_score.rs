@@ -298,7 +298,8 @@ unsafe fn hsum_avx2(v: __m256) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{TurboQuantizer, cosine_preprocess, unpack_indices};
+    use crate::turboquant::{TurboQuantizer, cosine_preprocess};
+    use crate::unpack_indices;
 
     /// Verify the scalar fused function matches the original unpack-then-loop
     /// approach for all supported bit widths.
