@@ -561,39 +561,56 @@ impl Inner {
         let mut update_lock = Some(self.update_lock.lock().await);
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
 
-        // Lock WAL, count pending items to transfer, grab batch up to byte budget
-        let (reached_end, total, batch) = {
+        // Lock WAL, count pending items to transfer, grab raw batch up to byte budget.
+        // We collect raw (not yet deserialized) bytes under the lock to minimize lock hold time,
+        // then deserialize outside the lock.
+        let (reached_end, total, raw_batch) = {
             let wal = self.wrapped_shard.wal.wal.lock().await;
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
 
-            let mut batch = Vec::new();
+            let mut raw_batch = Vec::new();
             let mut batch_bytes = 0usize;
-            for result in wal.read_with_size(transfer_from) {
-                let (idx, size, record) = result.map_err(|e| {
+            for result in wal.read_raw_with_size(transfer_from) {
+                let (idx, size, raw) = result.map_err(|e| {
                     CollectionError::service_error(format!(
                         "Failed to read WAL during queue proxy transfer: {e}"
                     ))
                 })?;
 
                 // Always include at least one operation per batch
-                if !batch.is_empty()
-                    && (batch_bytes + size > MAX_BATCH_BYTES || batch.len() >= MAX_BATCH_OPS)
+                if !raw_batch.is_empty()
+                    && (batch_bytes + size > MAX_BATCH_BYTES || raw_batch.len() >= MAX_BATCH_OPS)
                 {
                     break;
                 }
 
                 batch_bytes += size;
-                batch.push((idx, record));
+                raw_batch.push((idx, raw));
             }
 
-            let reached_end = batch.len() as u64 >= items_left;
+            let reached_end = raw_batch.len() as u64 >= items_left;
             debug_assert!(
-                batch.len() as u64 <= items_left,
+                raw_batch.len() as u64 <= items_left,
                 "batch cannot be larger than items_left",
             );
-            (reached_end, items_total, batch)
+            (reached_end, items_total, raw_batch)
         };
+
+        // Deserialize outside the WAL lock
+        let batch: Vec<(u64, OperationWithClockTag)> = raw_batch
+            .into_iter()
+            .map(|(idx, raw)| {
+                let record =
+                    shard::wal::WalRawRecord::<OperationWithClockTag>::deserialize_from(&raw)
+                        .map_err(|e| {
+                            CollectionError::service_error(format!(
+                                "Failed to deserialize WAL record during queue proxy transfer: {e}"
+                            ))
+                        })?;
+                Ok((idx, record))
+            })
+            .collect::<CollectionResult<_>>()?;
 
         log::trace!(
             "Queue proxy transferring batch of {} updates to peer {}",

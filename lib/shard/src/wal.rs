@@ -57,7 +57,7 @@ impl<R: DeserializeOwned + Serialize> WalRawRecord<R> {
         Self::deserialize_from(&self.record)
     }
 
-    fn deserialize_from(record: &[u8]) -> Result<R>
+    pub fn deserialize_from(record: &[u8]) -> Result<R>
     where
         R: DeserializeOwned,
     {
@@ -173,6 +173,25 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
             let record: R = WalRawRecord::deserialize_from(&record_bin)?;
 
             Ok((idx, size, record))
+        })
+    }
+
+    /// Read raw (not deserialized) records from the WAL, including the serialized byte size.
+    /// Returns an iterator of `(index, serialized_byte_size, raw_bytes)` tuples.
+    ///
+    /// Useful when you want to defer deserialization (e.g. to release a lock first).
+    pub fn read_raw_with_size(
+        &self,
+        from: u64,
+    ) -> impl DoubleEndedIterator<Item = Result<(u64, usize, Vec<u8>)>> + '_ {
+        let to = self.first_index() + self.len(false);
+        (from..to).map(move |idx| {
+            let record_bin = self.wal.entry(idx).ok_or_else(|| {
+                WalError::ReadWalError(format!("Can't read entry {idx} from WAL"))
+            })?;
+
+            let size = record_bin.len();
+            Ok((idx, size, record_bin.to_vec()))
         })
     }
 
