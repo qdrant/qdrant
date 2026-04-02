@@ -626,16 +626,30 @@ impl ShardHolder {
                     ShardingMethod::Custom => true,
                 };
 
+                let resharding_state = self.resharding_state.read().clone();
+
                 for (&shard_id, shard) in self.shards.iter() {
                     // Ignore a new resharding shard until it completed point migration
                     // The shard will be marked as active at the end of the migration stage
-                    let resharding_migrating_up =
-                        self.resharding_state.read().clone().is_some_and(|state| {
-                            state.direction == ReshardingDirection::Up
-                                && state.shard_id == shard_id
-                                && state.stage < ReshardingStage::ReadHashRingCommitted
-                        });
+                    let resharding_migrating_up = resharding_state.as_ref().is_some_and(|state| {
+                        state.direction == ReshardingDirection::Up
+                            && state.shard_id == shard_id
+                            && state.stage < ReshardingStage::ReadHashRingCommitted
+                    });
                     if resharding_migrating_up {
+                        continue;
+                    }
+
+                    // Skip shard being removed by resharding down once the write
+                    // hash ring is committed. The shard is logically gone at this
+                    // point; querying it on a remote peer that already applied
+                    // `finish_resharding` would return a "shard not found" error.
+                    let resharding_removing_down = resharding_state.as_ref().is_some_and(|state| {
+                        state.direction == ReshardingDirection::Down
+                            && state.shard_id == shard_id
+                            && state.stage >= ReshardingStage::WriteHashRingCommitted
+                    });
+                    if resharding_removing_down {
                         continue;
                     }
 
