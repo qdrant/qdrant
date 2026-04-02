@@ -2,8 +2,6 @@ use std::borrow::Cow;
 use std::iter;
 use std::marker::PhantomData;
 
-use ahash::HashMapExt as _;
-
 use super::*;
 
 pub struct IoUringReadIter<'a, T: 'static, I: Iterator> {
@@ -34,12 +32,11 @@ where
             && (self.ranges.peek().is_some() || self.runtime.in_progress > 0)
         {
             self.runtime.enqueue_while(|state| {
-                let Some((idx, range)) = self.ranges.next() else {
+                let Some((id, range)) = self.ranges.next() else {
                     return Ok(None);
                 };
 
-                let entry = state.read(idx as _, self.file.fd(), range, self.file.direct_io)?;
-
+                let entry = state.read(id as _, self.file.fd(), range, 0, self.file.direct_io)?;
                 Ok(Some(entry))
             })?;
 
@@ -51,7 +48,12 @@ where
             .completed()
             .next()
             .transpose()?
-            .map(|(idx, resp)| (idx as _, Cow::from(resp.expect_read())));
+            .map(|(id, resp)| {
+                let id = id as _;
+                let (_, items) = resp.expect_read();
+
+                (id, Cow::from(items))
+            });
 
         Ok(next)
     }
@@ -71,7 +73,6 @@ where
 
 pub struct IoUringReadMultiIter<'a, T: 'static, I: Iterator> {
     files: &'a [IoUringFile],
-    file_indexes: ahash::HashMap<usize, FileIndex>,
     ranges: iter::Peekable<iter::Enumerate<I>>,
     runtime: IoUringRuntime<'static, T>,
     _phantom: PhantomData<*const ()>, // `!Send + !Sync`
@@ -85,7 +86,6 @@ where
     pub fn new(files: &'a [IoUringFile], ranges: I) -> Result<Self> {
         let iter = Self {
             files,
-            file_indexes: ahash::HashMap::with_capacity(IO_URING_QUEUE_LENGTH as _),
             ranges: ranges.enumerate().peekable(),
             runtime: IoUringRuntime::new()?,
             _phantom: PhantomData,
@@ -100,7 +100,7 @@ where
             && (self.ranges.peek().is_some() || self.runtime.in_progress > 0)
         {
             self.runtime.enqueue_while(|state| {
-                let Some((idx, (file_index, range))) = self.ranges.next() else {
+                let Some((id, (file_index, range))) = self.ranges.next() else {
                     return Ok(None);
                 };
 
@@ -112,9 +112,7 @@ where
                             files: self.files.len(),
                         })?;
 
-                self.file_indexes.insert(idx, file_index);
-
-                let entry = state.read(idx as _, file.fd(), range, file.direct_io)?;
+                let entry = state.read(id as _, file.fd(), range, file_index, file.direct_io)?;
                 Ok(Some(entry))
             })?;
 
@@ -126,12 +124,11 @@ where
             .completed()
             .next()
             .transpose()?
-            .map(|(idx, resp)| {
-                let idx = idx as _;
-                let file_index = self.file_indexes.remove(&idx).expect("file index tracked");
-                let items = Cow::from(resp.expect_read());
+            .map(|(id, resp)| {
+                let id = id as _;
+                let (file_index, items) = resp.expect_read();
 
-                (idx, file_index, items)
+                (id, file_index, Cow::from(items))
             });
 
         Ok(next)
