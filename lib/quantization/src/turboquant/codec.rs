@@ -20,16 +20,10 @@ use super::Quantized;
 #[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Copy, Clone, Debug)]
 #[repr(C)]
 pub struct QuantizedHeader {
-    norm: [u8; 4],
     residual_norm: [u8; 4],
 }
 
 impl QuantizedHeader {
-    #[inline]
-    pub fn norm(&self) -> f32 {
-        f32::from_le_bytes(self.norm)
-    }
-
     #[inline]
     pub fn residual_norm(&self) -> f32 {
         f32::from_le_bytes(self.residual_norm)
@@ -63,11 +57,6 @@ impl<'a> QuantizedRef<'a> {
     }
 
     #[inline]
-    pub fn norm(&self) -> f32 {
-        self.header.norm()
-    }
-
-    #[inline]
     pub fn residual_norm(&self) -> f32 {
         self.header.residual_norm()
     }
@@ -77,7 +66,6 @@ impl Quantized {
     /// Build the header for this quantized vector.
     fn header(&self) -> QuantizedHeader {
         QuantizedHeader {
-            norm: self.norm.to_le_bytes(),
             residual_norm: self.residual_norm.to_le_bytes(),
         }
     }

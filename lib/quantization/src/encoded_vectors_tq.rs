@@ -11,10 +11,10 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::encoded_vectors::{validate_vector_parameters, EncodedVectors, VectorParameters};
 use crate::turboquant::TurboQuantizer;
+use crate::EncodingError;
 
 pub const DEFAULT_TURBO_QUANT_BITS: usize = 4;
 
@@ -60,6 +60,20 @@ pub struct Metadata {
     pub quantized_size: usize,
 }
 
+pub fn cosine_preprocess(vector: &[f32]) -> Vec<f32> {
+    let mut length: f32 = vector.iter().map(|x| x * x).sum();
+    if is_length_zero_or_normalized(length) {
+        return vector.to_vec();
+    }
+    length = length.sqrt();
+    vector.iter().map(|x| x / length).collect()
+}
+
+#[inline]
+pub fn is_length_zero_or_normalized(length: f32) -> bool {
+    length < f32::EPSILON || (length - 1.0).abs() <= 1.0e-6
+}
+
 impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
@@ -96,6 +110,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let turbo_quantizer = TurboQuantizer::new(vector_parameters.dim, levels as u8, 42);
 
         for vector in data {
+            let vector = cosine_preprocess(vector.as_ref());
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
@@ -180,7 +195,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let turbo_query = self.turbo_quantizer.decode(query.query.as_slice()).unwrap();
         let turbo_vector = self.turbo_quantizer.decode(vector).unwrap();
 
-        let result = self.turbo_quantizer.score_ref(&turbo_query, &turbo_vector);
+        let result = self
+            .turbo_quantizer
+            .score_ref_simd(&turbo_query, &turbo_vector);
 
         if self.metadata.vector_parameters.invert {
             -result
