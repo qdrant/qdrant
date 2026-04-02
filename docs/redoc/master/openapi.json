@@ -7556,7 +7556,7 @@
               }
             ]
           },
-          "hadamard_rotations": {
+          "hadamard_chunk": {
             "description": "Number of Hadamard rotations (only used when rotation is hadamard)",
             "type": "integer",
             "format": "uint",
