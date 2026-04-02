@@ -76,6 +76,24 @@ fn get_index_builder(
     (temp_dir, builder, id_tracker)
 }
 
+fn open_index_from_disk(
+    temp_dir: &Path,
+    index_type: IndexType,
+    id_tracker: &IdTrackerEnum,
+) -> NumericIndex<FloatPayloadType, FloatPayloadType> {
+    match index_type {
+        IndexType::MutableGridstore => NumericIndex::new_gridstore(temp_dir.to_path_buf(), true)
+            .unwrap()
+            .unwrap(),
+        IndexType::Mmap => NumericIndex::new_mmap(temp_dir, true, id_tracker)
+            .unwrap()
+            .unwrap(),
+        IndexType::RamMmap => NumericIndex::new_mmap(temp_dir, false, id_tracker)
+            .unwrap()
+            .unwrap(),
+    }
+}
+
 fn random_index(
     num_points: usize,
     values_per_point: usize,
@@ -564,6 +582,167 @@ fn test_numeric_index(#[case] index_type: IndexType) {
         },
         vec![6, 7, 8],
     );
+}
+
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_numeric_index_reload(#[case] index_type: IndexType) {
+    let (temp_dir, mut index_builder, id_tracker) = get_index_builder(index_type);
+
+    let values = vec![
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![2.0],
+        vec![2.5],
+        vec![2.6],
+        vec![3.0],
+    ];
+
+    let hw_counter = HardwareCounterCell::new();
+
+    values.into_iter().enumerate().for_each(|(idx, values)| {
+        let values = values.iter().map(|v| Value::from(*v)).collect_vec();
+        let values = values.iter().collect_vec();
+        let new_idx = idx as PointOffsetType + 1;
+        id_tracker
+            .borrow_mut()
+            .set_link(ExtendedPointId::NumId(new_idx as _), new_idx)
+            .unwrap();
+        index_builder
+            .add_point(new_idx, &values, &hw_counter)
+            .unwrap();
+    });
+    let mut index = index_builder.finalize().unwrap();
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: Some(1.0),
+            gte: None,
+            lt: None,
+            lte: None,
+        },
+        vec![6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(1.0),
+            lt: None,
+            lte: None,
+        },
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: Some(2.6),
+            lte: None,
+        },
+        vec![1, 2, 3, 4, 5, 6, 7],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![1, 2, 3, 4, 5, 6, 7, 8],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(2.0),
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![6, 7, 8],
+    );
+
+    // Remove some points
+    id_tracker.borrow_mut().drop_internal(1).unwrap();
+    index.remove_point(1).unwrap();
+    id_tracker.borrow_mut().drop_internal(2).unwrap();
+    index.remove_point(2).unwrap();
+    id_tracker.borrow_mut().drop_internal(5).unwrap();
+    index.remove_point(5).unwrap();
+    index.inner().flusher()().unwrap();
+
+    // Reload!
+    drop(index);
+    let index = open_index_from_disk(temp_dir.path(), index_type, &id_tracker.borrow());
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: Some(1.0),
+            gte: None,
+            lt: None,
+            lte: None,
+        },
+        vec![6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(1.0),
+            lt: None,
+            lte: None,
+        },
+        vec![3, 4, 6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: Some(2.6),
+            lte: None,
+        },
+        vec![3, 4, 6, 7],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![3, 4, 6, 7, 8],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(2.0),
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![6, 7, 8],
+    );
+
+    assert_eq!(index.inner().get_points_count(), 6);
 }
 
 fn test_cond<
