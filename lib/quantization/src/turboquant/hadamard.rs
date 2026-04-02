@@ -76,6 +76,14 @@ impl HadamardTransform {
         self.padded_dim
     }
 
+    pub(crate) fn signs(&self) -> &[f32] {
+        &self.signs
+    }
+
+    pub(crate) fn scale(&self) -> f32 {
+        self.scale
+    }
+
     /// Forward transform: apply per-chunk `scale · H · diag(signs) · x`.
     ///
     /// Input `x` has length `self.dim`; output has length `self.padded_dim`.
