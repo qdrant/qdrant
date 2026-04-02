@@ -47,6 +47,9 @@ const LLOYD_ITERATIONS: usize = 100;
 /// Size of the stored norm (f32) in bytes.
 const NORM_SIZE: usize = size_of::<f32>();
 
+/// Chunk size for chunked Walsh-Hadamard Transform. Must be a power of 2.
+const WHT_CHUNK_SIZE: usize = 256;
+
 // ============================================================================
 // Math helpers for codebook computation
 // ============================================================================
@@ -245,22 +248,29 @@ fn walsh_hadamard_transform(x: &mut [f32]) {
     }
 }
 
-/// Forward rotation: y = signs2 · WHT(signs1 · pad(x)).
-/// Pads input to `padded_dim`, returns `padded_dim` elements.
+/// Round up to the nearest multiple of `WHT_CHUNK_SIZE`.
+fn compute_padded_dim(dim: usize) -> usize {
+    (dim + WHT_CHUNK_SIZE - 1) / WHT_CHUNK_SIZE * WHT_CHUNK_SIZE
+}
+
+/// Forward rotation: y = signs2 · WHT_chunked(signs1 · pad(x)).
+/// Pads input to `padded_dim`, applies WHT per chunk of `WHT_CHUNK_SIZE`.
 fn apply_rotation(x: &[f32], signs1: &[f32], signs2: &[f32], padded_dim: usize) -> Vec<f32> {
     let mut buf = vec![0.0f32; padded_dim];
     buf[..x.len()].copy_from_slice(x);
     for (b, &s) in buf.iter_mut().zip(signs1.iter()) {
         *b *= s;
     }
-    walsh_hadamard_transform(&mut buf);
+    for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+        walsh_hadamard_transform(chunk);
+    }
     for (b, &s) in buf.iter_mut().zip(signs2.iter()) {
         *b *= s;
     }
     buf
 }
 
-/// Inverse rotation: x = truncate(signs1 · WHT(signs2 · y), dim).
+/// Inverse rotation: x = truncate(signs1 · WHT_chunked(signs2 · y), dim).
 fn apply_inverse_rotation(
     y: &[f32],
     dim: usize,
@@ -274,7 +284,9 @@ fn apply_inverse_rotation(
     for (b, &s) in buf.iter_mut().zip(signs2.iter()) {
         *b *= s;
     }
-    walsh_hadamard_transform(&mut buf);
+    for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+        walsh_hadamard_transform(chunk);
+    }
     for (b, &s) in buf.iter_mut().zip(signs1.iter()) {
         *b *= s;
     }
@@ -456,7 +468,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
-        let padded_dim = vector_parameters.dim.next_power_of_two();
+        let padded_dim = compute_padded_dim(vector_parameters.dim);
         let rotation_seed = ROTATION_SEED;
 
         let (signs1, signs2) = generate_signs(rotation_seed, padded_dim);
@@ -579,7 +591,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     /// Get quantized vector size in bytes:
     /// 4 bytes (f32 norm) + ⌈padded_dim × bits / 8⌉ bytes (packed indices).
     pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, bits: usize) -> usize {
-        let padded_dim = vector_parameters.dim.next_power_of_two();
+        let padded_dim = compute_padded_dim(vector_parameters.dim);
         NORM_SIZE + packed_indices_size(padded_dim, bits)
     }
 
