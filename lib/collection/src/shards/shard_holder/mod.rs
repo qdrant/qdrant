@@ -639,6 +639,20 @@ impl ShardHolder {
                         continue;
                     }
 
+                    // Skip shard being removed by resharding down once the write
+                    // hash ring is committed. The shard is logically gone at this
+                    // point; querying it on a remote peer that already applied
+                    // `finish_resharding` would return a "shard not found" error.
+                    let resharding_removing_down =
+                        self.resharding_state.read().clone().is_some_and(|state| {
+                            state.direction == ReshardingDirection::Down
+                                && state.shard_id == shard_id
+                                && state.stage >= ReshardingStage::WriteHashRingCommitted
+                        });
+                    if resharding_removing_down {
+                        continue;
+                    }
+
                     // Technically, we could skip inactive shards regardless of sharding method,
                     // as we do not expect that shard id can even become inactive on all replicas.
                     // (if it happens, means there is a bug)
