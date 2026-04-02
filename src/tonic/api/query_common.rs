@@ -312,7 +312,7 @@ pub async fn recommend(
 ) -> Result<Response<RecommendResponse>, Status> {
     // extract a few fields from the request and convert to internal request
     let collection_name = recommend_points.collection_name.clone();
-    let read_consistency = recommend_points.read_consistency.clone();
+    let read_consistency = recommend_points.read_consistency;
     let shard_key_selector = recommend_points.shard_key_selector.clone();
     let timeout = recommend_points.timeout;
 
@@ -784,7 +784,6 @@ pub async fn query(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
     let read_consistency = query_points
         .read_consistency
-        .clone()
         .map(TryFrom::try_from)
         .transpose()?;
     let collection_name = query_points.collection_name.clone();
@@ -904,7 +903,6 @@ pub async fn query_groups(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
     let read_consistency = query_points
         .read_consistency
-        .clone()
         .map(TryFrom::try_from)
         .transpose()?;
     let timeout = query_points.timeout;

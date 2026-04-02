@@ -64,18 +64,15 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
 
     // Collect header values before the async call to avoid holding `&req` across `.await`
     // (`tonic::body::Body` is `Send` but not `Sync`)
-    let headers: std::collections::HashMap<&str, String> = [
-        "api-key",
-        "authorization",
-    ]
-    .into_iter()
-    .filter_map(|key| {
-        req.headers()
-            .get(key)
-            .and_then(|val| val.to_str().ok())
-            .map(|val| (key, val.to_string()))
-    })
-    .collect();
+    let headers: std::collections::HashMap<&str, String> = ["api-key", "authorization"]
+        .into_iter()
+        .filter_map(|key| {
+            req.headers()
+                .get(key)
+                .and_then(|val| val.to_str().ok())
+                .map(|val| (key, val.to_string()))
+        })
+        .collect();
 
     let (access, inference_token, auth_type, subject) = auth_keys
         .validate_request(|key| headers.get(key).map(|v| v.as_str()))
