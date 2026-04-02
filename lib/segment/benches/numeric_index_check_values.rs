@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -40,7 +37,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
     for point_id in 0..NUM_POINTS as PointOffsetType {
         id_tracker
             .set_link(
-                segment::types::ExtendedPointId::NumId(point_id as _),
+                segment::types::ExtendedPointId::NumId(point_id.into()),
                 point_id,
             )
             .unwrap();
