@@ -43,7 +43,7 @@ fn fwht_inplace(x: &mut [f32]) {
 
 /// Pad dimension up to the next multiple of `CHUNK_SIZE`.
 fn padded_dim(dim: usize) -> usize {
-    (dim + CHUNK_SIZE - 1) / CHUNK_SIZE * CHUNK_SIZE
+    dim.div_ceil(CHUNK_SIZE) * CHUNK_SIZE
 }
 
 /// Manages the randomized Hadamard transform state.

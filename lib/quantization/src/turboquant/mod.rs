@@ -17,13 +17,14 @@ mod qjl;
 mod simd_score;
 
 use centroids::get_centroids;
+pub use codec::{QuantizedHeader, QuantizedRef};
 use hadamard::HadamardTransform;
 use packing::{pack_indices, packed_len, unpack_indices};
 use zerocopy::FromBytes;
 
 use crate::turboquant::qjl::Qjl;
-pub use codec::{QuantizedHeader, QuantizedRef};
 
+#[allow(dead_code)]
 pub fn cosine_preprocess(vector: &[f32]) -> Vec<f32> {
     let mut length: f32 = vector.iter().map(|x| x * x).sum();
     if is_length_zero_or_normalized(length) {
@@ -34,6 +35,7 @@ pub fn cosine_preprocess(vector: &[f32]) -> Vec<f32> {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub fn is_length_zero_or_normalized(length: f32) -> bool {
     length < f32::EPSILON || (length - 1.0).abs() <= 1.0e-6
 }
@@ -190,6 +192,7 @@ impl TurboQuantizer {
     /// Dequantize back to the original vector space.
     ///
     /// Returns a vector of length equal to the original `dim`.
+    #[allow(dead_code)]
     pub fn dequantize(&self, quantized: &Quantized) -> Vec<f32> {
         self.dequantize_inner(
             quantized.residual_norm,
@@ -201,6 +204,7 @@ impl TurboQuantizer {
     /// Dequantize from a zero-copy [`QuantizedRef`] decoded from bytes.
     ///
     /// Returns a vector of length equal to the original `dim`.
+    #[allow(dead_code)]
     pub fn dequantize_ref(&self, quantized: &QuantizedRef<'_>) -> Vec<f32> {
         self.dequantize_inner(
             quantized.residual_norm(),
@@ -215,6 +219,7 @@ impl TurboQuantizer {
     /// This is mathematically equivalent to `dot(dequantize(a), dequantize(b))`
     /// but significantly faster because the Hadamard inverse (O(d log d)) is
     /// skipped entirely.
+    #[allow(dead_code)]
     pub fn score(&self, a: &Quantized, b: &Quantized) -> f32 {
         self.score_inner(
             a.residual_norm,
@@ -263,6 +268,7 @@ impl TurboQuantizer {
     ///
     /// Uses AVX2+FMA on x86_64 when available, otherwise an allocation-free
     /// scalar fallback. Produces the same result as [`Self::score`].
+    #[allow(dead_code)]
     pub fn score_simd(&self, a: &Quantized, b: &Quantized) -> f32 {
         simd_score::score_fused(
             self.dim,
@@ -791,11 +797,11 @@ mod tests {
         // Construct two orthogonal vectors: one in the first half, one in the second.
         let mut raw1 = vec![0.0f32; dim];
         let mut raw2 = vec![0.0f32; dim];
-        for i in 0..dim / 2 {
-            raw1[i] = (i as f32 + 1.0).sqrt();
+        for (i, item) in raw1.iter_mut().enumerate().take(dim / 2) {
+            *item = (i as f32 + 1.0).sqrt();
         }
-        for i in dim / 2..dim {
-            raw2[i] = (i as f32 + 1.0).sqrt();
+        for (i, item) in raw2.iter_mut().enumerate().take(dim).skip(dim / 2) {
+            *item = (i as f32 + 1.0).sqrt();
         }
         let v1 = cosine_preprocess(&raw1);
         let v2 = cosine_preprocess(&raw2);

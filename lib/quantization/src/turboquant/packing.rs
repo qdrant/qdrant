@@ -11,7 +11,7 @@ pub fn packed_len(padded_dim: usize, bits: u8) -> usize {
     match bits {
         4 => padded_dim / 2,
         3 => {
-            debug_assert!(padded_dim % 8 == 0);
+            debug_assert!(padded_dim.is_multiple_of(8));
             (padded_dim * 3) / 8
         }
         2 => padded_dim / 4,
@@ -45,7 +45,7 @@ pub fn pack_indices(indices: &[u8], bits: u8) -> Vec<u8> {
                 let base = g * 8;
                 let mut packed_24: u32 = 0;
                 for i in 0..8 {
-                    packed_24 |= ((indices[base + i] & 0x07) as u32) << (i * 3);
+                    packed_24 |= u32::from(indices[base + i] & 0x07) << (i * 3);
                 }
                 out[g * 3] = (packed_24 & 0xFF) as u8;
                 out[g * 3 + 1] = ((packed_24 >> 8) & 0xFF) as u8;
@@ -56,9 +56,9 @@ pub fn pack_indices(indices: &[u8], bits: u8) -> Vec<u8> {
         2 => {
             let packed_dim = indices.len() / 4;
             let mut out = vec![0u8; packed_dim];
-            for i in 0..packed_dim {
+            for (i, item) in out.iter_mut().enumerate().take(packed_dim) {
                 let base = i * 4;
-                out[i] = (indices[base] & 0x03)
+                *item = (indices[base] & 0x03)
                     | ((indices[base + 1] & 0x03) << 2)
                     | ((indices[base + 2] & 0x03) << 4)
                     | ((indices[base + 3] & 0x03) << 6);
@@ -68,13 +68,13 @@ pub fn pack_indices(indices: &[u8], bits: u8) -> Vec<u8> {
         1 => {
             let packed_dim = indices.len() / 8;
             let mut out = vec![0u8; packed_dim];
-            for i in 0..packed_dim {
+            for (i, item) in out.iter_mut().enumerate().take(packed_dim) {
                 let base = i * 8;
                 let mut byte = 0u8;
                 for b in 0..8 {
                     byte |= (indices[base + b] & 1) << b;
                 }
-                out[i] = byte;
+                *item = byte;
             }
             out
         }
@@ -102,9 +102,9 @@ pub fn unpack_indices(packed: &[u8], bits: u8, padded_dim: usize) -> Vec<u8> {
         3 => {
             let num_groups = packed.len() / 3;
             for g in 0..num_groups {
-                let b0 = packed[g * 3] as u32;
-                let b1 = packed[g * 3 + 1] as u32;
-                let b2 = packed[g * 3 + 2] as u32;
+                let b0 = u32::from(packed[g * 3]);
+                let b1 = u32::from(packed[g * 3 + 1]);
+                let b2 = u32::from(packed[g * 3 + 2]);
                 let packed_24 = b0 | (b1 << 8) | (b2 << 16);
                 let base = g * 8;
                 for i in 0..8 {

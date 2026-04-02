@@ -24,11 +24,11 @@
 //! The speedup grows with dimension because the QJL matrix-vector multiply
 //! (O(d²)) dominates and benefits most from SIMD.
 
-use super::centroids::get_centroids;
-use super::packing::unpack_indices;
-
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+
+use super::centroids::get_centroids;
+use super::packing::unpack_indices;
 
 /// Hadamard chunk size (must match `hadamard::CHUNK_SIZE`).
 const CHUNK_SIZE: usize = 256;
@@ -112,16 +112,6 @@ pub fn score_fused(
     dot_f32(&recon_a[..dim], &recon_b[..dim])
 }
 
-/// SIMD-optimized QJL dequantization from packed sign bits.
-///
-/// Computes `(√(π/2) / d) · Sᵀ · (2·signs − 1)`.
-///
-/// Drop-in replacement for `Qjl::dequantize` that uses AVX2+FMA when available.
-pub fn qjl_dequantize(packed_signs: &[u8], d: usize, projection_data: &[f32]) -> Vec<f32> {
-    let signs = unpack_indices(packed_signs, 1, d);
-    qjl_dequant_inner(&signs, d, projection_data)
-}
-
 // ===========================================================================
 // QJL matrix-vector multiply: result = scale · Sᵀ · z
 //
@@ -136,7 +126,7 @@ pub fn qjl_dequantize(packed_signs: &[u8], d: usize, projection_data: &[f32]) ->
 
 fn qjl_dequant_inner(signs: &[u8], d: usize, projection_data: &[f32]) -> Vec<f32> {
     let scale = (std::f32::consts::PI / 2.0).sqrt() / d as f32;
-    let z: Vec<f32> = signs.iter().map(|&s| s as f32 * 2.0 - 1.0).collect();
+    let z: Vec<f32> = signs.iter().map(|&s| f32::from(s) * 2.0 - 1.0).collect();
     let mut result = vec![0.0f32; d];
 
     #[cfg(target_arch = "x86_64")]
@@ -165,49 +155,51 @@ fn qjl_matvec_scalar(z: &[f32], proj: &[f32], d: usize, scale: f32, result: &mut
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn qjl_matvec_avx2(z: &[f32], proj: &[f32], d: usize, scale: f32, result: &mut [f32]) {
-    let chunks8 = d / 8;
-    let d4 = d / 4 * 4;
+    unsafe {
+        let chunks8 = d / 8;
+        let d4 = d / 4 * 4;
 
-    // 4-output-blocked: each z load is reused for 4 independent dot products.
-    for i in (0..d4).step_by(4) {
-        let col0 = proj.as_ptr().add(i * d);
-        let col1 = proj.as_ptr().add((i + 1) * d);
-        let col2 = proj.as_ptr().add((i + 2) * d);
-        let col3 = proj.as_ptr().add((i + 3) * d);
+        // 4-output-blocked: each z load is reused for 4 independent dot products.
+        for i in (0..d4).step_by(4) {
+            let col0 = proj.as_ptr().add(i * d);
+            let col1 = proj.as_ptr().add((i + 1) * d);
+            let col2 = proj.as_ptr().add((i + 2) * d);
+            let col3 = proj.as_ptr().add((i + 3) * d);
 
-        let mut acc0 = _mm256_setzero_ps();
-        let mut acc1 = _mm256_setzero_ps();
-        let mut acc2 = _mm256_setzero_ps();
-        let mut acc3 = _mm256_setzero_ps();
+            let mut acc0 = _mm256_setzero_ps();
+            let mut acc1 = _mm256_setzero_ps();
+            let mut acc2 = _mm256_setzero_ps();
+            let mut acc3 = _mm256_setzero_ps();
 
-        for c in 0..chunks8 {
-            let k = c * 8;
-            let zv = _mm256_loadu_ps(z.as_ptr().add(k));
-            acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(col0.add(k)), zv, acc0);
-            acc1 = _mm256_fmadd_ps(_mm256_loadu_ps(col1.add(k)), zv, acc1);
-            acc2 = _mm256_fmadd_ps(_mm256_loadu_ps(col2.add(k)), zv, acc2);
-            acc3 = _mm256_fmadd_ps(_mm256_loadu_ps(col3.add(k)), zv, acc3);
+            for c in 0..chunks8 {
+                let k = c * 8;
+                let zv = _mm256_loadu_ps(z.as_ptr().add(k));
+                acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(col0.add(k)), zv, acc0);
+                acc1 = _mm256_fmadd_ps(_mm256_loadu_ps(col1.add(k)), zv, acc1);
+                acc2 = _mm256_fmadd_ps(_mm256_loadu_ps(col2.add(k)), zv, acc2);
+                acc3 = _mm256_fmadd_ps(_mm256_loadu_ps(col3.add(k)), zv, acc3);
+            }
+
+            *result.get_unchecked_mut(i) = hsum_avx2(acc0) * scale;
+            *result.get_unchecked_mut(i + 1) = hsum_avx2(acc1) * scale;
+            *result.get_unchecked_mut(i + 2) = hsum_avx2(acc2) * scale;
+            *result.get_unchecked_mut(i + 3) = hsum_avx2(acc3) * scale;
         }
 
-        *result.get_unchecked_mut(i) = hsum_avx2(acc0) * scale;
-        *result.get_unchecked_mut(i + 1) = hsum_avx2(acc1) * scale;
-        *result.get_unchecked_mut(i + 2) = hsum_avx2(acc2) * scale;
-        *result.get_unchecked_mut(i + 3) = hsum_avx2(acc3) * scale;
-    }
-
-    // Remainder (d not divisible by 4 — shouldn't happen for d = multiple of 256).
-    for i in d4..d {
-        let col = proj.as_ptr().add(i * d);
-        let mut acc = _mm256_setzero_ps();
-        for c in 0..chunks8 {
-            let k = c * 8;
-            acc = _mm256_fmadd_ps(
-                _mm256_loadu_ps(col.add(k)),
-                _mm256_loadu_ps(z.as_ptr().add(k)),
-                acc,
-            );
+        // Remainder (d not divisible by 4 — shouldn't happen for d = multiple of 256).
+        for i in d4..d {
+            let col = proj.as_ptr().add(i * d);
+            let mut acc = _mm256_setzero_ps();
+            for c in 0..chunks8 {
+                let k = c * 8;
+                acc = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(col.add(k)),
+                    _mm256_loadu_ps(z.as_ptr().add(k)),
+                    acc,
+                );
+            }
+            *result.get_unchecked_mut(i) = hsum_avx2(acc) * scale;
         }
-        *result.get_unchecked_mut(i) = hsum_avx2(acc) * scale;
     }
 }
 
@@ -250,28 +242,30 @@ unsafe fn reconstruct_avx2(
     qjl: &[f32],
     d: usize,
 ) {
-    let mut scaled = [0.0f32; 16];
-    for (i, &c) in centroids.iter().enumerate() {
-        scaled[i] = c * scale;
-    }
+    unsafe {
+        let mut scaled = [0.0f32; 16];
+        for (i, &c) in centroids.iter().enumerate() {
+            scaled[i] = c * scale;
+        }
 
-    let v_rn = _mm256_set1_ps(residual_norm);
+        let v_rn = _mm256_set1_ps(residual_norm);
 
-    for c in 0..d / 8 {
-        let j = c * 8;
-        let idx = _mm256_setr_epi32(
-            *indices.get_unchecked(j) as i32,
-            *indices.get_unchecked(j + 1) as i32,
-            *indices.get_unchecked(j + 2) as i32,
-            *indices.get_unchecked(j + 3) as i32,
-            *indices.get_unchecked(j + 4) as i32,
-            *indices.get_unchecked(j + 5) as i32,
-            *indices.get_unchecked(j + 6) as i32,
-            *indices.get_unchecked(j + 7) as i32,
-        );
-        let cent = _mm256_i32gather_ps::<4>(scaled.as_ptr(), idx);
-        let q = _mm256_loadu_ps(qjl.as_ptr().add(j));
-        _mm256_storeu_ps(out.as_mut_ptr().add(j), _mm256_fmadd_ps(v_rn, q, cent));
+        for c in 0..d / 8 {
+            let j = c * 8;
+            let idx = _mm256_setr_epi32(
+                i32::from(*indices.get_unchecked(j)),
+                i32::from(*indices.get_unchecked(j + 1)),
+                i32::from(*indices.get_unchecked(j + 2)),
+                i32::from(*indices.get_unchecked(j + 3)),
+                i32::from(*indices.get_unchecked(j + 4)),
+                i32::from(*indices.get_unchecked(j + 5)),
+                i32::from(*indices.get_unchecked(j + 6)),
+                i32::from(*indices.get_unchecked(j + 7)),
+            );
+            let cent = _mm256_i32gather_ps::<4>(scaled.as_ptr(), idx);
+            let q = _mm256_loadu_ps(qjl.as_ptr().add(j));
+            _mm256_storeu_ps(out.as_mut_ptr().add(j), _mm256_fmadd_ps(v_rn, q, cent));
+        }
     }
 }
 
@@ -341,52 +335,54 @@ fn fwht_inplace(x: &mut [f32]) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn fwht_256_avx2(x: &mut [f32]) {
-    debug_assert!(x.len() >= CHUNK_SIZE);
-    let p = x.as_mut_ptr();
+    unsafe {
+        debug_assert!(x.len() >= CHUNK_SIZE);
+        let p = x.as_mut_ptr();
 
-    // h = 1: butterfly on adjacent pairs.
-    // [a b ...] → [a+b, a−b, ...]
-    for i in (0..CHUNK_SIZE).step_by(8) {
-        let v = _mm256_loadu_ps(p.add(i));
-        // Swap adjacent elements within each 128-bit lane: [1,0,3,2].
-        let v_swap = _mm256_permute_ps::<0xB1>(v);
-        let add = _mm256_add_ps(v, v_swap);
-        let diff = _mm256_sub_ps(v_swap, v);
-        _mm256_storeu_ps(p.add(i), _mm256_blend_ps::<0xAA>(add, diff));
-    }
-
-    // h = 2: butterfly on groups of 2.
-    // [a0 a1 b0 b1 ...] → [a0+b0, a1+b1, a0−b0, a1−b1, ...]
-    for i in (0..CHUNK_SIZE).step_by(8) {
-        let v = _mm256_loadu_ps(p.add(i));
-        // Swap pairs within each 128-bit lane: [2,3,0,1].
-        let v_swap = _mm256_permute_ps::<0x4E>(v);
-        let add = _mm256_add_ps(v, v_swap);
-        let diff = _mm256_sub_ps(v_swap, v);
-        _mm256_storeu_ps(p.add(i), _mm256_blend_ps::<0xCC>(add, diff));
-    }
-
-    // h = 4: butterfly across 128-bit lane halves.
-    for i in (0..CHUNK_SIZE).step_by(8) {
-        let v = _mm256_loadu_ps(p.add(i));
-        let v_swap = _mm256_permute2f128_ps::<0x01>(v, v);
-        let add = _mm256_add_ps(v, v_swap);
-        let diff = _mm256_sub_ps(v_swap, v);
-        _mm256_storeu_ps(p.add(i), _mm256_blend_ps::<0xF0>(add, diff));
-    }
-
-    // h = 8, 16, 32, 64, 128: standard two-register butterfly.
-    let mut h = 8;
-    while h < CHUNK_SIZE {
-        for i in (0..CHUNK_SIZE).step_by(h * 2) {
-            for j in (i..i + h).step_by(8) {
-                let a = _mm256_loadu_ps(p.add(j));
-                let b = _mm256_loadu_ps(p.add(j + h));
-                _mm256_storeu_ps(p.add(j), _mm256_add_ps(a, b));
-                _mm256_storeu_ps(p.add(j + h), _mm256_sub_ps(a, b));
-            }
+        // h = 1: butterfly on adjacent pairs.
+        // [a b ...] → [a+b, a−b, ...]
+        for i in (0..CHUNK_SIZE).step_by(8) {
+            let v = _mm256_loadu_ps(p.add(i));
+            // Swap adjacent elements within each 128-bit lane: [1,0,3,2].
+            let v_swap = _mm256_permute_ps::<0xB1>(v);
+            let add = _mm256_add_ps(v, v_swap);
+            let diff = _mm256_sub_ps(v_swap, v);
+            _mm256_storeu_ps(p.add(i), _mm256_blend_ps::<0xAA>(add, diff));
         }
-        h *= 2;
+
+        // h = 2: butterfly on groups of 2.
+        // [a0 a1 b0 b1 ...] → [a0+b0, a1+b1, a0−b0, a1−b1, ...]
+        for i in (0..CHUNK_SIZE).step_by(8) {
+            let v = _mm256_loadu_ps(p.add(i));
+            // Swap pairs within each 128-bit lane: [2,3,0,1].
+            let v_swap = _mm256_permute_ps::<0x4E>(v);
+            let add = _mm256_add_ps(v, v_swap);
+            let diff = _mm256_sub_ps(v_swap, v);
+            _mm256_storeu_ps(p.add(i), _mm256_blend_ps::<0xCC>(add, diff));
+        }
+
+        // h = 4: butterfly across 128-bit lane halves.
+        for i in (0..CHUNK_SIZE).step_by(8) {
+            let v = _mm256_loadu_ps(p.add(i));
+            let v_swap = _mm256_permute2f128_ps::<0x01>(v, v);
+            let add = _mm256_add_ps(v, v_swap);
+            let diff = _mm256_sub_ps(v_swap, v);
+            _mm256_storeu_ps(p.add(i), _mm256_blend_ps::<0xF0>(add, diff));
+        }
+
+        // h = 8, 16, 32, 64, 128: standard two-register butterfly.
+        let mut h = 8;
+        while h < CHUNK_SIZE {
+            for i in (0..CHUNK_SIZE).step_by(h * 2) {
+                for j in (i..i + h).step_by(8) {
+                    let a = _mm256_loadu_ps(p.add(j));
+                    let b = _mm256_loadu_ps(p.add(j + h));
+                    _mm256_storeu_ps(p.add(j), _mm256_add_ps(a, b));
+                    _mm256_storeu_ps(p.add(j + h), _mm256_sub_ps(a, b));
+                }
+            }
+            h *= 2;
+        }
     }
 }
 
@@ -410,39 +406,41 @@ fn dot_f32(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn dot_avx2(a: &[f32], b: &[f32]) -> f32 {
-    let n = a.len();
-    let chunks8 = n / 8;
-    let mut acc0 = _mm256_setzero_ps();
-    let mut acc1 = _mm256_setzero_ps();
+    unsafe {
+        let n = a.len();
+        let chunks8 = n / 8;
+        let mut acc0 = _mm256_setzero_ps();
+        let mut acc1 = _mm256_setzero_ps();
 
-    let pairs = chunks8 / 2;
-    for c in 0..pairs {
-        let k = c * 16;
-        acc0 = _mm256_fmadd_ps(
-            _mm256_loadu_ps(a.as_ptr().add(k)),
-            _mm256_loadu_ps(b.as_ptr().add(k)),
-            acc0,
-        );
-        acc1 = _mm256_fmadd_ps(
-            _mm256_loadu_ps(a.as_ptr().add(k + 8)),
-            _mm256_loadu_ps(b.as_ptr().add(k + 8)),
-            acc1,
-        );
+        let pairs = chunks8 / 2;
+        for c in 0..pairs {
+            let k = c * 16;
+            acc0 = _mm256_fmadd_ps(
+                _mm256_loadu_ps(a.as_ptr().add(k)),
+                _mm256_loadu_ps(b.as_ptr().add(k)),
+                acc0,
+            );
+            acc1 = _mm256_fmadd_ps(
+                _mm256_loadu_ps(a.as_ptr().add(k + 8)),
+                _mm256_loadu_ps(b.as_ptr().add(k + 8)),
+                acc1,
+            );
+        }
+        // Odd trailing 8-wide chunk.
+        if !chunks8.is_multiple_of(2) {
+            let k = pairs * 16;
+            acc0 = _mm256_fmadd_ps(
+                _mm256_loadu_ps(a.as_ptr().add(k)),
+                _mm256_loadu_ps(b.as_ptr().add(k)),
+                acc0,
+            );
+        }
+        let mut sum = hsum_avx2(_mm256_add_ps(acc0, acc1));
+        for k in (chunks8 * 8)..n {
+            sum += *a.get_unchecked(k) * *b.get_unchecked(k);
+        }
+        sum
     }
-    // Odd trailing 8-wide chunk.
-    if chunks8 % 2 != 0 {
-        let k = pairs * 16;
-        acc0 = _mm256_fmadd_ps(
-            _mm256_loadu_ps(a.as_ptr().add(k)),
-            _mm256_loadu_ps(b.as_ptr().add(k)),
-            acc0,
-        );
-    }
-    let mut sum = hsum_avx2(_mm256_add_ps(acc0, acc1));
-    for k in (chunks8 * 8)..n {
-        sum += *a.get_unchecked(k) * *b.get_unchecked(k);
-    }
-    sum
 }
 
 // ===========================================================================
@@ -471,8 +469,8 @@ unsafe fn hsum_avx2(v: __m256) -> f32 {
 mod tests {
     use super::*;
     use crate::encoded_vectors_tq::cosine_preprocess;
-    use crate::turboquant::packing::pack_indices;
     use crate::turboquant::TurboQuantizer;
+    use crate::turboquant::packing::pack_indices;
 
     #[test]
     fn qjl_dequant_identity_matrix() {
