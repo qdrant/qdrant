@@ -172,6 +172,7 @@ impl StructPayloadIndex {
                 field,
                 &payload_schema.schema,
                 create_if_missing,
+                &self.id_tracker.borrow(),
             )?;
 
             if let Some(mut indexes) = indexes {
@@ -215,6 +216,7 @@ impl StructPayloadIndex {
                             &self.path,
                             total_point_count,
                             create_if_missing,
+                            &self.id_tracker.borrow(),
                         )
                     })
                 })
@@ -298,9 +300,11 @@ impl StructPayloadIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut builders = self
-            .selector(payload_schema)
-            .index_builder(field, payload_schema)?;
+        let mut builders = self.selector(payload_schema).index_builder(
+            field,
+            payload_schema,
+            self.id_tracker.clone(),
+        )?;
 
         // Special null index complements every index.
         let null_index = IndexSelector::null_builder(&self.path, field)?;
