@@ -4,12 +4,10 @@
 //! where H_d is the Walsh-Hadamard matrix and signs are random ±1 (Rademacher).
 
 use rand::rngs::SmallRng;
-use rand::{RngExt, SeedableRng};
+use rand::{Rng, SeedableRng};
 
-/// Next power of 2 ≥ n.
-fn next_power_of_2(n: usize) -> usize {
-    n.next_power_of_two()
-}
+/// Chunk size for the block-wise Hadamard transform.
+const CHUNK_SIZE: usize = 256;
 
 /// Generate deterministic Rademacher vector (±1) of length `dim`.
 fn generate_random_signs(dim: usize, seed: u64) -> Vec<f32> {
@@ -43,7 +41,17 @@ fn fwht_inplace(x: &mut [f32]) {
     }
 }
 
+/// Pad dimension up to the next multiple of `CHUNK_SIZE`.
+fn padded_dim(dim: usize) -> usize {
+    (dim + CHUNK_SIZE - 1) / CHUNK_SIZE * CHUNK_SIZE
+}
+
 /// Manages the randomized Hadamard transform state.
+///
+/// Instead of padding the full vector to the next power of 2, the vector is
+/// split into fixed-size chunks of 256 elements and the Hadamard transform is
+/// applied to each chunk independently. The last chunk is zero-padded to 256
+/// if needed. This avoids blowing up large dimensions to the next power of 2.
 pub struct HadamardTransform {
     dim: usize,
     padded_dim: usize,
@@ -53,12 +61,12 @@ pub struct HadamardTransform {
 
 impl HadamardTransform {
     pub fn new(dim: usize, seed: u64) -> Self {
-        let padded_dim = next_power_of_2(dim);
-        let signs = generate_random_signs(padded_dim, seed);
-        let scale = 1.0 / (padded_dim as f32).sqrt();
+        let pdim = padded_dim(dim);
+        let signs = generate_random_signs(pdim, seed);
+        let scale = 1.0 / (CHUNK_SIZE as f32).sqrt();
         Self {
             dim,
-            padded_dim,
+            padded_dim: pdim,
             signs,
             scale,
         }
@@ -68,7 +76,7 @@ impl HadamardTransform {
         self.padded_dim
     }
 
-    /// Forward transform: y = scale · H · diag(signs) · x
+    /// Forward transform: apply per-chunk `scale · H · diag(signs) · x`.
     ///
     /// Input `x` has length `self.dim`; output has length `self.padded_dim`.
     pub fn forward(&self, x: &[f32]) -> Vec<f32> {
@@ -79,9 +87,12 @@ impl HadamardTransform {
         for (i, &val) in x.iter().enumerate() {
             buf[i] = val * self.signs[i];
         }
-        // Padded positions stay zero (signs applied to zero = zero).
+        // Padded positions stay zero.
 
-        fwht_inplace(&mut buf);
+        // Apply FWHT to each 256-element chunk independently.
+        for chunk in buf.chunks_exact_mut(CHUNK_SIZE) {
+            fwht_inplace(chunk);
+        }
 
         // Scale.
         for v in &mut buf {
@@ -90,7 +101,7 @@ impl HadamardTransform {
         buf
     }
 
-    /// Inverse transform: x = diag(signs) · H · (scale · y)
+    /// Inverse transform applied per-chunk.
     ///
     /// Input `y` has length `self.padded_dim`; output has length `self.padded_dim`
     /// (caller trims to original dim).
@@ -98,9 +109,11 @@ impl HadamardTransform {
         debug_assert_eq!(y.len(), self.padded_dim);
         let mut buf = y.to_vec();
 
-        // H applied to y, then scaled: since H^{-1} = H/d and scale = 1/√d,
-        // inverse = diag(signs) · (scale · H · y).
-        fwht_inplace(&mut buf);
+        // Apply FWHT to each 256-element chunk independently.
+        for chunk in buf.chunks_exact_mut(CHUNK_SIZE) {
+            fwht_inplace(chunk);
+        }
+
         for (i, v) in buf.iter_mut().enumerate() {
             *v *= self.scale * self.signs[i];
         }
@@ -114,32 +127,44 @@ mod tests {
 
     #[test]
     fn roundtrip_identity() {
-        let dim = 64;
-        let ht = HadamardTransform::new(dim, 42);
-        let x: Vec<f32> = (0..dim).map(|i| i as f32).collect();
-        let y = ht.forward(&x);
-        let z = ht.inverse(&y);
-        for i in 0..dim {
-            assert!(
-                (x[i] - z[i]).abs() < 1e-4,
-                "mismatch at {i}: {} vs {}",
-                x[i],
-                z[i]
-            );
+        for &dim in &[64, 128, 256, 300, 512, 700] {
+            let ht = HadamardTransform::new(dim, 42);
+            let x: Vec<f32> = (0..dim).map(|i| i as f32).collect();
+            let y = ht.forward(&x);
+            assert_eq!(y.len(), ht.padded_dim());
+            let z = ht.inverse(&y);
+            for i in 0..dim {
+                assert!(
+                    (x[i] - z[i]).abs() < 1e-3,
+                    "dim={dim} mismatch at {i}: {} vs {}",
+                    x[i],
+                    z[i]
+                );
+            }
         }
     }
 
     #[test]
     fn norm_preservation() {
-        let dim = 128;
-        let ht = HadamardTransform::new(dim, 7);
-        let x: Vec<f32> = (0..dim).map(|i| (i as f32).sin()).collect();
-        let y = ht.forward(&x);
-        let norm_x: f32 = x.iter().map(|v| v * v).sum::<f32>().sqrt();
-        let norm_y: f32 = y.iter().map(|v| v * v).sum::<f32>().sqrt();
-        assert!(
-            (norm_x - norm_y).abs() < 1e-3,
-            "norms differ: {norm_x} vs {norm_y}"
-        );
+        for &dim in &[128, 256, 300, 512] {
+            let ht = HadamardTransform::new(dim, 7);
+            let x: Vec<f32> = (0..dim).map(|i| (i as f32).sin()).collect();
+            let y = ht.forward(&x);
+            let norm_x: f32 = x.iter().map(|v| v * v).sum::<f32>().sqrt();
+            let norm_y: f32 = y.iter().map(|v| v * v).sum::<f32>().sqrt();
+            assert!(
+                (norm_x - norm_y).abs() < 1e-3,
+                "dim={dim} norms differ: {norm_x} vs {norm_y}"
+            );
+        }
+    }
+
+    #[test]
+    fn padded_dim_is_multiple_of_chunk_size() {
+        assert_eq!(padded_dim(1), 256);
+        assert_eq!(padded_dim(256), 256);
+        assert_eq!(padded_dim(257), 512);
+        assert_eq!(padded_dim(1024), 1024);
+        assert_eq!(padded_dim(1025), 1280);
     }
 }
