@@ -4,7 +4,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
 use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-use quantization::encoded_vectors_tq::{DEFAULT_TURBO_QUANT_BITS, EncodedVectorsTQ};
+use quantization::encoded_vectors_tq::{
+    DEFAULT_TURBO_QUANT_BITS, EncodedVectorsTQ, TqCorrection, TqRotation,
+};
 use rand::RngExt;
 
 fn encode_bench(c: &mut Criterion) {
@@ -35,6 +37,9 @@ fn encode_bench(c: &mut Criterion) {
         &vector_parameters,
         vectors_count,
         DEFAULT_TURBO_QUANT_BITS,
+        TqCorrection::default(),
+        TqRotation::default(),
+        None,
         None,
         &AtomicBool::new(false),
     )

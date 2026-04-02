@@ -384,7 +384,7 @@ message TurboQuantization {
   // Rotation method for turbo quantization
   optional TurboQuantRotation rotation = 4;
   // Number of Hadamard rotations (only used when rotation is Hadamard)
-  optional uint32 hadamard_rotations = 5;
+  optional uint32 hadamard_chunk = 5;
 }
 
 message QuantizationConfig {

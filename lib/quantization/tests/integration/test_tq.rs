@@ -5,7 +5,9 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_tq::{DEFAULT_TURBO_QUANT_BITS, EncodedVectorsTQ};
+    use quantization::encoded_vectors_tq::{
+        DEFAULT_TURBO_QUANT_BITS, EncodedVectorsTQ, TqCorrection, TqRotation,
+    };
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
@@ -40,6 +42,9 @@ mod tests {
             &vector_parameters,
             VECTORS_COUNT,
             DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -80,6 +85,9 @@ mod tests {
             &vector_parameters,
             VECTORS_COUNT,
             DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -120,6 +128,9 @@ mod tests {
             &vector_parameters,
             VECTORS_COUNT,
             DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -160,6 +171,9 @@ mod tests {
             &vector_parameters,
             VECTORS_COUNT,
             DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -200,6 +214,9 @@ mod tests {
             &vector_parameters,
             VECTORS_COUNT,
             DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -240,6 +257,9 @@ mod tests {
             &vector_parameters,
             VECTORS_COUNT,
             DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -279,6 +299,9 @@ mod tests {
             &vector_parameters,
             VECTORS_COUNT,
             DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -317,6 +340,9 @@ mod tests {
             &vector_parameters,
             VECTORS_COUNT,
             DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
             None,
             &AtomicBool::new(false),
         )

@@ -17,6 +17,25 @@ use crate::{DistanceType, EncodingError};
 
 pub const DEFAULT_TURBO_QUANT_BITS: usize = 4;
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TqCorrection {
+    NoCorrection,
+    Qjl,
+    #[default]
+    Normalization,
+    QjlNormalization,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TqRotation {
+    NoRotation,
+    #[default]
+    Hadamard,
+    Random,
+}
+
 pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
@@ -33,6 +52,9 @@ pub struct EncodedQueryTQ {
 pub struct Metadata {
     pub vector_parameters: VectorParameters,
     pub bits: usize,
+    pub correction: TqCorrection,
+    pub rotation: TqRotation,
+    pub hadamard_chunk: Option<usize>,
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
@@ -48,6 +70,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `count` - number of vectors in `data` iterator, used for progress bar
     /// * `bits` - number of bits for quantization (default: 4, range: 1-6)
+    /// * `correction` - correction method
+    /// * `rotation` - rotation method
+    /// * `hadamard_chunk` - number of Hadamard rotations (only when rotation is Hadamard)
     /// * `meta_path` - optional path to save metadata, if `None`, metadata will not be saved
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     #[allow(clippy::too_many_arguments)]
@@ -57,6 +82,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         vector_parameters: &VectorParameters,
         _count: usize,
         bits: usize,
+        correction: TqCorrection,
+        rotation: TqRotation,
+        hadamard_chunk: Option<usize>,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
@@ -83,6 +111,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let metadata = Metadata {
             vector_parameters: vector_parameters.clone(),
             bits,
+            correction,
+            rotation,
+            hadamard_chunk,
         };
         if let Some(meta_path) = meta_path {
             meta_path

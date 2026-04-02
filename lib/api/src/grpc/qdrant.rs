@@ -988,7 +988,7 @@ pub struct TurboQuantization {
     pub rotation: ::core::option::Option<i32>,
     /// Number of Hadamard rotations (only used when rotation is Hadamard)
     #[prost(uint32, optional, tag = "5")]
-    pub hadamard_rotations: ::core::option::Option<u32>,
+    pub hadamard_chunk: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

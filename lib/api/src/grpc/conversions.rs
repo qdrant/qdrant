@@ -1405,14 +1405,14 @@ impl From<segment::types::TurboQuantQuantization> for TurboQuantization {
             always_ram,
             correction,
             rotation,
-            hadamard_rotations,
+            hadamard_chunk,
         } = turbo_quant;
         TurboQuantization {
             bits: bits.map(|b| b as u32),
             always_ram,
             correction: correction.map(|c| i32::from(TurboQuantCorrection::from(c))),
             rotation: rotation.map(|r| i32::from(TurboQuantRotation::from(r))),
-            hadamard_rotations: hadamard_rotations.map(|r| r as u32),
+            hadamard_chunk: hadamard_chunk.map(|r| r as u32),
         }
     }
 }
@@ -1426,7 +1426,7 @@ impl TryFrom<TurboQuantization> for segment::types::TurboQuantQuantization {
             always_ram,
             correction,
             rotation,
-            hadamard_rotations,
+            hadamard_chunk,
         } = value;
         let correction = correction
             .map(TurboQuantCorrection::try_from)
@@ -1442,7 +1442,7 @@ impl TryFrom<TurboQuantization> for segment::types::TurboQuantQuantization {
                 always_ram,
                 correction: correction.map(segment::types::TurboQuantCorrection::from),
                 rotation: rotation.map(segment::types::TurboQuantRotation::from),
-                hadamard_rotations: hadamard_rotations.map(|r| r as usize),
+                hadamard_chunk: hadamard_chunk.map(|r| r as usize),
             },
         })
     }

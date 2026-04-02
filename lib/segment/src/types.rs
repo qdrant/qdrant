@@ -912,7 +912,7 @@ pub struct TurboQuantQuantizationConfig {
     /// Number of Hadamard rotations (only used when rotation is hadamard)
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub hadamard_rotations: Option<usize>,
+    pub hadamard_chunk: Option<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]

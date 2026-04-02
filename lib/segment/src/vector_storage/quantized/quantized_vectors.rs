@@ -9,7 +9,7 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
-use quantization::encoded_vectors_tq::DEFAULT_TURBO_QUANT_BITS;
+use quantization::encoded_vectors_tq::{DEFAULT_TURBO_QUANT_BITS, TqCorrection, TqRotation};
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsTQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
@@ -26,8 +26,8 @@ use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding,
     BinaryQuantizationQueryEncoding, CompressionRatio, Distance, MultiVectorConfig,
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
-    ScalarQuantizationConfig, ScalarType, TurboQuantQuantization, TurboQuantQuantizationConfig,
-    VectorStorageDatatype,
+    ScalarQuantizationConfig, ScalarType, TurboQuantCorrection, TurboQuantQuantization,
+    TurboQuantQuantizationConfig, TurboQuantRotation, VectorStorageDatatype,
 };
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
     QuantizedChunkedMmapStorage, QuantizedChunkedMmapStorageBuilder,
@@ -2017,11 +2017,15 @@ impl QuantizedVectors {
             ));
         }
 
-        let levels = turbo_quant_config.bits.unwrap_or(DEFAULT_TURBO_QUANT_BITS);
+        let bits = turbo_quant_config.bits.unwrap_or(DEFAULT_TURBO_QUANT_BITS);
+        let correction =
+            Self::convert_correction(turbo_quant_config.correction.unwrap_or_default());
+        let rotation = Self::convert_rotation(turbo_quant_config.rotation.unwrap_or_default());
+        let hadamard_chunk = turbo_quant_config.hadamard_chunk;
         let quantized_vector_size =
             EncodedVectorsTQ::<QuantizedMmapStorage>::get_quantized_vector_size(
                 vector_parameters,
-                levels,
+                bits,
             );
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
@@ -2040,7 +2044,10 @@ impl QuantizedVectors {
                         storage_builder,
                         vector_parameters,
                         vectors_count,
-                        levels,
+                        bits,
+                        correction,
+                        rotation,
+                        hadamard_chunk,
                         Some(meta_path.as_path()),
                         stopped,
                     )?,
@@ -2057,7 +2064,10 @@ impl QuantizedVectors {
                     storage_builder,
                     vector_parameters,
                     vectors_count,
-                    levels,
+                    bits,
+                    correction,
+                    rotation,
+                    hadamard_chunk,
                     Some(meta_path.as_path()),
                     stopped,
                 )?))
@@ -2073,7 +2083,10 @@ impl QuantizedVectors {
                     storage_builder,
                     vector_parameters,
                     vectors_count,
-                    levels,
+                    bits,
+                    correction,
+                    rotation,
+                    hadamard_chunk,
                     Some(meta_path.as_path()),
                     stopped,
                 )?))
@@ -2101,11 +2114,15 @@ impl QuantizedVectors {
             ));
         }
 
-        let levels = turbo_quant_config.bits.unwrap_or(DEFAULT_TURBO_QUANT_BITS);
+        let bits = turbo_quant_config.bits.unwrap_or(DEFAULT_TURBO_QUANT_BITS);
+        let correction =
+            Self::convert_correction(turbo_quant_config.correction.unwrap_or_default());
+        let rotation = Self::convert_rotation(turbo_quant_config.rotation.unwrap_or_default());
+        let hadamard_chunk = turbo_quant_config.hadamard_chunk;
         let quantized_vector_size =
             EncodedVectorsTQ::<QuantizedMmapStorage>::get_quantized_vector_size(
                 vector_parameters,
-                levels,
+                bits,
             );
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
@@ -2122,7 +2139,10 @@ impl QuantizedVectors {
                 storage_builder,
                 vector_parameters,
                 inner_vectors_count,
-                levels,
+                bits,
+                correction,
+                rotation,
+                hadamard_chunk,
                 Some(meta_path.as_path()),
                 stopped,
             )?;
@@ -2146,7 +2166,10 @@ impl QuantizedVectors {
                 storage_builder,
                 vector_parameters,
                 inner_vectors_count,
-                levels,
+                bits,
+                correction,
+                rotation,
+                hadamard_chunk,
                 Some(meta_path.as_path()),
                 stopped,
             )?;
@@ -2201,6 +2224,23 @@ impl QuantizedVectors {
                 quantization::encoded_vectors_binary::QueryEncoding::SameAsStorage
             }
             None => quantization::encoded_vectors_binary::QueryEncoding::SameAsStorage,
+        }
+    }
+
+    fn convert_correction(correction: TurboQuantCorrection) -> TqCorrection {
+        match correction {
+            TurboQuantCorrection::NoCorrection => TqCorrection::NoCorrection,
+            TurboQuantCorrection::Qjl => TqCorrection::Qjl,
+            TurboQuantCorrection::Normalization => TqCorrection::Normalization,
+            TurboQuantCorrection::QjlNormalization => TqCorrection::QjlNormalization,
+        }
+    }
+
+    fn convert_rotation(rotation: TurboQuantRotation) -> TqRotation {
+        match rotation {
+            TurboQuantRotation::NoRotation => TqRotation::NoRotation,
+            TurboQuantRotation::Hadamard => TqRotation::Hadamard,
+            TurboQuantRotation::Random => TqRotation::Random,
         }
     }
 
