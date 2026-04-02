@@ -137,7 +137,7 @@ pub fn init(
             .with_service_name("qdrant.Qdrant")
             .with_service_name("grpc.health.v1.Health")
             .with_service_name("qdrant.StorageRead")
-            .build()
+            .build_v1()
             .unwrap();
 
         log::info!("Qdrant gRPC listening on {grpc_port}");

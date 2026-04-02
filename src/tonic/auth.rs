@@ -5,15 +5,14 @@ use futures::future::BoxFuture;
 use storage::audit::{audit_trust_forwarded_headers, extract_tracing_id};
 use storage::rbac::Access;
 use tonic::Status;
-use tonic::body::BoxBody;
 use tower::{Layer, Service};
 
 use super::forwarded;
 use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType, log_denied_auth};
 use crate::common::inference::api_keys::InferenceToken;
 
-type Request = tonic::codegen::http::Request<tonic::transport::Body>;
-type Response = tonic::codegen::http::Response<BoxBody>;
+type Request = http::Request<tonic::body::Body>;
+type Response = http::Response<tonic::body::Body>;
 
 #[derive(Clone)]
 pub struct AuthMiddleware<S> {
@@ -63,8 +62,23 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         return Ok(req);
     }
 
+    // Collect header values before the async call to avoid holding `&req` across `.await`
+    // (`tonic::body::Body` is `Send` but not `Sync`)
+    let headers: std::collections::HashMap<&str, String> = [
+        "api-key",
+        "authorization",
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        req.headers()
+            .get(key)
+            .and_then(|val| val.to_str().ok())
+            .map(|val| (key, val.to_string()))
+    })
+    .collect();
+
     let (access, inference_token, auth_type, subject) = auth_keys
-        .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
+        .validate_request(|key| headers.get(key).map(|v| v.as_str()))
         .await
         .map_err(|e| {
             log_denied_auth(path, remote.clone(), tracing_id.clone(), &e);
@@ -114,7 +128,7 @@ where
         Box::pin(async move {
             match check(auth_keys, request).await {
                 Ok(req) => service.call(req).await,
-                Err(e) => Ok(e.to_http()),
+                Err(e) => Ok(e.into_http()),
             }
         })
     }

@@ -10,9 +10,7 @@ static X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 /// parsing or validation is performed.
 ///
 /// Returns `None` when neither header is present or the value is not valid UTF-8.
-pub fn forwarded_for(
-    req: &tonic::codegen::http::Request<tonic::transport::Body>,
-) -> Option<String> {
+pub fn forwarded_for<B>(req: &http::Request<B>) -> Option<String> {
     let headers = req.headers();
 
     // Try standard Forwarded header first (RFC 7239)
