@@ -193,7 +193,7 @@ fn test_set_empty_payload() {
     let payload = serde_json::json!(null);
     id_tracker
         .borrow_mut()
-        .set_link(ExtendedPointId::NumId(point_id as _), point_id as _)
+        .set_link(ExtendedPointId::NumId(point_id.into()), point_id as _)
         .unwrap();
     index.add_point(point_id, &[&payload], &hw_counter).unwrap();
 
@@ -345,7 +345,7 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
         let new_id = idx as PointOffsetType + 1;
         id_tracker
             .borrow_mut()
-            .set_link(ExtendedPointId::NumId(new_id as _), new_id)
+            .set_link(ExtendedPointId::NumId(new_id.into()), new_id)
             .unwrap();
         index_builder
             .add_point(new_id, &values, &hw_counter)
@@ -388,7 +388,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         let new_idx = idx as PointOffsetType + 1;
         id_tracker
             .borrow_mut()
-            .set_link(ExtendedPointId::NumId(new_idx as _), new_idx)
+            .set_link(ExtendedPointId::NumId(new_idx.into()), new_idx)
             .unwrap();
         index_builder
             .add_point(new_idx, &values, &hw_counter)
@@ -457,7 +457,7 @@ fn test_numeric_index(#[case] index_type: IndexType) {
         let new_idx = idx as PointOffsetType + 1;
         id_tracker
             .borrow_mut()
-            .set_link(ExtendedPointId::NumId(new_idx as _), new_idx)
+            .set_link(ExtendedPointId::NumId(new_idx.into()), new_idx)
             .unwrap();
         index_builder
             .add_point(new_idx, &values, &hw_counter)
@@ -611,7 +611,7 @@ fn test_numeric_index_reload(#[case] index_type: IndexType) {
         let new_idx = idx as PointOffsetType + 1;
         id_tracker
             .borrow_mut()
-            .set_link(ExtendedPointId::NumId(new_idx as _), new_idx)
+            .set_link(ExtendedPointId::NumId(new_idx.into()), new_idx)
             .unwrap();
         index_builder
             .add_point(new_idx, &values, &hw_counter)
