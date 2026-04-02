@@ -4,7 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
 use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-use quantization::encoded_vectors_tq::{DEFAULT_TURBO_QUANT_LEVELS, EncodedVectorsTQ};
+use quantization::encoded_vectors_tq::{DEFAULT_TURBO_QUANT_BITS, EncodedVectorsTQ};
 use rand::RngExt;
 
 fn encode_bench(c: &mut Criterion) {
@@ -27,14 +27,14 @@ fn encode_bench(c: &mut Criterion) {
     };
     let quantized_vector_size = EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
         &vector_parameters,
-        DEFAULT_TURBO_QUANT_LEVELS,
+        DEFAULT_TURBO_QUANT_BITS,
     );
     let pq_encoded = EncodedVectorsTQ::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &vector_parameters,
         vectors_count,
-        DEFAULT_TURBO_QUANT_LEVELS,
+        DEFAULT_TURBO_QUANT_BITS,
         None,
         &AtomicBool::new(false),
     )

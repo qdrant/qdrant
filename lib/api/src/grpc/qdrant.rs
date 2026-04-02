@@ -973,13 +973,22 @@ pub struct BinaryQuantization {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TurboQuantization {
-    /// Number of recursive polar decomposition levels
+    /// Number of bits for quantization (default: 4, range: 1-6)
     #[prost(uint32, optional, tag = "1")]
     #[validate(range(min = 1, max = 6))]
-    pub levels: ::core::option::Option<u32>,
+    pub bits: ::core::option::Option<u32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "2")]
     pub always_ram: ::core::option::Option<bool>,
+    /// Correction method for turbo quantization
+    #[prost(enumeration = "TurboQuantCorrection", optional, tag = "3")]
+    pub correction: ::core::option::Option<i32>,
+    /// Rotation method for turbo quantization
+    #[prost(enumeration = "TurboQuantRotation", optional, tag = "4")]
+    pub rotation: ::core::option::Option<i32>,
+    /// Number of Hadamard rotations (only used when rotation is Hadamard)
+    #[prost(uint32, optional, tag = "5")]
+    pub hadamard_rotations: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -2436,6 +2445,69 @@ impl BinaryQuantizationEncoding {
             "OneBit" => Some(Self::OneBit),
             "TwoBits" => Some(Self::TwoBits),
             "OneAndHalfBits" => Some(Self::OneAndHalfBits),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TurboQuantCorrection {
+    Normalization = 0,
+    NoCorrection = 1,
+    Qjl = 2,
+    QjlNormalization = 3,
+}
+impl TurboQuantCorrection {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            TurboQuantCorrection::Normalization => "Normalization",
+            TurboQuantCorrection::NoCorrection => "NoCorrection",
+            TurboQuantCorrection::Qjl => "Qjl",
+            TurboQuantCorrection::QjlNormalization => "QjlNormalization",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Normalization" => Some(Self::Normalization),
+            "NoCorrection" => Some(Self::NoCorrection),
+            "Qjl" => Some(Self::Qjl),
+            "QjlNormalization" => Some(Self::QjlNormalization),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TurboQuantRotation {
+    TqrHadamard = 0,
+    TqrNoRotation = 1,
+    TqrRandom = 2,
+}
+impl TurboQuantRotation {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            TurboQuantRotation::TqrHadamard => "TQR_Hadamard",
+            TurboQuantRotation::TqrNoRotation => "TQR_NoRotation",
+            TurboQuantRotation::TqrRandom => "TQR_Random",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TQR_Hadamard" => Some(Self::TqrHadamard),
+            "TQR_NoRotation" => Some(Self::TqrNoRotation),
+            "TQR_Random" => Some(Self::TqrRandom),
             _ => None,
         }
     }

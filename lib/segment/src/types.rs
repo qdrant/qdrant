@@ -868,17 +868,51 @@ pub struct BinaryQuantization {
     pub binary: BinaryQuantizationConfig,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TurboQuantCorrection {
+    NoCorrection,
+    Qjl,
+    #[default]
+    Normalization,
+    QjlNormalization,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TurboQuantRotation {
+    NoRotation,
+    #[default]
+    Hadamard,
+    Random,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct TurboQuantQuantizationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
 
-    /// Number of recursive polar decomposition levels (default: 4, range: 1-6)
+    /// Number of bits for quantization (default: 4, range: 1-6)
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1, max = 6))]
-    pub levels: Option<usize>,
+    pub bits: Option<usize>,
+
+    /// Correction method for turbo quantization (default: normalization)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correction: Option<TurboQuantCorrection>,
+
+    /// Rotation method for turbo quantization (default: hadamard)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<TurboQuantRotation>,
+
+    /// Number of Hadamard rotations (only used when rotation is hadamard)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hadamard_rotations: Option<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]

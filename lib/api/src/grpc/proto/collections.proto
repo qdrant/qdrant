@@ -361,11 +361,30 @@ message BinaryQuantization {
   optional BinaryQuantizationQueryEncoding query_encoding = 3;
 }
 
+enum TurboQuantCorrection {
+  Normalization = 0;
+  NoCorrection = 1;
+  Qjl = 2;
+  QjlNormalization = 3;
+}
+
+enum TurboQuantRotation {
+  TQR_Hadamard = 0;
+  TQR_NoRotation = 1;
+  TQR_Random = 2;
+}
+
 message TurboQuantization {
-  // Number of recursive polar decomposition levels 
-  optional uint32 levels = 1;
+  // Number of bits for quantization (default: 4, range: 1-6)
+  optional uint32 bits = 1;
   // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
   optional bool always_ram = 2;
+  // Correction method for turbo quantization
+  optional TurboQuantCorrection correction = 3;
+  // Rotation method for turbo quantization
+  optional TurboQuantRotation rotation = 4;
+  // Number of Hadamard rotations (only used when rotation is Hadamard)
+  optional uint32 hadamard_rotations = 5;
 }
 
 message QuantizationConfig {

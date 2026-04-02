@@ -418,8 +418,11 @@ fn hnsw_turbo_quant_search_cosine_test() {
         5003,
         131,
         TurboQuantQuantizationConfig {
-            levels: None,
+            bits: None,
             always_ram: None,
+            correction: None,
+            rotation: None,
+            hadamard_rotations: None,
         }
         .into(),
         true,
@@ -433,8 +436,11 @@ fn hnsw_turbo_quant_search_euclid_test() {
         5003,
         131,
         TurboQuantQuantizationConfig {
-            levels: None,
+            bits: None,
             always_ram: None,
+            correction: None,
+            rotation: None,
+            hadamard_rotations: None,
         }
         .into(),
         true,
@@ -448,8 +454,11 @@ fn hnsw_turbo_quant_search_manhattan_test() {
         5003,
         131,
         TurboQuantQuantizationConfig {
-            levels: None,
+            bits: None,
             always_ram: None,
+            correction: None,
+            rotation: None,
+            hadamard_rotations: None,
         }
         .into(),
         true,

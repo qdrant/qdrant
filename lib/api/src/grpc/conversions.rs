@@ -60,7 +60,8 @@ use crate::grpc::qdrant::{
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
-    DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression, TurboQuantization,
+    DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression, TurboQuantCorrection,
+    TurboQuantRotation, TurboQuantization,
 };
 use crate::rest::models::{CollectionsResponse, ShardKeysResponse, VersionInfo};
 use crate::rest::schema as rest;
@@ -1342,13 +1343,76 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
     }
 }
 
+impl From<segment::types::TurboQuantCorrection> for TurboQuantCorrection {
+    fn from(value: segment::types::TurboQuantCorrection) -> Self {
+        match value {
+            segment::types::TurboQuantCorrection::NoCorrection => {
+                TurboQuantCorrection::NoCorrection
+            }
+            segment::types::TurboQuantCorrection::Qjl => TurboQuantCorrection::Qjl,
+            segment::types::TurboQuantCorrection::Normalization => {
+                TurboQuantCorrection::Normalization
+            }
+            segment::types::TurboQuantCorrection::QjlNormalization => {
+                TurboQuantCorrection::QjlNormalization
+            }
+        }
+    }
+}
+
+impl From<TurboQuantCorrection> for segment::types::TurboQuantCorrection {
+    fn from(value: TurboQuantCorrection) -> Self {
+        match value {
+            TurboQuantCorrection::NoCorrection => {
+                segment::types::TurboQuantCorrection::NoCorrection
+            }
+            TurboQuantCorrection::Qjl => segment::types::TurboQuantCorrection::Qjl,
+            TurboQuantCorrection::Normalization => {
+                segment::types::TurboQuantCorrection::Normalization
+            }
+            TurboQuantCorrection::QjlNormalization => {
+                segment::types::TurboQuantCorrection::QjlNormalization
+            }
+        }
+    }
+}
+
+impl From<segment::types::TurboQuantRotation> for TurboQuantRotation {
+    fn from(value: segment::types::TurboQuantRotation) -> Self {
+        match value {
+            segment::types::TurboQuantRotation::NoRotation => TurboQuantRotation::TqrNoRotation,
+            segment::types::TurboQuantRotation::Hadamard => TurboQuantRotation::TqrHadamard,
+            segment::types::TurboQuantRotation::Random => TurboQuantRotation::TqrRandom,
+        }
+    }
+}
+
+impl From<TurboQuantRotation> for segment::types::TurboQuantRotation {
+    fn from(value: TurboQuantRotation) -> Self {
+        match value {
+            TurboQuantRotation::TqrNoRotation => segment::types::TurboQuantRotation::NoRotation,
+            TurboQuantRotation::TqrHadamard => segment::types::TurboQuantRotation::Hadamard,
+            TurboQuantRotation::TqrRandom => segment::types::TurboQuantRotation::Random,
+        }
+    }
+}
+
 impl From<segment::types::TurboQuantQuantization> for TurboQuantization {
     fn from(value: segment::types::TurboQuantQuantization) -> Self {
         let segment::types::TurboQuantQuantization { turbo_quant } = value;
-        let segment::types::TurboQuantQuantizationConfig { levels, always_ram } = turbo_quant;
-        TurboQuantization {
-            levels: levels.map(|l| l as u32),
+        let segment::types::TurboQuantQuantizationConfig {
+            bits,
             always_ram,
+            correction,
+            rotation,
+            hadamard_rotations,
+        } = turbo_quant;
+        TurboQuantization {
+            bits: bits.map(|b| b as u32),
+            always_ram,
+            correction: correction.map(|c| i32::from(TurboQuantCorrection::from(c))),
+            rotation: rotation.map(|r| i32::from(TurboQuantRotation::from(r))),
+            hadamard_rotations: hadamard_rotations.map(|r| r as u32),
         }
     }
 }
@@ -1357,11 +1421,28 @@ impl TryFrom<TurboQuantization> for segment::types::TurboQuantQuantization {
     type Error = Status;
 
     fn try_from(value: TurboQuantization) -> Result<Self, Self::Error> {
-        let TurboQuantization { levels, always_ram } = value;
+        let TurboQuantization {
+            bits,
+            always_ram,
+            correction,
+            rotation,
+            hadamard_rotations,
+        } = value;
+        let correction = correction
+            .map(TurboQuantCorrection::try_from)
+            .transpose()
+            .map_err(|_| Status::invalid_argument("Unknown turbo quant correction"))?;
+        let rotation = rotation
+            .map(TurboQuantRotation::try_from)
+            .transpose()
+            .map_err(|_| Status::invalid_argument("Unknown turbo quant rotation"))?;
         Ok(segment::types::TurboQuantQuantization {
             turbo_quant: segment::types::TurboQuantQuantizationConfig {
-                levels: levels.map(|l| l as usize),
+                bits: bits.map(|b| b as usize),
                 always_ram,
+                correction: correction.map(segment::types::TurboQuantCorrection::from),
+                rotation: rotation.map(segment::types::TurboQuantRotation::from),
+                hadamard_rotations: hadamard_rotations.map(|r| r as usize),
             },
         })
     }

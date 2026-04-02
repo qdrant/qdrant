@@ -161,7 +161,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("QuantizationConfig.quantization", ""),
             ("QuantizationConfigDiff.quantization", ""),
             ("ScalarQuantization.quantile", "range(min = 0.5, max = 1.0)"),
-            ("TurboQuantization.levels", "range(min = 1, max = 6)"),
+            ("TurboQuantization.bits", "range(min = 1, max = 6)"),
             ("UpdateCollectionClusterSetupRequest.timeout", "range(min = 1)"),
             ("UpdateCollectionClusterSetupRequest.operation", ""),
             ("StrictModeConfig.max_query_limit", "range(min = 1)"),

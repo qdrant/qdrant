@@ -15,7 +15,7 @@ use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::{DistanceType, EncodingError};
 
-pub const DEFAULT_TURBO_QUANT_LEVELS: usize = 4;
+pub const DEFAULT_TURBO_QUANT_BITS: usize = 4;
 
 pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
@@ -32,7 +32,7 @@ pub struct EncodedQueryTQ {
 #[derive(Serialize, Deserialize)]
 pub struct Metadata {
     pub vector_parameters: VectorParameters,
-    pub levels: usize,
+    pub bits: usize,
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
@@ -47,7 +47,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `count` - number of vectors in `data` iterator, used for progress bar
-    /// * `levels` - number of recursive polar decomposition levels (default: 4, range: 1-6)
+    /// * `bits` - number of bits for quantization (default: 4, range: 1-6)
     /// * `meta_path` - optional path to save metadata, if `None`, metadata will not be saved
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     #[allow(clippy::too_many_arguments)]
@@ -56,7 +56,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         _count: usize,
-        levels: usize,
+        bits: usize,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
@@ -82,7 +82,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
 
         let metadata = Metadata {
             vector_parameters: vector_parameters.clone(),
-            levels,
+            bits,
         };
         if let Some(meta_path) = meta_path {
             meta_path
@@ -123,10 +123,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     }
 
     // Get quantized vector size in bytes
-    pub fn get_quantized_vector_size(
-        vector_parameters: &VectorParameters,
-        _levels: usize,
-    ) -> usize {
+    pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, _bits: usize) -> usize {
         vector_parameters.dim * std::mem::size_of::<f32>()
     }
 

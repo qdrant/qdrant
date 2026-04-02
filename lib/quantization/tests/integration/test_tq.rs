@@ -5,7 +5,7 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_tq::{DEFAULT_TURBO_QUANT_LEVELS, EncodedVectorsTQ};
+    use quantization::encoded_vectors_tq::{DEFAULT_TURBO_QUANT_BITS, EncodedVectorsTQ};
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
@@ -32,14 +32,14 @@ mod tests {
         let quantized_vector_size =
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
-                DEFAULT_TURBO_QUANT_LEVELS,
+                DEFAULT_TURBO_QUANT_BITS,
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             VECTORS_COUNT,
-            DEFAULT_TURBO_QUANT_LEVELS,
+            DEFAULT_TURBO_QUANT_BITS,
             None,
             &AtomicBool::new(false),
         )
@@ -72,14 +72,14 @@ mod tests {
         let quantized_vector_size =
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
-                DEFAULT_TURBO_QUANT_LEVELS,
+                DEFAULT_TURBO_QUANT_BITS,
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             VECTORS_COUNT,
-            DEFAULT_TURBO_QUANT_LEVELS,
+            DEFAULT_TURBO_QUANT_BITS,
             None,
             &AtomicBool::new(false),
         )
@@ -112,14 +112,14 @@ mod tests {
         let quantized_vector_size =
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
-                DEFAULT_TURBO_QUANT_LEVELS,
+                DEFAULT_TURBO_QUANT_BITS,
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             VECTORS_COUNT,
-            DEFAULT_TURBO_QUANT_LEVELS,
+            DEFAULT_TURBO_QUANT_BITS,
             None,
             &AtomicBool::new(false),
         )
@@ -152,14 +152,14 @@ mod tests {
         let quantized_vector_size =
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
-                DEFAULT_TURBO_QUANT_LEVELS,
+                DEFAULT_TURBO_QUANT_BITS,
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             VECTORS_COUNT,
-            DEFAULT_TURBO_QUANT_LEVELS,
+            DEFAULT_TURBO_QUANT_BITS,
             None,
             &AtomicBool::new(false),
         )
@@ -192,14 +192,14 @@ mod tests {
         let quantized_vector_size =
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
-                DEFAULT_TURBO_QUANT_LEVELS,
+                DEFAULT_TURBO_QUANT_BITS,
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             VECTORS_COUNT,
-            DEFAULT_TURBO_QUANT_LEVELS,
+            DEFAULT_TURBO_QUANT_BITS,
             None,
             &AtomicBool::new(false),
         )
@@ -232,14 +232,14 @@ mod tests {
         let quantized_vector_size =
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
-                DEFAULT_TURBO_QUANT_LEVELS,
+                DEFAULT_TURBO_QUANT_BITS,
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             VECTORS_COUNT,
-            DEFAULT_TURBO_QUANT_LEVELS,
+            DEFAULT_TURBO_QUANT_BITS,
             None,
             &AtomicBool::new(false),
         )
@@ -271,14 +271,14 @@ mod tests {
         let quantized_vector_size =
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
-                DEFAULT_TURBO_QUANT_LEVELS,
+                DEFAULT_TURBO_QUANT_BITS,
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             VECTORS_COUNT,
-            DEFAULT_TURBO_QUANT_LEVELS,
+            DEFAULT_TURBO_QUANT_BITS,
             None,
             &AtomicBool::new(false),
         )
@@ -309,14 +309,14 @@ mod tests {
         let quantized_vector_size =
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
-                DEFAULT_TURBO_QUANT_LEVELS,
+                DEFAULT_TURBO_QUANT_BITS,
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             VECTORS_COUNT,
-            DEFAULT_TURBO_QUANT_LEVELS,
+            DEFAULT_TURBO_QUANT_BITS,
             None,
             &AtomicBool::new(false),
         )
