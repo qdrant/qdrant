@@ -857,6 +857,7 @@ pub struct BinaryQuantizationConfig {
 
     /// Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
     /// It can increase the accuracy of search at the cost of performance.
+    /// Note: `unquantized` is only supported with `distance=Dot` and `encoding=one_bit`.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_encoding: Option<BinaryQuantizationQueryEncoding>,
@@ -921,6 +922,7 @@ pub enum BinaryQuantizationQueryEncoding {
     Binary,
     Scalar4Bits,
     Scalar8Bits,
+    Unquantized,
 }
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {

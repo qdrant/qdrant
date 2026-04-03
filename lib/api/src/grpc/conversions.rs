@@ -1412,6 +1412,9 @@ impl TryFrom<BinaryQuantizationQueryEncoding> for segment::types::BinaryQuantiza
                     Setting::Scalar8Bits => {
                         segment::types::BinaryQuantizationQueryEncoding::Scalar8Bits
                     }
+                    Setting::Unquantized => {
+                        segment::types::BinaryQuantizationQueryEncoding::Unquantized
+                    }
                 }
             }
         };
@@ -1425,16 +1428,19 @@ impl From<segment::types::BinaryQuantizationQueryEncoding> for BinaryQuantizatio
 
         let variant = match value {
             segment::types::BinaryQuantizationQueryEncoding::Default => {
-                Variant::Setting(Setting::Default.into())
+                Variant::Setting(i32::from(Setting::Default))
             }
             segment::types::BinaryQuantizationQueryEncoding::Binary => {
-                Variant::Setting(Setting::Binary.into())
+                Variant::Setting(i32::from(Setting::Binary))
             }
             segment::types::BinaryQuantizationQueryEncoding::Scalar4Bits => {
-                Variant::Setting(Setting::Scalar4Bits.into())
+                Variant::Setting(i32::from(Setting::Scalar4Bits))
             }
             segment::types::BinaryQuantizationQueryEncoding::Scalar8Bits => {
-                Variant::Setting(Setting::Scalar8Bits.into())
+                Variant::Setting(i32::from(Setting::Scalar8Bits))
+            }
+            segment::types::BinaryQuantizationQueryEncoding::Unquantized => {
+                Variant::Setting(i32::from(Setting::Unquantized))
             }
         };
 
