@@ -1201,6 +1201,8 @@ impl ShardHolder {
             let snapshot_description = snapshot_manager
                 .store_file(temp_file.path(), &snapshot_path)
                 .await;
+            // store_file moves the source on success; prevent NamedTempFile from
+            // attempting to delete an already-moved path.
             if snapshot_description.is_ok() {
                 let _ = temp_file.keep();
             }
