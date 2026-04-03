@@ -1,8 +1,10 @@
 use std::cmp::{max, min};
 use std::path::{Path, PathBuf};
 
+use ahash::HashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, UniversalRead};
 use itertools::Itertools;
 use mutable_geo_index::InMemoryGeoMapIndex;
 use serde_json::Value;
@@ -36,7 +38,7 @@ const GEO_QUERY_MAX_REGION: usize = 12;
 pub enum GeoMapIndex {
     Mutable(MutableGeoMapIndex),
     Immutable(ImmutableGeoMapIndex),
-    Mmap(Box<MmapGeoMapIndex>),
+    Mmap(Box<MmapGeoMapIndex<MmapFile>>),
 }
 
 impl GeoMapIndex {
@@ -100,7 +102,6 @@ impl GeoMapIndex {
         }
     }
 
-    #[expect(clippy::unnecessary_wraps, reason = "will return Err later")] // FIXME(uio-errors)
     fn points_of_hash(
         &self,
         hash: GeoHash,
@@ -109,11 +110,10 @@ impl GeoMapIndex {
         Ok(match self {
             GeoMapIndex::Mutable(index) => index.points_of_hash(hash),
             GeoMapIndex::Immutable(index) => index.points_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.points_of_hash(hash, hw_counter),
+            GeoMapIndex::Mmap(index) => index.points_of_hash(hash, hw_counter)?,
         })
     }
 
-    #[expect(clippy::unnecessary_wraps, reason = "will return Err later")] // FIXME(uio-errors)
     fn values_of_hash(
         &self,
         hash: GeoHash,
@@ -122,7 +122,7 @@ impl GeoMapIndex {
         Ok(match self {
             GeoMapIndex::Mutable(index) => index.values_of_hash(hash),
             GeoMapIndex::Immutable(index) => index.values_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.values_of_hash(hash, hw_counter),
+            GeoMapIndex::Mmap(index) => index.values_of_hash(hash, hw_counter)?,
         })
     }
 
@@ -228,7 +228,6 @@ impl GeoMapIndex {
         }
     }
 
-    #[expect(clippy::unnecessary_wraps, reason = "will return Err later")] // FIXME(uio-errors)
     fn iterator(
         &self,
         values: Vec<GeoHash>,
@@ -246,12 +245,16 @@ impl GeoMapIndex {
                     .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
                     .unique(),
             )),
-            GeoMapIndex::Mmap(index) => Ok(Box::new(
-                values
-                    .into_iter()
-                    .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
-                    .unique(),
-            )),
+            GeoMapIndex::Mmap(index) => {
+                // ToDo: currently, we don't have performance-critical places
+                // where this iterator is not collected.
+                // But in future we might want to make it into proper iterator
+                let mut result = HashSet::default();
+                for top_geo_hash in values {
+                    index.stored_sub_regions(&mut result, top_geo_hash)?;
+                }
+                Ok(Box::new(result.into_iter()))
+            }
         }
     }
 
@@ -259,7 +262,7 @@ impl GeoMapIndex {
     fn large_hashes(
         &self,
         threshold: usize,
-    ) -> impl Iterator<Item = OperationResult<(GeoHash, usize)>> + '_ {
+    ) -> OperationResult<impl Iterator<Item = (GeoHash, usize)> + '_> {
         let filter_condition =
             |(hash, size): &(GeoHash, usize)| *size > threshold && !hash.is_empty();
         let mut large_regions = match self {
@@ -271,10 +274,16 @@ impl GeoMapIndex {
                 .points_per_hash()
                 .filter(filter_condition)
                 .collect_vec(),
-            GeoMapIndex::Mmap(index) => index
-                .points_per_hash()
-                .filter(filter_condition)
-                .collect_vec(),
+            GeoMapIndex::Mmap(index) => {
+                let mut result = vec![];
+                index.storage.counts_per_hash.for_each(|_, counts| {
+                    let item = (counts.hash, counts.points as usize);
+                    if filter_condition(&item) {
+                        result.push(item);
+                    }
+                })?;
+                result
+            }
         };
 
         // smallest regions first
@@ -291,7 +300,7 @@ impl GeoMapIndex {
             }
         }
 
-        edge_region.into_iter().map(Ok)
+        Ok(edge_region.into_iter())
     }
 
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
@@ -632,16 +641,19 @@ impl PayloadFieldIndex for GeoMapIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        Box::new(
-            self.large_hashes(threshold)
-                .map_ok(move |(geo_hash, size)| PayloadBlockCondition {
-                    condition: FieldCondition::new_geo_bounding_box(
-                        key.clone(),
-                        geo_hash_to_box(geo_hash),
-                    ),
-                    cardinality: size,
-                }),
-        )
+        let large_hashes = match self.large_hashes(threshold) {
+            Ok(large_hashes) => large_hashes,
+            Err(e) => return Box::new(std::iter::once(Err(e))),
+        };
+        Box::new(large_hashes.map(move |(geo_hash, size)| {
+            Ok(PayloadBlockCondition {
+                condition: FieldCondition::new_geo_bounding_box(
+                    key.clone(),
+                    geo_hash_to_box(geo_hash),
+                ),
+                cardinality: size,
+            })
+        }))
     }
 }
 
@@ -1031,10 +1043,7 @@ mod tests {
             .points_of_hash(Default::default(), &hw_counter)
             .unwrap();
         assert_eq!(top_level_points, 1_000);
-        let block_hashes = field_index
-            .large_hashes(100)
-            .map(Result::unwrap)
-            .collect_vec();
+        let block_hashes = field_index.large_hashes(100).unwrap().collect_vec();
         assert!(!block_hashes.is_empty());
         for (geohash, size) in block_hashes {
             assert_eq!(geohash.len(), 1);
@@ -1653,12 +1662,12 @@ mod tests {
             assert_eq!(
                 indices[0]
                     .large_hashes(20)
-                    .map(Result::unwrap)
+                    .unwrap()
                     .map(|(hash, _)| hash)
                     .collect::<BTreeSet<_>>(),
                 index
                     .large_hashes(20)
-                    .map(Result::unwrap)
+                    .unwrap()
                     .map(|(hash, _)| hash)
                     .collect::<BTreeSet<_>>(),
             );

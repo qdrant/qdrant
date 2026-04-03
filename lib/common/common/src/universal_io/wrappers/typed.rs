@@ -104,6 +104,20 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
         S::read_multi_iter::<P>(Self::peel_slice(files), reads)
     }
+
+    #[inline]
+    fn read_batch_autochunks(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+        callback: impl FnMut(T),
+    ) -> Result<()> {
+        self.inner.read_batch_autochunks(ranges, callback)
+    }
+
+    #[inline]
+    fn for_each(&self, callback: impl FnMut(u64, T)) -> Result<()> {
+        self.inner.for_each(callback)
+    }
 }
 
 impl<S: UniversalWrite<T>, T: Copy + 'static> UniversalWrite<T> for TypedStorage<S, T> {
