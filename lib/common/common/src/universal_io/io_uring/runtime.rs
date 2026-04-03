@@ -1,25 +1,24 @@
 use std::collections::hash_map;
 use std::io;
-use std::mem::{self, MaybeUninit};
+use std::mem::MaybeUninit;
 
 use ::io_uring::types::Fd;
 use ::io_uring::{opcode, squeue};
-use ahash::AHashMap;
+use ahash::HashMapExt as _;
 
-use super::super::*;
-use super::pool::{self, IO_URING_QUEUE_LENGTH, IoUringGuard};
-use crate::maybe_uninit::assume_init_vec;
+use super::*;
+use crate::maybe_uninit;
 
 pub struct IoUringRuntime<'data, T> {
     io_uring: IoUringGuard,
-    pub state: IoUringState<'data, T>,
+    state: IoUringState<'data, T>,
     pub in_progress: usize,
 }
 
 impl<'data, T> IoUringRuntime<'data, T> {
     pub fn new() -> Result<Self> {
         let rt = Self {
-            io_uring: pool::take_io_uring()?,
+            io_uring: pool::get_io_uring()?,
             state: IoUringState::new(),
             in_progress: 0,
         };
@@ -33,16 +32,16 @@ impl<'data, T> IoUringRuntime<'data, T> {
     where
         F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
     {
-        let mut sqe = self.io_uring.io_uring().submission();
+        let mut squeue = self.io_uring.submission();
 
-        if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
+        if self.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
             return Ok(());
         }
 
         while let Some(entry) = entries(&mut self.state)? {
-            unsafe { sqe.push(&entry).expect("SQE is not full") };
+            unsafe { squeue.push(&entry).expect("submission queue is not full") };
 
-            if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
+            if self.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
                 break;
             }
         }
@@ -51,11 +50,11 @@ impl<'data, T> IoUringRuntime<'data, T> {
     }
 
     pub fn completion_is_empty(&mut self) -> bool {
-        self.io_uring.io_uring().completion().is_empty()
+        self.io_uring.completion().is_empty()
     }
 
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
-        let enqueued = self.io_uring.io_uring().submission().len();
+        let enqueued = self.io_uring.submission().len();
 
         debug_assert!(
             want == 0 || enqueued + self.in_progress >= want,
@@ -66,7 +65,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
 
         self.submit_and_wait_retry_early_wakeup(want)?;
 
-        let remaining = self.io_uring.io_uring().submission().len();
+        let remaining = self.io_uring.submission().len();
         debug_assert!(enqueued == 0 || enqueued > remaining);
         debug_assert_eq!(remaining, 0);
 
@@ -78,16 +77,16 @@ impl<'data, T> IoUringRuntime<'data, T> {
     fn submit_and_wait_retry_early_wakeup(&mut self, want: usize) -> io::Result<()> {
         self.submit_and_wait_retry_eintr(want)?;
 
-        while want > 0 && self.io_uring.io_uring().completion().is_empty() {
+        while want > 0 && self.io_uring.completion().is_empty() {
             self.submit_and_wait_retry_eintr(want)?;
         }
 
         Ok(())
     }
 
-    fn submit_and_wait_retry_eintr(&mut self, want: usize) -> io::Result<()> {
+    fn submit_and_wait_retry_eintr(&self, want: usize) -> io::Result<()> {
         let result = loop {
-            match self.io_uring.io_uring().submit_and_wait(want) {
+            match self.io_uring.submit_and_wait(want) {
                 Err(err) if err.kind() == io::ErrorKind::Interrupted => (),
                 res => break res,
             }
@@ -98,7 +97,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
     }
 
     pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, IoUringResponse<T>)>> {
-        self.io_uring.io_uring().completion().map(|entry| {
+        self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
             let id = entry.user_data();
@@ -122,7 +121,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
 
 impl<'data, T> Drop for IoUringRuntime<'data, T> {
     fn drop(&mut self) {
-        while self.in_progress > 0 || !self.io_uring.io_uring().submission().is_empty() {
+        while self.in_progress > 0 || !self.io_uring.submission().is_empty() {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
 
             // TODO: Implement `wait` (without submit) based on `io_uring::Submitter::enter`?
@@ -140,14 +139,14 @@ impl<'data, T> Drop for IoUringRuntime<'data, T> {
 }
 
 #[derive(Debug)]
-pub(super) struct IoUringState<'data, T> {
-    requests: AHashMap<RequestId, IoUringRequest<'data, T>>,
+pub struct IoUringState<'data, T> {
+    requests: ahash::HashMap<RequestId, IoUringRequest<'data, T>>,
 }
 
 impl<'data, T> IoUringState<'data, T> {
     pub fn new() -> Self {
         Self {
-            requests: AHashMap::new(),
+            requests: ahash::HashMap::new(),
         }
     }
 
@@ -158,7 +157,8 @@ impl<'data, T> IoUringState<'data, T> {
         id: RequestId,
         fd: Fd,
         range: ReadRange,
-        allow_short_read: bool,
+        file_index: FileIndex,
+        direct_io: bool,
     ) -> io::Result<squeue::Entry>
     where
         T: bytemuck::Pod,
@@ -175,8 +175,9 @@ impl<'data, T> IoUringState<'data, T> {
             .init(
                 id,
                 IoUringRequest::Read {
-                    buffer: items,
-                    allow_short_read,
+                    items,
+                    file_index,
+                    direct_io,
                 },
             )?
             .expect_read();
@@ -233,28 +234,29 @@ impl<'data, T> IoUringState<'data, T> {
             .remove(&id)
             .ok_or_else(|| io::Error::other(format!("request {id} does not exist")))?;
 
+        let byte_length = byte_length as usize;
+
         let resp = match req {
             IoUringRequest::Read {
-                buffer: mut items,
-                allow_short_read,
+                mut items,
+                file_index,
+                direct_io,
             } => {
-                if allow_short_read {
-                    let actual_items = byte_length as usize / mem::size_of::<T>();
-                    debug_assert!(
-                        actual_items <= items.len(),
-                        "read returned more bytes than requested"
-                    );
-                    // Truncate to the actual number of items read (short read at EOF).
-                    items.truncate(actual_items);
+                if direct_io {
+                    let item_length = byte_length / size_of::<T>();
+                    debug_assert!(item_length <= items.len());
+
+                    items.truncate(item_length);
                 } else {
-                    assert_eq!(mem::size_of_val(items.as_slice()), byte_length as usize);
+                    assert_eq!(size_of_val(items.as_slice()), byte_length);
                 }
-                let items: Vec<T> = unsafe { assume_init_vec(items) };
-                IoUringResponse::Read(items)
+
+                let items: Vec<T> = unsafe { maybe_uninit::assume_init_vec(items) };
+                IoUringResponse::Read { items, file_index }
             }
 
             IoUringRequest::Write(items) => {
-                assert_eq!(mem::size_of_val(items), byte_length as usize);
+                assert_eq!(size_of_val(items), byte_length);
                 IoUringResponse::Write
             }
         };
@@ -265,26 +267,24 @@ impl<'data, T> IoUringState<'data, T> {
     pub fn abort(&mut self, id: RequestId) -> bool {
         self.requests.remove(&id).is_some()
     }
-
-    fn is_empty(&self) -> bool {
-        self.requests.is_empty()
-    }
 }
 
 impl<'data, T> Drop for IoUringState<'data, T> {
     fn drop(&mut self) {
-        debug_assert!(self.is_empty());
+        debug_assert!(self.requests.is_empty());
     }
 }
 
-pub(super) type RequestId = u64;
+pub type RequestId = u64;
 
 #[derive(Debug)]
-enum IoUringRequest<'data, T> {
+pub enum IoUringRequest<'data, T> {
     Read {
-        buffer: Vec<MaybeUninit<T>>,
-        allow_short_read: bool,
+        items: Vec<MaybeUninit<T>>,
+        file_index: FileIndex,
+        direct_io: bool,
     },
+
     Write(&'data [T]),
 }
 
@@ -292,7 +292,7 @@ impl<'data, T> IoUringRequest<'data, T> {
     pub fn expect_read(&mut self) -> &mut Vec<MaybeUninit<T>> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            IoUringRequest::Read { buffer, .. } => buffer,
+            IoUringRequest::Read { items, .. } => items,
             _ => panic!(),
         }
     }
@@ -300,23 +300,27 @@ impl<'data, T> IoUringRequest<'data, T> {
     pub fn expect_write(&self) -> &'data [T] {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            IoUringRequest::Write(buffer) => buffer,
+            IoUringRequest::Write(items) => items,
             _ => panic!(),
         }
     }
 }
 
 #[derive(Debug)]
-pub(super) enum IoUringResponse<T> {
-    Read(Vec<T>),
+pub enum IoUringResponse<T> {
+    Read {
+        items: Vec<T>,
+        file_index: FileIndex,
+    },
+
     Write,
 }
 
 impl<T> IoUringResponse<T> {
-    pub fn expect_read(self) -> Vec<T> {
+    pub fn expect_read(self) -> (FileIndex, Vec<T>) {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            Self::Read(buffer) => buffer,
+            Self::Read { items, file_index } => (file_index, items),
             _ => panic!(),
         }
     }
@@ -326,26 +330,6 @@ impl<T> IoUringResponse<T> {
         match self {
             Self::Write => (),
             _ => panic!(),
-        }
-    }
-}
-
-pub(crate) fn io_error_context(err: io::Error, context: impl Into<String>) -> io::Error {
-    io::Error::new(err.kind(), IoErrorContext::new(err, context))
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("{context}: {error}")]
-struct IoErrorContext {
-    context: String,
-    error: io::Error,
-}
-
-impl IoErrorContext {
-    fn new(error: io::Error, context: impl Into<String>) -> Self {
-        Self {
-            context: context.into(),
-            error,
         }
     }
 }
