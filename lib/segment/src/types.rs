@@ -868,6 +868,41 @@ pub struct BinaryQuantization {
     pub binary: BinaryQuantizationConfig,
 }
 
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct PolarQuantizationConfig {
+    /// Number of recursive polar decomposition levels (default: 4, range: 1-6)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1, max = 6))]
+    pub levels: Option<u8>,
+
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+}
+
+impl Eq for PolarQuantizationConfig {}
+
+impl std::hash::Hash for PolarQuantizationConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.levels.hash(state);
+        self.always_ram.hash(state);
+    }
+}
+
+impl PolarQuantizationConfig {
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self != other
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct PolarQuantization {
+    #[validate(nested)]
+    pub polar: PolarQuantizationConfig,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(untagged, rename_all = "snake_case")]
 #[anonymize(false)]
@@ -875,6 +910,7 @@ pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
     Binary(BinaryQuantization),
+    Polar(PolarQuantization),
 }
 
 impl QuantizationConfig {
@@ -906,6 +942,7 @@ impl Validate for QuantizationConfig {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
             QuantizationConfig::Product(product) => product.validate(),
             QuantizationConfig::Binary(binary) => binary.validate(),
+            QuantizationConfig::Polar(polar) => polar.validate(),
         }
     }
 }
@@ -938,6 +975,12 @@ impl From<ProductQuantizationConfig> for QuantizationConfig {
 impl From<BinaryQuantizationConfig> for QuantizationConfig {
     fn from(config: BinaryQuantizationConfig) -> Self {
         QuantizationConfig::Binary(BinaryQuantization { binary: config })
+    }
+}
+
+impl From<PolarQuantizationConfig> for QuantizationConfig {
+    fn from(config: PolarQuantizationConfig) -> Self {
+        QuantizationConfig::Polar(PolarQuantization { polar: config })
     }
 }
 

@@ -158,6 +158,11 @@ impl Collection {
                         .quantization_config
                         .replace(QuantizationConfig::Binary(binary));
                 }
+                QuantizationConfigDiff::Polar(polar) => {
+                    config
+                        .quantization_config
+                        .replace(QuantizationConfig::Polar(polar));
+                }
                 QuantizationConfigDiff::Disabled(_) => {
                     config.quantization_config = None;
                 }

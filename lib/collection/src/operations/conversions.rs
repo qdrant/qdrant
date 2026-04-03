@@ -379,6 +379,7 @@ impl TryFrom<api::grpc::qdrant::QuantizationConfigDiff> for QuantizationConfigDi
                 Quantization::Scalar(scalar) => Ok(Self::Scalar(scalar.try_into()?)),
                 Quantization::Product(product) => Ok(Self::Product(product.try_into()?)),
                 Quantization::Binary(binary) => Ok(Self::Binary(binary.try_into()?)),
+                Quantization::Polar(polar) => Ok(Self::Polar(polar.try_into()?)),
                 Quantization::Disabled(_) => Ok(Self::new_disabled()),
             },
         }

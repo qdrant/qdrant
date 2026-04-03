@@ -7,7 +7,8 @@ use std::num::NonZeroU32;
 use api::rest::MaxOptimizationThreads;
 use schemars::JsonSchema;
 use segment::types::{
-    BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, StrictModeConfig,
+    BinaryQuantization, HnswConfig, PolarQuantization, ProductQuantization, ScalarQuantization,
+    StrictModeConfig,
 };
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
@@ -484,6 +485,7 @@ pub enum QuantizationConfigDiff {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
     Binary(BinaryQuantization),
+    Polar(PolarQuantization),
     Disabled(Disabled),
 }
 
@@ -499,6 +501,7 @@ impl Validate for QuantizationConfigDiff {
             QuantizationConfigDiff::Scalar(scalar) => scalar.validate(),
             QuantizationConfigDiff::Product(product) => product.validate(),
             QuantizationConfigDiff::Binary(binary) => binary.validate(),
+            QuantizationConfigDiff::Polar(polar) => polar.validate(),
             QuantizationConfigDiff::Disabled(_) => Ok(()),
         }
     }
