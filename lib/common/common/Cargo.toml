@@ -81,3 +81,7 @@ harness = false
 [[bench]]
 name = "atomic_stop"
 harness = false
+
+[[bench]]
+name = "universal_io"
+harness = false
