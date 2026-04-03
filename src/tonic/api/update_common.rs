@@ -453,7 +453,6 @@ pub async fn update_batch(
             .operation
             .ok_or_else(|| Status::invalid_argument("Operation is missing"))?;
         let collection_name = collection_name.clone();
-        let ordering = ordering.clone();
         let mut result = match operation {
             points_update_operation::Operation::Upsert(PointStructList {
                 points,
@@ -480,6 +479,7 @@ pub async fn update_batch(
                 )
                 .await
             }
+            #[allow(deprecated)]
             points_update_operation::Operation::DeleteDeprecated(points) => {
                 delete(
                     StrictModeCheckedTocProvider::new(dispatcher),
@@ -643,6 +643,7 @@ pub async fn update_batch(
                 )
                 .await
             }
+            #[allow(deprecated)]
             Operation::ClearPayloadDeprecated(selector) => {
                 clear_payload(
                     StrictModeCheckedTocProvider::new(dispatcher),

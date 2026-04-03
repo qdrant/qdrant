@@ -3,7 +3,7 @@ use std::process::Command;
 use std::{env, str};
 
 use common::defaults;
-use tonic_build::Builder;
+use tonic_prost_build::Builder;
 
 fn main() -> std::io::Result<()> {
     // Ensure Qdrant version is configured correctly
@@ -16,7 +16,7 @@ fn main() -> std::io::Result<()> {
     let build_out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     // Build gRPC bits from proto file
-    tonic_build::configure()
+    tonic_prost_build::configure()
         // Because we want to attach all validation rules to the generated gRPC types, we must do
         // so by extending the builder. This is ugly, but better than manually implementing
         // `Validation` for all these types and seems to be the best approach. The line below
@@ -24,7 +24,7 @@ fn main() -> std::io::Result<()> {
         .configure_validation()
         .file_descriptor_set_path(build_out_dir.join("qdrant_descriptor.bin"))
         .out_dir("src/grpc/") // saves generated structures at this location
-        .compile(
+        .compile_protos(
             &["src/grpc/proto/qdrant.proto"], // proto entry point
             &["src/grpc/proto"], // specify the root location to search proto dependencies
         )?;
@@ -84,7 +84,7 @@ impl BuilderExt for Builder {
     }
 
     fn derive_validate(self, path: &str) -> Self {
-        self.type_attribute(path, "#[derive(validator::Validate)]")
+        self.message_attribute(path, "#[derive(validator::Validate)]")
     }
 
     fn derive_validates(self, paths: &[&str]) -> Self {

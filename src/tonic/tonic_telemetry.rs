@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
-use tonic::body::BoxBody;
 use tower::Service;
 use tower_layer::Layer;
 
@@ -20,8 +19,8 @@ const DEFAULT_FAILURE_GRPC_STATUS_CODE: i32 = 2;
 
 const GRPC_STATUS_HEADER: &str = "grpc-status";
 
-type Request = tonic::codegen::http::Request<tonic::transport::Body>;
-type Response = tonic::codegen::http::Response<BoxBody>;
+type Request = http::Request<tonic::body::Body>;
+type Response = http::Response<tonic::body::Body>;
 
 #[derive(Clone)]
 pub struct TonicTelemetryService<T> {

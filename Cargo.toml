@@ -83,6 +83,7 @@ actix-cors = "0.7.1"
 actix-web-validator = { workspace = true }
 actix-web = { workspace = true }
 actix-files = { workspace = true }
+http = { workspace = true }
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
 tower = { version = "0.5.3", features = ["util"] }
@@ -253,9 +254,9 @@ parking_lot = { version = "0.12.5", features = ["arc_lock", "deadlock_detection"
 ph = "0.8.5"
 pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
-prost = "0.12.6"
-prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
-prost-wkt-types = "0.5"
+prost = "0.14.0"
+prost-build = { version = "0.14.0", features = ["cleanup-markdown"] }
+prost-wkt-types = "0.7"
 prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost used by raft
 raft = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a77dfafc5b10e9bc84" ,features = ["prost-codec"], default-features = false }
 rand = "0.10.0"
@@ -291,9 +292,11 @@ tempfile = "3.27.0"
 tinyvec = { version = "1.11.0", features = ["alloc", "latest_stable_rust"] }
 tokio = { version = "1.50.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io", "io-util", "rt"] }
-tonic = { version = "0.11.0", features = ["gzip", "tls"] }
-tonic-build = { version = "0.11.0", features = ["prost"] }
-tonic-reflection = "0.11.0"
+tonic = { version = "0.14.0", features = ["gzip", "tls-ring"] }
+tonic-build = "0.14.0"
+tonic-prost = "0.14.0"
+tonic-prost-build = "0.14.0"
+tonic-reflection = "0.14.0"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.23", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
@@ -307,8 +310,7 @@ dashmap = "6.1"
 walkdir = "2.5.0"
 
 [patch.crates-io]
-tonic = { git = "https://github.com/qdrant/tonic", branch = "v0.11.0-qdrant" }
-hyper = { git = "https://github.com/qdrant/hyper", branch = "v0.14.26-qdrant" }
+tonic = { git = "https://github.com/qdrant/tonic", branch = "v0.14.5-qdrant" }
 
 [[bin]]
 name = "schema_generator"
