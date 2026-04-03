@@ -1493,7 +1493,8 @@ mod tests {
             ),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
-        );
+        )
+        .unwrap();
         let toc_arc = Arc::new(toc);
         let storage_path = toc_arc.storage_path();
         let consensus_state: ConsensusStateRef = ConsensusManager::new(

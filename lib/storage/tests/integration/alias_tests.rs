@@ -83,16 +83,19 @@ fn test_alias_operation() {
     let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
     let propose_operation_sender = OperationSender::new(propose_sender);
 
-    let toc = Arc::new(TableOfContent::new(
-        &config,
-        search_runtime,
-        update_runtime,
-        general_runtime,
-        ResourceBudget::default(),
-        ChannelService::new(6333, false, None, None),
-        0,
-        Some(propose_operation_sender),
-    ));
+    let toc = Arc::new(
+        TableOfContent::new(
+            &config,
+            search_runtime,
+            update_runtime,
+            general_runtime,
+            ResourceBudget::default(),
+            ChannelService::new(6333, false, None, None),
+            0,
+            Some(propose_operation_sender),
+        )
+        .unwrap(),
+    );
     let dispatcher = Dispatcher::new(toc);
 
     handle
