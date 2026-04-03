@@ -302,6 +302,7 @@ impl GpuVectorStorage {
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
             ),
+            _ => todo!(),
         }
     }
 

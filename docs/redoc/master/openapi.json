@@ -7367,6 +7367,9 @@
           },
           {
             "$ref": "#/components/schemas/BinaryQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/TurboQuantQuantization"
           }
         ]
       },
@@ -7503,6 +7506,80 @@
           "binary",
           "scalar4bits",
           "scalar8bits"
+        ]
+      },
+      "TurboQuantQuantization": {
+        "type": "object",
+        "required": [
+          "turbo_quant"
+        ],
+        "properties": {
+          "turbo_quant": {
+            "$ref": "#/components/schemas/TurboQuantQuantizationConfig"
+          }
+        }
+      },
+      "TurboQuantQuantizationConfig": {
+        "type": "object",
+        "properties": {
+          "always_ram": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "bits": {
+            "description": "Number of bits for quantization (default: 4, range: 1-6)",
+            "type": "integer",
+            "format": "uint",
+            "maximum": 6,
+            "minimum": 1,
+            "nullable": true
+          },
+          "correction": {
+            "description": "Correction method for turbo quantization (default: normalization)",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurboQuantCorrection"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "rotation": {
+            "description": "Rotation method for turbo quantization (default: hadamard)",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurboQuantRotation"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "hadamard_chunk": {
+            "description": "Number of Hadamard rotations (only used when rotation is hadamard)",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "TurboQuantCorrection": {
+        "type": "string",
+        "enum": [
+          "no_correction",
+          "qjl",
+          "normalization",
+          "qjl_normalization"
+        ]
+      },
+      "TurboQuantRotation": {
+        "type": "string",
+        "enum": [
+          "no_rotation",
+          "hadamard",
+          "random"
         ]
       },
       "Datatype": {
@@ -10732,6 +10809,9 @@
           },
           {
             "$ref": "#/components/schemas/BinaryQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/TurboQuantQuantization"
           },
           {
             "$ref": "#/components/schemas/Disabled"

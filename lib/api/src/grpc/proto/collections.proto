@@ -361,11 +361,38 @@ message BinaryQuantization {
   optional BinaryQuantizationQueryEncoding query_encoding = 3;
 }
 
+enum TurboQuantCorrection {
+  Normalization = 0;
+  NoCorrection = 1;
+  Qjl = 2;
+  QjlNormalization = 3;
+}
+
+enum TurboQuantRotation {
+  TQR_Hadamard = 0;
+  TQR_NoRotation = 1;
+  TQR_Random = 2;
+}
+
+message TurboQuantization {
+  // Number of bits for quantization (default: 4, range: 1-6)
+  optional uint32 bits = 1;
+  // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+  optional bool always_ram = 2;
+  // Correction method for turbo quantization
+  optional TurboQuantCorrection correction = 3;
+  // Rotation method for turbo quantization
+  optional TurboQuantRotation rotation = 4;
+  // Number of Hadamard rotations (only used when rotation is Hadamard)
+  optional uint32 hadamard_chunk = 5;
+}
+
 message QuantizationConfig {
   oneof quantization {
     ScalarQuantization scalar = 1;
     ProductQuantization product = 2;
     BinaryQuantization binary = 3;
+    TurboQuantization turbo = 4;
   }
 }
 
@@ -377,6 +404,7 @@ message QuantizationConfigDiff {
     ProductQuantization product = 2;
     Disabled disabled = 3;
     BinaryQuantization binary = 4;
+    TurboQuantization turbo = 5;
   }
 }
 

@@ -55,6 +55,9 @@ impl<'py> IntoPyObject<'py> for PyQuantizationConfig {
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
                 PyBinaryQuantizationConfig(binary).into_bound_py_any(py)
             }
+            QuantizationConfig::TurboQuant(TurboQuantQuantization { turbo_quant: _ }) => {
+                unimplemented!("TurboQuantQuantization is not supported in Python yet")
+            }
         }
     }
 }
@@ -70,6 +73,9 @@ impl Repr for PyQuantizationConfig {
             }
             QuantizationConfig::Binary(binary) => {
                 PyBinaryQuantizationConfig::wrap_ref(&binary.binary).fmt(f)
+            }
+            QuantizationConfig::TurboQuant(TurboQuantQuantization { turbo_quant: _ }) => {
+                unimplemented!("TurboQuantQuantization is not supported in Python yet")
             }
         }
     }

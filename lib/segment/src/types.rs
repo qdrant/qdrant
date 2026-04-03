@@ -868,6 +868,59 @@ pub struct BinaryQuantization {
     pub binary: BinaryQuantizationConfig,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TurboQuantCorrection {
+    NoCorrection,
+    Qjl,
+    #[default]
+    Normalization,
+    QjlNormalization,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TurboQuantRotation {
+    NoRotation,
+    #[default]
+    Hadamard,
+    Random,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct TurboQuantQuantizationConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+
+    /// Number of bits for quantization (default: 4, range: 1-6)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1, max = 6))]
+    pub bits: Option<usize>,
+
+    /// Correction method for turbo quantization (default: normalization)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correction: Option<TurboQuantCorrection>,
+
+    /// Rotation method for turbo quantization (default: hadamard)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<TurboQuantRotation>,
+
+    /// Number of Hadamard rotations (only used when rotation is hadamard)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hadamard_chunk: Option<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct TurboQuantQuantization {
+    #[validate(nested)]
+    pub turbo_quant: TurboQuantQuantizationConfig,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(untagged, rename_all = "snake_case")]
 #[anonymize(false)]
@@ -875,6 +928,7 @@ pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
     Binary(BinaryQuantization),
+    TurboQuant(TurboQuantQuantization),
 }
 
 impl QuantizationConfig {
@@ -906,6 +960,7 @@ impl Validate for QuantizationConfig {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
             QuantizationConfig::Product(product) => product.validate(),
             QuantizationConfig::Binary(binary) => binary.validate(),
+            QuantizationConfig::TurboQuant(turbo_quant) => turbo_quant.validate(),
         }
     }
 }
@@ -938,6 +993,14 @@ impl From<ProductQuantizationConfig> for QuantizationConfig {
 impl From<BinaryQuantizationConfig> for QuantizationConfig {
     fn from(config: BinaryQuantizationConfig) -> Self {
         QuantizationConfig::Binary(BinaryQuantization { binary: config })
+    }
+}
+
+impl From<TurboQuantQuantizationConfig> for QuantizationConfig {
+    fn from(config: TurboQuantQuantizationConfig) -> Self {
+        QuantizationConfig::TurboQuant(TurboQuantQuantization {
+            turbo_quant: config,
+        })
     }
 }
 
