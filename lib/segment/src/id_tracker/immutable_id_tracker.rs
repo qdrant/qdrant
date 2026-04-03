@@ -2,14 +2,11 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitSlice;
-use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use common::ext::BitSliceExt as _;
-use common::mmap::{
-    AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
-};
+use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
+use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
+use common::universal_io::OpenOptions;
 use fs_err::File;
 use uuid::Uuid;
 
@@ -17,13 +14,14 @@ use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
 use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::point_mappings::FileEndianess;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
@@ -246,14 +244,18 @@ impl ImmutableIdTracker {
     }
 
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
-        let deleted_raw = open_write_mmap(
-            &Self::deleted_file_path(segment_path),
-            AdviceSetting::Global,
-            true,
+        let deleted_storage = MmapBitSlice::open(
+            Self::deleted_file_path(segment_path),
+            OpenOptions {
+                populate: Some(true),
+                ..OpenOptions::default()
+            },
         )?;
-        let deleted_mmap = MmapBitSlice::try_from(deleted_raw, 0)?;
-        let deleted_bitvec = deleted_mmap.to_bitvec();
-        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_mmap);
+
+        let mut deleted_bitvec = BitVec::new();
+        deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
+
+        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
 
         let internal_to_version_map = open_write_mmap(
             &Self::version_mapping_file_path(segment_path),
@@ -285,22 +287,29 @@ impl ImmutableIdTracker {
     ) -> OperationResult<Self> {
         // Create mmap file for deleted bitvec
         let deleted_filepath = Self::deleted_file_path(path);
-        {
-            let deleted_size = bitmap_mmap_size(mappings.total_point_count());
-            create_and_ensure_length(&deleted_filepath, deleted_size)?;
-        }
 
         debug_assert!(mappings.deleted().len() <= mappings.total_point_count());
 
-        let deleted_mmap = open_write_mmap(&deleted_filepath, AdviceSetting::Global, false)?;
-        let mut deleted_new = MmapBitSlice::try_from(deleted_mmap, 0)?;
-        deleted_new[..mappings.deleted().len()].copy_from_bitslice(mappings.deleted());
+        let _ = create_and_ensure_length(
+            &deleted_filepath,
+            mappings
+                .total_point_count()
+                .div_ceil(u8::BITS as usize)
+                .next_multiple_of(size_of::<u64>()),
+        )?;
 
-        for i in mappings.deleted().len()..mappings.total_point_count() {
-            deleted_new.set(i, true);
-        }
+        let mut deleted_storage = MmapBitSlice::open(&deleted_filepath, OpenOptions::default())?;
 
-        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_new);
+        // Set bits for deleted points from the mappings,
+        deleted_storage.write_bitslice(mappings.deleted())?;
+        // plus any trailing points beyond mappings.deleted().len() are also marked deleted.
+        deleted_storage.set_ascending_bits_batch(
+            (mappings.deleted().len()..mappings.total_point_count()).map(|i| (i as u64, true)),
+        )?;
+
+        deleted_storage.flusher()()?;
+
+        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
 
         // Create mmap file for internal-to-version list
         let version_filepath = Self::version_mapping_file_path(path);
@@ -375,11 +384,6 @@ fn mmap_size<T>(len: usize) -> usize {
     len.div_ceil(item_width) * item_width // Make it a multiple of usize-width.
 }
 
-/// Returns the required mmap filesize for a `BitSlice`.
-fn bitmap_mmap_size(number_of_elements: usize) -> usize {
-    mmap_size::<usize>(number_of_elements.div_ceil(u8::BITS as usize))
-}
-
 impl IdTracker for ImmutableIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id)
@@ -441,23 +445,8 @@ impl IdTracker for ImmutableIdTracker {
         Ok(())
     }
 
-    fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        self.mappings.iter_external()
-    }
-
-    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.mappings.iter_internal()
-    }
-
-    fn iter_from(
-        &self,
-        external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        self.mappings.iter_from(external_id)
-    }
-
-    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        self.mappings.iter_random()
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+        PointMappingsRefEnum::Compressed(&self.mappings)
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
@@ -519,15 +508,11 @@ pub(super) mod test {
     use std::collections::{HashMap, HashSet};
 
     use itertools::Itertools;
-    #[cfg(feature = "rocksdb")]
-    use rand::Rng;
     use rand::prelude::*;
     use tempfile::Builder;
     use uuid::Uuid;
 
     use super::*;
-    #[cfg(feature = "rocksdb")]
-    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;
 
@@ -551,12 +536,19 @@ pub(super) mod test {
         let id_tracker =
             ImmutableIdTracker::from_in_memory_tracker(id_tracker, dir.path()).unwrap();
 
-        let first_four = id_tracker.iter_from(None).take(4).collect_vec();
+        let first_four = id_tracker
+            .point_mappings()
+            .iter_from(None)
+            .take(4)
+            .collect_vec();
 
         assert_eq!(first_four.len(), 4);
         assert_eq!(first_four[0].0, 100.into());
 
-        let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
+        let last = id_tracker
+            .point_mappings()
+            .iter_from(Some(first_four[3].0))
+            .collect_vec();
         assert_eq!(last.len(), 7);
     }
 
@@ -581,7 +573,11 @@ pub(super) mod test {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
 
-        let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
+        let sorted_from_tracker = id_tracker
+            .point_mappings()
+            .iter_from(None)
+            .map(|(k, _)| k)
+            .collect_vec();
 
         let mut values = TEST_POINTS.to_vec();
         values.sort();
@@ -692,7 +688,7 @@ pub(super) mod test {
     fn test_all_points_have_version() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
-        for i in id_tracker.iter_internal() {
+        for i in id_tracker.point_mappings().iter_internal() {
             assert!(id_tracker.internal_version(i).is_some());
         }
     }
@@ -706,15 +702,26 @@ pub(super) mod test {
 
         let point_to_delete = PointIdType::NumId(100);
 
-        assert!(id_tracker.iter_external().contains(&point_to_delete));
+        assert!(
+            id_tracker
+                .point_mappings()
+                .iter_external()
+                .contains(&point_to_delete)
+        );
 
         assert_eq!(id_tracker.internal_id(point_to_delete), Some(0));
 
         id_tracker.drop(point_to_delete).unwrap();
 
         let point_exists = id_tracker.internal_id(point_to_delete).is_some()
-            && id_tracker.iter_external().contains(&point_to_delete)
-            && id_tracker.iter_from(None).any(|i| i.0 == point_to_delete);
+            && id_tracker
+                .point_mappings()
+                .iter_external()
+                .contains(&point_to_delete)
+            && id_tracker
+                .point_mappings()
+                .iter_from(None)
+                .any(|i| i.0 == point_to_delete);
 
         assert!(!point_exists);
 
@@ -890,98 +897,6 @@ pub(super) mod test {
             assert_eq!(
                 in_memory_id_tracker.external_id(internal),
                 immutable_id_tracker.external_id(internal)
-            );
-        }
-    }
-
-    #[test]
-    #[cfg(feature = "rocksdb")]
-    fn simple_id_tracker_vs_immutable_tracker_congruence() {
-        use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
-
-        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-
-        let mut id_tracker = InMemoryIdTracker::new();
-        let mut simple_id_tracker = SimpleIdTracker::open(db).unwrap();
-
-        // Insert 100 random points into id_tracker
-
-        let num_points = 200;
-        let mut rng = StdRng::seed_from_u64(RAND_SEED);
-
-        for _ in 0..num_points {
-            // Generate num id in range from 0 to 100
-
-            let point_id = PointIdType::NumId(rng.random_range(0..num_points as u64));
-
-            let version = rng.random_range(0..1000);
-
-            let internal_id_mmap = id_tracker.total_point_count() as PointOffsetType;
-            let internal_id_simple = simple_id_tracker.total_point_count() as PointOffsetType;
-
-            assert_eq!(internal_id_mmap, internal_id_simple);
-
-            if id_tracker.internal_id(point_id).is_some() {
-                id_tracker.drop(point_id).unwrap();
-            }
-            id_tracker.set_link(point_id, internal_id_mmap).unwrap();
-            id_tracker
-                .set_internal_version(internal_id_mmap, version)
-                .unwrap();
-
-            if simple_id_tracker.internal_id(point_id).is_some() {
-                simple_id_tracker.drop(point_id).unwrap();
-            }
-            simple_id_tracker
-                .set_link(point_id, internal_id_simple)
-                .unwrap();
-            simple_id_tracker
-                .set_internal_version(internal_id_simple, version)
-                .unwrap();
-        }
-
-        let immutable_id_tracker =
-            ImmutableIdTracker::from_in_memory_tracker(id_tracker, dir.path()).unwrap();
-        drop(immutable_id_tracker);
-
-        let immutable_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
-
-        for (external_id, internal_id) in simple_id_tracker.iter_from(None) {
-            assert_eq!(
-                simple_id_tracker.internal_version(internal_id).unwrap(),
-                immutable_id_tracker.internal_version(internal_id).unwrap()
-            );
-            assert_eq!(
-                simple_id_tracker.external_id(internal_id),
-                immutable_id_tracker.external_id(internal_id)
-            );
-            assert_eq!(
-                external_id,
-                immutable_id_tracker.external_id(internal_id).unwrap()
-            );
-            assert_eq!(
-                simple_id_tracker.external_id(internal_id).unwrap(),
-                immutable_id_tracker.external_id(internal_id).unwrap()
-            );
-        }
-
-        for (external_id, internal_id) in immutable_id_tracker.iter_from(None) {
-            assert_eq!(
-                simple_id_tracker.internal_version(internal_id).unwrap(),
-                immutable_id_tracker.internal_version(internal_id).unwrap()
-            );
-            assert_eq!(
-                simple_id_tracker.external_id(internal_id),
-                immutable_id_tracker.external_id(internal_id)
-            );
-            assert_eq!(
-                external_id,
-                simple_id_tracker.external_id(internal_id).unwrap()
-            );
-            assert_eq!(
-                simple_id_tracker.external_id(internal_id).unwrap(),
-                immutable_id_tracker.external_id(internal_id).unwrap()
             );
         }
     }

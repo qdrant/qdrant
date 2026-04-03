@@ -24,8 +24,6 @@ use common::is_alive_lock::IsAliveLock;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use parking_lot::Mutex;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 use uuid::Uuid;
 
 use self::version_tracker::VersionTracker;
@@ -43,10 +41,8 @@ pub const SEGMENT_STATE_FILE: &str = "segment.json";
 const SNAPSHOT_PATH: &str = "snapshot";
 
 // Sub-directories of `SNAPSHOT_PATH`:
-#[cfg(feature = "rocksdb")]
-const DB_BACKUP_PATH: &str = "db_backup";
-#[cfg(feature = "rocksdb")]
-const PAYLOAD_DB_BACKUP_PATH: &str = "payload_index_db_backup";
+const DEPRECATED_ROCKSDB_BACKUP_PATH: &str = "db_backup";
+const DEPRECATED_PAYLOAD_ROCKSDB_BACKUP_PATH: &str = "payload_index_db_backup";
 const SNAPSHOT_FILES_PATH: &str = "files";
 
 pub struct SegmentVersion;
@@ -92,11 +88,18 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    #[cfg(feature = "rocksdb")]
-    pub database: Option<Arc<parking_lot::RwLock<DB>>>,
+    pub(crate) deferred_point_status: Option<DeferredPointStatus>,
+}
+
+#[derive(Debug)]
+pub struct DeferredPointStatus {
     /// Points with internal id >= this value are hidden from reads.
     /// Available for appendable segments only.
-    pub(crate) deferred_internal_id: Option<PointOffsetType>,
+    pub(crate) deferred_internal_id: PointOffsetType,
+
+    /// Amount of deleted deferred points. Must kept track of properly to be able
+    /// to calculate the amount of available deferred and visible points.
+    pub(crate) deferred_deleted_count: usize,
 }
 
 pub struct VectorData {
@@ -147,18 +150,4 @@ impl Drop for Segment {
             }
         }
     }
-}
-
-#[cfg(feature = "rocksdb")]
-pub fn destroy_rocksdb(
-    path: &std::path::Path,
-) -> crate::common::operation_error::OperationResult<()> {
-    rocksdb::DB::destroy(&Default::default(), path).map_err(|err| {
-        crate::common::operation_error::OperationError::service_error(format!(
-            "failed to destroy RocksDB at {}: {err}",
-            path.display()
-        ))
-    })?;
-
-    Ok(())
 }

@@ -5,8 +5,6 @@ use std::hash::{BuildHasher, Hash};
 use std::iter;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 
 use ahash::HashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -17,10 +15,6 @@ use gridstore::Blob;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mmap_map_index::MmapMapIndex;
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -109,21 +103,6 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    #[cfg(feature = "rocksdb")]
-    pub fn new_rocksdb(
-        db: Arc<RwLock<DB>>,
-        field_name: &str,
-        is_appendable: bool,
-        create_if_missing: bool,
-    ) -> OperationResult<Option<Self>> {
-        let index = if is_appendable {
-            MutableMapIndex::open_rocksdb(db, field_name, create_if_missing)?.map(MapIndex::Mutable)
-        } else {
-            ImmutableMapIndex::open_rocksdb(db, field_name)?.map(MapIndex::Immutable)
-        };
-        Ok(index)
-    }
-
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
         let Some(mmap_index) = MmapMapIndex::open(path, is_on_disk)? else {
@@ -144,20 +123,6 @@ where
     pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let index = MutableMapIndex::open_gridstore(dir, create_if_missing)?;
         Ok(index.map(MapIndex::Mutable))
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn builder_rocksdb(
-        db: Arc<RwLock<DB>>,
-        field_name: &str,
-    ) -> OperationResult<MapIndexBuilder<N>> {
-        Ok(MapIndexBuilder(MapIndex::Mutable(
-            MutableMapIndex::open_rocksdb(db, field_name, true)?.ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "Failed to create and load mutable map index builder for field '{field_name}'",
-                ))
-            })?,
-        )))
     }
 
     pub fn builder_mmap(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
@@ -192,11 +157,12 @@ where
     pub fn get_values(
         &self,
         idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
         match self {
             MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx)?)),
             MapIndex::Immutable(index) => Some(Box::new(index.get_values(idx)?)),
-            MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx)?)),
+            MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
         }
     }
 
@@ -523,15 +489,6 @@ where
         }
     }
 
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self {
-            MapIndex::Mutable(index) => index.is_rocksdb(),
-            MapIndex::Immutable(index) => index.is_rocksdb(),
-            MapIndex::Mmap(_) => false,
-        }
-    }
-
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -763,8 +720,8 @@ impl PayloadFieldIndex for MapIndex<str> {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(keyword) => {
                     Some(Box::new(self.get_iterator(keyword.as_str(), hw_counter)))
@@ -798,15 +755,15 @@ impl PayloadFieldIndex for MapIndex<str> {
                 }
             },
             _ => None,
-        }
+        })
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(keyword) => {
                     let mut estimation = self.match_cardinality(keyword.as_str(), hw_counter);
@@ -860,14 +817,14 @@ impl PayloadFieldIndex for MapIndex<str> {
                 }
             },
             _ => None,
-        }
+        })
     }
 
     fn payload_blocks(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         Box::new(
             self.iter_values()
                 .map(|value| {
@@ -881,7 +838,8 @@ impl PayloadFieldIndex for MapIndex<str> {
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
                     cardinality: count,
-                }),
+                })
+                .map(Ok),
         )
     }
 }
@@ -911,11 +869,13 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(uuid_string) => {
-                    let uuid = Uuid::from_str(uuid_string).ok()?;
+                    let Some(uuid) = Uuid::from_str(uuid_string).ok() else {
+                        return Ok(None);
+                    };
                     Some(Box::new(self.get_iterator(&uuid.as_u128(), hw_counter)))
                 }
                 ValueVariants::Integer(_) => None,
@@ -928,7 +888,9 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
                         .collect();
 
-                    let uuids = uuids.ok()?;
+                    let Some(uuids) = uuids.ok() else {
+                        return Ok(None);
+                    };
 
                     Some(Box::new(
                         uuids
@@ -952,7 +914,9 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
                         .collect();
 
-                    let excluded_uuids = uuids.ok()?;
+                    let Some(excluded_uuids) = uuids.ok() else {
+                        return Ok(None);
+                    };
                     let exclude_iter = self
                         .iter_values()
                         .filter(move |key| !excluded_uuids.contains(*key))
@@ -969,18 +933,20 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                 }
             },
             _ => None,
-        }
+        })
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(uuid_string) => {
-                    let uuid = Uuid::from_str(uuid_string).ok()?;
+                    let Some(uuid) = Uuid::from_str(uuid_string).ok() else {
+                        return Ok(None);
+                    };
                     let mut estimation = self.match_cardinality(&uuid.as_u128(), hw_counter);
                     estimation
                         .primary_clauses
@@ -997,7 +963,9 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
                         .collect();
 
-                    let uuids = uuids.ok()?;
+                    let Some(uuids) = uuids.ok() else {
+                        return Ok(None);
+                    };
 
                     let estimations = uuids
                         .into_iter()
@@ -1031,7 +999,9 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
                         .collect();
 
-                    let excluded_uuids = uuids.ok()?;
+                    let Some(excluded_uuids) = uuids.ok() else {
+                        return Ok(None);
+                    };
 
                     Some(self.except_cardinality(excluded_uuids.iter(), hw_counter))
                 }
@@ -1046,14 +1016,14 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                 }
             },
             _ => None,
-        }
+        })
     }
 
     fn payload_blocks(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         Box::new(
             self.iter_values()
                 .map(move |value| {
@@ -1070,7 +1040,8 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         Uuid::from_u128(*value).to_string().into(),
                     ),
                     cardinality: count,
-                }),
+                })
+                .map(Ok),
         )
     }
 }
@@ -1100,8 +1071,8 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(_) => None,
                 ValueVariants::Integer(integer) => {
@@ -1135,15 +1106,15 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 AnyVariants::Integers(integers) => Some(self.except_set(integers, hw_counter)),
             },
             _ => None,
-        }
+        })
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
-        match &condition.r#match {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        Ok(match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(_) => None,
                 ValueVariants::Integer(integer) => {
@@ -1197,14 +1168,14 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 }
             },
             _ => None,
-        }
+        })
     }
 
     fn payload_blocks(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         Box::new(
             self.iter_values()
                 .map(move |value| {
@@ -1218,7 +1189,8 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), (*value).into()),
                     cardinality: count,
-                }),
+                })
+                .map(Ok),
         )
     }
 }
@@ -1232,8 +1204,9 @@ where
     fn get_point_values(
         &self,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        MapIndex::get_values(self, point_id)
+        MapIndex::get_values(self, point_id, hw_counter)
             .into_iter()
             .flatten()
             .map(|v| v.into())
@@ -1363,19 +1336,10 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    #[cfg(feature = "rocksdb")]
-    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-
-    #[cfg(feature = "rocksdb")]
-    const FIELD_NAME: &str = "test";
 
     #[derive(Clone, Copy)]
     enum IndexType {
-        #[cfg(feature = "rocksdb")]
-        Mutable,
         MutableGridstore,
-        #[cfg(feature = "rocksdb")]
-        Immutable,
         Mmap,
         RamMmap,
     }
@@ -1394,23 +1358,6 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         match index_type {
-            #[cfg(feature = "rocksdb")]
-            IndexType::Mutable | IndexType::Immutable => {
-                let mut builder = MapIndex::<N>::builder_rocksdb(
-                    open_db_with_existing_cf(path).unwrap(),
-                    FIELD_NAME,
-                )
-                .unwrap();
-                builder.init().unwrap();
-                for (idx, values) in data.iter().enumerate() {
-                    let values: Vec<Value> = values.iter().map(&into_value).collect();
-                    let values: Vec<_> = values.iter().collect();
-                    builder
-                        .add_point(idx as PointOffsetType, &values, &hw_counter)
-                        .unwrap();
-                }
-                builder.finalize().unwrap();
-            }
             IndexType::MutableGridstore => {
                 let mut builder = MapIndex::<N>::builder_gridstore(path.to_path_buf());
                 builder.init().unwrap();
@@ -1447,33 +1394,16 @@ mod tests {
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         let index = match index_type {
-            #[cfg(feature = "rocksdb")]
-            IndexType::Mutable => MapIndex::<N>::new_rocksdb(
-                open_db_with_existing_cf(path).unwrap(),
-                FIELD_NAME,
-                true,
-                true,
-            )
-            .unwrap()
-            .unwrap(),
             IndexType::MutableGridstore => MapIndex::<N>::new_gridstore(path.to_path_buf(), true)
                 .unwrap()
                 .unwrap(),
-            #[cfg(feature = "rocksdb")]
-            IndexType::Immutable => MapIndex::<N>::new_rocksdb(
-                open_db_with_existing_cf(path).unwrap(),
-                FIELD_NAME,
-                false,
-                true,
-            )
-            .unwrap()
-            .unwrap(),
             IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap().unwrap(),
             IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap().unwrap(),
         };
+        let hw_counter = HardwareCounterCell::new();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<<N as MapIndexKey>::Owned> = index
-                .get_values(idx as PointOffsetType)
+                .get_values(idx as PointOffsetType, &hw_counter)
                 .unwrap()
                 .map(|v| MapIndexKey::to_owned(v.as_ref()))
                 .collect();
@@ -1506,7 +1436,7 @@ mod tests {
         let index = builder.finalize().unwrap();
 
         for block in index.payload_blocks(50, PayloadKeyType::new("test_uuid")) {
-            black_box(block);
+            black_box(block.unwrap());
         }
     }
 
@@ -1529,9 +1459,10 @@ mod tests {
         }
 
         let index = builder.finalize().unwrap();
+        let hw_counter = HardwareCounterCell::new();
         for (idx, values) in data.iter().enumerate().rev() {
             let res: Vec<_> = index
-                .get_values(idx as u32)
+                .get_values(idx as u32, &hw_counter)
                 .unwrap()
                 .map(|i| *i as i32)
                 .collect();
@@ -1540,9 +1471,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_int_disk_map_index(#[case] index_type: IndexType) {
@@ -1569,9 +1498,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_string_disk_map_index(#[case] index_type: IndexType) {
@@ -1614,9 +1541,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_empty_index(#[case] index_type: IndexType) {
@@ -1633,6 +1558,52 @@ mod tests {
             index
                 .except_cardinality(std::iter::empty(), &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0))
+        );
+    }
+
+    /// Test that `get_values` on an on-disk mmap index actually increments the hardware counter.
+    #[test]
+    fn test_mmap_get_values_hw_counter() {
+        let data = vec![vec![1i64, 2, 3], vec![4, 5], vec![6]];
+
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap, |v| (*v).into());
+        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap);
+
+        // Read values with a fresh counter
+        let hw_counter = HardwareCounterCell::new();
+        for idx in 0..data.len() {
+            let _values: Vec<_> = index
+                .get_values(idx as PointOffsetType, &hw_counter)
+                .unwrap()
+                .collect();
+        }
+
+        // On-disk mmap variant should have tracked IO reads
+        assert!(
+            hw_counter.payload_index_io_read_counter().get() > 0,
+            "Expected on-disk mmap get_values to track payload index IO reads, but counter was 0"
+        );
+
+        // Contrast with RamMmap (is_on_disk=false) — counter should remain zero
+        let temp_dir2 = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap, |v| {
+            (*v).into()
+        });
+        let index2 = load_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap);
+
+        let hw_counter2 = HardwareCounterCell::new();
+        for idx in 0..data.len() {
+            let _values: Vec<_> = index2
+                .get_values(idx as PointOffsetType, &hw_counter2)
+                .unwrap()
+                .collect();
+        }
+
+        assert_eq!(
+            hw_counter2.payload_index_io_read_counter().get(),
+            0,
+            "Expected RAM mmap get_values NOT to track IO reads, but counter was non-zero"
         );
     }
 }

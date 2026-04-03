@@ -137,14 +137,10 @@ impl TableOfContent {
             sharding_method,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
             replication_factor: NonZeroU32::new(replication_factor).ok_or_else(|| {
-                StorageError::BadInput {
-                    description: "`replication_factor` cannot be 0".to_string(),
-                }
+                StorageError::bad_input("`replication_factor` cannot be 0".to_string())
             })?,
             write_consistency_factor: NonZeroU32::new(write_consistency_factor).ok_or_else(
-                || StorageError::BadInput {
-                    description: "`write_consistency_factor` cannot be 0".to_string(),
-                },
+                || StorageError::bad_input("`write_consistency_factor` cannot be 0".to_string()),
             )?,
             read_fan_out_factor: None,
             read_fan_out_delay_ms: None,

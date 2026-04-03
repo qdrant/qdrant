@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::{ReadSegmentEntry, SegmentEntry, StorageSegmentEntry as _};
 use segment::segment::Segment;
 
 use crate::proxy_segment::ProxySegment;
@@ -57,7 +57,7 @@ impl LockedSegment {
         }
     }
 
-    pub fn get_non_appendable(&self) -> &RwLock<dyn NonAppendableSegmentEntry> {
+    pub fn get_read(&self) -> &RwLock<dyn ReadSegmentEntry> {
         match self {
             LockedSegment::Original(segment) => segment.as_ref(),
             LockedSegment::Proxy(proxy) => proxy.as_ref(),

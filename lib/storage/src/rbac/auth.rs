@@ -1,7 +1,7 @@
 use chrono::Utc;
 
 use super::{Access, AccessRequirements, AuthType, CollectionMultipass, CollectionPass};
-use crate::audit::{AuditEvent, audit_log, is_audit_enabled};
+use crate::audit::{AuditEvent, AuditResult, audit_log, is_audit_enabled};
 use crate::content_manager::errors::StorageError;
 
 /// Per-request authentication context.
@@ -16,6 +16,7 @@ pub struct Auth {
     subject: Option<String>,
     remote: Option<String>,
     auth_type: AuthType,
+    tracing_id: Option<String>,
 }
 
 impl Auth {
@@ -24,12 +25,14 @@ impl Auth {
         subject: Option<String>,
         remote: Option<String>,
         auth_type: AuthType,
+        tracing_id: Option<String>,
     ) -> Self {
         Self {
             access,
             subject,
             remote,
             auth_type,
+            tracing_id,
         }
     }
 
@@ -39,6 +42,7 @@ impl Auth {
             subject: None,
             remote: None,
             auth_type: AuthType::Internal,
+            tracing_id: None,
         }
     }
 
@@ -103,9 +107,9 @@ impl Auth {
             return;
         }
 
-        let (status, error) = match result {
-            Ok(_) => ("ok", None),
-            Err(e) => ("denied", Some(e.to_string())),
+        let (audit_result, error) = match result {
+            Ok(_) => (AuditResult::Ok, None),
+            Err(e) => (AuditResult::Denied, Some(e.to_string())),
         };
 
         audit_log(AuditEvent {
@@ -115,7 +119,8 @@ impl Auth {
             subject: self.subject.clone(),
             remote: self.remote.clone(),
             collection: collection.map(String::from),
-            result: status,
+            tracing_id: self.tracing_id.clone(),
+            result: audit_result,
             error,
         });
     }

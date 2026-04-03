@@ -254,7 +254,7 @@ impl PayloadFieldIndex for MutableNullIndex {
         &'a self,
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         let FieldCondition {
             key: _,
             r#match: _,
@@ -267,7 +267,7 @@ impl PayloadFieldIndex for MutableNullIndex {
             is_null,
         } = condition;
 
-        if let Some(is_empty) = is_empty {
+        Ok(if let Some(is_empty) = is_empty {
             if *is_empty {
                 // Return points that don't have values
                 let iter = self.storage.has_values_flags.iter_falses();
@@ -289,14 +289,14 @@ impl PayloadFieldIndex for MutableNullIndex {
             }
         } else {
             None
-        }
+        })
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
         _hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         let FieldCondition {
             key,
             r#match: _,
@@ -309,7 +309,7 @@ impl PayloadFieldIndex for MutableNullIndex {
             is_null,
         } = condition;
 
-        if let Some(is_empty) = is_empty {
+        Ok(if let Some(is_empty) = is_empty {
             if *is_empty {
                 let has_values_count = self.storage.has_values_flags.count_trues();
                 let estimated = self.total_point_count.saturating_sub(has_values_count);
@@ -351,14 +351,14 @@ impl PayloadFieldIndex for MutableNullIndex {
             }
         } else {
             None
-        }
+        })
     }
 
     fn payload_blocks(
         &self,
         _threshold: usize,
         _key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         // No payload blocks
         Box::new(std::iter::empty())
     }
@@ -449,9 +449,11 @@ mod tests {
         let is_null_values: Vec<_> = null_index
             .filter(&filter_is_null, &hw_counter)
             .unwrap()
+            .unwrap()
             .collect();
         let not_empty_values: Vec<_> = null_index
             .filter(&filter_is_not_empty, &hw_counter)
+            .unwrap()
             .unwrap()
             .collect();
 
@@ -503,9 +505,11 @@ mod tests {
         let hw_cell = HardwareCounterCell::new();
         let is_null_cardinality = null_index
             .estimate_cardinality(&filter_is_null, &hw_cell)
+            .unwrap()
             .unwrap();
         let non_empty_cardinality = null_index
             .estimate_cardinality(&filter_is_not_empty, &hw_cell)
+            .unwrap()
             .unwrap();
 
         assert_eq!(is_null_cardinality.exp, 50);

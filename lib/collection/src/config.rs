@@ -141,16 +141,6 @@ pub struct CollectionParams {
 
 impl CollectionParams {
     pub fn payload_storage_type(&self) -> PayloadStorageType {
-        #[cfg(feature = "rocksdb")]
-        if self.on_disk_payload {
-            PayloadStorageType::Mmap
-        } else if common::flags::feature_flags().payload_storage_skip_rocksdb {
-            PayloadStorageType::InRamMmap
-        } else {
-            PayloadStorageType::InMemory
-        }
-
-        #[cfg(not(feature = "rocksdb"))]
         PayloadStorageType::from_on_disk_payload(self.on_disk_payload)
     }
 
@@ -397,30 +387,22 @@ impl CollectionParams {
         }
 
         if available_names.is_empty() {
-            CollectionError::BadInput {
-                description: "Vectors are not configured in this collection".into(),
-            }
+            CollectionError::bad_input("Vectors are not configured in this collection")
         } else if available_names == vec![DEFAULT_VECTOR_NAME] {
-            CollectionError::BadInput {
-                description: format!(
-                    "Vector with name {vector_name} is not configured in this collection"
-                ),
-            }
+            CollectionError::bad_input(format!(
+                "Vector with name {vector_name} is not configured in this collection"
+            ))
         } else {
             let available_names = available_names.join(", ");
             if vector_name == DEFAULT_VECTOR_NAME {
-                return CollectionError::BadInput {
-                    description: format!(
-                        "Collection requires specified vector name in the request, available names: {available_names}"
-                    ),
-                };
+                return CollectionError::bad_input(format!(
+                    "Collection requires specified vector name in the request, available names: {available_names}"
+                ));
             }
 
-            CollectionError::BadInput {
-                description: format!(
-                    "Vector with name `{vector_name}` is not configured in this collection, available names: {available_names}"
-                ),
-            }
+            CollectionError::bad_input(format!(
+                "Vector with name `{vector_name}` is not configured in this collection, available names: {available_names}"
+            ))
         }
     }
 
@@ -459,15 +441,13 @@ impl CollectionParams {
         &mut self,
         vector_name: &VectorName,
     ) -> CollectionResult<&mut VectorParams> {
-        self.vectors
-            .get_params_mut(vector_name)
-            .ok_or_else(|| CollectionError::BadInput {
-                description: if vector_name == DEFAULT_VECTOR_NAME {
-                    "Default vector params are not specified in config".into()
-                } else {
-                    format!("Vector params for {vector_name} are not specified in config")
-                },
+        self.vectors.get_params_mut(vector_name).ok_or_else(|| {
+            CollectionError::bad_input(if vector_name == DEFAULT_VECTOR_NAME {
+                "Default vector params are not specified in config".into()
+            } else {
+                format!("Vector params for {vector_name} are not specified in config")
             })
+        })
     }
 
     pub fn get_sparse_vector_params_opt(
@@ -485,16 +465,16 @@ impl CollectionParams {
     ) -> CollectionResult<&mut SparseVectorParams> {
         self.sparse_vectors
             .as_mut()
-            .ok_or_else(|| CollectionError::BadInput {
-                description: format!(
+            .ok_or_else(|| {
+                CollectionError::bad_input(format!(
                     "Sparse vector `{vector_name}` is not specified in collection config"
-                ),
+                ))
             })?
             .get_mut(vector_name)
-            .ok_or_else(|| CollectionError::BadInput {
-                description: format!(
+            .ok_or_else(|| {
+                CollectionError::bad_input(format!(
                     "Sparse vector `{vector_name}` is not specified in collection config"
-                ),
+                ))
             })
     }
 
@@ -584,26 +564,36 @@ impl CollectionParams {
         self.vectors
             .params_iter()
             .map(|(name, params)| {
+                let VectorParams {
+                    size,
+                    distance,
+                    hnsw_config: _,
+                    quantization_config,
+                    on_disk,
+                    datatype,
+                    multivector_config,
+                } = params;
+
                 (
                     name.into(),
                     VectorDataConfig {
-                        size: params.size.get() as usize,
-                        distance: params.distance,
+                        size: size.get() as usize,
+                        distance: *distance,
                         // Plain (disabled) index
                         index: Indexes::Plain {},
                         // Quantizaton config in appendable segment if runtime feature flag is set
                         quantization_config: common::flags::feature_flags()
                             .appendable_quantization
-                            .then(|| quantization_fn(params.quantization_config.as_ref()))
+                            .then(|| quantization_fn(quantization_config.as_ref()))
                             .flatten(),
                         // Default to in memory storage
-                        storage_type: if params.on_disk.unwrap_or_default() {
+                        storage_type: if on_disk.unwrap_or_default() {
                             VectorStorageType::ChunkedMmap
                         } else {
                             VectorStorageType::InRamChunkedMmap
                         },
-                        multivector_config: params.multivector_config,
-                        datatype: params.datatype.map(VectorStorageDatatype::from),
+                        multivector_config: *multivector_config,
+                        datatype: datatype.map(VectorStorageDatatype::from),
                     },
                 )
             })

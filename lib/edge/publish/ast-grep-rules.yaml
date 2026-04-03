@@ -40,6 +40,17 @@ rule:
         - precedes: { kind: type_identifier, stopBy: end }
         - precedes: { kind: use_list,        stopBy: end }
 fix: crate::$MOD
+---
+id: inner-deps-global
+language: rust
+rule:
+  pattern: ::$MOD
+  kind: scoped_identifier
+  has:
+    kind: identifier
+    regex: ^(%DEPS%)$
+    stopBy: end
+fix: crate::$MOD
 
 # Remove `Anonymize` derives.
 # Before: `#[derive(Debug, Anonymize)]`
@@ -65,7 +76,7 @@ fix: ""
 # Inline package versions.
 # Why: these are significant for migration logic.
 # Before: `env!("CARGO_PKG_VERSION")`
-# After:  `"0.6.0"`
+# After:  `"0.6.1"`
 ---
 id: replace-pkg-version
 language: rust

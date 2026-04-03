@@ -10,6 +10,7 @@ use itertools::Itertools as _;
 use rand::RngExt;
 use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
+use segment::common::operation_error::OperationResult;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -163,15 +164,22 @@ impl LocalShard {
         let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
-            let task = search_runtime_handle.spawn_blocking(move || {
-                segment.get().read().read_filtered(
-                    offset,
-                    Some(limit),
-                    filter.as_ref(),
-                    &is_stopped,
-                    &hw_counter,
-                    deferred_behavior,
-                )
+            let cpu_utilization = hw_counter.cpu_utilization();
+            let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let work = || {
+                    segment.get().read().read_filtered(
+                        offset,
+                        Some(limit),
+                        filter.as_ref(),
+                        &is_stopped,
+                        &hw_counter,
+                        deferred_behavior,
+                    )
+                };
+                match cpu_utilization {
+                    Some(cu) => cu.measure(work),
+                    None => work(),
+                }
             });
             AbortOnDropHandle::new(task)
         };
@@ -191,11 +199,7 @@ impl LocalShard {
 
         let point_ids = all_reads
             .into_iter()
-            .flatten()
-            .sorted()
-            .dedup()
-            .take(limit)
-            .collect_vec();
+            .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
 
         let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
@@ -261,15 +265,22 @@ impl LocalShard {
             let order_by = order_by.clone();
 
             let hw_counter = hw_counter.fork();
+            let cpu_utilization = hw_counter.cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
-                segment.get().read().read_ordered_filtered(
-                    Some(limit),
-                    filter.as_ref(),
-                    &order_by,
-                    &is_stopped,
-                    &hw_counter,
-                    deferred_behavior,
-                )
+                let work = || {
+                    segment.get().read().read_ordered_filtered(
+                        Some(limit),
+                        filter.as_ref(),
+                        &order_by,
+                        &is_stopped,
+                        &hw_counter,
+                        deferred_behavior,
+                    )
+                };
+                match cpu_utilization {
+                    Some(cu) => cu.measure(work),
+                    None => work(),
+                }
             });
             AbortOnDropHandle::new(task)
         };
@@ -288,17 +299,16 @@ impl LocalShard {
         .await
         .map_err(|_| CollectionError::timeout(timeout, "scroll_by_field"))??;
 
-        let all_reads = all_reads.into_iter().collect::<Result<Vec<_>, _>>()?;
-
-        let (values, point_ids): (Vec<_>, Vec<_>) = all_reads
-            .into_iter()
-            .kmerge_by(|a, b| match order_by.direction() {
-                Direction::Asc => a <= b,
-                Direction::Desc => a >= b,
-            })
-            .dedup()
-            .take(limit)
-            .unzip();
+        let (values, point_ids): (Vec<_>, Vec<_>) =
+            itertools::process_results(all_reads.into_iter(), |iter| {
+                iter.kmerge_by(|a, b| match order_by.direction() {
+                    Direction::Asc => a <= b,
+                    Direction::Desc => a >= b,
+                })
+                .dedup()
+                .take(limit)
+                .unzip()
+            })?;
 
         let with_payload = WithPayload::from(with_payload_interface);
 
@@ -365,19 +375,26 @@ impl LocalShard {
             let filter = filter.cloned();
 
             let hw_counter = hw_counter.fork();
-            let task = search_runtime_handle.spawn_blocking(move || {
-                let get_segment = segment.get();
-                let read_segment = get_segment.read();
+            let cpu_utilization = hw_counter.cpu_utilization();
+            let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let work = || -> OperationResult<_> {
+                    let get_segment = segment.get();
+                    let read_segment = get_segment.read();
 
-                (
-                    read_segment.available_point_count(),
-                    read_segment.read_random_filtered(
-                        limit,
-                        filter.as_ref(),
-                        &is_stopped,
-                        &hw_counter,
-                    ),
-                )
+                    Ok((
+                        read_segment.available_point_count_without_deferred(),
+                        read_segment.read_random_filtered(
+                            limit,
+                            filter.as_ref(),
+                            &is_stopped,
+                            &hw_counter,
+                        )?,
+                    ))
+                };
+                match cpu_utilization {
+                    Some(cu) => cu.measure(work),
+                    None => work(),
+                }
             });
             AbortOnDropHandle::new(task)
         };
@@ -396,7 +413,8 @@ impl LocalShard {
         .await
         .map_err(|_| CollectionError::timeout(timeout, "scroll_randomly"))??;
 
-        let (availability, mut segments_reads): (Vec<_>, Vec<_>) = all_reads.into_iter().unzip();
+        let (availability, mut segments_reads): (Vec<_>, Vec<_>) =
+            all_reads.into_iter().process_results(|iter| iter.unzip())?;
 
         // Shortcut if all segments are empty
         if availability.iter().all(|&count| count == 0) {

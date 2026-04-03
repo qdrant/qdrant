@@ -1,20 +1,20 @@
 use std::borrow::Cow;
 use std::cmp::max;
-use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapType, create_and_ensure_length,
     open_write_mmap,
 };
-use common::universal_io::mmap::MmapUniversalRo;
 use common::universal_io::{
-    ElementsRange, OpenOptions, UniversalIoError, UniversalWrite, read_json_via,
+    MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalWrite, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -25,7 +25,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{CHUNK_SIZE, PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
-use crate::vector_storage::{AccessPattern, VectorOffset, VectorOffsetType};
+use crate::vector_storage::{VectorOffset, VectorOffsetType};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
@@ -51,9 +51,8 @@ struct ChunkedVectorsConfig {
 pub struct ChunkedVectors<T: Copy + Sized + 'static, S: UniversalWrite<T>> {
     config: ChunkedVectorsConfig,
     status: MmapType<Status>,
-    chunks: Vec<S>,
+    chunks: Vec<TypedStorage<S, T>>,
     directory: PathBuf,
-    _vector_element_type: PhantomData<T>,
 }
 
 impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
@@ -107,7 +106,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     }
 
     fn load_config(config_file: &Path) -> OperationResult<Option<ChunkedVectorsConfig>> {
-        match read_json_via::<MmapUniversalRo<u8>, ChunkedVectorsConfig>(config_file) {
+        match read_json_via::<MmapFile, ChunkedVectorsConfig>(config_file) {
             Ok(config) => Ok(Some(config)),
             Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),
@@ -157,7 +156,6 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             config,
             chunks,
             directory: directory.to_owned(),
-            _vector_element_type: PhantomData,
         };
         Ok(vectors)
     }
@@ -241,7 +239,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
 
         let chunk = &mut self.chunks[chunk_idx];
 
-        chunk.write(chunk_offset as u64, vectors)?;
+        chunk.write((chunk_offset * size_of::<T>()) as u64, vectors)?;
 
         hw_counter
             .vector_io_write_counter()
@@ -302,8 +300,8 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             return None;
         }
 
-        let range = ElementsRange {
-            start: element_offset as u64,
+        let range = ReadRange {
+            byte_offset: (element_offset * size_of::<T>()) as u64,
             length: elements_length as u64,
         };
 
@@ -311,9 +309,9 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             force_sequential || elements_length * size_of::<T>() > PAGE_SIZE_BYTES * 4;
 
         if use_sequential {
-            chunk.read::<true>(range).ok()
+            chunk.read::<Sequential>(range).ok()
         } else {
-            chunk.read::<false>(range).ok()
+            chunk.read::<Random>(range).ok()
         }
     }
 
@@ -414,7 +412,7 @@ pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
     directory: &Path,
     advice: AdviceSetting,
     populate: bool,
-) -> Result<Vec<S>, common::universal_io::UniversalIoError> {
+) -> Result<Vec<TypedStorage<S, T>>, common::universal_io::UniversalIoError> {
     let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
@@ -441,13 +439,15 @@ pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
             ))
         })?;
 
-        let chunk = S::open(
+        let chunk = TypedStorage::open(
             &chunk_path,
             OpenOptions {
+                writeable: true,
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
                 disk_parallel: None,
                 populate: Some(populate),
                 advice: Some(advice),
+                prevent_caching: None,
             },
         )?;
 
@@ -466,17 +466,19 @@ pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-) -> Result<S, UniversalIoError> {
+) -> Result<TypedStorage<S, T>, UniversalIoError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
 
-    S::open(
+    TypedStorage::open(
         &chunk_file_path,
         OpenOptions {
+            writeable: true,
             need_sequential: *MULTI_MMAP_IS_SUPPORTED,
             disk_parallel: None,
             populate: Some(false), // don't populate newly created chunk, as it's empty and will be filled later
             advice: None,
+            prevent_caching: None,
         },
     )
 }
@@ -485,7 +487,7 @@ pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
 mod tests {
     use std::iter::zip;
 
-    use common::universal_io::mmap::MmapUniversal;
+    use common::universal_io::MmapFile;
     use rand::SeedableRng;
     use rand::prelude::StdRng;
     use tempfile::Builder;
@@ -508,10 +510,8 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedVectors<
-                VectorElementType,
-                MmapUniversal<VectorElementType>,
-            > = ChunkedVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true)).unwrap();
+            let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> =
+                ChunkedVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true)).unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec, &hw_counter).unwrap();

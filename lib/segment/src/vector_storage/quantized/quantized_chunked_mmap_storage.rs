@@ -2,16 +2,17 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::MmapFile;
 
 use crate::common::operation_error::OperationResult;
+use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::{Random, VectorOffsetType};
 
 pub struct QuantizedChunkedMmapStorage {
-    data: ChunkedVectors<u8, MmapUniversal<u8>>,
+    data: ChunkedVectors<u8, MmapFile>,
 }
 
 impl QuantizedChunkedMmapStorage {
@@ -81,7 +82,7 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
 
 #[allow(dead_code)]
 pub struct QuantizedChunkedMmapStorageBuilder {
-    data: ChunkedVectors<u8, MmapUniversal<u8>>,
+    data: ChunkedVectors<u8, MmapFile>,
     hw_counter: HardwareCounterCell,
 }
 

@@ -224,6 +224,7 @@ pub(super) async fn transfer_snapshot(
                     "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
                 ))
             })?;
+
         // Compute checksum path before snapshot_path is moved into the cleanup list.
         let snapshot_checksum_path = get_checksum_path(&snapshot_path);
         // INVARIANT: no `?` may be introduced between these pushes and the cleanup

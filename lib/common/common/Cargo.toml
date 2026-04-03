@@ -16,6 +16,7 @@ workspace = true
 testing = []
 
 [dependencies]
+ahash = { workspace = true }
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
@@ -24,6 +25,7 @@ chrono = { workspace = true }
 delegate = { workspace = true }
 fs-err = { workspace = true }
 fs_extra = { workspace = true }
+itertools = { workspace = true }
 log = { workspace = true }
 memmap2 = { workspace = true }
 nix = { workspace = true }
@@ -32,6 +34,7 @@ num_cpus = "1.17"
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 ph = { workspace = true }
+quick_cache = "0.6.19"
 rand = { workspace = true }
 schemars = { workspace = true }
 semver = { workspace = true }
@@ -51,10 +54,8 @@ zerocopy = { workspace = true }
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
-itertools = { workspace = true }
 rstest = { workspace = true }
 self_cell = { workspace = true }
-serde_json = { workspace = true }
 tango-bench = "0.7.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -79,4 +80,8 @@ harness = false
 
 [[bench]]
 name = "atomic_stop"
+harness = false
+
+[[bench]]
+name = "universal_io"
 harness = false

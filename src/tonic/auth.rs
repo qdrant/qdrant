@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
-use storage::audit::audit_trust_forwarded_headers;
+use storage::audit::{audit_trust_forwarded_headers, extract_tracing_id};
 use storage::rbac::Access;
 use tonic::Status;
 use tonic::body::BoxBody;
@@ -37,6 +37,13 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
             .map(|addr| addr.ip().to_string())
     });
 
+    let tracing_id = extract_tracing_id(|h| {
+        req.headers()
+            .get(h)
+            .and_then(|val| val.to_str().ok())
+            .map(str::to_string)
+    });
+
     // Allow health check endpoints to bypass authentication
     let path = req.uri().path();
     if path == "/qdrant.Qdrant/HealthCheck" || path == "/grpc.health.v1.Health/Check" {
@@ -46,6 +53,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
             None,
             remote,
             AuthType::None,
+            tracing_id,
         );
         let inference_token = InferenceToken(None);
 
@@ -59,7 +67,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
         .await
         .map_err(|e| {
-            log_denied_auth(path, remote.clone(), &e);
+            log_denied_auth(path, remote.clone(), tracing_id.clone(), &e);
             match e {
                 AuthError::Unauthorized(e) => Status::unauthenticated(e),
                 AuthError::Forbidden(e) => Status::permission_denied(e),
@@ -67,7 +75,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
             }
         })?;
 
-    let auth = Auth::new(access, subject, remote, auth_type);
+    let auth = Auth::new(access, subject, remote, auth_type, tracing_id);
 
     let previous = req.extensions_mut().insert(auth);
 
@@ -147,6 +155,12 @@ pub fn extract_auth<R>(req: &mut tonic::Request<R>) -> Auth {
             None,
             None,
             AuthType::None,
+            extract_tracing_id(|h| {
+                req.metadata()
+                    .get(h)
+                    .and_then(|val| val.to_str().ok())
+                    .map(str::to_string)
+            }),
         )
     })
 }

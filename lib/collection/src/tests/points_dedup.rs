@@ -33,6 +33,7 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_trait::WaitUntil;
 
 const DIM: u64 = 4;
 const PEER_ID: u64 = 1;
@@ -138,7 +139,7 @@ async fn fixture() -> Collection {
             ])),
         ));
         shard
-            .update_local(op, true, None, HwMeasurementAcc::new(), false)
+            .update_local(op, WaitUntil::Visible, None, HwMeasurementAcc::new(), false)
             .await
             .expect("failed to insert points");
     }

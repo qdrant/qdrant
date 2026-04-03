@@ -11,9 +11,10 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::fs::atomic_save_json;
+use common::generic_consts::{AccessPattern, Random};
 use common::is_alive_lock::IsAliveLock;
 use common::mmap::create_and_ensure_length;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -39,7 +40,7 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 pub struct Gridstore<V> {
     pub(super) config: StorageConfig,
     pub(super) tracker: Arc<RwLock<Tracker>>,
-    pub(super) pages: Arc<RwLock<Pages<MmapUniversal<u8>>>>,
+    pub(super) pages: Arc<RwLock<Pages<MmapFile>>>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
@@ -52,7 +53,7 @@ pub struct Gridstore<V> {
 
 impl<V: Blob> Gridstore<V> {
     /// Create a [`GridstoreView`] by locking pages and tracker, then call `f` with the view.
-    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, MmapUniversal<u8>>) -> R) -> R {
+    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, MmapFile>) -> R) -> R {
         let pages = self.pages.read();
         let tracker = self.tracker.read();
         f(GridstoreView::new(&self.config, &tracker, &pages))
@@ -309,7 +310,7 @@ impl<V: Blob> Gridstore<V> {
             return Ok(None);
         };
 
-        let raw = self.with_view(|view| view.read_from_pages::<false>(pointer))?;
+        let raw = self.with_view(|view| view.read_from_pages::<Random>(pointer))?;
         let decompressed = self.with_view(|view| view.decompress(raw));
         let value = V::from_bytes(&decompressed);
 
@@ -365,12 +366,12 @@ impl<V: Blob> Gridstore<V> {
         self.bitmask.read().get_storage_size_bytes()
     }
 
-    pub fn get_value<const READ_SEQUENTIAL: bool>(
+    pub fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        self.with_view(|view| view.get_value::<READ_SEQUENTIAL>(point_offset, hw_counter))
+        self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
     }
 
     #[cfg(test)]

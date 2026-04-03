@@ -576,18 +576,27 @@ impl From<api::grpc::qdrant::CollectionWarning> for CollectionWarning {
 
 impl From<UpdateQueueInfo> for api::grpc::qdrant::UpdateQueueInfo {
     fn from(value: UpdateQueueInfo) -> Self {
-        let UpdateQueueInfo { length } = value;
+        let UpdateQueueInfo {
+            length,
+            deferred_points,
+        } = value;
+
         Self {
             length: length as u64,
+            deferred_points: deferred_points.map(|i| i as u64),
         }
     }
 }
 
 impl From<api::grpc::qdrant::UpdateQueueInfo> for UpdateQueueInfo {
     fn from(value: api::grpc::qdrant::UpdateQueueInfo) -> Self {
-        let api::grpc::qdrant::UpdateQueueInfo { length } = value;
+        let api::grpc::qdrant::UpdateQueueInfo {
+            length,
+            deferred_points,
+        } = value;
         Self {
             length: length as usize,
+            deferred_points: deferred_points.map(|i| i as usize),
         }
     }
 }
@@ -1291,23 +1300,46 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::RecommendPointGroups) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::RecommendPointGroups {
+            collection_name: _,
+            positive,
+            negative,
+            filter,
+            limit,
+            with_payload,
+            params,
+            score_threshold,
+            using,
+            with_vectors,
+            lookup_from,
+            group_by,
+            group_size,
+            read_consistency: _,
+            with_lookup,
+            strategy,
+            positive_vectors,
+            negative_vectors,
+            timeout: _,
+            shard_key_selector: _,
+        } = value;
+
         let recommend_points = api::grpc::qdrant::RecommendPoints {
-            positive: value.positive,
-            negative: value.negative,
-            strategy: value.strategy,
-            using: value.using,
-            lookup_from: value.lookup_from,
-            filter: value.filter,
-            params: value.params,
-            with_payload: value.with_payload,
-            with_vectors: value.with_vectors,
-            score_threshold: value.score_threshold,
+            positive,
+            negative,
+            strategy,
+            using,
+            lookup_from,
+            filter,
+            params,
+            with_payload,
+            with_vectors,
+            score_threshold,
             read_consistency: None,
             limit: 0,     // Will be calculated from group_size
             offset: None, // Not enabled for groups
             collection_name: String::new(),
-            positive_vectors: value.positive_vectors,
-            negative_vectors: value.negative_vectors,
+            positive_vectors,
+            negative_vectors,
             timeout: None, // Passed as query param
             shard_key_selector: None,
         };
@@ -1339,10 +1371,10 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             with_vector,
             score_threshold,
             group_request: BaseGroupRequest {
-                group_by: json_path_from_proto(&value.group_by)?,
-                limit: value.limit,
-                group_size: value.group_size,
-                with_lookup: value.with_lookup.map(|l| l.try_into()).transpose()?,
+                group_by: json_path_from_proto(&group_by)?,
+                limit,
+                group_size,
+                with_lookup: with_lookup.map(|l| l.try_into()).transpose()?,
             },
         })
     }

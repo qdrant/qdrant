@@ -4,12 +4,12 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::DenseVector;
 
 mod context_query;
-mod discovery_query;
+mod discover_query;
 mod feedback_query;
 mod reco_query;
 
 pub use context_query::{ContextPair, ContextQuery};
-pub use discovery_query::DiscoveryQuery;
+pub use discover_query::DiscoverQuery;
 pub use feedback_query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
 pub use reco_query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
 

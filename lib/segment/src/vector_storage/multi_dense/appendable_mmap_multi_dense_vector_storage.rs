@@ -3,11 +3,12 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::BitSlice;
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -26,15 +27,14 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::{
-    AccessPattern, MultiVectorStorage, Random, Sequential, VectorOffsetType, VectorStorage,
-    VectorStorageEnum,
+    MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const OFFSETS_DIR_PATH: &str = "offsets";
 const DELETED_DIR_PATH: &str = "deleted";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct MultivectorMmapOffset {
     offset: u32,
@@ -44,8 +44,8 @@ pub struct MultivectorMmapOffset {
 
 #[derive(Debug)]
 pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
-    vectors: ChunkedVectors<T, MmapUniversal<T>>,
-    offsets: ChunkedVectors<MultivectorMmapOffset, MmapUniversal<MultivectorMmapOffset>>,
+    vectors: ChunkedVectors<T, MmapFile>,
+    offsets: ChunkedVectors<MultivectorMmapOffset, MmapFile>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -477,7 +477,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
 }
 
 /// Find files related to this dense vector storage
-#[cfg(any(test, feature = "rocksdb"))]
+#[cfg(test)]
 pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<Vec<PathBuf>> {
     let vectors_path = vector_storage_path.join(VECTORS_DIR_PATH);
     let offsets_path = vector_storage_path.join(OFFSETS_DIR_PATH);

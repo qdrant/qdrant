@@ -24,7 +24,9 @@ use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::entry::NonAppendableSegmentEntry;
+use segment::entry::{
+    NonAppendableSegmentEntry as _, ReadSegmentEntry as _, StorageSegmentEntry as _,
+};
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::PointIdType;
@@ -207,6 +209,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         segment_builder.update(
             &segment_guards.iter().map(Deref::deref).collect_vec(),
             stopped,
+            hw_counter,
         )?;
         drop(progress_copy_data);
     }
@@ -452,15 +455,6 @@ fn finish_optimization(
         .filter(|&(point_id, _)| !already_remove_points.contains_key(point_id));
 
     for (&point_id, &versions) in points_diff {
-        // In this specific case we're sure logical point data in the wrapped segment is not
-        // changed at all. We ensure this with an assertion at time of proxying, which makes
-        // sure we only wrap original segments. Because we're sure logical data doesn't change,
-        // we also know pending deletes are always newer. Here we assert that's actually the
-        // case.
-        debug_assert!(
-            versions.operation_version >= optimized_segment.point_version(point_id).unwrap_or(0),
-            "proxied point deletes should have newer version than point in segment",
-        );
         optimized_segment
             .delete_point(versions.operation_version, point_id, hw_counter)
             .unwrap();
@@ -493,13 +487,17 @@ fn finish_optimization(
     let deferred_points: Vec<PointIdType> = deferred_points_set.into_iter().collect();
 
     if !deferred_points.is_empty() {
+        const CHUNK_SIZE: usize = 100;
+
         // Deferred points in proxy segment may become visible for optimized segment (in most cases).
         // It's time to deduplicate them and remove older versions from optimized segment,
         // where they were visible while deferred status.
         // There are a situations, when deferred point is still deferred after optimization,
         // so `deduplicate_points` also cover this case and delete only older versions of the point,
         // which are still visible for optimized segment.
-        read_segment_holder.deduplicate_points(&deferred_points, hw_counter)?;
+        deferred_points
+            .chunks(CHUNK_SIZE)
+            .try_for_each(|chunk| read_segment_holder.deduplicate_points(chunk, hw_counter))?;
     }
 
     drop(read_segment_holder);

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use edge::config::vectors::EdgeSparseVectorParams;
+use edge::EdgeSparseVectorParams;
 use pyo3::prelude::*;
 use segment::data_types::modifier::Modifier;
 use segment::types::VectorStorageDatatype;

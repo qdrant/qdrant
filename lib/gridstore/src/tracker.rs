@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
+use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_from_u8, transmute_to_u8};
 use common::universal_io::{
-    ElementsRange, OpenOptions, UniversalIoError, UniversalRead, UniversalWrite,
+    OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalWrite,
 };
 use smallvec::SmallVec;
 use zerocopy::FromZeros;
@@ -20,10 +21,12 @@ pub type PageId = u32;
 /// OpenOptions for the tracker file (random access, no populate).
 fn tracker_open_options() -> OpenOptions {
     OpenOptions {
+        writeable: true,
         need_sequential: false,
         disk_parallel: None,
         populate: Some(false),
         advice: Some(AdviceSetting::Advice(Advice::Random)),
+        prevent_caching: None,
     }
 }
 
@@ -283,8 +286,8 @@ impl<S: UniversalRead<u8>> Tracker<S> {
     }
 
     fn read_header(storage: &S) -> Result<TrackerHeader> {
-        let header_bytes = storage.read::<false>(ElementsRange {
-            start: 0,
+        let header_bytes = storage.read::<Random>(ReadRange {
+            byte_offset: 0,
             length: std::mem::size_of::<TrackerHeader>() as u64,
         })?;
         #[expect(deprecated, reason = "legacy code")]
@@ -346,8 +349,8 @@ impl<S: UniversalRead<u8>> Tracker<S> {
         if end_offset as u64 > storage_len {
             return Ok(None);
         }
-        let bytes = self.storage.read::<false>(ElementsRange {
-            start: start_offset as u64,
+        let bytes = self.storage.read::<Random>(ReadRange {
+            byte_offset: start_offset as u64,
             length: std::mem::size_of::<Optional<ValuePointer>>() as u64,
         })?;
         #[expect(deprecated, reason = "legacy code")]
@@ -590,14 +593,14 @@ mod tests {
 
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_from_u8;
-    use common::universal_io::mmap::MmapUniversal;
+    use common::universal_io::MmapFile;
     use rstest::rstest;
     use tempfile::Builder;
 
     use super::{PointerUpdates, Tracker, ValuePointer};
     use crate::tracker::{BlockOffset, Optional, PageId};
 
-    type TestTracker = Tracker<MmapUniversal<u8>>;
+    type TestTracker = Tracker<MmapFile>;
 
     #[test]
     fn test_file_name() {

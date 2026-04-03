@@ -42,10 +42,16 @@ impl From<api::rest::WithLookupInterface> for WithLookup {
 
 impl From<api::rest::WithLookup> for WithLookup {
     fn from(with_lookup: api::rest::WithLookup) -> Self {
+        let api::rest::WithLookup {
+            collection_name,
+            with_payload,
+            with_vectors,
+        } = with_lookup;
+
         WithLookup {
-            collection_name: with_lookup.collection_name,
-            with_payload: with_lookup.with_payload,
-            with_vectors: with_lookup.with_vectors,
+            collection_name,
+            with_payload,
+            with_vectors,
         }
     }
 }

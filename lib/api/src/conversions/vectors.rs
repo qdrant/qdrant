@@ -17,13 +17,10 @@ fn convert_to_plain_multi_vector(
 ) -> Result<MultiDenseVector, OperationError> {
     let dim = data.len() / vectors_count;
     if dim * vectors_count != data.len() {
-        return Err(OperationError::ValidationError {
-            description: format!(
-                "Data length is not divisible by vectors count. Data length: {}, vectors count: {}",
-                data.len(),
-                vectors_count
-            ),
-        });
+        return Err(OperationError::validation_error(format!(
+            "Data length is not divisible by vectors count. Data length: {}, vectors count: {vectors_count}",
+            data.len(),
+        )));
     }
 
     Ok(data
@@ -372,9 +369,9 @@ impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
                                 Ok(VectorStructInternal::Single(data))
                             }
                             grpc::vector_output::Vector::Sparse(_sparse) => {
-                                return Err(OperationError::ValidationError {
-                                    description: "Sparse vector must be named".to_string(),
-                                });
+                                return Err(OperationError::validation_error(
+                                    "Sparse vector must be named",
+                                ));
                             }
                             grpc::vector_output::Vector::MultiDense(multi) => {
                                 Ok(VectorStructInternal::MultiDense(
@@ -385,9 +382,9 @@ impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
                     }
 
                     if indices.is_some() {
-                        return Err(OperationError::ValidationError {
-                            description: "Sparse vector must be named".to_string(),
-                        });
+                        return Err(OperationError::validation_error(
+                            "Sparse vector must be named",
+                        ));
                     }
 
                     if let Some(vectors_count) = vectors_count {
@@ -408,9 +405,7 @@ impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
                     VectorStructInternal::Named(named_vectors?)
                 }
             }),
-            None => Err(OperationError::ValidationError {
-                description: "No Vector Provided".to_string(),
-            }),
+            None => Err(OperationError::validation_error("No Vector Provided")),
         }
     }
 }

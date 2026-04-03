@@ -6,7 +6,7 @@ pub mod vector_data;
 use std::collections::HashMap;
 
 use derive_more::Into;
-use edge::config::shard::EdgeShardConfig;
+use edge::EdgeConfig;
 use pyo3::prelude::*;
 use segment::types::{QuantizationConfig, VectorNameBuf};
 
@@ -19,7 +19,7 @@ use crate::repr::*;
 #[pyclass(name = "EdgeConfig", from_py_object)]
 #[derive(Clone, Debug, Into)]
 #[repr(transparent)]
-pub struct PyEdgeConfig(pub EdgeShardConfig);
+pub struct PyEdgeConfig(pub EdgeConfig);
 
 #[pyclass_repr]
 #[pymethods]
@@ -47,7 +47,7 @@ impl PyEdgeConfig {
         let sparse_vectors = PyEdgeSparseVectorParams::peel_map(sparse_vectors);
         let vectors: HashMap<VectorNameBuf, _> = vectors.into_iter().collect();
         let sparse_vectors: HashMap<VectorNameBuf, _> = sparse_vectors.into_iter().collect();
-        Ok(Self(EdgeShardConfig {
+        Ok(Self(EdgeConfig {
             on_disk_payload,
             vectors,
             sparse_vectors,
@@ -94,7 +94,7 @@ impl PyEdgeConfig {
 
 impl PyEdgeConfig {
     fn _getters(self) {
-        let EdgeShardConfig {
+        let EdgeConfig {
             on_disk_payload: _,
             vectors: _,
             sparse_vectors: _,

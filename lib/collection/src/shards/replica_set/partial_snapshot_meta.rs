@@ -51,7 +51,6 @@ impl PartialSnapshotMeta {
             .get(Ordering::Relaxed)
     }
 
-    #[must_use]
     pub fn track_create_snapshot_request(&self) -> ScopeTrackerGuard {
         self.ongoing_create_snapshot_requests_tracker
             .measure_scope()

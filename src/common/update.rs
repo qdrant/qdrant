@@ -24,7 +24,7 @@ use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, Auth, AuthType};
+use storage::rbac::{Access, Auth};
 use validator::Validate;
 
 use crate::common::inference::params::InferenceParams;
@@ -67,16 +67,23 @@ impl UpdateParams {
 pub struct InternalUpdateParams {
     pub shard_id: Option<ShardId>,
     pub clock_tag: Option<ClockTag>,
+    /// When present, fully overrides the `wait` boolean from the public API message.
+    /// When absent, falls back to the `wait` boolean (backward compatible with older nodes).
+    pub wait_override: Option<collection::shards::shard_trait::WaitUntil>,
 }
 
 impl InternalUpdateParams {
     pub fn from_grpc(
         shard_id: Option<ShardId>,
         clock_tag: Option<api::grpc::qdrant::ClockTag>,
+        wait_override: Option<i32>,
     ) -> Self {
         Self {
             shard_id,
             clock_tag: clock_tag.map(ClockTag::from),
+            wait_override: wait_override
+                .and_then(|v| api::grpc::qdrant::WaitUntil::try_from(v).ok())
+                .map(collection::shards::shard_trait::WaitUntil::from),
         }
     }
 }
@@ -950,7 +957,7 @@ pub async fn do_create_index_internal(
         internal_params,
         params,
         None,
-        Auth::new(Access::full("Internal API"), None, None, AuthType::Internal),
+        Auth::new_internal(Access::full("Internal API")),
         hw_measurement_acc,
     )
     .await
@@ -1017,7 +1024,7 @@ pub async fn do_delete_index_internal(
         internal_params,
         params,
         None,
-        Auth::new(Access::full("Internal API"), None, None, AuthType::Internal),
+        Auth::new_internal(Access::full("Internal API")),
         hw_measurement_acc,
     )
     .await
@@ -1037,6 +1044,7 @@ pub async fn update(
     let InternalUpdateParams {
         shard_id,
         clock_tag,
+        wait_override,
     } = internal_params;
 
     let UpdateParams {
@@ -1044,6 +1052,10 @@ pub async fn update(
         ordering,
         timeout: _,
     } = params;
+
+    // Use wait_override if present, otherwise fall back to the wait boolean
+    let wait =
+        wait_override.unwrap_or_else(|| collection::shards::shard_trait::WaitUntil::from(wait));
 
     let shard_selector = match operation {
         CollectionUpdateOperations::PointOperation(point_ops::PointOperations::SyncPoints(_)) => {

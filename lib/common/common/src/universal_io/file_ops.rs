@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-pub trait UniversalReadFileOps {
+use super::*;
+
+pub trait UniversalReadFileOps: Sized {
     /// List files in the storage with the given prefix.
     /// The prefix is used to filter files, e.g. by directory or filename pattern.
     ///
@@ -9,8 +11,10 @@ pub trait UniversalReadFileOps {
     /// - `./gridstore/page_1.dat`
     /// - `./gridstore/page_2.dat`
     /// - `./gridstore/page_3.dat`
-    fn list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<PathBuf>>;
+    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>>;
 
     /// Check if a file exists at the given path.
-    fn exists(path: &Path) -> crate::universal_io::Result<bool>;
+    fn exists(path: &Path) -> Result<bool>;
+
+    // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }

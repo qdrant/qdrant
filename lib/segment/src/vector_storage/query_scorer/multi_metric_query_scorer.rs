@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
@@ -12,9 +13,9 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
+use crate::vector_storage::MultiVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::{MultiVectorStorage, Random};
 
 pub struct MultiMetricQueryScorer<
     'a,

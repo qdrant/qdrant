@@ -4,11 +4,9 @@ use std::path::{Path, PathBuf};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap::{
-    AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
-};
+use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::{MmapFile, OpenOptions};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -17,6 +15,7 @@ use super::mutable_geo_index::InMemoryGeoMapIndex;
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 use crate::types::GeoPoint;
@@ -76,7 +75,7 @@ pub(super) struct Storage {
     /// A storage of associations between geo-hashes and point ids. (See the diagram above)
     pub(super) points_map_ids: MmapSlice<PointOffsetType>,
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
-    pub(super) point_to_values: StoredPointToValues<GeoPoint, MmapUniversal<u8>>,
+    pub(super) point_to_values: StoredPointToValues<GeoPoint, MmapFile>,
     /// Deleted flags for each PointOffsetType
     pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
 }
@@ -102,7 +101,7 @@ impl MmapGeoMapIndex {
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
         // Create the point-to-value mapping and persist in the mmap file
-        StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<GeoPoint, MmapFile>::from_iter(
             path,
             dynamic_index
                 .point_to_values
@@ -171,21 +170,24 @@ impl MmapGeoMapIndex {
         }
 
         {
-            let deleted_flags_count = dynamic_index.point_to_values.len();
-            let deleted_file = create_and_ensure_length(
+            let _ = create_and_ensure_length(
                 &deleted_path,
-                deleted_flags_count
+                dynamic_index
+                    .point_to_values
+                    .len()
                     .div_ceil(u8::BITS as usize)
-                    .next_multiple_of(std::mem::size_of::<usize>()),
+                    .next_multiple_of(size_of::<usize>()),
             )?;
-            let mut deleted_mmap = unsafe { MmapMut::map_mut(&deleted_file)? };
-            deleted_mmap.fill(0);
-            let mut deleted_bitflags = MmapBitSlice::from(deleted_mmap, 0);
-            for (idx, values) in dynamic_index.point_to_values.iter().enumerate() {
-                if values.is_empty() {
-                    deleted_bitflags.set(idx, true);
-                }
-            }
+            let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+            deleted.set_ascending_bits_batch(
+                dynamic_index
+                    .point_to_values
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, values)| values.is_empty())
+                    .map(|(idx, _)| (idx as u64, true)),
+            )?;
+            deleted.flusher()()?;
         }
 
         atomic_save_json(
@@ -238,9 +240,14 @@ impl MmapGeoMapIndex {
         };
         let point_to_values = StoredPointToValues::open(path, true)?;
 
-        let deleted = open_write_mmap(&deleted_path, AdviceSetting::Global, populate)?;
-        let deleted = MmapBitSlice::from(deleted, 0);
-        let deleted_count = deleted.count_ones();
+        let deleted = MmapBitSlice::open(
+            &deleted_path,
+            OpenOptions {
+                populate: Some(populate),
+                ..OpenOptions::default()
+            },
+        )?;
+        let deleted_count = deleted.count_ones()?;
 
         Ok(Some(Self {
             path: path.to_owned(),
@@ -303,7 +310,7 @@ impl MmapGeoMapIndex {
             .map(|counts| (counts.hash, counts.points as usize))
     }
 
-    pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+    pub fn points_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         hw_counter
@@ -317,7 +324,7 @@ impl MmapGeoMapIndex {
         if let Ok(index) = self
             .storage
             .counts_per_hash
-            .binary_search_by(|x| x.hash.cmp(hash))
+            .binary_search_by(|x| x.hash.cmp(&hash))
         {
             self.storage.counts_per_hash[index].points as usize
         } else {
@@ -325,7 +332,7 @@ impl MmapGeoMapIndex {
         }
     }
 
-    pub fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+    pub fn values_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         hw_counter
@@ -339,7 +346,7 @@ impl MmapGeoMapIndex {
         if let Ok(index) = self
             .storage
             .counts_per_hash
-            .binary_search_by(|x| x.hash.cmp(hash))
+            .binary_search_by(|x| x.hash.cmp(&hash))
         {
             self.storage.counts_per_hash[index].values as usize
         } else {

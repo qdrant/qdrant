@@ -478,3 +478,103 @@ def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
     assert counts[0] == counts[1] == counts[2]
+
+
+# Transfer a shard, and assert that it doesn't block the shard holder for a long
+# time.
+#
+# A stream records transfer sends batches with wait=false. The last batch uses
+# wait=true to ensure all the transferred data is visible once the call returns.
+# Because of this the last batch may hang for a very long time. In older
+# versions such batch would hold a read lock on the shards holder for the entire
+# duration. It could cascade into freezing the entire cluster for a long time.
+#
+# This test ensures that doesn't happen anymore. It triggers a shard transfer
+# with artificial delay in batches to emulate a long running batch. Then it sends
+# a resharding start operation and confirms consensus is still responsive.
+# Previously this would be blocked and it would time out causing the test to
+# fail.
+#
+# See: <https://github.com/qdrant/qdrant/pull/8373>
+def test_shard_transfer_blocking_shard_holder(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # Prevent optimizers from interfering during the test
+    env = {
+        "QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD_KB": "0",
+        # Artificially make stream records transfer very slow
+        # Would hold shard holder read lock for a long time in previous version
+        "QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC": "10",
+    }
+
+    # Start a 3-node cluster
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
+
+    # Staging feature must be enabled
+    skip_if_no_feature(peer_api_uris[0], "staging")
+
+    # Collect peer IDs
+    peer_ids = [get_cluster_info(uri)["peer_id"] for uri in peer_api_uris]
+
+    # Create collection with 3 shards and replication factor 2
+    create_collection(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_number=N_PEERS,
+        replication_factor=1,
+    )
+    wait_collection_exists_and_active_on_all_peers(COLLECTION_NAME, peer_api_uris)
+    upsert_random_points(
+        peer_api_uris[0],
+        1000,
+        collection_name=COLLECTION_NAME,
+        wait="true",
+        with_sparse_vector=False,
+    )
+
+    # Find what shard is on the first peer
+    collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    local_shard = collection_cluster_info["local_shards"][0]
+    shard_id = local_shard["shard_id"]
+
+    # Trigger shard move transfer (non-blocking)
+    # This would previously hold the shard holder read lock for a long time
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
+        params={
+            "timeout": "3", # Operation is supposed to be accepted quickly
+        },
+        json={
+            "move_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": peer_ids[0],
+                "to_peer_id": peer_ids[1],
+                "method": "stream_records",
+            }
+        },
+    )
+    assert_http_ok(r)
+
+    # Immediately trigger resharding (start_resharding action)
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
+        params={
+            "timeout": "3", # Operation is supposed to be accepted quickly
+        },
+        json={
+            "start_resharding": {
+                "direction": "up",
+            }
+        },
+    )
+    assert_http_ok(r)
+
+    sleep(3)
+
+    # Check that all peers have 0 pending consensus operations
+    for i, uri in enumerate(peer_api_uris):
+        cluster_info = get_cluster_info(uri)
+        pending = cluster_info["raft_info"]["pending_operations"]
+        assert pending == 0, (
+            f"Peer {peer_ids[i]} at {uri} has {pending} pending operations, expected 0"
+        )

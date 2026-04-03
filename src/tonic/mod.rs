@@ -23,6 +23,7 @@ use ::api::grpc::qdrant::qdrant_internal_server::QdrantInternalServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::shard_snapshots_server::ShardSnapshotsServer;
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
+use ::api::grpc::qdrant::storage_read_server::StorageReadServer;
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
 use ::api::rest::models::VersionInfo;
 use collection::operations::verification::new_unchecked_verification_pass;
@@ -48,6 +49,17 @@ use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use crate::tonic::api::qdrant_internal_api::QdrantInternalService;
 use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
+use crate::tonic::api::storage_read_api::StorageReadService;
+use crate::tonic::api::telemetry_wrapper::{
+    PointsTelemetryWrapper, ShardSnapshotsTelemetryWrapper, SnapshotsTelemetryWrapper,
+};
+
+// Compile-time storage backend selection for StorageRead gRPC service.
+// On Linux, uses io_uring for optimal async I/O; falls back to mmap elsewhere.
+#[cfg(target_os = "linux")]
+type StorageBackend = common::universal_io::io_uring::IoUringFile;
+#[cfg(not(target_os = "linux"))]
+type StorageBackend = common::universal_io::mmap::MmapFile;
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -113,6 +125,7 @@ pub fn init(
         let collections_service = CollectionsService::new(dispatcher.clone());
         let points_service = PointsService::new(dispatcher.clone(), settings.service.clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
+        let storage_read_service = StorageReadService::<StorageBackend>::new(dispatcher.clone());
 
         // Only advertise the public services. By default, all services in QDRANT_DESCRIPTOR_SET
         // will be advertised, so explicitly list the services to be included.
@@ -123,6 +136,7 @@ pub fn init(
             .with_service_name("qdrant.Snapshots")
             .with_service_name("qdrant.Qdrant")
             .with_service_name("grpc.health.v1.Health")
+            .with_service_name("qdrant.StorageRead")
             .build()
             .unwrap();
 
@@ -177,19 +191,25 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .add_service(
-                PointsServer::new(points_service)
+                PointsServer::new(PointsTelemetryWrapper::new(points_service))
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
             )
             .add_service(
-                SnapshotsServer::new(snapshot_service)
+                SnapshotsServer::new(SnapshotsTelemetryWrapper::new(snapshot_service))
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
             )
             .add_service(
                 HealthServer::new(health_service)
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
+            )
+            .add_service(
+                StorageReadServer::new(storage_read_service)
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
@@ -226,7 +246,6 @@ pub fn init_internal(
     runtime
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
-
             let qdrant_service = QdrantService::default();
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
@@ -292,10 +311,12 @@ pub fn init_internal(
                         .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
-                    ShardSnapshotsServer::new(shard_snapshots_service)
-                        .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip)
-                        .max_decoding_message_size(usize::MAX),
+                    ShardSnapshotsServer::new(ShardSnapshotsTelemetryWrapper::new(
+                        shard_snapshots_service,
+                    ))
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
                     RaftServer::new(raft_service)

@@ -14,7 +14,7 @@ pub mod utils;
 use std::path::PathBuf;
 
 use bytemuck::TransparentWrapperAlloc as _;
-use edge::config::shard::EdgeShardConfig;
+use edge::EdgeConfig;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use segment::common::operation_error::OperationError;
@@ -97,10 +97,20 @@ pub struct PyEdgeShard(Option<edge::EdgeShard>);
 
 #[pymethods]
 impl PyEdgeShard {
-    #[new]
+    /// Load an edge shard from existing files at `path`.
+    /// Optional `config`: if provided, compatibility is checked and config is overwritten on disk.
+    #[staticmethod]
     #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PyEdgeConfig>) -> Result<Self> {
-        let shard = edge::EdgeShard::load(&path, config.map(EdgeShardConfig::from))?;
+        let shard = edge::EdgeShard::load(&path, config.map(EdgeConfig::from))?;
+        Ok(Self(Some(shard)))
+    }
+
+    /// Create a new edge shard at `path` with the given configuration.
+    /// Fails if the path already contains segment data.
+    #[staticmethod]
+    pub fn create(path: PathBuf, config: PyEdgeConfig) -> Result<Self> {
+        let shard = edge::EdgeShard::new(&path, config.0)?;
         Ok(Self(Some(shard)))
     }
 

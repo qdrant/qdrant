@@ -3,27 +3,22 @@ use std::io::Write;
 use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
-use bitvec::prelude::BitSlice;
-use common::ext::BitSliceExt as _;
+use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{ElementsRange, OpenOptions as UniversalOpenOptions, UniversalRead};
+use common::universal_io::{
+    MmapFile, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, TypedStorage, UniversalRead,
+};
 use fs_err::{File, OpenOptions};
-use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
-#[cfg(target_os = "linux")]
-use crate::vector_storage::async_io::UringReader;
-#[cfg(not(target_os = "linux"))]
-use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
-use crate::vector_storage::{AccessPattern, Random, Sequential};
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
@@ -31,29 +26,26 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Immutable storage for dense vectors.
 #[derive(Debug)]
-pub struct ImmutableDenseVectors<
+pub struct ImmutableDenseVectors<T, S = MmapFile>
+where
     T: PrimitiveVectorElement,
-    S: UniversalRead<u8> = MmapUniversal<u8>,
-> {
+    S: UniversalRead<T>,
+{
     pub dim: usize,
     pub num_vectors: usize,
-    /// Byte-addressable vector data storage, providing read access via [`UniversalRead<u8>`].
-    storage: S,
-    /// Context for io_uring-based async IO
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    uring_reader: Option<Mutex<UringReader<T>>>,
+    /// Vector data storage, providing read access via [`UniversalRead<T>`].
+    storage: TypedStorage<ReadOnly<S>, T>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S> {
+impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
-        with_async_io: bool,
         populate: bool,
     ) -> OperationResult<Self> {
         // Allocate/open vectors file
@@ -64,12 +56,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         let num_vectors = file_len.saturating_sub(HEADER_SIZE) / dim / size_of::<T>();
 
         let options = UniversalOpenOptions {
+            writeable: false,
             need_sequential: true,
             disk_parallel: None,
             populate: Some(populate),
             advice: None,
+            prevent_caching: None,
         };
-        let storage = UniversalRead::<u8>::open(vectors_path, options).map_err(|e| {
+        let storage = TypedStorage::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(
                 "Failed to open vector mmap at {}: {e}",
                 vectors_path.display()
@@ -93,27 +87,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
-        let uring_reader = if with_async_io {
-            // Keep file handle open for async IO
-            let vectors_file = File::open(vectors_path)?;
-            let raw_size = dim * size_of::<T>();
-            Some(UringReader::new(vectors_file, raw_size, HEADER_SIZE)?)
-        } else {
-            None
-        };
-
-        Ok(ImmutableDenseVectors {
+        Ok(Self {
             dim,
             num_vectors,
             storage,
-            uring_reader: uring_reader.map(Mutex::new),
             deleted,
             deleted_count,
         })
-    }
-
-    pub fn has_async_reader(&self) -> bool {
-        self.uring_reader.is_some()
     }
 
     pub fn flusher(&self) -> MmapFlusher {
@@ -136,30 +116,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         Some(offset)
     }
 
-    /// Size in bytes of a single vector.
-    pub fn raw_size(&self) -> usize {
-        self.dim * size_of::<T>()
-    }
-
-    /// Read one vector's worth of bytes from storage at `byte_offset` and reinterpret
-    /// the byte slice as `&[T]`.
+    /// Read one vector from storage at the given byte offset.
     fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
-        let range = ElementsRange {
-            start: byte_offset as u64,
-            length: self.raw_size() as u64,
+        let range = ReadRange {
+            byte_offset: byte_offset as u64,
+            length: self.dim as u64,
         };
 
-        let cow: Cow<'_, [u8]> = if P::IS_SEQUENTIAL {
-            self.storage.read::<true>(range)
-        } else {
-            self.storage.read::<false>(range)
-        }
-        .expect("vector read from storage failed");
-
-        match cow {
-            Cow::Borrowed(byte_slice) => Cow::Borrowed(bytemuck::cast_slice(byte_slice)),
-            Cow::Owned(byte_vec) => Cow::Owned(bytemuck::cast_vec(byte_vec)),
-        }
+        self.storage
+            .read::<P>(range)
+            .expect("vector read from storage failed")
     }
 
     /// Returns vector data by key
@@ -217,41 +183,26 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         &self.deleted
     }
 
-    fn process_points_simple(
-        &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(usize, PointOffsetType, &[T]),
-    ) {
-        for (idx, point) in points.enumerate() {
-            let vector = self.get_vector::<Random>(point);
-            callback(idx, point, &vector);
-        }
-    }
-
     /// Reads vectors for the given ids and calls the callback for each vector.
     /// Tries to utilize asynchronous IO if possible.
     /// In particular, uses io_uring on Linux and simple synchronous IO otherwise.
-    pub fn read_vectors_async(
+    pub fn read_vectors_async<P: AccessPattern>(
         &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        callback: impl FnMut(usize, PointOffsetType, &[T]),
+        points: &[PointOffsetType],
+        mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
-        match &self.uring_reader {
-            None => self.process_points_simple(points, callback),
+        let vector_size_bytes = size_of::<T>() * self.dim;
+        let ranges = points.iter().copied().map(|point| ReadRange {
+            byte_offset: (HEADER_SIZE + vector_size_bytes * point as usize) as _,
+            length: self.dim as _,
+        });
 
-            #[cfg(target_os = "linux")]
-            Some(uring_reader) => {
-                // Use `UringReader` on Linux
-                let mut uring_guard = uring_reader.lock();
-                uring_guard.read_stream(points, callback)?;
-            }
+        self.storage.read_batch::<P>(ranges, |idx, vector| {
+            let point = points.get(idx).copied().expect("point ID tracked");
+            callback(idx, point, vector);
+            Ok(())
+        })?;
 
-            #[cfg(not(target_os = "linux"))]
-            Some(_) => {
-                // Fallback to synchronous processing on non-Linux platforms
-                self.process_points_simple(points, callback);
-            }
-        }
         Ok(())
     }
 

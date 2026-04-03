@@ -7,7 +7,10 @@ use fs_err::File;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
-use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry as _, SnapshotEntry as _};
+use segment::entry::{
+    NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _, SnapshotEntry as _,
+    StorageSegmentEntry as _,
+};
 use segment::types::{FieldCondition, PayloadSchemaType};
 use tempfile::Builder;
 
@@ -224,23 +227,31 @@ fn test_read_filter() {
         "blue".to_string().into(),
     )));
 
-    let original_points = original_segment.get().read().read_filtered(
-        None,
-        Some(100),
-        None,
-        &is_stopped,
-        &hw_counter,
-        DeferredBehavior::Exclude,
-    );
+    let original_points = original_segment
+        .get()
+        .read()
+        .read_filtered(
+            None,
+            Some(100),
+            None,
+            &is_stopped,
+            &hw_counter,
+            DeferredBehavior::Exclude,
+        )
+        .unwrap();
 
-    let original_points_filtered = original_segment.get().read().read_filtered(
-        None,
-        Some(100),
-        Some(&filter),
-        &is_stopped,
-        &hw_counter,
-        DeferredBehavior::Exclude,
-    );
+    let original_points_filtered = original_segment
+        .get()
+        .read()
+        .read_filtered(
+            None,
+            Some(100),
+            Some(&filter),
+            &is_stopped,
+            &hw_counter,
+            DeferredBehavior::Exclude,
+        )
+        .unwrap();
 
     let mut proxy_segment = wrap_proxy(original_segment);
 
@@ -250,22 +261,26 @@ fn test_read_filter() {
         .delete_point(100, 2.into(), &hw_counter)
         .unwrap();
 
-    let proxy_res = proxy_segment.read_filtered(
-        None,
-        Some(100),
-        None,
-        &is_stopped,
-        &hw_counter,
-        DeferredBehavior::Exclude,
-    );
-    let proxy_res_filtered = proxy_segment.read_filtered(
-        None,
-        Some(100),
-        Some(&filter),
-        &is_stopped,
-        &hw_counter,
-        DeferredBehavior::Exclude,
-    );
+    let proxy_res = proxy_segment
+        .read_filtered(
+            None,
+            Some(100),
+            None,
+            &is_stopped,
+            &hw_counter,
+            DeferredBehavior::Exclude,
+        )
+        .unwrap();
+    let proxy_res_filtered = proxy_segment
+        .read_filtered(
+            None,
+            Some(100),
+            Some(&filter),
+            &is_stopped,
+            &hw_counter,
+            DeferredBehavior::Exclude,
+        )
+        .unwrap();
 
     assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
     assert_eq!(original_points.len() - 1, proxy_res.len());
@@ -519,4 +534,68 @@ fn test_proxy_segment_flush() {
     // We can never fully persist proxy segment, as list of deleted points is always in-memory only.
     // So we have to keep WAL for deleted points.
     assert!(version_after_delete > flushed_version_2);
+}
+
+#[test]
+fn test_proxy_deferred() {
+    let hw_counter = HardwareCounterCell::new();
+
+    let tmp_dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+
+    let mut wrapped_segment = build_segment_with_deferred_1(tmp_dir.path());
+
+    let initial_estimation = wrapped_segment.estimate_point_count(None, &hw_counter);
+
+    let initial_deferred_point_count = wrapped_segment.size_info().num_deferred_points.unwrap();
+
+    wrapped_segment
+        .delete_point_internal(3, &hw_counter)
+        .unwrap();
+
+    assert_eq!(
+        wrapped_segment.size_info().num_deferred_points.unwrap(),
+        initial_deferred_point_count - 1
+    );
+
+    let mut proxy_segment = ProxySegment::new(LockedSegment::new(wrapped_segment));
+
+    assert_eq!(
+        proxy_segment.size_info().num_deferred_points.unwrap(),
+        initial_deferred_point_count - 1
+    );
+
+    assert_eq!(proxy_segment.available_point_count_without_deferred(), 3);
+
+    proxy_segment
+        .delete_point(7, 5.into(), &hw_counter)
+        .unwrap();
+
+    assert_eq!(
+        proxy_segment.size_info().num_deferred_points.unwrap(),
+        initial_deferred_point_count - 2
+    );
+
+    assert_eq!(proxy_segment.available_point_count_without_deferred(), 3);
+
+    // We didn't touch normal points so estimation should not change.
+    assert_eq!(
+        proxy_segment.estimate_point_count(None, &hw_counter),
+        initial_estimation
+    );
+
+    // Touch normal points
+    proxy_segment
+        .delete_point(6, 1.into(), &hw_counter)
+        .unwrap();
+
+    // Now we must see a difference in estimation.
+    assert_ne!(
+        proxy_segment.estimate_point_count(None, &hw_counter),
+        initial_estimation
+    );
+
+    assert_eq!(proxy_segment.available_point_count_without_deferred(), 2);
 }

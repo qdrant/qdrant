@@ -27,11 +27,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{fmt, mem, slice};
 
-use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
 
 use super::advice::{Advice, AdviceSetting, Madviseable};
 use super::ops;
+use crate::bitvec::BitSlice;
 
 /// Result for mmap errors.
 type Result<T> = std::result::Result<T, Error>;

@@ -1,225 +1,102 @@
 use std::borrow::Cow;
-use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::{fs, slice};
 
-use crate::mmap::{
-    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapSlice, MmapSliceReadOnly, open_read_mmap,
-    open_write_mmap,
-};
-use crate::universal_io::file_ops::UniversalReadFileOps;
-use crate::universal_io::local_file_ops::local_list_files;
-use crate::universal_io::{
-    ElementOffset, ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead,
-    UniversalWrite,
-};
+use memmap2::MmapRaw;
 
-/// Trait for mmap types that support read access to a slice of `T`.
-///
-/// Both [`MmapSlice<T>`] and [`MmapSliceReadOnly<T>`] satisfy this trait.
-pub trait MmapAccess<T>: AsRef<[T]> + std::fmt::Debug {
-    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self>
-    where
-        Self: Sized;
+use super::*;
+use crate::generic_consts::AccessPattern;
+use crate::mmap::{MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
-    fn populate(&self) -> std::io::Result<()>;
-
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-// MmapMut-backed slice
-impl<T: Copy + 'static> MmapAccess<T> for MmapSlice<T> {
-    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self> {
-        let mmap = open_write_mmap(path, advice, populate).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                UniversalIoError::NotFound {
-                    path: path.to_path_buf(),
-                }
-            } else {
-                e.into()
-            }
-        })?;
-        Ok(unsafe { MmapSlice::try_from(mmap) }?)
-    }
-
-    fn populate(&self) -> std::io::Result<()> {
-        MmapSlice::populate(self)
-    }
-}
-
-// Mmap (read only) backed slice
-impl<T: Copy + 'static> MmapAccess<T> for MmapSliceReadOnly<T> {
-    fn open_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> Result<Self> {
-        let mmap = open_read_mmap(path, advice, populate).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                UniversalIoError::NotFound {
-                    path: path.to_path_buf(),
-                }
-            } else {
-                e.into()
-            }
-        })?;
-        Ok(unsafe { MmapSliceReadOnly::try_from(mmap) }?)
-    }
-
-    fn populate(&self) -> std::io::Result<()> {
-        MmapSliceReadOnly::populate(self)
-    }
-}
-
-/// Memory-mapped universal I/O, generic over the primary mmap type.
-///
-/// `M` defaults to [`MmapSlice<T>`] (read-write) for backward compatibility.
-/// Use [`MmapUniversalRo<T>`] for a read-only variant that opens with `Mmap` instead of `MmapMut`.
 #[derive(Debug)]
-pub struct MmapUniversal<T: Copy + 'static, M: MmapAccess<T> = MmapSlice<T>> {
+pub struct MmapFile {
     path: PathBuf,
-    /// Main data mmap slice for read (and optionally write)
-    ///
-    /// Best suited for random reads.
-    mmap: M,
-    /// Read-only mmap slice best suited for sequential reads
-    ///
-    /// `None` on platforms that do not support multiple memory maps to the same file.
-    mmap_seq: Option<MmapSliceReadOnly<T>>,
-    _phantom: PhantomData<T>,
+    mmap: Arc<MmapRaw>,
+    mmap_seq: Option<MmapRaw>,
 }
 
-/// Read-write mmap universal (default).
-pub type MmapUniversalRw<T> = MmapUniversal<T, MmapSlice<T>>;
-
-/// Read-only mmap universal.
-pub type MmapUniversalRo<T> = MmapUniversal<T, MmapSliceReadOnly<T>>;
-
-impl<T, M> MmapUniversal<T, M>
-where
-    T: Copy + 'static,
-    M: MmapAccess<T>,
-{
-    fn as_seq_slice(&self) -> &[T] {
-        self.mmap_seq
-            .as_ref()
-            .map(|m| m.as_ref())
-            .unwrap_or(self.mmap.as_ref())
-    }
-
-    fn as_slice<const SEQUENTIAL: bool>(&self) -> &[T] {
-        if SEQUENTIAL {
-            self.as_seq_slice()
-        } else {
-            self.mmap.as_ref()
-        }
-    }
-}
-
-impl<T, M> UniversalReadFileOps for MmapUniversal<T, M>
-where
-    T: 'static + Copy,
-    M: MmapAccess<T>,
-{
+impl UniversalReadFileOps for MmapFile {
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        local_list_files(prefix_path)
+        local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(path: &Path) -> Result<bool> {
-        fs_err::exists(path).map_err(Into::into)
+    fn exists(path: &Path) -> crate::universal_io::Result<bool> {
+        fs_err::exists(path).map_err(UniversalIoError::from)
     }
 }
 
-impl<T, M> UniversalRead<T> for MmapUniversal<T, M>
+impl<T> UniversalRead<T> for MmapFile
 where
-    T: Copy + 'static,
-    M: MmapAccess<T>,
+    T: bytemuck::Pod,
 {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized,
-    {
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
+            writeable,
             need_sequential,
             disk_parallel: _,
             populate,
             advice,
+            prevent_caching: _, // Whole point of mmap is to cache
         } = options;
 
-        let mmap_file = path.as_ref();
-        let advice = advice.unwrap_or(AdviceSetting::Global);
+        let mmap = open_mmap(
+            path.as_ref(),
+            writeable,
+            populate.unwrap_or_default(),
+            advice.unwrap_or(AdviceSetting::Global),
+        )?;
 
-        let mmap = M::open_mmap(mmap_file, advice, populate.unwrap_or_default())?;
+        let mmap_seq = if need_sequential && *MULTI_MMAP_IS_SUPPORTED {
+            let mmap_seq = open_mmap(
+                path.as_ref(),
+                false,
+                false,
+                AdviceSetting::Advice(Advice::Sequential),
+            )?;
 
-        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED && need_sequential {
-            let mmap_seq =
-                open_read_mmap(mmap_file, AdviceSetting::Advice(Advice::Sequential), false)?;
-            Some(unsafe { MmapSliceReadOnly::try_from(mmap_seq) }?)
+            Some(mmap_seq)
         } else {
             None
         };
 
-        Ok(MmapUniversal {
-            path: mmap_file.to_path_buf(),
-            mmap,
+        let mmap = Self {
+            path: path.as_ref().into(),
+            mmap: Arc::new(mmap),
             mmap_seq,
-            _phantom: PhantomData,
-        })
+        };
+
+        Ok(mmap)
     }
 
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
-        let data_slice = self.as_slice::<SEQUENTIAL>();
-        let start = range.start as usize;
-        let end = start + range.length as usize;
-
-        let data_range = data_slice
-            .get(start..end)
-            .ok_or(UniversalIoError::OutOfBounds {
-                start: start as u64,
-                end: end as u64,
-                data_length: data_slice.len(),
-            })?;
-
-        Ok(Cow::Borrowed(data_range))
+    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+        let mmap = self.as_bytes::<P>();
+        let items = read(mmap, range)?;
+        Ok(Cow::Borrowed(items))
     }
 
-    fn read_batch<const SEQUENTIAL: bool>(
+    fn read_batch<P: AccessPattern>(
         &self,
-        ranges: impl IntoIterator<Item = ElementsRange>,
+        ranges: impl IntoIterator<Item = ReadRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
-        let data_slice = self.as_slice::<SEQUENTIAL>();
-        let data_length = data_slice.len();
+        let mmap = self.as_bytes::<P>();
 
         for (idx, range) in ranges.into_iter().enumerate() {
-            let start = range.start as usize;
-            let end = start + range.length as usize;
-
-            let data_range = data_slice
-                .get(start..end)
-                .ok_or(UniversalIoError::OutOfBounds {
-                    start: start as u64,
-                    end: end as u64,
-                    data_length,
-                })?;
-
-            callback(idx, data_range)?;
+            let items = read(mmap, range)?;
+            callback(idx, items)?;
         }
 
         Ok(())
     }
 
     fn len(&self) -> Result<u64> {
-        Ok(self.mmap.len() as u64)
+        let len = self.mmap.len() / size_of::<T>();
+        Ok(len as u64)
     }
 
     fn populate(&self) -> Result<()> {
-        if let Some(mmap_seq) = &self.mmap_seq {
-            mmap_seq.populate()?;
-        } else {
-            self.mmap.populate()?;
-        }
+        self.mmap.populate();
         Ok(())
     }
 
@@ -227,48 +104,132 @@ where
         crate::fs::clear_disk_cache(&self.path)?;
         Ok(())
     }
-
-    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
-        Ok(Cow::Borrowed(self.mmap.as_ref()))
-    }
 }
 
-// --- UniversalWrite only for read-write variant ---
-
-impl<T> UniversalWrite<T> for MmapUniversal<T, MmapSlice<T>>
+impl<T> UniversalWrite<T> for MmapFile
 where
-    T: Copy + 'static,
+    T: bytemuck::Pod,
 {
-    fn write(&mut self, offset: ElementOffset, data: &[T]) -> Result<()> {
-        let mmap_slice: &mut [T] = &mut self.mmap;
-        let data_length = mmap_slice.len();
-        let start = offset as usize;
-        let end = start + data.len();
-
-        let target = mmap_slice
-            .get_mut(start..end)
-            .ok_or(UniversalIoError::OutOfBounds {
-                start: offset,
-                end: offset + data.len() as u64,
-                data_length,
-            })?;
-
-        target.copy_from_slice(data);
+    fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
+        let mmap = self.as_bytes_mut();
+        write(mmap, byte_offset, items)?;
         Ok(())
     }
 
     fn write_batch<'a>(
         &mut self,
-        offset_data: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
+        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
-        for (offset, data) in offset_data {
-            self.write(offset, data)?;
+        let mmap = self.as_bytes_mut();
+
+        for (byte_offset, items) in offset_data {
+            write(mmap, byte_offset, items)?;
         }
+
         Ok(())
     }
 
     fn flusher(&self) -> Flusher {
-        let inner = self.mmap.flusher();
-        Box::new(move || Ok(inner()?)) // Converts error type to UniversalIoError
+        let mmap = self.mmap.clone();
+        let flusher = move || {
+            // flushing empty mmap returns error on some platforms
+            if mmap.len() > 0 {
+                mmap.flush()?;
+            }
+
+            Ok(())
+        };
+
+        Box::new(flusher)
     }
+}
+
+fn open_mmap(path: &Path, write: bool, populate: bool, advice: AdviceSetting) -> Result<MmapRaw> {
+    // TODO: `fs_err` can cause panic when run on a single-threaded Tokio runtime
+    #[expect(clippy::disallowed_types)]
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(write)
+        .open(path)
+        .map_err(|err| UniversalIoError::extract_not_found(err, path))?;
+
+    let mmap = if write {
+        memmap2::MmapOptions::new().map_raw(&file)?
+    } else {
+        memmap2::MmapOptions::new().map_raw_read_only(&file)?
+    };
+
+    if populate {
+        mmap.populate();
+    }
+
+    mmap.madvise(advice.resolve())?;
+
+    Ok(mmap)
+}
+
+impl MmapFile {
+    fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
+        let mmap = if P::IS_SEQUENTIAL {
+            self.mmap_seq.as_ref().unwrap_or(&self.mmap)
+        } else {
+            &self.mmap
+        };
+
+        unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) }
+    }
+
+    fn as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.mmap.as_mut_ptr(), self.mmap.len()) }
+    }
+}
+
+#[inline]
+fn read<T>(bytes: &[u8], range: ReadRange) -> Result<&[T]>
+where
+    T: bytemuck::Pod,
+{
+    let ReadRange {
+        byte_offset,
+        length: items,
+    } = range;
+
+    let start = byte_offset as usize;
+    let end = start + size_of::<T>() * items as usize;
+
+    let bytes = bytes
+        .get(start..end)
+        .ok_or_else(|| UniversalIoError::OutOfBounds {
+            start: start as _,
+            end: end as _,
+            elements: bytes.len() / size_of::<T>(),
+        })?;
+
+    // `bytemuck::cast_slice` checks that `bytes` size and alignment match `T` requirements
+    let items = bytemuck::cast_slice(bytes);
+    Ok(items)
+}
+
+#[inline]
+fn write<T>(mmap: &mut [u8], byte_offset: ByteOffset, items: &[T]) -> Result<()>
+where
+    T: bytemuck::Pod,
+{
+    let start = byte_offset as usize;
+    let end = start + size_of_val(items);
+
+    let mmap_len_bytes = mmap.len();
+
+    let mmap = mmap
+        .get_mut(start..end)
+        .ok_or_else(|| UniversalIoError::OutOfBounds {
+            start: start as _,
+            end: end as _,
+            elements: mmap_len_bytes / size_of::<T>(),
+        })?;
+
+    let bytes = bytemuck::cast_slice(items);
+    mmap.copy_from_slice(bytes);
+
+    Ok(())
 }

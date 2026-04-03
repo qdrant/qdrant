@@ -226,28 +226,28 @@ impl Collection {
             };
 
             let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-                return Err(CollectionError::BadRequest {
-                    description: format!("Shard {} of {} not found", shard_id, self.name()),
-                });
+                return Err(CollectionError::bad_request(format!(
+                    "Shard {} of {} not found",
+                    shard_id,
+                    self.name()
+                )));
             };
 
             let peers = replica_set.peers();
 
             if !peers.contains_key(&peer_id) {
-                return Err(CollectionError::BadRequest {
-                    description: format!("Peer {peer_id} has no replica of shard {shard_id}"),
-                });
+                return Err(CollectionError::bad_request(format!(
+                    "Peer {peer_id} has no replica of shard {shard_id}"
+                )));
             }
 
             // Check that we are not removing the *last* replica or the last *active* replica
             //
             // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
             if peers.len() == 1 || replica_set.is_last_source_of_truth_replica(peer_id) {
-                return Err(CollectionError::BadRequest {
-                    description: format!(
-                        "Shard {shard_id} must have at least one active replica after removing {peer_id}",
-                    ),
-                });
+                return Err(CollectionError::bad_request(format!(
+                    "Shard {shard_id} must have at least one active replica after removing {peer_id}",
+                )));
             }
 
             let all_nodes_fixed_cancellation = self
@@ -356,11 +356,23 @@ impl Collection {
             info.points_count = info.points_count.zip(points_count).map(|(a, b)| a + b);
             info.segments_count += segments_count;
             info.warnings.extend(warnings);
-            if let Some(queue) = &mut info.update_queue {
-                queue.length += update_queue.map(|q| q.length).unwrap_or(0);
+
+            if let Some(UpdateQueueInfo {
+                length,
+                deferred_points,
+            }) = &mut info.update_queue
+            {
+                *length += update_queue.as_ref().map(|q| q.length).unwrap_or(0);
+
+                if let Some(response_deferred_count) = update_queue.and_then(|i| i.deferred_points)
+                    && response_deferred_count > 0
+                {
+                    *deferred_points.get_or_insert_default() += response_deferred_count;
+                }
             } else {
                 info.update_queue = update_queue;
             }
+
             for (key, response_schema) in payload_schema {
                 info.payload_schema
                     .entry(key)

@@ -50,6 +50,7 @@ use crate::shards::dummy_shard::DummyShard;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_trait::WaitUntil;
 
 //    │    Collection Created
 //    │
@@ -1031,9 +1032,10 @@ impl ShardReplicaSet {
         let remotes = self.remotes.read().await;
 
         let Some(remote) = remotes.iter().find(|remote| remote.peer_id == peer_id) else {
-            return Err(CollectionError::NotFound {
-                what: format!("{}/{}:{} shard", peer_id, self.collection_id, self.shard_id),
-            });
+            return Err(CollectionError::not_found(format!(
+                "{}/{}:{} shard",
+                peer_id, self.collection_id, self.shard_id
+            )));
         };
 
         remote.health_check().await?;
@@ -1051,9 +1053,10 @@ impl ShardReplicaSet {
         let local_shard_guard = self.local.read().await;
 
         let Some(local_shard) = local_shard_guard.deref() else {
-            return Err(CollectionError::NotFound {
-                what: format!("local shard {}:{}", self.collection_id, self.shard_id),
-            });
+            return Err(CollectionError::not_found(format!(
+                "local shard {}:{}",
+                self.collection_id, self.shard_id
+            )));
         };
 
         let mut next_offset = Some(ExtendedPointId::NumId(0));
@@ -1103,7 +1106,13 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(op.into(), true, None, hw_measurement_acc, force)
+            .update_local(
+                op.into(),
+                WaitUntil::Visible,
+                None,
+                hw_measurement_acc,
+                force,
+            )
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(
@@ -1282,9 +1291,7 @@ impl ShardReplicaSet {
     pub(crate) async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
         let local_shard = self.local.read().await;
         let Some(local_shard) = local_shard.as_ref() else {
-            return Err(CollectionError::NotFound {
-                what: "Peer does not have local shard".into(),
-            });
+            return Err(CollectionError::not_found("Peer does not have local shard"));
         };
 
         local_shard.shard_recovery_point().await
@@ -1297,9 +1304,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<()> {
         let local_shard = self.local.read().await;
         let Some(local_shard) = local_shard.as_ref() else {
-            return Err(CollectionError::NotFound {
-                what: "Peer does not have local shard".into(),
-            });
+            return Err(CollectionError::not_found("Peer does not have local shard"));
         };
 
         local_shard.update_cutoff(cutoff).await
@@ -1313,9 +1318,7 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
 
         let Some(local) = local.as_ref() else {
-            return Err(CollectionError::NotFound {
-                what: "Peer does not have local shard".into(),
-            });
+            return Err(CollectionError::not_found("Peer does not have local shard"));
         };
 
         local.get_wal_entries(count).await

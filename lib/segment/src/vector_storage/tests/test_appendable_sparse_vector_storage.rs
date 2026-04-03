@@ -1,25 +1,20 @@
 use std::path::Path;
-#[cfg(feature = "rocksdb")]
-use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
-#[cfg(feature = "rocksdb")]
-use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
-use crate::vector_storage::{DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![
@@ -261,23 +256,6 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
 }
 
 #[test]
-#[cfg(feature = "rocksdb")]
-fn test_delete_points_in_simple_sparse_vector_storage() {
-    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-
-    {
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage =
-            open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
-        do_test_delete_points(&mut storage);
-        storage.flusher()().unwrap();
-    }
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage =
-        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
-}
-
-#[test]
 fn test_delete_points_in_mmap_sparse_vector_storage() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let mut storage =
@@ -289,23 +267,6 @@ fn test_delete_points_in_mmap_sparse_vector_storage() {
     drop(storage);
 
     let _storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
-}
-
-#[test]
-#[cfg(feature = "rocksdb")]
-fn test_update_from_delete_points_simple_sparse_vector_storage() {
-    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    {
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage =
-            open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
-        do_test_update_from_delete_points(&mut storage);
-        storage.flusher()().unwrap();
-    }
-
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage =
-        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
 }
 
 #[test]
@@ -328,14 +289,5 @@ fn test_update_from_delete_points_mmap_sparse_vector_storage() {
 fn test_persistence_in_mmap_sparse_vector_storage() {
     do_test_persistence(|path| {
         VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(path).unwrap())
-    });
-}
-
-#[test]
-#[cfg(feature = "rocksdb")]
-fn test_persistence_in_simple_sparse_vector_storage() {
-    do_test_persistence(|path| {
-        let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
-        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap()
     });
 }

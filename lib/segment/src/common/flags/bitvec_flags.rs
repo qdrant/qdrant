@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use bitvec::slice::BitSlice;
-use bitvec::vec::BitVec;
+use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;

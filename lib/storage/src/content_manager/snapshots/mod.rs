@@ -170,7 +170,7 @@ async fn _do_create_full_snapshot(
         .join(&snapshot_name);
 
     // Make sure temporary file is removed in case of error
-    let _temp_full_snapshot_path_file = TempPath::from_path(&temp_full_snapshot_path);
+    let _temp_full_snapshot_path_file = TempPath::try_from_path(&temp_full_snapshot_path)?;
 
     let config_path_clone = config_path.clone();
 
@@ -194,7 +194,7 @@ async fn _do_create_full_snapshot(
             .await?;
 
         temp_collection_snapshots.push((
-            TempPath::from_path(local_temp_collection_snapshot),
+            TempPath::try_from_path(local_temp_collection_snapshot)?,
             snapshot_details.name.clone(),
         ));
     }

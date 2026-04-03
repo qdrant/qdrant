@@ -11,7 +11,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
 };
 use segment::types::{Filter, SearchParams, VectorNameBuf, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery,
+    ContextQuery, DiscoverQuery, FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery,
     RecoQuery,
 };
 
@@ -514,8 +514,8 @@ impl QueryEnum {
                 query: RecoQuery::try_from(recommend)?,
                 using,
             }),
-            Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
-                query: DiscoveryQuery::try_from(discovery)?,
+            Variant::Discover(discover) => QueryEnum::Discover(NamedQuery {
+                query: DiscoverQuery::try_from(discover)?,
                 using,
             }),
             Variant::Context(context) => QueryEnum::Context(NamedQuery {

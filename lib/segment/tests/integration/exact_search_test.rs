@@ -95,6 +95,7 @@ fn exact_search_test() {
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
+        .map(Result::unwrap)
         .collect_vec();
     for block in blocks.iter() {
         assert!(
@@ -107,7 +108,9 @@ fn exact_search_test() {
     for block in &blocks {
         let px = payload_index_ptr.borrow();
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-        let points = px.query_points(&filter, &hw_counter, &is_stopped, None);
+        let points = px
+            .query_points(&filter, &hw_counter, &is_stopped, None)
+            .unwrap();
         for point in points {
             coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
         }

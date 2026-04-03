@@ -141,7 +141,7 @@ impl RecoverableWal {
                 .lock()
                 .await
                 .read_all(true)
-                .map(|(op_num, op)| (op_num, op.clock_tag)),
+                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
             recovery_point,
             newest_clocks,
             oldest_clocks,
@@ -160,13 +160,15 @@ impl RecoverableWal {
     /// Append records to this WAL from `other`, starting at operation `append_from` in `other`.
     #[cfg(test)]
     pub async fn append_from(&self, other: &Self, append_from: u64) -> shard::wal::Result<()> {
-        let mut operations = other
+        let mut operations: Vec<_> = other
             .wal
             .lock()
             .await
             .read(append_from)
+            .collect::<shard::wal::Result<Vec<_>>>()?
+            .into_iter()
             .map(|(_, op)| op)
-            .collect::<Vec<_>>();
+            .collect();
         for update in operations.iter_mut() {
             let (_, _) = self.lock_and_write(update).await?;
         }
@@ -198,7 +200,7 @@ impl RecoverableWal {
 /// If `None` - the remote WAL is already equal, and we don't have to send any records.
 /// If `Err` - no delta can be resolved.
 fn resolve_wal_delta(
-    operations: impl DoubleEndedIterator<Item = (u64, Option<ClockTag>)>,
+    operations: impl DoubleEndedIterator<Item = Result<(u64, Option<ClockTag>), shard::wal::WalError>>,
     mut recovery_point: RecoveryPoint,
     mut newest_clocks: RecoveryPoint,
     mut oldest_clocks: RecoveryPoint,
@@ -230,16 +232,18 @@ fn resolve_wal_delta(
     // Ensure the recovering node gets records for a clock it might not have seen yet
     recovery_point.initialize_clocks_missing_from(&newest_clocks);
 
-    // Remove clocks that are equal to this node, we don't have to transfer records for them
-    // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
-    recovery_point.remove_clocks_equal_to(&newest_clocks);
-
-    // Recovery point may not be below our cutoff point
+    // Recovery point may not be below our cutoff point.
+    // This check must happen before removing equal clocks, otherwise we may
+    // accidentally accept an empty delta for an already truncated history.
     if recovery_point.has_any_older_clocks_than(&oldest_clocks) {
         return Err(WalDeltaError::Cutoff);
     }
 
-    // If there are no points left, WALs match op so we do not recovery anything
+    // Remove clocks that are equal to this node, we don't have to transfer records for them
+    // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
+    recovery_point.remove_clocks_equal_to(&newest_clocks);
+
+    // If there are no points left, WALs match op so we do not recover anything
     if recovery_point.is_empty() {
         return Ok(None);
     }
@@ -250,7 +254,8 @@ fn resolve_wal_delta(
 
     let mut last_op_num = None;
 
-    for (op_num, clock_tag) in operations.rev() {
+    for entry in operations.rev() {
+        let (op_num, clock_tag) = entry.map_err(|e| WalDeltaError::WalReadError(e.to_string()))?;
         // We cannot resolve a delta if we have untagged records
         let Some(clock_tag) = clock_tag else {
             return Err(WalDeltaError::UntaggedRecords);
@@ -292,6 +297,8 @@ pub enum WalDeltaError {
     UntaggedRecords,
     #[error("cannot find slice of WAL records that satisfies the recovery point")]
     NotFound,
+    #[error("failed to read WAL: {0}")]
+    WalReadError(String),
 }
 
 #[cfg(test)]
@@ -415,7 +422,16 @@ mod tests {
         assert_eq!(delta_from, 1);
 
         // Diff should have 1 operation, as C missed just one
-        assert_eq!(b_wal.wal.lock().await.read(delta_from).count(), 1);
+        assert_eq!(
+            b_wal
+                .wal
+                .lock()
+                .await
+                .read(delta_from)
+                .map(Result::unwrap)
+                .count(),
+            1
+        );
 
         // Recover WAL on node C by writing delta from node B to it
         c_wal.append_from(&b_wal, delta_from).await.unwrap();
@@ -426,8 +442,9 @@ mod tests {
             .lock()
             .await
             .read(0)
-            .zip(b_wal.wal.lock().await.read(0))
-            .zip(c_wal.wal.lock().await.read(0))
+            .map(Result::unwrap)
+            .zip(b_wal.wal.lock().await.read(0).map(Result::unwrap))
+            .zip(c_wal.wal.lock().await.read(0).map(Result::unwrap))
             .for_each(|((a, b), c)| {
                 assert_eq!(a, b);
                 assert_eq!(b, c);
@@ -524,7 +541,16 @@ mod tests {
         assert_eq!(delta_from, N as u64);
 
         // Diff should have N operation, as C missed just N of them
-        assert_eq!(b_wal.wal.lock().await.read(delta_from).count(), N);
+        assert_eq!(
+            b_wal
+                .wal
+                .lock()
+                .await
+                .read(delta_from)
+                .map(Result::unwrap)
+                .count(),
+            N
+        );
 
         // Recover WAL on node C by writing delta from node B to it
         c_wal.append_from(&b_wal, delta_from).await.unwrap();
@@ -535,8 +561,9 @@ mod tests {
             .lock()
             .await
             .read(0)
-            .zip(b_wal.wal.lock().await.read(0))
-            .zip(c_wal.wal.lock().await.read(0))
+            .map(Result::unwrap)
+            .zip(b_wal.wal.lock().await.read(0).map(Result::unwrap))
+            .zip(c_wal.wal.lock().await.read(0).map(Result::unwrap))
             .for_each(|((a, b), c)| {
                 assert_eq!(a, b);
                 assert_eq!(b, c);
@@ -620,7 +647,16 @@ mod tests {
         assert_eq!(delta_from, N as u64);
 
         // Diff should have M operations, as node C missed M operations
-        assert_eq!(b_wal.wal.lock().await.read(delta_from).count(), M);
+        assert_eq!(
+            b_wal
+                .wal
+                .lock()
+                .await
+                .read(delta_from)
+                .map(Result::unwrap)
+                .count(),
+            M
+        );
 
         // Recover WAL on node C by writing delta from node B to it
         c_wal.append_from(&b_wal, delta_from).await.unwrap();
@@ -631,8 +667,9 @@ mod tests {
             .lock()
             .await
             .read(0)
-            .zip(b_wal.wal.lock().await.read(0))
-            .zip(c_wal.wal.lock().await.read(0))
+            .map(Result::unwrap)
+            .zip(b_wal.wal.lock().await.read(0).map(Result::unwrap))
+            .zip(c_wal.wal.lock().await.read(0).map(Result::unwrap))
             .for_each(|((a, b), c)| {
                 assert_eq!(a, b);
                 assert_eq!(b, c);
@@ -726,7 +763,16 @@ mod tests {
         assert_eq!(delta_from, N as u64);
 
         // Diff should have M operations, as node C missed M operations
-        assert_eq!(b_wal.wal.lock().await.read(delta_from).count(), M);
+        assert_eq!(
+            b_wal
+                .wal
+                .lock()
+                .await
+                .read(delta_from)
+                .map(Result::unwrap)
+                .count(),
+            M
+        );
 
         // Recover WAL on node C by writing delta from node B to it
         c_wal.append_from(&b_wal, delta_from).await.unwrap();
@@ -737,8 +783,9 @@ mod tests {
             .lock()
             .await
             .read(0)
-            .zip(b_wal.wal.lock().await.read(0))
-            .zip(c_wal.wal.lock().await.read(0))
+            .map(Result::unwrap)
+            .zip(b_wal.wal.lock().await.read(0).map(Result::unwrap))
+            .zip(c_wal.wal.lock().await.read(0).map(Result::unwrap))
             .for_each(|((a, b), c)| {
                 assert_eq!(a, b);
                 assert_eq!(b, c);
@@ -831,8 +878,26 @@ mod tests {
         assert_eq!(delta_from, 1);
 
         // Diff should have 2 operations on both nodes
-        assert_eq!(a_wal.wal.lock().await.read(delta_from).count(), 2);
-        assert_eq!(b_wal.wal.lock().await.read(delta_from).count(), 2);
+        assert_eq!(
+            a_wal
+                .wal
+                .lock()
+                .await
+                .read(delta_from)
+                .map(Result::unwrap)
+                .count(),
+            2
+        );
+        assert_eq!(
+            b_wal
+                .wal
+                .lock()
+                .await
+                .read(delta_from)
+                .map(Result::unwrap)
+                .count(),
+            2
+        );
 
         // Recover WAL on node C by writing delta from node B to it
         c_wal.append_from(&b_wal, delta_from).await.unwrap();
@@ -844,7 +909,8 @@ mod tests {
                 .lock()
                 .await
                 .read(0)
-                .zip(c_wal.wal.lock().await.read(0))
+                .map(Result::unwrap)
+                .zip(c_wal.wal.lock().await.read(0).map(Result::unwrap))
                 .all(|(a, c)| a == c),
         );
         assert!(
@@ -853,14 +919,24 @@ mod tests {
                 .lock()
                 .await
                 .read(0)
-                .zip(c_wal.wal.lock().await.read(0))
+                .map(Result::unwrap)
+                .zip(c_wal.wal.lock().await.read(0).map(Result::unwrap))
                 .all(|(b, c)| b == c),
         );
 
         // All WALs should have 3 operations
-        assert_eq!(a_wal.wal.lock().await.read(0).count(), 3);
-        assert_eq!(b_wal.wal.lock().await.read(0).count(), 3);
-        assert_eq!(c_wal.wal.lock().await.read(0).count(), 3);
+        assert_eq!(
+            a_wal.wal.lock().await.read(0).map(Result::unwrap).count(),
+            3
+        );
+        assert_eq!(
+            b_wal.wal.lock().await.read(0).map(Result::unwrap).count(),
+            3
+        );
+        assert_eq!(
+            c_wal.wal.lock().await.read(0).map(Result::unwrap).count(),
+            3
+        );
 
         // All WALs must have operations for point 1, 2 and 3
         let get_point = |op| match op {
@@ -878,21 +954,30 @@ mod tests {
             .lock()
             .await
             .read(0)
-            .map(|(_, op)| get_point(op).id)
+            .map(|e| {
+                let (_, op) = e.unwrap();
+                get_point(op).id
+            })
             .collect::<HashSet<_>>();
         let b_wal_point_ids = b_wal
             .wal
             .lock()
             .await
             .read(0)
-            .map(|(_, op)| get_point(op).id)
+            .map(|e| {
+                let (_, op) = e.unwrap();
+                get_point(op).id
+            })
             .collect::<HashSet<_>>();
         let c_wal_point_ids = c_wal
             .wal
             .lock()
             .await
             .read(0)
-            .map(|(_, op)| get_point(op).id)
+            .map(|e| {
+                let (_, op) = e.unwrap();
+                get_point(op).id
+            })
             .collect::<HashSet<_>>();
         (1..=3).for_each(|i| {
             assert!(a_wal_point_ids.contains(&i.into()));
@@ -1251,7 +1336,16 @@ mod tests {
             .unwrap();
 
         // Diff expected
-        assert_eq!(b_wal.wal.lock().await.read(delta_from).count(), 1);
+        assert_eq!(
+            b_wal
+                .wal
+                .lock()
+                .await
+                .read(delta_from)
+                .map(Result::unwrap)
+                .count(),
+            1
+        );
 
         assert_wal_ordering_property(&a_wal, false).await;
         assert_wal_ordering_property(&b_wal, false).await;
@@ -1442,7 +1536,9 @@ mod tests {
             }
             opened_wals.array_windows().for_each(|[a, b]| {
                 assert!(
-                    a.read(0).eq(b.read(0)),
+                    a.read(0)
+                        .map(Result::unwrap)
+                        .eq(b.read(0).map(Result::unwrap)),
                     "all WALs must have the same entries",
                 );
             });
@@ -1535,7 +1631,7 @@ mod tests {
             wal.wal
                 .blocking_lock()
                 .read_all(true)
-                .map(|(op_num, op)| (op_num, op.clock_tag)),
+                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
             recovery_point,
             newest_clocks,
             RecoveryPoint::default(),
@@ -1562,7 +1658,7 @@ mod tests {
             wal.wal
                 .blocking_lock()
                 .read_all(true)
-                .map(|(op_num, op)| (op_num, op.clock_tag)),
+                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
             recovery_point,
             newest_clocks,
             RecoveryPoint::default(),
@@ -1588,7 +1684,7 @@ mod tests {
             wal.wal
                 .blocking_lock()
                 .read_all(true)
-                .map(|(op_num, op)| (op_num, op.clock_tag)),
+                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
             recovery_point,
             newest_clocks,
             RecoveryPoint::default(),
@@ -1619,7 +1715,34 @@ mod tests {
             wal.wal
                 .blocking_lock()
                 .read_all(true)
-                .map(|(op_num, op)| (op_num, op.clock_tag)),
+                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
+            recovery_point,
+            newest_clocks,
+            oldest_clocks,
+        );
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Cutoff);
+    }
+
+    /// Recovery point may look equal to newest clocks but still be below cutoff.
+    /// This must return cutoff instead of accepting an empty delta.
+    #[test]
+    fn test_recover_point_cutoff_before_equal_removal() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        let mut recovery_point = RecoveryPoint::default();
+        let mut newest_clocks = RecoveryPoint::default();
+        let mut oldest_clocks = RecoveryPoint::default();
+
+        // Same clock in recovery/newest, but below source cutoff.
+        recovery_point.insert(1, 0, 15);
+        newest_clocks.insert(1, 0, 15);
+        oldest_clocks.insert(1, 0, 16);
+
+        let resolve_result = resolve_wal_delta(
+            wal.wal
+                .blocking_lock()
+                .read_all(true)
+                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
             recovery_point,
             newest_clocks,
             oldest_clocks,
@@ -1645,7 +1768,7 @@ mod tests {
             wal.wal
                 .blocking_lock()
                 .read_all(true)
-                .map(|(op_num, op)| (op_num, op.clock_tag)),
+                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
             recovery_point,
             newest_clocks,
             RecoveryPoint::default(),
@@ -1662,6 +1785,7 @@ mod tests {
                 .lock()
                 .await
                 .read(0)
+                .map(Result::unwrap)
                 // Only take records with clock tags
                 .filter_map(|(_, operation)| operation.clock_tag)
                 // Clock tags must be equal or higher to cutoff point

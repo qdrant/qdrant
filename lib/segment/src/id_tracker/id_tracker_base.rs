@@ -1,19 +1,20 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use bitvec::prelude::BitSlice;
-use common::ext::BitSliceExt as _;
+use atomic_refcell::AtomicRef;
+use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
+use self_cell::self_cell;
 
 use super::in_memory_id_tracker::InMemoryIdTracker;
 use super::mutable_id_tracker::MutableIdTracker;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
-#[cfg(feature = "rocksdb")]
-use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
 
 /// Sampling randomness seed
@@ -64,86 +65,8 @@ pub trait IdTracker: fmt::Debug {
     /// If mapping doesn't exist, still removes( unsets ) version.
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()>;
 
-    /// Iterate over all external IDs
-    ///
-    /// Count should match `available_point_count`, excludes soft deleted points.
-    fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
-
-    /// Iterate over internal IDs (offsets)
-    ///
-    /// Count should match `total_point_count`, excludes soft deleted points.
-    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
-
-    /// Iterate over internal IDs (offsets)
-    ///
-    /// - excludes soft deleted points
-    /// - excludes flagged items from `exclude_bitslice`
-    fn iter_internal_excluding<'a>(
-        &'a self,
-        exclude_bitslice: &'a BitSlice,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        Box::new(
-            self.iter_internal()
-                .filter(|point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
-        )
-    }
-
-    /// Iterate starting from a given ID
-    ///
-    /// Excludes soft deleted points.
-    fn iter_from(
-        &self,
-        external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
-
-    /// Iterate over internal IDs in a random order
-    ///
-    /// Excludes soft deleted points.
-    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
-
-    /// Iterate over all internal IDs. Optionally filter all deferred points.
-    fn iter_internal_visible(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        match deferred_internal_id {
-            None => self.iter_internal(),
-            Some(deferred_internal_id) => Box::new(
-                self.iter_internal()
-                    .take_while(move |&id| id < deferred_internal_id),
-            ),
-        }
-    }
-
-    /// Iterate starting from a given ID. Optionally filter all deferred points.
-    fn iter_from_visible(
-        &self,
-        external_id: Option<PointIdType>,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        match deferred_internal_id {
-            None => self.iter_from(external_id),
-            Some(deferred_internal_id) => Box::new(
-                self.iter_from(external_id)
-                    .filter(move |&(_, iid)| iid < deferred_internal_id),
-            ),
-        }
-    }
-
-    fn iter_random_visible(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        match deferred_internal_id {
-            None => self.iter_random(),
-            Some(deferred_internal_id) => Box::new(
-                self.iter_random()
-                    // We _can_ prevent iterating over all points by going down into `iter_random()` and set
-                    // the `max_internal_id` to `deferred_internal_id`.
-                    .filter(move |&(_, iid)| iid < deferred_internal_id),
-            ),
-        }
-    }
+    /// Get a reference to the point mappings, which provides iteration methods.
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_>;
 
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
@@ -232,7 +155,7 @@ pub trait IdTracker: fmt::Debug {
             }
         }
 
-        for internal_id in self.iter_internal() {
+        for internal_id in self.point_mappings().iter_internal() {
             if self.internal_version(internal_id).is_none() {
                 if let Some(external_id) = self.external_id(internal_id) {
                     to_remove.push(external_id);
@@ -257,16 +180,139 @@ pub trait IdTracker: fmt::Debug {
     }
 }
 
+/// Enum holding a reference to point mappings from an ID tracker.
+///
+/// Provides iteration methods over external/internal IDs without requiring
+/// the `IdTracker` trait to return boxed iterators.
+#[derive(Clone, Copy)]
+pub enum PointMappingsRefEnum<'a> {
+    Plain(&'a PointMappings),
+    Compressed(&'a CompressedPointMappings),
+}
+
+impl<'a> PointMappingsRefEnum<'a> {
+    /// Iterate over all external IDs.
+    ///
+    /// Excludes soft deleted points.
+    pub fn iter_external(self) -> Box<dyn Iterator<Item = PointIdType> + 'a> {
+        match self {
+            PointMappingsRefEnum::Plain(m) => m.iter_external(),
+            PointMappingsRefEnum::Compressed(m) => m.iter_external(),
+        }
+    }
+
+    /// Iterate over internal IDs (offsets).
+    ///
+    /// Excludes soft deleted points.
+    pub fn iter_internal(self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        match self {
+            PointMappingsRefEnum::Plain(m) => m.iter_internal(),
+            PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
+        }
+    }
+
+    /// Iterate starting from a given ID.
+    ///
+    /// Excludes soft deleted points.
+    pub fn iter_from(
+        self,
+        external_id: Option<PointIdType>,
+    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
+        match self {
+            PointMappingsRefEnum::Plain(m) => m.iter_from(external_id),
+            PointMappingsRefEnum::Compressed(m) => m.iter_from(external_id),
+        }
+    }
+
+    /// Iterate over internal IDs in a random order.
+    ///
+    /// Excludes soft deleted points.
+    pub fn iter_random(self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
+        match self {
+            PointMappingsRefEnum::Plain(m) => m.iter_random(),
+            PointMappingsRefEnum::Compressed(m) => m.iter_random(),
+        }
+    }
+
+    /// Iterate over internal IDs (offsets), excluding soft deleted points
+    /// and flagged items from `exclude_bitslice`.
+    pub fn iter_internal_excluding(
+        self,
+        exclude_bitslice: &'a BitSlice,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let iter: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
+            PointMappingsRefEnum::Plain(m) => m.iter_internal(),
+            PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
+        };
+        Box::new(
+            iter.filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
+        )
+    }
+
+    /// Iterate over all internal IDs. Optionally filter all deferred points.
+    pub fn iter_internal_visible(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        match deferred_internal_id {
+            None => self.iter_internal(),
+            Some(deferred_internal_id) => Box::new(
+                self.iter_internal()
+                    .take_while(move |&id| id < deferred_internal_id),
+            ),
+        }
+    }
+
+    /// Iterate starting from a given ID. Optionally filter all deferred points.
+    pub fn iter_from_visible(
+        &self,
+        external_id: Option<PointIdType>,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        match deferred_internal_id {
+            None => self.iter_from(external_id),
+            Some(deferred_internal_id) => Box::new(
+                self.iter_from(external_id)
+                    .filter(move |&(_, iid)| iid < deferred_internal_id),
+            ),
+        }
+    }
+
+    pub fn iter_random_visible(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        match deferred_internal_id {
+            None => self.iter_random(),
+            Some(deferred_internal_id) => Box::new(
+                self.iter_random()
+                    // We _can_ prevent iterating over all points by going down into `iter_random()` and set
+                    // the `max_internal_id` to `deferred_internal_id`.
+                    .filter(move |&(_, iid)| iid < deferred_internal_id),
+            ),
+        }
+    }
+}
+
+self_cell! {
+    /// Wrapper around `PointMappingsRefEnum` that only exposes external ID iteration.
+    ///
+    /// Used by `NonAppendableSegmentEntry::iter_points()` to return an iterator
+    /// over external point IDs without creating the iterator inside the unsafe block.
+    pub struct PointMappingsGuard<'a> {
+        owner: AtomicRef<'a, IdTrackerEnum>,
+
+        #[covariant]
+        dependent: PointMappingsRefEnum,
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum IdTrackerEnum {
     MutableIdTracker(MutableIdTracker),
     ImmutableIdTracker(ImmutableIdTracker),
     InMemoryIdTracker(InMemoryIdTracker),
-
-    // Deprecated since Qdrant 1.14
-    #[cfg(feature = "rocksdb")]
-    RocksDbIdTracker(SimpleIdTracker),
 }
 
 impl IdTracker for IdTrackerEnum {
@@ -279,8 +325,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.internal_version(internal_id)
             }
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.internal_version(internal_id),
         }
     }
 
@@ -299,10 +343,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.set_internal_version(internal_id, version)
             }
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
-                id_tracker.set_internal_version(internal_id, version)
-            }
         }
     }
 
@@ -311,8 +351,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.internal_id(external_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.internal_id(external_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.internal_id(external_id),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.internal_id(external_id),
         }
     }
 
@@ -321,8 +359,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.external_id(internal_id),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.external_id(internal_id),
         }
     }
 
@@ -341,10 +377,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.set_link(external_id, internal_id)
             }
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
-                id_tracker.set_link(external_id, internal_id)
-            }
         }
     }
 
@@ -353,8 +385,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.drop(external_id),
         }
     }
 
@@ -363,51 +393,14 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
         }
     }
 
-    fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_external(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_external(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_external(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_external(),
-        }
-    }
-
-    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_internal(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_internal(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_internal(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_internal(),
-        }
-    }
-
-    fn iter_from(
-        &self,
-        external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_from(external_id),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_from(external_id),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_from(external_id),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_from(external_id),
-        }
-    }
-
-    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_random(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_random(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_random(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_random(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.point_mappings(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.point_mappings(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.point_mappings(),
         }
     }
 
@@ -416,8 +409,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.mapping_flusher(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.mapping_flusher(),
         }
     }
 
@@ -426,8 +417,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.versions_flusher(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.versions_flusher(),
         }
     }
 
@@ -436,8 +425,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.total_point_count(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.total_point_count(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.total_point_count(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.total_point_count(),
         }
     }
 
@@ -446,8 +433,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_count(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_count(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_count(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deleted_point_count(),
         }
     }
 
@@ -456,8 +441,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
         }
     }
 
@@ -470,8 +453,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.is_deleted_point(internal_id)
             }
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.is_deleted_point(internal_id),
         }
     }
 
@@ -480,8 +461,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.name(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.name(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.name(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.name(),
         }
     }
 
@@ -492,8 +471,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
         }
     }
 
@@ -502,8 +479,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
         }
     }
 
@@ -512,8 +487,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.files(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.files(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.files(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.files(),
         }
     }
 
@@ -522,8 +495,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.immutable_files(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.immutable_files(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.immutable_files(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.immutable_files(),
         }
     }
 }

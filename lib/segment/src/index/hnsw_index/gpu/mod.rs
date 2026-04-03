@@ -91,6 +91,7 @@ fn create_graph_layers_builder(
 mod tests {
     use ahash::HashSet;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Random;
     use common::types::PointOffsetType;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -105,7 +106,7 @@ mod tests {
     use crate::index::hnsw_index::graph_links::GraphLinksFormatParam;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::{DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum};
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
     pub struct GpuGraphTestData {
         pub vector_storage: VectorStorageEnum,

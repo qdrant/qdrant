@@ -11,11 +11,7 @@ use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
-#[cfg(feature = "rocksdb")]
-use super::map_index::MapIndexBuilder;
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexMmapBuilder};
-#[cfg(feature = "rocksdb")]
-use super::numeric_index::NumericIndexBuilder;
 use super::numeric_index::{
     NumericIndex, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder, StreamRange,
 };
@@ -56,15 +52,15 @@ pub trait PayloadFieldIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
 
     /// Return estimation of amount of points which satisfy given condition.
-    /// Returns `None` if the condition does not match the index type
+    /// Returns `Ok(None)` if the condition does not match the index type
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation>;
+    ) -> OperationResult<Option<CardinalityEstimation>>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
@@ -72,7 +68,7 @@ pub trait PayloadFieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_>;
 }
 
 pub trait ValueIndexer {
@@ -249,7 +245,7 @@ impl FieldIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         self.get_payload_field_index().filter(condition, hw_counter)
     }
 
@@ -257,7 +253,7 @@ impl FieldIndex {
         &self,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         self.get_payload_field_index()
             .estimate_cardinality(condition, hw_counter)
     }
@@ -266,7 +262,7 @@ impl FieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         self.get_payload_field_index()
             .payload_blocks(threshold, key)
     }
@@ -426,23 +422,6 @@ impl FieldIndex {
         }
     }
 
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self {
-            FieldIndex::IntIndex(index) => index.is_rocksdb(),
-            FieldIndex::DatetimeIndex(index) => index.is_rocksdb(),
-            FieldIndex::IntMapIndex(index) => index.is_rocksdb(),
-            FieldIndex::KeywordIndex(index) => index.is_rocksdb(),
-            FieldIndex::FloatIndex(index) => index.is_rocksdb(),
-            FieldIndex::GeoIndex(index) => index.is_rocksdb(),
-            FieldIndex::BoolIndex(index) => index.is_rocksdb(),
-            FieldIndex::FullTextIndex(index) => index.is_rocksdb(),
-            FieldIndex::UuidIndex(index) => index.is_rocksdb(),
-            FieldIndex::UuidMapIndex(index) => index.is_rocksdb(),
-            FieldIndex::NullIndex(_) => false,
-        }
-    }
-
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -564,39 +543,21 @@ pub trait FieldIndexBuilderTrait {
 
 /// Builders for all index types
 pub enum FieldIndexBuilder {
-    #[cfg(feature = "rocksdb")]
-    IntIndex(NumericIndexBuilder<IntPayloadType, IntPayloadType>),
     IntMmapIndex(NumericIndexMmapBuilder<IntPayloadType, IntPayloadType>),
     IntGridstoreIndex(NumericIndexGridstoreBuilder<IntPayloadType, IntPayloadType>),
-    #[cfg(feature = "rocksdb")]
-    DatetimeIndex(NumericIndexBuilder<IntPayloadType, DateTimePayloadType>),
     DatetimeMmapIndex(NumericIndexMmapBuilder<IntPayloadType, DateTimePayloadType>),
     DatetimeGridstoreIndex(NumericIndexGridstoreBuilder<IntPayloadType, DateTimePayloadType>),
-    #[cfg(feature = "rocksdb")]
-    IntMapIndex(MapIndexBuilder<IntPayloadType>),
     IntMapMmapIndex(MapIndexMmapBuilder<IntPayloadType>),
     IntMapGridstoreIndex(MapIndexGridstoreBuilder<IntPayloadType>),
-    #[cfg(feature = "rocksdb")]
-    KeywordIndex(MapIndexBuilder<str>),
     KeywordMmapIndex(MapIndexMmapBuilder<str>),
     KeywordGridstoreIndex(MapIndexGridstoreBuilder<str>),
-    #[cfg(feature = "rocksdb")]
-    FloatIndex(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
     FloatMmapIndex(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
     FloatGridstoreIndex(NumericIndexGridstoreBuilder<FloatPayloadType, FloatPayloadType>),
-    #[cfg(feature = "rocksdb")]
-    GeoIndex(super::geo_index::GeoMapIndexBuilder),
     GeoMmapIndex(GeoMapIndexMmapBuilder),
     GeoGridstoreIndex(GeoMapIndexGridstoreBuilder),
-    #[cfg(feature = "rocksdb")]
-    FullTextIndex(super::full_text_index::text_index::FullTextIndexRocksDbBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
     FullTextGridstoreIndex(FullTextGridstoreIndexBuilder),
-    #[cfg(feature = "rocksdb")]
-    BoolIndex(super::bool_index::simple_bool_index::BoolIndexBuilder),
     BoolMmapIndex(MutableBoolIndexBuilder),
-    #[cfg(feature = "rocksdb")]
-    UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
     UuidGridstoreIndex(MapIndexGridstoreBuilder<UuidIntType>),
     NullIndex(MutableNullIndexBuilder),
@@ -607,39 +568,21 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
 
     fn init(&mut self) -> OperationResult<()> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            Self::IntIndex(index) => index.init(),
             Self::IntMmapIndex(index) => index.init(),
             Self::IntGridstoreIndex(index) => index.init(),
-            #[cfg(feature = "rocksdb")]
-            Self::DatetimeIndex(index) => index.init(),
             Self::DatetimeMmapIndex(index) => index.init(),
             Self::DatetimeGridstoreIndex(index) => index.init(),
-            #[cfg(feature = "rocksdb")]
-            Self::IntMapIndex(index) => index.init(),
             Self::IntMapMmapIndex(index) => index.init(),
             Self::IntMapGridstoreIndex(index) => index.init(),
-            #[cfg(feature = "rocksdb")]
-            Self::KeywordIndex(index) => index.init(),
             Self::KeywordMmapIndex(index) => index.init(),
             Self::KeywordGridstoreIndex(index) => index.init(),
-            #[cfg(feature = "rocksdb")]
-            Self::FloatIndex(index) => index.init(),
             Self::FloatMmapIndex(index) => index.init(),
             Self::FloatGridstoreIndex(index) => index.init(),
-            #[cfg(feature = "rocksdb")]
-            Self::GeoIndex(index) => index.init(),
             Self::GeoMmapIndex(index) => index.init(),
             Self::GeoGridstoreIndex(index) => index.init(),
-            #[cfg(feature = "rocksdb")]
-            Self::BoolIndex(index) => index.init(),
             Self::BoolMmapIndex(index) => index.init(),
-            #[cfg(feature = "rocksdb")]
-            Self::FullTextIndex(index) => index.init(),
             Self::FullTextMmapIndex(builder) => builder.init(),
             Self::FullTextGridstoreIndex(builder) => builder.init(),
-            #[cfg(feature = "rocksdb")]
-            Self::UuidIndex(index) => index.init(),
             Self::UuidMmapIndex(index) => index.init(),
             Self::UuidGridstoreIndex(index) => index.init(),
             Self::NullIndex(index) => index.init(),
@@ -653,43 +596,25 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            #[cfg(feature = "rocksdb")]
-            Self::IntIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            #[cfg(feature = "rocksdb")]
-            Self::DatetimeIndex(index) => index.add_point(id, payload, hw_counter),
             Self::DatetimeMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::DatetimeGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            #[cfg(feature = "rocksdb")]
-            Self::IntMapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntMapMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntMapGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            #[cfg(feature = "rocksdb")]
-            Self::KeywordIndex(index) => index.add_point(id, payload, hw_counter),
             Self::KeywordMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::KeywordGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            #[cfg(feature = "rocksdb")]
-            Self::FloatIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FloatMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FloatGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            #[cfg(feature = "rocksdb")]
-            Self::GeoIndex(index) => index.add_point(id, payload, hw_counter),
             Self::GeoMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::GeoGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            #[cfg(feature = "rocksdb")]
-            Self::BoolIndex(index) => index.add_point(id, payload, hw_counter),
             Self::BoolMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            #[cfg(feature = "rocksdb")]
-            Self::FullTextIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FullTextMmapIndex(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
             Self::FullTextGridstoreIndex(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
-            #[cfg(feature = "rocksdb")]
-            Self::UuidIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
             Self::NullIndex(index) => index.add_point(id, payload, hw_counter),
@@ -698,39 +623,21 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
 
     fn finalize(self) -> OperationResult<FieldIndex> {
         Ok(match self {
-            #[cfg(feature = "rocksdb")]
-            Self::IntIndex(index) => FieldIndex::IntIndex(index.finalize()?),
             Self::IntMmapIndex(index) => FieldIndex::IntIndex(index.finalize()?),
             Self::IntGridstoreIndex(index) => FieldIndex::IntIndex(index.finalize()?),
-            #[cfg(feature = "rocksdb")]
-            Self::DatetimeIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
             Self::DatetimeMmapIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
             Self::DatetimeGridstoreIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
-            #[cfg(feature = "rocksdb")]
-            Self::IntMapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
             Self::IntMapMmapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
             Self::IntMapGridstoreIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
-            #[cfg(feature = "rocksdb")]
-            Self::KeywordIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
             Self::KeywordMmapIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
             Self::KeywordGridstoreIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
-            #[cfg(feature = "rocksdb")]
-            Self::FloatIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::FloatMmapIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::FloatGridstoreIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
-            #[cfg(feature = "rocksdb")]
-            Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::GeoMmapIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::GeoGridstoreIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
-            #[cfg(feature = "rocksdb")]
-            Self::BoolIndex(index) => FieldIndex::BoolIndex(index.finalize()?),
             Self::BoolMmapIndex(index) => FieldIndex::BoolIndex(index.finalize()?),
-            #[cfg(feature = "rocksdb")]
-            Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::FullTextGridstoreIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
-            #[cfg(feature = "rocksdb")]
-            Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidGridstoreIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::NullIndex(index) => FieldIndex::NullIndex(index.finalize()?),

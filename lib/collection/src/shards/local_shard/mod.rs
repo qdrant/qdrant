@@ -31,7 +31,7 @@ use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::defaults::LOAD_TIMING_LOG_TARGET;
+use common::defaults::log_load_timing;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
@@ -43,7 +43,8 @@ use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::Mutex as ParkingMutex;
-use segment::entry::entry_point::NonAppendableSegmentEntry as _;
+use segment::common::operation_error::OperationResult;
+use segment::entry::ReadSegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
@@ -523,12 +524,7 @@ impl LocalShard {
         // Apply outstanding operations from WAL
         local_shard.load_from_wal(collection_id).await?;
 
-        log::debug!(
-            target: LOAD_TIMING_LOG_TARGET,
-            "Shard {} - total loaded in {:.2}s",
-            shard_path.display(),
-            total_started.elapsed().as_secs_f64(),
-        );
+        log_load_timing(shard_path, "total", total_started);
 
         Ok(local_shard)
     }
@@ -714,21 +710,23 @@ impl LocalShard {
 
         let from = wal.first_index();
         let last_wal_index = from + wal.len(false);
-        let to = self
-            .applied_seq_handler
-            .op_num_upper_bound()
-            .unwrap_or(last_wal_index);
+        let op_num_upper_bound = self.applied_seq_handler.op_num_upper_bound();
+        let to = op_num_upper_bound.unwrap_or(last_wal_index);
 
         // Cap the number of WAL entries to move to the update queue size,
         // since the update queue is limited and must hold all pending operations.
         let update_queue_size = self.update_sender.load().capacity();
-        let to = std::cmp::max(
+        let to = cmp::max(
             to,
             last_wal_index.saturating_sub(update_queue_size as u64 - 1),
         );
 
-        let to = std::cmp::min(to, last_wal_index);
-        let wal_entries_to_replay = to - from;
+        let to = cmp::min(to, last_wal_index);
+        debug_assert!(
+            from <= to,
+            "WAL first_index ({from}) is ahead of replay target ({to}) (last_wal_index:{last_wal_index} op_num_upper_bound:{op_num_upper_bound:?})"
+        );
+        let wal_entries_to_replay = to.saturating_sub(from);
 
         assert!(
             last_wal_index - to <= update_queue_size as u64,
@@ -778,7 +776,13 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
-        for (op_num, update) in wal.read_range(from..to) {
+        for entry in wal.read_range(from..to) {
+            let (op_num, update) = entry.map_err(|e| {
+                CollectionError::service_error(format!(
+                    "Failed to read WAL during recovery of {}: {e}",
+                    self.path.display(),
+                ))
+            })?;
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
             }
@@ -865,6 +869,7 @@ impl LocalShard {
                         op_num,
                         operation: None,
                         sender: None,
+                        wait_for_deferred: false,
                         hw_measurements: hw_measurements.clone(),
                     }))
                     .await?;
@@ -932,7 +937,7 @@ impl LocalShard {
         let hw_counter = hw_measurement_acc.get_counter_cell();
         // clone filter for spawning task
         let filter = filter.cloned();
-        let cardinality = tokio::task::spawn_blocking(move || {
+        let cardinality = tokio::task::spawn_blocking(move || -> OperationResult<_> {
             // Collect the segments first so we don't lock the segment holder during the operations.
             let segments = segments
                 .read()
@@ -948,9 +953,9 @@ impl LocalShard {
                         .read() // blocking sync lock
                         .estimate_point_count(filter.as_ref(), &hw_counter)
                 })
-                .merge_independent()
+                .process_results(|iter| iter.merge_independent())
         });
-        let cardinality = AbortOnDropHandle::new(cardinality).await?;
+        let cardinality = AbortOnDropHandle::new(cardinality).await??;
         Ok(cardinality)
     }
 
@@ -974,10 +979,64 @@ impl LocalShard {
         .await
     }
 
-    pub fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
+    // Perform an operation using the shards segments.
+    // This doesn't lock the SegmentHolder during the operation.
+    // The function also allows to specify which type of segments to iterate over.
+    // `appendable_only` iterates over both non-appendable and appendable segments if `false`
+    // and over appendable segments only if `true`.
+    fn do_with_segments<R, F>(&self, mut f: F) -> AbortOnDropHandle<R>
+    where
+        R: Send + 'static,
+        F: FnMut(&[LockedSegment]) -> R + Send + 'static,
+    {
+        let segments_holder = self.segments.clone();
+
+        let handle = tokio::task::spawn_blocking(move || {
+            // Collect the segments first so we don't lock the segment holder during the operation `f`.
+            let segments: Vec<_> = segments_holder
+                .read()
+                .iter()
+                .map(|(_, segment)| segment.clone())
+                .collect();
+
+            f(&segments)
+        });
+
+        AbortOnDropHandle::new(handle)
+    }
+
+    pub async fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
+        let prevent_unoptimized = self
+            .collection_config
+            .read()
+            .await
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or(false);
+
+        let deferred_point_count = if prevent_unoptimized {
+            let deferred_point_count = self
+                .do_with_segments(|segments| {
+                    segments
+                        .iter()
+                        .map(|segment| segment.get().read().deferred_point_count())
+                        .sum::<usize>()
+                })
+                .await;
+
+            if let Err(err) = &deferred_point_count {
+                log::warn!("Failed to get deferred point counts: {err:?}");
+            }
+
+            deferred_point_count.ok()
+        } else {
+            None
+        };
+
         ShardUpdateQueueInfo {
             length: self.update_queue_length(),
             op_num: self.applied_seq_handler.op_num().map(|s| s as usize),
+            deferred_points: deferred_point_count,
         }
     }
 
@@ -1043,37 +1102,30 @@ impl LocalShard {
     pub async fn local_shard_info(&self) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
 
-        let segments = self.segments.clone();
-        let segment_info = tokio::task::spawn_blocking(move || {
-            // Collect the segments first so we don't lock the segment holder during the operations.
-            let segments = segments
-                .read()
-                .iter()
-                .map(|i| i.1.clone())
-                .collect::<Vec<_>>();
+        let segment_info = self
+            .do_with_segments(|segments| {
+                let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
+                let mut indexed_vectors_count = 0;
+                let mut points_count = 0;
+                let mut segments_count = 0;
 
-            let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
-            let mut indexed_vectors_count = 0;
-            let mut points_count = 0;
-            let mut segments_count = 0;
+                for segment in segments {
+                    segments_count += 1;
 
-            for segment in segments {
-                segments_count += 1;
+                    let segment_info = segment.get().read().info();
 
-                let segment_info = segment.get().read().info();
-
-                indexed_vectors_count += segment_info.num_indexed_vectors;
-                points_count += segment_info.num_points;
-                for (key, val) in segment_info.index_schema {
-                    schema
-                        .entry(key)
-                        .and_modify(|entry| entry.points += val.points)
-                        .or_insert(val);
+                    indexed_vectors_count += segment_info.num_indexed_vectors;
+                    points_count += segment_info.num_points;
+                    for (key, val) in segment_info.index_schema {
+                        schema
+                            .entry(key)
+                            .and_modify(|entry| entry.points += val.points)
+                            .or_insert(val);
+                    }
                 }
-            }
-            (schema, indexed_vectors_count, points_count, segments_count)
-        });
-        let segment_info = AbortOnDropHandle::new(segment_info).await;
+                (schema, indexed_vectors_count, points_count, segments_count)
+            })
+            .await;
 
         if let Err(err) = &segment_info {
             log::error!("Failed to get local shard info: {err}");
@@ -1084,7 +1136,7 @@ impl LocalShard {
 
         let (status, optimizer_status) = self.local_shard_status().await;
 
-        let update_queue = self.local_update_queue_info();
+        let update_queue = self.local_update_queue_info().await;
 
         ShardInfoInternal {
             status,
@@ -1197,11 +1249,14 @@ impl LocalShard {
     /// Get the last N entries from the WAL
     ///
     /// Returns a vector of (sequence_number, operation) tuples, newest first.
-    pub async fn get_wal_entries(&self, count: u64) -> Vec<(SeqNumberType, OperationWithClockTag)> {
+    pub async fn get_wal_entries(
+        &self,
+        count: u64,
+    ) -> CollectionResult<Vec<(SeqNumberType, OperationWithClockTag)>> {
         let wal = self.wal.wal.lock().await;
 
         if wal.len(true) == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let count = cmp::min(count, wal.len(true));
@@ -1209,7 +1264,10 @@ impl LocalShard {
         let end = wal.last_index();
         let start = end.saturating_sub(count);
 
-        wal.read_range(start..end + 1).rev().collect()
+        wal.read_range(start..end + 1)
+            .rev()
+            .collect::<shard::wal::Result<Vec<_>>>()
+            .map_err(|e| CollectionError::service_error(format!("Failed to read WAL entries: {e}")))
     }
 
     /// Check if the read rate limiter allows the operation to proceed

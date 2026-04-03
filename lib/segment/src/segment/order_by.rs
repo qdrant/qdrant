@@ -36,21 +36,23 @@ impl Segment {
                 key: order_by.key.to_string(),
             })?;
 
-        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
+        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter)?;
 
         let start_from = order_by.start_from();
 
-        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
 
+        let point_mappings = id_tracker.point_mappings();
         let values_ids_iterator = payload_index
             .iter_filtered_points(
                 condition,
                 &id_tracker,
+                &point_mappings,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
                 effective_deferred_id,
-            )
+            )?
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has
                 numeric_index
@@ -114,7 +116,7 @@ impl Segment {
             // We can't early stop the iterator for deferred points because the items are sorted lexicographically by type `(T, internalID)`.
             .filter(|&(_, internal_id)| {
                 deferred_behavior.include_all_points()
-                    || internal_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+                    || internal_id < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
             });
 
         let directed_range_iter = match order_by.direction() {
@@ -127,7 +129,7 @@ impl Segment {
         let filtered_iter = match filter {
             None => Either::Left(directed_range_iter),
             Some(filter) => {
-                let filter_context = payload_index.filter_context(filter, hw_counter);
+                let filter_context = payload_index.filter_context(filter, hw_counter)?;
 
                 Either::Right(
                     directed_range_iter

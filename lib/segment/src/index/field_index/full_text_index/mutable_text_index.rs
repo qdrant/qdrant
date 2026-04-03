@@ -14,8 +14,6 @@ use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-#[cfg(feature = "rocksdb")]
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::ValueIndexer;
 use crate::index::payload_config::StorageType;
@@ -35,47 +33,10 @@ pub struct MutableFullTextIndex {
 }
 
 pub(super) enum Storage {
-    #[cfg(feature = "rocksdb")]
-    RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Gridstore(Gridstore<Vec<u8>>),
 }
 
 impl MutableFullTextIndex {
-    /// Open and load mutable full text index from RocksDB storage
-    #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb(
-        db_wrapper: DatabaseColumnScheduledDeleteWrapper,
-        config: TextIndexParams,
-        create_if_missing: bool,
-    ) -> OperationResult<Option<Self>> {
-        let tokenizer = Tokenizer::new_from_text_index_params(&config);
-
-        if !db_wrapper.has_column_family()? {
-            if create_if_missing {
-                db_wrapper.recreate_column_family()?;
-            } else {
-                // Column family doesn't exist, cannot load
-                return Ok(None);
-            }
-        };
-
-        let phrase_matching = config.phrase_matching.unwrap_or_default();
-        let db = db_wrapper.clone();
-        let db = db.lock_db();
-        let iter = db.iter()?.map(|(key, value)| {
-            let idx = FullTextIndex::restore_key(&key);
-            let str_tokens = FullTextIndex::deserialize_document(&value)?;
-            Ok((idx, str_tokens))
-        });
-
-        Ok(Some(Self {
-            inverted_index: MutableInvertedIndex::build_index(iter, phrase_matching)?,
-            config,
-            storage: Storage::RocksDb(db_wrapper),
-            tokenizer,
-        }))
-    }
-
     /// Open and load mutable full text index from Gridstore storage
     ///
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
@@ -137,8 +98,6 @@ impl MutableFullTextIndex {
     #[inline]
     pub(super) fn init(&mut self) -> OperationResult<()> {
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Gridstore(store) => store.clear().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable full text index: {err}",
@@ -150,8 +109,6 @@ impl MutableFullTextIndex {
     #[inline]
     pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
             Storage::Gridstore(store) => store.wipe().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to wipe mutable full text index: {err}",
@@ -166,8 +123,6 @@ impl MutableFullTextIndex {
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => Ok(()),
             Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable full text index gridstore cache: {err}"
@@ -179,8 +134,6 @@ impl MutableFullTextIndex {
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => vec![],
             Storage::Gridstore(store) => store.files(),
         }
     }
@@ -188,8 +141,6 @@ impl MutableFullTextIndex {
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
                 let storage_flusher = store.flusher();
                 Box::new(move || {
@@ -246,11 +197,6 @@ impl MutableFullTextIndex {
 
         // Update persisted storage
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => {
-                let db_idx = FullTextIndex::store_key(idx);
-                db_wrapper.put(db_idx, db_document)?;
-            }
             Storage::Gridstore(store) => {
                 store
                     .put_value(
@@ -269,17 +215,9 @@ impl MutableFullTextIndex {
         Ok(())
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
         match &mut self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => {
-                if self.inverted_index.remove(id) {
-                    let db_doc_id = FullTextIndex::store_key(id);
-                    db_wrapper.remove(db_doc_id)?;
-                }
-            }
             Storage::Gridstore(store) => {
                 if self.inverted_index.remove(id) {
                     store.delete_value(id)?;
@@ -293,17 +231,10 @@ impl MutableFullTextIndex {
     /// Get the tokenized document stored for a given point ID. Only for testing purposes.
     #[cfg(test)]
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
+        use common::generic_consts::Random;
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db) => {
-                let db_idx = FullTextIndex::store_key(idx);
-                db.get_pinned(&db_idx, |bytes| {
-                    FullTextIndex::deserialize_document(bytes).unwrap()
-                })
-                .unwrap()
-            }
             Storage::Gridstore(gridstore) => gridstore
-                .get_value::<false>(idx, &HardwareCounterCell::disposable())
+                .get_value::<Random>(idx, &HardwareCounterCell::disposable())
                 .unwrap()
                 .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
         }
@@ -311,17 +242,7 @@ impl MutableFullTextIndex {
 
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Gridstore(_) => StorageType::Gridstore,
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self.storage {
-            Storage::RocksDb(_) => true,
-            Storage::Gridstore(_) => false,
         }
     }
 }
@@ -423,6 +344,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
+                .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0, 4]);
 
@@ -430,12 +352,14 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
+                .unwrap()
                 .collect();
             assert_eq!(search_res, vec![2]);
 
             let filter_condition = filter_request("the great time");
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
+                .unwrap()
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![4]);
@@ -447,6 +371,7 @@ mod tests {
             assert!(
                 index
                     .filter(&filter_condition, &hw_counter)
+                    .unwrap()
                     .unwrap()
                     .next()
                     .is_none()
@@ -485,12 +410,14 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
+                .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0]);
 
             let filter_condition = filter_request("the");
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
+                .unwrap()
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0, 1, 3, 4]);
@@ -501,6 +428,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
+                .unwrap()
                 .collect();
             assert!(search_res.is_empty());
             assert_eq!(index.count_indexed_points(), 3);
@@ -509,6 +437,7 @@ mod tests {
             let filter_condition = filter_request("the");
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
+                .unwrap()
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![1, 4]);

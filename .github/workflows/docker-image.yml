@@ -16,10 +16,10 @@ jobs:
       packages: write
       id-token: write # needed for cosign keyless signing with OIDC
     steps:
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
     - name: Install cosign
-      uses: sigstore/cosign-installer@v4.1.0
+      uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -53,7 +53,7 @@ jobs:
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
 
         # Pull, retag and push to GitHub packages
-        docker buildx build --sbom=true --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} --build-arg=FEATURES=rocksdb $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --sbom=true --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
@@ -70,7 +70,7 @@ jobs:
         GITHUB_TAG_UNPRIVILEGED="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
 
         # Pull, retag and push to GitHub packages
-        docker buildx build --sbom=true --build-arg='USER_ID=1000' --platform='linux/amd64,linux/arm64' --build-arg=FEATURES=rocksdb $TAGS_UNPRIVILEGED --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --sbom=true --build-arg='USER_ID=1000' --platform='linux/amd64,linux/arm64' $TAGS_UNPRIVILEGED --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG_UNPRIVILEGED
         docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
         docker push $GITHUB_TAG_UNPRIVILEGED
@@ -85,10 +85,10 @@ jobs:
       packages: write
       id-token: write # needed for cosign keyless signing with OIDC
     steps:
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
     - name: Install cosign
-      uses: sigstore/cosign-installer@v4.1.0
+      uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -122,7 +122,7 @@ jobs:
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-gpu-nvidia"
 
         # Pull, retag and push to GitHub packages
-        docker buildx build --sbom=true --build-arg GPU=nvidia --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} --build-arg=FEATURES=rocksdb $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --sbom=true --build-arg GPU=nvidia --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
@@ -139,7 +139,7 @@ jobs:
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
 
         # Pull, retag and push to GitHub packages
-        docker buildx build --sbom=true --build-arg GPU=amd --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} --build-arg=FEATURES=rocksdb $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --sbom=true --build-arg GPU=amd --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG

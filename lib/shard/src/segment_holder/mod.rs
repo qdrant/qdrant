@@ -25,7 +25,9 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::{
+    NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
+};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
@@ -255,6 +257,11 @@ impl SegmentHolder {
             .cloned()
     }
 
+    /// Iterates appendable segments only.
+    pub fn iter_appendable(&self) -> impl Iterator<Item = LockedSegment> {
+        self.appendable_segments.values().cloned()
+    }
+
     /// Get two separate lists for non-appendable and appendable locked segments
     pub fn split_segments(&self) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
         (
@@ -340,10 +347,7 @@ impl SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(
-        ids: &[PointIdType],
-        segment: &dyn NonAppendableSegmentEntry,
-    ) -> Vec<PointIdType> {
+    fn segment_points(ids: &[PointIdType], segment: &dyn ReadSegmentEntry) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
             .filter(|id| segment.has_point(*id))
@@ -455,13 +459,11 @@ impl SegmentHolder {
 
     pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
     where
-        F: FnMut(
-            &RwLockReadGuard<dyn NonAppendableSegmentEntry + 'static>,
-        ) -> OperationResult<bool>,
+        F: FnMut(&RwLockReadGuard<dyn ReadSegmentEntry + 'static>) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
-            let is_applied = f(&segment.get_non_appendable().read())?;
+            let is_applied = f(&segment.get_read().read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
@@ -470,12 +472,12 @@ impl SegmentHolder {
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
     where
         F: FnMut(
-            &mut RwLockUpgradableReadGuard<dyn NonAppendableSegmentEntry + 'static>,
+            &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
         ) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
-            let is_applied = f(&mut segment.get_non_appendable().upgradable_read())?;
+            let is_applied = f(&mut segment.get().upgradable_read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
@@ -583,8 +585,8 @@ impl SegmentHolder {
     /// Try to acquire read lock over the given segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     fn aloha_lock_segment_read(
-        segment: &'_ RwLock<dyn NonAppendableSegmentEntry>,
-    ) -> RwLockReadGuard<'_, dyn NonAppendableSegmentEntry> {
+        segment: &'_ RwLock<dyn StorageSegmentEntry>,
+    ) -> RwLockReadGuard<'_, dyn StorageSegmentEntry> {
         let mut interval = Duration::from_nanos(100);
         loop {
             if let Some(guard) = segment.try_read_for(interval) {
@@ -943,15 +945,13 @@ impl SegmentHolder {
         // Iterator produces groups of points by point ID
         let point_group_iter = locked_segments
             .iter()
-            .map(|(&segment_id, locked_segment)| {
-                locked_segment
-                    .iter_points()
-                    .map(move |point_id| DedupPoint {
-                        segment_id,
-                        point_id,
-                        version: None,
-                        is_deferred: false,
-                    })
+            .map(|(&segment_id, segment)| {
+                segment.iter_points().map(move |point_id| DedupPoint {
+                    segment_id,
+                    point_id,
+                    version: None,
+                    is_deferred: false,
+                })
             })
             .kmerge_by(|a, b| a.point_id < b.point_id)
             .chunk_by(|entry| entry.point_id);

@@ -1,13 +1,12 @@
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::BitSlice;
+use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::ext::BitSliceExt as _;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::query::{
-    ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
+    ContextQuery, DiscoverQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
 };
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
@@ -57,53 +56,28 @@ pub fn new_raw_scorer<'a>(
     hc: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage {
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::DenseSimple(vs) => raw_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::DenseSimpleByte(vs) => raw_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::DenseSimpleHalf(vs) => raw_scorer_impl(query, vs, hc),
         VectorStorageEnum::DenseVolatile(vs) => raw_scorer_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileByte(vs) => raw_scorer_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileHalf(vs) => raw_scorer_impl(query, vs, hc),
 
-        VectorStorageEnum::DenseMemmap(vs) => {
-            if vs.has_async_reader() {
-                #[cfg(target_os = "linux")]
-                {
-                    let scorer_result = super::async_raw_scorer::new(query.clone(), vs, hc.fork());
-                    match scorer_result {
-                        Ok(raw_scorer) => return Ok(raw_scorer),
-                        Err(err) => log::error!("failed to initialize async raw scorer: {err}"),
-                    };
-                }
-
-                #[cfg(not(target_os = "linux"))]
-                log::warn!("async raw scorer is only supported on Linux");
-            }
-
-            raw_scorer_impl(query, vs.as_ref(), hc)
-        }
-
-        // TODO(byte_storage): Implement async raw scorer for DenseMemmapByte and DenseMemmapHalf
+        VectorStorageEnum::DenseMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUring(vs) => super::async_raw_scorer::new(query, vs, hc),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUringByte(vs) => super::async_raw_scorer::new(query, vs, hc),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUringHalf(vs) => super::async_raw_scorer::new(query, vs, hc),
 
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::SparseSimple(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::MultiDenseSimple(vs) => raw_multi_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::MultiDenseSimpleByte(vs) => raw_multi_scorer_impl(query, vs, hc),
-        #[cfg(feature = "rocksdb")]
-        VectorStorageEnum::MultiDenseSimpleHalf(vs) => raw_multi_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::MultiDenseVolatileByte(vs) => raw_multi_scorer_impl(query, vs, hc),
@@ -170,10 +144,10 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
-        QueryVector::Discovery(discovery_query) => {
-            let discovery_query: DiscoveryQuery<SparseVector> = discovery_query.transform_into()?;
+        QueryVector::Discover(discover_query) => {
+            let discover_query: DiscoverQuery<SparseVector> = discover_query.transform_into()?;
             let query_scorer = SparseCustomQueryScorer::<_, _>::new(
-                discovery_query,
+                discover_query,
                 vector_storage,
                 hardware_counter,
             );
@@ -285,10 +259,10 @@ fn new_scorer_with_metric<
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
-        QueryVector::Discovery(discovery_query) => {
-            let discovery_query: DiscoveryQuery<DenseVector> = discovery_query.transform_into()?;
+        QueryVector::Discover(discover_query) => {
+            let discover_query: DiscoverQuery<DenseVector> = discover_query.transform_into()?;
             let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
-                discovery_query,
+                discover_query,
                 vector_storage,
                 hardware_counter_cell,
             );
@@ -398,11 +372,11 @@ fn new_multi_scorer_with_metric<
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
-        QueryVector::Discovery(discovery_query) => {
-            let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
-                discovery_query.transform_into()?;
+        QueryVector::Discover(discover_query) => {
+            let discover_query: DiscoverQuery<MultiDenseVectorInternal> =
+                discover_query.transform_into()?;
             let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
-                discovery_query,
+                discover_query,
                 vector_storage,
                 hardware_counter,
             );

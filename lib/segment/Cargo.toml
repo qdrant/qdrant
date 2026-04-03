@@ -15,7 +15,6 @@ workspace = true
 default = []
 testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
 gpu = ["gpu/gpu"]
-rocksdb = ["dep:rocksdb"]
 
 [build-dependencies]
 cc = { workspace = true }
@@ -51,11 +50,6 @@ tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
 itertools = { workspace = true }
-rocksdb = { version = "0.24.0", optional = true, default-features = false, features = [
-    "bindgen-runtime",
-    "snappy",
-    "lz4",
-] }
 uuid = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
@@ -88,7 +82,7 @@ ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
-self_cell = { workspace = true }
+self_cell.workspace = true
 sha2 = { workspace = true }
 smallvec = { workspace = true }
 strum = { workspace = true }
@@ -98,7 +92,7 @@ zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
 sysinfo = "0.38"
-charabia = { version = "0.9.7", default-features = false, features = [
+charabia = { version = "0.9.9", default-features = false, features = [
     "greek",
     "hebrew",
     "thai",
@@ -129,7 +123,7 @@ io-uring = "0.7.11"
 [[bench]]
 name = "vector_search"
 harness = false
-required-features = ["rocksdb"]
+bench = false # TODO(rocksdb): fix and re-enable (or just remove)
 
 [[bench]]
 name = "hnsw_build_graph"
@@ -178,12 +172,12 @@ harness = false
 [[bench]]
 name = "sparse_index_build"
 harness = false
-required-features = ["rocksdb"]
+bench = false # TODO(rocksdb): fix and re-enable (or just remove)
 
 [[bench]]
 name = "sparse_vector_storage"
 harness = false
-required-features = ["rocksdb"]
+bench = false # TODO(rocksdb): fix and re-enable (or just remove)
 
 [[bench]]
 name = "multi_vector_search"

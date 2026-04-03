@@ -115,8 +115,8 @@ impl Points for PointsService {
 
         let auth = extract_auth(&mut request);
         let inner_request = request.into_inner();
-        let hw_metrics = self
-            .get_request_collection_hw_usage_counter(inner_request.collection_name.clone(), None);
+        let collection_name = inner_request.collection_name.clone();
+        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
         get(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -165,10 +165,8 @@ impl Points for PointsService {
 
         let auth = extract_auth(&mut request);
 
-        let hw_metrics = self.get_request_collection_hw_usage_counter(
-            request.get_ref().collection_name.clone(),
-            None,
-        );
+        let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
         delete_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -435,9 +433,9 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
 
         let inner_request = request.into_inner();
+        let collection_name = inner_request.collection_name.clone();
 
-        let hw_metrics = self
-            .get_request_collection_hw_usage_counter(inner_request.collection_name.clone(), None);
+        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
         scroll(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -678,10 +676,8 @@ impl Points for PointsService {
     ) -> Result<Response<FacetResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let hw_metrics = self.get_request_collection_hw_usage_counter(
-            request.get_ref().collection_name.clone(),
-            None,
-        );
+        let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         facet(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),

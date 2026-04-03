@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
-use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use common::bitvec::{BitSlice, BitVec};
 use common::fs::OneshotFile;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
@@ -19,7 +19,7 @@ use super::point_mappings::FileEndianess;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 const FILE_MAPPINGS: &str = "mutable_id_tracker.mappings";
@@ -268,23 +268,8 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
-    fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        self.mappings.iter_external()
-    }
-
-    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.mappings.iter_internal()
-    }
-
-    fn iter_from(
-        &self,
-        external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        self.mappings.iter_from(external_id)
-    }
-
-    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        self.mappings.iter_random()
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+        PointMappingsRefEnum::Plain(&self.mappings)
     }
 
     fn total_point_count(&self) -> usize {
@@ -935,8 +920,6 @@ pub(super) mod tests {
 
     use fs_err as fs;
     use itertools::Itertools;
-    #[cfg(feature = "rocksdb")]
-    use rand::Rng;
     use rand::prelude::*;
     use tempfile::Builder;
     use uuid::Uuid;
@@ -944,8 +927,6 @@ pub(super) mod tests {
     use super::*;
     use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
     use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-    #[cfg(feature = "rocksdb")]
-    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;
     const DEFAULT_VERSION: SeqNumberType = 42;
@@ -967,12 +948,19 @@ pub(super) mod tests {
         id_tracker.set_link(177.into(), 8).unwrap();
         id_tracker.set_link(118.into(), 9).unwrap();
 
-        let first_four = id_tracker.iter_from(None).take(4).collect_vec();
+        let first_four = id_tracker
+            .point_mappings()
+            .iter_from(None)
+            .take(4)
+            .collect_vec();
 
         assert_eq!(first_four.len(), 4);
         assert_eq!(first_four[0].0, 100.into());
 
-        let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
+        let last = id_tracker
+            .point_mappings()
+            .iter_from(Some(first_four[3].0))
+            .collect_vec();
         assert_eq!(last.len(), 7);
     }
 
@@ -997,7 +985,11 @@ pub(super) mod tests {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let id_tracker = make_mutable_tracker(segment_dir.path());
 
-        let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
+        let sorted_from_tracker = id_tracker
+            .point_mappings()
+            .iter_from(None)
+            .map(|(k, _)| k)
+            .collect_vec();
 
         let mut values = TEST_POINTS.to_vec();
         values.sort();
@@ -1106,7 +1098,7 @@ pub(super) mod tests {
     fn test_all_points_have_version() {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let id_tracker = make_mutable_tracker(segment_dir.path());
-        for i in id_tracker.iter_internal() {
+        for i in id_tracker.point_mappings().iter_internal() {
             assert!(id_tracker.internal_version(i).is_some());
         }
     }
@@ -1120,15 +1112,26 @@ pub(super) mod tests {
 
         let point_to_delete = PointIdType::NumId(100);
 
-        assert!(id_tracker.iter_external().contains(&point_to_delete));
+        assert!(
+            id_tracker
+                .point_mappings()
+                .iter_external()
+                .contains(&point_to_delete)
+        );
 
         assert_eq!(id_tracker.internal_id(point_to_delete), Some(0));
 
         id_tracker.drop(point_to_delete).unwrap();
 
         let point_exists = id_tracker.internal_id(point_to_delete).is_some()
-            && id_tracker.iter_external().contains(&point_to_delete)
-            && id_tracker.iter_from(None).any(|i| i.0 == point_to_delete);
+            && id_tracker
+                .point_mappings()
+                .iter_external()
+                .contains(&point_to_delete)
+            && id_tracker
+                .point_mappings()
+                .iter_from(None)
+                .any(|i| i.0 == point_to_delete);
 
         assert!(!point_exists);
 
@@ -1434,7 +1437,9 @@ pub(super) mod tests {
     }
 
     #[test]
-    #[cfg(feature = "rocksdb")]
+    // TODO(rocksdb): fix and re-enable
+    // https://github.com/qdrant/qdrant/pull/8529#discussion_r3014389245
+    #[cfg(false)]
     fn simple_id_tracker_vs_mutable_tracker_congruence() {
         use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 
@@ -1483,7 +1488,7 @@ pub(super) mod tests {
         }
 
         fn check_trackers(a: &SimpleIdTracker, b: &MutableIdTracker) {
-            for (external_id, internal_id) in a.iter_from(None) {
+            for (external_id, internal_id) in a.point_mappings().iter_from(None) {
                 assert_eq!(
                     a.internal_version(internal_id).unwrap(),
                     b.internal_version(internal_id).unwrap()
@@ -1496,7 +1501,7 @@ pub(super) mod tests {
                 );
             }
 
-            for (external_id, internal_id) in b.iter_from(None) {
+            for (external_id, internal_id) in b.point_mappings().iter_from(None) {
                 assert_eq!(
                     a.internal_version(internal_id).unwrap(),
                     b.internal_version(internal_id).unwrap()

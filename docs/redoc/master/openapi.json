@@ -32,7 +32,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -204,7 +205,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -322,6 +324,15 @@
             }
           },
           {
+            "name": "per_collection",
+            "in": "query",
+            "description": "If true, include per-collection request statistics in the response",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "timeout",
             "in": "query",
             "description": "Timeout for this request",
@@ -406,6 +417,15 @@
             "name": "anonymize",
             "in": "query",
             "description": "If true, anonymize result",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "per_collection",
+            "in": "query",
+            "description": "If true, include per-collection request metrics with a collection label instead of global request metrics",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -858,7 +878,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           },
           {
@@ -1109,7 +1130,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -1204,7 +1226,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -1289,7 +1312,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -1376,7 +1400,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -1861,7 +1886,8 @@
             "in": "query",
             "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -7789,6 +7815,13 @@
             "minimum": 0,
             "nullable": true
           },
+          "search_max_batchsize": {
+            "description": "Max batchsize when searching",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "max_collection_vector_size_bytes": {
             "description": "Max size of a collections vector storage in bytes, ignoring replicas.",
             "type": "integer",
@@ -8432,6 +8465,13 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "deferred_points": {
+            "description": "Number of points that are deferred (i.e hidden from search as they're not yet optimized).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -10426,6 +10466,13 @@
             "minimum": 0,
             "nullable": true
           },
+          "search_max_batchsize": {
+            "description": "Max batchsize when searching",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "max_collection_vector_size_bytes": {
             "description": "Max size of a collections vector storage in bytes, ignoring replicas.",
             "type": "integer",
@@ -12238,43 +12285,8 @@
             "default": false,
             "type": "boolean"
           },
-          "payload_index_skip_rocksdb": {
-            "description": "Skip usage of RocksDB in new immutable payload indices.\n\nFirst implemented in Qdrant 1.13.5. Enabled by default in Qdrant 1.14.1.",
-            "default": true,
-            "type": "boolean"
-          },
-          "payload_index_skip_mutable_rocksdb": {
-            "description": "Skip usage of RocksDB in new mutable payload indices.\n\nFirst implemented in Qdrant 1.15.0. Enabled by default in Qdrant 1.16.0.",
-            "default": true,
-            "type": "boolean"
-          },
-          "payload_storage_skip_rocksdb": {
-            "description": "Skip usage of RocksDB in new payload storages.\n\nOn-disk payload storages never use Gridstore.\n\nFirst implemented in Qdrant 1.15.0. Enabled by default in Qdrant 1.16.0.",
-            "default": true,
-            "type": "boolean"
-          },
           "incremental_hnsw_building": {
             "description": "Use incremental HNSW building.\n\nEnabled by default in Qdrant 1.14.1.",
-            "default": true,
-            "type": "boolean"
-          },
-          "migrate_rocksdb_id_tracker": {
-            "description": "Migrate RocksDB based ID trackers into file based ID tracker on start.\n\nEnabled by default in Qdrant 1.15.0.",
-            "default": true,
-            "type": "boolean"
-          },
-          "migrate_rocksdb_vector_storage": {
-            "description": "Migrate RocksDB based vector storages into new format on start.\n\nEnabled by default in Qdrant 1.16.1.",
-            "default": true,
-            "type": "boolean"
-          },
-          "migrate_rocksdb_payload_storage": {
-            "description": "Migrate RocksDB based payload storages into new format on start.\n\nEnabled by default in Qdrant 1.16.1.",
-            "default": true,
-            "type": "boolean"
-          },
-          "migrate_rocksdb_payload_indices": {
-            "description": "Migrate RocksDB based payload indices into new format on start.\n\nRebuilds a new payload index from scratch.\n\nEnabled by default in Qdrant 1.16.1.",
             "default": true,
             "type": "boolean"
           },
@@ -12778,6 +12790,18 @@
             "format": "uint",
             "minimum": 0
           },
+          "num_deferred_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_deleted_deferred_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "num_indexed_vectors": {
             "type": "integer",
             "format": "uint",
@@ -12824,6 +12848,13 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/VectorDataInfo"
             }
+          },
+          "deferred_internal_id": {
+            "description": "Internal ID from which points are deferred (hidden from reads). Only set for appendable segments.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -13122,13 +13153,6 @@
       "SparseVectorStorageType": {
         "oneOf": [
           {
-            "description": "Storage on disk (rocksdb storage)",
-            "type": "string",
-            "enum": [
-              "on_disk"
-            ]
-          },
-          {
             "description": "Storage in memory maps (gridstore storage)",
             "type": "string",
             "enum": [
@@ -13140,34 +13164,6 @@
       "PayloadStorageType": {
         "description": "Type of payload storage",
         "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "in_memory"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "on_disk"
-                ]
-              }
-            }
-          },
           {
             "type": "object",
             "required": [
@@ -13455,6 +13451,13 @@
           },
           "op_num": {
             "description": "last operation number processed",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "deferred_points": {
+            "description": "Number of points that are deferred (i.e hidden from search as they're not yet optimized).",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -13844,6 +13847,18 @@
                 "$ref": "#/components/schemas/OperationDurationStatistics"
               }
             }
+          },
+          "per_collection_responses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OperationDurationStatistics"
+                }
+              }
+            }
           }
         }
       },
@@ -13859,6 +13874,18 @@
               "type": "object",
               "additionalProperties": {
                 "$ref": "#/components/schemas/OperationDurationStatistics"
+              }
+            }
+          },
+          "per_collection_responses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OperationDurationStatistics"
+                }
               }
             }
           }

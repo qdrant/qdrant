@@ -228,6 +228,13 @@ Examples and/or documentation of Qdrant integrations:
 - [OpenAI - ChatGPT retrieval plugin](https://github.com/openai/chatgpt-retrieval-plugin/blob/main/docs/providers/qdrant/setup.md) - Use Qdrant as a memory backend for ChatGPT
 - [Microsoft Semantic Kernel](https://devblogs.microsoft.com/semantic-kernel/the-power-of-persistent-memory-with-semantic-kernel-and-qdrant-vector-database/) - Use Qdrant as persistent memory with Semantic Kernel
 
+## Contributing
+
+We are happy to receive your contributions! Before opening a pull request, please read our [Contributing Guide](docs/CONTRIBUTING.md).
+
+> [!IMPORTANT]
+> Our development branch is `dev`, not `master`. Please fork the repo, branch from `dev`, and open your pull request against `dev`. PRs targeting `master` will be asked to retarget.
+
 ## Contacts
 
 - Have questions? Join our [Discord channel](https://qdrant.to/discord) or mention [@qdrant_engine on Twitter](https://qdrant.to/twitter)

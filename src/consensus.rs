@@ -725,7 +725,7 @@ impl Consensus {
     }
 
     fn is_leader(&self) -> bool {
-        self.node.status().ss.raft_state == raft::StateRole::Leader
+        self.node.status().ss.raft_state == StateRole::Leader
     }
 
     fn try_sync_local_state(&self) -> anyhow::Result<()> {
@@ -773,7 +773,7 @@ impl Consensus {
         // If we reached this point, we are the origin peer, but it's impossible to propose anything
         // to consensus, before leader is elected (`propose_conf_change` will return an error),
         // so we have to wait for a few ticks for self-election
-        if status.ss.raft_state != StateRole::Leader {
+        if !self.is_leader() {
             return Err(TryAddOriginError::NotLeader);
         }
 
@@ -796,7 +796,7 @@ impl Consensus {
             .ok_or_else(|| TryAddOriginError::UriNotFound)?
             .to_string();
 
-        self.node.propose_conf_change(peer_uri.into(), change)?;
+        self.node.propose_conf_change(Vec::from(peer_uri), change)?;
 
         Ok(true)
     }
@@ -808,7 +808,7 @@ impl Consensus {
     /// that guarantees that learner will start voting only after it applies all the changes in the log
     fn try_promote_learner(&mut self) -> anyhow::Result<bool> {
         // Promote only if leader
-        if self.node.status().ss.raft_state != StateRole::Leader {
+        if !self.is_leader() {
             return Ok(false);
         }
 
@@ -1452,7 +1452,7 @@ mod tests {
     use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
-    use storage::rbac::{Access, Auth, AuthType};
+    use storage::rbac::{Access, Auth};
     use tempfile::Builder;
 
     use super::Consensus;
@@ -1576,7 +1576,7 @@ mod tests {
                         )
                         .unwrap(),
                     ),
-                    Auth::new(Access::full("For test"), None, None, AuthType::Internal),
+                    Auth::new_internal(Access::full("For test")),
                     None,
                 ),
             )

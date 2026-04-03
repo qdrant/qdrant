@@ -58,9 +58,9 @@ impl UnindexedField {
         collection_name: String,
     ) -> Result<Self, OperationError> {
         if field_schemas.is_empty() {
-            return Err(OperationError::ValidationError {
-                description: "Cannot create issue which won't have a solution".to_string(),
-            });
+            return Err(OperationError::validation_error(
+                "Cannot create issue which won't have a solution",
+            ));
         }
 
         let encoded_collection_name = urlencoding::encode(&collection_name);
@@ -72,9 +72,7 @@ impl UnindexedField {
             Ok(uri) => uri,
             Err(e) => {
                 log::trace!("Failed to build uri: {e}");
-                return Err(OperationError::ValidationError {
-                    description: "Bad collection name".to_string(),
-                });
+                return Err(OperationError::validation_error("Bad collection name"));
             }
         };
 

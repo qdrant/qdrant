@@ -340,6 +340,7 @@ impl DiffConfig<StrictModeConfig> for StrictModeConfig {
             multivector_config,
             sparse_config,
             max_payload_index_count,
+            search_max_batchsize,
         } = diff;
 
         StrictModeConfig {
@@ -354,6 +355,7 @@ impl DiffConfig<StrictModeConfig> for StrictModeConfig {
             search_allow_exact: search_allow_exact.or(self.search_allow_exact),
             search_max_oversampling: search_max_oversampling.or(self.search_max_oversampling),
             upsert_max_batchsize: upsert_max_batchsize.or(self.upsert_max_batchsize),
+            search_max_batchsize: search_max_batchsize.or(self.search_max_batchsize),
             max_collection_vector_size_bytes: max_collection_vector_size_bytes
                 .or(self.max_collection_vector_size_bytes),
             read_rate_limit: read_rate_limit.or(self.read_rate_limit),

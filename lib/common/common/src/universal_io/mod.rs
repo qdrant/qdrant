@@ -1,24 +1,32 @@
-mod file_ops;
+#[cfg(not(target_os = "windows"))]
+pub mod disk_cache;
+pub mod error;
+pub mod file_ops;
 #[cfg(target_os = "linux")]
 pub mod io_uring;
-mod local_file_ops;
+pub mod local_file_ops;
 pub mod mmap;
 pub mod read;
+mod wrappers;
 pub mod write;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::de::DeserializeOwned;
 
+pub use self::error::UniversalIoError;
 pub use self::file_ops::UniversalReadFileOps;
+#[cfg(target_os = "linux")]
+pub use self::io_uring::*;
+pub use self::mmap::*;
 pub use self::read::UniversalRead;
+pub use self::wrappers::*;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
 
-pub type FileIndex = usize;
-
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
+    pub writeable: bool,
     pub need_sequential: bool,
     /// How many parallel requests to the disk we can do.
     /// If `None`, then use implementation-specific default.
@@ -27,66 +35,54 @@ pub struct OpenOptions {
     pub populate: Option<bool>,
     /// Use specific mmap advice.
     pub advice: Option<AdviceSetting>,
+    /// Whether to try to prevent caching for reads.
+    pub prevent_caching: Option<bool>,
 }
 
 impl Default for OpenOptions {
     fn default() -> Self {
         Self {
+            writeable: true,
             need_sequential: true,
             disk_parallel: None,
             populate: None,
             advice: None,
+            prevent_caching: None,
         }
     }
 }
 
-pub type ElementOffset = u64;
-
 #[derive(Copy, Clone, Debug)]
-pub struct ElementsRange {
-    pub start: ElementOffset,
+pub struct ReadRange {
+    /// Start position in bytes from the beginning of the file/storage.
+    pub byte_offset: u64,
+    /// Number of elements to read.
     pub length: u64,
 }
+
+pub type ByteOffset = u64;
+
+pub type FileIndex = usize;
+
 pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
-
-#[derive(thiserror::Error, Debug)]
-pub enum UniversalIoError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Mmap(#[from] crate::mmap::Error),
-    #[error("Data range {start}..{end} is out of bounds (data size: {data_length} elements)")]
-    OutOfBounds {
-        start: u64,
-        end: u64,
-        data_length: usize,
-    },
-    #[error(transparent)]
-    SerdeJson(#[from] serde_json::Error),
-    /// Path does not exist or is not accessible; backends may use this instead of
-    /// `Io(NotFound)` so callers can match without relying on a specific io::ErrorKind.
-    #[error("Not found: {path:?}")]
-    NotFound { path: PathBuf },
-    /// Source id is not valid for this multi-source storage.
-    #[error("Invalid source id {file_index} (num sources: {num_files})")]
-    InvalidFileIndex { file_index: usize, num_files: usize },
-}
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
 ///
 /// Uses a single logical read when the backend overrides [`UniversalRead::read_whole`].
 pub fn read_json_via<S, T>(path: impl AsRef<Path>) -> Result<T>
 where
-    S: UniversalRead<u8> + Sized,
+    S: UniversalRead<u8>,
     T: DeserializeOwned,
 {
     let options = OpenOptions {
+        writeable: false,
         need_sequential: false,
         disk_parallel: None,
         populate: Some(false),
         advice: Some(AdviceSetting::Advice(Advice::Sequential)),
+        prevent_caching: Some(false),
     };
 
     let storage = S::open(path, options)?;

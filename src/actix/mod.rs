@@ -25,11 +25,12 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, Auth};
 
+use crate::actix::api::audit_api::config_audit_api;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
 use crate::actix::api::debug_api::config_debugger_api;
-use crate::actix::api::discovery_api::config_discovery_api;
+use crate::actix::api::discover_api::config_discover_api;
 use crate::actix::api::issues_api::config_issues_api;
 use crate::actix::api::local_shard_api::config_local_shard_api;
 use crate::actix::api::profiler_api::config_profiler_api;
@@ -83,6 +84,7 @@ pub fn init(
         let health_checker = web::Data::new(health_checker);
         let web_ui_available = web_ui_folder(&settings);
         let service_config = web::Data::new(settings.service.clone());
+        let audit_config_data = web::Data::new(settings.audit.clone());
 
         let mut api_key_whitelist = vec![
             WhitelistItem::exact("/"),
@@ -142,6 +144,7 @@ pub fn init(
                 .app_data(TempFileConfig::default().directory(&upload_dir))
                 .app_data(MultipartFormConfig::default().total_limit(usize::MAX))
                 .app_data(service_config.clone())
+                .app_data(audit_config_data.clone())
                 .service(index)
                 .configure(config_collections_api)
                 .configure(config_snapshots_api)
@@ -150,7 +153,7 @@ pub fn init(
                 .configure(config_service_api)
                 .configure(config_search_api)
                 .configure(config_recommend_api)
-                .configure(config_discovery_api)
+                .configure(config_discover_api)
                 .configure(config_query_api)
                 .configure(config_facet_api)
                 .configure(config_shards_api)
@@ -158,6 +161,7 @@ pub fn init(
                 .configure(config_debugger_api)
                 .configure(config_profiler_api)
                 .configure(config_local_shard_api)
+                .configure(config_audit_api)
                 // Ordering of services is important for correct path pattern matching
                 // See: <https://github.com/qdrant/qdrant/issues/3543>
                 .service(scroll_points)

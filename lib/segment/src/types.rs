@@ -12,7 +12,7 @@ use std::sync::Arc;
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
 use common::stable_hash::StableHash;
-use common::types::ScoreType;
+use common::types::{PointOffsetType, ScoreType};
 use ecow::EcoString;
 use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
@@ -472,6 +472,8 @@ pub struct SegmentInfo {
     pub segment_type: SegmentType,
     pub num_vectors: usize,
     pub num_points: usize,
+    pub num_deferred_points: Option<usize>,
+    pub num_deleted_deferred_points: Option<usize>,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
     /// An ESTIMATION of effective amount of bytes used for vectors
@@ -484,6 +486,11 @@ pub struct SegmentInfo {
     pub is_appendable: bool,
     pub index_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     pub vector_data: HashMap<String, VectorDataInfo>,
+    /// Internal ID from which points are deferred (hidden from reads).
+    /// Only set for appendable segments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub deferred_internal_id: Option<PointOffsetType>,
 }
 
 #[derive(Debug, Default)]
@@ -1078,6 +1085,10 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upsert_max_batchsize: Option<usize>,
 
+    /// Max batchsize when searching
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_batchsize: Option<usize>,
+
     /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_vector_size_bytes: Option<usize>,
@@ -1140,6 +1151,7 @@ impl Hash for StrictModeConfig {
             // We skip hashing this field because we cannot reliably hash a float
             search_max_oversampling: _,
             upsert_max_batchsize,
+            search_max_batchsize,
             max_collection_vector_size_bytes,
             read_rate_limit,
             write_rate_limit,
@@ -1159,6 +1171,7 @@ impl Hash for StrictModeConfig {
         search_max_hnsw_ef.hash(state);
         search_allow_exact.hash(state);
         upsert_max_batchsize.hash(state);
+        search_max_batchsize.hash(state);
         max_collection_vector_size_bytes.hash(state);
         read_rate_limit.hash(state);
         write_rate_limit.hash(state);
@@ -1219,6 +1232,10 @@ pub struct StrictModeConfigOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub upsert_max_batchsize: Option<usize>,
+    /// Max batchsize when searching
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub search_max_batchsize: Option<usize>,
 
     /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1281,6 +1298,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             search_allow_exact,
             search_max_oversampling,
             upsert_max_batchsize,
+            search_max_batchsize,
             max_collection_vector_size_bytes,
             read_rate_limit,
             write_rate_limit,
@@ -1303,6 +1321,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             search_allow_exact,
             search_max_oversampling,
             upsert_max_batchsize,
+            search_max_batchsize,
             max_collection_vector_size_bytes,
             read_rate_limit,
             write_rate_limit,
@@ -1343,12 +1362,6 @@ impl Default for Indexes {
 #[derive(Anonymize, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
-    // Store payload in memory and use persistence storage only if vectors are changed
-    #[cfg(feature = "rocksdb")]
-    InMemory,
-    // Store payload on disk only, read each time it is requested
-    #[cfg(feature = "rocksdb")]
-    OnDisk,
     // Store payload on disk and in memory, read from memory if possible
     Mmap,
     // Store payload on disk and in memory, populate on load
@@ -1372,10 +1385,6 @@ impl PayloadStorageType {
 
     pub fn is_on_disk(&self) -> bool {
         match self {
-            #[cfg(feature = "rocksdb")]
-            PayloadStorageType::InMemory => false,
-            #[cfg(feature = "rocksdb")]
-            PayloadStorageType::OnDisk => true,
             PayloadStorageType::Mmap => true,
             PayloadStorageType::InRamMmap => false,
         }
@@ -1714,9 +1723,6 @@ impl VectorDataConfig {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum SparseVectorStorageType {
-    /// Storage on disk (rocksdb storage)
-    #[cfg(feature = "rocksdb")]
-    OnDisk,
     /// Storage in memory maps (gridstore storage)
     #[default]
     Mmap,
@@ -1728,8 +1734,6 @@ impl SparseVectorStorageType {
         match self {
             // Both options are on disk, but we keep it explicit for the case if someone adds a new
             // storage type in the future
-            #[cfg(feature = "rocksdb")]
-            Self::OnDisk => true,
             Self::Mmap => true,
         }
     }
@@ -1756,14 +1760,7 @@ pub struct SparseVectorDataConfig {
 
 /// If the storage type is not in config, it means it is the OnDisk variant
 fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorageType {
-    #[cfg(feature = "rocksdb")]
-    {
-        SparseVectorStorageType::OnDisk
-    }
-    #[cfg(not(feature = "rocksdb"))]
-    {
-        SparseVectorStorageType::default()
-    }
+    SparseVectorStorageType::default()
 }
 
 impl SparseVectorDataConfig {
@@ -2934,23 +2931,19 @@ pub struct GeoPolygon {
 impl GeoPolygon {
     pub fn validate_line_string(line: &GeoLineString) -> OperationResult<()> {
         if line.points.len() <= 3 {
-            return Err(OperationError::ValidationError {
-                description: format!(
-                    "polygon invalid, the size must be at least 4, got {}",
-                    line.points.len()
-                ),
-            });
+            return Err(OperationError::validation_error(format!(
+                "polygon invalid, the size must be at least 4, got {}",
+                line.points.len()
+            )));
         }
 
         if let (Some(first), Some(last)) = (line.points.first(), line.points.last())
             && ((first.lat - last.lat).abs() > f64::EPSILON
                 || (first.lon - last.lon).abs() > f64::EPSILON)
         {
-            return Err(OperationError::ValidationError {
-                description: String::from(
-                    "polygon invalid, the first and the last points should be the same to form a closed line",
-                ),
-            });
+            return Err(OperationError::validation_error(
+                "polygon invalid, the first and the last points should be the same to form a closed line",
+            ));
         }
 
         Ok(())
@@ -3414,26 +3407,29 @@ impl<'de> serde::Deserialize<'de> for Condition {
     where
         D: serde::Deserializer<'de>,
     {
-        if deserializer.is_human_readable() {
-            let value = serde_json::Value::deserialize(deserializer)?;
+        // Buffer into serde_value::Value which, unlike serde_json::Value,
+        // can represent byte arrays from non-human-readable formats (e.g. CBOR).
+        // Note: we cannot rely on `deserializer.is_human_readable()` here because
+        // serde's internal ContentDeserializer (used by flatten + untagged) always
+        // reports `true` regardless of the original format.
+        let value = serde_value::Value::deserialize(deserializer)?;
 
-            // Special case: FieldCondition first to surface datetime parse errors.
-            // Untagged enum would swallow these errors with generic message.
-            if let Some(obj) = value.as_object()
-                && obj.contains_key("key")
-            {
-                return serde_json::from_value::<FieldCondition>(value)
-                    .map(Condition::Field)
-                    .map_err(serde::de::Error::custom);
-            }
-
-            // All other variants handled by ConditionUntagged (compiler-safe)
-            serde_json::from_value::<ConditionUntagged>(value)
-                .map(Condition::from)
-                .map_err(serde::de::Error::custom)
-        } else {
-            ConditionUntagged::deserialize(deserializer).map(Condition::from)
+        // Special case: FieldCondition first to surface datetime parse errors.
+        // Untagged enum would swallow these errors with generic message.
+        if let serde_value::Value::Map(obj) = &value
+            && obj.contains_key(&serde_value::Value::String("key".into()))
+        {
+            return value
+                .deserialize_into()
+                .map(Condition::Field)
+                .map_err(serde::de::Error::custom);
         }
+
+        // All other variants handled by ConditionUntagged (compiler-safe)
+        value
+            .deserialize_into::<ConditionUntagged>()
+            .map(Condition::from)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -5263,6 +5259,37 @@ mod tests {
             }
         };
         assert_eq!(payload, expected);
+    }
+
+    #[test]
+    fn test_extended_point_id_cbor_roundtrip() {
+        let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+
+        for point_id in [ExtendedPointId::Uuid(uuid), ExtendedPointId::NumId(42)] {
+            let cbor_bytes = serde_cbor::to_vec(&point_id).unwrap();
+            let deserialized: ExtendedPointId = serde_cbor::from_slice(&cbor_bytes).unwrap();
+            assert_eq!(point_id, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_filter_with_match_and_has_id_uuid_cbor_roundtrip() {
+        let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let filter = Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![Condition::Field(FieldCondition::new_match(
+                crate::json_path::JsonPath::new("org_id"),
+                Match::new_value(ValueVariants::String("test_org".to_string())),
+            ))]),
+            must_not: Some(vec![Condition::HasId(HasIdCondition {
+                has_id: [ExtendedPointId::Uuid(uuid)].into_iter().collect(),
+            })]),
+        };
+
+        let cbor_bytes = serde_cbor::to_vec(&filter).unwrap();
+        let deserialized: Filter = serde_cbor::from_slice(&cbor_bytes).unwrap();
+        assert_eq!(filter, deserialized);
     }
 }
 

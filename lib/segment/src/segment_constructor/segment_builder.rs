@@ -23,8 +23,6 @@ use rand::Rng;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-#[cfg(feature = "rocksdb")]
-use super::rocksdb_builder::RocksDbBuilder;
 use super::{
     create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
     create_sparse_vector_storage, get_payload_index_path, get_vector_index_path,
@@ -32,7 +30,7 @@ use super::{
 };
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::entry::entry_point::NonAppendableSegmentEntry;
+use crate::entry::ReadSegmentEntry;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
@@ -93,30 +91,13 @@ impl SegmentBuilder {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
 
-        #[cfg(feature = "rocksdb")]
-        let mut db_builder = RocksDbBuilder::new(temp_dir.path(), segment_config)?;
-
-        let payload_storage = create_payload_storage(
-            #[cfg(feature = "rocksdb")]
-            &mut db_builder,
-            temp_dir.path(),
-            segment_config,
-        )?;
+        let payload_storage = create_payload_storage(temp_dir.path(), segment_config)?;
 
         let mut vector_data = HashMap::new();
 
         for (vector_name, vector_config) in &segment_config.vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
-            let vector_storage = open_vector_storage(
-                #[cfg(feature = "rocksdb")]
-                &mut db_builder,
-                vector_config,
-                #[cfg(feature = "rocksdb")]
-                &Default::default(),
-                &vector_storage_path,
-                #[cfg(feature = "rocksdb")]
-                vector_name,
-            )?;
+            let vector_storage = open_vector_storage(vector_config, &vector_storage_path)?;
 
             vector_data.insert(
                 vector_name.to_owned(),
@@ -131,14 +112,8 @@ impl SegmentBuilder {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
 
             let vector_storage = create_sparse_vector_storage(
-                #[cfg(feature = "rocksdb")]
-                &mut db_builder,
                 &vector_storage_path,
-                #[cfg(feature = "rocksdb")]
-                vector_name,
                 &sparse_vector_config.storage_type,
-                #[cfg(feature = "rocksdb")]
-                &Default::default(),
             )?;
 
             vector_data.insert(
@@ -195,12 +170,16 @@ impl SegmentBuilder {
     ///
     /// Note: This value doesn't guarantee strict ordering in ambiguous cases.
     ///       It should only be used in optimization purposes, not for correctness.
-    fn _get_ordering_value(internal_id: PointOffsetType, indices: &[FieldIndex]) -> u64 {
+    fn _get_ordering_value(
+        internal_id: PointOffsetType,
+        indices: &[FieldIndex],
+        hw_counter: &HardwareCounterCell,
+    ) -> u64 {
         let mut ordering = 0;
         for payload_index in indices {
             match payload_index {
                 FieldIndex::IntMapIndex(index) => {
-                    if let Some(numbers) = index.get_values(internal_id) {
+                    if let Some(numbers) = index.get_values(internal_id, hw_counter) {
                         for number in numbers {
                             ordering = ordering.wrapping_add(*number as u64);
                         }
@@ -208,7 +187,7 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::KeywordIndex(index) => {
-                    if let Some(keywords) = index.get_values(internal_id) {
+                    if let Some(keywords) = index.get_values(internal_id, hw_counter) {
                         for keyword in keywords {
                             let mut hasher = AHasher::default();
                             keyword.hash(&mut hasher);
@@ -252,7 +231,7 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::UuidMapIndex(index) => {
-                    if let Some(ids) = index.get_values(internal_id) {
+                    if let Some(ids) = index.get_values(internal_id, hw_counter) {
                         uuid_hash(&mut ordering, ids.map(Cow::into_owned));
                     }
                     break;
@@ -281,7 +260,12 @@ impl SegmentBuilder {
     ///
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
-    pub fn update(&mut self, segments: &[&Segment], stopped: &AtomicBool) -> OperationResult<bool> {
+    pub fn update(
+        &mut self,
+        segments: &[&Segment],
+        stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         if segments.is_empty() {
             return Ok(true);
         }
@@ -321,6 +305,7 @@ impl SegmentBuilder {
                 point_data.ordering = point_data.ordering.wrapping_add(Self::_get_ordering_value(
                     point_data.internal_id,
                     payload_indices,
+                    hw_counter,
                 ));
             }
         }
@@ -532,8 +517,6 @@ impl SegmentBuilder {
                 IdTrackerEnum::ImmutableIdTracker(_) => {
                     unreachable!("ImmutableIdTracker should not be used for building segment")
                 }
-                #[cfg(feature = "rocksdb")]
-                IdTrackerEnum::RocksDbIdTracker(_) => id_tracker,
             };
 
             id_tracker.mapping_flusher()()?;
@@ -675,6 +658,8 @@ impl SegmentBuilder {
                     path: &vector_index_path,
                     stopped,
                     tick_progress: || (),
+                    // We don't use the `index` returned here so we always set deferred to `None`. It's been loaded properly later.
+                    deferred_internal_id: None,
                 })?;
 
                 if sparse_vector_config.storage_type.is_on_disk() {
@@ -686,6 +671,9 @@ impl SegmentBuilder {
                 if sparse_vector_config.index.index_type.is_on_disk() {
                     index.clear_cache()?;
                 }
+
+                // Ensure we don't use the sparse vector index in future because it's missing proper setup of deferred points.
+                drop(index);
             }
             drop(progress_sparse_vector_index);
 

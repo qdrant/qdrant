@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::ext::ResultOptionExt;
 use common::fs::clear_disk_cache;
+use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, ElementsRange, UniversalRead};
+use common::universal_io::{self, ReadOnly, ReadRange, UniversalRead};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -70,7 +71,7 @@ impl StoredValue for str {
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
 pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead<u8>> {
     file_name: PathBuf,
-    store: S,
+    store: ReadOnly<S>,
     header: Header,
     phantom: std::marker::PhantomData<T>,
 }
@@ -166,24 +167,23 @@ where
         let file_name = path.join(POINT_TO_VALUES_PATH);
 
         let open_options = common::universal_io::OpenOptions {
+            writeable: false,
             need_sequential: false,
             disk_parallel: None,
             populate: Some(populate),
             advice: None,
+            prevent_caching: None,
         };
 
-        let store = S::open(&file_name, open_options)?;
+        let store = ReadOnly::open(&file_name, open_options)?;
 
-        let header_bytes = store.read::<false>(ElementsRange {
-            start: 0,
+        let header_bytes = store.read::<Random>(ReadRange {
+            byte_offset: 0,
             length: std::mem::size_of::<Header>() as u64,
         })?;
 
-        let (header, _) = Header::read_from_prefix(&header_bytes).map_err(|_| {
-            OperationError::InconsistentStorage {
-                description: NOT_ENOUGH_BYTES_ERROR_MESSAGE.to_owned(),
-            }
-        })?;
+        let (header, _) = Header::read_from_prefix(&header_bytes)
+            .map_err(|_| OperationError::inconsistent_storage(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
 
         Ok(Self {
             file_name,
@@ -230,8 +230,8 @@ where
 
         // first, get range of values for point
         let Some(bytes_range) = self.get_bytes_range(point_id)?.map(|range| {
-            let range = universal_io::ElementsRange {
-                start: range.start,
+            let range = universal_io::ReadRange {
+                byte_offset: range.start,
                 length: range.end - range.start,
             };
             // Measure IO overhead of `self.get_bytes_range()` and the length of the values
@@ -242,7 +242,7 @@ where
             return Ok(None);
         };
 
-        let bytes = self.store.read::<false>(bytes_range)?;
+        let bytes = self.store.read::<Random>(bytes_range)?;
         let count = self.get_values_count(point_id)?.unwrap_or(0);
 
         let iter = ValuesIter::new(bytes, count);
@@ -269,8 +269,8 @@ where
             let range_offset = (self.header.ranges_start as usize)
                 + (point_id as usize) * std::mem::size_of::<MmapRange>();
 
-            let bytes = self.store.read::<false>(ElementsRange {
-                start: range_offset as u64,
+            let bytes = self.store.read::<Random>(ReadRange {
+                byte_offset: range_offset as u64,
                 length: std::mem::size_of::<MmapRange>() as u64,
             })?;
             Ok(MmapRange::read_from_prefix(&bytes)
@@ -378,7 +378,7 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::mmap::MmapUniversal;
+    use common::universal_io::MmapFile;
     use itertools::Itertools;
     use tempfile::Builder;
 
@@ -430,7 +430,7 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        StoredPointToValues::<str, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<str, MmapFile>::from_iter(
             dir.path(),
             values
                 .iter()
@@ -439,7 +439,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            StoredPointToValues::<str, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
+            StoredPointToValues::<str, MmapFile>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let v = point_to_values
@@ -490,7 +490,7 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<GeoPoint, MmapFile>::from_iter(
             dir.path(),
             values
                 .iter()
@@ -499,7 +499,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
+            StoredPointToValues::<GeoPoint, MmapFile>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values

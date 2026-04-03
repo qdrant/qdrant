@@ -24,7 +24,7 @@ pub async fn hash_file(file_path: &Path) -> io::Result<String> {
         sha.update(&buf[0..len]);
     }
     let hash = sha.finalize();
-    Ok(format!("{hash:x}"))
+    Ok(hash.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// Compare two hashes, ignoring whitespace and case

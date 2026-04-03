@@ -26,7 +26,7 @@ use segment::json_path::JsonPath;
 use segment::types::Filter;
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
-use storage::rbac::{Access, Auth, AuthType};
+use storage::rbac::{Access, Auth};
 use tonic::{Request, Response, Status};
 
 use super::query_common::*;
@@ -39,10 +39,15 @@ use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 
 fn full_internal_auth() -> Auth {
-    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal)
+    Auth::new_internal(Access::full("Internal API"))
 }
 
 /// This API is intended for P2P communication within a distributed deployment.
+///
+/// Note: unlike the public `PointsService`, this service does NOT attach
+/// `CollectionName` to gRPC responses. Internal endpoints
+/// (`/qdrant.PointsInternal/…`) are not in `GRPC_ENDPOINT_WHITELIST`, so
+/// attaching a collection name would have no effect on `/metrics` output.
 pub struct PointsInternalService {
     toc: Arc<TableOfContent>,
     service_config: ServiceConfig,
@@ -65,6 +70,7 @@ impl PointsInternalService {
             sync_points,
             shard_id,
             clock_tag,
+            wait_override,
         } = sync_points_internal;
 
         let sync_points = extract_internal_request(sync_points)?;
@@ -73,7 +79,7 @@ impl PointsInternalService {
         let (response, _inference_usage) = sync(
             self.toc.clone(),
             sync_points,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             inference_params,
         )
@@ -92,6 +98,7 @@ impl PointsInternalService {
             upsert_points,
             shard_id,
             clock_tag,
+            wait_override,
         } = upsert_points_internal;
 
         let upsert_points = extract_internal_request(upsert_points)?;
@@ -103,7 +110,7 @@ impl PointsInternalService {
         upsert(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             upsert_points,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             inference_params.clone(),
             hw_metrics,
@@ -119,6 +126,7 @@ impl PointsInternalService {
             delete_points,
             shard_id,
             clock_tag,
+            wait_override,
         } = delete_points_internal;
 
         let delete_points = extract_internal_request(delete_points)?;
@@ -130,7 +138,7 @@ impl PointsInternalService {
         delete(
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_points,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             hw_metrics,
         )
@@ -146,6 +154,7 @@ impl PointsInternalService {
             update_vectors,
             shard_id,
             clock_tag,
+            wait_override,
         } = update_vectors_internal;
 
         let update_point_vectors = extract_internal_request(update_vectors)?;
@@ -157,7 +166,7 @@ impl PointsInternalService {
         crate::tonic::api::update_common::update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             update_point_vectors,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             inference_params.clone(),
             hw_metrics,
@@ -173,6 +182,7 @@ impl PointsInternalService {
             delete_vectors,
             shard_id,
             clock_tag,
+            wait_override,
         } = delete_vectors_internal;
 
         let delete_point_vectors = extract_internal_request(delete_vectors)?;
@@ -184,7 +194,7 @@ impl PointsInternalService {
         crate::tonic::api::update_common::delete_vectors(
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_point_vectors,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             hw_metrics,
         )
@@ -199,6 +209,7 @@ impl PointsInternalService {
             set_payload_points,
             shard_id,
             clock_tag,
+            wait_override,
         } = set_payload_internal;
 
         let set_payload_points = extract_internal_request(set_payload_points)?;
@@ -210,7 +221,7 @@ impl PointsInternalService {
         set_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             hw_metrics,
         )
@@ -225,6 +236,7 @@ impl PointsInternalService {
             set_payload_points,
             shard_id,
             clock_tag,
+            wait_override,
         } = overwrite_payload_internal;
 
         let set_payload_points = extract_internal_request(set_payload_points)?;
@@ -236,7 +248,7 @@ impl PointsInternalService {
         overwrite_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             hw_metrics,
         )
@@ -251,6 +263,7 @@ impl PointsInternalService {
             delete_payload_points,
             shard_id,
             clock_tag,
+            wait_override,
         } = delete_payload_internal;
 
         let delete_payload_points = extract_internal_request(delete_payload_points)?;
@@ -262,7 +275,7 @@ impl PointsInternalService {
         delete_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_payload_points,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             hw_metrics,
         )
@@ -277,6 +290,7 @@ impl PointsInternalService {
             clear_payload_points,
             shard_id,
             clock_tag,
+            wait_override,
         } = clear_payload_internal;
 
         let clear_payload_points = extract_internal_request(clear_payload_points)?;
@@ -288,7 +302,7 @@ impl PointsInternalService {
         clear_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
             clear_payload_points,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
             full_internal_auth(),
             hw_metrics,
         )
@@ -303,12 +317,13 @@ impl PointsInternalService {
             create_field_index_collection,
             shard_id,
             clock_tag,
+            wait_override,
         } = create_field_index_collection;
 
         create_field_index_internal(
             self.toc.clone(),
             extract_internal_request(create_field_index_collection)?,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
         )
         .await
     }
@@ -321,12 +336,13 @@ impl PointsInternalService {
             delete_field_index_collection,
             shard_id,
             clock_tag,
+            wait_override,
         } = delete_field_index_collection;
 
         delete_field_index_internal(
             self.toc.clone(),
             extract_internal_request(delete_field_index_collection)?,
-            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
         )
         .await
     }
@@ -562,6 +578,7 @@ impl PointsInternal for PointsInternalService {
         let inference_params = InferenceParams::new(api_keys, None);
 
         let request_inner = request.into_inner();
+        let batch_wait_override = request_inner.wait_override;
 
         let mut total_usage = HardwareUsage::default();
 
@@ -571,7 +588,45 @@ impl PointsInternal for PointsInternalService {
         // - If one operation fails, it will report the error immediately
         // - If no operations are present, it will return an empty response
         // - If all operations are successful, it will return the last operation result
-        for update in request_inner.operations {
+        for mut update in request_inner.operations {
+            // Propagate batch-level wait_override to individual operations if not already set
+            if let Some(batch_wo) = batch_wait_override
+                && let Some(ref mut op) = update.update
+            {
+                match op {
+                    Update::Sync(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::Upsert(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::Delete(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::UpdateVectors(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::DeleteVectors(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::SetPayload(inner) | Update::OverwritePayload(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::DeletePayload(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::ClearPayload(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::CreateFieldIndex(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                    Update::DeleteFieldIndex(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
+                }
+            }
+
             let result = match update.update {
                 None => {
                     return Err(Status::invalid_argument("Update is missing"));

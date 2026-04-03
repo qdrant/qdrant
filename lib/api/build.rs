@@ -421,6 +421,27 @@ fn configure_validation(builder: Builder) -> Builder {
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",
         ])
+        // Service: storage_read_service.proto
+        .validates(&[
+            ("FileExistsRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("FileExistsRequest.path", "length(min = 1)"),
+            ("ListFilesRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("ListFilesRequest.prefix_path", "length(min = 1)"),
+            ("FileLengthRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("FileLengthRequest.path", "length(min = 1)"),
+            ("ReadBytesRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("ReadBytesRequest.path", "length(min = 1)"),
+            ("ReadBytesStreamRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("ReadBytesStreamRequest.path", "length(min = 1)"),
+            ("ReadWholeRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("ReadWholeRequest.path", "length(min = 1)"),
+            ("ReadBatchRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("ReadBatchRequest.path", "length(min = 1)"),
+            ("ReadBatchRequest.ranges", "length(min = 1)"),
+            ("ReadMultiRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("ReadMultiRequest.reads", "length(min = 1), nested"),
+            ("ReadMultiEntry.path", "length(min = 1)"),
+        ], &[])
 }
 
 fn append_to_file(path: &str, line: &str) {

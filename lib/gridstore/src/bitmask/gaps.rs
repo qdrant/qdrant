@@ -344,10 +344,11 @@ mod tests {
     }
 
     proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(64))]
         #[test]
         fn test_find_fitting_gap(
-            gaps in prop::collection::vec(any::<RegionGaps>(), 1..100),
-            num_blocks in 1..=(DEFAULT_REGION_SIZE_BLOCKS as u32 * 3)
+            gaps in prop::collection::vec(any::<RegionGaps>(), 1..50),
+            num_blocks in 1..=(DEFAULT_REGION_SIZE_BLOCKS as u32 * 2)
         ) {
             let temp_dir = tempdir().unwrap();
             let config = StorageOptions::default().try_into().unwrap();

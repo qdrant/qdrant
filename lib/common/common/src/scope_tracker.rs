@@ -17,7 +17,6 @@ impl ScopeTracker {
 
     /// Measures the scope, the counter should keep track of.
     /// Must always be bound to a variable, to not get dropped prematurely!
-    #[must_use]
     pub fn measure_scope(&self) -> ScopeTrackerGuard {
         ScopeTrackerGuard::measure(self)
     }
@@ -32,12 +31,12 @@ const COUNT_SIZE: usize = 1;
 
 /// Guard type for [`ScopeTracker`], that must be hold for the entire duration of a scope.
 /// This type is in charge of correctly counting the passed counter.
+#[must_use = "dropping this guard immediately decrements the scope counter"]
 pub struct ScopeTrackerGuard {
     scope_tracker: ScopeTracker,
 }
 
 impl ScopeTrackerGuard {
-    #[must_use]
     fn measure(scope_tracker: &ScopeTracker) -> Self {
         let scope_tracker = scope_tracker.clone();
         scope_tracker.inner.fetch_add(COUNT_SIZE, Ordering::SeqCst);

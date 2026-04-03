@@ -1,6 +1,7 @@
 use super::counter_cell::CounterCell;
 use super::hardware_accumulator::HwMeasurementAcc;
 use super::hardware_data::HardwareData;
+use crate::cpu_utilization::CpuUtilization;
 
 /// Collection of different types of hardware measurements.
 ///
@@ -85,6 +86,10 @@ impl HardwareCounterCell {
             vector_io_write_counter: CounterCell::new(),
             accumulator: Some(accumulator),
         }
+    }
+
+    pub fn cpu_utilization(&self) -> Option<CpuUtilization> {
+        self.accumulator.as_ref().map(|a| a.cpu_utilization())
     }
 
     pub fn new_accumulator(&self) -> HwMeasurementAcc {

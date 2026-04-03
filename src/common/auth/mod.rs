@@ -7,7 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;
-use storage::audit::{AuditEvent, audit_log, is_audit_enabled};
+use storage::audit::{AuditEvent, AuditResult, audit_log, is_audit_enabled};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -67,7 +67,12 @@ impl Display for AuthError {
 
 /// Log a denied authentication attempt to the audit log when audit is enabled.
 /// Used by both REST (actix) and gRPC (tonic) auth middlewares.
-pub fn log_denied_auth(method: &str, remote: Option<String>, error: &AuthError) {
+pub fn log_denied_auth(
+    method: &str,
+    remote: Option<String>,
+    tracing_id: Option<String>,
+    error: &AuthError,
+) {
     if is_audit_enabled() {
         audit_log(AuditEvent {
             timestamp: Utc::now(),
@@ -76,7 +81,8 @@ pub fn log_denied_auth(method: &str, remote: Option<String>, error: &AuthError) 
             subject: None,
             remote,
             collection: None,
-            result: "denied",
+            tracing_id,
+            result: AuditResult::Denied,
             error: Some(error.to_string()),
         });
     }
@@ -210,12 +216,7 @@ impl AuthKeys {
                 None,
                 None, // no timeout
                 ShardSelectorInternal::All,
-                Auth::new(
-                    Access::full("JWT stateful validation"),
-                    None,
-                    None,
-                    AuthType::Internal,
-                ),
+                Auth::new_internal(Access::full("JWT stateful validation")),
                 HwMeasurementAcc::disposable(),
             )
             .await

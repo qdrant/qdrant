@@ -28,6 +28,7 @@ use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_workers::UpdateWorkers;
 use crate::update_workers::applied_seq::AppliedSeqHandler;
+use crate::update_workers::internal_update_result::InternalUpdateResult;
 use crate::wal_delta::LockedWal;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
@@ -40,7 +41,10 @@ pub struct OperationData {
     /// Operation. If None, then the operation data is read from WAL
     pub operation: Option<Box<CollectionUpdateOperations>>,
     /// Callback notification channel
-    pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
+    pub sender: Option<oneshot::Sender<CollectionResult<InternalUpdateResult>>>,
+    /// Whether to wait for deferred points to be optimized before sending feedback.
+    /// Only relevant when `sender` is `Some`.
+    pub wait_for_deferred: bool,
     /// Hardware measurement for the operation
     pub hw_measurements: HwMeasurementAcc,
 }
@@ -218,7 +222,8 @@ impl UpdateHandler {
         let collection_name = self.collection_name.clone();
         let applied_seq_handler = self.applied_seq_handler.clone();
 
-        // Create a new cancellation token for this worker
+        // Cancel the old update worker and create a new cancellation token
+        self.update_worker_cancel.cancel();
         self.update_worker_cancel = CancellationToken::new();
         let cancel = self.update_worker_cancel.clone();
 

@@ -90,6 +90,44 @@ impl Raft for RaftService {
             .map_err(|err| Status::internal(format!("Failed to parse uri: {err}")))?;
         let peer = request.into_inner();
 
+        // If this URI is already registered by a different peer that has no
+        // shards, remove the old peer first so the new one can take its place.
+        let existing_peer_id = self
+            .consensus_state
+            .peer_address_by_id()
+            .into_iter()
+            .find(|(id, peer_uri)| *peer_uri == uri && *id != peer.id)
+            .map(|(id, _)| id);
+
+        if let Some(old_peer_id) = existing_peer_id {
+            let consensus_state = self.consensus_state.clone();
+            let has_shards = tokio::task::spawn_blocking(move || {
+                // Must use spawn_blocking for peer_has_shards
+                consensus_state.peer_has_shards(old_peer_id)
+            })
+            .await
+            .map_err(|err| Status::internal(format!("Failed to check shards: {err}")))?;
+
+            if has_shards {
+                return Err(Status::failed_precondition(format!(
+                    "peer URI {uri} already used by peer {old_peer_id} which still has shards, \
+                     remove its shards first or use a different URI",
+                )));
+            }
+
+            log::info!(
+                "Peer {} is replacing peer {old_peer_id} which has no shards ({uri})",
+                peer.id,
+            );
+
+            self.consensus_state
+                .propose_consensus_op_with_await(ConsensusOperations::RemovePeer(old_peer_id), None)
+                .await
+                .map_err(|err| {
+                    Status::internal(format!("Failed to remove old peer {old_peer_id}: {err}"))
+                })?;
+        }
+
         // the consensus operation can take up to DEFAULT_META_OP_WAIT
         self.consensus_state
             .propose_consensus_op_with_await(

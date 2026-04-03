@@ -26,7 +26,6 @@ class TestStorageCompatibility:
         "v1.16.2",
         "v1.16.1",
         "v1.16.0",
-        "v1.15.5", # technically not guaranteed but kept testing purpose
     ]
 
     EXPECTED_COLLECTIONS = [

@@ -99,13 +99,20 @@ impl EdgeShard {
             .try_into()
             .expect("single batched search result");
 
-        let distance = self
-            .config
-            .read()
-            .vectors
-            .get(&vector_name)
-            .expect("vector config exist")
-            .distance;
+        let distance = {
+            let config = self.config.read();
+            if let Some(dense) = config.vectors.get(&vector_name) {
+                dense.distance
+            } else if config.sparse_vectors.contains_key(&vector_name) {
+                segment::types::Distance::Dot
+            } else {
+                return Err(
+                    segment::common::operation_error::OperationError::service_error(format!(
+                        "vector config for '{vector_name}' does not exist"
+                    )),
+                );
+            }
+        };
 
         match &query_vector {
             QueryVector::Nearest(_) => {
@@ -115,7 +122,7 @@ impl EdgeShard {
             }
             QueryVector::RecommendBestScore(_) => (),
             QueryVector::RecommendSumScores(_) => (),
-            QueryVector::Discovery(_) => (),
+            QueryVector::Discover(_) => (),
             QueryVector::Context(_) => (),
             QueryVector::FeedbackNaive(_) => (),
         }

@@ -1,4 +1,10 @@
 # Contributing to Qdrant
+
+> [!IMPORTANT]
+> **All pull requests must target the `dev` branch.** The `master` branch is used for releases only.
+> Fork the repo, create your branch from `dev`, and set `dev` as the base branch when opening your PR.
+> PRs opened against `master` will not be merged and you will be asked to retarget them.
+
 We love your input! We want to make contributing to this project as easy and transparent as possible, whether it's:
 
 - Reporting a bug

@@ -11,6 +11,7 @@ pub trait FacetIndex {
     fn get_point_values(
         &self,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> impl Iterator<Item = FacetValueRef<'_>> + '_;
 
     /// Get all values in the index
@@ -40,14 +41,21 @@ impl<'a> FacetIndexEnum<'a> {
     pub fn get_point_values(
         &self,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = FacetValueRef<'a>> + 'a> {
         match self {
             FacetIndexEnum::Keyword(index) => {
-                Box::new(FacetIndex::get_point_values(*index, point_id))
+                Box::new(FacetIndex::get_point_values(*index, point_id, hw_counter))
             }
-            FacetIndexEnum::Int(index) => Box::new(FacetIndex::get_point_values(*index, point_id)),
-            FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::get_point_values(*index, point_id)),
-            FacetIndexEnum::Bool(index) => Box::new(FacetIndex::get_point_values(*index, point_id)),
+            FacetIndexEnum::Int(index) => {
+                Box::new(FacetIndex::get_point_values(*index, point_id, hw_counter))
+            }
+            FacetIndexEnum::Uuid(index) => {
+                Box::new(FacetIndex::get_point_values(*index, point_id, hw_counter))
+            }
+            FacetIndexEnum::Bool(index) => {
+                Box::new(FacetIndex::get_point_values(*index, point_id, hw_counter))
+            }
         }
     }
 

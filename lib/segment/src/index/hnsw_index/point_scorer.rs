@@ -1,9 +1,10 @@
 use std::sync::atomic::AtomicBool;
 
-use bitvec::slice::BitSlice;
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use smallvec::SmallVec;
 
@@ -15,7 +16,7 @@ use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsu
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
-    Random, RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
+    RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
 };
 
 /// Scorers composition:
@@ -32,7 +33,7 @@ use crate::vector_storage::{
 /// │                 │                     │                │ │  Query
 /// │ deleted_points  │                     │ TVectorStorage │ │ ┌──────────────────┐
 /// │ deleted_vectors │                     └────────────────┘ └─┤ - RecoQuery      │
-/// └─────────────────┘                                          │ - DiscoveryQuery │
+/// └─────────────────┘                                          │ - DiscoverQuery  │
 ///                                                              │ - ContextQuery   │
 ///                                                              └──────────────────┘
 ///                                                              - Scoring logic

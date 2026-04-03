@@ -478,6 +478,7 @@ impl<'a> GpuInsertContext<'a> {
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Random;
     use common::types::ScoredPointOffset;
     use itertools::Itertools;
     use rand::SeedableRng;
@@ -491,7 +492,7 @@ mod tests {
     use crate::index::hnsw_index::links_container::LinksContainer;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::{DEFAULT_STOPPED, Random, VectorStorage};
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
 
     #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
     #[repr(C)]

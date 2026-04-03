@@ -23,7 +23,7 @@ use crate::operations::types::{
     PointRequestInternal, ShardStatus, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::LocalShardTelemetry;
 
 #[derive(Clone, Debug)]
@@ -43,7 +43,10 @@ impl DummyShard {
     }
 
     pub fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        self.dummy()
+        let error = self.dummy_error("Update optimizer config");
+        log::error!("{error}");
+        // We can't fail this operation because this operation is part of consensus loop
+        Ok(())
     }
 
     pub fn on_strict_mode_config_update(&mut self) {}
@@ -78,15 +81,15 @@ impl DummyShard {
         &self,
         _: Option<&Filter>,
     ) -> CollectionResult<CardinalityEstimation> {
-        self.dummy()
+        self.dummy("estimate_cardinality")
     }
 
-    pub fn dummy_error(&self) -> CollectionError {
-        CollectionError::service_error(self.message.clone())
+    pub fn dummy_error(&self, action: &str) -> CollectionError {
+        CollectionError::service_error(format!("Failed to {action},  {}", self.message))
     }
 
-    fn dummy<T>(&self) -> CollectionResult<T> {
-        Err(self.dummy_error())
+    fn dummy<T>(&self, action: &str) -> CollectionResult<T> {
+        Err(self.dummy_error(action))
     }
 }
 
@@ -95,14 +98,14 @@ impl ShardOperation for DummyShard {
     async fn update(
         &self,
         op: OperationWithClockTag,
-        _: bool,
+        _: WaitUntil,
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         match &op.operation {
-            CollectionUpdateOperations::PointOperation(_) => self.dummy(),
-            CollectionUpdateOperations::VectorOperation(_) => self.dummy(),
-            CollectionUpdateOperations::PayloadOperation(_) => self.dummy(),
+            CollectionUpdateOperations::PointOperation(_) => self.dummy("Update Points"),
+            CollectionUpdateOperations::VectorOperation(_) => self.dummy("Update Vectors"),
+            CollectionUpdateOperations::PayloadOperation(_) => self.dummy("Update Payloads"),
 
             // Allow (and ignore) field index operations. Field index schema is stored in collection
             // config, and indices will be created (if needed) when dummy shard is recovered.
@@ -129,7 +132,7 @@ impl ShardOperation for DummyShard {
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
-        self.dummy()
+        self.dummy("Scroll")
     }
 
     async fn local_scroll_by_id(
@@ -144,11 +147,11 @@ impl ShardOperation for DummyShard {
         _: HwMeasurementAcc,
         _: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
-        self.dummy()
+        self.dummy("Scroll by ID")
     }
 
     async fn info(&self) -> CollectionResult<CollectionInfo> {
-        self.dummy()
+        self.dummy("Get Info")
     }
 
     async fn core_search(
@@ -158,7 +161,7 @@ impl ShardOperation for DummyShard {
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.dummy()
+        self.dummy("search")
     }
 
     async fn count(
@@ -169,7 +172,7 @@ impl ShardOperation for DummyShard {
         _: HwMeasurementAcc,
         _: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
-        self.dummy()
+        self.dummy("count")
     }
 
     async fn retrieve(
@@ -182,7 +185,7 @@ impl ShardOperation for DummyShard {
         _: HwMeasurementAcc,
         _: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
-        self.dummy()
+        self.dummy("retrieve")
     }
 
     async fn query_batch(
@@ -192,7 +195,7 @@ impl ShardOperation for DummyShard {
         _timeout: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        self.dummy()
+        self.dummy("query")
     }
 
     async fn facet(
@@ -202,7 +205,7 @@ impl ShardOperation for DummyShard {
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
-        self.dummy()
+        self.dummy("facet")
     }
 
     async fn stop_gracefully(self) {}

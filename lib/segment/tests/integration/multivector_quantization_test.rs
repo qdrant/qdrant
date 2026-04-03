@@ -73,8 +73,8 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     false,
     25., // min_acc out of 100
 )]
-#[case::discovery_binary_dot(
-    QueryVariant::Discovery,
+#[case::discover_binary_dot(
+    QueryVariant::Discover,
     QuantizationVariant::Binary,
     Distance::Dot,
     128, // dim
@@ -109,8 +109,8 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     false,
     25., // min_acc out of 100
 )]
-#[case::discovery_binary_cosine(
-    QueryVariant::Discovery,
+#[case::discover_binary_cosine(
+    QueryVariant::Discover,
     QuantizationVariant::Binary,
     Distance::Cosine,
     128, // dim
@@ -202,14 +202,7 @@ fn test_multivector_quantization_hnsw(
     let storage_type = if on_disk {
         VectorStorageType::ChunkedMmap
     } else {
-        #[cfg(feature = "rocksdb")]
-        {
-            VectorStorageType::Memory
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        {
-            VectorStorageType::InRamChunkedMmap
-        }
+        VectorStorageType::InRamChunkedMmap
     };
     let config = SegmentConfig {
         vector_data: HashMap::from([(

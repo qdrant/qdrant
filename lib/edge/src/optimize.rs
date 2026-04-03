@@ -148,7 +148,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::config::vectors::EdgeVectorParams;
-    use crate::{EdgeShard, EdgeShardConfig};
+    use crate::{EdgeConfig, EdgeShard};
 
     const VECTOR_NAME: &str = "edge-test-vector";
 
@@ -159,7 +159,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -184,7 +184,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -219,7 +219,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let points = (1..=100).map(point).collect::<Vec<_>>();
         shard
@@ -242,7 +242,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let optimized = shard.optimize().unwrap();
         assert!(!optimized, "empty shard should not trigger optimization");
@@ -260,7 +260,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -305,7 +305,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -338,7 +338,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -370,7 +370,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         // Only 100 points total (below DEFAULT_VACUUM_MIN_VECTOR_NUMBER=1000)
         let points = (1..=100).map(point).collect::<Vec<_>>();
@@ -403,7 +403,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -459,7 +459,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -509,7 +509,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -539,7 +539,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -573,7 +573,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         // Insert 1000 points, then delete 250 (25% — above DEFAULT_DELETED_THRESHOLD=20%)
         let points = (1..=1000).map(point).collect::<Vec<_>>();
@@ -631,7 +631,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -702,8 +702,8 @@ mod tests {
         }
     }
 
-    fn test_config() -> EdgeShardConfig {
-        EdgeShardConfig {
+    fn test_config() -> EdgeConfig {
+        EdgeConfig {
             on_disk_payload: false,
             vectors: HashMap::from([(
                 VECTOR_NAME.to_string(),

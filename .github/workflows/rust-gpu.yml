@@ -17,27 +17,27 @@ jobs:
 
     steps:
     - name: Install minimal stable
-      uses: dtolnay/rust-toolchain@stable
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
+      uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
     - name: Install Protoc
-      uses: arduino/setup-protoc@v3
+      uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Install nextest
-      uses: taiki-e/install-action@nextest
+      uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Install Vulkan packages
       run: |
         sudo apt-get update -y
         sudo apt-get install clang mesa-vulkan-drivers libvulkan1 vulkan-tools vulkan-validationlayers
         /usr/bin/vulkaninfo --summary
     - name: Build
-      run: cargo build --workspace --tests --features "gpu rocksdb" --locked
+      run: cargo build --workspace --tests --features "gpu" --locked
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --features "gpu rocksdb" --profile ci --locked
+      run: cargo nextest run --workspace --features "gpu" --profile ci --locked
     - name: Upload test report
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
@@ -56,7 +56,7 @@ jobs:
         os: [ ubuntu-latest ]
     steps:
       - name: Download test report
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: junit-${{ matrix.os }}.xml
       - name: Process test report
@@ -77,7 +77,7 @@ jobs:
           echo $delimiter >> $GITHUB_OUTPUT
       - name: pull issue template
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           sparse-checkout: |
             .github/ISSUE_TEMPLATE/flaky_test.md
@@ -86,7 +86,7 @@ jobs:
         continue-on-error: true
         id: create-issue
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
-        uses: JasonEtco/create-an-issue@v2
+        uses: JasonEtco/create-an-issue@1b14a70e4d8dc185e5cc76d3bec9eab20257b2c5 # v2.9.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TEST_NAME: ${{ steps.get-flaky-tests.outputs.test }}

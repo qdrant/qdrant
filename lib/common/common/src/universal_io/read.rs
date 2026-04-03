@@ -2,17 +2,17 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use super::*;
+use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::file_ops::UniversalReadFileOps;
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
+#[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized;
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
+    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>;
 
     /// Read the entire file in one logical access.
     ///
@@ -20,23 +20,31 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
     fn read_whole(&self) -> Result<Cow<'_, [T]>> {
         let n = self.len()?;
-        self.read::<true>(ElementsRange {
-            start: 0,
+        self.read::<Sequential>(ReadRange {
+            byte_offset: 0,
             length: n,
         })
     }
 
-    fn read_batch<const SEQUENTIAL: bool>(
+    fn read_batch<P: AccessPattern>(
         &self,
-        ranges: impl IntoIterator<Item = ElementsRange>,
+        ranges: impl IntoIterator<Item = ReadRange>,
         callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()>;
 
-    fn len(&self) -> Result<u64>;
-
-    fn is_empty(&self) -> Result<bool> {
-        Ok(self.len()? == 0)
+    /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator instead of
+    /// accepting a callback.
+    fn read_iter<P: AccessPattern>(
+        &self,
+        ranges: impl IntoIterator<Item = ReadRange>,
+    ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
+        ranges
+            .into_iter()
+            .enumerate()
+            .map(move |(idx, range)| self.read::<P>(range).map(|data| (idx, data)))
     }
+
+    fn len(&self) -> Result<u64>;
 
     /// Fill RAM cache with related data, if applicable for this implementation.
     ///
@@ -49,26 +57,47 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn clear_ram_cache(&self) -> Result<()>;
 
     /// Read from multiple files in a single operation.
-    fn read_multi<const SEQUENTIAL: bool>(
+    fn read_multi<P: AccessPattern>(
         files: &[Self],
-        reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
         mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
+    ) -> Result<()> {
         for (operation_index, (file_index, range)) in reads.into_iter().enumerate() {
             let file = files
                 .get(file_index)
                 .ok_or(UniversalIoError::InvalidFileIndex {
                     file_index,
-                    num_files: files.len(),
+                    files: files.len(),
                 })?;
 
-            let data = file.read::<SEQUENTIAL>(range)?;
+            let data = file.read::<P>(range)?;
             callback(operation_index, file_index, &data)?;
         }
 
         Ok(())
     }
+
+    /// Like [`read_multi`](Self::read_multi), but returns a fallible iterator instead of
+    /// accepting a callback.
+    fn read_multi_iter<P: AccessPattern>(
+        files: &[Self],
+        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
+        reads
+            .into_iter()
+            .enumerate()
+            .map(move |(idx, (file_index, range))| {
+                let file = files
+                    .get(file_index)
+                    .ok_or(UniversalIoError::InvalidFileIndex {
+                        file_index,
+                        files: files.len(),
+                    })?;
+
+                let data = file.read::<P>(range)?;
+                Ok((idx, file_index, data))
+            })
+    }
+
+    // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }

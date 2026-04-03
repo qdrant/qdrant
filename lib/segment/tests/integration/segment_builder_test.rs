@@ -12,7 +12,7 @@ use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, only_default_vector};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::id_tracker::IdTracker;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::json_path::JsonPath;
@@ -63,7 +63,7 @@ fn test_building_new_segment() {
         .unwrap();
 
     builder
-        .update(&[&segment1, &segment2, &segment2], &stopped)
+        .update(&[&segment1, &segment2, &segment2], &stopped, &hw_counter)
         .unwrap();
 
     // Check what happens if segment building fails here
@@ -142,7 +142,9 @@ fn test_building_new_defragmented_segment() {
 
     builder.set_defragment_keys(vec![defragment_key.clone()]);
 
-    builder.update(&[&segment1, &segment2], &stopped).unwrap();
+    builder
+        .update(&[&segment1, &segment2], &stopped, &hw_counter)
+        .unwrap();
 
     // Check what happens if segment building fails here
 
@@ -198,7 +200,7 @@ fn check_points_defragmented(
 
     let hw_counter = HardwareCounterCell::new();
 
-    for internal_id in id_tracker.iter_internal() {
+    for internal_id in id_tracker.point_mappings().iter_internal() {
         let external_id = id_tracker.external_id(internal_id).unwrap();
         let payload = segment.payload(external_id, &hw_counter).unwrap();
         let values = payload.get_value(defragment_key);
@@ -266,7 +268,7 @@ fn test_building_new_sparse_segment() {
         .unwrap();
 
     builder
-        .update(&[&segment1, &segment2, &segment2], &stopped)
+        .update(&[&segment1, &segment2, &segment2], &stopped, &hw_counter)
         .unwrap();
 
     // Check what happens if segment building fails here
@@ -334,7 +336,8 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
     )
     .unwrap();
 
-    builder.update(&[segment], &stopped).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    builder.update(&[segment], &stopped, &hw_counter).unwrap();
 
     let now = Instant::now();
 
@@ -423,7 +426,9 @@ fn test_building_new_segment_bug_5614() {
         .upsert_point(124, 100.into(), vector_100_high.clone(), &hw_counter)
         .unwrap();
 
-    builder.update(&[&segment1, &segment2], &stopped).unwrap();
+    builder
+        .update(&[&segment1, &segment2], &stopped, &hw_counter)
+        .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

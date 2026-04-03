@@ -160,19 +160,28 @@ pub(crate) async fn transfer_resharding_stream_records(
     let mut total_send = Duration::ZERO;
 
     loop {
-        let shard_holder = shard_holder.read().await;
+        // Read batch under shard holder lock
+        let prepared_batch = {
+            let shard_holder = shard_holder.read().await;
 
-        let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-            // Forward proxy gone?!
-            // That would be a programming error.
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} is not found"
-            )));
+            let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+                // Forward proxy gone?!
+                // That would be a programming error.
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} is not found"
+                )));
+            };
+
+            replica_set
+                .read_transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
+                .await?
+
+            // Shard holder lock is dropped here, but the forward proxy update lock is still
+            // held inside the prepared batch.
         };
 
-        let result = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
-            .await?;
+        // Send batch to remote shard without holding the shard holder lock.
+        let result = prepared_batch.send(&remote_shard).await?;
 
         offset = result.next_page_offset;
         total_read += result.read_duration;

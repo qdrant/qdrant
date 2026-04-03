@@ -1,5 +1,5 @@
 mod count;
-mod discovery;
+mod discover;
 mod facet;
 mod local_shard;
 mod matrix;
@@ -208,6 +208,17 @@ pub fn check_timeout(
     check_limit_opt(Some(timeout), strict_mode_config.max_timeout, "timeout")
 }
 
+pub fn check_search_batch_size(
+    batch_size: usize,
+    strict_mode_config: &StrictModeConfig,
+) -> CollectionResult<()> {
+    check_limit_opt(
+        Some(batch_size),
+        strict_mode_config.search_max_batchsize,
+        "search batch size",
+    )
+}
+
 pub(crate) fn check_bool_opt(
     value: Option<bool>,
     allowed: Option<bool>,
@@ -329,6 +340,7 @@ pub fn check_grouping_field(
 mod test {
     use std::sync::Arc;
 
+    use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
     use common::budget::ResourceBudget;
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::types::{
@@ -343,7 +355,8 @@ mod test {
     use crate::operations::point_ops::{FilterSelector, PointsSelector};
     use crate::operations::shared_storage_config::SharedStorageConfig;
     use crate::operations::types::{
-        CollectionError, CountRequestInternal, DiscoverRequestInternal,
+        CollectionError, CountRequestInternal, DiscoverRequestInternal, SearchRequest,
+        SearchRequestBatch,
     };
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::channel_service::ChannelService;
@@ -362,32 +375,34 @@ mod test {
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
         test_request_exact(&collection).await;
+        test_search_batch_limit(&collection).await;
+        test_upsert_batch_limit(&collection).await;
     }
 
     async fn test_query_limit(collection: &Collection) {
-        assert_strict_mode_error(discovery_fixture(Some(10), None, None), collection).await;
-        assert_strict_mode_success(discovery_fixture(Some(4), None, None), collection).await;
+        assert_strict_mode_error(discover_fixture(Some(10), None, None), collection).await;
+        assert_strict_mode_success(discover_fixture(Some(4), None, None), collection).await;
     }
 
     async fn test_filter_read(collection: &Collection) {
         let filter = filter_fixture(UNINDEXED_KEY);
-        assert_strict_mode_error(discovery_fixture(None, Some(filter), None), collection).await;
+        assert_strict_mode_error(discover_fixture(None, Some(filter), None), collection).await;
 
         let filter = filter_fixture(INDEXED_KEY);
-        assert_strict_mode_success(discovery_fixture(None, Some(filter), None), collection).await;
+        assert_strict_mode_success(discover_fixture(None, Some(filter), None), collection).await;
     }
 
     async fn test_search_params(collection: &Collection) {
         let restricted_params = search_params_fixture(true);
         assert_strict_mode_error(
-            discovery_fixture(None, None, Some(restricted_params)),
+            discover_fixture(None, None, Some(restricted_params)),
             collection,
         )
         .await;
 
         let allowed_params = search_params_fixture(false);
         assert_strict_mode_success(
-            discovery_fixture(None, None, Some(allowed_params)),
+            discover_fixture(None, None, Some(allowed_params)),
             collection,
         )
         .await;
@@ -418,6 +433,80 @@ mod test {
             filter: None,
             exact: false,
         };
+        assert_strict_mode_success(request, collection).await;
+    }
+
+    async fn test_search_batch_limit(collection: &Collection) {
+        let request = SearchRequestBatch {
+            searches: vec![
+                SearchRequest {
+                    search_request: SearchRequestInternal {
+                        vector: api::rest::NamedVectorStruct::Default(vec![0.2, 0.1, 0.9, 0.7]),
+                        filter: None,
+                        params: None,
+                        limit: 3,
+                        offset: None,
+                        with_payload: None,
+                        with_vector: None,
+                        score_threshold: None,
+                    },
+                    shard_key: None,
+                };
+                5
+            ],
+        };
+        assert_strict_mode_error(request, collection).await;
+
+        let request = SearchRequestBatch {
+            searches: vec![
+                SearchRequest {
+                    search_request: SearchRequestInternal {
+                        vector: api::rest::NamedVectorStruct::Default(vec![0.2, 0.1, 0.9, 0.7]),
+                        filter: None,
+                        params: None,
+                        limit: 3,
+                        offset: None,
+                        with_payload: None,
+                        with_vector: None,
+                        score_threshold: None,
+                    },
+                    shard_key: None,
+                };
+                2
+            ],
+        };
+        assert_strict_mode_success(request, collection).await;
+    }
+
+    async fn test_upsert_batch_limit(collection: &Collection) {
+        let request = PointInsertOperations::PointsList(PointsList {
+            points: vec![
+                PointStruct {
+                    id: 1.into(),
+                    vector: api::rest::VectorStruct::Single(vec![0.1, 0.2, 0.3, 0.4]),
+                    payload: None,
+                };
+                5
+            ],
+            shard_key: None,
+            update_filter: None,
+            update_mode: None,
+        });
+        assert_strict_mode_error(request, collection).await;
+
+        let request = PointInsertOperations::PointsList(PointsList {
+            points: vec![
+                PointStruct {
+                    id: 1.into(),
+                    vector: api::rest::VectorStruct::Single(vec![0.1, 0.2, 0.3, 0.4]),
+                    payload: None,
+                };
+                4
+            ],
+            shard_key: None,
+            update_filter: None,
+            update_mode: None,
+        });
         assert_strict_mode_success(request, collection).await;
     }
 
@@ -464,7 +553,7 @@ mod test {
         }
     }
 
-    fn discovery_fixture(
+    fn discover_fixture(
         limit: Option<usize>,
         filter: Option<Filter>,
         search_params: Option<SearchParams>,
@@ -493,6 +582,8 @@ mod test {
             search_max_hnsw_ef: Some(3),
             search_allow_exact: Some(false),
             search_max_oversampling: Some(0.2),
+            search_max_batchsize: Some(4),
+            upsert_max_batchsize: Some(4),
             ..Default::default()
         };
 

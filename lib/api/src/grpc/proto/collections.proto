@@ -1,10 +1,10 @@
 syntax = "proto3";
 package qdrant;
 
-option csharp_namespace = "Qdrant.Client.Grpc";
-
 import "json_with_int.proto";
 import "qdrant_common.proto";
+
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 enum Datatype {
   Default = 0;
@@ -406,6 +406,8 @@ message StrictModeConfig {
   optional float search_max_oversampling = 8;
   // Max batchsize when upserting
   optional uint64 upsert_max_batchsize = 9;
+  // Max batchsize when searching
+  optional uint64 search_max_batchsize = 20;
   // Max size of a collections vector storage in bytes, ignoring replicas.
   optional uint64 max_collection_vector_size_bytes = 10;
   // Max number of read operations per minute per replica
@@ -749,8 +751,11 @@ message PayloadSchemaInfo {
 }
 
 message UpdateQueueInfo {
-    // Number of elements in the queue
-    uint64 length = 1;
+  // Number of elements in the queue
+  uint64 length = 1;
+
+  // Number of points that are deferred (i.e hidden from search as they're not yet optimized).
+  optional uint64 deferred_points = 2;
 }
 
 message CollectionInfo {

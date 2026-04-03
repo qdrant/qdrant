@@ -15,7 +15,6 @@ workspace = true
 testing = []
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 data-consistency-check = []
-rocksdb = ["segment/rocksdb"]
 staging = ["shard/staging"]
 
 [dev-dependencies]
@@ -58,7 +57,7 @@ atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = { workspace = true }
 async-trait = { workspace = true }
-arc-swap = "1.8.2"
+arc-swap = "1.9.0"
 tonic = { workspace = true }
 uuid = { workspace = true }
 url = { workspace = true }
@@ -96,7 +95,7 @@ tracing = { workspace = true, optional = true }
 fs4 = { workspace = true }
 
 # AWS S3 support
-object_store = { version = "0.13.1", features = ["aws"] }
+object_store = { version = "0.13.2", features = ["aws"] }
 
 
 [[bench]]

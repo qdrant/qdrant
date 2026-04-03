@@ -31,8 +31,9 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::update_handler::{OperationData, UpdateSignal};
+use crate::update_workers::internal_update_result::InternalUpdateResult;
 
 #[async_trait]
 impl ShardOperation for LocalShard {
@@ -46,13 +47,13 @@ impl ShardOperation for LocalShard {
     async fn update(
         &self,
         mut operation: OperationWithClockTag,
-        wait: bool,
+        wait: WaitUntil,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
-        let (callback_sender, callback_receiver) = if wait {
+        let (callback_sender, callback_receiver) = if wait.needs_callback() {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
         } else {
@@ -104,6 +105,7 @@ impl ShardOperation for LocalShard {
                 op_num: operation_id,
                 operation,
                 sender: callback_sender,
+                wait_for_deferred: wait.wait_for_deferred(),
                 hw_measurements: hw_measurement_acc.clone(),
             }));
 
@@ -124,18 +126,25 @@ impl ShardOperation for LocalShard {
             (Some(receiver), Some(timeout)) => {
                 match tokio::time::timeout(timeout, receiver).await {
                     Ok(res) => {
-                        res??;
+                        let InternalUpdateResult { op_num, status } = res??;
+                        debug_assert_eq!(
+                            op_num, operation_id,
+                            "Operation ID from WAL should match the one received from update worker"
+                        );
                         Ok(UpdateResult {
-                            operation_id: Some(operation_id),
-                            status: UpdateStatus::Completed,
+                            operation_id: Some(op_num),
+                            status,
                             clock_tag: operation.clock_tag,
                         })
                     }
-                    Err(_) => Ok(UpdateResult {
-                        operation_id: Some(operation_id),
-                        status: UpdateStatus::WaitTimeout,
-                        clock_tag: operation.clock_tag,
-                    }),
+                    Err(elapsed) => {
+                        let _elapsed: Elapsed = elapsed;
+                        Ok(UpdateResult {
+                            operation_id: Some(operation_id),
+                            status: UpdateStatus::WaitTimeout,
+                            clock_tag: operation.clock_tag,
+                        })
+                    }
                 }
             }
             // Don't wait at all
@@ -180,6 +189,7 @@ impl ShardOperation for LocalShard {
             cost
         })?;
         let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
 
         let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
         let order_by = order_by.clone().map(OrderBy::from);
@@ -216,7 +226,13 @@ impl ShardOperation for LocalShard {
         };
 
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request);
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(result)
     }
 
@@ -287,6 +303,7 @@ impl ShardOperation for LocalShard {
             cost
         })?;
         let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let total_count = if request.exact {
             let timeout = self.timeout_or_default_search_timeout(timeout);
             let all_points = tokio::time::timeout(
@@ -308,7 +325,13 @@ impl ShardOperation for LocalShard {
                 .exp
         };
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request);
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(CountResult { count: total_count })
     }
 
@@ -328,6 +351,7 @@ impl ShardOperation for LocalShard {
         let timeout = self.timeout_or_default_search_timeout(timeout);
 
         let start_time = Instant::now();
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let records_map = tokio::time::timeout(
             timeout,
             SegmentsSearcher::retrieve(
@@ -351,7 +375,13 @@ impl ShardOperation for LocalShard {
             .collect();
 
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request);
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
 
         Ok(ordered_records)
     }
@@ -377,6 +407,7 @@ impl ShardOperation for LocalShard {
                 .sum()
         })?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let result = self
             .do_planned_query(
                 planned_query,
@@ -387,7 +418,15 @@ impl ShardOperation for LocalShard {
             .await;
 
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || requests.remove_details());
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || {
+            requests.remove_details()
+        });
 
         result
     }
@@ -411,6 +450,7 @@ impl ShardOperation for LocalShard {
 
         let start_time = Instant::now();
         let timeout = self.timeout_or_default_search_timeout(timeout);
+        let cpu_utilization = hw_measurement_acc.cpu_utilization();
         let hits = if request.exact {
             self.exact_facet(
                 request.clone(),
@@ -429,7 +469,13 @@ impl ShardOperation for LocalShard {
             .await?
         };
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request);
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
+        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(FacetResponse { hits })
     }
 

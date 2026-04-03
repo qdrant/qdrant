@@ -9,7 +9,7 @@ use common::types::DeferredBehavior;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{ReadSegmentEntry, SegmentEntry};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload, WithVector};
@@ -83,14 +83,18 @@ fn test_update_proxy_segments() {
         .read()
         .iter()
         .flat_map(|(_id, segment)| {
-            segment.get().read().read_filtered(
-                None,
-                Some(100),
-                None,
-                &is_stopped,
-                &hw_counter,
-                DeferredBehavior::Exclude,
-            )
+            segment
+                .get()
+                .read()
+                .read_filtered(
+                    None,
+                    Some(100),
+                    None,
+                    &is_stopped,
+                    &hw_counter,
+                    DeferredBehavior::Exclude,
+                )
+                .unwrap()
         })
         .sorted()
         .collect_vec();

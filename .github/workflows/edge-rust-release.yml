@@ -28,22 +28,22 @@ jobs:
 
     steps:
       - name: Checkout Qdrant
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Install mold
         if: startsWith(matrix.os, 'ubuntu')
-        uses: rui314/setup-mold@v1
+        uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
       - name: Install Just
-        # TODO: switch to extractions/setup-just@v3 once this PR is merged:
+        # TODO: switch to extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3.1.0 once this PR is merged:
         # https://github.com/extractions/setup-crate/pull/8
         uses: xzfc/setup-just@fb4bb125d47d4680296d3f3766c6ec83f70b3523
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
 
       - name: Install ast-grep
         run: uv tool install ast-grep-cli
@@ -56,7 +56,7 @@ jobs:
         uses: ./.github/actions/setup-qdrant
 
       - name: Restore Rust build cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Prepare data files (for testing examples)
         if: steps.setup-qdrant.conclusion == 'success'
@@ -84,16 +84,16 @@ jobs:
 
     steps:
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
 
       - name: Install ast-grep
         run: uv tool install ast-grep-cli
 
       - name: Checkout Qdrant
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Amalgamate
         run: uv run lib/edge/publish/amalgamate.py

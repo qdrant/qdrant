@@ -1,53 +1,37 @@
 // See lib/edge/python/examples/demo.py for the equivalent Python example.
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
-use examples::{TMP_DIR, load_new_shard, point};
-use ordered_float::OrderedFloat;
-use qdrant_edge::EdgeShard;
-use qdrant_edge::segment::data_types::vectors::{
-    MultiDenseVectorInternal, NamedQuery, VectorInternal, VectorStructInternal,
+use examples::{TMP_DIR, load_new_shard};
+use qdrant_edge::external::ordered_float::OrderedFloat;
+use qdrant_edge::external::serde_json::json;
+use qdrant_edge::external::uuid::Uuid;
+use qdrant_edge::{
+    Condition, CountRequest, CreateIndex, EdgeShard, FacetRequest, FieldCondition,
+    FieldIndexOperations, Filter, Match, MatchTextAny, NamedQuery, PayloadFieldSchema,
+    PayloadSchemaType, PointId, PointInsertOperations, PointOperations, PointStruct, QueryEnum,
+    QueryRequest, Range, ScoringQuery, ScrollRequest, SearchRequest, UpdateOperation, Vector,
+    Vectors, WithPayloadInterface, WithVector,
 };
-use qdrant_edge::segment::types::{
-    Condition, ExtendedPointId, FieldCondition, Filter, Match, MatchTextAny, PayloadFieldSchema,
-    PayloadSchemaType, Range, WithPayloadInterface, WithVector,
-};
-use qdrant_edge::shard::count::CountRequestInternal;
-use qdrant_edge::shard::facet::FacetRequestInternal;
-use qdrant_edge::shard::operations::CollectionUpdateOperations::{
-    FieldIndexOperation, PointOperation,
-};
-use qdrant_edge::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
-use qdrant_edge::shard::operations::{CreateIndex, FieldIndexOperations};
-use qdrant_edge::shard::query::query_enum::QueryEnum;
-use qdrant_edge::shard::query::{ScoringQuery, ShardQueryRequest};
-use qdrant_edge::shard::scroll::ScrollRequestInternal;
-use qdrant_edge::shard::search::CoreSearchRequest;
-use qdrant_edge::sparse::common::sparse_vector::SparseVector;
-use serde_json::json;
-use uuid::Uuid;
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("---- Point conversions ----");
 
     let points = vec![
-        point(
+        // Multi-dense vector
+        PointStruct::new(
             10u64,
-            VectorStructInternal::MultiDense(MultiDenseVectorInternal::new(
-                vec![1.0, 2.0, 3.0, 3.0, 4.0, 5.0],
-                3,
-            )),
+            Vectors::try_from(vec![vec![1.0, 2.0, 3.0], vec![3.0, 4.0, 5.0]])?,
             json!({}),
         ),
-        point(
+        // Named sparse vector
+        PointStruct::new(
             11,
-            VectorStructInternal::Named(HashMap::from_iter([(
-                "sparse".to_string(),
-                VectorInternal::Sparse(SparseVector::new(vec![0, 2], vec![1.0, 3.0]).unwrap()),
-            )])),
+            qdrant_edge::Vectors::new_named([(
+                "sparse",
+                Vector::new_sparse(vec![0, 2], vec![1.0, 3.0]).unwrap(),
+            )]),
             json!({}),
         ),
     ];
@@ -62,51 +46,56 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Upsert ----");
 
-    shard.update(PointOperation(UpsertPoints(PointsList(vec![
-        point(
-            1u64,
-            VectorStructInternal::Single(vec![6.0, 9.0, 4.0, 2.0]),
-            json!({
-                "null": null,
-                "str": "string",
-                "uint": 42,
-                "int": -69,
-                "float": 4.20,
-                "bool": true,
-                "obj": {
+    shard.update(UpdateOperation::PointOperation(
+        PointOperations::UpsertPoints(PointInsertOperations::PointsList(vec![
+            PointStruct::new(
+                1u64,
+                vec![6.0, 9.0, 4.0, 2.0],
+                json!({
                     "null": null,
                     "str": "string",
                     "uint": 42,
                     "int": -69,
                     "float": 4.20,
                     "bool": true,
-                    "obj": {},
-                    "arr": [],
-                },
-                "arr": [null, "string", 42, -69, 4.20, true, {}, []],
-            }),
-        ),
-        point(
-            ExtendedPointId::Uuid("e9408f2b-b917-4af1-ab75-d97ac6b2c047".parse().unwrap()),
-            VectorStructInternal::Single(vec![6.0, 9.0, 3.0, -2.0]),
-            json!({
-                "hello": "world",
-                "price": 199.99,
-            }),
-        ),
-        point(
-            ExtendedPointId::Uuid(Uuid::new_v4()),
-            VectorStructInternal::Single(vec![1.0, 6.0, 4.0, 2.0]),
-            json!({
-                "hello": "world",
-                "price": 999.99,
-            }),
-        ),
-    ]))))?;
+                    "obj": {
+                        "null": null,
+                        "str": "string",
+                        "uint": 42,
+                        "int": -69,
+                        "float": 4.20,
+                        "bool": true,
+                        "obj": {},
+                        "arr": [],
+                    },
+                    "arr": [null, "string", 42, -69, 4.20, true, {}, []],
+                }),
+            )
+            .into(),
+            PointStruct::new(
+                PointId::Uuid("e9408f2b-b917-4af1-ab75-d97ac6b2c047".parse().unwrap()),
+                vec![6.0, 9.0, 3.0, -2.0],
+                json!({
+                    "hello": "world",
+                    "price": 199.99,
+                }),
+            )
+            .into(),
+            PointStruct::new(
+                PointId::Uuid(Uuid::new_v4()),
+                vec![1.0, 6.0, 4.0, 2.0],
+                json!({
+                    "hello": "world",
+                    "price": 999.99,
+                }),
+            )
+            .into(),
+        ])),
+    ))?;
 
     println!("---- Query ----");
 
-    let result = shard.query(ShardQueryRequest {
+    let result = shard.query(QueryRequest {
         prefetches: vec![],
         query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
             query: vec![6.0, 9.0, 4.0, 2.0].into(),
@@ -127,7 +116,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Search ----");
 
-    let points = shard.search(CoreSearchRequest {
+    let points = shard.search(SearchRequest {
         query: QueryEnum::Nearest(NamedQuery {
             query: vec![1.0, 1.0, 1.0, 1.0].into(),
             using: None,
@@ -170,7 +159,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         must_not: None,
     };
 
-    let points = shard.search(CoreSearchRequest {
+    let points = shard.search(SearchRequest {
         query: QueryEnum::Nearest(NamedQuery {
             query: vec![1.0, 1.0, 1.0, 1.0].into(),
             using: None,
@@ -191,7 +180,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("---- Retrieve ----");
 
     let points = shard.retrieve(
-        &[ExtendedPointId::NumId(1)],
+        &[PointId::NumId(1)],
         Some(WithPayloadInterface::Bool(true)),
         Some(WithVector::Bool(true)),
     )?;
@@ -202,7 +191,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Scroll ----");
 
-    let (scroll_result, mut next_offset) = shard.scroll(ScrollRequestInternal {
+    let (scroll_result, mut next_offset) = shard.scroll(ScrollRequest {
         offset: None,
         limit: Some(2),
         filter: None,
@@ -216,7 +205,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     while let Some(offset) = next_offset {
         println!("--- Next scroll (offset = {offset})---");
-        let (scroll_result, next) = shard.scroll(ScrollRequestInternal {
+        let (scroll_result, next) = shard.scroll(ScrollRequest {
             offset: Some(offset),
             limit: Some(2),
             filter: None,
@@ -232,7 +221,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Count ----");
 
-    let count = shard.count(CountRequestInternal {
+    let count = shard.count(CountRequest {
         filter: None,
         exact: true,
     })?;
@@ -240,14 +229,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Facet ----");
 
-    shard.update(FieldIndexOperation(FieldIndexOperations::CreateIndex(
-        CreateIndex {
+    shard.update(UpdateOperation::FieldIndexOperation(
+        FieldIndexOperations::CreateIndex(CreateIndex {
             field_name: "hello".try_into().unwrap(),
             field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-        },
-    )))?;
+        }),
+    ))?;
 
-    let response = shard.facet(FacetRequestInternal {
+    let response = shard.facet(FacetRequest {
         key: "hello".try_into().unwrap(),
         limit: 10,
         filter: None,

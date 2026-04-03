@@ -13,6 +13,7 @@ static REQUESTS_COLLECTOR: OnceCell<crate::profiling::slow_requests_collector::R
 pub fn log_request_to_collector<F, L>(
     collection_name: impl Into<String>,
     duration: std::time::Duration,
+    cpu_usage_ratio: Option<f32>,
     get_request: F,
 ) where
     F: FnOnce() -> L,
@@ -23,8 +24,12 @@ pub fn log_request_to_collector<F, L>(
     }
 
     if let Some(listener) = REQUESTS_COLLECTOR.get() {
-        let message =
-            RequestProfileMessage::new(Box::new(get_request()), duration, collection_name.into());
+        let message = RequestProfileMessage::new(
+            Box::new(get_request()),
+            duration,
+            collection_name.into(),
+            cpu_usage_ratio,
+        );
         listener.send_if_available(message);
     } else {
         log::warn!("SlowRequestsListener is not initialized");

@@ -34,3 +34,6 @@ storage:
 
   handle_collection_load_errors: true
 
+
+audit:
+   enabled: true

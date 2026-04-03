@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::storage_version::VERSION_FILE;
 use common::types::{PointOffsetType, TelemetryDetail};
 use fs_err as fs;
@@ -12,7 +13,7 @@ use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::entry::{SegmentEntry, StorageSegmentEntry as _};
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_sparse_index, fixture_sparse_index_from_iter};
 use segment::id_tracker::IdTracker;
@@ -31,7 +32,7 @@ use segment::types::{
     SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType, VectorName,
     VectorStorageDatatype,
 };
-use segment::vector_storage::{Random, VectorStorage};
+use segment::vector_storage::VectorStorage;
 use segment::{fixture_for_all_indices, payload_json};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
@@ -226,6 +227,7 @@ fn sparse_vector_index_consistent_with_storage() {
             path: mmap_index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
+            deferred_internal_id: None,
         })
         .unwrap();
 
@@ -252,6 +254,7 @@ fn sparse_vector_index_consistent_with_storage() {
             path: mmap_index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
+            deferred_internal_id: None,
         })
         .unwrap();
 
@@ -688,6 +691,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
             path: inverted_index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
+            deferred_internal_id: None,
         })
         .unwrap()
     };

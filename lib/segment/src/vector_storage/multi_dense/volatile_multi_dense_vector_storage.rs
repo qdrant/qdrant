@@ -3,9 +3,9 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::{BitSlice, BitVec};
+use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::ext::BitSliceExt as _;
+use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 
 use crate::common::Flusher;
@@ -14,11 +14,10 @@ use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
-    AccessPattern, MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
 
 /// All fields are counting vectors and not dimensions.

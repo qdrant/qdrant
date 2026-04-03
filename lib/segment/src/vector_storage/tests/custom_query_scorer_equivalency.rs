@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
@@ -21,14 +22,14 @@ use crate::types::{
     BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
     ScalarQuantizationConfig,
 };
+use crate::vector_storage::VectorStorageEnum;
 #[cfg(target_os = "linux")]
-use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
+use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage_with_uring;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{Random, VectorStorageEnum};
 
 const DIMS: usize = 128;
 const NUM_POINTS: usize = 600;
@@ -61,7 +62,7 @@ fn ram_storage(_dir: &Path) -> VectorStorageEnum {
 
 #[cfg(target_os = "linux")]
 fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
-    open_memmap_vector_storage_with_async_io(dir, DIMS, DISTANCE, true, false).unwrap()
+    open_dense_vector_storage_with_uring(dir, DIMS, DISTANCE, false, true).unwrap()
 }
 
 fn scalar_u8() -> WithQuantization {
@@ -240,7 +241,7 @@ fn compare_scoring_equivalency(
     #[values(
         QueryVariant::RecoBestScore,
         QueryVariant::RecoSumScores,
-        QueryVariant::Discovery,
+        QueryVariant::Discover,
         QueryVariant::Context
     )]
     query_variant: QueryVariant,
@@ -257,7 +258,7 @@ fn async_compare_scoring_equivalency(
     #[values(
         QueryVariant::RecoBestScore,
         QueryVariant::RecoSumScores,
-        QueryVariant::Discovery,
+        QueryVariant::Discover,
         QueryVariant::Context
     )]
     query_variant: QueryVariant,

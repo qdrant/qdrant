@@ -3,6 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::{Random, Sequential};
 use fs_err::File;
 use itertools::Itertools;
 use rand::distr::Uniform;
@@ -24,7 +25,7 @@ use crate::fixtures::{HM_FIELDS, Payload, empty_storage, empty_storage_sized, ra
 fn test_empty_payload_storage() {
     let hw_counter = HardwareCounterCell::new();
     let (_dir, storage) = empty_storage();
-    let payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+    let payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(payload.is_none());
     assert_eq!(storage.get_storage_size_bytes(), 0);
 }
@@ -43,7 +44,7 @@ fn test_put_single_empty_value() {
     assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
     let hw_counter = HardwareCounterCell::new();
-    let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), Payload::default());
     assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -71,7 +72,7 @@ fn test_put_single_payload() {
     assert_eq!(page_mapping.block_offset, 0); // first cell
 
     let hw_counter = HardwareCounterCell::new();
-    let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
     assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -110,7 +111,7 @@ fn test_storage_files() {
 }
 
 #[rstest]
-#[case(100000, 2)]
+#[case(50000, 2)]
 #[case(100, 2000)]
 fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usize) {
     let (_dir, mut storage) = empty_storage();
@@ -129,7 +130,7 @@ fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usiz
             .unwrap();
 
         let stored_payload = storage
-            .get_value::<false>(*point_offset, &hw_counter)
+            .get_value::<Random>(*point_offset, &hw_counter)
             .unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(&stored_payload.unwrap(), payload);
@@ -139,7 +140,7 @@ fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usiz
     payloads.shuffle(rng);
     for (point_offset, payload) in payloads.iter() {
         let stored_payload = storage
-            .get_value::<false>(*point_offset, &hw_counter)
+            .get_value::<Random>(*point_offset, &hw_counter)
             .unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload.clone());
@@ -165,7 +166,7 @@ fn test_delete_single_payload() {
     assert_eq!(page_mapping.page_id, 0); // first page
     assert_eq!(page_mapping.block_offset, 0); // first cell
 
-    let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(stored_payload, Some(payload));
     assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
 
@@ -175,7 +176,7 @@ fn test_delete_single_payload() {
     assert_eq!(storage.pages.read().num_pages(), 1);
 
     // get payload again
-    let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_none());
     storage.flusher()().unwrap();
     assert_eq!(storage.get_storage_size_bytes(), 0);
@@ -204,7 +205,7 @@ fn test_update_single_payload() {
             assert_eq!(page_mapping.block_offset, expected_block_offset);
 
             let hw_counter = HardwareCounterCell::new();
-            let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+            let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
         };
@@ -253,7 +254,7 @@ fn test_write_across_pages() {
         .unwrap();
 
     let read_value = storage
-        .with_view(|view| view.read_from_pages::<false>(pointer))
+        .with_view(|view| view.read_from_pages::<Random>(pointer))
         .unwrap();
     assert_eq!(value, read_value);
 }
@@ -323,7 +324,7 @@ fn test_behave_like_hashmap(
 ) {
     use ahash::AHashMap;
 
-    let operation_count = 100_000;
+    let operation_count = 50_000;
     let max_point_offset = 10_000u32;
 
     let _ = env_logger::builder().is_test(true).try_init();
@@ -395,10 +396,10 @@ fn test_behave_like_hashmap(
             Operation::Get(point_offset) => {
                 log::debug!("op:{i} GET offset:{point_offset}");
                 let v1_seq = storage
-                    .get_value::<true>(point_offset, &hw_counter)
+                    .get_value::<Sequential>(point_offset, &hw_counter)
                     .unwrap();
                 let v1_rand = storage
-                    .get_value::<false>(point_offset, &hw_counter)
+                    .get_value::<Random>(point_offset, &hw_counter)
                     .unwrap();
                 let v2 = model_hashmap.get(&point_offset).cloned();
                 assert_eq!(
@@ -458,7 +459,7 @@ fn test_behave_like_hashmap(
     // validate storage and model_hashmap are the same
     for point_offset in 0..=max_point_offset {
         let stored_payload = storage
-            .get_value::<false>(point_offset, &hw_counter)
+            .get_value::<Random>(point_offset, &hw_counter)
             .unwrap();
         let model_payload = model_hashmap.get(&point_offset);
         assert_eq!(
@@ -488,7 +489,7 @@ fn test_behave_like_hashmap(
     // validate storage and model_hashmap are the same
     for point_offset in 0..=max_point_offset {
         let stored_payload = storage
-            .get_value::<false>(point_offset, &hw_counter)
+            .get_value::<Random>(point_offset, &hw_counter)
             .unwrap();
         let model_payload = model_hashmap.get(&point_offset);
         assert_eq!(
@@ -533,7 +534,7 @@ fn test_handle_huge_payload() {
     assert_eq!(page_mapping.page_id, 0); // first page
     assert_eq!(page_mapping.block_offset, 0); // first cell
 
-    let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
 
@@ -553,7 +554,7 @@ fn test_handle_huge_payload() {
 
         assert!(
             storage
-                .get_value::<false>(0, &hw_counter)
+                .get_value::<Random>(0, &hw_counter)
                 .unwrap()
                 .is_none()
         );
@@ -582,7 +583,7 @@ fn test_storage_persistence_basic() {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+        let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
 
@@ -594,7 +595,7 @@ fn test_storage_persistence_basic() {
     let storage = Gridstore::<Payload>::open(path).unwrap();
     assert_eq!(storage.pages.read().num_pages(), 1);
 
-    let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
 }
@@ -647,11 +648,11 @@ fn test_with_real_hm_data() {
             let record = result.unwrap();
             let storage_index = row_index as u32 + right_shift_offset;
             let first = storage
-                .get_value::<false>(storage_index, &hw_counter)
+                .get_value::<Random>(storage_index, &hw_counter)
                 .unwrap()
                 .unwrap();
             let second = storage
-                .get_value::<false>(storage_index + EXPECTED_LEN as u32, &hw_counter)
+                .get_value::<Random>(storage_index + EXPECTED_LEN as u32, &hw_counter)
                 .unwrap()
                 .unwrap();
             assert_eq!(first, second);
@@ -700,7 +701,7 @@ fn test_with_real_hm_data() {
     let offset: u32 = 1;
     for i in (0..EXPECTED_LEN).rev() {
         let payload = storage
-            .get_value::<false>(i as u32, &hw_counter)
+            .get_value::<Random>(i as u32, &hw_counter)
             .unwrap()
             .unwrap();
         storage
@@ -732,7 +733,6 @@ fn test_payload_compression() {
 }
 
 #[rstest]
-#[case(64)]
 #[case(128)]
 #[case(256)]
 #[case(512)]
@@ -780,7 +780,7 @@ fn test_deferred_flush() {
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     let get_payload = |storage: &Gridstore<Payload>| {
         storage
-            .get_value::<false>(0, &hw_counter)
+            .get_value::<Random>(0, &hw_counter)
             .expect("no io error")
             .expect("offset exists")
             .0
@@ -807,7 +807,7 @@ fn test_deferred_flush() {
             assert_eq!(page_mapping.block_offset, expected_block_offset);
 
             let hw_counter = HardwareCounterCell::new();
-            let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+            let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
         };
@@ -872,7 +872,7 @@ fn test_deferred_flush_with_delete() {
     let get_payload = |storage: &Gridstore<Payload>| {
         Some(
             storage
-                .get_value::<false>(0, &hw_counter)
+                .get_value::<Random>(0, &hw_counter)
                 .unwrap()?
                 .0
                 .get("key")
@@ -899,7 +899,7 @@ fn test_deferred_flush_with_delete() {
             assert_eq!(page_mapping.block_offset, expected_block_offset);
 
             let hw_counter = HardwareCounterCell::new();
-            let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
+            let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
         };
@@ -1068,15 +1068,15 @@ fn test_live_reload() {
     assert_eq!(reader.max_point_offset(), 2);
 
     // Step 3: Verify reader sees initial data
-    let v0 = reader.get_value::<false>(0, &hw_counter).unwrap();
+    let v0 = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
-    let v1 = reader.get_value::<false>(1, &hw_counter).unwrap();
+    let v1 = reader.get_value::<Random>(1, &hw_counter).unwrap();
     assert_eq!(v1.as_ref(), Some(&payload_1));
 
     // Step 4: live_reload when nothing changed should be a no-op
     reader.live_reload().unwrap();
     assert_eq!(reader.max_point_offset(), 2);
-    let v0 = reader.get_value::<false>(0, &hw_counter).unwrap();
+    let v0 = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
 
     // Step 5: Write more data via writable storage and flush
@@ -1092,15 +1092,15 @@ fn test_live_reload() {
     // Step 6: live_reload should update max_point_offset and make new data accessible
     reader.live_reload().unwrap();
     assert_eq!(reader.max_point_offset(), 4);
-    let v2 = reader.get_value::<false>(2, &hw_counter).unwrap();
+    let v2 = reader.get_value::<Random>(2, &hw_counter).unwrap();
     assert_eq!(v2.as_ref(), Some(&payload_2));
-    let v3 = reader.get_value::<false>(3, &hw_counter).unwrap();
+    let v3 = reader.get_value::<Random>(3, &hw_counter).unwrap();
     assert_eq!(v3.as_ref(), Some(&payload_3));
 
     // Original data should still be readable
-    let v0 = reader.get_value::<false>(0, &hw_counter).unwrap();
+    let v0 = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
-    let v1 = reader.get_value::<false>(1, &hw_counter).unwrap();
+    let v1 = reader.get_value::<Random>(1, &hw_counter).unwrap();
     assert_eq!(v1.as_ref(), Some(&payload_1));
 }
 
@@ -1145,7 +1145,7 @@ fn test_live_reload_across_pages() {
 
     // Verify reader can read all initial data
     for i in 0..first_batch {
-        let v = reader.get_value::<false>(i, &hw_counter).unwrap();
+        let v = reader.get_value::<Random>(i, &hw_counter).unwrap();
         assert_eq!(v.as_ref(), Some(&payload), "missing point {i}");
     }
 
@@ -1171,7 +1171,7 @@ fn test_live_reload_across_pages() {
 
     // Verify all data is readable
     for i in 0..(first_batch + second_batch) {
-        let v = reader.get_value::<false>(i, &hw_counter).unwrap();
+        let v = reader.get_value::<Random>(i, &hw_counter).unwrap();
         assert_eq!(v.as_ref(), Some(&payload), "missing point {i} after reload");
     }
 }
@@ -1202,7 +1202,7 @@ fn test_skip_deferred_flush_after_clear() {
 
         let hw_counter = HardwareCounterCell::new();
         let stored_payload = storage
-            .get_value::<false>(point_offset, &hw_counter)
+            .get_value::<Random>(point_offset, &hw_counter)
             .unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);

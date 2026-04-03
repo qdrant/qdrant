@@ -333,9 +333,9 @@ impl From<PyVectorStorageDatatype> for VectorStorageDatatype {
     }
 }
 
-// --- EdgeVectorParams (user-facing config for EdgeShardConfig) ---
+// --- EdgeVectorParams (user-facing config for EdgeConfig) ---
 
-use edge::config::vectors::EdgeVectorParams;
+use edge::EdgeVectorParams;
 
 #[pyclass(name = "EdgeVectorParams", from_py_object)]
 #[derive(Clone, Debug)]

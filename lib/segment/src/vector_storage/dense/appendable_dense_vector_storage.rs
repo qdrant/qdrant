@@ -3,11 +3,12 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::BitSlice;
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::generic_consts::AccessPattern;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -20,7 +21,7 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
-    AccessPattern, DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -28,7 +29,7 @@ const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Debug)]
 pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
-    vectors: ChunkedVectors<T, MmapUniversal<T>>,
+    vectors: ChunkedVectors<T, MmapFile>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -264,7 +265,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 }
 
 /// Find files related to this dense vector storage
-#[cfg(any(test, feature = "rocksdb"))]
+#[cfg(test)]
 pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<Vec<PathBuf>> {
     let vectors_path = vector_storage_path.join(VECTORS_DIR_PATH);
     let deleted_path = vector_storage_path.join(DELETED_DIR_PATH);

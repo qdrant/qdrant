@@ -2,9 +2,10 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use ahash::HashSet;
+use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::universal_io::{
-    ElementsRange, FileIndex, Flusher, OpenOptions, UniversalRead, UniversalWrite,
+    FileIndex, Flusher, OpenOptions, ReadRange, UniversalRead, UniversalWrite,
 };
 use smallvec::SmallVec;
 
@@ -12,7 +13,7 @@ use crate::Result;
 use crate::config::StorageConfig;
 use crate::tracker::{PageId, ValuePointer};
 
-type PageRanges = SmallVec<[(FileIndex, ElementsRange); 2]>;
+type PageRanges = SmallVec<[(FileIndex, ReadRange); 2]>;
 type BufferOffsets = SmallVec<[usize; 2]>;
 
 pub fn page_path(base_path: &Path, page_id: PageId) -> PathBuf {
@@ -57,10 +58,12 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
     pub fn attach_page(&mut self, path: &Path) -> Result<()> {
         let options = OpenOptions {
+            writeable: true,
             need_sequential: true,
             disk_parallel: None,
             populate: Some(false),
             advice: None,
+            prevent_caching: None,
         };
 
         let page = S::open(path, options)?;
@@ -86,7 +89,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
     /// section can be read into or written from the correct position.
     ///
     /// Returns a tuple of:
-    /// - `SmallVec<[(FileIndex, ElementsRange); 2]>` — the per-page file ranges to access.
+    /// - `SmallVec<[(FileIndex, ReadRange); 2]>` — the per-page file ranges to access.
     /// - `SmallVec<[usize; 2]>` — the offset within the value buffer that each page range
     ///   corresponds to.
     fn get_page_value_ranges(
@@ -122,8 +125,8 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
             page_ranges.push((
                 page_idx,
-                ElementsRange {
-                    start,
+                ReadRange {
+                    byte_offset: start,
                     length: section_len,
                 },
             ));
@@ -137,7 +140,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
         (page_ranges, buffer_offsets)
     }
 
-    pub fn read_from_pages<const READ_SEQUENTIAL: bool>(
+    pub fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
         config: &StorageConfig,
@@ -147,7 +150,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
         let (read_ranges, buffer_offsets) = Self::get_page_value_ranges(pointer, config);
 
-        S::read_multi::<READ_SEQUENTIAL>(self.pages.as_slice(), read_ranges, |idx, _, slice| {
+        S::read_multi::<P>(self.pages.as_slice(), read_ranges, |idx, _, slice| {
             let offset = buffer_offsets[idx];
             raw_value[offset..offset + slice.len()].write_copy_of_slice(slice);
             Ok(())
@@ -220,7 +223,7 @@ impl<S: UniversalWrite<u8>> Pages<S> {
             .map(|(&(file_idx, range), &start)| {
                 (
                     file_idx,
-                    range.start,
+                    range.byte_offset,
                     &value[start..start + range.length as usize],
                 )
             });

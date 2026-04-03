@@ -2,10 +2,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::defaults::log_load_timing;
 use common::either_variant::EitherVariant;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
@@ -13,8 +15,6 @@ use fs_err as fs;
 use schemars::_serde_json::Value;
 
 use super::field_index::facet_index::FacetIndexEnum;
-#[cfg(feature = "rocksdb")]
-use super::field_index::index_selector::IndexSelectorRocksDb;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
@@ -23,7 +23,7 @@ use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexTyp
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
-use crate::id_tracker::{IdTracker, IdTrackerEnum};
+use crate::id_tracker::{IdTracker, IdTrackerEnum, PointMappingsRefEnum};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
@@ -46,34 +46,8 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
 enum StorageType {
-    #[cfg(feature = "rocksdb")]
-    RocksDbAppendable(std::sync::Arc<parking_lot::RwLock<rocksdb::DB>>),
     GridstoreAppendable,
-    #[cfg(feature = "rocksdb")]
-    RocksDbNonAppendable(Arc<parking_lot::RwLock<rocksdb::DB>>),
     GridstoreNonAppendable,
-}
-
-impl StorageType {
-    #[cfg(feature = "rocksdb")]
-    pub fn is_appendable(&self) -> bool {
-        match self {
-            StorageType::RocksDbAppendable(_) => true,
-            StorageType::GridstoreAppendable => true,
-            StorageType::RocksDbNonAppendable(_) => false,
-            StorageType::GridstoreNonAppendable => false,
-        }
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn is_rocksdb(&self) -> bool {
-        match self {
-            StorageType::RocksDbAppendable(_) => true,
-            StorageType::RocksDbNonAppendable(_) => true,
-            StorageType::GridstoreAppendable => false,
-            StorageType::GridstoreNonAppendable => false,
-        }
-    }
 }
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
@@ -94,9 +68,6 @@ pub struct StructPayloadIndex {
     visited_pool: VisitedPool,
     /// Desired storage type for payload indices, used in builder to pick correct type
     storage_type: StorageType,
-    /// RocksDB instance, if any index is using it
-    #[cfg(feature = "rocksdb")]
-    db: Option<Arc<parking_lot::RwLock<rocksdb::DB>>>,
 }
 
 impl StructPayloadIndex {
@@ -105,38 +76,48 @@ impl StructPayloadIndex {
         condition: &FieldCondition,
         nested_path: Option<&JsonPath>,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<CardinalityEstimation> {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         let full_path = JsonPath::extend_or_new(nested_path, &condition.key);
-        self.field_indexes.get(&full_path).and_then(|indexes| {
-            // rewrite condition with fullpath to enable cardinality estimation
-            let full_path_condition = FieldCondition {
-                key: full_path,
-                ..condition.clone()
-            };
-
-            indexes
-                .iter()
-                .find_map(|index| index.estimate_cardinality(&full_path_condition, hw_counter))
-        })
+        let Some(indexes) = self.field_indexes.get(&full_path) else {
+            return Ok(None);
+        };
+        // rewrite condition with fullpath to enable cardinality estimation
+        let full_path_condition = FieldCondition {
+            key: full_path,
+            ..condition.clone()
+        };
+        indexes
+            .iter()
+            .find_map(|index| {
+                index
+                    .estimate_cardinality(&full_path_condition, hw_counter)
+                    .transpose()
+            })
+            .transpose()
     }
 
     fn query_field<'a>(
         &'a self,
         condition: &'a PrimaryCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         match condition {
             PrimaryCondition::Condition(field_condition) => {
                 let field_key = &field_condition.key;
-                let field_indexes = self.field_indexes.get(field_key)?;
+                let Some(field_indexes) = self.field_indexes.get(field_key) else {
+                    return Ok(None);
+                };
                 field_indexes
                     .iter()
-                    .find_map(|field_index| field_index.filter(field_condition, hw_counter))
+                    .find_map(|field_index| {
+                        field_index.filter(field_condition, hw_counter).transpose()
+                    })
+                    .transpose()
             }
             PrimaryCondition::Ids(ids) => {
-                Some(Box::new(ids.resolved_point_offsets.iter().copied()))
+                Ok(Some(Box::new(ids.resolved_point_offsets.iter().copied())))
             }
-            PrimaryCondition::HasVector(_) => None,
+            PrimaryCondition::HasVector(_) => Ok(None),
         }
     }
 
@@ -156,8 +137,10 @@ impl StructPayloadIndex {
         let mut is_dirty = false;
 
         for (field, payload_schema) in indices.iter_mut() {
+            let started = Instant::now();
             let (field_index, dirty) =
                 self.load_from_db(field, payload_schema, create_if_missing)?;
+            log_load_timing(&self.path, &format!("field `{field}`"), started);
             field_indexes.insert(field.clone(), field_index);
             is_dirty |= dirty;
         }
@@ -173,9 +156,8 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    #[cfg_attr(not(feature = "rocksdb"), allow(clippy::needless_pass_by_ref_mut))]
     fn load_from_db(
-        &mut self,
+        &self,
         field: PayloadKeyTypeRef,
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
@@ -247,40 +229,7 @@ impl StructPayloadIndex {
                 .collect::<OperationResult<Vec<_>>>()?
         };
 
-        // Actively migrate away from RocksDB indices
-        // Naively implemented by just rebuilding the indices from scratch
-        #[cfg(feature = "rocksdb")]
-        if common::flags::feature_flags().migrate_rocksdb_payload_indices
-            && indexes.iter().any(|index| index.is_rocksdb())
-        {
-            log::info!("Migrating away from RocksDB indices for field `{field}`");
-
-            rebuild = true;
-            is_dirty = true;
-
-            // Change storage type, set skip RocksDB flag and persist
-            // Needed to not use RocksDB when rebuilding indices below
-            match self.storage_type {
-                StorageType::RocksDbAppendable(_) => {
-                    self.storage_type = StorageType::GridstoreAppendable;
-                }
-                StorageType::GridstoreAppendable => {}
-                StorageType::RocksDbNonAppendable(_) => {
-                    self.storage_type = StorageType::GridstoreNonAppendable;
-                }
-                StorageType::GridstoreNonAppendable => {}
-            }
-            self.config.skip_rocksdb.replace(true);
-
-            // Wipe all existing indices
-            for index in indexes.drain(..) {
-                index.wipe().map_err(|err| {
-                    OperationError::service_error(format!(
-                        "Failed to delete existing payload index for field `{field}` before rebuild: {err}"
-                    ))
-                })?;
-            }
-        }
+        // TODO(rocksdb): review leftover code in this function
 
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
@@ -312,78 +261,14 @@ impl StructPayloadIndex {
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
         } else {
-            #[cfg(feature = "rocksdb")]
-            {
-                let mut new_config = PayloadConfig::default();
-                let skip_rocksdb = if is_appendable {
-                    common::flags::feature_flags().payload_index_skip_mutable_rocksdb
-                } else {
-                    common::flags::feature_flags().payload_index_skip_rocksdb
-                };
-                if skip_rocksdb {
-                    new_config.skip_rocksdb = Some(true);
-                }
-                new_config
-            }
-
-            #[cfg(not(feature = "rocksdb"))]
-            {
-                PayloadConfig::default()
-            }
+            PayloadConfig::default()
         };
 
-        #[cfg(feature = "rocksdb")]
-        let mut db = None;
         let storage_type = if is_appendable {
-            #[cfg(feature = "rocksdb")]
-            {
-                let skip_rocksdb = config.skip_rocksdb.unwrap_or(false);
-                if !skip_rocksdb {
-                    let rocksdb = crate::common::rocksdb_wrapper::open_db_with_existing_cf(path)
-                        .map_err(|err| {
-                            OperationError::service_error(format!("RocksDB open error: {err}"))
-                        })?;
-                    db.replace(rocksdb.clone());
-                    StorageType::RocksDbAppendable(rocksdb)
-                } else {
-                    StorageType::GridstoreAppendable
-                }
-            }
-            #[cfg(not(feature = "rocksdb"))]
-            {
-                StorageType::GridstoreAppendable
-            }
+            StorageType::GridstoreAppendable
         } else {
-            #[cfg(feature = "rocksdb")]
-            {
-                let skip_rocksdb = config.skip_rocksdb.unwrap_or(false);
-                if !skip_rocksdb {
-                    let rocksdb = crate::common::rocksdb_wrapper::open_db_with_existing_cf(path)
-                        .map_err(|err| {
-                            OperationError::service_error(format!("RocksDB open error: {err}"))
-                        })?;
-                    db.replace(rocksdb.clone());
-                    StorageType::RocksDbNonAppendable(rocksdb)
-                } else {
-                    StorageType::GridstoreNonAppendable
-                }
-            }
-            #[cfg(not(feature = "rocksdb"))]
-            {
-                StorageType::GridstoreNonAppendable
-            }
+            StorageType::GridstoreNonAppendable
         };
-
-        // Also prematurely open RocksDB if any index is still using it
-        #[cfg(feature = "rocksdb")]
-        if db.is_none() && config.indices.any_is_rocksdb() {
-            log::debug!("Opening RocksDB to load old payload index");
-            let rocksdb =
-                crate::common::rocksdb_wrapper::open_db_with_existing_cf(path).map_err(|err| {
-                    OperationError::service_error(format!("RocksDB open error: {err}"))
-                })?;
-            db.replace(rocksdb);
-        }
 
         let mut index = StructPayloadIndex {
             payload,
@@ -394,8 +279,6 @@ impl StructPayloadIndex {
             path: path.to_owned(),
             visited_pool: Default::default(),
             storage_type,
-            #[cfg(feature = "rocksdb")]
-            db,
         };
 
         if !index.config_path().exists() {
@@ -404,44 +287,6 @@ impl StructPayloadIndex {
         }
 
         index.load_all_fields(create)?;
-
-        // If we have a RocksDB instance, but no index using it, completely delete it here
-        #[cfg(feature = "rocksdb")]
-        if !index.storage_type.is_rocksdb()
-            && !index.config.indices.any_is_rocksdb()
-            && let Some(db) = index.db.take()
-        {
-            match Arc::try_unwrap(db) {
-                Ok(db) => {
-                    log::trace!(
-                        "Deleting RocksDB for payload indices, no payload index uses it anymore"
-                    );
-
-                    // Close RocksDB instance
-                    let db = db.into_inner();
-                    drop(db);
-
-                    // Destroy all RocksDB files
-                    let options = crate::common::rocksdb_wrapper::make_db_options();
-                    match rocksdb::DB::destroy(&options, &index.path) {
-                        Ok(_) => log::debug!("Deleted RocksDB for payload indices"),
-                        Err(err) => {
-                            log::warn!("Failed to delete RocksDB for payload indices: {err}")
-                        }
-                    }
-                }
-                // Here we don't have exclusive ownership of RocksDB, which prevents us from
-                // controlling and closing the instance. Because of it, we cannot destroy the
-                // RocksDB files, and leave them behind. We don't consider this a problem, because
-                // a future optimization run will get rid of these files.
-                Err(db) => {
-                    log::warn!(
-                        "RocksDB for payload indices could not be deleted, does not have exclusive ownership"
-                    );
-                    index.db.replace(db);
-                }
-            }
-        }
 
         Ok(index)
     }
@@ -493,7 +338,7 @@ impl StructPayloadIndex {
         &'a self,
         filter: &'a Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> StructFilterContext<'a> {
+    ) -> OperationResult<StructFilterContext<'a>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
         let (optimized_filter, _) = self.optimize_filter(
@@ -501,9 +346,9 @@ impl StructPayloadIndex {
             payload_provider,
             self.available_point_count(),
             hw_counter,
-        );
+        )?;
 
-        StructFilterContext::new(optimized_filter)
+        Ok(StructFilterContext::new(optimized_filter))
     }
 
     pub(super) fn condition_cardinality(
@@ -511,26 +356,26 @@ impl StructPayloadIndex {
         condition: &Condition,
         nested_path: Option<&JsonPath>,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
-        match condition {
+    ) -> OperationResult<CardinalityEstimation> {
+        Ok(match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::Nested(nested) => {
                 // propagate complete nested path in case of multiple nested layers
                 let full_path = JsonPath::extend_or_new(nested_path, &nested.array_key());
-                self.estimate_nested_cardinality(nested.filter(), &full_path, hw_counter)
+                self.estimate_nested_cardinality(nested.filter(), &full_path, hw_counter)?
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let available_points = self.available_point_count();
                 let condition = FieldCondition::new_is_empty(field.key.clone(), true);
 
-                self.estimate_field_condition(&condition, nested_path, hw_counter)
+                self.estimate_field_condition(&condition, nested_path, hw_counter)?
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
                 let available_points = self.available_point_count();
                 let condition = FieldCondition::new_is_null(field.key.clone(), true);
 
-                self.estimate_field_condition(&condition, nested_path, hw_counter)
+                self.estimate_field_condition(&condition, nested_path, hw_counter)?
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::HasId(has_id) => {
@@ -563,13 +408,13 @@ impl StructPayloadIndex {
                 }
             }
             Condition::Field(field_condition) => self
-                .estimate_field_condition(field_condition, nested_path, hw_counter)
+                .estimate_field_condition(field_condition, nested_path, hw_counter)?
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
 
             Condition::CustomIdChecker(cond) => cond
                 .0
                 .estimate_cardinality(self.id_tracker.borrow().available_point_count()),
-        }
+        })
     }
 
     pub fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
@@ -582,14 +427,6 @@ impl StructPayloadIndex {
                     .collect()
             })
             .collect()
-    }
-
-    #[cfg(feature = "rocksdb")]
-    pub fn restore_database_snapshot(
-        snapshot_path: &Path,
-        segment_path: &Path,
-    ) -> OperationResult<()> {
-        crate::rocksdb_backup::restore(snapshot_path, &segment_path.join("payload_index"))
     }
 
     fn clear_index_for_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
@@ -613,25 +450,27 @@ impl StructPayloadIndex {
             .unwrap_or(false)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
         id_tracker: &'a IdTrackerEnum,
+        point_mappings: &'a PointMappingsRefEnum,
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = id_tracker.iter_internal_visible(deferred_internal_id);
+            let full_scan_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
 
-            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
                 .stop_if(is_stopped)
                 .filter(move |i| struct_filtered_context.check(*i));
 
-            EitherVariant::A(matched_points)
+            Ok(EitherVariant::A(matched_points))
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
@@ -641,8 +480,8 @@ impl StructPayloadIndex {
             let primary_clause_iterators: Option<Vec<_>> = query_cardinality
                 .primary_clauses
                 .iter()
-                .map(move |clause| self.query_field(clause, hw_counter))
-                .collect();
+                .map(|clause| self.query_field(clause, hw_counter))
+                .collect::<OperationResult<_>>()?;
 
             if let Some(primary_iterators) = primary_clause_iterators {
                 let all_conditions_are_primary = filter
@@ -659,7 +498,7 @@ impl StructPayloadIndex {
                     })
                     .stop_if(is_stopped);
 
-                return if all_conditions_are_primary {
+                return Ok(if all_conditions_are_primary {
                     // All conditions are primary clauses,
                     // We can avoid post-filtering
                     let iter = joined_primary_iterator
@@ -667,20 +506,21 @@ impl StructPayloadIndex {
                     EitherVariant::B(iter)
                 } else {
                     // Some conditions are primary clauses, some are not
-                    let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+                    let struct_filtered_context =
+                        self.struct_filtered_context(filter, hw_counter)?;
                     let iter = joined_primary_iterator.filter(move |&id| {
                         !visited_list.check_and_update_visited(id)
                             && struct_filtered_context.check(id)
                     });
                     EitherVariant::C(iter)
-                };
+                });
             }
 
             // We can't use primary conditions, so we fall back to iterating over all ids
             // and applying full filter.
-            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
 
-            let id_tracker_iterator = id_tracker.iter_internal_visible(deferred_internal_id);
+            let id_tracker_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
 
             let iter = id_tracker_iterator
                 .stop_if(is_stopped)
@@ -691,7 +531,7 @@ impl StructPayloadIndex {
                     !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
                 });
 
-            EitherVariant::D(iter)
+            Ok(EitherVariant::D(iter))
         }
     }
 
@@ -700,28 +540,8 @@ impl StructPayloadIndex {
         let is_on_disk = payload_schema.is_on_disk();
 
         match &self.storage_type {
-            #[cfg(feature = "rocksdb")]
-            StorageType::RocksDbAppendable(db) => IndexSelector::RocksDb(IndexSelectorRocksDb {
-                db,
-                is_appendable: true,
-            }),
             StorageType::GridstoreAppendable => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
-            }
-            #[cfg(feature = "rocksdb")]
-            StorageType::RocksDbNonAppendable(db) => {
-                // legacy logic: we keep rocksdb, but load mmap indexes
-                if !is_on_disk {
-                    return IndexSelector::RocksDb(IndexSelectorRocksDb {
-                        db,
-                        is_appendable: false,
-                    });
-                }
-
-                IndexSelector::Mmap(IndexSelectorMmap {
-                    dir: &self.path,
-                    is_on_disk,
-                })
             }
             StorageType::GridstoreNonAppendable => IndexSelector::Mmap(IndexSelectorMmap {
                 dir: &self.path,
@@ -739,35 +559,6 @@ impl StructPayloadIndex {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
             }
             payload_config::StorageType::RocksDb => {
-                #[cfg(feature = "rocksdb")]
-                {
-                    let db = match (&self.storage_type, &self.db) {
-                        (
-                            StorageType::RocksDbAppendable(db)
-                            | StorageType::RocksDbNonAppendable(db),
-                            _,
-                        ) => db,
-                        (
-                            StorageType::GridstoreAppendable | StorageType::GridstoreNonAppendable,
-                            Some(db),
-                        ) => db,
-                        (
-                            StorageType::GridstoreAppendable | StorageType::GridstoreNonAppendable,
-                            None,
-                        ) => {
-                            return Err(OperationError::service_error(
-                                "Loading payload index failed: Configured storage type and payload schema mismatch!",
-                            ));
-                        }
-                    };
-
-                    return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
-                        db,
-                        is_appendable: self.storage_type.is_appendable(),
-                    }));
-                }
-
-                #[cfg(not(feature = "rocksdb"))]
                 return Err(OperationError::service_error(
                     "Loading payload index failed: Index is RocksDB but RocksDB feature is disabled.",
                 ));
@@ -937,7 +728,7 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         query: &Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         let available_points = self.available_point_count();
         let estimator =
             |condition: &Condition| self.condition_cardinality(condition, None, hw_counter);
@@ -949,7 +740,7 @@ impl PayloadIndex for StructPayloadIndex {
         query: &Filter,
         nested_path: &JsonPath,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         let available_points = self.available_point_count();
         let estimator = |condition: &Condition| {
             self.condition_cardinality(condition, Some(nested_path), hw_counter)
@@ -963,19 +754,22 @@ impl PayloadIndex for StructPayloadIndex {
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> Vec<PointOffsetType> {
+    ) -> OperationResult<Vec<PointOffsetType>> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let query_cardinality = self.estimate_cardinality(filter, hw_counter);
+        let query_cardinality = self.estimate_cardinality(filter, hw_counter)?;
         let id_tracker = self.id_tracker.borrow();
-        self.iter_filtered_points(
-            filter,
-            &id_tracker,
-            &query_cardinality,
-            hw_counter,
-            is_stopped,
-            deferred_internal_id,
-        )
-        .collect()
+        let point_mappings = id_tracker.point_mappings();
+        Ok(self
+            .iter_filtered_points(
+                filter,
+                &id_tracker,
+                &point_mappings,
+                &query_cardinality,
+                hw_counter,
+                is_stopped,
+                deferred_internal_id,
+            )?
+            .collect())
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {
@@ -995,15 +789,15 @@ impl PayloadIndex for StructPayloadIndex {
         &'a self,
         filter: &'a Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn FilterContext + 'a> {
-        Box::new(self.struct_filtered_context(filter, hw_counter))
+    ) -> OperationResult<Box<dyn FilterContext + 'a>> {
+        Ok(Box::new(self.struct_filtered_context(filter, hw_counter)?))
     }
 
     fn payload_blocks(
         &self,
         field: PayloadKeyTypeRef,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
         match self.field_indexes.get(field) {
             None => Box::new(std::iter::empty()),
             Some(indexes) => {
@@ -1131,19 +925,6 @@ impl PayloadIndex for StructPayloadIndex {
             for flusher in flushers {
                 match flusher() {
                     Ok(_) => {}
-                    Err(OperationError::RocksDbColumnFamilyNotFound { name }) => {
-                        // It is possible, that the index was removed during the flush by user or another thread.
-                        // In this case, non-existing column family is not an error, but an expected behavior.
-
-                        // Still we want to log this event, for potential debugging.
-                        log::warn!(
-                            "Flush: RocksDB cf_handle error: Cannot find column family {name}. Assume index is removed.",
-                        );
-                        debug_assert!(
-                            false,
-                            "Missing column family should not happen during testing",
-                        );
-                    }
                     Err(err) => {
                         return Err(OperationError::service_error(format!(
                             "Failed to flush payload_index: {err}",

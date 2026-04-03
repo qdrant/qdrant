@@ -10,6 +10,23 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 use crate::rbac::AuthType;
 
+/// Maximum length for a tracing ID extracted from request headers.
+pub const MAX_TRACING_ID_LEN: usize = 256;
+
+/// Request headers checked (in priority order) to extract a tracing ID.
+pub const TRACING_ID_HEADERS: &[&str] = &["x-request-id", "x-tracing-id", "traceparent"];
+
+/// Extract a tracing ID from request headers, checking [`TRACING_ID_HEADERS`]
+/// in priority order.  The value is truncated to [`MAX_TRACING_ID_LEN`] bytes.
+pub fn extract_tracing_id(get_header: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let value = TRACING_ID_HEADERS.iter().find_map(|h| get_header(h))?;
+    if value.len() > MAX_TRACING_ID_LEN {
+        Some(value.chars().take(MAX_TRACING_ID_LEN).collect())
+    } else {
+        Some(value)
+    }
+}
+
 /// Global audit logger singleton.
 static AUDIT_LOGGER: OnceLock<AuditLogger> = OnceLock::new();
 
@@ -68,8 +85,16 @@ pub enum AuditRotation {
 // Audit event
 // ---------------------------------------------------------------------------
 
+/// Whether the access check passed or was denied.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuditResult {
+    Ok,
+    Denied,
+}
+
 /// A single structured audit log entry.
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuditEvent {
     /// ISO‑8601 timestamp.
     pub timestamp: DateTime<Utc>,
@@ -78,18 +103,21 @@ pub struct AuditEvent {
     /// How the request was authenticated.
     pub auth_type: AuthType,
     /// The `subject` field from the JWT (if any).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject: Option<String>,
     /// Remote IP address of the client.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote: Option<String>,
     /// Collection name, if the check was collection‑scoped.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collection: Option<String>,
-    /// `"ok"` when the access check passed, `"denied"` otherwise.
-    pub result: &'static str,
+    /// Tracing ID extracted from request headers, if present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracing_id: Option<String>,
+    /// Whether the access check passed or was denied.
+    pub result: AuditResult,
     /// Error message when the access check failed.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 

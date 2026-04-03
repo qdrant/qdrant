@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
-use bitvec::slice::BitSlice;
+use common::bitvec::BitSlice;
 use common::fs::clear_disk_cache;
 use common::mmap::{
     Advice, AdviceSetting, MmapBitSlice, create_and_ensure_length, open_write_mmap,
@@ -553,7 +553,7 @@ impl Bitmask {
 mod tests {
 
     use bitvec::bits;
-    use bitvec::vec::BitVec;
+    use common::bitvec::BitVec;
     use proptest::prelude::*;
     use rand::{RngExt, rng};
 
@@ -636,7 +636,7 @@ mod tests {
             1, 1, 1, 1, 1, 1
         ];
 
-        let mut bitvec = BitVec::<usize, Lsb0>::new();
+        let mut bitvec = BitVec::new();
         bitvec.extend_from_bitslice(bits);
 
         assert_eq!(bitvec.len(), 64);

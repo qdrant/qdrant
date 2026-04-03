@@ -144,9 +144,11 @@ fn test_filtering_context_consistency() {
         );
 
         let nested_filter_0 = Filter::new_must(nested_condition_0);
-        let res0 = index.query_points(&nested_filter_0, &hw_counter, &is_stopped, None);
+        let res0 = index
+            .query_points(&nested_filter_0, &hw_counter, &is_stopped, None)
+            .unwrap();
 
-        let filter_context = index.filter_context(&nested_filter_0, &hw_counter);
+        let filter_context = index.filter_context(&nested_filter_0, &hw_counter).unwrap();
 
         let check_res0: Vec<_> = (0..NUM_POINTS as PointOffsetType)
             .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
@@ -182,9 +184,11 @@ fn test_filtering_context_consistency() {
 
         let nested_filter_1 = Filter::new_must(nested_condition_1);
 
-        let res1 = index.query_points(&nested_filter_1, &hw_counter, &is_stopped, None);
+        let res1 = index
+            .query_points(&nested_filter_1, &hw_counter, &is_stopped, None)
+            .unwrap();
 
-        let filter_context = index.filter_context(&nested_filter_1, &hw_counter);
+        let filter_context = index.filter_context(&nested_filter_1, &hw_counter).unwrap();
 
         let check_res1: Vec<_> = (0..NUM_POINTS as PointOffsetType)
             .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
@@ -217,9 +221,11 @@ fn test_filtering_context_consistency() {
 
         let nested_filter_2 = Filter::new_must(nested_condition_2);
 
-        let res2 = index.query_points(&nested_filter_2, &hw_counter, &is_stopped, None);
+        let res2 = index
+            .query_points(&nested_filter_2, &hw_counter, &is_stopped, None)
+            .unwrap();
 
-        let filter_context = index.filter_context(&nested_filter_2, &hw_counter);
+        let filter_context = index.filter_context(&nested_filter_2, &hw_counter).unwrap();
 
         let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
             .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
@@ -262,9 +268,11 @@ fn test_filtering_context_consistency() {
             must_not: None,
         };
 
-        let res3 = index.query_points(&nested_filter_3, &hw_counter, &is_stopped, None);
+        let res3 = index
+            .query_points(&nested_filter_3, &hw_counter, &is_stopped, None)
+            .unwrap();
 
-        let filter_context = index.filter_context(&nested_filter_3, &hw_counter);
+        let filter_context = index.filter_context(&nested_filter_3, &hw_counter).unwrap();
 
         let check_res3: Vec<_> = (0..NUM_POINTS as PointOffsetType)
             .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
