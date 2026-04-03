@@ -296,7 +296,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
             storage
-                .read_batch::<Random>(ranges, |idx, chunk| {
+                .read_batch::<Random, _>(ranges.into_iter().enumerate(), |idx, chunk| {
                     results[idx].extend_from_slice(chunk);
                     Ok(())
                 })
@@ -356,7 +356,13 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 .map_err(io_error_to_status)?;
 
             let mut results = vec![Vec::new(); reads_.len()];
-            S::read_multi::<Random>(&files, reads_, |op_idx, _, chunk| {
+
+            let reads = reads_
+                .into_iter()
+                .enumerate()
+                .map(|(op_idx, (file_idx, range))| (op_idx, &files[file_idx], range));
+
+            S::read_multi::<Random, _>(reads, |op_idx, chunk| {
                 results[op_idx].extend_from_slice(chunk);
                 Ok(())
             })

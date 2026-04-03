@@ -170,7 +170,6 @@ impl<'data, T, RequestId> IoUringState<'data, T, RequestId> {
         id: RequestId,
         fd: Fd,
         range: ReadRange,
-        file_index: FileIndex,
         direct_io: bool,
     ) -> io::Result<squeue::Entry>
     where
@@ -184,14 +183,7 @@ impl<'data, T, RequestId> IoUringState<'data, T, RequestId> {
         let mut items: Vec<MaybeUninit<T>> = Vec::with_capacity(length as _);
         items.resize_with(length as _, || MaybeUninit::uninit());
 
-        let (slot, req) = self.init(
-            id,
-            IoUringRequest::Read {
-                items,
-                file_index,
-                direct_io,
-            },
-        )?;
+        let (slot, req) = self.init(id, IoUringRequest::Read { items, direct_io })?;
         let items = req.expect_read();
 
         let bytes_ptr = items.as_mut_ptr().cast();
@@ -260,7 +252,6 @@ impl<'data, T, RequestId> IoUringState<'data, T, RequestId> {
         let resp = match req {
             IoUringRequest::Read {
                 mut items,
-                file_index,
                 direct_io,
             } => {
                 if direct_io {
@@ -273,7 +264,7 @@ impl<'data, T, RequestId> IoUringState<'data, T, RequestId> {
                 }
 
                 let items: Vec<T> = unsafe { maybe_uninit::assume_init_vec(items) };
-                IoUringResponse::Read { items, file_index }
+                IoUringResponse::Read(items)
             }
 
             IoUringRequest::Write(items) => {
@@ -307,7 +298,6 @@ impl<'data, T, RequestId> Drop for IoUringState<'data, T, RequestId> {
 pub enum IoUringRequest<'data, T> {
     Read {
         items: Vec<MaybeUninit<T>>,
-        file_index: FileIndex,
         direct_io: bool,
     },
 
@@ -334,19 +324,15 @@ impl<'data, T> IoUringRequest<'data, T> {
 
 #[derive(Debug)]
 pub enum IoUringResponse<T> {
-    Read {
-        items: Vec<T>,
-        file_index: FileIndex,
-    },
-
+    Read(Vec<T>),
     Write,
 }
 
 impl<T> IoUringResponse<T> {
-    pub fn expect_read(self) -> (FileIndex, Vec<T>) {
+    pub fn expect_read(self) -> Vec<T> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            Self::Read { items, file_index } => (file_index, items),
+            Self::Read(items) => items,
             _ => panic!(),
         }
     }

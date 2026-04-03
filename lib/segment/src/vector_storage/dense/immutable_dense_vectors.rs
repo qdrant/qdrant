@@ -197,11 +197,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             length: self.dim as _,
         });
 
-        self.storage.read_batch::<P>(ranges, |idx, vector| {
-            let point = points.get(idx).copied().expect("point ID tracked");
-            callback(idx, point, vector);
-            Ok(())
-        })?;
+        self.storage
+            .read_batch::<P, _>(ranges.enumerate(), |idx, vector| {
+                let point = points.get(idx).copied().expect("point ID tracked");
+                callback(idx, point, vector);
+                Ok(())
+            })?;
 
         Ok(())
     }
