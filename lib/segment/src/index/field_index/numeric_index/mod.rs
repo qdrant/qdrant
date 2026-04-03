@@ -11,7 +11,9 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use chrono::DateTime;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -32,6 +34,7 @@ use super::stored_point_to_values::StoredValue;
 use super::utils::{check_boundaries, value_to_integer};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::IdTrackerEnum;
 use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
@@ -173,8 +176,12 @@ where
     Vec<T>: Blob,
 {
     /// Load immutable mmap based index, either in RAM or on disk
-    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
-        let Some(mmap_index) = MmapNumericIndex::open(path, is_on_disk)? else {
+    pub fn new_mmap(
+        path: &Path,
+        is_on_disk: bool,
+        id_tracker: &IdTrackerEnum,
+    ) -> OperationResult<Option<Self>> {
+        let Some(mmap_index) = MmapNumericIndex::open(path, is_on_disk, id_tracker)? else {
             // Files don't exist, cannot load
             return Ok(None);
         };
@@ -489,8 +496,12 @@ where
     Vec<T>: Blob,
 {
     /// Load immutable mmap based index, either in RAM or on disk
-    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
-        let index = NumericIndexInner::new_mmap(path, is_on_disk)?;
+    pub fn new_mmap(
+        path: &Path,
+        is_on_disk: bool,
+        id_tracker: &IdTrackerEnum,
+    ) -> OperationResult<Option<Self>> {
+        let index = NumericIndexInner::new_mmap(path, is_on_disk, id_tracker)?;
 
         Ok(index.map(|inner| Self {
             inner,
@@ -507,7 +518,11 @@ where
         }))
     }
 
-    pub fn builder_mmap(path: &Path, is_on_disk: bool) -> NumericIndexMmapBuilder<T, P>
+    pub fn builder_mmap(
+        path: &Path,
+        is_on_disk: bool,
+        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
+    ) -> NumericIndexMmapBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
     {
@@ -515,6 +530,7 @@ where
             path: path.to_owned(),
             in_memory_index: InMemoryNumericIndex::default(),
             is_on_disk,
+            id_tracker,
             _phantom: PhantomData,
         }
     }
@@ -614,6 +630,7 @@ where
     path: PathBuf,
     in_memory_index: InMemoryNumericIndex<T>,
     is_on_disk: bool,
+    id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     _phantom: PhantomData<P>,
 }
 
@@ -655,7 +672,12 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let inner = MmapNumericIndex::build(self.in_memory_index, &self.path, self.is_on_disk)?;
+        let inner = MmapNumericIndex::build(
+            self.in_memory_index,
+            &self.path,
+            self.is_on_disk,
+            &self.id_tracker.borrow(),
+        )?;
         Ok(NumericIndex {
             inner: NumericIndexInner::Mmap(inner),
             _phantom: PhantomData,

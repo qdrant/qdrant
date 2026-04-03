@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use gridstore::Blob;
 
 use super::bool_index::BoolIndex;
@@ -14,6 +16,7 @@ use super::stored_point_to_values::StoredValue;
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
+use crate::id_tracker::IdTrackerEnum;
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
@@ -45,6 +48,7 @@ pub struct IndexSelectorGridstore<'a> {
 
 impl IndexSelector<'_> {
     /// Loads the correct index based on `index_type`.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_index_with_type(
         &self,
         field: &JsonPath,
@@ -53,6 +57,7 @@ impl IndexSelector<'_> {
         path: &Path,
         total_point_count: usize,
         create_if_missing: bool,
+        id_tracker: &IdTrackerEnum,
     ) -> OperationResult<Option<FieldIndex>> {
         let index = match (&index_type.index_type, payload_schema.expand().as_ref()) {
             (PayloadIndexType::IntIndex, PayloadSchemaParams::Integer(params)) => {
@@ -66,7 +71,7 @@ impl IndexSelector<'_> {
                     );
                 }
 
-                self.numeric_new(field, create_if_missing)?
+                self.numeric_new(field, create_if_missing, id_tracker)?
                     .map(FieldIndex::IntIndex)
             }
             (PayloadIndexType::IntMapIndex, PayloadSchemaParams::Integer(params)) => {
@@ -84,7 +89,7 @@ impl IndexSelector<'_> {
                     .map(FieldIndex::IntMapIndex)
             }
             (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => self
-                .numeric_new(field, create_if_missing)?
+                .numeric_new(field, create_if_missing, id_tracker)?
                 .map(FieldIndex::DatetimeIndex),
 
             (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(_)) => self
@@ -92,7 +97,7 @@ impl IndexSelector<'_> {
                 .map(FieldIndex::KeywordIndex),
 
             (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => self
-                .numeric_new(field, create_if_missing)?
+                .numeric_new(field, create_if_missing, id_tracker)?
                 .map(FieldIndex::FloatIndex),
 
             (PayloadIndexType::GeoIndex, PayloadSchemaParams::Geo(_)) => self
@@ -139,6 +144,7 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         create_if_missing: bool,
+        id_tracker: &IdTrackerEnum,
     ) -> OperationResult<Option<Vec<FieldIndex>>> {
         let indexes = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(_) => self
@@ -157,7 +163,7 @@ impl IndexSelector<'_> {
                     None
                 };
                 let range = if use_range {
-                    match self.numeric_new(field, create_if_missing)? {
+                    match self.numeric_new(field, create_if_missing, id_tracker)? {
                         Some(index) => Some(FieldIndex::IntIndex(index)),
                         None => return Ok(None),
                     }
@@ -168,7 +174,7 @@ impl IndexSelector<'_> {
                 Some(lookup.into_iter().chain(range).collect())
             }
             PayloadSchemaParams::Float(_) => self
-                .numeric_new(field, create_if_missing)?
+                .numeric_new(field, create_if_missing, id_tracker)?
                 .map(|index| vec![FieldIndex::FloatIndex(index)]),
             PayloadSchemaParams::Geo(_) => self
                 .geo_new(field, create_if_missing)?
@@ -180,7 +186,7 @@ impl IndexSelector<'_> {
                 .bool_new(field, create_if_missing)?
                 .map(|index| vec![FieldIndex::BoolIndex(index)]),
             PayloadSchemaParams::Datetime(_) => self
-                .numeric_new(field, create_if_missing)?
+                .numeric_new(field, create_if_missing, id_tracker)?
                 .map(|index| vec![FieldIndex::DatetimeIndex(index)]),
             PayloadSchemaParams::Uuid(_) => self
                 .map_new(field, create_if_missing)?
@@ -195,6 +201,7 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
+        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     ) -> OperationResult<Vec<FieldIndexBuilder>> {
         let builders = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(_) => {
@@ -223,6 +230,7 @@ impl IndexSelector<'_> {
                         field,
                         FieldIndexBuilder::IntMmapIndex,
                         FieldIndexBuilder::IntGridstoreIndex,
+                        id_tracker,
                     ))
                 } else {
                     None
@@ -235,6 +243,7 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::FloatMmapIndex,
                     FieldIndexBuilder::FloatGridstoreIndex,
+                    id_tracker,
                 )]
             }
             PayloadSchemaParams::Geo(_) => {
@@ -255,6 +264,7 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::DatetimeMmapIndex,
                     FieldIndexBuilder::DatetimeGridstoreIndex,
+                    id_tracker,
                 )]
             }
             PayloadSchemaParams::Uuid(_) => {
@@ -310,13 +320,14 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         create_if_missing: bool,
+        id_tracker: &IdTrackerEnum,
     ) -> OperationResult<Option<NumericIndex<T, P>>>
     where
         Vec<T>: Blob,
     {
         Ok(match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
-                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
+                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk, id_tracker)?
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 NumericIndex::new_gridstore(numeric_dir(dir, field), create_if_missing)?
@@ -329,6 +340,7 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         make_mmap: fn(NumericIndexMmapBuilder<T, P>) -> FieldIndexBuilder,
         make_gridstore: fn(NumericIndexGridstoreBuilder<T, P>) -> FieldIndexBuilder,
+        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     ) -> FieldIndexBuilder
     where
         NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
@@ -336,7 +348,7 @@ impl IndexSelector<'_> {
     {
         match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => make_mmap(
-                NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk),
+                NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk, id_tracker),
             ),
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 make_gridstore(NumericIndex::builder_gridstore(numeric_dir(dir, field)))

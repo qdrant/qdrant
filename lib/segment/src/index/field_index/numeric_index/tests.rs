@@ -6,7 +6,9 @@ use rstest::rstest;
 use tempfile::{Builder, TempDir};
 
 use super::*;
+use crate::id_tracker::id_tracker_base::IdTracker;
 use crate::json_path::JsonPath;
+use crate::types::ExtendedPointId;
 
 #[derive(Clone, Copy)]
 enum IndexType {
@@ -41,7 +43,12 @@ impl IndexBuilder {
     }
 }
 
-fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
+fn get_index_builder(
+    index_type: IndexType,
+) -> (TempDir, IndexBuilder, Arc<AtomicRefCell<IdTrackerEnum>>) {
+    let id_tracker = Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+        Default::default(),
+    )));
     let temp_dir = Builder::new()
         .prefix("test_numeric_index")
         .tempdir()
@@ -57,36 +64,65 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
             FloatPayloadType,
             FloatPayloadType,
         >::builder_mmap(
-            temp_dir.path(), false
+            temp_dir.path(),
+            false,
+            id_tracker.clone(),
         )),
     };
     match &mut builder {
         IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
         IndexBuilder::Mmap(builder) => builder.init().unwrap(),
     }
-    (temp_dir, builder)
+    (temp_dir, builder, id_tracker)
+}
+
+fn open_index_from_disk(
+    temp_dir: &Path,
+    index_type: IndexType,
+    id_tracker: &IdTrackerEnum,
+) -> NumericIndex<FloatPayloadType, FloatPayloadType> {
+    match index_type {
+        IndexType::MutableGridstore => NumericIndex::new_gridstore(temp_dir.to_path_buf(), true)
+            .unwrap()
+            .unwrap(),
+        IndexType::Mmap => NumericIndex::new_mmap(temp_dir, true, id_tracker)
+            .unwrap()
+            .unwrap(),
+        IndexType::RamMmap => NumericIndex::new_mmap(temp_dir, false, id_tracker)
+            .unwrap()
+            .unwrap(),
+    }
 }
 
 fn random_index(
     num_points: usize,
     values_per_point: usize,
     index_type: IndexType,
-) -> (TempDir, NumericIndex<FloatPayloadType, FloatPayloadType>) {
+) -> (
+    TempDir,
+    NumericIndex<FloatPayloadType, FloatPayloadType>,
+    Arc<AtomicRefCell<IdTrackerEnum>>,
+) {
     let mut rng = StdRng::seed_from_u64(42);
-    let (temp_dir, mut index_builder) = get_index_builder(index_type);
+    let (temp_dir, mut index_builder, id_tracker) = get_index_builder(index_type);
 
     let hw_counter = HardwareCounterCell::new();
 
-    for i in 0..num_points {
-        let values = (0..values_per_point)
-            .map(|_| Value::from(rng.random_range(0.0..100.0)))
-            .collect_vec();
-        let values = values.iter().collect_vec();
-        index_builder
-            .add_point(i as PointOffsetType, &values, &hw_counter)
-            .unwrap();
+    {
+        for i in 0..num_points {
+            let values = (0..values_per_point)
+                .map(|_| Value::from(rng.random_range(0.0..100.0)))
+                .collect_vec();
+            let values = values.iter().collect_vec();
+            id_tracker
+                .borrow_mut()
+                .set_link(ExtendedPointId::NumId(i as _), i as _)
+                .unwrap();
+            index_builder
+                .add_point(i as PointOffsetType, &values, &hw_counter)
+                .unwrap();
+        }
     }
-
     let mut index = index_builder.finalize().unwrap();
 
     if matches!(index_type, IndexType::RamMmap) {
@@ -99,7 +135,7 @@ fn random_index(
         };
     }
 
-    (temp_dir, index)
+    (temp_dir, index, id_tracker)
 }
 
 fn cardinality_request(
@@ -133,14 +169,18 @@ fn cardinality_request(
 
     eprintln!("estimation = {estimation:#?}");
     eprintln!("result.len() = {:#?}", result.len());
-    assert!(estimation.min <= result.len());
+    assert!(
+        estimation.min <= result.len(),
+        "{estimation:#?} should be less than or equal to {:#?}",
+        result.len()
+    );
     assert!(estimation.max >= result.len());
     estimation
 }
 
 #[test]
 fn test_set_empty_payload() {
-    let (_temp_dir, mut index) = random_index(1000, 1, IndexType::MutableGridstore);
+    let (_temp_dir, mut index, id_tracker) = random_index(1000, 1, IndexType::MutableGridstore);
 
     let point_id = 42;
 
@@ -151,6 +191,10 @@ fn test_set_empty_payload() {
     let hw_counter = HardwareCounterCell::new();
 
     let payload = serde_json::json!(null);
+    id_tracker
+        .borrow_mut()
+        .set_link(ExtendedPointId::NumId(point_id.into()), point_id as _)
+        .unwrap();
     index.add_point(point_id, &[&payload], &hw_counter).unwrap();
 
     let values_count = index.inner().get_values(point_id).unwrap().count();
@@ -163,7 +207,7 @@ fn test_set_empty_payload() {
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
 fn test_cardinality_exp(#[case] index_type: IndexType) {
-    let (_temp_dir, index) = random_index(1000, 1, index_type);
+    let (_temp_dir, index, _id_tracker) = random_index(1000, 1, index_type);
 
     cardinality_request(
         &index,
@@ -186,7 +230,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
         HwMeasurementAcc::new(),
     );
 
-    let (_temp_dir, index) = random_index(1000, 2, index_type);
+    let (_temp_dir, index, _id_tracker) = random_index(1000, 2, index_type);
     cardinality_request(
         &index,
         Range {
@@ -236,7 +280,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
 fn test_payload_blocks(#[case] index_type: IndexType) {
-    let (_temp_dir, index) = random_index(1000, 2, index_type);
+    let (_temp_dir, index, _id_tracker) = random_index(1000, 2, index_type);
     let threshold = 100;
     let blocks = index
         .inner()
@@ -279,7 +323,7 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
 fn test_payload_blocks_small(#[case] index_type: IndexType) {
-    let (_temp_dir, mut index_builder) = get_index_builder(index_type);
+    let (_temp_dir, mut index_builder, id_tracker) = get_index_builder(index_type);
     let threshold = 4;
     let values = vec![
         vec![1.0],
@@ -298,8 +342,13 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
+        let new_id = idx as PointOffsetType + 1;
+        id_tracker
+            .borrow_mut()
+            .set_link(ExtendedPointId::NumId(new_id.into()), new_id)
+            .unwrap();
         index_builder
-            .add_point(idx as PointOffsetType + 1, &values, &hw_counter)
+            .add_point(new_id, &values, &hw_counter)
             .unwrap();
     });
     let index = index_builder.finalize().unwrap();
@@ -317,7 +366,7 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
 fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
-    let (temp_dir, mut index_builder) = get_index_builder(index_type);
+    let (temp_dir, mut index_builder, id_tracker) = get_index_builder(index_type);
 
     let values = vec![
         vec![1.0],
@@ -336,14 +385,20 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
+        let new_idx = idx as PointOffsetType + 1;
+        id_tracker
+            .borrow_mut()
+            .set_link(ExtendedPointId::NumId(new_idx.into()), new_idx)
+            .unwrap();
         index_builder
-            .add_point(idx as PointOffsetType + 1, &values, &hw_counter)
+            .add_point(new_idx, &values, &hw_counter)
             .unwrap();
     });
     let index = index_builder.finalize().unwrap();
 
     drop(index);
 
+    let id_tracker = id_tracker.borrow();
     let new_index = match index_type {
         IndexType::MutableGridstore => NumericIndexInner::<FloatPayloadType>::new_gridstore(
             temp_dir.path().to_path_buf(),
@@ -351,11 +406,13 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         )
         .unwrap()
         .unwrap(),
-        IndexType::Mmap => NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), true)
-            .unwrap()
-            .unwrap(),
+        IndexType::Mmap => {
+            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), true, &id_tracker)
+                .unwrap()
+                .unwrap()
+        }
         IndexType::RamMmap => {
-            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), false)
+            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), false, &id_tracker)
                 .unwrap()
                 .unwrap()
         }
@@ -378,7 +435,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
 fn test_numeric_index(#[case] index_type: IndexType) {
-    let (_temp_dir, mut index_builder) = get_index_builder(index_type);
+    let (_temp_dir, mut index_builder, id_tracker) = get_index_builder(index_type);
 
     let values = vec![
         vec![1.0],
@@ -397,8 +454,13 @@ fn test_numeric_index(#[case] index_type: IndexType) {
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
+        let new_idx = idx as PointOffsetType + 1;
+        id_tracker
+            .borrow_mut()
+            .set_link(ExtendedPointId::NumId(new_idx.into()), new_idx)
+            .unwrap();
         index_builder
-            .add_point(idx as PointOffsetType + 1, &values, &hw_counter)
+            .add_point(new_idx, &values, &hw_counter)
             .unwrap();
     });
     let mut index = index_builder.finalize().unwrap();
@@ -459,8 +521,11 @@ fn test_numeric_index(#[case] index_type: IndexType) {
     );
 
     // Remove some points
+    id_tracker.borrow_mut().drop_internal(1).unwrap();
     index.remove_point(1).unwrap();
+    id_tracker.borrow_mut().drop_internal(2).unwrap();
     index.remove_point(2).unwrap();
+    id_tracker.borrow_mut().drop_internal(5).unwrap();
     index.remove_point(5).unwrap();
 
     test_cond(
@@ -519,6 +584,167 @@ fn test_numeric_index(#[case] index_type: IndexType) {
     );
 }
 
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_numeric_index_reload(#[case] index_type: IndexType) {
+    let (temp_dir, mut index_builder, id_tracker) = get_index_builder(index_type);
+
+    let values = vec![
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![2.0],
+        vec![2.5],
+        vec![2.6],
+        vec![3.0],
+    ];
+
+    let hw_counter = HardwareCounterCell::new();
+
+    values.into_iter().enumerate().for_each(|(idx, values)| {
+        let values = values.iter().map(|v| Value::from(*v)).collect_vec();
+        let values = values.iter().collect_vec();
+        let new_idx = idx as PointOffsetType + 1;
+        id_tracker
+            .borrow_mut()
+            .set_link(ExtendedPointId::NumId(new_idx.into()), new_idx)
+            .unwrap();
+        index_builder
+            .add_point(new_idx, &values, &hw_counter)
+            .unwrap();
+    });
+    let mut index = index_builder.finalize().unwrap();
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: Some(1.0),
+            gte: None,
+            lt: None,
+            lte: None,
+        },
+        vec![6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(1.0),
+            lt: None,
+            lte: None,
+        },
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: Some(2.6),
+            lte: None,
+        },
+        vec![1, 2, 3, 4, 5, 6, 7],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![1, 2, 3, 4, 5, 6, 7, 8],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(2.0),
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![6, 7, 8],
+    );
+
+    // Remove some points
+    id_tracker.borrow_mut().drop_internal(1).unwrap();
+    index.remove_point(1).unwrap();
+    id_tracker.borrow_mut().drop_internal(2).unwrap();
+    index.remove_point(2).unwrap();
+    id_tracker.borrow_mut().drop_internal(5).unwrap();
+    index.remove_point(5).unwrap();
+    index.inner().flusher()().unwrap();
+
+    // Reload!
+    drop(index);
+    let index = open_index_from_disk(temp_dir.path(), index_type, &id_tracker.borrow());
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: Some(1.0),
+            gte: None,
+            lt: None,
+            lte: None,
+        },
+        vec![6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(1.0),
+            lt: None,
+            lte: None,
+        },
+        vec![3, 4, 6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: Some(2.6),
+            lte: None,
+        },
+        vec![3, 4, 6, 7],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![3, 4, 6, 7, 8],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(2.0),
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![6, 7, 8],
+    );
+
+    assert_eq!(index.inner().get_points_count(), 6);
+}
+
 fn test_cond<
     T: Encodable + Numericable + PartialOrd + Clone + StoredValue + Send + Sync + Default + 'static,
 >(
@@ -552,7 +778,7 @@ fn test_cond<
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
 fn test_empty_cardinality(#[case] index_type: IndexType) {
-    let (_temp_dir, index) = random_index(0, 1, index_type);
+    let (_temp_dir, index, _id_tracker) = random_index(0, 1, index_type);
     cardinality_request(
         &index,
         Range {
@@ -564,7 +790,7 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
         HwMeasurementAcc::new(),
     );
 
-    let (_temp_dir, index) = random_index(0, 0, index_type);
+    let (_temp_dir, index, _id_tracker) = random_index(0, 0, index_type);
     cardinality_request(
         &index,
         Range {
