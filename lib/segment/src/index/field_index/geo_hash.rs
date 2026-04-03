@@ -30,6 +30,11 @@ use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 /// Decoded     'd'   'r'   '5'   'r'   'u'   'j'   '4'   '4'   '7'                      9
 /// Meaning     s[0]  s[1]  s[2]  s[3]  s[4]  s[5]  s[6]  s[7]  s[8]  s[9]  s[10] s[11]  length
 /// ```
+///
+/// WARN, `bytemuck::Pod` correctness:
+///  On a byte level geo might have incorrect Length if read from raw bits.
+///  This will produce meaningless GeoHash, but should not cause any unwanted memory access.
+///
 #[repr(C)]
 #[derive(
     Default,

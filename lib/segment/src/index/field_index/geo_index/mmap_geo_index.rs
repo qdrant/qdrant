@@ -419,6 +419,9 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
     ) -> OperationResult<()> {
         let len = self.storage.points_map.len()? as usize;
 
+        // self.storage.points_map - sorted array sorted by GeoHash
+        // Here we search for a range of GeoHashes, which are inside requested `geohash`
+
         let read_one = |idx| -> OperationResult<PointKeyValue> {
             let range = ReadRange::one((idx * size_of::<PointKeyValue>()) as u64);
             let value = self.storage.points_map.read::<Random>(range)?;
@@ -427,6 +430,8 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         let start_index =
             binary_search_by(0..len, |idx| read_one(idx).map(|c| c.hash.cmp(&geohash)))?
                 .unwrap_or_else(|i| i);
+
+        // ToDo: we want to try this as iterator
         let end_index = partition_point(start_index..len, |idx| {
             read_one(idx).map(|c| c.hash.starts_with(geohash))
         })?;

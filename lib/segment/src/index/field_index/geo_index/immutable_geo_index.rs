@@ -73,7 +73,7 @@ impl ImmutableGeoMapIndex {
         index.storage.points_map_ids.read_batch::<Random>(
             points_map_old.iter().map(|item| ReadRange {
                 byte_offset: u64::from(item.ids_start) * size_of::<PointOffsetType>() as u64,
-                length: u64::from(item.ids_end - item.ids_start),
+                length: u64::from(item.ids_end.saturating_sub(item.ids_start)),
             }),
             |i, ids| {
                 points_map[i].1 = ids

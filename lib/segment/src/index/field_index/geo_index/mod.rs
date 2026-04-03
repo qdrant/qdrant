@@ -246,6 +246,9 @@ impl GeoMapIndex {
                     .unique(),
             )),
             GeoMapIndex::Mmap(index) => {
+                // ToDo: currently, we don't have performance-critical places
+                // where this iterator is not collected.
+                // But in future we might want to make it into proper iterator
                 let mut result = HashSet::default();
                 for top_geo_hash in values {
                     index.stored_sub_regions(&mut result, top_geo_hash)?;
