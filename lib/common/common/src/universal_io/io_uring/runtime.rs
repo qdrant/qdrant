@@ -1,10 +1,9 @@
-use std::collections::hash_map;
 use std::io;
 use std::mem::MaybeUninit;
 
 use ::io_uring::types::Fd;
 use ::io_uring::{opcode, squeue};
-use ahash::HashMapExt as _;
+use slab::Slab;
 
 use super::*;
 use crate::maybe_uninit;
@@ -17,9 +16,11 @@ pub struct IoUringRuntime<'data, T> {
 
 impl<'data, T> IoUringRuntime<'data, T> {
     pub fn new() -> Result<Self> {
+        let mut io_uring = pool::get_io_uring()?;
+        let capacity = io_uring.submission().capacity();
         let rt = Self {
-            io_uring: pool::get_io_uring()?,
-            state: IoUringState::new(),
+            io_uring,
+            state: IoUringState::with_capacity(capacity),
             in_progress: 0,
         };
 
@@ -100,20 +101,20 @@ impl<'data, T> IoUringRuntime<'data, T> {
         self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
-            let id = entry.user_data();
+            let slot = entry.user_data() as usize;
             let result = entry.result();
 
             if result < 0 {
-                self.state.abort(id);
+                self.state.abort(slot);
 
                 return Err(io_error_context(
                     io::Error::from_raw_os_error(-result),
-                    format!("io_uring operation {id} failed"),
+                    format!("io_uring operation in slot {slot} failed"),
                 ));
             }
 
             let length = result as _;
-            let resp = self.state.finalize(id, length)?;
+            let (id, resp) = self.state.finalize(slot, length)?;
             Ok((id, resp))
         })
     }
@@ -140,13 +141,13 @@ impl<'data, T> Drop for IoUringRuntime<'data, T> {
 
 #[derive(Debug)]
 pub struct IoUringState<'data, T> {
-    requests: ahash::HashMap<RequestId, IoUringRequest<'data, T>>,
+    requests: Slab<(RequestId, IoUringRequest<'data, T>)>,
 }
 
 impl<'data, T> IoUringState<'data, T> {
-    pub fn new() -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            requests: ahash::HashMap::new(),
+            requests: Slab::with_capacity(capacity),
         }
     }
 
@@ -159,7 +160,7 @@ impl<'data, T> IoUringState<'data, T> {
         range: ReadRange,
         file_index: FileIndex,
         direct_io: bool,
-    ) -> io::Result<squeue::Entry>
+    ) -> squeue::Entry
     where
         T: bytemuck::Pod,
     {
@@ -171,26 +172,23 @@ impl<'data, T> IoUringState<'data, T> {
         let mut items: Vec<MaybeUninit<T>> = Vec::with_capacity(length as _);
         items.resize_with(length as _, || MaybeUninit::uninit());
 
-        let items = self
-            .init(
-                id,
-                IoUringRequest::Read {
-                    items,
-                    file_index,
-                    direct_io,
-                },
-            )?
-            .expect_read();
+        let (slot, req) = self.init(
+            id,
+            IoUringRequest::Read {
+                items,
+                file_index,
+                direct_io,
+            },
+        );
+        let items = req.expect_read();
 
         let bytes_ptr = items.as_mut_ptr().cast();
         let byte_length = length * size_of::<T>() as u64;
         let byte_length = u32::try_from(byte_length).expect("read buffer length fit within u32");
-        let entry = opcode::Read::new(fd, bytes_ptr, byte_length)
+        opcode::Read::new(fd, bytes_ptr, byte_length)
             .offset(byte_offset)
             .build()
-            .user_data(id);
-
-        Ok(entry)
+            .user_data(slot as u64)
     }
 
     pub fn write(
@@ -199,40 +197,41 @@ impl<'data, T> IoUringState<'data, T> {
         fd: Fd,
         byte_offset: u64,
         items: &'data [T],
-    ) -> io::Result<squeue::Entry>
+    ) -> squeue::Entry
     where
         T: bytemuck::Pod,
     {
-        let items = self.init(id, IoUringRequest::Write(items))?.expect_write();
+        let (slot, req) = self.init(id, IoUringRequest::Write(items));
+        let items = req.expect_write();
 
         let bytes: &[u8] = bytemuck::cast_slice(items);
         let byte_length = u32::try_from(bytes.len()).expect("write buffer length fit within u32");
-        let entry = opcode::Write::new(fd, bytes.as_ptr(), byte_length)
+        opcode::Write::new(fd, bytes.as_ptr(), byte_length)
             .offset(byte_offset)
             .build()
-            .user_data(id);
-
-        Ok(entry)
+            .user_data(slot as u64)
     }
 
     fn init(
         &mut self,
         id: RequestId,
         req: IoUringRequest<'data, T>,
-    ) -> io::Result<&mut IoUringRequest<'data, T>> {
-        let hash_map::Entry::Vacant(entry) = self.requests.entry(id) else {
-            return Err(io::Error::other(format!("request {id} already exists")));
-        };
-
-        let req = entry.insert(req);
-        Ok(req)
+    ) -> (usize, &mut IoUringRequest<'data, T>) {
+        let entry = self.requests.vacant_entry();
+        let slot = entry.key();
+        let (_, req) = entry.insert((id, req));
+        (slot, req)
     }
 
-    pub fn finalize(&mut self, id: RequestId, byte_length: u32) -> io::Result<IoUringResponse<T>> {
-        let req = self
+    pub fn finalize(
+        &mut self,
+        slot: usize,
+        byte_length: u32,
+    ) -> io::Result<(RequestId, IoUringResponse<T>)> {
+        let (id, req) = self
             .requests
-            .remove(&id)
-            .ok_or_else(|| io::Error::other(format!("request {id} does not exist")))?;
+            .try_remove(slot)
+            .ok_or_else(|| io::Error::other(format!("request in slot {slot} does not exist")))?;
 
         let byte_length = byte_length as usize;
 
@@ -261,11 +260,11 @@ impl<'data, T> IoUringState<'data, T> {
             }
         };
 
-        Ok(resp)
+        Ok((id, resp))
     }
 
-    pub fn abort(&mut self, id: RequestId) -> bool {
-        self.requests.remove(&id).is_some()
+    pub fn abort(&mut self, slot: usize) {
+        self.requests.try_remove(slot);
     }
 }
 

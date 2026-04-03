@@ -40,6 +40,7 @@ schemars = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+slab = "0.4.12"
 strum = { workspace = true }
 tap = { workspace = true }
 tar = { workspace = true }

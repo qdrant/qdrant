@@ -36,7 +36,7 @@ where
                     return Ok(None);
                 };
 
-                let entry = state.read(id as _, self.file.fd(), range, 0, self.file.direct_io)?;
+                let entry = state.read(id as _, self.file.fd(), range, 0, self.file.direct_io);
                 Ok(Some(entry))
             })?;
 
@@ -112,7 +112,7 @@ where
                             files: self.files.len(),
                         })?;
 
-                let entry = state.read(id as _, file.fd(), range, file_index, file.direct_io)?;
+                let entry = state.read(id as _, file.fd(), range, file_index, file.direct_io);
                 Ok(Some(entry))
             })?;
 

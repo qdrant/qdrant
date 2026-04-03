@@ -188,7 +188,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                     return Ok(None);
                 };
 
-                let entry = state.write(id as _, self.fd(), byte_offset, items)?;
+                let entry = state.write(id as _, self.fd(), byte_offset, items);
                 Ok(Some(entry))
             })?;
 
@@ -223,7 +223,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                     }
                 })?;
 
-                let entry = state.write(id as _, file.fd(), byte_offset, items)?;
+                let entry = state.write(id as _, file.fd(), byte_offset, items);
                 Ok(Some(entry))
             })?;
 

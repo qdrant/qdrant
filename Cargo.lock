@@ -1449,6 +1449,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "slab",
  "strum",
  "tango-bench",
  "tap",
