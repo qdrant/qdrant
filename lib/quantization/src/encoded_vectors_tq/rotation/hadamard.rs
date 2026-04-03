@@ -8,8 +8,8 @@ const WHT_CHUNK_SIZE: usize = 256;
 pub(crate) struct HadamardRotation {
     signs1: Vec<f64>,
     signs2: Vec<f64>,
-    /// Two independent permutations applied between the three WHT passes.
-    permutations: [(Vec<usize>, Vec<usize>); 2],
+    /// Three independent permutations applied between the four WHT passes.
+    permutations: [(Vec<usize>, Vec<usize>); 3],
     padded_dim: usize,
 }
 
@@ -21,10 +21,11 @@ impl HadamardRotation {
         let signs2 = generate_signs(&mut rng, padded_dim);
         let perm1 = generate_permutation(&mut rng, padded_dim);
         let perm2 = generate_permutation(&mut rng, padded_dim);
+        let perm3 = generate_permutation(&mut rng, padded_dim);
         Self {
             signs1,
             signs2,
-            permutations: [perm1, perm2],
+            permutations: [perm1, perm2, perm3],
             padded_dim,
         }
     }
@@ -41,17 +42,15 @@ impl HadamardRotation {
         for (b, &s) in buf.iter_mut().zip(self.signs1.iter()) {
             *b *= s;
         }
-        // WHT · P2 · WHT · P1 · WHT
+        // WHT · P3 · WHT · P2 · WHT · P1 · WHT
         for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
             walsh_hadamard_transform(chunk);
         }
-        apply_permutation(&mut buf, &self.permutations[0].0);
-        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
-            walsh_hadamard_transform(chunk);
-        }
-        apply_permutation(&mut buf, &self.permutations[1].0);
-        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
-            walsh_hadamard_transform(chunk);
+        for perm in &self.permutations {
+            apply_permutation(&mut buf, &perm.0);
+            for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+                walsh_hadamard_transform(chunk);
+            }
         }
         for (b, &s) in buf.iter_mut().zip(self.signs2.iter()) {
             *b *= s;
@@ -68,17 +67,15 @@ impl HadamardRotation {
         for (b, &s) in buf.iter_mut().zip(self.signs2.iter()) {
             *b *= s;
         }
-        // WHT · P1⁻¹ · WHT · P2⁻¹ · WHT
+        // WHT · P1⁻¹ · WHT · P2⁻¹ · WHT · P3⁻¹ · WHT
         for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
             walsh_hadamard_transform(chunk);
         }
-        apply_permutation(&mut buf, &self.permutations[1].1);
-        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
-            walsh_hadamard_transform(chunk);
-        }
-        apply_permutation(&mut buf, &self.permutations[0].1);
-        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
-            walsh_hadamard_transform(chunk);
+        for perm in self.permutations.iter().rev() {
+            apply_permutation(&mut buf, &perm.1);
+            for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+                walsh_hadamard_transform(chunk);
+            }
         }
         for (b, &s) in buf.iter_mut().zip(self.signs1.iter()) {
             *b *= s;
