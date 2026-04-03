@@ -7,8 +7,8 @@ use serde_json::Value;
 
 use crate::types::{
     AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
-    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny,
-    MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
+    GeoPolygon, GeoRadius, IntPayloadType, Match, MatchAny, MatchExcept, MatchPhrase, MatchText,
+    MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -82,6 +82,7 @@ impl ValueChecker for FieldCondition {
                 .as_ref()
                 .is_some_and(|range_interface| match range_interface {
                     RangeInterface::Float(condition) => condition.check_match(payload),
+                    RangeInterface::Integer(condition) => condition.check_match(payload),
                     RangeInterface::DateTime(condition) => condition.check_match(payload),
                 })
             || geo_radius
@@ -228,6 +229,36 @@ impl ValueChecker for Range<OrderedFloat<FloatPayloadType>> {
                 .as_f64()
                 .map(|number| self.check_range(OrderedFloat(number)))
                 .unwrap_or(false),
+            _ => false,
+        }
+    }
+}
+
+impl ValueChecker for Range<IntPayloadType> {
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Number(num) => {
+                // Try to compare as integer first for precision
+                if let Some(int_val) = num.as_i64() {
+                    self.check_range(int_val)
+                } else {
+                    // Fall back to f64, but only accept values that are integral
+                    // and within i64 bounds to avoid lossy truncation
+                    num.as_f64()
+                        .and_then(|number| {
+                            if number.fract() == 0.0
+                                && number >= i64::MIN as f64
+                                && number <= i64::MAX as f64
+                            {
+                                Some(number as IntPayloadType)
+                            } else {
+                                None
+                            }
+                        })
+                        .map(|number| self.check_range(number))
+                        .unwrap_or(false)
+                }
+            }
             _ => false,
         }
     }
