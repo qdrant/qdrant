@@ -1,11 +1,11 @@
 #[cfg(any(test, feature = "testing"))]
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(any(test, feature = "testing"))]
 use std::hash::Hash;
 use std::io::{self, Cursor, Write};
 use std::marker::PhantomData;
-use std::mem::{align_of, size_of};
+use std::mem::size_of;
 use std::path::Path;
-use std::str;
 
 use fs_err::File;
 use memmap2::Mmap;
@@ -17,6 +17,7 @@ use rand::rngs::StdRng;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::mmap::{AdviceSetting, Madviseable, open_read_mmap};
+use crate::persisted_hashmap::keys::Key;
 use crate::zeros::WriteZerosExt as _;
 
 type ValuesLen = u32;
@@ -357,127 +358,6 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
     }
 }
 
-/// A key that can be stored in the hash map.
-pub trait Key: Sync + Hash {
-    const ALIGN: usize;
-
-    const NAME: [u8; 8];
-
-    /// Returns number of bytes which `write` will write.
-    fn write_bytes(&self) -> usize;
-
-    /// Write the key to `buf`.
-    fn write(&self, buf: &mut impl Write) -> io::Result<()>;
-
-    /// Check whether the first [`Key::write_bytes()`] of `buf` match the key.
-    fn matches(&self, buf: &[u8]) -> bool;
-
-    /// Try to read the key from `buf`.
-    fn from_bytes(buf: &[u8]) -> Option<&Self>;
-}
-
-impl Key for str {
-    const ALIGN: usize = align_of::<u8>();
-
-    const NAME: [u8; 8] = *b"str\0\0\0\0\0";
-
-    fn write_bytes(&self) -> usize {
-        self.len() + 1
-    }
-
-    fn write(&self, buf: &mut impl Write) -> io::Result<()> {
-        buf.write_all(self.as_bytes())?;
-        buf.write_all(&[0xFF])?; // 0xFF is not a valid leading byte of a UTF-8 sequence.
-        Ok(())
-    }
-
-    fn matches(&self, buf: &[u8]) -> bool {
-        // The sentinel value 0xFF is used to ensure that `self` has the same length as the string
-        // in the entry buffer.
-        //
-        // Suppose `self` is a prefix of the string in the entry buffer. (it's not very likely since
-        // it would require a PHF collision, but it is still possible).
-        // We'd like this method to return `false` in this case. So we need not just check that the
-        // first `self.len()` bytes of `buf` are equal to `self`, but also that they have the same
-        // length. To achieve that, we compare `self + [0xFF]` with `buf + [0xFF]`.
-        //
-        // ┌───self────┐       ┌───self────┐                 ┌─────self─────┐
-        //  'f' 'o' 'o' FF      'f' 'o' 'o' FF                'f' 'o' 'o' FF
-        //  'f' 'o' 'o' FF      'f' 'o' 'o' 'b' 'a' 'r' FF    'f' 'o' 'o' FF 'b' 'a' 'r' FF
-        // └───entry───┘       └─────────entry─────────┘     └───────────entry──────────┘
-        //    Case 1                    Case 2                          Case 3
-        //    (happy)                 (collision)                   (never happens)
-        //
-        // 1. The case 1 is the happy path. This function returns `true`.
-        // 2. In the case 2, `self` is a prefix of `entry`, but since we are also checking the
-        //    sentinel, this function returns `false`. (0xFF != 'b')
-        // 3. Hypothetical case 3 might never happen unless the index data is corrupted. This is
-        //    because it assumes that `entry` is a concatenation of three parts: a valid UTF-8
-        //    string ('foo'), a byte 0xFF, and the rest ('bar'). Concatenating a valid UTF-8 string
-        //    with 0xFF will always result in an invalid UTF-8 string. Such string could not be
-        //    added to the index since we are adding only valid UTF-8 strings as Rust enforces the
-        //    validity of `str`/`String` types.
-        buf.get(..self.len()) == Some(IntoBytes::as_bytes(self))
-            && buf.get(self.len()) == Some(&0xFF)
-    }
-
-    fn from_bytes(buf: &[u8]) -> Option<&Self> {
-        let len = buf.iter().position(|&b| b == 0xFF)?;
-        str::from_utf8(&buf[..len]).ok()
-    }
-}
-
-impl Key for i64 {
-    const ALIGN: usize = align_of::<i64>();
-
-    const NAME: [u8; 8] = *b"i64\0\0\0\0\0";
-
-    fn write_bytes(&self) -> usize {
-        size_of::<i64>()
-    }
-
-    fn write(&self, buf: &mut impl Write) -> io::Result<()> {
-        buf.write_all(self.as_bytes())
-    }
-
-    fn matches(&self, buf: &[u8]) -> bool {
-        buf.get(..size_of::<i64>()) == Some(self.as_bytes())
-    }
-
-    fn from_bytes(buf: &[u8]) -> Option<&Self> {
-        Some(i64::ref_from_prefix(buf).ok()?.0)
-    }
-}
-
-impl Key for u128 {
-    const ALIGN: usize = size_of::<u128>();
-
-    const NAME: [u8; 8] = *b"u128\0\0\0\0";
-
-    fn write_bytes(&self) -> usize {
-        size_of::<u128>()
-    }
-
-    fn write(&self, buf: &mut impl Write) -> io::Result<()> {
-        buf.write_all(self.as_bytes())
-    }
-
-    fn matches(&self, buf: &[u8]) -> bool {
-        buf.get(..size_of::<u128>()) == Some(self.as_bytes())
-    }
-
-    fn from_bytes(buf: &[u8]) -> Option<&Self> {
-        match u128::ref_from_prefix(buf) {
-            Ok(res) => Some(res.0),
-            Err(err) => {
-                debug_assert!(false, "Error reading u128 from mmap: {err}");
-                log::error!("Error reading u128 from mmap: {err}");
-                None
-            }
-        }
-    }
-}
-
 #[cfg(any(test, feature = "testing"))]
 pub fn gen_map<T: Eq + Ord + Hash>(
     rng: &mut StdRng,
@@ -505,130 +385,6 @@ pub fn gen_ident(rng: &mut StdRng) -> String {
 }
 
 #[cfg(any(test, feature = "testing"))]
-fn repeat_until<T>(mut f: impl FnMut() -> T, cond: impl Fn(&T) -> bool) -> T {
+pub fn repeat_until<T>(mut f: impl FnMut() -> T, cond: impl Fn(&T) -> bool) -> T {
     std::iter::from_fn(|| Some(f())).find(|v| cond(v)).unwrap()
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use rand::SeedableRng as _;
-
-    use super::*;
-
-    #[test]
-    fn test_mmap_hash() {
-        test_mmap_hash_impl(gen_ident, |s| s.as_str(), |s| s.to_owned());
-        test_mmap_hash_impl(|rng| rng.random::<i64>(), |i| i, |i| *i);
-        test_mmap_hash_impl(|rng| rng.random::<u128>(), |i| i, |i| *i);
-    }
-
-    fn test_mmap_hash_impl<K: Key + ?Sized, K1: Ord + Hash>(
-        generator: impl Clone + Fn(&mut StdRng) -> K1,
-        as_ref: impl Fn(&K1) -> &K,
-        from_ref: impl Fn(&K) -> K1,
-    ) {
-        let mut rng = StdRng::seed_from_u64(42);
-        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-
-        let map = gen_map(&mut rng, generator.clone(), 1000);
-        MmapHashMap::<K, u32>::create(
-            &tmpdir.path().join("map"),
-            map.iter().map(|(k, v)| (as_ref(k), v.iter().copied())),
-        )
-        .unwrap();
-        let mmap = MmapHashMap::<K, u32>::open(&tmpdir.path().join("map"), false).unwrap();
-
-        // Non-existing keys should return None
-        for _ in 0..1000 {
-            let key = repeat_until(|| generator(&mut rng), |key| !map.contains_key(key));
-            assert!(mmap.get(as_ref(&key)).unwrap().is_none());
-        }
-
-        // check keys iterator
-        for key in mmap.keys() {
-            let key = from_ref(key);
-            assert!(map.contains_key(&key));
-        }
-        assert_eq!(mmap.keys_count(), map.len());
-        assert_eq!(mmap.keys().count(), map.len());
-
-        for (k, v) in mmap.iter() {
-            let v = v.iter().copied().collect::<BTreeSet<_>>();
-            assert_eq!(map.get(&from_ref(k)).unwrap(), &v);
-        }
-
-        let keys: Vec<_> = mmap.keys().collect();
-        assert_eq!(keys.len(), map.len());
-
-        // Existing keys should return the correct values
-        for (k, v) in map {
-            assert_eq!(
-                mmap.get(as_ref(&k)).unwrap().unwrap(),
-                &v.into_iter().collect::<Vec<_>>()
-            );
-        }
-    }
-
-    #[test]
-    fn test_mmap_hash_impl_u64_value() {
-        let mut rng = StdRng::seed_from_u64(42);
-        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-
-        let mut map: HashMap<i64, BTreeSet<u64>> = Default::default();
-
-        for key in 0..10i64 {
-            map.insert(key, (0..100).map(|_| rng.random_range(0..=1000)).collect());
-        }
-
-        MmapHashMap::<i64, u64>::create(
-            &tmpdir.path().join("map"),
-            map.iter().map(|(k, v)| (k, v.iter().copied())),
-        )
-        .unwrap();
-
-        let mmap = MmapHashMap::<i64, u64>::open(&tmpdir.path().join("map"), true).unwrap();
-
-        for (k, v) in map {
-            assert_eq!(
-                mmap.get(&k).unwrap().unwrap(),
-                &v.into_iter().collect::<Vec<_>>()
-            );
-        }
-
-        assert!(mmap.get(&100).unwrap().is_none())
-    }
-
-    #[test]
-    fn test_mmap_hash_impl_u128_value() {
-        let mut rng = StdRng::seed_from_u64(42);
-        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-
-        let mut map: HashMap<u128, BTreeSet<u32>> = Default::default();
-
-        map.insert(
-            9812384971724u128,
-            (0..100).map(|_| rng.random_range(0..=1000)).collect(),
-        );
-
-        MmapHashMap::<u128, u32>::create(
-            &tmpdir.path().join("map"),
-            map.iter().map(|(k, v)| (k, v.iter().copied())),
-        )
-        .unwrap();
-
-        let mmap = MmapHashMap::<u128, u32>::open(&tmpdir.path().join("map"), true).unwrap();
-
-        let keys: Vec<_> = mmap.keys().collect();
-        assert_eq!(keys.len(), map.len());
-
-        for (k, v) in map {
-            assert_eq!(
-                mmap.get(&k).unwrap().unwrap(),
-                &v.into_iter().collect::<Vec<_>>()
-            );
-        }
-        assert!(mmap.get(&100).unwrap().is_none())
-    }
 }
