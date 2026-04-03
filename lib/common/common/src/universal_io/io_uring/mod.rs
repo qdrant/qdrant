@@ -180,15 +180,15 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
         items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
         let mut rt = IoUringRuntime::new()?;
-        let mut items = items.into_iter().enumerate().peekable();
+        let mut items = items.into_iter().peekable();
 
         while items.peek().is_some() || rt.in_progress > 0 {
             rt.enqueue_while(|state| {
-                let Some((id, (byte_offset, items))) = items.next() else {
+                let Some((byte_offset, items)) = items.next() else {
                     return Ok(None);
                 };
 
-                let entry = state.write(id as _, self.fd(), byte_offset, items)?;
+                let entry = state.write((), self.fd(), byte_offset, items)?;
                 Ok(Some(entry))
             })?;
 
@@ -208,11 +208,11 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {
         let mut rt = IoUringRuntime::new()?;
-        let mut writes = writes.into_iter().enumerate().peekable();
+        let mut writes = writes.into_iter().peekable();
 
         while writes.peek().is_some() || rt.in_progress > 0 {
             rt.enqueue_while(|state| {
-                let Some((id, (file_index, byte_offset, items))) = writes.next() else {
+                let Some((file_index, byte_offset, items)) = writes.next() else {
                     return Ok(None);
                 };
 
@@ -223,7 +223,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                     }
                 })?;
 
-                let entry = state.write(id as _, file.fd(), byte_offset, items)?;
+                let entry = state.write((), file.fd(), byte_offset, items)?;
                 Ok(Some(entry))
             })?;
 

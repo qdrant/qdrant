@@ -8,16 +8,16 @@ use bitvec::array::BitArray;
 use super::*;
 use crate::maybe_uninit;
 
-pub struct IoUringRuntime<'data, T> {
+pub struct IoUringRuntime<'data, T, RequestId = u64> {
     io_uring: IoUringGuard,
-    state: IoUringState<'data, T>,
+    state: IoUringState<'data, T, RequestId>,
     pub in_progress: usize,
 }
 
-impl<'data, T> IoUringRuntime<'data, T> {
+impl<'data, T, RequestId> IoUringRuntime<'data, T, RequestId> {
     pub fn new() -> Result<Self> {
         let mut io_uring = pool::get_io_uring()?;
-        let state = IoUringState::<T>::new(io_uring.submission().capacity());
+        let state = IoUringState::<T, RequestId>::new(io_uring.submission().capacity());
         let rt = Self {
             io_uring,
             state,
@@ -31,7 +31,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
     /// or the queue is full.
     pub fn enqueue_while<F>(&mut self, mut entries: F) -> Result<()>
     where
-        F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
+        F: FnMut(&mut IoUringState<'data, T, RequestId>) -> Result<Option<squeue::Entry>>,
     {
         let mut squeue = self.io_uring.submission();
 
@@ -97,7 +97,9 @@ impl<'data, T> IoUringRuntime<'data, T> {
         Ok(())
     }
 
-    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, IoUringResponse<T>)>> {
+    pub fn completed(
+        &mut self,
+    ) -> impl Iterator<Item = io::Result<(RequestId, IoUringResponse<T>)>> {
         self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
@@ -120,7 +122,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
     }
 }
 
-impl<'data, T> Drop for IoUringRuntime<'data, T> {
+impl<'data, T, RequestId> Drop for IoUringRuntime<'data, T, RequestId> {
     fn drop(&mut self) {
         while self.in_progress > 0 || !self.io_uring.submission().is_empty() {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
@@ -140,7 +142,7 @@ impl<'data, T> Drop for IoUringRuntime<'data, T> {
 }
 
 #[derive(Debug)]
-pub struct IoUringState<'data, T> {
+pub struct IoUringState<'data, T, RequestId> {
     requests: UninitSlice<(RequestId, IoUringRequest<'data, T>)>,
     /// Safety invariant: all bits above `requests.len()` must be zero,
     /// so we can skip bounds checks.
@@ -149,7 +151,7 @@ pub struct IoUringState<'data, T> {
 
 type UninitSlice<T> = Box<[MaybeUninit<T>]>;
 
-impl<'data, T> IoUringState<'data, T> {
+impl<'data, T, RequestId> IoUringState<'data, T, RequestId> {
     pub fn new(entries: usize) -> Self {
         let occupied = BitArray::ZERO;
         assert!(occupied.len() >= entries);
@@ -291,7 +293,7 @@ impl<'data, T> IoUringState<'data, T> {
     }
 }
 
-impl<'data, T> Drop for IoUringState<'data, T> {
+impl<'data, T, RequestId> Drop for IoUringState<'data, T, RequestId> {
     fn drop(&mut self) {
         debug_assert!(self.occupied.not_any());
         for slot in self.occupied.iter_ones() {
@@ -300,8 +302,6 @@ impl<'data, T> Drop for IoUringState<'data, T> {
         }
     }
 }
-
-pub type RequestId = u64;
 
 #[derive(Debug)]
 pub enum IoUringRequest<'data, T> {
