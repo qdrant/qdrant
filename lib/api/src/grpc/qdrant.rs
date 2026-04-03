@@ -2460,6 +2460,8 @@ pub enum TurboQuantCorrection {
     NoCorrection = 1,
     Qjl = 2,
     QjlNormalization = 3,
+    QjlShort = 4,
+    QjlShortNormalization = 5,
 }
 impl TurboQuantCorrection {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2472,6 +2474,8 @@ impl TurboQuantCorrection {
             TurboQuantCorrection::NoCorrection => "NoCorrection",
             TurboQuantCorrection::Qjl => "Qjl",
             TurboQuantCorrection::QjlNormalization => "QjlNormalization",
+            TurboQuantCorrection::QjlShort => "QjlShort",
+            TurboQuantCorrection::QjlShortNormalization => "QjlShortNormalization",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2481,6 +2485,8 @@ impl TurboQuantCorrection {
             "NoCorrection" => Some(Self::NoCorrection),
             "Qjl" => Some(Self::Qjl),
             "QjlNormalization" => Some(Self::QjlNormalization),
+            "QjlShort" => Some(Self::QjlShort),
+            "QjlShortNormalization" => Some(Self::QjlShortNormalization),
             _ => None,
         }
     }

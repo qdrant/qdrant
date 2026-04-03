@@ -1,6 +1,9 @@
 mod codebook;
 pub mod coordinate_analysis;
+mod encoded_query;
+mod encoded_vector;
 mod packing;
+mod qjl;
 mod rotation;
 
 use std::alloc::Layout;
@@ -21,7 +24,9 @@ use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_p
 use crate::{DistanceType, EncodingError};
 
 pub(crate) use codebook::Codebook;
-use packing::pack_indices;
+pub use encoded_query::EncodedQueryTQ;
+pub use encoded_vector::EncodedVectorTQ;
+use encoded_vector::{NORM_SIZE, encode_vector_data, normalize_and_rotate};
 use rotation::{ROTATION_SEED, RotationImpl};
 
 pub const DEFAULT_TURBO_QUANT_BITS: usize = 4;
@@ -34,6 +39,8 @@ pub enum TqCorrection {
     #[default]
     Normalization,
     QjlNormalization,
+    QjlShort,
+    QjlShortNormalization,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -45,69 +52,9 @@ pub enum TqRotation {
     RotationMatrix,
 }
 
-/// Size of the stored norm (f32) in bytes.
-const NORM_SIZE: usize = size_of::<f32>();
-
 // ============================================================================
 // Encode a single vector
 // ============================================================================
-
-/// Encode a vector into TurboQuant binary format.
-///
-/// Layout: `[norm: f32 (4 bytes)] [packed indices: ⌈padded_dim·levels/8⌉ bytes]`
-///
-/// When `medians`/`scales` are non-empty (TQ+ mode), each rotated coordinate
-/// is shifted and scaled before quantization: `(rotated[i] - median[i]) * scale[i]`.
-fn encode_vector_data(
-    vector_data: &[f32],
-    rotation: &RotationImpl,
-    codebook: &Codebook,
-    medians: &[f32],
-    scales: &[f32],
-) -> Vec<u8> {
-    // 1. Extract norm
-    let norm_sq: f32 = vector_data.iter().map(|&x| x * x).sum();
-    let norm = norm_sq.sqrt();
-
-    // 2. Normalize (handle zero vector)
-    let normalized: Vec<f32> = if norm > 0.0 {
-        vector_data.iter().map(|&x| x / norm).collect()
-    } else {
-        vec![0.0; vector_data.len()]
-    };
-
-    // 3. Rotate
-    let mut rotated = rotation.apply(&normalized);
-
-    // 4. TQ+: shift and scale to match codebook distribution
-    if !medians.is_empty() {
-        for (i, val) in rotated.iter_mut().enumerate() {
-            *val = (*val - medians[i]) * scales[i];
-        }
-    }
-
-    // 5. Quantize each coordinate to nearest centroid
-    let indices: Vec<u8> = rotated.iter().map(|&val| codebook.quantize(val)).collect();
-
-    // 6. Pack: norm bytes + index bits
-    let packed = pack_indices(&indices, codebook.bits);
-    let mut result = Vec::with_capacity(NORM_SIZE + packed.len());
-    result.extend_from_slice(&norm.to_ne_bytes());
-    result.extend_from_slice(&packed);
-    result
-}
-
-/// Normalize a vector and apply rotation; return the rotated coordinates.
-fn normalize_and_rotate(v: &[f32], rotation: &RotationImpl) -> Vec<f32> {
-    let norm_sq: f32 = v.iter().map(|&x| x * x).sum();
-    let norm = norm_sq.sqrt();
-    let normalized: Vec<f32> = if norm > 0.0 {
-        v.iter().map(|&x| x / norm).collect()
-    } else {
-        vec![0.0; v.len()]
-    };
-    rotation.apply(&normalized)
-}
 
 /// Compute per-coordinate medians and scales from training data (TQ+ mode).
 ///
@@ -172,17 +119,7 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
     rotation_impl: RotationImpl,
-}
-
-/// Pre-processed query for efficient TurboQuant scoring.
-pub struct EncodedQueryTQ {
-    /// Rotated query (padded_dim elements).
-    rotated_query: Vec<f32>,
-    /// Original query (dim elements). Needed for L1 scoring which is not
-    /// rotation-invariant.
-    original_query: Vec<f32>,
-    /// ||q||². Used for L2 scoring: ||q−x̃||² = ||q||² + γ² − 2γ⟨Rq, ŷ⟩.
-    query_norm_sq: f32,
+    qjl: Option<qjl::QjlProjection>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -255,6 +192,16 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let padded_dim = rotation_impl.padded_dim();
         let codebook = Codebook::new(bits, padded_dim);
 
+        let qjl = match correction {
+            TqCorrection::Qjl | TqCorrection::QjlNormalization => {
+                Some(qjl::QjlProjection::new(padded_dim, padded_dim))
+            }
+            TqCorrection::QjlShort | TqCorrection::QjlShortNormalization => {
+                Some(qjl::QjlProjection::new(padded_dim, qjl::QJL_SHORT_DIM))
+            }
+            _ => None,
+        };
+
         // TQ+: compute per-coordinate medians and scales
         let (medians, scales) = if plus {
             compute_plus_stats(data.clone(), &rotation_impl, padded_dim)
@@ -320,6 +267,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                 &codebook,
                 &medians,
                 &scales,
+                qjl.as_ref(),
             );
 
             storage_builder.push_vector_data(&encoded).map_err(|e| {
@@ -368,6 +316,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
             rotation_impl,
+            qjl,
         })
     }
 
@@ -379,149 +328,114 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             metadata.rotation_seed,
             metadata.vector_parameters.dim,
         );
+        let qjl = match metadata.correction {
+            TqCorrection::Qjl | TqCorrection::QjlNormalization => {
+                Some(qjl::QjlProjection::new(metadata.padded_dim, metadata.padded_dim))
+            }
+            TqCorrection::QjlShort | TqCorrection::QjlShortNormalization => {
+                Some(qjl::QjlProjection::new(metadata.padded_dim, qjl::QJL_SHORT_DIM))
+            }
+            _ => None,
+        };
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
             rotation_impl,
+            qjl,
         };
         Ok(result)
     }
 
     /// Get quantized vector size in bytes:
-    /// 4 bytes (f32 norm) + ⌈padded_dim × bits / 8⌉ bytes (packed indices).
+    /// 4 bytes (f32 norm) + ⌈padded_dim × bits / 8⌉ bytes (packed indices)
+    /// + optionally 4 bytes (residual norm) + ⌈padded_dim / 8⌉ bytes (QJL bits).
     pub fn get_quantized_vector_size(
         vector_parameters: &VectorParameters,
         bits: usize,
         rotation: TqRotation,
+        correction: TqCorrection,
     ) -> usize {
         let padded_dim = RotationImpl::compute_padded_dim(rotation, vector_parameters.dim);
         let codebook = Codebook::new(bits, padded_dim);
-        NORM_SIZE + codebook.packed_size(padded_dim)
-    }
-
-    /// Decode stored bytes into (norm, norm-corrected centroid vector in rotated space).
-    ///
-    /// For standard TQ: decodes raw centroids and norm-corrects in quantized space.
-    /// For TQ+: decodes raw centroids, undoes shift+scale to rotated space, THEN
-    /// norm-corrects — because norm correction must happen in rotated space where
-    /// the original vector was unit-norm.
-    fn decode_rotated(
-        bytes: &[u8],
-        codebook: &Codebook,
-        padded_dim: usize,
-        medians: &[f32],
-        scales: &[f32],
-    ) -> (f32, Vec<f32>) {
-        let norm = f32::from_ne_bytes(bytes[..NORM_SIZE].try_into().unwrap());
-        let packed = &bytes[NORM_SIZE..];
-
-        if !medians.is_empty() {
-            // TQ+: decode raw → undo shift+scale → norm correct in rotated space
-            let raw = codebook.decode_raw(packed, padded_dim);
-            let mut rotated: Vec<f32> = raw
-                .iter()
-                .enumerate()
-                .map(|(i, &c)| c / scales[i] + medians[i])
-                .collect();
-            Codebook::normalize_to_unit(&mut rotated);
-            (norm, rotated)
-        } else {
-            // Standard TQ: decode + norm correct in quantized space
-            let y_tilde = codebook.decode_corrected(packed, padded_dim);
-            (norm, y_tilde)
+        let base = NORM_SIZE + codebook.packed_size(padded_dim);
+        match correction {
+            TqCorrection::Qjl | TqCorrection::QjlNormalization => {
+                base + NORM_SIZE + (padded_dim + 7) / 8
+            }
+            TqCorrection::QjlShort | TqCorrection::QjlShortNormalization => {
+                base + NORM_SIZE + (qjl::QJL_SHORT_DIM + 7) / 8
+            }
+            _ => base,
         }
-    }
-
-    /// Dot product score: γ · ⟨Rq, ŷ⟩
-    fn score_dot(
-        rotated_query: &[f32],
-        bytes: &[u8],
-        codebook: &Codebook,
-        padded_dim: usize,
-        medians: &[f32],
-        scales: &[f32],
-    ) -> f32 {
-        let (gamma, y_corrected) =
-            Self::decode_rotated(bytes, codebook, padded_dim, medians, scales);
-        let dot: f32 = rotated_query
-            .iter()
-            .zip(y_corrected.iter())
-            .map(|(&q, &v)| q * v)
-            .sum();
-        gamma * dot
-    }
-
-    /// L2 score: ||q||² + γ² − 2γ⟨Rq, ŷ⟩
-    fn score_l2(
-        rotated_query: &[f32],
-        query_norm_sq: f32,
-        bytes: &[u8],
-        codebook: &Codebook,
-        padded_dim: usize,
-        medians: &[f32],
-        scales: &[f32],
-    ) -> f32 {
-        let (gamma, y_corrected) =
-            Self::decode_rotated(bytes, codebook, padded_dim, medians, scales);
-        let dot: f32 = rotated_query
-            .iter()
-            .zip(y_corrected.iter())
-            .map(|(&q, &v)| q * v)
-            .sum();
-        query_norm_sq + gamma * gamma - 2.0 * gamma * dot
-    }
-
-    /// L1 score requires full reconstruction via inverse rotation.
-    fn score_l1(
-        original_query: &[f32],
-        bytes: &[u8],
-        codebook: &Codebook,
-        rotation_impl: &RotationImpl,
-        dim: usize,
-        medians: &[f32],
-        scales: &[f32],
-    ) -> f32 {
-        let padded_dim = rotation_impl.padded_dim();
-        let (gamma, y_corrected) =
-            Self::decode_rotated(bytes, codebook, padded_dim, medians, scales);
-        let x_hat = rotation_impl.apply_inverse(&y_corrected, dim);
-        original_query
-            .iter()
-            .zip(x_hat.iter())
-            .map(|(&q, &x)| (q - gamma * x).abs())
-            .sum()
     }
 
     fn score_tq(&self, query: &EncodedQueryTQ, bytes: &[u8]) -> f32 {
         let medians = &self.metadata.medians;
         let scales = &self.metadata.scales;
+        let correction = self.metadata.correction;
+        let qjl = self.qjl.as_ref();
+        let vec = EncodedVectorTQ::new(bytes);
         let result = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot => Self::score_dot(
-                &query.rotated_query,
-                bytes,
-                &self.metadata.codebook,
-                self.metadata.padded_dim,
-                medians,
-                scales,
-            ),
-            DistanceType::L2 => Self::score_l2(
-                &query.rotated_query,
-                query.query_norm_sq,
-                bytes,
-                &self.metadata.codebook,
-                self.metadata.padded_dim,
-                medians,
-                scales,
-            ),
-            DistanceType::L1 => Self::score_l1(
+            DistanceType::Dot => {
+                if let (Some(projected), Some(qjl)) = (&query.qjl_projected_query, qjl) {
+                    vec.score_dot_fast(
+                        &query.rotated_query,
+                        &self.metadata.codebook,
+                        self.metadata.padded_dim,
+                        medians,
+                        scales,
+                        correction,
+                        qjl,
+                        projected,
+                    )
+                } else {
+                    vec.score_dot(
+                        &query.rotated_query,
+                        &self.metadata.codebook,
+                        self.metadata.padded_dim,
+                        medians,
+                        scales,
+                        correction,
+                        qjl,
+                    )
+                }
+            }
+            DistanceType::L2 => {
+                if let (Some(projected), Some(qjl)) = (&query.qjl_projected_query, qjl) {
+                    vec.score_l2_fast(
+                        &query.rotated_query,
+                        query.query_norm_sq,
+                        &self.metadata.codebook,
+                        self.metadata.padded_dim,
+                        medians,
+                        scales,
+                        correction,
+                        qjl,
+                        projected,
+                    )
+                } else {
+                    vec.score_l2(
+                        &query.rotated_query,
+                        query.query_norm_sq,
+                        &self.metadata.codebook,
+                        self.metadata.padded_dim,
+                        medians,
+                        scales,
+                        correction,
+                        qjl,
+                    )
+                }
+            }
+            DistanceType::L1 => vec.score_l1(
                 &query.original_query,
-                bytes,
                 &self.metadata.codebook,
                 &self.rotation_impl,
                 self.metadata.vector_parameters.dim,
                 medians,
                 scales,
+                correction,
+                qjl,
             ),
         };
 
@@ -555,10 +469,34 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
         let rotated_query = self.rotation_impl.apply(query);
         let query_norm_sq: f32 = query.iter().map(|&x| x * x).sum();
+
+        // Precompute S · weighted_query for O(d) QJL correction in Dot/L2 scoring.
+        // Only for Qjl mode (not QjlNormalization — normalization is nonlinear).
+        let qjl_projected_query = if matches!(
+            self.metadata.correction,
+            TqCorrection::Qjl | TqCorrection::QjlShort
+        ) {
+            self.qjl.as_ref().map(|qjl| {
+                if self.metadata.scales.is_empty() {
+                    qjl.project_query(&rotated_query)
+                } else {
+                    let weighted: Vec<f32> = rotated_query
+                        .iter()
+                        .zip(self.metadata.scales.iter())
+                        .map(|(&q, &s)| q / s)
+                        .collect();
+                    qjl.project_query(&weighted)
+                }
+            })
+        } else {
+            None
+        };
+
         EncodedQueryTQ {
             rotated_query,
             original_query: query.to_vec(),
             query_norm_sq,
+            qjl_projected_query,
         }
     }
 
@@ -587,9 +525,26 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         let padded_dim = self.metadata.padded_dim;
         let medians = &self.metadata.medians;
         let scales = &self.metadata.scales;
+        let correction = self.metadata.correction;
 
-        let (gamma1, y1) = Self::decode_rotated(&v1, codebook, padded_dim, medians, scales);
-        let (gamma2, y2) = Self::decode_rotated(&v2, codebook, padded_dim, medians, scales);
+        let vec1 = EncodedVectorTQ::new(&v1);
+        let vec2 = EncodedVectorTQ::new(&v2);
+        let (gamma1, y1) = vec1.decode_rotated(
+            codebook,
+            padded_dim,
+            medians,
+            scales,
+            correction,
+            None, // Skip QJL because it's quadratic time
+        );
+        let (gamma2, y2) = vec2.decode_rotated(
+            codebook,
+            padded_dim,
+            medians,
+            scales,
+            correction,
+            None, // Skip QJL because it's quadratic time
+        );
 
         let result = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot => {
@@ -619,7 +574,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     fn quantized_vector_size(&self) -> usize {
-        NORM_SIZE + self.metadata.codebook.packed_size(self.metadata.padded_dim)
+        let base = NORM_SIZE + self.metadata.codebook.packed_size(self.metadata.padded_dim);
+        if let Some(qjl) = &self.qjl {
+            base + qjl.extra_bytes()
+        } else {
+            base
+        }
     }
 
     fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {

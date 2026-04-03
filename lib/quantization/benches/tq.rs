@@ -31,6 +31,7 @@ fn encode_bench(c: &mut Criterion) {
         &vector_parameters,
         DEFAULT_TURBO_QUANT_BITS,
         TqRotation::default(),
+        TqCorrection::default(),
     );
     let pq_encoded = EncodedVectorsTQ::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),

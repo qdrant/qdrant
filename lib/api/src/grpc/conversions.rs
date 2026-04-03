@@ -1356,6 +1356,10 @@ impl From<segment::types::TurboQuantCorrection> for TurboQuantCorrection {
             segment::types::TurboQuantCorrection::QjlNormalization => {
                 TurboQuantCorrection::QjlNormalization
             }
+            segment::types::TurboQuantCorrection::QjlShort => TurboQuantCorrection::QjlShort,
+            segment::types::TurboQuantCorrection::QjlShortNormalization => {
+                TurboQuantCorrection::QjlShortNormalization
+            }
         }
     }
 }
@@ -1372,6 +1376,10 @@ impl From<TurboQuantCorrection> for segment::types::TurboQuantCorrection {
             }
             TurboQuantCorrection::QjlNormalization => {
                 segment::types::TurboQuantCorrection::QjlNormalization
+            }
+            TurboQuantCorrection::QjlShort => segment::types::TurboQuantCorrection::QjlShort,
+            TurboQuantCorrection::QjlShortNormalization => {
+                segment::types::TurboQuantCorrection::QjlShortNormalization
             }
         }
     }

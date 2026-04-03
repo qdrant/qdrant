@@ -876,6 +876,8 @@ pub enum TurboQuantCorrection {
     #[default]
     Normalization,
     QjlNormalization,
+    QjlShort,
+    QjlShortNormalization,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Default)]
