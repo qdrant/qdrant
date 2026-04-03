@@ -4,15 +4,16 @@ use std::path::{Path, PathBuf};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
-use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
+use common::mmap::create_and_ensure_length;
 use common::types::PointOffsetType;
-use common::universal_io::OpenOptions;
+use common::universal_io::{
+    MmapFile, OpenOptions, SliceBufferedUpdateWrapper, TypedStorage, UniversalRead, UniversalWrite,
+};
 use fs_err::File;
 use uuid::Uuid;
 
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
-use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::stored_bitslice::MmapBitSlice;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
@@ -59,7 +60,7 @@ pub struct ImmutableIdTracker {
     deleted_wrapper: MmapBitSliceBufferedUpdateWrapper,
 
     internal_to_version: CompressedVersions,
-    internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
+    internal_to_version_wrapper: SliceBufferedUpdateWrapper<MmapFile, SeqNumberType>,
 
     mappings: CompressedPointMappings,
 }
@@ -257,16 +258,23 @@ impl ImmutableIdTracker {
 
         let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
 
-        let internal_to_version_map = open_write_mmap(
-            &Self::version_mapping_file_path(segment_path),
-            AdviceSetting::Global,
-            true,
+        let internal_to_version_file = TypedStorage::<MmapFile, SeqNumberType>::open(
+            Self::version_mapping_file_path(segment_path),
+            OpenOptions {
+                writeable: true,
+                need_sequential: false,
+                disk_parallel: None,
+                populate: Some(true),
+                advice: None,
+                prevent_caching: None,
+            },
         )?;
-        let internal_to_version_mapslice: MmapSlice<SeqNumberType> =
-            unsafe { MmapSlice::try_from(internal_to_version_map)? };
-        let internal_to_version = CompressedVersions::from_slice(&internal_to_version_mapslice);
+
+        let internal_to_version_slice = internal_to_version_file.read_whole()?;
+
+        let internal_to_version = CompressedVersions::from_slice(&internal_to_version_slice);
         let internal_to_version_wrapper =
-            MmapSliceBufferedUpdateWrapper::new(internal_to_version_mapslice);
+            SliceBufferedUpdateWrapper::new(internal_to_version_file)?;
 
         let reader = BufReader::new(File::open(Self::mappings_file_path(segment_path))?);
         let mappings = Self::load_mapping(reader, Some(deleted_bitvec))?;
@@ -326,22 +334,27 @@ impl ImmutableIdTracker {
             let version_size = mmap_size::<SeqNumberType>(min_size);
             create_and_ensure_length(&version_filepath, version_size)?;
         }
-        let mut internal_to_version_wrapper = unsafe {
-            MmapSlice::try_from(open_write_mmap(
-                &version_filepath,
-                AdviceSetting::Global,
-                false,
-            )?)?
-        };
 
-        internal_to_version_wrapper[..internal_to_version.len()]
-            .copy_from_slice(internal_to_version);
-        let internal_to_version = CompressedVersions::from_slice(&internal_to_version_wrapper);
+        let mut internal_to_version_file = TypedStorage::<MmapFile, SeqNumberType>::open(
+            &version_filepath,
+            OpenOptions {
+                writeable: true,
+                need_sequential: false,
+                disk_parallel: None,
+                populate: Some(false),
+                advice: None,
+                prevent_caching: None,
+            },
+        )?;
+        internal_to_version_file.write(0, internal_to_version)?;
+
+        let internal_to_version =
+            CompressedVersions::from_slice(&internal_to_version_file.read_whole()?);
 
         debug_assert_eq!(internal_to_version.len(), mappings.total_point_count());
 
         let internal_to_version_wrapper =
-            MmapSliceBufferedUpdateWrapper::new(internal_to_version_wrapper);
+            SliceBufferedUpdateWrapper::new(internal_to_version_file)?;
 
         // Write mappings to disk.
         let file = File::create(Self::mappings_file_path(path))?;
@@ -457,7 +470,8 @@ impl IdTracker for ImmutableIdTracker {
 
     /// Creates a flusher function, that writes the points versions to disk.
     fn versions_flusher(&self) -> Flusher {
-        self.internal_to_version_wrapper.flusher()
+        let flusher = self.internal_to_version_wrapper.flusher();
+        Box::new(move || flusher().map_err(OperationError::from))
     }
 
     fn total_point_count(&self) -> usize {
