@@ -150,7 +150,12 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
         let (read_ranges, buffer_offsets) = Self::get_page_value_ranges(pointer, config);
 
-        S::read_multi::<P>(self.pages.as_slice(), read_ranges, |idx, _, slice| {
+        let reads = read_ranges
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (page_idx, range))| (idx, &self.pages[page_idx], range));
+
+        S::read_multi::<P, _>(reads, |idx, slice| {
             let offset = buffer_offsets[idx];
             raw_value[offset..offset + slice.len()].write_copy_of_slice(slice);
             Ok(())
