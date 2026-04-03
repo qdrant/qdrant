@@ -82,6 +82,37 @@ impl<S: UniversalRead<u8>> Pages<S> {
     /// A value may span across two consecutive pages if it starts near the end of a page.
     /// Returns `(buffer_offset, page_index, range)` entries that together cover the full
     /// extent of the value.
+    ///
+    /// - `buffer_offset` offset in the data buffer
+    /// - `page_index` index of the page to read from / write to
+    /// - `range` in the page to read from / write to.
+    ///    Length of the range matches length of the part of buffer
+    ///
+    ///VALUE BUFFER
+    /// ----------------------------------------------------------------------
+    /// buffer index:   0    1    2    3    4    5    6    7
+    ///                 [ A ][ A ][ A ][ A ][ A ][ A ][ A ][ A ]
+    ///
+    /// PAGE 42  (value starts near end)
+    /// ----------------------------------------------------------------------
+    /// page index:     0    1    2    3    4    5    6    7    8    9   10   11
+    ///                 [ . ][ . ][ . ][ . ][ . ][ . ][ . ][ . ][ . ][ A ][ A ][ A ]
+    ///                                                                ^^^^^^^^^^^
+    ///                                                                range = 9..12
+    ///                                                                (3 bytes)
+    ///
+    /// PAGE 43  (continuation)
+    /// ----------------------------------------------------------------------
+    /// page index:     0    1    2    3    4    5    6    7    8    9   10   11
+    ///                 [ A ][ A ][ A ][ A ][ A ][ . ][ . ][ . ][ . ][ . ][ . ][ . ]
+    ///                 ^^^^^^^^^^^^^^^^^^^^^
+    ///                 range = 0..5
+    ///                 (remaining 5 bytes)
+    ///
+    /// MAPPING
+    /// ----------------------------------------------------------------------
+    /// buffer_offset = 0  --->  page 42[9..12]
+    /// buffer_offset = 3  --->  page 43[0..5]
     fn get_page_value_ranges(
         pointer: ValuePointer,
         config: &StorageConfig,
