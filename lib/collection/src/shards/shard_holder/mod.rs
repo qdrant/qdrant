@@ -11,6 +11,7 @@ use std::time::Duration;
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwSharedDrain;
 use common::fs::sync_parent_dir_async;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
@@ -896,6 +897,7 @@ impl ShardHolder {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
@@ -934,6 +936,7 @@ impl ShardHolder {
             let search_runtime = search_runtime.clone();
             let shard_key = shard_id_to_key_mapping_clone.get(&shard_id).cloned();
             let optimizer_resource_budget = optimizer_resource_budget.clone();
+            let hw_shared_drain = hw_shared_drain.clone();
             async move {
                 let shard_key_for_add = shard_key.clone();
 
@@ -965,6 +968,7 @@ impl ShardHolder {
                     update_runtime,
                     search_runtime,
                     optimizer_resource_budget,
+                    hw_shared_drain,
                 )
                 .await;
 

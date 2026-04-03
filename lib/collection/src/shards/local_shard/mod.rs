@@ -29,7 +29,7 @@ use std::{cmp, thread};
 
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::defaults::log_load_timing;
 use common::rate_limiting::RateLimiter;
@@ -136,6 +136,9 @@ pub struct LocalShard {
 
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
+
+    /// Shared drain for hardware measurements at collection level
+    hw_shared_drain: Arc<HwSharedDrain>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -241,6 +244,7 @@ impl LocalShard {
         clocks: LocalShardClocks,
         update_runtime: Handle,
         search_runtime: Handle,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) -> Self {
         let segment_holder = LockedSegmentHolder::new(segment_holder);
         let config = collection_config.read().await;
@@ -323,6 +327,7 @@ impl LocalShard {
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
             applied_seq_handler,
+            hw_shared_drain,
         }
     }
 
@@ -345,6 +350,7 @@ impl LocalShard {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) -> CollectionResult<LocalShard> {
         let total_started = Instant::now();
 
@@ -518,6 +524,7 @@ impl LocalShard {
             clocks,
             update_runtime,
             search_runtime,
+            hw_shared_drain,
         )
         .await;
 
@@ -553,6 +560,7 @@ impl LocalShard {
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_replica_set();
@@ -567,6 +575,7 @@ impl LocalShard {
             search_runtime,
             optimizer_resource_budget,
             effective_optimizers_config,
+            hw_shared_drain,
         )
         .await?;
         local_shard_config.save(shard_path)?;
@@ -586,6 +595,7 @@ impl LocalShard {
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
@@ -681,6 +691,7 @@ impl LocalShard {
             LocalShardClocks::default(),
             update_runtime,
             search_runtime,
+            hw_shared_drain,
         )
         .await;
 
@@ -861,8 +872,8 @@ impl LocalShard {
                 last_wal_index - to
             );
             let update_sender = self.update_sender.load();
-            // TODO use proper collection's hardware measurement
-            let hw_measurements = HwMeasurementAcc::disposable();
+            let hw_measurements =
+                HwMeasurementAcc::new_with_metrics_drain(self.hw_shared_drain.clone());
             for op_num in to..=last_wal_index {
                 update_sender
                     .send(UpdateSignal::Operation(OperationData {

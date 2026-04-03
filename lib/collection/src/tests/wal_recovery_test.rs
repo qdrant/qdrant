@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::VectorStructInternal;
@@ -49,6 +49,7 @@ async fn test_delete_from_indexed_payload() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -110,6 +111,7 @@ async fn test_delete_from_indexed_payload() {
         current_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -142,6 +144,7 @@ async fn test_delete_from_indexed_payload() {
         current_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -187,6 +190,7 @@ async fn test_partial_flush_recovery() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -248,6 +252,7 @@ async fn test_partial_flush_recovery() {
         current_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -294,6 +299,7 @@ async fn test_truncate_unapplied_wal() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -458,6 +464,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -531,6 +538,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
         current_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -613,6 +621,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -689,6 +698,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
         current_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();

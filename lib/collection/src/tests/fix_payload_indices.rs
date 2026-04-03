@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
@@ -38,6 +38,7 @@ async fn test_fix_payload_indices() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -97,6 +98,7 @@ async fn test_fix_payload_indices() {
         current_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();

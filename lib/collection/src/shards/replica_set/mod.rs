@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
@@ -123,6 +123,7 @@ pub struct ShardReplicaSet {
     clock_set: Mutex<ClockSet>,
     write_rate_limiter: Option<parking_lot::Mutex<RateLimiter>>,
     pub partial_snapshot_meta: PartialSnapshotMeta,
+    pub(crate) hw_shared_drain: Arc<HwSharedDrain>,
 }
 
 pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
@@ -153,6 +154,7 @@ impl ShardReplicaSet {
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
         init_state: Option<ReplicaState>,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) -> CollectionResult<Self> {
         let shard_path = super::create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
@@ -167,6 +169,7 @@ impl ShardReplicaSet {
                 search_runtime.clone(),
                 optimizer_resource_budget.clone(),
                 effective_optimizers_config.clone(),
+                hw_shared_drain.clone(),
             )
             .await?;
             Some(Shard::Local(shard))
@@ -233,6 +236,7 @@ impl ShardReplicaSet {
             clock_set: Default::default(),
             write_rate_limiter,
             partial_snapshot_meta: PartialSnapshotMeta::default(),
+            hw_shared_drain,
         })
     }
 
@@ -259,6 +263,7 @@ impl ShardReplicaSet {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -311,6 +316,7 @@ impl ShardReplicaSet {
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_resource_budget.clone(),
+                    hw_shared_drain.clone(),
                 )
                 .await;
 
@@ -375,6 +381,7 @@ impl ShardReplicaSet {
             clock_set: Default::default(),
             write_rate_limiter,
             partial_snapshot_meta: PartialSnapshotMeta::default(),
+            hw_shared_drain,
         };
 
         // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
@@ -623,6 +630,7 @@ impl ShardReplicaSet {
             self.search_runtime.clone(),
             self.optimizer_resource_budget.clone(),
             self.optimizers_config.clone(),
+            self.hw_shared_drain.clone(),
         )
         .await;
 
@@ -884,6 +892,7 @@ impl ShardReplicaSet {
                     self.search_runtime.clone(),
                     self.optimizer_resource_budget.clone(),
                     self.optimizers_config.clone(),
+                    self.hw_shared_drain.clone(),
                 )
                 .await?;
 

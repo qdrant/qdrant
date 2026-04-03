@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwSharedDrain;
 use common::save_on_disk::SaveOnDisk;
 use common::storage_version::StorageVersion;
 use segment::types::{SeqNumberType, ShardKey};
@@ -89,6 +90,8 @@ pub struct Collection {
     collection_stats_cache: CollectionSizeStatsCache,
     // Background tasks to clean shards
     shard_clean_tasks: ShardCleanTasks,
+    /// Shared drain for hardware measurements at collection level
+    hw_shared_drain: Arc<HwSharedDrain>,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -115,6 +118,7 @@ impl Collection {
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) -> CollectionResult<Self> {
         let start_time = std::time::Instant::now();
 
@@ -156,6 +160,7 @@ impl Collection {
                 search_runtime.clone().unwrap_or_else(Handle::current),
                 optimizer_resource_budget.clone(),
                 None,
+                hw_shared_drain.clone(),
             )
             .await?;
 
@@ -196,6 +201,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
+            hw_shared_drain,
         })
     }
 
@@ -214,6 +220,7 @@ impl Collection {
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
+        hw_shared_drain: Arc<HwSharedDrain>,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -280,6 +287,7 @@ impl Collection {
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
                 optimizer_resource_budget.clone(),
+                hw_shared_drain.clone(),
             )
             .await;
 
@@ -313,6 +321,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
+            hw_shared_drain,
         }
     }
 

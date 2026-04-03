@@ -230,6 +230,7 @@ impl TableOfContent {
             Some(self.update_runtime.handle().clone()),
             self.optimizer_resource_budget.clone(),
             self.storage_config.optimizers_overwrite.clone(),
+            self.get_collection_hw_metrics(collection_name.to_string()),
         )
         .await?;
 

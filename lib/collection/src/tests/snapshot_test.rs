@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwSharedDrain;
 use segment::types::Distance;
 use shard::snapshots::snapshot_data::SnapshotData;
 use tempfile::Builder;
@@ -93,6 +94,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         None,
         ResourceBudget::default(),
         None,
+        Arc::new(HwSharedDrain::default()),
     )
     .await
     .unwrap();
@@ -144,6 +146,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         None,
         ResourceBudget::default(),
         None,
+        Arc::new(HwSharedDrain::default()),
     )
     .await;
 
