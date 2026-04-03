@@ -1,33 +1,31 @@
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
-/// Alignment for padded dimension.
-const PADDED_DIM_ALIGNMENT: usize = 128;
+/// Chunk size for chunked Walsh-Hadamard Transform. Must be a power of 2.
+/// Padded dimension is always a multiple of this value.
+const WHT_CHUNK_SIZE: usize = 256;
 
 pub(crate) struct HadamardRotation {
     signs1: Vec<f64>,
     signs2: Vec<f64>,
+    /// Two independent permutations applied between the three WHT passes.
+    permutations: [(Vec<usize>, Vec<usize>); 2],
     padded_dim: usize,
-    /// Power-of-2 chunk sizes for the decomposed WHT (largest first).
-    /// E.g. for padded_dim=384: [256, 128].
-    chunks: Vec<usize>,
-    /// Whether a second (reversed) WHT pass is needed.
-    /// True when padded_dim is not a power of 2.
-    needs_reverse_pass: bool,
 }
 
 impl HadamardRotation {
     pub fn new(seed: u64, dim: usize) -> Self {
         let padded_dim = compute_padded_dim(dim);
-        let (signs1, signs2) = generate_signs(seed, padded_dim);
-        let chunks = decompose_into_powers_of_two(padded_dim);
-        let needs_reverse_pass = !padded_dim.is_power_of_two();
+        let mut rng = StdRng::seed_from_u64(seed);
+        let signs1 = generate_signs(&mut rng, padded_dim);
+        let signs2 = generate_signs(&mut rng, padded_dim);
+        let perm1 = generate_permutation(&mut rng, padded_dim);
+        let perm2 = generate_permutation(&mut rng, padded_dim);
         Self {
             signs1,
             signs2,
+            permutations: [perm1, perm2],
             padded_dim,
-            chunks,
-            needs_reverse_pass,
         }
     }
 
@@ -43,10 +41,17 @@ impl HadamardRotation {
         for (b, &s) in buf.iter_mut().zip(self.signs1.iter()) {
             *b *= s;
         }
-        apply_chunked_wht(&mut buf, &self.chunks);
-        if self.needs_reverse_pass {
-            buf.reverse();
-            apply_chunked_wht(&mut buf, &self.chunks);
+        // WHT · P2 · WHT · P1 · WHT
+        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+            walsh_hadamard_transform(chunk);
+        }
+        apply_permutation(&mut buf, &self.permutations[0].0);
+        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+            walsh_hadamard_transform(chunk);
+        }
+        apply_permutation(&mut buf, &self.permutations[1].0);
+        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+            walsh_hadamard_transform(chunk);
         }
         for (b, &s) in buf.iter_mut().zip(self.signs2.iter()) {
             *b *= s;
@@ -63,11 +68,18 @@ impl HadamardRotation {
         for (b, &s) in buf.iter_mut().zip(self.signs2.iter()) {
             *b *= s;
         }
-        if self.needs_reverse_pass {
-            apply_chunked_wht(&mut buf, &self.chunks);
-            buf.reverse();
+        // WHT · P1⁻¹ · WHT · P2⁻¹ · WHT
+        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+            walsh_hadamard_transform(chunk);
         }
-        apply_chunked_wht(&mut buf, &self.chunks);
+        apply_permutation(&mut buf, &self.permutations[1].1);
+        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+            walsh_hadamard_transform(chunk);
+        }
+        apply_permutation(&mut buf, &self.permutations[0].1);
+        for chunk in buf.chunks_mut(WHT_CHUNK_SIZE) {
+            walsh_hadamard_transform(chunk);
+        }
         for (b, &s) in buf.iter_mut().zip(self.signs1.iter()) {
             *b *= s;
         }
@@ -75,42 +87,39 @@ impl HadamardRotation {
     }
 }
 
-/// Round up to the nearest multiple of `PADDED_DIM_ALIGNMENT`.
+/// Round up to the nearest multiple of `WHT_CHUNK_SIZE`.
 pub(crate) fn compute_padded_dim(dim: usize) -> usize {
-    (dim + PADDED_DIM_ALIGNMENT - 1) / PADDED_DIM_ALIGNMENT * PADDED_DIM_ALIGNMENT
+    (dim + WHT_CHUNK_SIZE - 1) / WHT_CHUNK_SIZE * WHT_CHUNK_SIZE
 }
 
-/// Decompose `n` into a sum of powers of 2, largest first.
-/// E.g. 384 → [256, 128], 512 → [512], 640 → [512, 128].
-fn decompose_into_powers_of_two(mut n: usize) -> Vec<usize> {
-    let mut chunks = Vec::new();
-    while n > 0 {
-        let largest = 1 << (usize::BITS - 1 - n.leading_zeros());
-        chunks.push(largest);
-        n -= largest;
-    }
-    chunks
-}
-
-/// Apply WHT to consecutive power-of-2 chunks of `buf`.
-fn apply_chunked_wht(buf: &mut [f64], chunks: &[usize]) {
-    let mut offset = 0;
-    for &chunk_size in chunks {
-        walsh_hadamard_transform(&mut buf[offset..offset + chunk_size]);
-        offset += chunk_size;
-    }
-}
-
-/// Generate two random sign vectors (±1.0) from a deterministic seed.
-fn generate_signs(seed: u64, padded_dim: usize) -> (Vec<f64>, Vec<f64>) {
-    let mut rng = StdRng::seed_from_u64(seed);
-    let signs1: Vec<f64> = (0..padded_dim)
+/// Generate a random sign vector (±1.0).
+fn generate_signs(rng: &mut StdRng, n: usize) -> Vec<f64> {
+    (0..n)
         .map(|_| if rng.random::<bool>() { 1.0f64 } else { -1.0f64 })
-        .collect();
-    let signs2: Vec<f64> = (0..padded_dim)
-        .map(|_| if rng.random::<bool>() { 1.0f64 } else { -1.0f64 })
-        .collect();
-    (signs1, signs2)
+        .collect()
+}
+
+/// Apply a permutation out-of-place: element at index `i` moves to `perm[i]`.
+fn apply_permutation(buf: &mut [f64], perm: &[usize]) {
+    let mut tmp = vec![0.0f64; buf.len()];
+    for (i, &p) in perm.iter().enumerate() {
+        tmp[p] = buf[i];
+    }
+    buf.copy_from_slice(&tmp);
+}
+
+/// Generate a random permutation and its inverse using Fisher-Yates shuffle.
+fn generate_permutation(rng: &mut StdRng, n: usize) -> (Vec<usize>, Vec<usize>) {
+    let mut perm: Vec<usize> = (0..n).collect();
+    for i in (1..n).rev() {
+        let j = rng.random_range(0..=i);
+        perm.swap(i, j);
+    }
+    let mut inv = vec![0usize; n];
+    for (i, &p) in perm.iter().enumerate() {
+        inv[p] = i;
+    }
+    (perm, inv)
 }
 
 /// In-place normalized Walsh-Hadamard Transform in f64. Self-inverse: WHT(WHT(x)) = x.
@@ -133,5 +142,62 @@ fn walsh_hadamard_transform(x: &mut [f64]) {
     let norm = (n as f64).sqrt();
     for val in x.iter_mut() {
         *val /= norm;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_roundtrip() {
+        for dim in [128, 200, 384, 512, 768, 1536] {
+            let rot = HadamardRotation::new(42, dim);
+            let x: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.01 + 0.5).collect();
+            let y = rot.apply(&x);
+            let x2 = rot.apply_inverse(&y, dim);
+            let max_err: f32 = x.iter().zip(x2.iter())
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            println!("dim={dim}: padded={}, max_roundtrip_err={max_err:.2e}", rot.padded_dim());
+            assert!(max_err < 1e-5, "roundtrip error too large for dim={dim}: {max_err}");
+        }
+    }
+
+    #[test]
+    fn test_variance_uniformity() {
+        let dim = 384;
+        let rot = HadamardRotation::new(42, dim);
+        // Input with energy concentrated in first block
+        let mut x = vec![0.0f32; dim];
+        for i in 0..128 {
+            x[i] = 1.0;
+        }
+        let y = rot.apply(&x);
+        // Check variance across 256-element blocks
+        let chunk_size = WHT_CHUNK_SIZE.min(rot.padded_dim());
+        let num_chunks = rot.padded_dim() / chunk_size;
+        let mut chunk_energies = Vec::new();
+        for c in 0..num_chunks {
+            let start = c * chunk_size;
+            let end = start + chunk_size;
+            let energy: f64 = y[start..end].iter().map(|&v| (v as f64) * (v as f64)).sum();
+            chunk_energies.push(energy);
+        }
+        let total_energy: f64 = chunk_energies.iter().sum();
+        let expected_per_chunk = total_energy / num_chunks as f64;
+        println!("dim={dim}, padded={}, chunks={num_chunks}", rot.padded_dim());
+        for (i, e) in chunk_energies.iter().enumerate() {
+            let ratio = e / expected_per_chunk;
+            println!("  chunk {i}: energy={e:.4}, ratio={ratio:.4}");
+        }
+        // With good mixing, each chunk should have roughly equal energy
+        for (i, e) in chunk_energies.iter().enumerate() {
+            let ratio = e / expected_per_chunk;
+            assert!(
+                (0.5..2.0).contains(&ratio),
+                "chunk {i} energy ratio {ratio:.4} is too far from 1.0"
+            );
+        }
     }
 }
