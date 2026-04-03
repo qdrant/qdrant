@@ -35,6 +35,7 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -45,6 +46,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -78,6 +80,7 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -88,6 +91,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -121,6 +125,7 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -131,6 +136,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -164,6 +170,7 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -174,6 +181,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -207,6 +215,7 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -217,6 +226,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -250,6 +260,7 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -260,6 +271,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -292,6 +304,7 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -302,6 +315,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -333,6 +347,7 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -343,6 +358,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )

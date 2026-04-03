@@ -5,6 +5,7 @@ use std::time::SystemTime;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
+use super::Codebook;
 use crate::encoded_vectors::VectorParameters;
 
 const NUM_BINS: usize = 50;
@@ -404,8 +405,8 @@ fn render_grid(histograms: &[Histogram], sorted_by_distortion: &[usize]) -> Stri
 
 fn render_gaussian_grid(histograms: &[Histogram], dim: usize) -> String {
     let sigma = 1.0 / (dim as f64).sqrt();
-    let (centroids_8, _) = crate::encoded_vectors_tq::compute_codebook(3, dim);
-    let (centroids_16, _) = crate::encoded_vectors_tq::compute_codebook(4, dim);
+    let codebook_8 = Codebook::new(3, dim);
+    let codebook_16 = Codebook::new(4, dim);
 
     let num_coords = histograms.len();
     let num_cells = 9.min(num_coords);
@@ -487,7 +488,7 @@ fn render_gaussian_grid(histograms: &[Histogram], dim: usize) -> String {
             let _ = writeln!(svg, "\"/>");
 
             // 16 centroids (levels=4) as smaller pink points
-            for &c in &centroids_16 {
+            for &c in &codebook_16.centroids {
                 let c64 = c as f64;
                 if c64 >= hist.min_val as f64 && c64 <= hist.max_val as f64 {
                     let frac = (c64 - hist.min_val as f64) / range as f64;
@@ -507,7 +508,7 @@ fn render_gaussian_grid(histograms: &[Histogram], dim: usize) -> String {
             }
 
             // 8 centroids (levels=3) as larger orange points
-            for &c in &centroids_8 {
+            for &c in &codebook_8.centroids {
                 let c64 = c as f64;
                 if c64 >= hist.min_val as f64 && c64 <= hist.max_val as f64 {
                     let frac = (c64 - hist.min_val as f64) / range as f64;
@@ -649,8 +650,8 @@ pub fn analyse<'a>(
         let all_hist = build_histogram(&all_values, 0);
 
         let sigma = 1.0 / (dim as f64).sqrt();
-        let (centroids_8, _) = crate::encoded_vectors_tq::compute_codebook(3, dim);
-        let (centroids_16, _) = crate::encoded_vectors_tq::compute_codebook(4, dim);
+        let codebook_8 = Codebook::new(3, dim);
+        let codebook_16 = Codebook::new(4, dim);
 
         let plot_w = CHART_W - MARGIN_L - MARGIN_R;
         let plot_h = CHART_H - MARGIN_T - MARGIN_B;
@@ -699,7 +700,7 @@ pub fn analyse<'a>(
             let _ = writeln!(svg, "\"/>");
 
             // 16 centroids (pink, smaller)
-            for &c in &centroids_16 {
+            for &c in &codebook_16.centroids {
                 let c64 = c as f64;
                 if c64 >= all_hist.min_val as f64 && c64 <= all_hist.max_val as f64 {
                     let frac = (c64 - all_hist.min_val as f64) / range as f64;
@@ -719,7 +720,7 @@ pub fn analyse<'a>(
             }
 
             // 8 centroids (orange, larger)
-            for &c in &centroids_8 {
+            for &c in &codebook_8.centroids {
                 let c64 = c as f64;
                 if c64 >= all_hist.min_val as f64 && c64 <= all_hist.max_val as f64 {
                     let frac = (c64 - all_hist.min_val as f64) / range as f64;

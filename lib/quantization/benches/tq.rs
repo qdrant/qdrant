@@ -30,6 +30,7 @@ fn encode_bench(c: &mut Criterion) {
     let quantized_vector_size = EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
         &vector_parameters,
         DEFAULT_TURBO_QUANT_BITS,
+        TqRotation::default(),
     );
     let pq_encoded = EncodedVectorsTQ::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
@@ -40,6 +41,7 @@ fn encode_bench(c: &mut Criterion) {
         TqCorrection::default(),
         TqRotation::default(),
         None,
+        false,
         None,
         &AtomicBool::new(false),
     )

@@ -1382,7 +1382,7 @@ impl From<segment::types::TurboQuantRotation> for TurboQuantRotation {
         match value {
             segment::types::TurboQuantRotation::NoRotation => TurboQuantRotation::TqrNoRotation,
             segment::types::TurboQuantRotation::Hadamard => TurboQuantRotation::TqrHadamard,
-            segment::types::TurboQuantRotation::Random => TurboQuantRotation::TqrRandom,
+            segment::types::TurboQuantRotation::RotationMatrix => TurboQuantRotation::TqrRotationMatrix,
         }
     }
 }
@@ -1392,7 +1392,7 @@ impl From<TurboQuantRotation> for segment::types::TurboQuantRotation {
         match value {
             TurboQuantRotation::TqrNoRotation => segment::types::TurboQuantRotation::NoRotation,
             TurboQuantRotation::TqrHadamard => segment::types::TurboQuantRotation::Hadamard,
-            TurboQuantRotation::TqrRandom => segment::types::TurboQuantRotation::Random,
+            TurboQuantRotation::TqrRotationMatrix => segment::types::TurboQuantRotation::RotationMatrix,
         }
     }
 }
@@ -1406,6 +1406,7 @@ impl From<segment::types::TurboQuantQuantization> for TurboQuantization {
             correction,
             rotation,
             hadamard_chunk,
+            plus,
         } = turbo_quant;
         TurboQuantization {
             bits: bits.map(|b| b as u32),
@@ -1413,6 +1414,7 @@ impl From<segment::types::TurboQuantQuantization> for TurboQuantization {
             correction: correction.map(|c| i32::from(TurboQuantCorrection::from(c))),
             rotation: rotation.map(|r| i32::from(TurboQuantRotation::from(r))),
             hadamard_chunk: hadamard_chunk.map(|r| r as u32),
+            plus,
         }
     }
 }
@@ -1427,6 +1429,7 @@ impl TryFrom<TurboQuantization> for segment::types::TurboQuantQuantization {
             correction,
             rotation,
             hadamard_chunk,
+            plus,
         } = value;
         let correction = correction
             .map(TurboQuantCorrection::try_from)
@@ -1443,6 +1446,7 @@ impl TryFrom<TurboQuantization> for segment::types::TurboQuantQuantization {
                 correction: correction.map(segment::types::TurboQuantCorrection::from),
                 rotation: rotation.map(segment::types::TurboQuantRotation::from),
                 hadamard_chunk: hadamard_chunk.map(|r| r as usize),
+                plus,
             },
         })
     }

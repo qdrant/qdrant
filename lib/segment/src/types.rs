@@ -884,7 +884,8 @@ pub enum TurboQuantRotation {
     NoRotation,
     #[default]
     Hadamard,
-    Random,
+    #[serde(alias = "random")]
+    RotationMatrix,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -913,6 +914,11 @@ pub struct TurboQuantQuantizationConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hadamard_chunk: Option<usize>,
+
+    /// Enable turbo quant plus mode (default: false)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plus: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
