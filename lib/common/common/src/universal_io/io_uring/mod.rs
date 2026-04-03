@@ -91,48 +91,62 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         Ok(Cow::Owned(items))
     }
 
-    fn read_batch<P: AccessPattern>(
-        &self,
-        ranges: impl IntoIterator<Item = ReadRange>,
-        mut callback: impl FnMut(usize, &[T]) -> Result<()>,
+    fn read_batch<'a, P: AccessPattern, RequestId: 'a>(
+        &'a self,
+        ranges: impl IntoIterator<Item = (RequestId, ReadRange)>,
+        mut callback: impl FnMut(RequestId, &[T]) -> Result<()>,
     ) -> Result<()> {
-        for record in self.read_iter::<P>(ranges) {
-            let (idx, items) = record?;
-            callback(idx, &items)?;
+        for record in self.read_iter::<P, RequestId>(ranges) {
+            let (id, items) = record?;
+            callback(id, &items)?;
         }
 
         Ok(())
     }
 
-    fn read_iter<P: AccessPattern>(
+    fn read_iter<P: AccessPattern, RequestId>(
         &self,
-        ranges: impl IntoIterator<Item = ReadRange>,
-    ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
-        match IoUringReadIter::new(self, ranges.into_iter()) {
-            Ok(iter) => itertools::Either::Left(iter),
+        ranges: impl IntoIterator<Item = (RequestId, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(RequestId, Cow<'_, [T]>)>> {
+        let fd = self.fd();
+        let direct_io = self.direct_io;
+        let ranges = ranges
+            .into_iter()
+            .map(move |(id, range)| (id, fd, direct_io, range));
+        match IoUringReadIter::new(ranges) {
+            Ok(iter) => itertools::Either::Left(
+                iter.map(|result| result.map(|(id, items)| (id, Cow::Owned(items)))),
+            ),
             Err(err) => itertools::Either::Right(iter::once(Err(err))),
         }
     }
 
-    fn read_multi<P: AccessPattern>(
-        files: &[Self],
-        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
-        mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()> {
-        for record in Self::read_multi_iter::<P>(files, reads) {
-            let (idx, file_idx, items) = record?;
-            callback(idx, file_idx, &items)?;
+    fn read_multi<'a, P: AccessPattern, RequestId: 'a>(
+        reads: impl IntoIterator<Item = (RequestId, &'a Self, ReadRange)>,
+        mut callback: impl FnMut(RequestId, &[T]) -> Result<()>,
+    ) -> Result<()>
+    where
+        Self: 'a,
+    {
+        for record in Self::read_multi_iter::<'a, P, RequestId>(reads) {
+            let (id, items) = record?;
+            callback(id, &items)?;
         }
 
         Ok(())
     }
 
-    fn read_multi_iter<P: AccessPattern>(
-        files: &[Self],
-        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
-        match IoUringReadMultiIter::new(files, reads.into_iter()) {
-            Ok(iter) => itertools::Either::Left(iter),
+    fn read_multi_iter<'a, P: AccessPattern, RequestId>(
+        reads: impl IntoIterator<Item = (RequestId, &'a Self, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(RequestId, Cow<'a, [T]>)>> {
+        let ranges = reads
+            .into_iter()
+            .map(|(id, file, range)| (id, file.fd(), file.direct_io, range));
+
+        match IoUringReadIter::new(ranges) {
+            Ok(iter) => itertools::Either::Left(
+                iter.map(|result| result.map(|(id, items)| (id, Cow::Owned(items)))),
+            ),
             Err(err) => itertools::Either::Right(iter::once(Err(err))),
         }
     }

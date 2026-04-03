@@ -57,20 +57,20 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     }
 
     #[inline]
-    fn read_batch<P: AccessPattern>(
-        &self,
-        ranges: impl IntoIterator<Item = ReadRange>,
-        callback: impl FnMut(usize, &[T]) -> Result<()>,
+    fn read_batch<'a, P: AccessPattern, RequestId: 'a>(
+        &'a self,
+        ranges: impl IntoIterator<Item = (RequestId, ReadRange)>,
+        callback: impl FnMut(RequestId, &[T]) -> Result<()>,
     ) -> Result<()> {
-        self.inner.read_batch::<P>(ranges, callback)
+        self.inner.read_batch::<P, RequestId>(ranges, callback)
     }
 
     #[inline]
-    fn read_iter<P: AccessPattern>(
+    fn read_iter<P: AccessPattern, RequestId>(
         &self,
-        ranges: impl IntoIterator<Item = ReadRange>,
-    ) -> impl Iterator<Item = Result<(usize, Cow<'_, [T]>)>> {
-        self.inner.read_iter::<P>(ranges)
+        ranges: impl IntoIterator<Item = (RequestId, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(RequestId, Cow<'_, [T]>)>> {
+        self.inner.read_iter::<P, RequestId>(ranges)
     }
 
     #[inline]
@@ -89,20 +89,32 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     }
 
     #[inline]
-    fn read_multi<P: AccessPattern>(
-        files: &[Self],
-        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
-        callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
-    ) -> Result<()> {
-        S::read_multi::<P>(Self::peel_slice(files), reads, callback)
+    fn read_multi<'a, P: AccessPattern, RequestId: 'a>(
+        reads: impl IntoIterator<Item = (RequestId, &'a Self, ReadRange)>,
+        callback: impl FnMut(RequestId, &[T]) -> Result<()>,
+    ) -> Result<()>
+    where
+        Self: 'a,
+    {
+        S::read_multi::<'a, P, RequestId>(
+            reads
+                .into_iter()
+                .map(|(id, file, range)| (id, &file.inner, range)),
+            callback,
+        )
     }
 
     #[inline]
-    fn read_multi_iter<P: AccessPattern>(
-        files: &[Self],
-        reads: impl IntoIterator<Item = (FileIndex, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(usize, FileIndex, Cow<'_, [T]>)>> {
-        S::read_multi_iter::<P>(Self::peel_slice(files), reads)
+    fn read_multi_iter<'a, P: AccessPattern, RequestId>(
+        reads: impl IntoIterator<Item = (RequestId, &'a Self, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(RequestId, Cow<'a, [T]>)>>
+    where
+        Self: 'a,
+    {
+        let reads = reads
+            .into_iter()
+            .map(|(id, file, range)| (id, &file.inner, range));
+        S::read_multi_iter::<P, _>(reads)
     }
 }
 

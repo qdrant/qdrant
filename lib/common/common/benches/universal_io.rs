@@ -110,12 +110,14 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
     group.bench_function("read_batch_small_random", |b| {
         b.iter(|| {
             let mut sum = 0u64;
-            let ranges = (0..8).map(|_| ReadRange {
-                byte_offset: rng.random_range(0..len) * size_of::<T>() as u64,
-                length: 1,
-            });
+            let ranges = (0..8)
+                .map(|_| ReadRange {
+                    byte_offset: rng.random_range(0..len) * size_of::<T>() as u64,
+                    length: 1,
+                })
+                .map(|range| ((), range));
             storage
-                .read_batch::<Random>(ranges, |_, chunk| {
+                .read_batch::<Random, ()>(ranges, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -131,12 +133,14 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
         b.iter(|| {
             let mut sum = 0u64;
             let start = rng.random_range(0..len - 8) * size_of::<T>() as u64;
-            let ranges = (0..8).map(move |i| ReadRange {
-                byte_offset: start + i * size_of::<T>() as u64,
-                length: 1,
-            });
+            let ranges = (0..8)
+                .map(move |i| ReadRange {
+                    byte_offset: start + i * size_of::<T>() as u64,
+                    length: 1,
+                })
+                .map(|range| ((), range));
             storage
-                .read_batch::<Sequential>(ranges, |_, chunk| {
+                .read_batch::<Sequential, ()>(ranges, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -152,7 +156,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
     let read_batch_full = || {
         let mut sum = 0u64;
         storage
-            .read_batch::<Sequential>(ranges_full_file::<T>(), |_, chunk| {
+            .read_batch::<Sequential, ()>(ranges_full_file::<T>(), |(), chunk| {
                 for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                     sum = sum.wrapping_add(item);
                 }
@@ -175,12 +179,14 @@ fn time_it<F: FnOnce()>(f: F) -> Duration {
     start.elapsed()
 }
 
-fn ranges_full_file<T>() -> impl Iterator<Item = ReadRange> {
+fn ranges_full_file<T>() -> impl Iterator<Item = ((), ReadRange)> {
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
-    (0..len).map(move |i| ReadRange {
-        byte_offset: i * size_of::<T>() as u64,
-        length: 1,
-    })
+    (0..len)
+        .map(move |i| ReadRange {
+            byte_offset: i * size_of::<T>() as u64,
+            length: 1,
+        })
+        .map(|range| ((), range))
 }
 
 fn make_random_file() -> PathBuf {
