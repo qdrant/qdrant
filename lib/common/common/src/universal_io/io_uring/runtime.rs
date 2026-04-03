@@ -1,25 +1,26 @@
-use std::collections::hash_map;
 use std::io;
 use std::mem::MaybeUninit;
 
 use ::io_uring::types::Fd;
 use ::io_uring::{opcode, squeue};
-use ahash::HashMapExt as _;
+use bitvec::array::BitArray;
 
 use super::*;
 use crate::maybe_uninit;
 
-pub struct IoUringRuntime<'data, T> {
+pub struct IoUringRuntime<'data, T, RequestId = u64> {
     io_uring: IoUringGuard,
-    state: IoUringState<'data, T>,
+    state: IoUringState<'data, T, RequestId>,
     pub in_progress: usize,
 }
 
-impl<'data, T> IoUringRuntime<'data, T> {
+impl<'data, T, RequestId> IoUringRuntime<'data, T, RequestId> {
     pub fn new() -> Result<Self> {
+        let mut io_uring = pool::get_io_uring()?;
+        let state = IoUringState::<T, RequestId>::new(io_uring.submission().capacity());
         let rt = Self {
-            io_uring: pool::get_io_uring()?,
-            state: IoUringState::new(),
+            io_uring,
+            state,
             in_progress: 0,
         };
 
@@ -30,7 +31,7 @@ impl<'data, T> IoUringRuntime<'data, T> {
     /// or the queue is full.
     pub fn enqueue_while<F>(&mut self, mut entries: F) -> Result<()>
     where
-        F: FnMut(&mut IoUringState<'data, T>) -> Result<Option<squeue::Entry>>,
+        F: FnMut(&mut IoUringState<'data, T, RequestId>) -> Result<Option<squeue::Entry>>,
     {
         let mut squeue = self.io_uring.submission();
 
@@ -96,30 +97,32 @@ impl<'data, T> IoUringRuntime<'data, T> {
         Ok(())
     }
 
-    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, IoUringResponse<T>)>> {
+    pub fn completed(
+        &mut self,
+    ) -> impl Iterator<Item = io::Result<(RequestId, IoUringResponse<T>)>> {
         self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
-            let id = entry.user_data();
+            let slot = entry.user_data() as usize;
             let result = entry.result();
 
             if result < 0 {
-                self.state.abort(id);
+                self.state.abort(slot);
 
                 return Err(io_error_context(
                     io::Error::from_raw_os_error(-result),
-                    format!("io_uring operation {id} failed"),
+                    format!("io_uring operation in slot {slot} failed"),
                 ));
             }
 
             let length = result as _;
-            let resp = self.state.finalize(id, length)?;
+            let (id, resp) = self.state.finalize(slot, length);
             Ok((id, resp))
         })
     }
 }
 
-impl<'data, T> Drop for IoUringRuntime<'data, T> {
+impl<'data, T, RequestId> Drop for IoUringRuntime<'data, T, RequestId> {
     fn drop(&mut self) {
         while self.in_progress > 0 || !self.io_uring.submission().is_empty() {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
@@ -139,14 +142,24 @@ impl<'data, T> Drop for IoUringRuntime<'data, T> {
 }
 
 #[derive(Debug)]
-pub struct IoUringState<'data, T> {
-    requests: ahash::HashMap<RequestId, IoUringRequest<'data, T>>,
+pub struct IoUringState<'data, T, RequestId> {
+    requests: UninitSlice<(RequestId, IoUringRequest<'data, T>)>,
+    /// Safety invariant: all bits above `requests.len()` must be zero,
+    /// so we can skip bounds checks.
+    occupied: BitArray<[u64; 1]>,
 }
 
-impl<'data, T> IoUringState<'data, T> {
-    pub fn new() -> Self {
+type UninitSlice<T> = Box<[MaybeUninit<T>]>;
+
+impl<'data, T, RequestId> IoUringState<'data, T, RequestId> {
+    pub fn new(entries: usize) -> Self {
+        let occupied = BitArray::ZERO;
+        assert!(occupied.len() >= entries);
         Self {
-            requests: ahash::HashMap::new(),
+            requests: std::iter::repeat_with(MaybeUninit::uninit)
+                .take(entries)
+                .collect(),
+            occupied,
         }
     }
 
@@ -171,16 +184,15 @@ impl<'data, T> IoUringState<'data, T> {
         let mut items: Vec<MaybeUninit<T>> = Vec::with_capacity(length as _);
         items.resize_with(length as _, || MaybeUninit::uninit());
 
-        let items = self
-            .init(
-                id,
-                IoUringRequest::Read {
-                    items,
-                    file_index,
-                    direct_io,
-                },
-            )?
-            .expect_read();
+        let (slot, req) = self.init(
+            id,
+            IoUringRequest::Read {
+                items,
+                file_index,
+                direct_io,
+            },
+        )?;
+        let items = req.expect_read();
 
         let bytes_ptr = items.as_mut_ptr().cast();
         let byte_length = length * size_of::<T>() as u64;
@@ -188,7 +200,7 @@ impl<'data, T> IoUringState<'data, T> {
         let entry = opcode::Read::new(fd, bytes_ptr, byte_length)
             .offset(byte_offset)
             .build()
-            .user_data(id);
+            .user_data(slot as u64);
 
         Ok(entry)
     }
@@ -203,36 +215,45 @@ impl<'data, T> IoUringState<'data, T> {
     where
         T: bytemuck::Pod,
     {
-        let items = self.init(id, IoUringRequest::Write(items))?.expect_write();
+        let (slot, req) = self.init(id, IoUringRequest::Write(items))?;
+        let items = req.expect_write();
 
         let bytes: &[u8] = bytemuck::cast_slice(items);
         let byte_length = u32::try_from(bytes.len()).expect("write buffer length fit within u32");
         let entry = opcode::Write::new(fd, bytes.as_ptr(), byte_length)
             .offset(byte_offset)
             .build()
-            .user_data(id);
+            .user_data(slot as u64);
 
         Ok(entry)
     }
 
+    /// Stores a request in the next free slot.
+    ///
+    /// Returns the slot index (to be used as `user_data`) and a mutable reference to the request.
     fn init(
         &mut self,
         id: RequestId,
         req: IoUringRequest<'data, T>,
-    ) -> io::Result<&mut IoUringRequest<'data, T>> {
-        let hash_map::Entry::Vacant(entry) = self.requests.entry(id) else {
-            return Err(io::Error::other(format!("request {id} already exists")));
+    ) -> io::Result<(usize, &mut IoUringRequest<'data, T>)> {
+        let slot = match self.occupied.first_zero() {
+            Some(slot) if slot < self.requests.len() => slot,
+            _ => return Err(io::Error::other("No free slots in io_uring state")),
         };
 
-        let req = entry.insert(req);
-        Ok(req)
+        self.occupied.set(slot, true);
+        // SAFETY: checked requests length above.
+        let (_, req) = unsafe { self.requests.get_unchecked_mut(slot) }.write((id, req));
+        Ok((slot, req))
     }
 
-    pub fn finalize(&mut self, id: RequestId, byte_length: u32) -> io::Result<IoUringResponse<T>> {
-        let req = self
-            .requests
-            .remove(&id)
-            .ok_or_else(|| io::Error::other(format!("request {id} does not exist")))?;
+    pub fn finalize(&mut self, slot: usize, byte_length: u32) -> (RequestId, IoUringResponse<T>) {
+        if !self.occupied.replace(slot, false) {
+            panic!("io_uring completion for slot {slot} without matching request");
+        }
+
+        // SAFETY: slot was marked occupied, so it is within bounds and the value is initialized.
+        let (id, req) = unsafe { self.requests.get_unchecked_mut(slot).assume_init_read() };
 
         let byte_length = byte_length as usize;
 
@@ -261,21 +282,26 @@ impl<'data, T> IoUringState<'data, T> {
             }
         };
 
-        Ok(resp)
+        (id, resp)
     }
 
-    pub fn abort(&mut self, id: RequestId) -> bool {
-        self.requests.remove(&id).is_some()
+    pub fn abort(&mut self, slot: usize) {
+        if self.occupied.replace(slot, false) {
+            // SAFETY: slot was marked occupied, so it is within bounds and the value is initialized.
+            unsafe { self.requests.get_unchecked_mut(slot).assume_init_drop() };
+        }
     }
 }
 
-impl<'data, T> Drop for IoUringState<'data, T> {
+impl<'data, T, RequestId> Drop for IoUringState<'data, T, RequestId> {
     fn drop(&mut self) {
-        debug_assert!(self.requests.is_empty());
+        debug_assert!(self.occupied.not_any());
+        for slot in self.occupied.iter_ones() {
+            // SAFETY: slot was marked occupied, so it is within bounds and the value is initialized.
+            unsafe { self.requests.get_unchecked_mut(slot).assume_init_drop() };
+        }
     }
 }
-
-pub type RequestId = u64;
 
 #[derive(Debug)]
 pub enum IoUringRequest<'data, T> {
