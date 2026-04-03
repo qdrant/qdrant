@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::Ordering as AtomicOrdering;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
@@ -11,12 +12,12 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
-use crate::types::{PointIdType, SeqNumberType};
+use crate::types::{AtomicSeqNumberType, PointIdType, SeqNumberType};
 
 /// A non-persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
 #[derive(Debug, Default)]
 pub struct InMemoryIdTracker {
-    internal_to_version: Vec<SeqNumberType>,
+    internal_to_version: Vec<AtomicSeqNumberType>,
     mappings: PointMappings,
 }
 
@@ -25,7 +26,7 @@ impl InMemoryIdTracker {
         Self::default()
     }
 
-    pub fn into_internal(self) -> (Vec<SeqNumberType>, PointMappings) {
+    pub fn into_internal(self) -> (Vec<AtomicSeqNumberType>, PointMappings) {
         (self.internal_to_version, self.mappings)
     }
 
@@ -35,7 +36,9 @@ impl InMemoryIdTracker {
         let mappings = PointMappings::random_with_params(rand, size, bits_in_id);
 
         let mut id_tracker = Self {
-            internal_to_version: vec![rand.random(); size as usize],
+            internal_to_version: (0..size)
+                .map(|_| AtomicSeqNumberType::new(rand.random()))
+                .collect(),
             mappings,
         };
 
@@ -46,11 +49,22 @@ impl InMemoryIdTracker {
 
         id_tracker
     }
+
+    fn set_internal_version_deleted(&self, internal_id: PointOffsetType) {
+        let version = DELETED_POINT_VERSION;
+        if self.external_id(internal_id).is_some()
+            && let Some(internal_version_cell) = self.internal_to_version.get(internal_id as usize)
+        {
+            internal_version_cell.store(version, AtomicOrdering::Release);
+        }
+    }
 }
 
 impl IdTracker for InMemoryIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        self.internal_to_version.get(internal_id as usize).copied()
+        self.internal_to_version
+            .get(internal_id as usize)
+            .map(|cell| cell.load(AtomicOrdering::Acquire))
     }
 
     fn set_internal_version(
@@ -59,11 +73,13 @@ impl IdTracker for InMemoryIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         if self.external_id(internal_id).is_some() {
-            if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
-                *old_version = version;
+            if let Some(old_version) = self.internal_to_version.get(internal_id as usize) {
+                old_version.store(version, AtomicOrdering::Release);
             } else {
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
-                self.internal_to_version[internal_id as usize] = version;
+                self.internal_to_version
+                    .resize_with(internal_id as usize + 1, Default::default);
+                self.internal_to_version[internal_id as usize]
+                    .store(version, AtomicOrdering::Release);
             }
         }
 
@@ -90,7 +106,7 @@ impl IdTracker for InMemoryIdTracker {
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
         if let Some(internal_id) = self.internal_id(external_id) {
-            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+            self.set_internal_version_deleted(internal_id);
         }
         self.mappings.drop(external_id);
         Ok(())
@@ -98,7 +114,7 @@ impl IdTracker for InMemoryIdTracker {
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        self.set_internal_version_deleted(internal_id);
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
@@ -152,7 +168,7 @@ impl IdTracker for InMemoryIdTracker {
             self.internal_to_version
                 .iter()
                 .enumerate()
-                .map(|(i, version)| (i as PointOffsetType, *version)),
+                .map(|(i, version)| (i as PointOffsetType, version.load(AtomicOrdering::Acquire))),
         )
     }
 
