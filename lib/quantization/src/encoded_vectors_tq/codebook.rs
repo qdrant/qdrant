@@ -75,26 +75,34 @@ impl Codebook {
         self.centroids[(index as usize).min(self.centroids.len() - 1)]
     }
 
-    /// Decode packed indices into centroid values, then re-normalize to unit norm.
-    ///
-    /// Returns the decoded and norm-corrected vector in rotated space.
-    pub fn decode_corrected(&self, packed: &[u8], padded_dim: usize) -> Vec<f32> {
+    /// Decode packed indices into raw centroid values (no norm correction).
+    pub fn decode_raw(&self, packed: &[u8], padded_dim: usize) -> Vec<f32> {
         let mut y_tilde = Vec::with_capacity(padded_dim);
         for i in 0..padded_dim {
             let idx = unpack_index(packed, i, self.bits) as usize;
             y_tilde.push(self.centroids[idx.min(self.centroids.len() - 1)]);
         }
+        y_tilde
+    }
 
-        // Norm correction: re-normalize to unit norm (compensates for quantization error)
-        let y_norm_sq: f32 = y_tilde.iter().map(|&v| v * v).sum();
-        let y_norm = y_norm_sq.sqrt();
-        if y_norm > 1e-10 {
-            for v in y_tilde.iter_mut() {
-                *v /= y_norm;
+    /// Decode packed indices into centroid values, then re-normalize to unit norm.
+    ///
+    /// Returns the decoded and norm-corrected vector in rotated space.
+    pub fn decode_corrected(&self, packed: &[u8], padded_dim: usize) -> Vec<f32> {
+        let mut y_tilde = self.decode_raw(packed, padded_dim);
+        Self::normalize_to_unit(&mut y_tilde);
+        y_tilde
+    }
+
+    /// Re-normalize a vector to unit norm in-place.
+    pub fn normalize_to_unit(v: &mut [f32]) {
+        let norm_sq: f32 = v.iter().map(|&x| x * x).sum();
+        let norm = norm_sq.sqrt();
+        if norm > 1e-10 {
+            for x in v.iter_mut() {
+                *x /= norm;
             }
         }
-
-        y_tilde
     }
 
     /// Bytes needed to store `padded_dim` indices at this codebook's bit width.
