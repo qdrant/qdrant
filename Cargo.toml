@@ -355,6 +355,7 @@ members = [
     "lib/sparse",
     "lib/storage",
     "lib/trififo",
+    "lib/uio-client",
     "lib/wal",
 ]
 
