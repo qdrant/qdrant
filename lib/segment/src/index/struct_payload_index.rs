@@ -18,6 +18,7 @@ use super::field_index::facet_index::FacetIndexEnum;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
+use super::field_index::nested_element_index::NestedElementIndex;
 use super::field_index::{FieldIndexBuilderTrait as _, ResolvedHasId};
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
 use crate::common::Flusher;
@@ -61,6 +62,9 @@ pub struct StructPayloadIndex {
     pub(super) vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     /// Indexes, associated with fields
     pub field_indexes: IndexesMap,
+    pub(super) nested_element_indexes:
+        parking_lot::RwLock<Arc<HashMap<PayloadKeyType, NestedElementIndex>>>,
+    nested_element_indexes_initialized: std::sync::atomic::AtomicBool,
     config: PayloadConfig,
     /// Root of index persistence dir
     path: PathBuf,
@@ -153,6 +157,7 @@ impl StructPayloadIndex {
         }
 
         self.field_indexes = field_indexes;
+
         Ok(())
     }
 
@@ -275,6 +280,8 @@ impl StructPayloadIndex {
             id_tracker,
             vector_storages,
             field_indexes: Default::default(),
+            nested_element_indexes: parking_lot::RwLock::new(Arc::new(HashMap::new())),
+            nested_element_indexes_initialized: std::sync::atomic::AtomicBool::new(false),
             config,
             path: path.to_owned(),
             visited_pool: Default::default(),
@@ -611,6 +618,102 @@ impl StructPayloadIndex {
         }
         Ok(())
     }
+
+    pub(super) fn ensure_nested_element_indexes(&self) {
+        if self
+            .nested_element_indexes_initialized
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return;
+        }
+
+        // Take the write lock first to serialize concurrent cold builds
+        let mut lock = self.nested_element_indexes.write();
+        if self
+            .nested_element_indexes_initialized
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+
+        let nested_fields: Vec<_> = self
+            .config
+            .indices
+            .keys()
+            .filter(|f| {
+                f.rest
+                    .iter()
+                    .filter(|item| matches!(item, crate::json_path::JsonPathItem::WildcardIndex))
+                    .count()
+                    == 1
+            })
+            .cloned()
+            .collect();
+
+        if nested_fields.is_empty() {
+            self.nested_element_indexes_initialized
+                .store(true, std::sync::atomic::Ordering::Release);
+            return;
+        }
+
+        let hw_counter = HardwareCounterCell::disposable();
+        let payload_storage = self.payload.borrow();
+        let mut indexes: HashMap<PayloadKeyType, NestedElementIndex> = HashMap::new();
+
+        for field in &nested_fields {
+            indexes.insert(field.clone(), NestedElementIndex::new());
+        }
+
+        let scan_result = payload_storage.iter(
+            |point_id, point_payload| {
+                for field in &nested_fields {
+                    let nei = indexes.get_mut(field).unwrap();
+                    let values_with_positions =
+                        field.value_get_with_element_index(&point_payload.0);
+                    for (value, elem_idx) in values_with_positions {
+                        let key = match value {
+                            Value::String(s) => format!("s:{s}"),
+                            Value::Number(n) => {
+                                if let Some(i) = n.as_i64() {
+                                    format!("n:{i}")
+                                } else {
+                                    format!("n:{n}")
+                                }
+                            }
+                            Value::Bool(b) => format!("b:{b}"),
+                            Value::Null | Value::Object(_) | Value::Array(_) => continue,
+                        };
+                        nei.add_entry(point_id, key, elem_idx);
+                    }
+                }
+                Ok(true)
+            },
+            &hw_counter,
+        );
+
+        drop(payload_storage);
+
+        if let Err(err) = scan_result {
+            log::error!("Failed to build nested element indexes: {err}");
+            self.nested_element_indexes_initialized
+                .store(false, std::sync::atomic::Ordering::Release);
+            return;
+        }
+
+        let built: HashMap<PayloadKeyType, NestedElementIndex> = indexes
+            .into_iter()
+            .filter(|(_, nei)| !nei.is_empty())
+            .collect();
+        *lock = Arc::new(built);
+        self.nested_element_indexes_initialized
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    pub(super) fn nested_element_indexes_snapshot(
+        &self,
+    ) -> Arc<HashMap<PayloadKeyType, NestedElementIndex>> {
+        Arc::clone(&*self.nested_element_indexes.read())
+    }
 }
 
 impl PayloadIndex for StructPayloadIndex {
@@ -654,6 +757,10 @@ impl PayloadIndex for StructPayloadIndex {
             PayloadFieldSchemaWithIndexType::new(payload_schema, index_types),
         );
 
+        *self.nested_element_indexes.write() = Arc::new(HashMap::new());
+        self.nested_element_indexes_initialized
+            .store(false, std::sync::atomic::Ordering::Release);
+
         self.save_config()?;
 
         Ok(())
@@ -672,12 +779,9 @@ impl PayloadIndex for StructPayloadIndex {
         let field_index = match self.build_index(field, &payload_schema, hw_counter)? {
             BuildIndexResult::Built(field_index) => field_index,
             BuildIndexResult::AlreadyBuilt => {
-                // Index already built, no need to do anything
                 return Ok(());
             }
             BuildIndexResult::IncompatibleSchema => {
-                // We should have fixed it by now explicitly
-                // If it is not fixed, it is a bug
                 return Err(OperationError::service_error(format!(
                     "Incompatible schema for field `{field}`. Please drop the index first."
                 )));
@@ -692,6 +796,10 @@ impl PayloadIndex for StructPayloadIndex {
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool> {
         let removed_config = self.config.indices.remove(field);
         let removed_indexes = self.field_indexes.remove(field);
+
+        *self.nested_element_indexes.write() = Arc::new(HashMap::new());
+        self.nested_element_indexes_initialized
+            .store(false, std::sync::atomic::Ordering::Release);
 
         let is_removed = removed_config.is_some() || removed_indexes.is_some();
 
@@ -815,6 +923,10 @@ impl PayloadIndex for StructPayloadIndex {
         payload: &Payload,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        *self.nested_element_indexes.write() = Arc::new(HashMap::new());
+        self.nested_element_indexes_initialized
+            .store(false, std::sync::atomic::Ordering::Release);
+
         self.payload
             .borrow_mut()
             .overwrite(point_id, payload, hw_counter)?;
@@ -841,6 +953,10 @@ impl PayloadIndex for StructPayloadIndex {
         key: &Option<JsonPath>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        *self.nested_element_indexes.write() = Arc::new(HashMap::new());
+        self.nested_element_indexes_initialized
+            .store(false, std::sync::atomic::Ordering::Release);
+
         if let Some(key) = key {
             self.payload
                 .borrow_mut()
@@ -892,6 +1008,10 @@ impl PayloadIndex for StructPayloadIndex {
         key: PayloadKeyTypeRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
+        *self.nested_element_indexes.write() = Arc::new(HashMap::new());
+        self.nested_element_indexes_initialized
+            .store(false, std::sync::atomic::Ordering::Release);
+
         if let Some(indexes) = self.field_indexes.get_mut(key) {
             for index in indexes {
                 index.remove_point(point_id)?;
@@ -905,6 +1025,9 @@ impl PayloadIndex for StructPayloadIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
+        *self.nested_element_indexes.write() = Arc::new(HashMap::new());
+        self.nested_element_indexes_initialized
+            .store(false, std::sync::atomic::Ordering::Release);
         self.clear_index_for_point(point_id)?;
         self.payload.borrow_mut().clear(point_id, hw_counter)
     }
