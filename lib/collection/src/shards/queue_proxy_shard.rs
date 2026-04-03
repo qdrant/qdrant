@@ -39,8 +39,14 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::LocalShardTelemetry;
 
-/// Number of operations in batch when syncing
-const BATCH_SIZE: usize = 10;
+/// Maximum total serialized byte size of a single transfer batch.
+/// Each WAL operation can vary widely in size (a delete vs an upsert of many high-dimensional
+/// vectors), so we use a byte budget rather than a fixed operation count.
+const MAX_BATCH_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
+
+/// Maximum number of operations in a single transfer batch.
+/// Caps memory usage and WAL lock duration when operations are small.
+const MAX_BATCH_OPS: usize = 10_000;
 
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
@@ -555,26 +561,54 @@ impl Inner {
         let mut update_lock = Some(self.update_lock.lock().await);
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
 
-        // Lock wall, count pending items to transfer, grab batch
-        let (pending_count, total, batch) = {
+        // Lock WAL, count pending items to transfer, grab raw batch up to byte budget.
+        // We collect raw (not yet deserialized) bytes under the lock to minimize lock hold time,
+        // then deserialize outside the lock.
+        let (reached_end, total, raw_batch) = {
             let wal = self.wrapped_shard.wal.wal.lock().await;
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
-            let batch = wal
-                .read(transfer_from)
-                .take(BATCH_SIZE)
-                .collect::<shard::wal::Result<Vec<_>>>()
-                .map_err(|e| {
+
+            let mut raw_batch = Vec::new();
+            let mut batch_bytes = 0usize;
+            for result in wal.read_raw_with_size(transfer_from) {
+                let (idx, size, raw) = result.map_err(|e| {
                     CollectionError::service_error(format!(
                         "Failed to read WAL during queue proxy transfer: {e}"
                     ))
                 })?;
+
+                batch_bytes += size;
+                raw_batch.push((idx, raw));
+
+                // Always include at least one operation per batch
+                if batch_bytes > MAX_BATCH_BYTES || raw_batch.len() >= MAX_BATCH_OPS {
+                    break;
+                }
+            }
+
+            let reached_end = raw_batch.len() as u64 >= items_left;
             debug_assert!(
-                batch.len() <= items_left as usize,
+                raw_batch.len() as u64 <= items_left,
                 "batch cannot be larger than items_left",
             );
-            (items_left, items_total, batch)
+            (reached_end, items_total, raw_batch)
         };
+
+        // Deserialize outside the WAL lock
+        let batch: Vec<(u64, OperationWithClockTag)> = raw_batch
+            .into_iter()
+            .map(|(idx, raw)| {
+                let record =
+                    shard::wal::WalRawRecord::<OperationWithClockTag>::deserialize_from(&raw)
+                        .map_err(|e| {
+                            CollectionError::service_error(format!(
+                                "Failed to deserialize WAL record during queue proxy transfer: {e}"
+                            ))
+                        })?;
+                Ok((idx, record))
+            })
+            .collect::<CollectionResult<_>>()?;
 
         log::trace!(
             "Queue proxy transferring batch of {} updates to peer {}",
@@ -585,7 +619,7 @@ impl Inner {
         // Normally, we immediately release the update lock to allow new updates.
         // On the last batch we keep the lock to prevent accumulating more updates on the WAL,
         // so we can finalize the transfer after this batch, before accepting new updates.
-        let last_batch = pending_count <= BATCH_SIZE as u64 || batch.is_empty();
+        let last_batch = reached_end || batch.is_empty();
         if !last_batch {
             drop(update_lock.take());
         }
