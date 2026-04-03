@@ -4,9 +4,10 @@ use std::path::Path;
 use std::result;
 use std::thread::JoinHandle;
 
-use common::fs::{atomic_save_json, read_json};
+use common::fs::atomic_save_json;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 use wal::{Wal, WalOptions};
 
@@ -83,15 +84,8 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         let first_index_path = dir.join(FIRST_INDEX_FILE);
 
         let first_index = if first_index_path.exists() {
-            let wal_state: WalState = read_json(&first_index_path).map_err(|err| {
-                WalError::InitWalError(format!("failed to read first-index file: {err}"))
-            })?;
-
-            let first_index = wal_state
-                .ack_index
-                .max(wal.first_index())
-                .min(wal.last_index());
-            Some(first_index)
+            read_first_index_file(&first_index_path)?
+                .map(|ack_index| ack_index.max(wal.first_index()).min(wal.last_index()))
         } else {
             None
         };
@@ -294,6 +288,67 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     }
 }
 
+/// Read `first-index` state from disk.
+///
+/// Returns:
+/// - `Ok(Some(ack_index))` for a valid `{"ack_index": <u64>}` payload,
+/// - `Ok(None)` for recoverable placeholder states (`null`, empty content),
+/// - `Err(..)` for invalid payload shape/type.
+fn read_first_index_file(path: &Path) -> Result<Option<u64>> {
+    let raw = fs_err::read_to_string(path).map_err(|err| {
+        WalError::InitWalError(format!(
+            "failed to read first-index file {}: {err}",
+            path.display()
+        ))
+    })?;
+    let trimmed = raw.trim();
+
+    // Snapshot/upload flows can leave an empty or null marker file.
+    // Treat this as "no acknowledged index yet" instead of failing WAL init.
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+        log::warn!(
+            "Ignoring empty/null first-index file at {}, fallback to WAL bounds",
+            path.display()
+        );
+        return Ok(None);
+    }
+
+    let value: Value = serde_json::from_str(trimmed).map_err(|err| {
+        WalError::InitWalError(format!(
+            "failed to parse first-index file {}: {err}",
+            path.display()
+        ))
+    })?;
+
+    match value {
+        Value::Object(map) => match map.get("ack_index") {
+            Some(Value::Number(n)) => n
+                .as_u64()
+                .ok_or_else(|| {
+                    WalError::InitWalError(format!(
+                        "failed to parse first-index file {}: ack_index must be u64",
+                        path.display()
+                    ))
+                })
+                .map(Some),
+            Some(Value::Null) | None => Err(WalError::InitWalError(format!(
+                "failed to parse first-index file {}: ack_index is required and must be u64",
+                path.display()
+            ))),
+            Some(_) => Err(WalError::InitWalError(format!(
+                "failed to parse first-index file {}: ack_index has invalid type",
+                path.display()
+            ))),
+        },
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            Err(WalError::InitWalError(format!(
+                "failed to parse first-index file {}: expected JSON object with ack_index",
+                path.display()
+            )))
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct WalState {
     pub ack_index: u64,
@@ -328,7 +383,6 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     use std::os::unix::fs::MetadataExt;
 
-    #[cfg(not(target_os = "windows"))]
     use fs_err as fs;
     use tempfile::Builder;
 
@@ -355,15 +409,21 @@ mod tests {
         b: i32,
     }
 
-    #[test]
-    fn test_wal() {
-        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
-        let capacity = 32 * 1024 * 1024;
-        let wal_options = WalOptions {
+    /// Build test WAL options with deterministic retention.
+    fn wal_options(capacity: usize) -> WalOptions {
+        WalOptions {
             segment_capacity: capacity,
             segment_queue_len: 0,
             retain_closed: NonZeroUsize::new(1).unwrap(),
-        };
+        }
+    }
+
+    #[test]
+    /// Round-trip test for basic WAL write/read behavior.
+    fn test_wal() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let capacity = 32 * 1024 * 1024;
+        let wal_options = wal_options(capacity);
 
         let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
 
@@ -432,14 +492,11 @@ mod tests {
     }
 
     #[test]
+    /// Truncation test for dropping WAL records from a given index.
     fn test_wal_drop() {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         let capacity = 32 * 1024 * 1024;
-        let wal_options = WalOptions {
-            segment_capacity: capacity,
-            segment_queue_len: 0,
-            retain_closed: NonZeroUsize::new(1).unwrap(),
-        };
+        let wal_options = wal_options(capacity);
 
         let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
 
@@ -462,5 +519,68 @@ mod tests {
                 TestRecord::Struct2(_) => panic!("Wrong structure"),
             }
         }
+    }
+
+    #[test]
+    /// `first-index` with `null` should be treated as recoverable state.
+    fn test_wal_new_ignores_null_first_index_file() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        fs::write(dir.path().join(FIRST_INDEX_FILE), "null").unwrap();
+
+        let wal: SerdeWal<TestRecord> =
+            SerdeWal::new(dir.path(), wal_options(1024 * 1024)).unwrap();
+        assert_eq!(wal.first_index(), wal.first_closed_index());
+    }
+
+    #[test]
+    /// Empty `first-index` content should be treated as recoverable state.
+    fn test_wal_new_ignores_empty_first_index_file() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        fs::write(dir.path().join(FIRST_INDEX_FILE), "  \n\t").unwrap();
+
+        let wal: SerdeWal<TestRecord> =
+            SerdeWal::new(dir.path(), wal_options(1024 * 1024)).unwrap();
+        assert_eq!(wal.first_index(), wal.first_closed_index());
+    }
+
+    #[test]
+    /// Invalid `ack_index` type should fail WAL initialization.
+    fn test_wal_new_fails_on_invalid_first_index_shape() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        fs::write(dir.path().join(FIRST_INDEX_FILE), r#"{"ack_index":"oops"}"#).unwrap();
+
+        let err = SerdeWal::<TestRecord>::new(dir.path(), wal_options(1024 * 1024)).unwrap_err();
+        assert!(
+            err.to_string().contains("ack_index has invalid type"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    /// Missing `ack_index` in object payload should fail WAL initialization.
+    fn test_wal_new_fails_on_missing_ack_index_in_object() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        fs::write(dir.path().join(FIRST_INDEX_FILE), r"{}").unwrap();
+
+        let err = SerdeWal::<TestRecord>::new(dir.path(), wal_options(1024 * 1024)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("ack_index is required and must be u64"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    /// Null `ack_index` in object payload should fail WAL initialization.
+    fn test_wal_new_fails_on_null_ack_index_in_object() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        fs::write(dir.path().join(FIRST_INDEX_FILE), r#"{"ack_index":null}"#).unwrap();
+
+        let err = SerdeWal::<TestRecord>::new(dir.path(), wal_options(1024 * 1024)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("ack_index is required and must be u64"),
+            "unexpected error: {err}"
+        );
     }
 }
