@@ -8,7 +8,6 @@ pub mod operation_error;
 pub mod operation_time_statistics;
 pub mod reciprocal_rank_fusion;
 pub mod score_fusion;
-pub mod stored_bitslice;
 pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;

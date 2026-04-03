@@ -22,7 +22,7 @@ use reader::CONFIG_FILENAME;
 pub use reader::GridstoreReader;
 pub use view::GridstoreView;
 
-use crate::bitmask::Bitmask;
+use crate::bitmask::MmapBitmask;
 use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
@@ -41,10 +41,10 @@ pub struct Gridstore<V> {
     pub(super) config: StorageConfig,
     pub(super) tracker: Arc<RwLock<Tracker>>,
     pub(super) pages: Arc<RwLock<Pages<MmapFile>>>,
-    /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
+    /// MmapBitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
-    pub(super) bitmask: Arc<RwLock<Bitmask>>,
+    pub(super) bitmask: Arc<RwLock<MmapBitmask>>,
     pub(super) base_path: PathBuf,
     pub(super) _value_type: std::marker::PhantomData<V>,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
@@ -109,7 +109,7 @@ impl<V: Blob> Gridstore<V> {
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
-        let bitmask = Bitmask::create(&base_path, config.clone())?;
+        let bitmask = MmapBitmask::create(&base_path, config.clone())?;
 
         let storage = Self {
             tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None)?)),
@@ -137,7 +137,7 @@ impl<V: Blob> Gridstore<V> {
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(base_path: PathBuf) -> Result<Self> {
         let (config, tracker) = reader::read_config_and_tracker(&base_path)?;
-        let bitmask = Bitmask::open(&base_path, config.clone())?;
+        let bitmask = MmapBitmask::open(&base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
         let pages = Pages::open(&base_path)?;
@@ -180,10 +180,10 @@ impl<V: Blob> Gridstore<V> {
         debug_assert!(num_blocks > 0, "num_blocks must be greater than 0");
 
         let bitmask_guard = self.bitmask.read();
-        if let Some((page_id, block_offset)) = bitmask_guard.find_available_blocks(num_blocks) {
+        if let Some((page_id, block_offset)) = bitmask_guard.find_available_blocks(num_blocks)? {
             return Ok((page_id, block_offset));
         }
-        let trailing_free_blocks = bitmask_guard.trailing_free_blocks();
+        let trailing_free_blocks = bitmask_guard.trailing_free_blocks()?;
 
         drop(bitmask_guard);
 
@@ -198,8 +198,8 @@ impl<V: Blob> Gridstore<V> {
         let available = self
             .bitmask
             .read()
-            .find_available_blocks(num_blocks)
-            .unwrap();
+            .find_available_blocks(num_blocks)?
+            .expect("New page has just been created");
 
         Ok(available)
     }
@@ -289,7 +289,7 @@ impl<V: Blob> Gridstore<V> {
 
         self.bitmask
             .write()
-            .mark_blocks(start_page_id, block_offset, required_blocks, true);
+            .mark_blocks(start_page_id, block_offset, required_blocks, true)?;
 
         let mut tracker_guard = self.tracker.write();
         let is_update = tracker_guard.has_pointer(point_offset)?;
@@ -362,7 +362,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Return the storage size in bytes (precise, based on bitmask occupancy).
-    pub fn get_storage_size_bytes(&self) -> usize {
+    pub fn get_storage_size_bytes(&self) -> Result<usize> {
         self.bitmask.read().get_storage_size_bytes()
     }
 
@@ -482,7 +482,7 @@ impl<V> Gridstore<V> {
 
     /// Update all free blocks in the bitmask for old pointers and flush it.
     fn flush_free_blocks(
-        bitmask: &Arc<RwLock<Bitmask>>,
+        bitmask: &Arc<RwLock<MmapBitmask>>,
         old_pointers: Vec<ValuePointer>,
         block_size_bytes: usize,
     ) -> crate::Result<()> {
@@ -497,7 +497,7 @@ impl<V> Gridstore<V> {
                         + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
                     start as usize..end as usize
                 });
-                guard.mark_blocks_batch(page_id, local_ranges, false);
+                guard.mark_blocks_batch(page_id, local_ranges, false)?;
             }
             guard.flusher()
         };

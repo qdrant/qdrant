@@ -35,6 +35,7 @@ pub mod small_uint;
 pub mod sort_utils;
 pub mod stable_hash;
 pub mod storage_version;
+pub mod stored_bitslice;
 pub mod tar_ext;
 pub mod tar_unpack;
 pub mod tempfile_ext;

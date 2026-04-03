@@ -10,6 +10,7 @@ use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap::create_and_ensure_length;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
+use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, OpenOptions};
 use fs_err as fs;
@@ -20,7 +21,6 @@ use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 
 const DELETED_PATH: &str = "deleted.bin";

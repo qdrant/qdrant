@@ -75,7 +75,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     storage.flusher()().unwrap();
 
     // sanity check of storage size
-    let storage_size = storage.get_storage_size_bytes();
+    let storage_size = storage.get_storage_size_bytes().unwrap();
     assert_eq!(storage_size, 54_034_048); // 54MB
 
     // check storage folder size
@@ -83,7 +83,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     assert_eq!(file_size_mb, 70); // 70MB (includes metadata)
 
     c.bench_function("compute storage size", |b| {
-        b.iter(|| black_box(storage.get_storage_size_bytes()));
+        b.iter(|| black_box(storage.get_storage_size_bytes().unwrap()));
     });
 
     c.bench_function("scan storage", |b| {
@@ -105,11 +105,11 @@ pub fn real_data_data_bench(c: &mut Criterion) {
         storage.flusher()().unwrap();
     }
 
-    let inflated_storage_size = storage.get_storage_size_bytes();
+    let inflated_storage_size = storage.get_storage_size_bytes().unwrap();
     assert_eq!(inflated_storage_size, 594_374_528); // 594 MB (close to 10x54MB)
 
     c.bench_function("compute storage size (large)", |b| {
-        b.iter(|| black_box(storage.get_storage_size_bytes()));
+        b.iter(|| black_box(storage.get_storage_size_bytes().unwrap()));
     });
 
     // delete 30% of the points
@@ -124,7 +124,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     storage.flusher()().unwrap();
 
     c.bench_function("compute storage size (large sparse)", |b| {
-        b.iter(|| black_box(storage.get_storage_size_bytes()));
+        b.iter(|| black_box(storage.get_storage_size_bytes().unwrap()));
     });
 
     c.bench_function("insert real payload (large)", |b| {

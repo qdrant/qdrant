@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 ahash = { workspace = true }
+bytemuck = { workspace = true }
 ecow = { workspace = true }
 fs-err = { workspace = true }
 serde_cbor = { workspace = true }
