@@ -33,7 +33,10 @@ use segment::types::PointIdType;
 use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
-use crate::proxy_segment::{DeletedPoints, ProxyIndexChange, ProxyIndexChanges, ProxySegment};
+use crate::proxy_segment::{
+    DeletedPoints, ProxyIndexChange, ProxyIndexChanges, ProxySegment, ProxyVectorNameChange,
+    ProxyVectorNameChanges,
+};
 use crate::segment_holder::SegmentId;
 use crate::segment_holder::locked::LockedSegmentHolder;
 
@@ -147,6 +150,28 @@ pub fn proxy_index_changes(proxies: &[LockedSegment]) -> ProxyIndexChanges {
         }
     }
     index_changes
+}
+
+/// Accumulates vector name changes made in a given set of proxies
+///
+/// This list is not synchronized (if not externally enforced),
+/// but guarantees that it contains at least all vector name changes made in the proxies
+/// before the call to this function.
+pub fn proxy_vector_name_changes(proxies: &[LockedSegment]) -> ProxyVectorNameChanges {
+    let mut changes = ProxyVectorNameChanges::default();
+    for proxy_segment in proxies {
+        match proxy_segment {
+            LockedSegment::Original(_) => {
+                log::error!("Reading raw segment, while proxy expected");
+                debug_assert!(false, "Reading raw segment, while proxy expected");
+            }
+            LockedSegment::Proxy(proxy) => {
+                let proxy_read = proxy.read();
+                changes.merge(proxy_read.get_vector_name_changes())
+            }
+        }
+    }
+    changes
 }
 
 /// Function to wrap slow part of optimization. Performs proxy rollback in case of cancellation.
@@ -420,6 +445,21 @@ fn finish_optimization(
 
     // This mutex prevents update operations, which could create inconsistency during transition.
     let update_guard = segment_holder.acquire_updates_lock();
+
+    // Apply vector name changes before index and point changes
+    // New named vectors must exist before indexes or points reference them
+    let vector_name_changes = proxy_vector_name_changes(&locked_proxies);
+    for (vector_name, change) in vector_name_changes.iter_ordered() {
+        match change {
+            ProxyVectorNameChange::Create(config, version) => {
+                optimized_segment.create_vector_name(*version, vector_name, config)?;
+            }
+            ProxyVectorNameChange::Delete(version) => {
+                optimized_segment.delete_vector_name(*version, vector_name)?;
+            }
+        }
+        check_process_stopped(stopped)?;
+    }
 
     let index_changes = proxy_index_changes(&locked_proxies);
 

@@ -24,7 +24,7 @@ use segment::telemetry::SegmentTelemetry;
 use segment::types::*;
 use uuid::Uuid;
 
-use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
+use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment, ProxyVectorNameChange};
 use crate::locked_segment::LockedSegment;
 
 impl ReadSegmentEntry for ProxySegment {
@@ -890,24 +890,38 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
     fn create_vector_name(
         &mut self,
-        _op_num: SeqNumberType,
-        _vector_name: &VectorName,
-        _vector_config: &VectorNameConfig,
+        op_num: SeqNumberType,
+        vector_name: &VectorName,
+        vector_config: &VectorNameConfig,
     ) -> OperationResult<bool> {
-        // TODO: Track vector name changes for propagation (Step 3)
-        Err(OperationError::service_error(
-            "Creating named vectors through proxy segment is not yet supported",
-        ))
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.version = cmp::max(self.version, op_num);
+
+        self.changed_vector_names.insert(
+            vector_name.to_owned(),
+            ProxyVectorNameChange::Create(vector_config.clone(), op_num),
+        );
+
+        Ok(true)
     }
 
     fn delete_vector_name(
         &mut self,
-        _op_num: SeqNumberType,
-        _vector_name: &VectorName,
+        op_num: SeqNumberType,
+        vector_name: &VectorName,
     ) -> OperationResult<bool> {
-        // TODO: Track vector name changes for propagation (Step 3)
-        Err(OperationError::service_error(
-            "Deleting named vectors through proxy segment is not yet supported",
-        ))
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.version = cmp::max(self.version, op_num);
+
+        self.changed_vector_names
+            .insert(vector_name.to_owned(), ProxyVectorNameChange::Delete(op_num));
+
+        Ok(true)
     }
 }

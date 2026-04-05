@@ -28,6 +28,7 @@ pub struct ProxySegment {
     /// Used for faster deletion checks
     deleted_mask: Option<BitVec>,
     changed_indexes: ProxyIndexChanges,
+    changed_vector_names: ProxyVectorNameChanges,
     /// Points which should no longer used from wrapped_segment
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
@@ -63,6 +64,7 @@ impl ProxySegment {
             wrapped_segment: segment,
             deleted_mask,
             changed_indexes: ProxyIndexChanges::default(),
+            changed_vector_names: ProxyVectorNameChanges::default(),
             deleted_points: AHashMap::new(),
             deleted_deferred_count: 0,
             wrapped_config,
@@ -211,6 +213,30 @@ impl ProxySegment {
             }
         }
 
+        // Propagate vector name changes (between index changes and point deletions)
+        {
+            if !self.changed_vector_names.is_empty() {
+                wrapped_segment.with_upgraded(|wrapped_segment| {
+                    for (vector_name, change) in self.changed_vector_names.iter_ordered() {
+                        match change {
+                            ProxyVectorNameChange::Create(config, version) => {
+                                wrapped_segment.create_vector_name(
+                                    *version,
+                                    vector_name,
+                                    config,
+                                )?;
+                            }
+                            ProxyVectorNameChange::Delete(version) => {
+                                wrapped_segment.delete_vector_name(*version, vector_name)?;
+                            }
+                        }
+                    }
+                    OperationResult::Ok(())
+                })?;
+                self.changed_vector_names.clear();
+            }
+        }
+
         // Propagate deleted points
         // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
@@ -249,6 +275,10 @@ impl ProxySegment {
 
     pub fn get_index_changes(&self) -> &ProxyIndexChanges {
         &self.changed_indexes
+    }
+
+    pub fn get_vector_name_changes(&self) -> &ProxyVectorNameChanges {
+        &self.changed_vector_names
     }
 }
 
@@ -326,6 +356,58 @@ impl ProxyIndexChange {
             ProxyIndexChange::Create(_, version) => *version,
             ProxyIndexChange::Delete(version) => *version,
             ProxyIndexChange::DeleteIfIncompatible(version, _) => *version,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ProxyVectorNameChange {
+    /// Create a new named vector with the given config
+    Create(VectorNameConfig, SeqNumberType),
+    /// Delete a named vector
+    Delete(SeqNumberType),
+}
+
+impl ProxyVectorNameChange {
+    pub fn version(&self) -> SeqNumberType {
+        match self {
+            ProxyVectorNameChange::Create(_, version) => *version,
+            ProxyVectorNameChange::Delete(version) => *version,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ProxyVectorNameChanges {
+    changes: AHashMap<VectorNameBuf, ProxyVectorNameChange>,
+}
+
+impl ProxyVectorNameChanges {
+    pub fn insert(&mut self, name: VectorNameBuf, change: ProxyVectorNameChange) {
+        self.changes.insert(name, change);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.changes.clear();
+    }
+
+    /// Iterate over proxy vector name changes in order of version.
+    ///
+    /// Changes must be applied in order because changes with an old version will silently be
+    /// rejected.
+    pub fn iter_ordered(&self) -> impl Iterator<Item = (&VectorNameBuf, &ProxyVectorNameChange)> {
+        self.changes
+            .iter()
+            .sorted_by_key(|(_, change)| change.version())
+    }
+
+    pub fn merge(&mut self, other: &Self) {
+        for (key, change) in &other.changes {
+            self.changes.insert(key.clone(), change.clone());
         }
     }
 }
