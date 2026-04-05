@@ -3098,3 +3098,49 @@ class UpdateOperation:
             field_name: Path to the payload field.
         """
         ...
+
+    @staticmethod
+    def create_dense_vector(
+        vector_name: str,
+        size: int,
+        distance: Distance,
+        multivector_config: Optional[MultiVectorConfig] = None,
+        datatype: Optional[VectorStorageDatatype] = None,
+    ) -> "UpdateOperation":
+        """
+        Create a new dense named vector on the collection.
+
+        Args:
+            vector_name: Name for the new vector.
+            size: Dimensionality of the vectors.
+            distance: Distance function (Cosine, Euclid, Dot, Manhattan).
+            multivector_config: Optional multi-vector configuration (e.g., for ColBERT).
+            datatype: Optional element storage type (Float32, Float16, Uint8).
+        """
+        ...
+
+    @staticmethod
+    def create_sparse_vector(
+        vector_name: str,
+        modifier: Optional[Modifier] = None,
+        datatype: Optional[VectorStorageDatatype] = None,
+    ) -> "UpdateOperation":
+        """
+        Create a new sparse named vector on the collection.
+
+        Args:
+            vector_name: Name for the new sparse vector.
+            modifier: Optional value modifier (e.g., Modifier.Idf).
+            datatype: Optional datatype for storing weights in the index.
+        """
+        ...
+
+    @staticmethod
+    def delete_vector_name(vector_name: str) -> "UpdateOperation":
+        """
+        Delete a named vector from the collection.
+
+        Args:
+            vector_name: Name of the vector to delete.
+        """
+        ...

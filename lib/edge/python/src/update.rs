@@ -1,8 +1,9 @@
 use bytemuck::TransparentWrapperAlloc as _;
 use derive_more::Into;
 use pyo3::prelude::*;
+use segment::data_types::modifier::Modifier;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, Payload, VectorNameBuf};
+use segment::types::{Distance, Filter, MultiVectorConfig, Payload, VectorNameBuf, VectorStorageDatatype};
 use shard::operations::point_ops::{PointIdsList, PointInsertOperationsInternal, UpdateMode};
 use shard::operations::*;
 
@@ -210,6 +211,61 @@ impl PyUpdateOperation {
     pub fn delete_field_index(field_name: PyJsonPath) -> Self {
         let operation = FieldIndexOperations::DeleteIndex(JsonPath::from(field_name));
         Self(CollectionUpdateOperations::FieldIndexOperation(operation))
+    }
+
+    /// Create a new dense named vector on the collection.
+    #[staticmethod]
+    #[pyo3(signature = (vector_name, size, distance, multivector_config=None, datatype=None))]
+    pub fn create_dense_vector(
+        vector_name: String,
+        size: usize,
+        distance: PyDistance,
+        multivector_config: Option<PyMultiVectorConfig>,
+        datatype: Option<PyVectorStorageDatatype>,
+    ) -> Self {
+        let config = vector_name_ops::VectorNameConfig::Dense(
+            vector_name_ops::DenseVectorNameConfig {
+                size,
+                distance: Distance::from(distance),
+                multivector_config: multivector_config.map(MultiVectorConfig::from),
+                datatype: datatype.map(VectorStorageDatatype::from),
+            },
+        );
+        let operation = VectorNameOperations::CreateVectorName(CreateVectorName {
+            vector_name: vector_name.into(),
+            config,
+        });
+        Self(CollectionUpdateOperations::VectorNameOperation(operation))
+    }
+
+    /// Create a new sparse named vector on the collection.
+    #[staticmethod]
+    #[pyo3(signature = (vector_name, modifier=None, datatype=None))]
+    pub fn create_sparse_vector(
+        vector_name: String,
+        modifier: Option<PyModifier>,
+        datatype: Option<PyVectorStorageDatatype>,
+    ) -> Self {
+        let config = vector_name_ops::VectorNameConfig::Sparse(
+            vector_name_ops::SparseVectorNameConfig {
+                modifier: modifier.map(Modifier::from),
+                datatype: datatype.map(VectorStorageDatatype::from),
+            },
+        );
+        let operation = VectorNameOperations::CreateVectorName(CreateVectorName {
+            vector_name: vector_name.into(),
+            config,
+        });
+        Self(CollectionUpdateOperations::VectorNameOperation(operation))
+    }
+
+    /// Delete a named vector from the collection.
+    #[staticmethod]
+    pub fn delete_vector_name(vector_name: String) -> Self {
+        let operation = VectorNameOperations::DeleteVectorName(DeleteVectorName {
+            vector_name: vector_name.into(),
+        });
+        Self(CollectionUpdateOperations::VectorNameOperation(operation))
     }
 }
 
