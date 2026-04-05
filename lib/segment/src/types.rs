@@ -898,6 +898,14 @@ impl QuantizationConfig {
     pub fn supports_appendable(&self) -> bool {
         matches!(self, QuantizationConfig::Binary(_))
     }
+
+    pub fn always_ram(&self) -> bool {
+        match self {
+            QuantizationConfig::Scalar(s) => s.scalar.always_ram == Some(true),
+            QuantizationConfig::Product(p) => p.product.always_ram == Some(true),
+            QuantizationConfig::Binary(b) => b.binary.always_ram == Some(true),
+        }
+    }
 }
 
 impl Validate for QuantizationConfig {

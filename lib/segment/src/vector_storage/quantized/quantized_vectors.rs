@@ -1982,3 +1982,22 @@ impl QuantizedVectors {
         }
     }
 }
+
+impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
+    fn memory_usage(&self) -> crate::common::memory_usage::ComponentMemoryUsage {
+        use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};
+
+        let files = self.files();
+        let intent = if self.config.quantization_config.always_ram()
+            || !self.storage_impl.is_on_disk()
+        {
+            // Data is in RAM: either always_ram config is set,
+            // or storage is a RAM variant.
+            FileStorageIntent::PinnedInRam
+        } else {
+            // On-disk quantization: mmap'd but not populated into RAM.
+            FileStorageIntent::OnDisk
+        };
+        ComponentMemoryUsage::from_files(files, intent)
+    }
+}
