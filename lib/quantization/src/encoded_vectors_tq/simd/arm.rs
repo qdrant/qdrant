@@ -2,10 +2,10 @@
 //!
 //! All kernels accumulate in i64 and convert to float once at the end.
 
-use super::{SimdCodebook2, SimdCodebook4, SimdQuery1, SimdQuery2, SimdQuery4};
-
 #[cfg(target_arch = "aarch64")]
 use std::arch::aarch64::*;
+
+use super::{SimdCodebook2, SimdCodebook4, SimdQuery1, SimdQuery2, SimdQuery4};
 
 // ============================================================================
 // 4-bit kernel — 16 coords/iter
@@ -40,10 +40,8 @@ pub unsafe fn codebook_dot_neon(
 
             let looked_up_lo = vqtbl1q_u8(c_lo, indices);
             let looked_up_hi = vqtbl1q_u8(c_hi, indices);
-            let centroids_0_7 =
-                vreinterpretq_s16_u8(vzip1q_u8(looked_up_lo, looked_up_hi));
-            let centroids_8_15 =
-                vreinterpretq_s16_u8(vzip2q_u8(looked_up_lo, looked_up_hi));
+            let centroids_0_7 = vreinterpretq_s16_u8(vzip1q_u8(looked_up_lo, looked_up_hi));
+            let centroids_8_15 = vreinterpretq_s16_u8(vzip2q_u8(looked_up_lo, looked_up_hi));
 
             let q_0_7 = vld1q_s16(query.values.as_ptr().add(query_offset));
             let q_8_15 = vld1q_s16(query.values.as_ptr().add(query_offset + 8));
@@ -185,14 +183,7 @@ pub unsafe fn codebook_dot_2bit_neon(
         let combined = vaddq_s64(acc_lo, acc_hi);
         let sum = vgetq_lane_s64::<0>(combined) + vgetq_lane_s64::<1>(combined);
 
-        let sum = scalar_tail_2bit(
-            packed,
-            codebook,
-            query,
-            num_iters * 16,
-            num_nibbles,
-            sum,
-        );
+        let sum = scalar_tail_2bit(packed, codebook, query, num_iters * 16, num_nibbles, sum);
         (sum as f64 / (codebook.centroid_scale as f64 * query.query_scale as f64)) as f32
     }
 }
@@ -242,12 +233,43 @@ pub unsafe fn and_popcount_u16_neon(packed: &[u8], query: &SimdQuery1) -> (u64, 
             // AND+popcount for each of 16 bit planes
             let base = chunk * 16;
             for b in 0..16u64 {
-                let plane =
-                    vld1_u8(&query.planes[base + b as usize] as *const u64 as *const u8);
+                let plane = vld1_u8(&query.planes[base + b as usize] as *const u64 as *const u8);
                 let count = vaddv_u8(vcnt_u8(vand_u8(v, plane))) as u64;
                 s1 += count << b;
             }
         }
         (s1, popcnt_v)
+    }
+}
+
+// ============================================================================
+// 1-bit XOR+popcount for score_internal
+// ============================================================================
+
+/// # Safety
+/// Requires NEON support (always available on aarch64).
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+pub unsafe fn xor_popcount_neon(packed1: &[u8], packed2: &[u8], num_bytes: usize) -> u32 {
+    unsafe {
+        let mut acc = vdupq_n_u32(0);
+        let num_u128 = num_bytes / 16;
+        for i in 0..num_u128 {
+            let off = i * 16;
+            let a = vld1q_u8(packed1.as_ptr().add(off));
+            let b = vld1q_u8(packed2.as_ptr().add(off));
+            let xored = veorq_u8(a, b);
+            // vcntq_u8 → per-byte popcount, vpaddlq → widen-accumulate
+            let cnt8 = vcntq_u8(xored);
+            let cnt16 = vpaddlq_u8(cnt8);
+            let cnt32 = vpaddlq_u16(cnt16);
+            acc = vaddq_u32(acc, cnt32);
+        }
+        let mut count = vaddvq_u32(acc);
+        // Tail bytes
+        for i in (num_u128 * 16)..num_bytes {
+            count += (*packed1.as_ptr().add(i) ^ *packed2.as_ptr().add(i)).count_ones();
+        }
+        count
     }
 }

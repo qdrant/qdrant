@@ -4,10 +4,10 @@
 //! 2-bit kernels: fused even/odd with shared accumulator.
 //! All accumulate in i64 and convert to float once at the end.
 
-use super::{SimdCodebook2, SimdCodebook4, SimdQuery1, SimdQuery2, SimdQuery4};
-
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+
+use super::{SimdCodebook2, SimdCodebook4, SimdQuery1, SimdQuery2, SimdQuery4};
 
 // ============================================================================
 // Helpers
@@ -43,11 +43,7 @@ unsafe fn hsum_i64_sse(acc_0: __m128i, acc_1: __m128i) -> i64 {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "ssse3")]
 #[inline]
-unsafe fn widen_add_i32_to_i64_sse(
-    prod: __m128i,
-    acc_0: &mut __m128i,
-    acc_1: &mut __m128i,
-) {
+unsafe fn widen_add_i32_to_i64_sse(prod: __m128i, acc_0: &mut __m128i, acc_1: &mut __m128i) {
     unsafe {
         let sign = _mm_srai_epi32(prod, 31);
         *acc_0 = _mm_add_epi64(*acc_0, _mm_unpacklo_epi32(prod, sign));
@@ -60,10 +56,7 @@ unsafe fn widen_add_i32_to_i64_sse(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "ssse3")]
 #[inline]
-unsafe fn extract_nibbles_128(
-    packed_ptr: *const u8,
-    nibble_mask: __m128i,
-) -> __m128i {
+unsafe fn extract_nibbles_128(packed_ptr: *const u8, nibble_mask: __m128i) -> __m128i {
     unsafe {
         let packed_bytes = _mm_loadl_epi64(packed_ptr as *const __m128i);
         let hi = _mm_and_si128(_mm_srli_epi16(packed_bytes, 4), nibble_mask);
@@ -85,19 +78,18 @@ pub unsafe fn codebook_dot_avx2(
     padded_dim: usize,
 ) -> f32 {
     unsafe {
-        let c_lo = _mm256_broadcastsi128_si256(
-            _mm_loadu_si128(codebook.centroid_bytes_lo.as_ptr() as *const __m128i),
-        );
-        let c_hi = _mm256_broadcastsi128_si256(
-            _mm_loadu_si128(codebook.centroid_bytes_hi.as_ptr() as *const __m128i),
-        );
+        let c_lo = _mm256_broadcastsi128_si256(_mm_loadu_si128(
+            codebook.centroid_bytes_lo.as_ptr() as *const __m128i,
+        ));
+        let c_hi = _mm256_broadcastsi128_si256(_mm_loadu_si128(
+            codebook.centroid_bytes_hi.as_ptr() as *const __m128i,
+        ));
         let nibble_mask = _mm_set1_epi8(0x0F);
         let mut acc = _mm256_setzero_si256();
         let num_iters = padded_dim / 32;
 
         for iter in 0..num_iters {
-            let packed_128 =
-                _mm_loadu_si128(packed.as_ptr().add(iter * 16) as *const __m128i);
+            let packed_128 = _mm_loadu_si128(packed.as_ptr().add(iter * 16) as *const __m128i);
             let hi_nib = _mm_and_si128(_mm_srli_epi16(packed_128, 4), nibble_mask);
             let lo_nib = _mm_and_si128(packed_128, nibble_mask);
             let indices_256 = _mm256_inserti128_si256(
@@ -112,12 +104,9 @@ pub unsafe fn codebook_dot_avx2(
             let cent_b = _mm256_unpackhi_epi8(lu_lo, lu_hi);
 
             let q_off = iter * 32;
-            let q_seq_lo = _mm256_loadu_si256(
-                query.values.as_ptr().add(q_off) as *const __m256i,
-            );
-            let q_seq_hi = _mm256_loadu_si256(
-                query.values.as_ptr().add(q_off + 16) as *const __m256i,
-            );
+            let q_seq_lo = _mm256_loadu_si256(query.values.as_ptr().add(q_off) as *const __m256i);
+            let q_seq_hi =
+                _mm256_loadu_si256(query.values.as_ptr().add(q_off + 16) as *const __m256i);
             let q_a = _mm256_permute2x128_si256(q_seq_lo, q_seq_hi, 0x20);
             let q_b = _mm256_permute2x128_si256(q_seq_lo, q_seq_hi, 0x31);
 
@@ -125,9 +114,15 @@ pub unsafe fn codebook_dot_avx2(
             let prod_b = _mm256_madd_epi16(cent_b, q_b);
 
             acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(prod_a)));
-            acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(prod_a, 1)));
+            acc = _mm256_add_epi64(
+                acc,
+                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(prod_a, 1)),
+            );
             acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(prod_b)));
-            acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(prod_b, 1)));
+            acc = _mm256_add_epi64(
+                acc,
+                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(prod_b, 1)),
+            );
         }
 
         let sum = hsum_i64_avx2(acc);
@@ -209,18 +204,18 @@ pub unsafe fn codebook_dot_2bit_avx2(
     padded_dim: usize,
 ) -> f32 {
     unsafe {
-        let ce_lo = _mm256_broadcastsi128_si256(
-            _mm_loadu_si128(codebook.even_lo.as_ptr() as *const __m128i),
-        );
-        let ce_hi = _mm256_broadcastsi128_si256(
-            _mm_loadu_si128(codebook.even_hi.as_ptr() as *const __m128i),
-        );
-        let co_lo = _mm256_broadcastsi128_si256(
-            _mm_loadu_si128(codebook.odd_lo.as_ptr() as *const __m128i),
-        );
-        let co_hi = _mm256_broadcastsi128_si256(
-            _mm_loadu_si128(codebook.odd_hi.as_ptr() as *const __m128i),
-        );
+        let ce_lo = _mm256_broadcastsi128_si256(_mm_loadu_si128(
+            codebook.even_lo.as_ptr() as *const __m128i
+        ));
+        let ce_hi = _mm256_broadcastsi128_si256(_mm_loadu_si128(
+            codebook.even_hi.as_ptr() as *const __m128i
+        ));
+        let co_lo = _mm256_broadcastsi128_si256(_mm_loadu_si128(
+            codebook.odd_lo.as_ptr() as *const __m128i
+        ));
+        let co_hi = _mm256_broadcastsi128_si256(_mm_loadu_si128(
+            codebook.odd_hi.as_ptr() as *const __m128i
+        ));
         let nibble_mask = _mm_set1_epi8(0x0F);
 
         let mut acc = _mm256_setzero_si256();
@@ -228,8 +223,7 @@ pub unsafe fn codebook_dot_2bit_avx2(
         let num_iters = num_nibbles / 32; // 32 nibbles = 16 bytes per iter
 
         for iter in 0..num_iters {
-            let packed_128 =
-                _mm_loadu_si128(packed.as_ptr().add(iter * 16) as *const __m128i);
+            let packed_128 = _mm_loadu_si128(packed.as_ptr().add(iter * 16) as *const __m128i);
             let hi_nib = _mm_and_si128(_mm_srli_epi16(packed_128, 4), nibble_mask);
             let lo_nib = _mm_and_si128(packed_128, nibble_mask);
             let indices_256 = _mm256_inserti128_si256(
@@ -252,14 +246,18 @@ pub unsafe fn codebook_dot_2bit_avx2(
 
             // Load even query
             let qe_off = iter * 32;
-            let qe_lo256 = _mm256_loadu_si256(query.even_values.as_ptr().add(qe_off) as *const __m256i);
-            let qe_hi256 = _mm256_loadu_si256(query.even_values.as_ptr().add(qe_off + 16) as *const __m256i);
+            let qe_lo256 =
+                _mm256_loadu_si256(query.even_values.as_ptr().add(qe_off) as *const __m256i);
+            let qe_hi256 =
+                _mm256_loadu_si256(query.even_values.as_ptr().add(qe_off + 16) as *const __m256i);
             let qe_a = _mm256_permute2x128_si256(qe_lo256, qe_hi256, 0x20);
             let qe_b = _mm256_permute2x128_si256(qe_lo256, qe_hi256, 0x31);
 
             // Load odd query
-            let qo_lo256 = _mm256_loadu_si256(query.odd_values.as_ptr().add(qe_off) as *const __m256i);
-            let qo_hi256 = _mm256_loadu_si256(query.odd_values.as_ptr().add(qe_off + 16) as *const __m256i);
+            let qo_lo256 =
+                _mm256_loadu_si256(query.odd_values.as_ptr().add(qe_off) as *const __m256i);
+            let qo_hi256 =
+                _mm256_loadu_si256(query.odd_values.as_ptr().add(qe_off + 16) as *const __m256i);
             let qo_a = _mm256_permute2x128_si256(qo_lo256, qo_hi256, 0x20);
             let qo_b = _mm256_permute2x128_si256(qo_lo256, qo_hi256, 0x31);
 
@@ -271,13 +269,25 @@ pub unsafe fn codebook_dot_2bit_avx2(
 
             // Widen each i32 → i64 separately, then accumulate
             acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(eprod_a)));
-            acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(eprod_a, 1)));
+            acc = _mm256_add_epi64(
+                acc,
+                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(eprod_a, 1)),
+            );
             acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(eprod_b)));
-            acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(eprod_b, 1)));
+            acc = _mm256_add_epi64(
+                acc,
+                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(eprod_b, 1)),
+            );
             acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(oprod_a)));
-            acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(oprod_a, 1)));
+            acc = _mm256_add_epi64(
+                acc,
+                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(oprod_a, 1)),
+            );
             acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(oprod_b)));
-            acc = _mm256_add_epi64(acc, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(oprod_b, 1)));
+            acc = _mm256_add_epi64(
+                acc,
+                _mm256_cvtepi32_epi64(_mm256_extracti128_si256(oprod_b, 1)),
+            );
         }
 
         let sum = hsum_i64_avx2(acc);
@@ -335,9 +345,11 @@ pub unsafe fn codebook_dot_2bit_ssse3(
 
             let q_off = iter * 16;
             let qe_0_7 = _mm_loadu_si128(query.even_values.as_ptr().add(q_off) as *const __m128i);
-            let qe_8_15 = _mm_loadu_si128(query.even_values.as_ptr().add(q_off + 8) as *const __m128i);
+            let qe_8_15 =
+                _mm_loadu_si128(query.even_values.as_ptr().add(q_off + 8) as *const __m128i);
             let qo_0_7 = _mm_loadu_si128(query.odd_values.as_ptr().add(q_off) as *const __m128i);
-            let qo_8_15 = _mm_loadu_si128(query.odd_values.as_ptr().add(q_off + 8) as *const __m128i);
+            let qo_8_15 =
+                _mm_loadu_si128(query.odd_values.as_ptr().add(q_off + 8) as *const __m128i);
 
             // Widen each madd result to i64 separately (can't add i32 — would overflow)
             widen_add_i32_to_i64_sse(_mm_madd_epi16(ecent_0_7, qe_0_7), &mut acc_0, &mut acc_1);
@@ -396,5 +408,30 @@ pub unsafe fn and_popcount_u16_x86(packed: &[u8], query: &SimdQuery1) -> (u64, u
             }
         }
         (s1, popcnt_v)
+    }
+}
+
+// ============================================================================
+// 1-bit XOR+popcount for score_internal
+// ============================================================================
+
+/// # Safety
+/// Requires popcnt support.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "popcnt")]
+pub unsafe fn xor_popcount_x86(packed1: &[u8], packed2: &[u8], num_bytes: usize) -> u32 {
+    unsafe {
+        let mut count = 0u32;
+        let num_u64 = num_bytes / 8;
+        for i in 0..num_u64 {
+            let off = i * 8;
+            let a = *(packed1.as_ptr().add(off) as *const u64);
+            let b = *(packed2.as_ptr().add(off) as *const u64);
+            count += _popcnt_u64(a ^ b) as u32;
+        }
+        for i in (num_u64 * 8)..num_bytes {
+            count += (*packed1.as_ptr().add(i) ^ *packed2.as_ptr().add(i)).count_ones();
+        }
+        count
     }
 }

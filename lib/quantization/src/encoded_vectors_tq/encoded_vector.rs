@@ -1,8 +1,8 @@
+use super::TqCorrection;
 use super::codebook::Codebook;
 use super::packing::{pack_indices, unpack_index};
 use super::qjl::QjlProjection;
 use super::rotation::RotationImpl;
-use super::TqCorrection;
 
 /// Size of the stored norm (f32) in bytes.
 pub(crate) const NORM_SIZE: usize = size_of::<f32>();
@@ -56,11 +56,7 @@ impl<'a> EncodedVectorTQ<'a> {
     /// Compute dot product on the fly using shared codebook centroids.
     /// `dot = Σ_i effective_query[i] * centroids[unpack_index(packed, i, bits)]`
     /// Zero allocation. Codebook centroids (K values) stay hot in cache.
-    pub(super) fn codebook_dot(
-        &self,
-        effective_query: &[f32],
-        codebook: &Codebook,
-    ) -> f32 {
+    pub(super) fn codebook_dot(&self, effective_query: &[f32], codebook: &Codebook) -> f32 {
         let packed = self.packed_data();
         let bits = codebook.bits;
         let centroids = &codebook.centroids;

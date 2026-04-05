@@ -12,23 +12,22 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub(crate) use codebook::Codebook;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
 use common::mmap::MmapFlusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
+pub use encoded_query::EncodedQueryTQ;
+pub use encoded_vector::EncodedVectorTQ;
+use encoded_vector::{NORM_SIZE, encode_vector_data, normalize_and_rotate};
 use fs_err as fs;
+use rotation::{ROTATION_SEED, RotationImpl};
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::{DistanceType, EncodingError};
-
-pub(crate) use codebook::Codebook;
-pub use encoded_query::EncodedQueryTQ;
-pub use encoded_vector::EncodedVectorTQ;
-use encoded_vector::{NORM_SIZE, encode_vector_data, normalize_and_rotate};
-use rotation::{ROTATION_SEED, RotationImpl};
 
 pub const DEFAULT_TURBO_QUANT_BITS: usize = 4;
 
@@ -341,12 +340,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             metadata.vector_parameters.dim,
         );
         let qjl = match metadata.correction {
-            TqCorrection::Qjl | TqCorrection::QjlNormalization => {
-                Some(qjl::QjlProjection::new(metadata.padded_dim, metadata.padded_dim))
-            }
-            TqCorrection::QjlShort | TqCorrection::QjlShortNormalization => {
-                Some(qjl::QjlProjection::new(metadata.padded_dim, qjl::QJL_SHORT_DIM))
-            }
+            TqCorrection::Qjl | TqCorrection::QjlNormalization => Some(qjl::QjlProjection::new(
+                metadata.padded_dim,
+                metadata.padded_dim,
+            )),
+            TqCorrection::QjlShort | TqCorrection::QjlShortNormalization => Some(
+                qjl::QjlProjection::new(metadata.padded_dim, qjl::QJL_SHORT_DIM),
+            ),
             _ => None,
         };
         let simd_codebook = match metadata.codebook.bits {
@@ -393,12 +393,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     #[inline]
     fn base_codebook_dot(&self, vec: &EncodedVectorTQ, query: &EncodedQueryTQ) -> f32 {
         if let (Some(simd_c), Some(simd_q)) = (&self.simd_codebook, &query.simd_query) {
-            simd::codebook_dot_simd(
-                vec.packed_data(),
-                simd_c,
-                simd_q,
-                self.metadata.padded_dim,
-            )
+            simd::codebook_dot_simd(vec.packed_data(), simd_c, simd_q, self.metadata.padded_dim)
         } else {
             vec.codebook_dot(
                 query.effective_query.as_ref().unwrap(),
@@ -418,8 +413,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                 if query.effective_query.is_some() {
                     // On-the-fly path: codebook_dot + median_dot + optional QJL + normalization
                     let gamma = vec.norm();
-                    let mut dot = self.base_codebook_dot(&vec, query)
-                        + query.median_dot;
+                    let mut dot = self.base_codebook_dot(&vec, query) + query.median_dot;
 
                     // QJL correction (Qjl/QjlShort modes)
                     if let (Some(projected), Some(qjl)) =
@@ -456,8 +450,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             DistanceType::L2 => {
                 if query.effective_query.is_some() {
                     let gamma = vec.norm();
-                    let mut dot = self.base_codebook_dot(&vec, query)
-                        + query.median_dot;
+                    let mut dot = self.base_codebook_dot(&vec, query) + query.median_dot;
 
                     if let (Some(projected), Some(qjl)) =
                         (&query.qjl_projected_query, self.qjl.as_ref())
@@ -521,6 +514,62 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn get_metadata(&self) -> &Metadata {
         &self.metadata
     }
+
+    /// Compute ⟨ŷ1, ŷ2⟩ between two encoded vectors' decoded centroid representations.
+    fn internal_dot(
+        &self,
+        vec1: &EncodedVectorTQ,
+        vec2: &EncodedVectorTQ,
+        codebook: &Codebook,
+        padded_dim: usize,
+        correction: TqCorrection,
+    ) -> f32 {
+        // 1-bit fast path: XOR + popcount
+        if let Some(simd::SimdAccel::Bits1(cb)) = &self.simd_codebook {
+            let packed_size = codebook.packed_size(padded_dim);
+            let xor_popcnt =
+                simd::xor_popcount(vec1.packed_data(), vec2.packed_data(), packed_size);
+            // dot = c² * (dim - 2 * popcount(v1 XOR v2))
+            // For Normalization: divide by both stored centroid norms.
+            let raw_dot = cb.c * cb.c * (padded_dim as f32 - 2.0 * xor_popcnt as f32);
+            return if matches!(correction, TqCorrection::Normalization) {
+                let cn1 = vec1.centroid_norm(packed_size);
+                let cn2 = vec2.centroid_norm(packed_size);
+                let denom = cn1 * cn2;
+                if denom > 1e-20 { raw_dot / denom } else { 0.0 }
+            } else {
+                raw_dot
+            };
+        }
+
+        // 2-bit/4-bit: decode v1 once, use as effective_query for codebook_dot on v2
+        let medians = &self.metadata.medians;
+        let scales = &self.metadata.scales;
+        let (_, y1) = vec1.decode_rotated(codebook, padded_dim, medians, scales, correction, None);
+
+        let has_plus = !scales.is_empty();
+        if has_plus {
+            let eq: Vec<f32> = y1.iter().zip(scales.iter()).map(|(&y, &s)| y / s).collect();
+            let median_dot: f32 = y1.iter().zip(medians.iter()).map(|(&y, &m)| y * m).sum();
+            let mut dot = vec2.codebook_dot(&eq, codebook) + median_dot;
+            if matches!(correction, TqCorrection::Normalization) {
+                let cn2 = vec2.centroid_norm(codebook.packed_size(padded_dim));
+                if cn2 > 1e-10 {
+                    dot /= cn2;
+                }
+            }
+            dot
+        } else {
+            let mut dot = vec2.codebook_dot(&y1, codebook);
+            if matches!(correction, TqCorrection::Normalization) {
+                let cn2 = vec2.centroid_norm(codebook.packed_size(padded_dim));
+                if cn2 > 1e-10 {
+                    dot /= cn2;
+                }
+            }
+            dot
+        }
+    }
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
@@ -564,16 +613,14 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
         // Precompute S · weighted_query for O(d) QJL correction in Dot/L2 scoring.
         // Reuse effective_query for TQ+ case (already divided by scales).
-        let qjl_projected_query = if matches!(
-            correction,
-            TqCorrection::Qjl | TqCorrection::QjlShort
-        ) {
-            self.qjl.as_ref().map(|qjl| {
-                qjl.project_query(effective_query.as_ref().unwrap())
-            })
-        } else {
-            None
-        };
+        let qjl_projected_query =
+            if matches!(correction, TqCorrection::Qjl | TqCorrection::QjlShort) {
+                self.qjl
+                    .as_ref()
+                    .map(|qjl| qjl.project_query(effective_query.as_ref().unwrap()))
+            } else {
+                None
+            };
 
         // Create SIMD query matching the codebook variant
         let simd_query = match &self.simd_codebook {
@@ -623,47 +670,41 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
         let codebook = &self.metadata.codebook;
         let padded_dim = self.metadata.padded_dim;
-        let medians = &self.metadata.medians;
-        let scales = &self.metadata.scales;
         let correction = self.metadata.correction;
 
         let vec1 = EncodedVectorTQ::new(&v1);
         let vec2 = EncodedVectorTQ::new(&v2);
-        let (gamma1, y1) = vec1.decode_rotated(
-            codebook,
-            padded_dim,
-            medians,
-            scales,
-            correction,
-            None, // Skip QJL because it's quadratic time
-        );
-        let (gamma2, y2) = vec2.decode_rotated(
-            codebook,
-            padded_dim,
-            medians,
-            scales,
-            correction,
-            None, // Skip QJL because it's quadratic time
+        let gamma1 = vec1.norm();
+        let gamma2 = vec2.norm();
+
+        // Try fast path for Dot/L2 (not L1 — that needs inverse rotation)
+        let use_fast = !matches!(
+            self.metadata.vector_parameters.distance_type,
+            DistanceType::L1
         );
 
-        let result = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot => {
-                let dot: f32 = y1.iter().zip(y2.iter()).map(|(&a, &b)| a * b).sum();
-                gamma1 * gamma2 * dot
+        let result = if use_fast {
+            let dot = self.internal_dot(&vec1, &vec2, codebook, padded_dim, correction);
+            match self.metadata.vector_parameters.distance_type {
+                DistanceType::Dot => gamma1 * gamma2 * dot,
+                DistanceType::L2 => gamma1 * gamma1 + gamma2 * gamma2 - 2.0 * gamma1 * gamma2 * dot,
+                _ => unreachable!(),
             }
-            DistanceType::L2 => {
-                let dot: f32 = y1.iter().zip(y2.iter()).map(|(&a, &b)| a * b).sum();
-                gamma1 * gamma1 + gamma2 * gamma2 - 2.0 * gamma1 * gamma2 * dot
-            }
-            DistanceType::L1 => {
-                let dim = self.metadata.vector_parameters.dim;
-                let x1 = self.rotation_impl.apply_inverse(&y1, dim);
-                let x2 = self.rotation_impl.apply_inverse(&y2, dim);
-                x1.iter()
-                    .zip(x2.iter())
-                    .map(|(&a, &b)| (gamma1 * a - gamma2 * b).abs())
-                    .sum()
-            }
+        } else {
+            // L1 fallback: full decode + inverse rotation
+            let medians = &self.metadata.medians;
+            let scales = &self.metadata.scales;
+            let (_, y1) =
+                vec1.decode_rotated(codebook, padded_dim, medians, scales, correction, None);
+            let (_, y2) =
+                vec2.decode_rotated(codebook, padded_dim, medians, scales, correction, None);
+            let dim = self.metadata.vector_parameters.dim;
+            let x1 = self.rotation_impl.apply_inverse(&y1, dim);
+            let x2 = self.rotation_impl.apply_inverse(&y2, dim);
+            x1.iter()
+                .zip(x2.iter())
+                .map(|(&a, &b)| (gamma1 * a - gamma2 * b).abs())
+                .sum()
         };
 
         if self.metadata.vector_parameters.invert {

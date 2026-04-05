@@ -62,10 +62,7 @@ pub struct SimdQuery2 {
 // Constructors
 // ============================================================================
 
-fn quantize_table_to_i16_bytes(
-    values: &[f32; 16],
-    scale: f32,
-) -> ([u8; 16], [u8; 16]) {
+fn quantize_table_to_i16_bytes(values: &[f32; 16], scale: f32) -> ([u8; 16], [u8; 16]) {
     let mut lo = [0u8; 16];
     let mut hi = [0u8; 16];
     for (j, &c) in values.iter().enumerate() {
@@ -471,11 +468,7 @@ fn codebook_dot_2bit_scalar(
 // 1-bit kernel dispatch
 // ============================================================================
 
-fn codebook_dot_1bit(
-    packed: &[u8],
-    codebook: &SimdCodebook1,
-    query: &SimdQuery1,
-) -> f32 {
+fn codebook_dot_1bit(packed: &[u8], codebook: &SimdCodebook1, query: &SimdQuery1) -> f32 {
     let (s1_u16, popcnt_v) = and_popcount_u16(packed, query);
     let s1 = s1_u16 as f64 * query.inv_scale - popcnt_v as f64 * query.max_abs;
     let dot = codebook.c as f64 * (2.0 * s1 - query.total_sum);
@@ -497,6 +490,40 @@ fn and_popcount_u16(packed: &[u8], query: &SimdQuery1) -> (u64, u32) {
 
     #[allow(unreachable_code)]
     and_popcount_u16_scalar(packed, query)
+}
+
+/// XOR two packed 1-bit vectors and popcount — for score_internal.
+/// Returns popcount(v1 XOR v2) over `num_bytes` bytes.
+pub fn xor_popcount(packed1: &[u8], packed2: &[u8], num_bytes: usize) -> u32 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::arch::is_x86_feature_detected!("popcnt") {
+            return unsafe { x86::xor_popcount_x86(packed1, packed2, num_bytes) };
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        return unsafe { arm::xor_popcount_neon(packed1, packed2, num_bytes) };
+    }
+
+    #[allow(unreachable_code)]
+    xor_popcount_scalar(packed1, packed2, num_bytes)
+}
+
+fn xor_popcount_scalar(packed1: &[u8], packed2: &[u8], num_bytes: usize) -> u32 {
+    let mut count = 0u32;
+    let num_u64 = num_bytes / 8;
+    for i in 0..num_u64 {
+        let off = i * 8;
+        let a = u64::from_ne_bytes(packed1[off..off + 8].try_into().unwrap());
+        let b = u64::from_ne_bytes(packed2[off..off + 8].try_into().unwrap());
+        count += (a ^ b).count_ones();
+    }
+    for i in (num_u64 * 8)..num_bytes {
+        count += (packed1[i] ^ packed2[i]).count_ones();
+    }
+    count
 }
 
 fn and_popcount_u16_scalar(packed: &[u8], query: &SimdQuery1) -> (u64, u32) {

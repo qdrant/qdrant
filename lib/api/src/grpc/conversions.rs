@@ -1390,7 +1390,9 @@ impl From<segment::types::TurboQuantRotation> for TurboQuantRotation {
         match value {
             segment::types::TurboQuantRotation::NoRotation => TurboQuantRotation::TqrNoRotation,
             segment::types::TurboQuantRotation::Hadamard => TurboQuantRotation::TqrHadamard,
-            segment::types::TurboQuantRotation::RotationMatrix => TurboQuantRotation::TqrRotationMatrix,
+            segment::types::TurboQuantRotation::RotationMatrix => {
+                TurboQuantRotation::TqrRotationMatrix
+            }
         }
     }
 }
@@ -1400,7 +1402,9 @@ impl From<TurboQuantRotation> for segment::types::TurboQuantRotation {
         match value {
             TurboQuantRotation::TqrNoRotation => segment::types::TurboQuantRotation::NoRotation,
             TurboQuantRotation::TqrHadamard => segment::types::TurboQuantRotation::Hadamard,
-            TurboQuantRotation::TqrRotationMatrix => segment::types::TurboQuantRotation::RotationMatrix,
+            TurboQuantRotation::TqrRotationMatrix => {
+                segment::types::TurboQuantRotation::RotationMatrix
+            }
         }
     }
 }

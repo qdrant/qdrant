@@ -92,7 +92,13 @@ pub(crate) fn compute_padded_dim(dim: usize) -> usize {
 /// Generate a random sign vector (±1.0).
 fn generate_signs(rng: &mut StdRng, n: usize) -> Vec<f64> {
     (0..n)
-        .map(|_| if rng.random::<bool>() { 1.0f64 } else { -1.0f64 })
+        .map(|_| {
+            if rng.random::<bool>() {
+                1.0f64
+            } else {
+                -1.0f64
+            }
+        })
         .collect()
 }
 
@@ -153,11 +159,19 @@ mod tests {
             let x: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.01 + 0.5).collect();
             let y = rot.apply(&x);
             let x2 = rot.apply_inverse(&y, dim);
-            let max_err: f32 = x.iter().zip(x2.iter())
+            let max_err: f32 = x
+                .iter()
+                .zip(x2.iter())
                 .map(|(a, b)| (a - b).abs())
                 .fold(0.0f32, f32::max);
-            println!("dim={dim}: padded={}, max_roundtrip_err={max_err:.2e}", rot.padded_dim());
-            assert!(max_err < 1e-5, "roundtrip error too large for dim={dim}: {max_err}");
+            println!(
+                "dim={dim}: padded={}, max_roundtrip_err={max_err:.2e}",
+                rot.padded_dim()
+            );
+            assert!(
+                max_err < 1e-5,
+                "roundtrip error too large for dim={dim}: {max_err}"
+            );
         }
     }
 
@@ -183,7 +197,10 @@ mod tests {
         }
         let total_energy: f64 = chunk_energies.iter().sum();
         let expected_per_chunk = total_energy / num_chunks as f64;
-        println!("dim={dim}, padded={}, chunks={num_chunks}", rot.padded_dim());
+        println!(
+            "dim={dim}, padded={}, chunks={num_chunks}",
+            rot.padded_dim()
+        );
         for (i, e) in chunk_energies.iter().enumerate() {
             let ratio = e / expected_per_chunk;
             println!("  chunk {i}: energy={e:.4}, ratio={ratio:.4}");
