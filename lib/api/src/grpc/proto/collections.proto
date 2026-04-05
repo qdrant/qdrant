@@ -371,7 +371,7 @@ enum TurboQuantCorrection {
 enum TurboQuantRotation {
   TQR_Hadamard = 0;
   TQR_NoRotation = 1;
-  TQR_Random = 2;
+  TQR_RotationMatrix = 2;
 }
 
 message TurboQuantization {
@@ -385,6 +385,8 @@ message TurboQuantization {
   optional TurboQuantRotation rotation = 4;
   // Number of Hadamard rotations (only used when rotation is Hadamard)
   optional uint32 hadamard_chunk = 5;
+  // Enable turbo quant plus mode
+  optional bool plus = 6;
 }
 
 message QuantizationConfig {

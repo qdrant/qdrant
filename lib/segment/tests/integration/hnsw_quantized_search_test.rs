@@ -423,6 +423,7 @@ fn hnsw_turbo_quant_search_cosine_test() {
             correction: None,
             rotation: None,
             hadamard_chunk: None,
+            plus: None,
         }
         .into(),
         true,
@@ -441,6 +442,7 @@ fn hnsw_turbo_quant_search_euclid_test() {
             correction: None,
             rotation: None,
             hadamard_chunk: None,
+            plus: None,
         }
         .into(),
         true,
@@ -459,6 +461,7 @@ fn hnsw_turbo_quant_search_manhattan_test() {
             correction: None,
             rotation: None,
             hadamard_chunk: None,
+            plus: None,
         }
         .into(),
         true,

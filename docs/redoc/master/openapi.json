@@ -7562,6 +7562,11 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "plus": {
+            "description": "Enable turbo quant plus mode (default: false)",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7579,7 +7584,7 @@
         "enum": [
           "no_rotation",
           "hadamard",
-          "random"
+          "rotation_matrix"
         ]
       },
       "Datatype": {

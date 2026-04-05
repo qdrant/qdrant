@@ -989,6 +989,9 @@ pub struct TurboQuantization {
     /// Number of Hadamard rotations (only used when rotation is Hadamard)
     #[prost(uint32, optional, tag = "5")]
     pub hadamard_chunk: ::core::option::Option<u32>,
+    /// Enable turbo quant plus mode
+    #[prost(bool, optional, tag = "6")]
+    pub plus: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -2457,6 +2460,8 @@ pub enum TurboQuantCorrection {
     NoCorrection = 1,
     Qjl = 2,
     QjlNormalization = 3,
+    QjlShort = 4,
+    QjlShortNormalization = 5,
 }
 impl TurboQuantCorrection {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2469,6 +2474,8 @@ impl TurboQuantCorrection {
             TurboQuantCorrection::NoCorrection => "NoCorrection",
             TurboQuantCorrection::Qjl => "Qjl",
             TurboQuantCorrection::QjlNormalization => "QjlNormalization",
+            TurboQuantCorrection::QjlShort => "QjlShort",
+            TurboQuantCorrection::QjlShortNormalization => "QjlShortNormalization",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2478,6 +2485,8 @@ impl TurboQuantCorrection {
             "NoCorrection" => Some(Self::NoCorrection),
             "Qjl" => Some(Self::Qjl),
             "QjlNormalization" => Some(Self::QjlNormalization),
+            "QjlShort" => Some(Self::QjlShort),
+            "QjlShortNormalization" => Some(Self::QjlShortNormalization),
             _ => None,
         }
     }
@@ -2488,7 +2497,7 @@ impl TurboQuantCorrection {
 pub enum TurboQuantRotation {
     TqrHadamard = 0,
     TqrNoRotation = 1,
-    TqrRandom = 2,
+    TqrRotationMatrix = 2,
 }
 impl TurboQuantRotation {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2499,7 +2508,7 @@ impl TurboQuantRotation {
         match self {
             TurboQuantRotation::TqrHadamard => "TQR_Hadamard",
             TurboQuantRotation::TqrNoRotation => "TQR_NoRotation",
-            TurboQuantRotation::TqrRandom => "TQR_Random",
+            TurboQuantRotation::TqrRotationMatrix => "TQR_RotationMatrix",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2507,7 +2516,7 @@ impl TurboQuantRotation {
         match value {
             "TQR_Hadamard" => Some(Self::TqrHadamard),
             "TQR_NoRotation" => Some(Self::TqrNoRotation),
-            "TQR_Random" => Some(Self::TqrRandom),
+            "TQR_RotationMatrix" => Some(Self::TqrRotationMatrix),
             _ => None,
         }
     }

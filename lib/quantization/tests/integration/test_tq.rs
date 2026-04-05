@@ -35,6 +35,8 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -45,6 +47,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -78,6 +81,8 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -88,6 +93,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -121,6 +127,8 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -131,6 +139,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -164,6 +173,8 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -174,6 +185,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -207,6 +219,8 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -217,6 +231,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -250,6 +265,8 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -260,6 +277,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -292,6 +310,8 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -302,6 +322,7 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
             None,
             &AtomicBool::new(false),
         )
@@ -333,6 +354,8 @@ mod tests {
             EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                 &vector_parameters,
                 DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
             );
         let encoded = EncodedVectorsTQ::encode(
             vector_data.iter(),
@@ -343,6 +366,751 @@ mod tests {
             TqCorrection::default(),
             TqRotation::default(),
             None,
+            false,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        let counter = HardwareCounterCell::new();
+        for i in 1..VECTORS_COUNT {
+            let score = encoded.score_internal(0, i as u32, &counter);
+            let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    // ========================================================================
+    // TurboQuant+ tests (plus=true)
+    // ========================================================================
+
+    #[test]
+    fn test_tq_plus_dot() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = dot_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_plus_l2() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = l2_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_plus_l1() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L1,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = l1_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_plus_dot_inverted() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = -dot_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_plus_l2_inverted() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = -l2_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_plus_l1_inverted() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L1,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = -l1_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_plus_dot_internal() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        let counter = HardwareCounterCell::new();
+        for i in 1..VECTORS_COUNT {
+            let score = encoded.score_internal(0, i as u32, &counter);
+            let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    // ========================================================================
+    // QJL correction tests (TqCorrection::Qjl) — exercises fast dot/L2 path
+    // ========================================================================
+
+    #[test]
+    fn test_tq_qjl_dot() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::Qjl,
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::Qjl,
+            TqRotation::default(),
+            None,
+            false,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = dot_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_qjl_l2() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::Qjl,
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::Qjl,
+            TqRotation::default(),
+            None,
+            false,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = l2_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_qjl_plus_dot() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::Qjl,
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::Qjl,
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = dot_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_qjl_plus_l2() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::Qjl,
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::Qjl,
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = l2_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    // ========================================================================
+    // QJL Short correction tests (TqCorrection::QjlShort, projection_dim=128)
+    // ========================================================================
+
+    #[test]
+    fn test_tq_qjl_short_dot() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::QjlShort,
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::QjlShort,
+            TqRotation::default(),
+            None,
+            false,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = dot_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_qjl_short_l2() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::QjlShort,
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::QjlShort,
+            TqRotation::default(),
+            None,
+            false,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = l2_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_qjl_short_plus_dot() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::QjlShort,
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::QjlShort,
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = dot_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_qjl_short_plus_l2() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::QjlShort,
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::QjlShort,
+            TqRotation::default(),
+            None,
+            true,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_u8 = encoded.encode_query(&query);
+
+        let counter = HardwareCounterCell::new();
+        for (index, vector) in vector_data.iter().enumerate() {
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let orginal_score = l2_similarity(&query, vector);
+            assert!((score - orginal_score).abs() < ERROR);
+        }
+    }
+
+    #[test]
+    fn test_tq_plus_dot_inverted_internal() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<_>> = vec![];
+        for _ in 0..VECTORS_COUNT {
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
+        }
+
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                DEFAULT_TURBO_QUANT_BITS,
+                TqRotation::default(),
+                TqCorrection::default(),
+            );
+        let encoded = EncodedVectorsTQ::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            VECTORS_COUNT,
+            DEFAULT_TURBO_QUANT_BITS,
+            TqCorrection::default(),
+            TqRotation::default(),
+            None,
+            true,
             None,
             &AtomicBool::new(false),
         )
