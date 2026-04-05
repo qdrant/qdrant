@@ -1,6 +1,7 @@
 pub mod condition_checker;
 #[cfg(feature = "testing")]
 pub mod in_memory_payload_storage;
+mod memory_reporter;
 #[cfg(feature = "testing")]
 pub mod in_memory_payload_storage_impl;
 pub mod mmap_payload_storage;

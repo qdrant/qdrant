@@ -5,13 +5,11 @@ use std::path::PathBuf;
 /// Used to compute `expected_cache_bytes` and label components for users.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileStorageIntent {
-    /// Data is pinned in RAM (e.g., in-memory vectors, RAM quantization).
-    PinnedInRam,
-    /// Data is mmap'd and expected to be fully resident (populated on load).
-    MmapPopulated,
-    /// Data is mmap'd, residency managed by OS page cache.
-    MmapCached,
-    /// Data lives on disk, accessed via io_uring or read() syscalls.
+    /// Data is in RAM and expected to stay there.
+    Pinned,
+    /// Data may or may not be in RAM, residency managed by OS page cache.
+    Cached,
+    /// Data is on disk, not expected to be in RAM.
     OnDisk,
 }
 

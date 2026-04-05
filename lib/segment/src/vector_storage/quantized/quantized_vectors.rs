@@ -1993,7 +1993,7 @@ impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
         {
             // Data is in RAM: either always_ram config is set,
             // or storage is a RAM variant.
-            FileStorageIntent::PinnedInRam
+            FileStorageIntent::Pinned
         } else {
             // On-disk quantization: mmap'd but not populated into RAM.
             FileStorageIntent::OnDisk

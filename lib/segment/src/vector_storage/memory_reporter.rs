@@ -13,11 +13,11 @@ fn from_files_with_on_disk(files: Vec<PathBuf>, is_on_disk: bool) -> ComponentMe
     let intent = if is_on_disk {
         // Files are mmap'd but not expected to be fully resident
         // (no populate, or explicitly on-disk).
-        FileStorageIntent::MmapCached
+        FileStorageIntent::OnDisk
     } else {
         // Files are mmap'd and populated into RAM on load,
         // expected to be fully resident.
-        FileStorageIntent::MmapPopulated
+        FileStorageIntent::Cached
     };
     ComponentMemoryUsage::from_files(files, intent)
 }
