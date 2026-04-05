@@ -61,6 +61,21 @@ impl ComponentMemoryUsage {
             extra_ram_bytes: None,
         }
     }
+
+    /// Report files with a uniform intent plus additional non-file RAM.
+    pub fn from_files_and_ram(
+        paths: Vec<PathBuf>,
+        intent: FileStorageIntent,
+        extra_ram_bytes: u64,
+    ) -> Self {
+        Self {
+            files: paths
+                .into_iter()
+                .map(|path| ComponentFileEntry { path, intent })
+                .collect(),
+            extra_ram_bytes: Some(extra_ram_bytes),
+        }
+    }
 }
 
 /// Trait for components to report their memory footprint.
