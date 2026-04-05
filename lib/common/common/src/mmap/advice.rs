@@ -197,7 +197,7 @@ fn populate_simple(slice: &[u8]) {
 /// Note: if the region fits within a single page, this function is a no-op.
 #[cfg(unix)]
 pub fn will_need_multiple_pages(region: &[u8]) {
-    let Some(page_mask) = *PAGE_SIZE_MASK else {
+    let Some(page_mask) = page_size().map(|s| s - 1) else {
         return;
     };
 
@@ -226,22 +226,28 @@ pub fn will_need_multiple_pages(region: &[u8]) {
 #[cfg(not(unix))]
 pub fn will_need_multiple_pages(_region: &[u8]) {}
 
-/// Page size mask. Typically 0xfff for 4KiB pages.
+/// Returns the system page size in bytes, or `None` if it could not be determined.
+///
+/// Cached after first call. Typically 4096 on x86_64, 16384 on aarch64 macOS.
 #[cfg(unix)]
-static PAGE_SIZE_MASK: std::sync::LazyLock<Option<usize>> =
-    std::sync::LazyLock::new(|| get_page_mask().inspect_err(|err| log::warn!("{err}")).ok());
+pub fn page_size() -> Option<usize> {
+    *CACHED_PAGE_SIZE
+}
+
+/// System page size. Must be a power of two.
+#[cfg(unix)]
+static CACHED_PAGE_SIZE: std::sync::LazyLock<Option<usize>> =
+    std::sync::LazyLock::new(|| get_page_size().inspect_err(|err| log::warn!("{err}")).ok());
 
 #[cfg(unix)]
-fn get_page_mask() -> Result<usize, String> {
+fn get_page_size() -> Result<usize, String> {
     let page_size = nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)
         .map_err(|err| format!("Failed to get page size: {err}"))?
         .ok_or_else(|| "sysconf(PAGE_SIZE) returned None".to_string())?;
     let page_size = usize::try_from(page_size)
         .map_err(|_| format!("Failed to convert page size {page_size} to usize"))?;
     if !page_size.is_power_of_two() {
-        // Assuming that page size is a power of two (which is true for all
-        // known platforms) simplifies computations.
         return Err(format!("Page size {page_size} is not a power of two"));
     }
-    Ok(page_size - 1)
+    Ok(page_size)
 }

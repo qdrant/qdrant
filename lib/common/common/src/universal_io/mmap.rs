@@ -169,6 +169,75 @@ fn open_mmap(path: &Path, write: bool, populate: bool, advice: AdviceSetting) ->
 }
 
 impl MmapFile {
+    /// Returns the path of the underlying file.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns total file size on disk in bytes.
+    pub fn disk_bytes(&self) -> std::io::Result<u64> {
+        Ok(fs::metadata(&self.path)?.len())
+    }
+
+    /// Returns the number of bytes currently resident in RAM (page cache),
+    /// measured via `mincore`. This is a point-in-time approximation.
+    #[cfg(unix)]
+    pub fn resident_bytes(&self) -> std::io::Result<u64> {
+        let len = self.mmap.len();
+        if len == 0 {
+            return Ok(0);
+        }
+
+        let page_size = crate::mmap::advice::page_size().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::Other, "failed to determine page size")
+        })?;
+        let num_pages = (len + page_size - 1) / page_size;
+        let mut vec = vec![0u8; num_pages];
+
+        // SAFETY: `self.mmap.as_ptr()` is a valid page-aligned pointer for `len` bytes
+        // (guaranteed by memmap2). `vec` is correctly sized for `num_pages` entries.
+        let ret = unsafe {
+            nix::libc::mincore(
+                self.mmap.as_ptr() as *mut nix::libc::c_void,
+                len,
+                vec.as_mut_ptr(),
+            )
+        };
+        if ret != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        // `mincore` writes one byte per page. The least significant bit indicates
+        // whether the page is currently resident in RAM (page cache).
+        // See: https://man7.org/linux/man-pages/man2/mincore.2.html
+        let resident_pages = vec.iter().filter(|&&b| b & 1 != 0).count();
+        let resident_bytes = (resident_pages * page_size).min(len) as u64;
+        Ok(resident_bytes)
+    }
+
+    /// Opens a file as a read-only `MmapFile` and returns its memory stats.
+    ///
+    /// This creates a temporary `MmapFile` to measure `mincore` residency,
+    /// ensuring all measurements go through the same mmap path.
+    #[cfg(unix)]
+    pub fn probe_memory_stats(path: impl AsRef<Path>) -> std::io::Result<(u64, u64)> {
+        let file: Self = <Self as UniversalRead<u8>>::open(
+            path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                disk_parallel: None,
+                populate: Some(false),
+                advice: Some(AdviceSetting::Advice(Advice::Normal)),
+                prevent_caching: None,
+            },
+        )
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let disk_bytes = file.disk_bytes()?;
+        let resident_bytes = file.resident_bytes()?;
+        Ok((disk_bytes, resident_bytes))
+    }
+
     fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
         let mmap = if P::IS_SEQUENTIAL {
             self.mmap_seq.as_ref().unwrap_or(&self.mmap)
