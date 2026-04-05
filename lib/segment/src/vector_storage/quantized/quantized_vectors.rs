@@ -614,6 +614,15 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
+            VectorStorageEnum::EmptyDense(v) => Self::create_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::EmptySparse(_) => Err(OperationError::WrongSparse),
         }
     }
 

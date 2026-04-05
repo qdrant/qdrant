@@ -191,6 +191,19 @@ pub(crate) fn open_vector_storage(
             AdviceSetting::from(Advice::Normal),
             true,
         ),
+
+        // Empty placeholder storage, no files on disk
+        VectorStorageType::Empty => {
+            use crate::vector_storage::dense::empty_dense_vector_storage::new_empty_dense_vector_storage;
+            Ok(new_empty_dense_vector_storage(
+                vector_config.size,
+                vector_config.distance,
+                vector_config.datatype.unwrap_or_default(),
+                vector_config.storage_type.is_on_disk(),
+                vector_config.multivector_config,
+                0, // num_points set after id_tracker is loaded
+            ))
+        }
     }
 }
 
@@ -370,6 +383,10 @@ pub(crate) fn create_sparse_vector_storage(
         SparseVectorStorageType::Mmap => {
             let mmap_storage = MmapSparseVectorStorage::open_or_create(path)?;
             Ok(VectorStorageEnum::SparseMmap(mmap_storage))
+        }
+        SparseVectorStorageType::Empty => {
+            use crate::vector_storage::sparse::empty_sparse_vector_storage::new_empty_sparse_vector_storage;
+            Ok(new_empty_sparse_vector_storage(0))
         }
     }
 }

@@ -100,7 +100,9 @@ impl ConfigMismatchOptimizer {
                         }
                     }
 
-                    if let Some(is_required_on_disk) = self.check_if_vectors_on_disk(vector_name)
+                    if !vector_data.storage_type.is_empty()
+                        && let Some(is_required_on_disk) =
+                            self.check_if_vectors_on_disk(vector_name)
                         && is_required_on_disk != vector_data.storage_type.is_on_disk()
                     {
                         return true;

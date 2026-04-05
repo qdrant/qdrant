@@ -92,6 +92,8 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => {
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
+        VectorStorageEnum::EmptyDense(vs) => raw_scorer_impl(query, vs, hc),
+        VectorStorageEnum::EmptySparse(vs) => raw_sparse_scorer_impl(query, vs, hc),
     }
 }
 
