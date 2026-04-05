@@ -10,6 +10,7 @@ pub mod query;
 pub mod query_scorer;
 pub mod raw_scorer;
 pub mod sparse;
+mod memory_reporter;
 mod vector_storage_base;
 pub mod volatile_chunked_vectors;
 
