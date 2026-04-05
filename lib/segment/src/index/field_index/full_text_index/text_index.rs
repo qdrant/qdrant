@@ -345,6 +345,15 @@ impl FullTextIndex {
             })
     }
 
+    /// Approximate RAM usage in bytes for in-memory structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            FullTextIndex::Mutable(index) => index.ram_usage_bytes(),
+            FullTextIndex::Immutable(index) => index.ram_usage_bytes(),
+            FullTextIndex::Mmap(_) => 0,
+        }
+    }
+
     pub fn is_on_disk(&self) -> bool {
         match self {
             FullTextIndex::Mutable(_) => false,

@@ -13,6 +13,7 @@ pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,
     // Backing storage, source of state, persists deletions
     pub(super) storage: Storage,
+    cached_ram_usage_bytes: usize,
 }
 
 pub(super) enum Storage {
@@ -29,10 +30,13 @@ impl ImmutableFullTextIndex {
             log::warn!("Failed to clear mmap cache of ram mmap full text index: {err}");
         }
 
-        Self {
+        let mut result = Self {
             inverted_index,
             storage: Storage::Mmap(Box::new(index)),
-        }
+            cached_ram_usage_bytes: 0,
+        };
+        result.cached_ram_usage_bytes = result.inverted_index.ram_usage_bytes();
+        result
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) {
@@ -87,5 +91,10 @@ impl ImmutableFullTextIndex {
                 is_on_disk: index.is_on_disk(),
             },
         }
+    }
+
+    /// Approximate RAM usage in bytes (cached at construction).
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.cached_ram_usage_bytes
     }
 }

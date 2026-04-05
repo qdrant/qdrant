@@ -440,4 +440,37 @@ where
             Storage::Gridstore(_) => StorageType::Gridstore,
         }
     }
+
+    /// Approximate RAM usage in bytes for in-memory index structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            storage: _,  // disk-backed, accounted via files
+            in_memory_index,
+        } = self;
+        in_memory_index.ram_usage_bytes()
+    }
+}
+
+impl<T: Encodable + Numericable> InMemoryNumericIndex<T> {
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            map,
+            histogram,
+            points_count: _,       // scalar
+            max_values_per_point: _, // scalar
+            point_to_values,
+        } = self;
+
+        // BTreeSet: ~3 pointers overhead per entry
+        let btree_entry_overhead = std::mem::size_of::<usize>() * 3;
+        let map_bytes = map.len() * (std::mem::size_of::<Point<T>>() + btree_entry_overhead);
+        let histogram_bytes = histogram.ram_usage_bytes();
+        let ptv_bytes: usize = point_to_values.capacity() * std::mem::size_of::<Vec<T>>()
+            + point_to_values
+                .iter()
+                .map(|v| v.capacity() * std::mem::size_of::<T>())
+                .sum::<usize>();
+        map_bytes + histogram_bytes + ptv_bytes
+    }
 }

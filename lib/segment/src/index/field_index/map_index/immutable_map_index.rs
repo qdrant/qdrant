@@ -28,6 +28,7 @@ pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
     values_count: usize,
     // Backing storage, source of state, persists deletions
     storage: Storage<N>,
+    cached_ram_usage_bytes: usize,
 }
 
 enum Storage<N: MapIndexKey + Key + ?Sized> {
@@ -122,7 +123,7 @@ where
             log::warn!("Failed to clear mmap cache of ram mmap map index: {err}");
         }
 
-        Self {
+        let mut result = Self {
             value_to_points,
             value_to_points_container,
             deleted_value_to_points_container: BitVec::new(),
@@ -130,7 +131,10 @@ where
             indexed_points,
             values_count,
             storage: Storage::Mmap(Box::new(index)),
-        }
+            cached_ram_usage_bytes: 0,
+        };
+        result.cached_ram_usage_bytes = result.compute_ram_usage_bytes();
+        result
     }
 
     /// Return mutable slice of a container which holds point_ids for given value.
@@ -380,5 +384,44 @@ where
                 is_on_disk: index.is_on_disk(),
             },
         }
+    }
+
+    /// Approximate RAM usage in bytes for in-memory structures.
+    /// Approximate RAM usage in bytes (cached at construction).
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.cached_ram_usage_bytes
+    }
+
+    fn compute_ram_usage_bytes(&self) -> usize {
+        let Self {
+            value_to_points,
+            value_to_points_container,
+            deleted_value_to_points_container,
+            point_to_values,
+            indexed_points: _,
+            values_count: _,
+            storage: _,
+            cached_ram_usage_bytes: _,
+        } = self;
+
+        let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
+        let vtp_base_bytes: usize = value_to_points.capacity()
+            * (std::mem::size_of::<<N as MapIndexKey>::Owned>()
+                + std::mem::size_of::<ContainerSegment>()
+                + hashmap_entry_overhead);
+        // Account for heap-allocated key data (e.g., long strings)
+        let vtp_heap_bytes: usize = value_to_points
+            .keys()
+            .map(|k| N::owned_heap_bytes(k))
+            .sum();
+        let container_bytes =
+            value_to_points_container.capacity() * std::mem::size_of::<PointOffsetType>();
+        let deleted_bytes =
+            deleted_value_to_points_container.capacity() / u8::BITS as usize;
+        vtp_base_bytes
+            + vtp_heap_bytes
+            + container_bytes
+            + deleted_bytes
+            + point_to_values.ram_usage_bytes()
     }
 }

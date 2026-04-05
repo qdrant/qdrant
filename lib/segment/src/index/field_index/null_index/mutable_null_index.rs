@@ -193,6 +193,21 @@ impl MutableNullIndex {
     pub fn populate(&self) -> OperationResult<()> {
         Ok(())
     }
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            base_dir: _,
+            storage,
+            total_point_count: _,
+        } = self;
+        let Storage {
+            has_values_flags,
+            is_null_flags,
+        } = storage;
+        has_values_flags.get_bitmap().serialized_size()
+            + is_null_flags.get_bitmap().serialized_size()
+    }
+
     pub fn is_on_disk(&self) -> bool {
         false
     }

@@ -14,9 +14,7 @@ use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::immutable_text_index::{
-    ImmutableFullTextIndex, Storage,
-};
+use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 pub struct MmapFullTextIndex {
@@ -211,10 +209,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let text_index = if is_on_disk {
             FullTextIndex::Mmap(Box::new(mmap_index))
         } else {
-            FullTextIndex::Immutable(ImmutableFullTextIndex {
-                inverted_index: immutable,
-                storage: Storage::Mmap(Box::new(mmap_index)),
-            })
+            FullTextIndex::Immutable(ImmutableFullTextIndex::open_mmap(mmap_index))
         };
 
         Ok(text_index)

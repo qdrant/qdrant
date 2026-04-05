@@ -749,4 +749,17 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
             self.borders.insert(new_border, new_border_count);
         }
     }
+
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            max_bucket_size: _,
+            precision: _,
+            total_count: _,
+            borders,
+        } = self;
+
+        let btree_entry_overhead = std::mem::size_of::<usize>() * 3;
+        borders.len() * (std::mem::size_of::<Point<T>>() + std::mem::size_of::<Counts>() + btree_entry_overhead)
+    }
 }

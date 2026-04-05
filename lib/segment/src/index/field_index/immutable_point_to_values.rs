@@ -44,6 +44,16 @@ pub struct ImmutablePointToValues<N: Default> {
 }
 
 impl<N: Default> ImmutablePointToValues<N> {
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            point_entries,
+            values_container,
+        } = self;
+        point_entries.capacity() * std::mem::size_of::<PointValueEntry<N>>()
+            + values_container.capacity() * std::mem::size_of::<N>()
+    }
+
     pub fn new(src: Vec<Vec<N>>) -> Self {
         let mut point_entries = Vec::with_capacity(src.len());
 

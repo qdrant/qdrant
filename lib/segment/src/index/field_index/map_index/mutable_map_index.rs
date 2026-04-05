@@ -312,4 +312,28 @@ where
             Storage::Gridstore(_) => StorageType::Gridstore,
         }
     }
+
+    /// Approximate RAM usage in bytes for in-memory index structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            map,
+            point_to_values,
+            indexed_points: _,
+            values_count: _,
+            storage: _,  // disk-backed, accounted via files
+        } = self;
+
+        let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
+        let map_base_bytes = map.capacity()
+            * (std::mem::size_of::<<N as MapIndexKey>::Owned>() + hashmap_entry_overhead);
+        let map_bitmap_bytes: usize = map.values().map(|bitmap| bitmap.serialized_size()).sum();
+        let map_bytes = map_base_bytes + map_bitmap_bytes;
+        let ptv_bytes: usize = point_to_values.capacity()
+            * std::mem::size_of::<Vec<<N as MapIndexKey>::Owned>>()
+            + point_to_values
+                .iter()
+                .map(|v| v.capacity() * std::mem::size_of::<<N as MapIndexKey>::Owned>())
+                .sum::<usize>();
+        map_bytes + ptv_bytes
+    }
 }

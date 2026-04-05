@@ -406,6 +406,23 @@ impl FieldIndex {
         }
     }
 
+    /// Approximate RAM usage in bytes for in-memory index structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            FieldIndex::IntIndex(index) => index.inner().ram_usage_bytes(),
+            FieldIndex::DatetimeIndex(index) => index.inner().ram_usage_bytes(),
+            FieldIndex::IntMapIndex(index) => index.ram_usage_bytes(),
+            FieldIndex::KeywordIndex(index) => index.ram_usage_bytes(),
+            FieldIndex::FloatIndex(index) => index.inner().ram_usage_bytes(),
+            FieldIndex::GeoIndex(index) => index.ram_usage_bytes(),
+            FieldIndex::BoolIndex(index) => index.ram_usage_bytes(),
+            FieldIndex::FullTextIndex(index) => index.ram_usage_bytes(),
+            FieldIndex::UuidIndex(index) => index.inner().ram_usage_bytes(),
+            FieldIndex::UuidMapIndex(index) => index.ram_usage_bytes(),
+            FieldIndex::NullIndex(index) => index.ram_usage_bytes(),
+        }
+    }
+
     pub fn is_on_disk(&self) -> bool {
         match self {
             FieldIndex::IntIndex(index) => index.is_on_disk(),

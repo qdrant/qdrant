@@ -483,3 +483,25 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
         }
     }
 }
+
+impl ImmutableInvertedIndex {
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            postings,
+            vocab,
+            point_to_tokens_count,
+            points_count: _,
+        } = self;
+
+        let postings_bytes = postings.ram_usage_bytes();
+        // HashMap per-slot overhead: hash (u64) + metadata pointer
+        let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
+        let vocab_base_bytes = vocab.capacity()
+            * (std::mem::size_of::<String>() + std::mem::size_of::<TokenId>() + hashmap_entry_overhead);
+        // Account for actual heap-allocated string data
+        let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
+        let pttc_bytes = point_to_tokens_count.capacity() * std::mem::size_of::<usize>();
+        postings_bytes + vocab_base_bytes + vocab_heap_bytes + pttc_bytes
+    }
+}

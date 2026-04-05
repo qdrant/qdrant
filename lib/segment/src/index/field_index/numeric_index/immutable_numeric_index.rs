@@ -24,6 +24,28 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + StoredValue + Defa
     point_to_values: ImmutablePointToValues<T>,
     // Backing storage, source of state, persists deletions
     storage: Storage<T>,
+    cached_ram_usage_bytes: usize,
+}
+
+impl<T: Encodable + Numericable + StoredValue + Default> ImmutableNumericIndex<T> {
+    /// Approximate RAM usage in bytes for in-memory structures (cached at construction).
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.cached_ram_usage_bytes
+    }
+
+    fn compute_ram_usage_bytes(&self) -> usize {
+        let Self {
+            map,
+            histogram,
+            points_count: _,
+            max_values_per_point: _,
+            point_to_values,
+            storage: _,
+            cached_ram_usage_bytes: _,
+        } = self;
+
+        map.ram_usage_bytes() + histogram.ram_usage_bytes() + point_to_values.ram_usage_bytes()
+    }
 }
 
 enum Storage<T: Encodable + Numericable + StoredValue + Default> {
@@ -43,6 +65,16 @@ pub(super) struct NumericKeySortedVecIterator<'a, T: Encodable + Numericable> {
 }
 
 impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
+    pub(super) fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            data,
+            deleted,
+            deleted_count: _,
+        } = self;
+        data.capacity() * std::mem::size_of::<Point<T>>()
+            + deleted.capacity() / u8::BITS as usize
+    }
+
     fn from_btree_set(map: BTreeSet<Point<T>>) -> Self {
         Self {
             deleted: BitVec::repeat(false, map.len()),
@@ -164,14 +196,17 @@ where
             log::warn!("Failed to clear mmap cache of ram mmap numeric index: {err}");
         }
 
-        Self {
+        let mut result = Self {
             map: NumericKeySortedVec::from_btree_set(map),
             histogram,
             points_count,
             max_values_per_point,
             point_to_values: ImmutablePointToValues::new(point_to_values),
             storage: Storage::Mmap(Box::new(index)),
-        }
+            cached_ram_usage_bytes: 0,
+        };
+        result.cached_ram_usage_bytes = result.compute_ram_usage_bytes();
+        result
     }
 
     #[inline]

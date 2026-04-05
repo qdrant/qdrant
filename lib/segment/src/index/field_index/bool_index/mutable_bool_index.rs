@@ -252,6 +252,23 @@ impl MutableBoolIndex {
         .collect()
     }
 
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            base_dir: _,
+            indexed_count: _,
+            trues_count: _,
+            falses_count: _,
+            storage,
+        } = self;
+        let Storage {
+            trues_flags,
+            falses_flags,
+        } = storage;
+        trues_flags.get_bitmap().serialized_size()
+            + falses_flags.get_bitmap().serialized_size()
+    }
+
     pub fn is_on_disk(&self) -> bool {
         false
     }

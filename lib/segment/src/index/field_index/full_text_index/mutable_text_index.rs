@@ -262,6 +262,19 @@ impl ValueIndexer for MutableFullTextIndex {
     }
 }
 
+impl MutableFullTextIndex {
+    /// Approximate RAM usage in bytes for in-memory structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            inverted_index,
+            config: _,
+            storage: _,
+            tokenizer: _,
+        } = self;
+        inverted_index.ram_usage_bytes()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::Builder;

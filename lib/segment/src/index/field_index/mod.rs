@@ -8,6 +8,7 @@ use crate::types::{Condition, FieldCondition, PointIdType, VectorNameBuf};
 pub mod bool_index;
 pub(super) mod facet_index;
 mod field_index_base;
+mod memory_reporter;
 pub mod full_text_index;
 pub mod geo_hash;
 pub mod geo_index;

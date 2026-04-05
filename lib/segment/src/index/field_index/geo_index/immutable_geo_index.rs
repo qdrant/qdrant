@@ -44,8 +44,9 @@ pub struct ImmutableGeoMapIndex {
     points_count: usize,
     points_values_count: usize,
     max_values_per_point: usize,
-    // Backing s torage, source of state, persists deletions
+    // Backing storage, source of state, persists deletions
     storage: Storage,
+    cached_ram_usage_bytes: usize,
 }
 
 enum Storage {
@@ -135,6 +136,7 @@ impl ImmutableGeoMapIndex {
             points_values_count: index.points_values_count(),
             max_values_per_point: index.max_values_per_point(),
             storage: Storage::Mmap(Box::new(index)),
+            cached_ram_usage_bytes: 0,
         };
 
         // Update point and value counts based on deleted points
@@ -153,6 +155,7 @@ impl ImmutableGeoMapIndex {
             index.decrement_hash_point_counts(&removed_geo_hashes);
         }
 
+        index.cached_ram_usage_bytes = index.compute_ram_usage_bytes();
         Ok(index)
     }
 
@@ -358,5 +361,33 @@ impl ImmutableGeoMapIndex {
                 is_on_disk: index.is_on_disk(),
             },
         }
+    }
+
+    /// Approximate RAM usage in bytes (cached at construction).
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.cached_ram_usage_bytes
+    }
+
+    fn compute_ram_usage_bytes(&self) -> usize {
+        let Self {
+            counts_per_hash,
+            points_map,
+            point_to_values,
+            points_count: _,
+            points_values_count: _,
+            max_values_per_point: _,
+            storage: _,
+            cached_ram_usage_bytes: _,
+        } = self;
+
+        let cph_bytes = counts_per_hash.capacity() * std::mem::size_of::<Counts>();
+        let hashset_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
+        let pm_bytes: usize = points_map.capacity()
+            * std::mem::size_of::<(GeoHash, AHashSet<PointOffsetType>)>()
+            + points_map
+                .iter()
+                .map(|(_, set)| set.capacity() * (std::mem::size_of::<PointOffsetType>() + hashset_entry_overhead))
+                .sum::<usize>();
+        cph_bytes + pm_bytes + point_to_values.ram_usage_bytes()
     }
 }

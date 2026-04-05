@@ -31,6 +31,22 @@ impl ImmutablePostings {
         }
     }
 
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        use common::types::PointOffsetType;
+
+        match self {
+            ImmutablePostings::Ids(lists) => {
+                lists.capacity() * std::mem::size_of::<PostingList<()>>()
+                    + lists.iter().map(|p| p.len() * std::mem::size_of::<PointOffsetType>()).sum::<usize>()
+            }
+            ImmutablePostings::WithPositions(lists) => {
+                lists.capacity() * std::mem::size_of::<PostingList<Positions>>()
+                    + lists.iter().map(|p| p.len() * (std::mem::size_of::<PointOffsetType>() + std::mem::size_of::<Positions>())).sum::<usize>()
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn iter_ids(
         &self,

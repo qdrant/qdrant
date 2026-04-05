@@ -446,6 +446,15 @@ where
         }
     }
 
+    /// Approximate RAM usage in bytes for in-memory structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            NumericIndexInner::Mutable(index) => index.ram_usage_bytes(),
+            NumericIndexInner::Immutable(index) => index.ram_usage_bytes(),
+            NumericIndexInner::Mmap(_) => 0, // mmap-backed, accounted via files
+        }
+    }
+
     pub fn is_on_disk(&self) -> bool {
         match self {
             NumericIndexInner::Mutable(_) => false,

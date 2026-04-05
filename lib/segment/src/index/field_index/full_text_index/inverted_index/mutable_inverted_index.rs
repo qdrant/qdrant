@@ -280,3 +280,30 @@ impl InvertedIndex for MutableInvertedIndex {
         self.vocab.get(token).copied()
     }
 }
+
+impl MutableInvertedIndex {
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            postings,
+            vocab,
+            point_to_tokens,
+            point_to_doc,
+            points_count: _,
+        } = self;
+
+        // PostingList contains compressed data, approximate by element count
+        let postings_bytes: usize = postings.capacity() * std::mem::size_of::<PostingList>()
+            + postings.iter().map(|p| p.len() * std::mem::size_of::<PointOffsetType>()).sum::<usize>();
+        let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
+        let string_stack_size = std::mem::size_of::<String>();
+        let vocab_bytes: usize = vocab.capacity()
+            * (string_stack_size + std::mem::size_of::<TokenId>() + hashmap_entry_overhead);
+        let ptt_bytes = point_to_tokens.capacity() * std::mem::size_of::<Option<TokenSet>>();
+        let ptd_bytes = point_to_doc
+            .as_ref()
+            .map(|v| v.capacity() * std::mem::size_of::<Option<Document>>())
+            .unwrap_or(0);
+        postings_bytes + vocab_bytes + ptt_bytes + ptd_bytes
+    }
+}

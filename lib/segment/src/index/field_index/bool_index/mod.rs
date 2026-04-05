@@ -76,6 +76,12 @@ impl BoolIndex {
         }
     }
 
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            BoolIndex::Mmap(index) => index.ram_usage_bytes(),
+        }
+    }
+
     pub fn is_on_disk(&self) -> bool {
         match self {
             BoolIndex::Mmap(index) => index.is_on_disk(),

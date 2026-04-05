@@ -300,6 +300,15 @@ impl GeoMapIndex {
         self.values_count(idx) == 0
     }
 
+    /// Approximate RAM usage in bytes for in-memory structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            GeoMapIndex::Mutable(index) => index.ram_usage_bytes(),
+            GeoMapIndex::Immutable(index) => index.ram_usage_bytes(),
+            GeoMapIndex::Storage(_) => 0,
+        }
+    }
+
     pub fn is_on_disk(&self) -> bool {
         match self {
             GeoMapIndex::Mutable(_) => false,

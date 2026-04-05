@@ -60,6 +60,12 @@ pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug {
     fn gridstore_block_size() -> usize {
         size_of::<<Self as MapIndexKey>::Owned>()
     }
+
+    /// Extra heap bytes for an owned value beyond `size_of::<Owned>()`.
+    /// Override for types with heap allocations (e.g., strings).
+    fn owned_heap_bytes(_value: &<Self as MapIndexKey>::Owned) -> usize {
+        0
+    }
 }
 
 impl MapIndexKey for str {
@@ -71,6 +77,16 @@ impl MapIndexKey for str {
 
     fn gridstore_block_size() -> usize {
         BLOCK_SIZE_KEYWORD
+    }
+
+    fn owned_heap_bytes(value: &<Self as MapIndexKey>::Owned) -> usize {
+        // EcoString inlines strings up to INLINE_LIMIT bytes.
+        // Longer strings are heap-allocated.
+        if value.len() > EcoString::INLINE_LIMIT {
+            value.len()
+        } else {
+            0
+        }
     }
 }
 
@@ -480,6 +496,15 @@ where
                 .unique()
                 .map(Ok),
         )
+    }
+
+    /// Approximate RAM usage in bytes for in-memory structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            MapIndex::Mutable(index) => index.ram_usage_bytes(),
+            MapIndex::Immutable(index) => index.ram_usage_bytes(),
+            MapIndex::Mmap(_) => 0,
+        }
     }
 
     pub fn is_on_disk(&self) -> bool {
