@@ -74,6 +74,16 @@ impl ComponentMemoryUsage {
             extra_ram_bytes: Some(extra_ram_bytes),
         }
     }
+
+    /// Merge another report into this one (concatenate files, sum RAM).
+    pub fn merge(&mut self, other: &ComponentMemoryUsage) {
+        self.files.extend(other.files.iter().cloned());
+        match (self.extra_ram_bytes, other.extra_ram_bytes) {
+            (Some(a), Some(b)) => self.extra_ram_bytes = Some(a + b),
+            (None, Some(b)) => self.extra_ram_bytes = Some(b),
+            _ => {}
+        }
+    }
 }
 
 /// Trait for components to report their memory footprint.
