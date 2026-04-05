@@ -24,7 +24,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    VectorName, VectorNameBuf, VectorNameConfig, WithPayload, WithVector,
 };
 
 /// Define all operations on segment that do not require mutable access.
@@ -371,6 +371,27 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
 
         self.apply_field_index(op_num, key.to_owned(), schema, indexes)
     }
+
+    /// Create a new named vector in the segment.
+    /// For appendable segments: creates a real, writable vector storage + plain index.
+    /// For immutable segments: creates a placeholder (empty) vector storage.
+    /// Returns Ok(false) if the vector already exists (idempotent).
+    fn create_vector_name(
+        &mut self,
+        op_num: SeqNumberType,
+        vector_name: &VectorName,
+        vector_config: &VectorNameConfig,
+    ) -> OperationResult<bool>;
+
+    /// Delete a named vector from the segment.
+    /// Removes vector storage, index, and quantization data.
+    /// Removes the vector from segment config.
+    /// Returns Ok(false) if the vector does not exist (idempotent).
+    fn delete_vector_name(
+        &mut self,
+        op_num: SeqNumberType,
+        vector_name: &VectorName,
+    ) -> OperationResult<bool>;
 }
 
 /// Define mutable operations which can be performed with Segment or Segment-like entity.

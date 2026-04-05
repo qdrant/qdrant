@@ -1,3 +1,5 @@
+mod test_vector_name_ops;
+
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;

@@ -36,7 +36,8 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
     PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentType, SeqNumberType, VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
+    SegmentType, SeqNumberType, VectorDataInfo, VectorName, VectorNameBuf, VectorNameConfig,
+    WithPayload, WithVector,
 };
 use crate::vector_storage::VectorStorage;
 
@@ -969,6 +970,27 @@ impl NonAppendableSegmentEntry for Segment {
                 .set_payload_index_schema(&key, Some(op_num));
 
             Ok(true)
+        })
+    }
+
+    fn create_vector_name(
+        &mut self,
+        op_num: SeqNumberType,
+        vector_name: &VectorName,
+        vector_config: &VectorNameConfig,
+    ) -> OperationResult<bool> {
+        self.handle_segment_version_and_failure(op_num, |segment| {
+            segment.create_vector_name_impl(op_num, vector_name, vector_config)
+        })
+    }
+
+    fn delete_vector_name(
+        &mut self,
+        op_num: SeqNumberType,
+        vector_name: &VectorName,
+    ) -> OperationResult<bool> {
+        self.handle_segment_version_and_failure(op_num, |segment| {
+            segment.delete_vector_name_impl(op_num, vector_name)
         })
     }
 }

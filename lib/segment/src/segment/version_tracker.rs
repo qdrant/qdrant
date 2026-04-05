@@ -27,6 +27,11 @@ pub struct VersionTracker {
     /// E.g., payload index can be created *after* immutable segment is created, and so we have to
     /// track payload index schema version separately from `Segment::initial_version`.
     payload_index_schema: HashMap<JsonPath, SeqNumberType>,
+
+    /// Tracks version of named vector schema changes (create/delete named vectors).
+    /// Similar to `payload_index_schema`, named vectors can be added or removed on
+    /// immutable segments, so their schema changes need to be tracked separately.
+    vector_names_schema: HashMap<VectorNameBuf, SeqNumberType>,
 }
 
 impl VersionTracker {
@@ -52,6 +57,18 @@ impl VersionTracker {
 
     pub fn set_payload_index_schema(&mut self, field: &JsonPath, version: Option<SeqNumberType>) {
         bump_key(&mut self.payload_index_schema, field, version)
+    }
+
+    pub fn get_vector_names_schema(&self, vector_name: &str) -> Option<SeqNumberType> {
+        self.vector_names_schema.get(vector_name).copied()
+    }
+
+    pub fn set_vector_names_schema(
+        &mut self,
+        vector_name: &str,
+        version: Option<SeqNumberType>,
+    ) {
+        bump_key(&mut self.vector_names_schema, vector_name, version)
     }
 }
 

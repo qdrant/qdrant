@@ -1807,6 +1807,14 @@ impl SparseVectorDataConfig {
     }
 }
 
+/// Unified config for creating a named vector (dense or sparse) on an existing segment.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VectorNameConfig {
+    Dense(VectorDataConfig),
+    Sparse(SparseVectorDataConfig),
+}
+
 /// Default value based on experiments and observations
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 10_000;
 

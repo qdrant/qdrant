@@ -887,4 +887,27 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
         Ok(true)
     }
+
+    fn create_vector_name(
+        &mut self,
+        _op_num: SeqNumberType,
+        _vector_name: &VectorName,
+        _vector_config: &VectorNameConfig,
+    ) -> OperationResult<bool> {
+        // TODO: Track vector name changes for propagation (Step 3)
+        Err(OperationError::service_error(
+            "Creating named vectors through proxy segment is not yet supported",
+        ))
+    }
+
+    fn delete_vector_name(
+        &mut self,
+        _op_num: SeqNumberType,
+        _vector_name: &VectorName,
+    ) -> OperationResult<bool> {
+        // TODO: Track vector name changes for propagation (Step 3)
+        Err(OperationError::service_error(
+            "Deleting named vectors through proxy segment is not yet supported",
+        ))
+    }
 }
