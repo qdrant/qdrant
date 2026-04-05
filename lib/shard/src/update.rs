@@ -16,7 +16,7 @@ use segment::types::{
     SeqNumberType, VectorNameBuf, WithPayload, WithVector,
 };
 
-use crate::operations::FieldIndexOperations;
+use crate::operations::{FieldIndexOperations, VectorNameOperations};
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointOperations, PointStructPersisted, UpdateMode,
@@ -953,6 +953,33 @@ pub fn delete_field_index(
     segments.apply_segments(|write_segment| {
         write_segment.with_upgraded(|segment| segment.delete_field_index(op_num, field_name))
     })
+}
+
+pub fn process_vector_name_operation(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    vector_name_operation: &VectorNameOperations,
+) -> OperationResult<usize> {
+    match vector_name_operation {
+        VectorNameOperations::CreateVectorName(create_data) => {
+            // Convert shard API config to segment internal config.
+            // Use on_disk=false as default; the optimizer will migrate to on-disk
+            // storage if the collection config requires it.
+            let internal_config = create_data.config.to_internal(false);
+            segments.apply_segments(|write_segment| {
+                write_segment.with_upgraded(|segment| {
+                    segment.create_vector_name(op_num, &create_data.vector_name, &internal_config)
+                })
+            })
+        }
+        VectorNameOperations::DeleteVectorName(delete_data) => {
+            segments.apply_segments(|write_segment| {
+                write_segment.with_upgraded(|segment| {
+                    segment.delete_vector_name(op_num, &delete_data.vector_name)
+                })
+            })
+        }
+    }
 }
 
 fn select_excluded_by_filter_ids(

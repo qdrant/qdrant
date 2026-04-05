@@ -295,7 +295,8 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
                 manage: false,
                 extras: false,
             },
-            CollectionUpdateOperations::FieldIndexOperation(_) => AccessRequirements {
+            CollectionUpdateOperations::FieldIndexOperation(_)
+            | CollectionUpdateOperations::VectorNameOperation(_) => AccessRequirements {
                 write: true,
                 manage: true,
                 extras: true,
@@ -687,6 +688,9 @@ mod tests_ops {
             CollectionUpdateOperationsDiscriminants::FieldIndexOperation => {
                 check_collection_update_operations_field_index()
             }
+            CollectionUpdateOperationsDiscriminants::VectorNameOperation => {
+                check_collection_update_operations_vector_name()
+            }
             #[cfg(feature = "staging")]
             CollectionUpdateOperationsDiscriminants::StagingOperation => {
                 use shard::operations::staging::{StagingOperations, TestDelayOperation};
@@ -892,6 +896,45 @@ mod tests_ops {
             };
 
             let op = CollectionUpdateOperations::FieldIndexOperation(inner);
+            assert_allowed(&op, &Access::Global(GlobalAccessMode::Manage));
+            assert_forbidden(&op, &Access::Global(GlobalAccessMode::Read));
+            assert_forbidden(&op, &AccessCollectionBuilder::new().add("col", true).into());
+            assert_forbidden(
+                &op,
+                &AccessCollectionBuilder::new().add("col", false).into(),
+            );
+        }
+    }
+
+    /// Tests for [`CollectionUpdateOperations::VectorNameOperation`].
+    fn check_collection_update_operations_vector_name() {
+        use segment::types::Distance;
+        use shard::operations::vector_name_ops::{
+            DenseVectorNameConfig, VectorNameConfig, VectorNameOperationsDiscriminants,
+        };
+        use shard::operations::{CreateVectorName, DeleteVectorName, VectorNameOperations};
+
+        for discr in VectorNameOperationsDiscriminants::iter() {
+            let inner = match discr {
+                VectorNameOperationsDiscriminants::CreateVectorName => {
+                    VectorNameOperations::CreateVectorName(CreateVectorName {
+                        vector_name: "test".into(),
+                        config: VectorNameConfig::Dense(DenseVectorNameConfig {
+                            size: 4,
+                            distance: Distance::Cosine,
+                            multivector_config: None,
+                            datatype: None,
+                        }),
+                    })
+                }
+                VectorNameOperationsDiscriminants::DeleteVectorName => {
+                    VectorNameOperations::DeleteVectorName(DeleteVectorName {
+                        vector_name: "test".into(),
+                    })
+                }
+            };
+
+            let op = CollectionUpdateOperations::VectorNameOperation(inner);
             assert_allowed(&op, &Access::Global(GlobalAccessMode::Manage));
             assert_forbidden(&op, &Access::Global(GlobalAccessMode::Read));
             assert_forbidden(&op, &AccessCollectionBuilder::new().add("col", true).into());

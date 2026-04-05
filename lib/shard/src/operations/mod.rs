@@ -3,12 +3,15 @@ pub mod payload_ops;
 pub mod point_ops;
 #[cfg(feature = "staging")]
 pub mod staging;
+pub mod vector_name_ops;
 pub mod vector_ops;
 
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
+
+pub use self::vector_name_ops::{VectorNameOperations, CreateVectorName, DeleteVectorName, VectorNameConfig};
 
 use crate::PeerId;
 use crate::operations::point_ops::PointOperations;
@@ -21,6 +24,7 @@ pub enum CollectionUpdateOperations {
     VectorOperation(vector_ops::VectorOperations),
     PayloadOperation(payload_ops::PayloadOps),
     FieldIndexOperation(FieldIndexOperations),
+    VectorNameOperation(VectorNameOperations),
     /// Staging-only operations for testing and debugging purposes
     #[cfg(feature = "staging")]
     StagingOperation(staging::StagingOperations),
@@ -47,6 +51,7 @@ impl CollectionUpdateOperations {
             Self::VectorOperation(op) => op.point_ids(),
             Self::PayloadOperation(op) => op.point_ids(),
             Self::FieldIndexOperation(_) => None,
+            Self::VectorNameOperation(_) => None,
             #[cfg(feature = "staging")]
             Self::StagingOperation(_) => None,
         }
@@ -68,6 +73,7 @@ impl CollectionUpdateOperations {
             Self::VectorOperation(_) => None,
             Self::PayloadOperation(_) => None,
             Self::FieldIndexOperation(_) => None,
+            Self::VectorNameOperation(_) => None,
             #[cfg(feature = "staging")]
             Self::StagingOperation(_) => None,
         }
@@ -82,6 +88,7 @@ impl CollectionUpdateOperations {
             Self::VectorOperation(op) => op.retain_point_ids(filter),
             Self::PayloadOperation(op) => op.retain_point_ids(filter),
             Self::FieldIndexOperation(_) => (),
+            Self::VectorNameOperation(_) => (),
             #[cfg(feature = "staging")]
             Self::StagingOperation(_) => (),
         }
@@ -290,6 +297,7 @@ mod tests {
                 any::<vector_ops::VectorOperations>().prop_map(Self::VectorOperation),
                 any::<payload_ops::PayloadOps>().prop_map(Self::PayloadOperation),
                 any::<FieldIndexOperations>().prop_map(Self::FieldIndexOperation),
+                any::<VectorNameOperations>().prop_map(Self::VectorNameOperation),
             ]
             .boxed()
         }
@@ -417,6 +425,41 @@ mod tests {
             let delete = Self::DeleteIndex("field_name".parse().unwrap());
 
             prop_oneof![Just(create), Just(delete),].boxed()
+        }
+    }
+
+    impl Arbitrary for VectorNameOperations {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            use crate::operations::vector_name_ops::{
+                self as vnops, DenseVectorNameConfig, SparseVectorNameConfig,
+            };
+
+            let create_dense = Self::CreateVectorName(CreateVectorName {
+                vector_name: "test_vector".into(),
+                config: vnops::VectorNameConfig::Dense(DenseVectorNameConfig {
+                    size: 4,
+                    distance: Distance::Cosine,
+                    multivector_config: None,
+                    datatype: None,
+                }),
+            });
+
+            let create_sparse = Self::CreateVectorName(CreateVectorName {
+                vector_name: "sparse_test".into(),
+                config: vnops::VectorNameConfig::Sparse(SparseVectorNameConfig {
+                    modifier: None,
+                    datatype: None,
+                }),
+            });
+
+            let delete = Self::DeleteVectorName(DeleteVectorName {
+                vector_name: "test_vector".into(),
+            });
+
+            prop_oneof![Just(create_dense), Just(create_sparse), Just(delete),].boxed()
         }
     }
 

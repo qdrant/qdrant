@@ -8,7 +8,7 @@ use shard::operations::point_ops::{
     VectorPersisted, VectorStructPersisted,
 };
 use shard::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
-use shard::operations::{CollectionUpdateOperations, FieldIndexOperations};
+use shard::operations::{CollectionUpdateOperations, FieldIndexOperations, VectorNameOperations};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
 
@@ -39,6 +39,9 @@ impl Generalizer for CollectionUpdateOperations {
             }
             CollectionUpdateOperations::FieldIndexOperation(field_operation) => {
                 CollectionUpdateOperations::FieldIndexOperation(field_operation.remove_details())
+            }
+            CollectionUpdateOperations::VectorNameOperation(op) => {
+                CollectionUpdateOperations::VectorNameOperation(op.remove_details())
             }
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(op) => {
@@ -298,6 +301,12 @@ impl Generalizer for SetPayloadOp {
 }
 
 impl Generalizer for FieldIndexOperations {
+    fn remove_details(&self) -> Self {
+        self.clone()
+    }
+}
+
+impl Generalizer for VectorNameOperations {
     fn remove_details(&self) -> Self {
         self.clone()
     }

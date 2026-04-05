@@ -444,6 +444,10 @@ impl RemoteShard {
                         }
                     }
                 }
+                CollectionUpdateOperations::VectorNameOperation(_) => {
+                    // Vector name operations are applied through consensus, not shard forwarding
+                    continue;
+                }
                 #[cfg(feature = "staging")]
                 CollectionUpdateOperations::StagingOperation(_) => {
                     // Staging operations should not be forwarded to remote shards
@@ -804,6 +808,15 @@ impl RemoteShard {
                     .into_inner()
                 }
             },
+            CollectionUpdateOperations::VectorNameOperation(_) => {
+                // Vector name operations are applied through consensus, not shard forwarding
+                timer.set_success(true);
+                return Ok(UpdateResult {
+                    operation_id: None,
+                    status: crate::operations::types::UpdateStatus::Completed,
+                    clock_tag: operation.clock_tag,
+                });
+            }
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(staging_op) => {
                 // TODO: Add gRPC support to forward staging operations to remote shards

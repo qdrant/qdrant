@@ -40,6 +40,7 @@ impl EstimateOperationEffectArea for CollectionUpdateOperations {
                 payload_operation.estimate_effect_area()
             }
             CollectionUpdateOperations::FieldIndexOperation(_) => OperationEffectArea::Empty,
+            CollectionUpdateOperations::VectorNameOperation(_) => OperationEffectArea::Empty,
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(_) => OperationEffectArea::Empty,
         }

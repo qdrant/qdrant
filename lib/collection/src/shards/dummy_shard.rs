@@ -107,9 +107,10 @@ impl ShardOperation for DummyShard {
             CollectionUpdateOperations::VectorOperation(_) => self.dummy("Update Vectors"),
             CollectionUpdateOperations::PayloadOperation(_) => self.dummy("Update Payloads"),
 
-            // Allow (and ignore) field index operations. Field index schema is stored in collection
-            // config, and indices will be created (if needed) when dummy shard is recovered.
-            CollectionUpdateOperations::FieldIndexOperation(_) => Ok(UpdateResult {
+            // Allow (and ignore) field index and vector name operations.
+            // These schemas are stored in collection config and will be recreated when recovered.
+            CollectionUpdateOperations::FieldIndexOperation(_)
+            | CollectionUpdateOperations::VectorNameOperation(_) => Ok(UpdateResult {
                 operation_id: None,
                 status: UpdateStatus::Acknowledged,
                 clock_tag: None,

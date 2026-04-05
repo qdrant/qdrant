@@ -1,7 +1,7 @@
 use shard::operations::payload_ops::PayloadOps;
 use shard::operations::point_ops::PointOperations;
 use shard::operations::vector_ops::VectorOperations;
-use shard::operations::{CollectionUpdateOperations, FieldIndexOperations};
+use shard::operations::{CollectionUpdateOperations, FieldIndexOperations, VectorNameOperations};
 
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 
@@ -34,6 +34,10 @@ impl AuditableOperation for CollectionUpdateOperations {
             CollectionUpdateOperations::FieldIndexOperation(op) => match op {
                 FieldIndexOperations::CreateIndex(_) => "create_field_index",
                 FieldIndexOperations::DeleteIndex(_) => "delete_field_index",
+            },
+            CollectionUpdateOperations::VectorNameOperation(op) => match op {
+                VectorNameOperations::CreateVectorName(_) => "create_vector_name",
+                VectorNameOperations::DeleteVectorName(_) => "delete_vector_name",
             },
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(_) => "debug",

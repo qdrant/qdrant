@@ -1560,7 +1560,7 @@ impl Default for VectorStorageType {
 
 /// Storage types for vectors
 #[derive(
-    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone,
+    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum VectorStorageDatatype {
@@ -1807,9 +1807,12 @@ impl SparseVectorDataConfig {
     }
 }
 
-/// Unified config for creating a named vector (dense or sparse) on an existing segment.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
+/// Internal config for creating a named vector on an existing segment.
+///
+/// This is the segment-level representation with full internal config types.
+/// The shard layer provides a clean API type (`shard::operations::VectorNameConfig`)
+/// that is converted to this type before calling segment methods.
+#[derive(Clone, Debug, PartialEq)]
 pub enum VectorNameConfig {
     Dense(VectorDataConfig),
     Sparse(SparseVectorDataConfig),
