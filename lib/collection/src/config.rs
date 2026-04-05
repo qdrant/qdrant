@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Write as _};
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::Path;
@@ -146,7 +146,7 @@ impl CollectionParams {
 
     pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {
         let CollectionParams {
-            vectors,
+            vectors: _,                  // May be changed
             shard_number: _, // Maybe be updated by resharding, assume local shards needs to be dropped
             sharding_method, // Not changeable
             replication_factor: _, // May be changed
@@ -154,30 +154,10 @@ impl CollectionParams {
             read_fan_out_factor: _, // May be changed
             read_fan_out_delay_ms: _, // May be changed,
             on_disk_payload: _, // May be changed
-            sparse_vectors,  // Parameters may be changes, but not the structure
+            sparse_vectors: _, // Sets may differ via named vector CRUD
         } = other;
 
-        self.vectors.check_compatible(vectors)?;
 
-        let this_sparse_vectors: HashSet<_> = if let Some(sparse_vectors) = &self.sparse_vectors {
-            sparse_vectors.keys().collect()
-        } else {
-            HashSet::new()
-        };
-
-        let other_sparse_vectors: HashSet<_> = if let Some(sparse_vectors) = sparse_vectors {
-            sparse_vectors.keys().collect()
-        } else {
-            HashSet::new()
-        };
-
-        if this_sparse_vectors != other_sparse_vectors {
-            return Err(CollectionError::bad_input(format!(
-                "sparse vectors are incompatible: \
-                 origin sparse vectors: {this_sparse_vectors:?}, \
-                 while other sparse vectors: {other_sparse_vectors:?}",
-            )));
-        }
 
         let this_sharding_method = self.sharding_method.unwrap_or_default();
         let other_sharding_method = sharding_method.unwrap_or_default();

@@ -1541,30 +1541,6 @@ impl VectorsConfig {
         }
     }
 
-    // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
-    pub fn check_compatible(&self, other: &Self) -> CollectionResult<()> {
-        match (self, other) {
-            (Self::Single(_), Self::Single(_)) | (Self::Multi(_), Self::Multi(_)) => (),
-            _ => {
-                return Err(incompatible_vectors_error(
-                    self.params_iter().map(|(name, _)| name),
-                    other.params_iter().map(|(name, _)| name),
-                ));
-            }
-        };
-
-        for (vector_name, this) in self.params_iter() {
-            let Some(other) = other.get_params(vector_name) else {
-                return Err(missing_vector_error(vector_name));
-            };
-
-            VectorParamsBase::from(this).check_compatibility(&other.into(), vector_name)?;
-        }
-
-        Ok(())
-    }
-
-    // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
     pub fn check_compatible_with_segment_config(
         &self,
         other: &HashMap<VectorNameBuf, segment::types::VectorDataConfig>,

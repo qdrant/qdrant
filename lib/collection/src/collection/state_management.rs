@@ -44,6 +44,8 @@ impl Collection {
             payload_index_schema,
         } = state;
 
+        // Apply config first — this updates the collection-level vector definitions
+        let new_config = config.clone();
         self.apply_config(config).await?;
         self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
             .await?;
@@ -51,6 +53,9 @@ impl Collection {
         self.apply_shard_info(shards, shards_key_mapping).await?;
         self.apply_payload_index_schema(payload_index_schema)
             .await?;
+        // Reconcile named vectors at the segment level to match the new config.
+        // This ensures segments have the correct vector storages after a Raft snapshot.
+        self.apply_vector_name_schema(&new_config).await?;
         Ok(())
     }
 
@@ -252,6 +257,136 @@ impl Collection {
             self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable())
                 .await?;
         }
+        Ok(())
+    }
+
+    /// Reconcile named vectors at the segment level to match the given config.
+    ///
+    /// This is called during state application (Raft snapshot recovery) to ensure
+    /// that segments have the correct vector storages, even if the node missed the
+    /// original create/delete vector name operations.
+    async fn apply_vector_name_schema(
+        &self,
+        target_config: &CollectionConfigInternal,
+    ) -> CollectionResult<()> {
+        use segment::data_types::vector_name_config::{
+            DenseVectorNameConfig, SparseVectorNameConfig, VectorNameConfig,
+        };
+        use segment::types::VectorStorageDatatype;
+
+        let current_config = self.collection_config.read().await;
+
+        let mut to_create: Vec<(segment::types::VectorNameBuf, VectorNameConfig)> = Vec::new();
+        let mut to_delete: Vec<segment::types::VectorNameBuf> = Vec::new();
+
+        // Dense vectors: compare target vs current
+        for (vector_name, target_params) in target_config.params.vectors.params_iter() {
+            let target_dense = DenseVectorNameConfig {
+                size: target_params.size.get() as usize,
+                distance: target_params.distance,
+                multivector_config: target_params.multivector_config,
+                datatype: target_params.datatype.map(VectorStorageDatatype::from),
+            };
+
+            match current_config.params.vectors.get_params(vector_name) {
+                None => {
+                    // New vector — create it
+                    to_create.push((
+                        vector_name.to_owned(),
+                        VectorNameConfig::Dense(target_dense),
+                    ));
+                }
+                Some(current_params) => {
+                    // Exists in both — check if parameters changed (delete+recreate)
+                    let current_dense = DenseVectorNameConfig {
+                        size: current_params.size.get() as usize,
+                        distance: current_params.distance,
+                        multivector_config: current_params.multivector_config,
+                        datatype: current_params.datatype.map(VectorStorageDatatype::from),
+                    };
+                    if current_dense != target_dense {
+                        to_delete.push(vector_name.to_owned());
+                        to_create.push((
+                            vector_name.to_owned(),
+                            VectorNameConfig::Dense(target_dense),
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Dense vectors: delete those in current but not in target
+        for (vector_name, _) in current_config.params.vectors.params_iter() {
+            if target_config.params.vectors.get_params(vector_name).is_none() {
+                to_delete.push(vector_name.to_owned());
+            }
+        }
+
+        // Sparse vectors: compare target vs current
+        if let Some(target_sparse) = &target_config.params.sparse_vectors {
+            let current_sparse = current_config.params.sparse_vectors.as_ref();
+            for (vector_name, target_params) in target_sparse {
+                let target_sparse_cfg = SparseVectorNameConfig {
+                    modifier: target_params.modifier,
+                    datatype: target_params
+                        .index
+                        .as_ref()
+                        .and_then(|idx| idx.datatype)
+                        .map(VectorStorageDatatype::from),
+                };
+
+                let current_exists = current_sparse.and_then(|c| c.get(vector_name));
+                match current_exists {
+                    None => {
+                        to_create.push((
+                            vector_name.clone(),
+                            VectorNameConfig::Sparse(target_sparse_cfg),
+                        ));
+                    }
+                    Some(current_params) => {
+                        let current_sparse_cfg = SparseVectorNameConfig {
+                            modifier: current_params.modifier,
+                            datatype: current_params
+                                .index
+                                .as_ref()
+                                .and_then(|idx| idx.datatype)
+                                .map(VectorStorageDatatype::from),
+                        };
+                        if current_sparse_cfg != target_sparse_cfg {
+                            to_delete.push(vector_name.clone());
+                            to_create.push((
+                                vector_name.clone(),
+                                VectorNameConfig::Sparse(target_sparse_cfg),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sparse vectors: delete those in current but not in target
+        if let Some(current_sparse) = &current_config.params.sparse_vectors {
+            let target_sparse = target_config.params.sparse_vectors.as_ref();
+            for vector_name in current_sparse.keys() {
+                if target_sparse.map_or(true, |t| !t.contains_key(vector_name)) {
+                    to_delete.push(vector_name.clone());
+                }
+            }
+        }
+
+        // Release lock before mutating
+        drop(current_config);
+
+        // Delete first (includes changed vectors), then create
+        for vector_name in to_delete {
+            self.delete_named_vector(vector_name).await?;
+        }
+
+        for (vector_name, config) in to_create {
+            self.create_named_vector(vector_name, config, HwMeasurementAcc::disposable())
+                .await?;
+        }
+
         Ok(())
     }
 
