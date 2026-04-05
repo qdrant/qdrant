@@ -10,9 +10,9 @@ impl MemoryReporter for VectorIndexEnum {
             // HNSW: graph files, intent depends on on_disk config
             VectorIndexEnum::Hnsw(index) => {
                 let intent = if index.is_on_disk() {
-                    FileStorageIntent::MmapCached
+                    FileStorageIntent::OnDisk
                 } else {
-                    FileStorageIntent::MmapPopulated
+                    FileStorageIntent::Cached
                 };
                 ComponentMemoryUsage::from_files(index.files(), intent)
             }
