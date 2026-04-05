@@ -1807,17 +1807,6 @@ impl SparseVectorDataConfig {
     }
 }
 
-/// Internal config for creating a named vector on an existing segment.
-///
-/// This is the segment-level representation with full internal config types.
-/// The shard layer provides a clean API type (`shard::operations::VectorNameConfig`)
-/// that is converted to this type before calling segment methods.
-#[derive(Clone, Debug, PartialEq)]
-pub enum VectorNameConfigInternal {
-    Dense(VectorDataConfig),
-    Sparse(SparseVectorDataConfig),
-}
-
 /// Default value based on experiments and observations
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 10_000;
 

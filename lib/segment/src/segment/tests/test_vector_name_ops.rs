@@ -11,13 +11,14 @@ use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
     StorageSegmentEntry as _,
 };
-use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use crate::data_types::vector_name_config::{
+    DenseVectorNameConfig, SparseVectorNameConfig, VectorNameConfig,
+};
 use crate::segment::Segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
-    Distance, HnswGlobalConfig, Indexes, SegmentConfig, SparseVectorDataConfig,
-    SparseVectorStorageType, VectorDataConfig, VectorNameConfigInternal, VectorStorageType,
+    Distance, HnswGlobalConfig, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
 use crate::vector_storage::VectorStorage as _;
 
@@ -43,12 +44,20 @@ fn mmap_dense_config(dim: usize) -> VectorDataConfig {
     }
 }
 
-fn default_sparse_config() -> SparseVectorDataConfig {
-    SparseVectorDataConfig {
-        index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
-        storage_type: SparseVectorStorageType::default(),
+fn dense_vector_name_config(dim: usize) -> VectorNameConfig {
+    VectorNameConfig::Dense(DenseVectorNameConfig {
+        size: dim,
+        distance: Distance::Dot,
+        multivector_config: None,
+        datatype: None,
+    })
+}
+
+fn sparse_vector_name_config() -> VectorNameConfig {
+    VectorNameConfig::Sparse(SparseVectorNameConfig {
         modifier: None,
-    }
+        datatype: None,
+    })
 }
 
 fn hw() -> HardwareCounterCell {
@@ -132,7 +141,7 @@ fn test_create_dense_vector_on_appendable_segment() {
     // Create a new dense vector
     let new_dim = 8;
     let result = segment
-        .create_vector_name(100, "v2", &VectorNameConfigInternal::Dense(default_dense_config(new_dim)))
+        .create_vector_name(100, "v2", &dense_vector_name_config(new_dim))
         .unwrap();
     assert!(result);
 
@@ -170,7 +179,7 @@ fn test_create_sparse_vector_on_appendable_segment() {
     let hw = hw();
 
     let result = segment
-        .create_vector_name(100, "sparse1", &VectorNameConfigInternal::Sparse(default_sparse_config()))
+        .create_vector_name(100, "sparse1", &sparse_vector_name_config())
         .unwrap();
     assert!(result);
     assert!(segment
@@ -207,7 +216,7 @@ fn test_create_dense_vector_on_immutable_segment() {
     // Create a new dense vector on immutable segment -> empty placeholder
     let new_dim = 8;
     let result = segment
-        .create_vector_name(100, "v2", &VectorNameConfigInternal::Dense(default_dense_config(new_dim)))
+        .create_vector_name(100, "v2", &dense_vector_name_config(new_dim))
         .unwrap();
     assert!(result);
     assert!(segment.segment_config.vector_data.contains_key("v2"));
@@ -250,7 +259,7 @@ fn test_create_sparse_vector_on_immutable_segment() {
     // Create a sparse vector on immutable segment with MutableRam config.
     // The implementation should upgrade to a non-appendable index type (Mmap).
     let result = segment
-        .create_vector_name(100, "sp", &VectorNameConfigInternal::Sparse(default_sparse_config()))
+        .create_vector_name(100, "sp", &sparse_vector_name_config())
         .unwrap();
     assert!(result);
     assert!(segment
@@ -299,14 +308,14 @@ fn test_create_vector_idempotent() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
 
-    let config = default_dense_config(8);
+    let config = dense_vector_name_config(8);
 
     assert!(segment
-        .create_vector_name(100, "v2", &VectorNameConfigInternal::Dense(config.clone()))
+        .create_vector_name(100, "v2", &config)
         .unwrap());
     // Second call returns false (already exists)
     assert!(!segment
-        .create_vector_name(101, "v2", &VectorNameConfigInternal::Dense(config))
+        .create_vector_name(101, "v2", &config)
         .unwrap());
 }
 
@@ -334,7 +343,7 @@ fn test_delete_dense_vector_with_data() {
         .create_vector_name(
             100,
             "to_delete",
-            &VectorNameConfigInternal::Dense(default_dense_config(new_dim)),
+            &dense_vector_name_config(new_dim),
         )
         .unwrap();
 
@@ -377,7 +386,7 @@ fn test_delete_sparse_vector_with_data() {
     let hw = hw();
 
     segment
-        .create_vector_name(100, "sp", &VectorNameConfigInternal::Sparse(default_sparse_config()))
+        .create_vector_name(100, "sp", &sparse_vector_name_config())
         .unwrap();
 
     // Insert a point with sparse data
@@ -419,7 +428,7 @@ fn test_persistence_after_create_with_data() {
         .create_vector_name(
             100,
             "persisted",
-            &VectorNameConfigInternal::Dense(default_dense_config(new_dim)),
+            &dense_vector_name_config(new_dim),
         )
         .unwrap();
 
@@ -476,7 +485,7 @@ fn test_persistence_after_delete_with_data() {
         .create_vector_name(
             100,
             "temp",
-            &VectorNameConfigInternal::Dense(default_dense_config(new_dim)),
+            &dense_vector_name_config(new_dim),
         )
         .unwrap();
 

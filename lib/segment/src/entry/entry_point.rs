@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
+use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
@@ -24,7 +25,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, VectorNameConfigInternal, WithPayload, WithVector,
+    VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Define all operations on segment that do not require mutable access.
@@ -380,7 +381,7 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
-        vector_config: &VectorNameConfigInternal,
+        vector_config: &VectorNameConfig,
     ) -> OperationResult<bool>;
 
     /// Delete a named vector from the segment.

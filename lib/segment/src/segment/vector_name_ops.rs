@@ -5,6 +5,7 @@ use atomic_refcell::AtomicRefCell;
 
 use super::Segment;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::id_tracker::IdTracker as _;
 use crate::index::VectorIndexEnum;
 use crate::index::plain_vector_index::PlainVectorIndex;
@@ -16,8 +17,7 @@ use crate::segment_constructor::{
     get_vector_storage_path, open_vector_storage,
 };
 use crate::types::{
-    SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorNameConfigInternal,
-    VectorStorageType,
+    SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorStorageType,
 };
 use crate::vector_storage::dense::empty_dense_vector_storage::new_empty_dense_vector_storage;
 use crate::vector_storage::sparse::empty_sparse_vector_storage::new_empty_sparse_vector_storage;
@@ -29,7 +29,7 @@ impl Segment {
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
-        config: &VectorNameConfigInternal,
+        config: &VectorNameConfig,
     ) -> OperationResult<bool> {
         // Idempotent: if vector already exists, return false
         if self.vector_data.contains_key(vector_name) {
@@ -37,11 +37,13 @@ impl Segment {
         }
 
         match config {
-            VectorNameConfigInternal::Dense(dense_config) => {
-                self.create_dense_vector(vector_name, dense_config)
+            VectorNameConfig::Dense(dense_config) => {
+                let internal = dense_config.to_internal(false);
+                self.create_dense_vector(vector_name, &internal)
             }
-            VectorNameConfigInternal::Sparse(sparse_config) => {
-                self.create_sparse_vector(vector_name, sparse_config)
+            VectorNameConfig::Sparse(sparse_config) => {
+                let internal = sparse_config.to_internal();
+                self.create_sparse_vector(vector_name, &internal)
             }
         }?;
 

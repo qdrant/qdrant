@@ -10,6 +10,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools as _;
 use segment::common::operation_error::OperationResult;
+use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::types::*;
 
 use crate::locked_segment::LockedSegment;
@@ -363,7 +364,7 @@ impl ProxyIndexChange {
 #[derive(Debug, Clone)]
 pub enum ProxyVectorNameChange {
     /// Create a new named vector with the given config
-    Create(VectorNameConfigInternal, SeqNumberType),
+    Create(VectorNameConfig, SeqNumberType),
     /// Delete a named vector
     Delete(SeqNumberType),
 }

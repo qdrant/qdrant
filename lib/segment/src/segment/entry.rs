@@ -5,6 +5,8 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
+
+use crate::data_types::vector_name_config::VectorNameConfig;
 use common::fs::safe_delete_with_suffix;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
@@ -36,8 +38,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
     PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentType, SeqNumberType, VectorDataInfo, VectorName, VectorNameBuf, VectorNameConfigInternal,
-    WithPayload, WithVector,
+    SegmentType, SeqNumberType, VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 use crate::vector_storage::VectorStorage;
 
@@ -977,7 +978,7 @@ impl NonAppendableSegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
-        vector_config: &VectorNameConfigInternal,
+        vector_config: &VectorNameConfig,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
             segment.create_vector_name_impl(op_num, vector_name, vector_config)

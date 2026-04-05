@@ -17,6 +17,7 @@ use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQu
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::StorageSegmentEntry;
+use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
@@ -892,7 +893,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
-        vector_config: &VectorNameConfigInternal,
+        vector_config: &VectorNameConfig,
     ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);

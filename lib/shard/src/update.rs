@@ -16,12 +16,14 @@ use segment::types::{
     SeqNumberType, VectorNameBuf, WithPayload, WithVector,
 };
 
-use crate::operations::{FieldIndexOperations, VectorNameOperations};
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointOperations, PointStructPersisted, UpdateMode,
 };
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
+use crate::operations::{
+    CreateVectorName, DeleteVectorName, FieldIndexOperations, VectorNameOperations,
+};
 use crate::segment_holder::{SegmentHolder, SegmentId};
 
 pub fn process_point_operation(
@@ -962,21 +964,22 @@ pub fn process_vector_name_operation(
 ) -> OperationResult<usize> {
     match vector_name_operation {
         VectorNameOperations::CreateVectorName(create_data) => {
-            // Convert shard API config to segment internal config.
-            // Use on_disk=false as default; the optimizer will migrate to on-disk
-            // storage if the collection config requires it.
-            let internal_config = create_data.config.to_internal(false);
+            let CreateVectorName {
+                vector_name,
+                config,
+            } = create_data;
+
             segments.apply_segments(|write_segment| {
                 write_segment.with_upgraded(|segment| {
-                    segment.create_vector_name(op_num, &create_data.vector_name, &internal_config)
+                    segment.create_vector_name(op_num, vector_name, config)
                 })
             })
         }
         VectorNameOperations::DeleteVectorName(delete_data) => {
+            let DeleteVectorName { vector_name } = delete_data;
             segments.apply_segments(|write_segment| {
-                write_segment.with_upgraded(|segment| {
-                    segment.delete_vector_name(op_num, &delete_data.vector_name)
-                })
+                write_segment
+                    .with_upgraded(|segment| segment.delete_vector_name(op_num, vector_name))
             })
         }
     }
