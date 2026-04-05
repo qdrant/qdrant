@@ -586,6 +586,48 @@ impl Collection {
         replica_set.local_optimizations(options).await
     }
 
+    /// Collect memory report across all shards (local + remote).
+    pub async fn memory_report(
+        &self,
+    ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
+        use crate::common::memory_reporter::CollectionMemoryReport;
+
+        let shards_holder = self.shards_holder.read().await;
+        let shards = shards_holder.select_shards(
+            &crate::operations::shard_selector_internal::ShardSelectorInternal::All,
+        )?;
+
+        let mut futures: futures::stream::FuturesUnordered<_> = shards
+            .into_iter()
+            .map(|(shard, _shard_key)| shard.memory_report())
+            .collect();
+
+        let mut reports = Vec::new();
+        while let Some(result) = futures::StreamExt::next(&mut futures).await {
+            match result {
+                Ok(report) => reports.push(report),
+                Err(err) => {
+                    log::warn!("Failed to collect memory report from shard: {err}");
+                }
+            }
+        }
+
+        Ok(CollectionMemoryReport::merge_all(reports))
+    }
+
+    pub async fn local_shard_memory_report(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
+        let shard_holder_read = self.shards_holder.read().await;
+
+        let shard = shard_holder_read.get_shard(shard_id);
+        let replica_set =
+            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
+
+        replica_set.local_memory_report().await
+    }
+
     pub async fn state(&self) -> State {
         let shards_holder = self.shards_holder.read().await;
         let transfers = shards_holder.shard_transfers.read().clone();

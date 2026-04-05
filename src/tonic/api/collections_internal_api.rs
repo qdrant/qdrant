@@ -4,9 +4,9 @@ use std::time::{Duration, Instant};
 use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
 use api::grpc::qdrant::{
     CollectionOperationResponse, GetCollectionInfoRequestInternal, GetCollectionInfoResponse,
-    GetShardOptimizationsRequest, GetShardOptimizationsResponse, GetShardRecoveryPointRequest,
-    GetShardRecoveryPointResponse, InitiateShardTransferRequest, UpdateShardCutoffPointRequest,
-    WaitForShardStateRequest,
+    GetShardMemoryReportRequest, GetShardMemoryReportResponse, GetShardOptimizationsRequest,
+    GetShardOptimizationsResponse, GetShardRecoveryPointRequest, GetShardRecoveryPointResponse,
+    InitiateShardTransferRequest, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
@@ -261,6 +261,48 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let response = GetShardOptimizationsResponse {
             optimizations_json,
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn get_shard_memory_report(
+        &self,
+        request: Request<GetShardMemoryReportRequest>,
+    ) -> Result<Response<GetShardMemoryReportResponse>, Status> {
+        validate_and_log(request.get_ref());
+
+        let timing = Instant::now();
+        let GetShardMemoryReportRequest {
+            collection_name,
+            shard_id,
+        } = request.into_inner();
+
+        let collection_read = self
+            .toc
+            .get_collection(&full_access_pass(&collection_name)?)
+            .await
+            .map_err(|err| {
+                Status::not_found(format!(
+                    "Collection {collection_name} could not be found: {err}"
+                ))
+            })?;
+
+        let memory_report = collection_read
+            .local_shard_memory_report(shard_id)
+            .await
+            .map_err(|err| {
+                Status::internal(format!(
+                    "Failed to get memory report for shard {shard_id}: {err}"
+                ))
+            })?;
+
+        let memory_report_json = serde_json::to_vec(&memory_report).map_err(|err| {
+            Status::internal(format!("Failed to serialize memory report: {err}"))
+        })?;
+
+        let response = GetShardMemoryReportResponse {
+            memory_report_json,
             time: timing.elapsed().as_secs_f64(),
         };
         Ok(Response::new(response))

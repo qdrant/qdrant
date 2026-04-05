@@ -1435,6 +1435,46 @@ impl ShardReplicaSet {
         Ok(response)
     }
 
+    /// Get memory report from only the local shard.
+    ///
+    /// Used by the internal gRPC handler to return local data
+    /// without querying remote shards (which would cause recursion).
+    pub async fn local_memory_report(
+        &self,
+    ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
+        let local = self.local.read().await;
+        match local.as_ref() {
+            Some(Shard::Local(local_shard)) => local_shard.memory_report().await,
+            // Proxy shards are temporary (during transfers), skip them
+            _ => Ok(crate::common::memory_reporter::CollectionMemoryReport::default()),
+        }
+    }
+
+    /// Collect memory reports from both local and remote shards.
+    pub async fn memory_report(
+        &self,
+    ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
+        use crate::common::memory_reporter::CollectionMemoryReport;
+
+        let local_future = self.local_memory_report();
+        let remote_futures = async {
+            let remotes = self.remotes.read().await;
+            let futures: Vec<_> = remotes
+                .iter()
+                .filter(|remote| self.peer_is_updatable(remote.peer_id))
+                .map(|remote| remote.memory_report())
+                .collect();
+            futures::future::try_join_all(futures).await
+        };
+
+        let (local_report, remote_reports) =
+            futures::future::try_join(local_future, remote_futures).await?;
+
+        let mut all_reports = vec![local_report];
+        all_reports.extend(remote_reports);
+        Ok(CollectionMemoryReport::merge_all(all_reports))
+    }
+
     /// Get optimizations info from only the local shard.
     ///
     /// This is used by the internal gRPC handler to return local data

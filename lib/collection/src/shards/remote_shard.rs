@@ -1052,6 +1052,33 @@ impl RemoteShard {
         Ok(response)
     }
 
+    pub async fn memory_report(
+        &self,
+    ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .get_shard_memory_report(
+                        api::grpc::qdrant::GetShardMemoryReportRequest {
+                            collection_name: self.collection_id.clone(),
+                            shard_id: self.id,
+                        },
+                    )
+                    .await
+            })
+            .await?
+            .into_inner();
+
+        let report: crate::common::memory_reporter::CollectionMemoryReport =
+            serde_json::from_slice(&res.memory_report_json).map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to deserialize memory report from remote shard: {err}"
+                ))
+            })?;
+
+        Ok(report)
+    }
+
     pub async fn health_check(&self) -> CollectionResult<()> {
         let _ = self
             .with_qdrant_client(|mut client| async move {

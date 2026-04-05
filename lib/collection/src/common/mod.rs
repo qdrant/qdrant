@@ -1,4 +1,5 @@
 pub mod batching;
+pub mod memory_reporter;
 pub mod collection_size_stats;
 pub mod eta_calculator;
 pub mod fetch_vectors;
