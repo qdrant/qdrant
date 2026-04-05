@@ -29,6 +29,17 @@ impl InMemoryIdTracker {
         (self.internal_to_version, self.mappings)
     }
 
+    /// Approximate RAM usage in bytes for in-memory data structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            internal_to_version,
+            mappings,
+        } = self;
+
+        internal_to_version.capacity() * std::mem::size_of::<SeqNumberType>()
+            + mappings.ram_usage_bytes()
+    }
+
     /// Generate a random [`InMemoryIdTracker`].
     #[cfg(test)]
     pub fn random(rand: &mut StdRng, size: u32, preserved_size: u32, bits_in_id: u8) -> Self {

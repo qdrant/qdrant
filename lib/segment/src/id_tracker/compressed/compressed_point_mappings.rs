@@ -256,4 +256,17 @@ impl CompressedPointMappings {
             external_to_internal,
         }
     }
+
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            deleted,
+            internal_to_external,
+            external_to_internal,
+        } = self;
+
+        deleted.capacity() / u8::BITS as usize
+            + internal_to_external.ram_usage_bytes()
+            + external_to_internal.ram_usage_bytes()
+    }
 }

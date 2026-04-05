@@ -66,6 +66,23 @@ pub struct ImmutableIdTracker {
 }
 
 impl ImmutableIdTracker {
+    /// Approximate RAM usage in bytes for in-memory data structures.
+    ///
+    /// ImmutableIdTracker loads all mappings and versions into compressed
+    /// in-memory structures. The mmap files are used for persistence but
+    /// the working data lives in RAM.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            path: _,
+            deleted_wrapper: _,              // mmap-backed, accounted via files
+            internal_to_version,
+            internal_to_version_wrapper: _,  // mmap-backed, accounted via files
+            mappings,
+        } = self;
+
+        internal_to_version.ram_usage_bytes() + mappings.ram_usage_bytes()
+    }
+
     pub fn from_in_memory_tracker(
         in_memory_tracker: InMemoryIdTracker,
         path: &Path,

@@ -341,4 +341,30 @@ impl PointMappings {
             );
         }
     }
+
+    /// Approximate RAM usage in bytes for the in-memory data structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            deleted,
+            internal_to_external,
+            external_to_internal_num,
+            external_to_internal_uuid,
+        } = self;
+
+        let deleted_bytes = deleted.capacity() / u8::BITS as usize;
+        let internal_to_external_bytes =
+            internal_to_external.capacity() * std::mem::size_of::<PointIdType>();
+        // BTreeMap node overhead: key + value + 2 child pointers + parent pointer + metadata.
+        // Approximation based on std BTreeMap B=6 node layout.
+        let btree_node_overhead = std::mem::size_of::<usize>() * 3;
+        let num_entry_size = std::mem::size_of::<u64>()
+            + std::mem::size_of::<PointOffsetType>()
+            + btree_node_overhead;
+        let uuid_entry_size = std::mem::size_of::<Uuid>()
+            + std::mem::size_of::<PointOffsetType>()
+            + btree_node_overhead;
+        let num_map_bytes = external_to_internal_num.len() * num_entry_size;
+        let uuid_map_bytes = external_to_internal_uuid.len() * uuid_entry_size;
+        deleted_bytes + internal_to_external_bytes + num_map_bytes + uuid_map_bytes
+    }
 }

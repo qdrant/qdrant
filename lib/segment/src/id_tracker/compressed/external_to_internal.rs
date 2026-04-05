@@ -224,4 +224,20 @@ impl CompressedExternalToInternal {
             }
         }
     }
+
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            num_ids,
+            num_ids_removed,
+            uuids,
+            uuids_removed,
+            count_removed: _, // scalar, negligible
+        } = self;
+
+        num_ids.capacity() * std::mem::size_of::<(u64, PointOffsetType)>()
+            + num_ids_removed.capacity() / u8::BITS as usize
+            + uuids.capacity() * std::mem::size_of::<(Uuid, PointOffsetType)>()
+            + uuids_removed.capacity() / u8::BITS as usize
+    }
 }

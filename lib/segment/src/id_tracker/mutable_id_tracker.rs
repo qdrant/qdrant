@@ -188,6 +188,22 @@ impl MutableIdTracker {
         })
     }
 
+    /// Approximate RAM usage in bytes for in-memory data structures.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            segment_path: _,
+            internal_to_version,
+            mappings,
+            pending_versions: _,  // transient, small
+            pending_mappings: _,  // transient, small
+            is_alive_lock: _,
+            mappings_expected_len: _,
+        } = self;
+
+        internal_to_version.capacity() * std::mem::size_of::<SeqNumberType>()
+            + mappings.ram_usage_bytes()
+    }
+
     pub fn segment_files(segment_path: &Path) -> Vec<PathBuf> {
         [mappings_path(segment_path), versions_path(segment_path)]
             .into_iter()
