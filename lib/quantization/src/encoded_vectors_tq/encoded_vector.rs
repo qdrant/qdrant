@@ -1,5 +1,5 @@
 use super::codebook::Codebook;
-use super::packing::pack_indices;
+use super::packing::{pack_indices, unpack_index};
 use super::qjl::QjlProjection;
 use super::rotation::RotationImpl;
 use super::TqCorrection;
@@ -35,15 +35,41 @@ impl<'a> EncodedVectorTQ<'a> {
     }
 
     /// The residual norm stored after packed indices (only when QJL is active).
-    fn residual_norm(&self, codebook_packed_size: usize) -> f32 {
+    pub(super) fn residual_norm(&self, codebook_packed_size: usize) -> f32 {
         let offset = NORM_SIZE + codebook_packed_size;
         f32::from_ne_bytes(self.bytes[offset..offset + NORM_SIZE].try_into().unwrap())
     }
 
     /// The packed QJL sign bits (only when QJL is active).
-    fn qjl_bits(&self, codebook_packed_size: usize) -> &[u8] {
+    pub(super) fn qjl_bits(&self, codebook_packed_size: usize) -> &[u8] {
         let offset = NORM_SIZE + codebook_packed_size + NORM_SIZE;
         &self.bytes[offset..]
+    }
+
+    /// The precomputed norm of the decoded centroid vector (Normalization mode only).
+    /// Stored after packed indices: `[norm][packed][centroid_norm]`.
+    pub(super) fn centroid_norm(&self, codebook_packed_size: usize) -> f32 {
+        let offset = NORM_SIZE + codebook_packed_size;
+        f32::from_ne_bytes(self.bytes[offset..offset + NORM_SIZE].try_into().unwrap())
+    }
+
+    /// Compute dot product on the fly using shared codebook centroids.
+    /// `dot = Σ_i effective_query[i] * centroids[unpack_index(packed, i, bits)]`
+    /// Zero allocation. Codebook centroids (K values) stay hot in cache.
+    pub(super) fn codebook_dot(
+        &self,
+        effective_query: &[f32],
+        codebook: &Codebook,
+    ) -> f32 {
+        let packed = self.packed_data();
+        let bits = codebook.bits;
+        let centroids = &codebook.centroids;
+        let mut sum = 0.0f32;
+        for (i, &eq) in effective_query.iter().enumerate() {
+            let idx = unpack_index(packed, i, bits) as usize;
+            sum += eq * centroids[idx];
+        }
+        sum
     }
 
     /// Decode into (norm, corrected centroid vector in rotated space).
@@ -142,63 +168,6 @@ impl<'a> EncodedVectorTQ<'a> {
         query_norm_sq + gamma * gamma - 2.0 * gamma * dot
     }
 
-    /// Fast dot product score using precomputed QJL projection: O(d) per vector.
-    ///
-    /// Instead of `decode_correction` (O(d²)), uses `correction_dot` with the
-    /// pre-projected query to compute the QJL correction's contribution in O(d).
-    pub(super) fn score_dot_fast(
-        &self,
-        rotated_query: &[f32],
-        codebook: &Codebook,
-        padded_dim: usize,
-        medians: &[f32],
-        scales: &[f32],
-        correction: TqCorrection,
-        qjl: &QjlProjection,
-        projected_query: &[f32],
-    ) -> f32 {
-        let (gamma, y_base) =
-            self.decode_rotated(codebook, padded_dim, medians, scales, correction, None);
-        let base_dot: f32 = rotated_query
-            .iter()
-            .zip(y_base.iter())
-            .map(|(&q, &v)| q * v)
-            .sum();
-        let codebook_packed_size = codebook.packed_size(padded_dim);
-        let res_norm = self.residual_norm(codebook_packed_size);
-        let qjl_packed = self.qjl_bits(codebook_packed_size);
-        let correction_dot = qjl.correction_dot(qjl_packed, res_norm, projected_query);
-        gamma * (base_dot + correction_dot)
-    }
-
-    /// Fast L2 score using precomputed QJL projection: O(d) per vector.
-    pub(super) fn score_l2_fast(
-        &self,
-        rotated_query: &[f32],
-        query_norm_sq: f32,
-        codebook: &Codebook,
-        padded_dim: usize,
-        medians: &[f32],
-        scales: &[f32],
-        correction: TqCorrection,
-        qjl: &QjlProjection,
-        projected_query: &[f32],
-    ) -> f32 {
-        let (gamma, y_base) =
-            self.decode_rotated(codebook, padded_dim, medians, scales, correction, None);
-        let base_dot: f32 = rotated_query
-            .iter()
-            .zip(y_base.iter())
-            .map(|(&q, &v)| q * v)
-            .sum();
-        let codebook_packed_size = codebook.packed_size(padded_dim);
-        let res_norm = self.residual_norm(codebook_packed_size);
-        let qjl_packed = self.qjl_bits(codebook_packed_size);
-        let correction_dot = qjl.correction_dot(qjl_packed, res_norm, projected_query);
-        let dot = base_dot + correction_dot;
-        query_norm_sq + gamma * gamma - 2.0 * gamma * dot
-    }
-
     /// L1 score requires full reconstruction via inverse rotation.
     pub(super) fn score_l1(
         &self,
@@ -239,6 +208,7 @@ pub(super) fn encode_vector_data(
     codebook: &Codebook,
     medians: &[f32],
     scales: &[f32],
+    correction: TqCorrection,
     qjl: Option<&QjlProjection>,
 ) -> Vec<u8> {
     // 1. Extract norm
@@ -282,15 +252,45 @@ pub(super) fn encode_vector_data(
         (None, None)
     };
 
-    // 8. Pack everything
+    // 8. Compute centroid norm for Normalization mode
+    let centroid_norm_bytes = if matches!(correction, TqCorrection::Normalization) {
+        let centroid_norm_sq: f32 = if medians.is_empty() {
+            indices
+                .iter()
+                .map(|&idx| {
+                    let c = codebook.centroid(idx);
+                    c * c
+                })
+                .sum()
+        } else {
+            indices
+                .iter()
+                .enumerate()
+                .map(|(i, &idx)| {
+                    let c = codebook.centroid(idx);
+                    let decoded = c / scales[i] + medians[i];
+                    decoded * decoded
+                })
+                .sum()
+        };
+        Some(centroid_norm_sq.sqrt().to_ne_bytes())
+    } else {
+        None
+    };
+
+    // 9. Pack everything
     let mut result = Vec::with_capacity(
         NORM_SIZE
             + packed.len()
+            + centroid_norm_bytes.as_ref().map_or(0, |b| b.len())
             + qjl_norm_bytes.as_ref().map_or(0, |b| b.len())
             + qjl_bits.as_ref().map_or(0, |b| b.len()),
     );
     result.extend_from_slice(&norm.to_ne_bytes());
     result.extend_from_slice(&packed);
+    if let Some(cn_bytes) = centroid_norm_bytes {
+        result.extend_from_slice(&cn_bytes);
+    }
     if let (Some(norm_bytes), Some(bits)) = (qjl_norm_bytes, qjl_bits) {
         result.extend_from_slice(&norm_bytes);
         result.extend_from_slice(&bits);

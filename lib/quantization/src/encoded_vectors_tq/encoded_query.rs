@@ -1,3 +1,5 @@
+use super::simd;
+
 /// Pre-processed query for efficient TurboQuant scoring.
 pub struct EncodedQueryTQ {
     /// Rotated query (padded_dim elements).
@@ -10,4 +12,13 @@ pub struct EncodedQueryTQ {
     /// S · weighted_query, precomputed for O(d) QJL correction in Dot/L2 scoring.
     /// Present only when correction == Qjl (not QjlNormalization).
     pub(crate) qjl_projected_query: Option<Vec<f32>>,
+    /// Effective query for on-the-fly dot product with codebook centroids:
+    ///   effective_query[i] = rotated_query[i] / scales[i]  (TQ+)
+    ///   effective_query[i] = rotated_query[i]               (non-TQ+)
+    /// None for QjlNormalization/QjlShortNormalization (fallback to decode_rotated).
+    pub(crate) effective_query: Option<Vec<f32>>,
+    /// Precomputed Σ_i rotated_query[i] * medians[i]. Zero when no TQ+.
+    pub(crate) median_dot: f32,
+    /// SIMD-quantized query for 4-bit codebook dot. Created when bits == 4 and SIMD available.
+    pub(crate) simd_query: Option<simd::SimdQuery4>,
 }
