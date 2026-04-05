@@ -121,8 +121,8 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     metadata_path: Option<PathBuf>,
     rotation_impl: RotationImpl,
     qjl: Option<qjl::QjlProjection>,
-    /// SIMD-ready codebook for 4-bit quantization. Created at init when bits == 4.
-    simd_codebook: Option<simd::SimdCodebook4>,
+    /// SIMD-accelerated codebook (4-bit or 2-bit). Created at init when bits == 4 or 2.
+    simd_codebook: Option<simd::SimdAccel>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -283,10 +283,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             .build()
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
-        let simd_codebook = if bits == 4 {
-            simd::SimdCodebook4::new(&codebook.centroids)
-        } else {
-            None
+        let simd_codebook = match bits {
+            4 => simd::SimdAccel::new_4bit(&codebook.centroids),
+            2 => simd::SimdAccel::new_2bit(&codebook.centroids),
+            1 => simd::SimdAccel::new_1bit(&codebook.centroids),
+            _ => None,
         };
 
         let metadata = Metadata {
@@ -348,10 +349,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             }
             _ => None,
         };
-        let simd_codebook = if metadata.codebook.bits == 4 {
-            simd::SimdCodebook4::new(&metadata.codebook.centroids)
-        } else {
-            None
+        let simd_codebook = match metadata.codebook.bits {
+            4 => simd::SimdAccel::new_4bit(&metadata.codebook.centroids),
+            2 => simd::SimdAccel::new_2bit(&metadata.codebook.centroids),
+            _ => None,
         };
         let result = Self {
             encoded_vectors,
@@ -388,11 +389,16 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         }
     }
 
-    /// Compute the base codebook dot product, using SIMD when available for 4-bit.
+    /// Compute the base codebook dot product, using SIMD when available.
     #[inline]
     fn base_codebook_dot(&self, vec: &EncodedVectorTQ, query: &EncodedQueryTQ) -> f32 {
         if let (Some(simd_c), Some(simd_q)) = (&self.simd_codebook, &query.simd_query) {
-            simd::codebook_dot_4bit(vec.packed_data(), simd_c, simd_q, self.metadata.padded_dim)
+            simd::codebook_dot_simd(
+                vec.packed_data(),
+                simd_c,
+                simd_q,
+                self.metadata.padded_dim,
+            )
         } else {
             vec.codebook_dot(
                 query.effective_query.as_ref().unwrap(),
@@ -569,13 +575,18 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             None
         };
 
-        // Create SIMD query for 4-bit acceleration
-        let simd_query = if self.simd_codebook.is_some() {
-            effective_query
+        // Create SIMD query matching the codebook variant
+        let simd_query = match &self.simd_codebook {
+            Some(simd::SimdAccel::Bits4(_)) => effective_query
                 .as_ref()
-                .map(|eq| simd::SimdQuery4::new(eq))
-        } else {
-            None
+                .map(|eq| simd::SimdQueryAccel::new_4bit(eq)),
+            Some(simd::SimdAccel::Bits2(..)) => effective_query
+                .as_ref()
+                .map(|eq| simd::SimdQueryAccel::new_2bit(eq)),
+            Some(simd::SimdAccel::Bits1(_)) => effective_query
+                .as_ref()
+                .map(|eq| simd::SimdQueryAccel::new_1bit(eq)),
+            None => None,
         };
 
         EncodedQueryTQ {

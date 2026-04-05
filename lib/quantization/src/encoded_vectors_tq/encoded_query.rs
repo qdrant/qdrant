@@ -19,6 +19,6 @@ pub struct EncodedQueryTQ {
     pub(crate) effective_query: Option<Vec<f32>>,
     /// Precomputed Σ_i rotated_query[i] * medians[i]. Zero when no TQ+.
     pub(crate) median_dot: f32,
-    /// SIMD-quantized query for 4-bit codebook dot. Created when bits == 4 and SIMD available.
-    pub(crate) simd_query: Option<simd::SimdQuery4>,
+    /// SIMD-quantized query for accelerated codebook dot (4-bit or 2-bit).
+    pub(crate) simd_query: Option<simd::SimdQueryAccel>,
 }
