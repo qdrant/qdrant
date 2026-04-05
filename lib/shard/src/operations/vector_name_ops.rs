@@ -122,13 +122,13 @@ impl SparseVectorNameConfig {
 
 impl VectorNameConfig {
     /// Convert to the segment-internal VectorNameConfig type.
-    pub fn to_internal(&self, on_disk: bool) -> segment::types::VectorNameConfig {
+    pub fn to_internal(&self, on_disk: bool) -> segment::types::VectorNameConfigInternal {
         match self {
             VectorNameConfig::Dense(dense) => {
-                segment::types::VectorNameConfig::Dense(dense.to_internal(on_disk))
+                segment::types::VectorNameConfigInternal::Dense(dense.to_internal(on_disk))
             }
             VectorNameConfig::Sparse(sparse) => {
-                segment::types::VectorNameConfig::Sparse(sparse.to_internal())
+                segment::types::VectorNameConfigInternal::Sparse(sparse.to_internal())
             }
         }
     }

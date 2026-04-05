@@ -5,6 +5,7 @@ mod facet;
 pub mod mmr;
 pub mod payload_index_schema;
 mod point_ops;
+mod vector_name_schema;
 pub mod query;
 mod resharding;
 mod search;

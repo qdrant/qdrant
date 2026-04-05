@@ -363,7 +363,7 @@ impl ProxyIndexChange {
 #[derive(Debug, Clone)]
 pub enum ProxyVectorNameChange {
     /// Create a new named vector with the given config
-    Create(VectorNameConfig, SeqNumberType),
+    Create(VectorNameConfigInternal, SeqNumberType),
     /// Delete a named vector
     Delete(SeqNumberType),
 }

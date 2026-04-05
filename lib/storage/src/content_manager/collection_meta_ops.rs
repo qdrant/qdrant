@@ -398,6 +398,19 @@ pub struct DropPayloadIndex {
     pub field_name: PayloadKeyType,
 }
 
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct CreateNamedVector {
+    pub collection_name: String,
+    pub vector_name: segment::types::VectorNameBuf,
+    pub config: shard::operations::vector_name_ops::VectorNameConfig,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct DeleteNamedVector {
+    pub collection_name: String,
+    pub vector_name: segment::types::VectorNameBuf,
+}
+
 /// Enumeration of all possible collection update operations
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -413,6 +426,8 @@ pub enum CollectionMetaOperations {
     DropShardKey(DropShardKey),
     CreatePayloadIndex(CreatePayloadIndex),
     DropPayloadIndex(DropPayloadIndex),
+    CreateNamedVector(CreateNamedVector),
+    DeleteNamedVector(DeleteNamedVector),
     Nop {
         token: usize,
     }, // Empty operation

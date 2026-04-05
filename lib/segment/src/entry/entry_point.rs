@@ -24,7 +24,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, VectorNameConfig, WithPayload, WithVector,
+    VectorName, VectorNameBuf, VectorNameConfigInternal, WithPayload, WithVector,
 };
 
 /// Define all operations on segment that do not require mutable access.
@@ -380,7 +380,7 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
-        vector_config: &VectorNameConfig,
+        vector_config: &VectorNameConfigInternal,
     ) -> OperationResult<bool>;
 
     /// Delete a named vector from the segment.

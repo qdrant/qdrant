@@ -892,7 +892,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
-        vector_config: &VectorNameConfig,
+        vector_config: &VectorNameConfigInternal,
     ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);

@@ -178,6 +178,8 @@ impl Dispatcher {
                 | CollectionMetaOperations::DropShardKey(_)
                 | CollectionMetaOperations::CreatePayloadIndex(_)
                 | CollectionMetaOperations::DropPayloadIndex(_)
+                | CollectionMetaOperations::CreateNamedVector(_)
+                | CollectionMetaOperations::DeleteNamedVector(_)
                 | CollectionMetaOperations::Nop { .. } => false,
 
                 #[cfg(feature = "staging")]

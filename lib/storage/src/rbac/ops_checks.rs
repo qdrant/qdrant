@@ -67,6 +67,18 @@ impl Access {
                     AccessRequirements::new().write().extras(),
                 )?;
             }
+            CollectionMetaOperations::CreateNamedVector(op) => {
+                self.check_collection_access(
+                    &op.collection_name,
+                    AccessRequirements::new().write().extras(),
+                )?;
+            }
+            CollectionMetaOperations::DeleteNamedVector(op) => {
+                self.check_collection_access(
+                    &op.collection_name,
+                    AccessRequirements::new().write().extras(),
+                )?;
+            }
             CollectionMetaOperations::Nop { token: _ } => (),
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(_) => {

@@ -1813,7 +1813,7 @@ impl SparseVectorDataConfig {
 /// The shard layer provides a clean API type (`shard::operations::VectorNameConfig`)
 /// that is converted to this type before calling segment methods.
 #[derive(Clone, Debug, PartialEq)]
-pub enum VectorNameConfig {
+pub enum VectorNameConfigInternal {
     Dense(VectorDataConfig),
     Sparse(SparseVectorDataConfig),
 }

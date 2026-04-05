@@ -17,7 +17,7 @@ use crate::segment_constructor::segment_builder::SegmentBuilder;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
     Distance, HnswGlobalConfig, Indexes, SegmentConfig, SparseVectorDataConfig,
-    SparseVectorStorageType, VectorDataConfig, VectorNameConfig, VectorStorageType,
+    SparseVectorStorageType, VectorDataConfig, VectorNameConfigInternal, VectorStorageType,
 };
 use crate::vector_storage::VectorStorage as _;
 
@@ -132,7 +132,7 @@ fn test_create_dense_vector_on_appendable_segment() {
     // Create a new dense vector
     let new_dim = 8;
     let result = segment
-        .create_vector_name(100, "v2", &VectorNameConfig::Dense(default_dense_config(new_dim)))
+        .create_vector_name(100, "v2", &VectorNameConfigInternal::Dense(default_dense_config(new_dim)))
         .unwrap();
     assert!(result);
 
@@ -170,7 +170,7 @@ fn test_create_sparse_vector_on_appendable_segment() {
     let hw = hw();
 
     let result = segment
-        .create_vector_name(100, "sparse1", &VectorNameConfig::Sparse(default_sparse_config()))
+        .create_vector_name(100, "sparse1", &VectorNameConfigInternal::Sparse(default_sparse_config()))
         .unwrap();
     assert!(result);
     assert!(segment
@@ -207,7 +207,7 @@ fn test_create_dense_vector_on_immutable_segment() {
     // Create a new dense vector on immutable segment -> empty placeholder
     let new_dim = 8;
     let result = segment
-        .create_vector_name(100, "v2", &VectorNameConfig::Dense(default_dense_config(new_dim)))
+        .create_vector_name(100, "v2", &VectorNameConfigInternal::Dense(default_dense_config(new_dim)))
         .unwrap();
     assert!(result);
     assert!(segment.segment_config.vector_data.contains_key("v2"));
@@ -250,7 +250,7 @@ fn test_create_sparse_vector_on_immutable_segment() {
     // Create a sparse vector on immutable segment with MutableRam config.
     // The implementation should upgrade to a non-appendable index type (Mmap).
     let result = segment
-        .create_vector_name(100, "sp", &VectorNameConfig::Sparse(default_sparse_config()))
+        .create_vector_name(100, "sp", &VectorNameConfigInternal::Sparse(default_sparse_config()))
         .unwrap();
     assert!(result);
     assert!(segment
@@ -302,11 +302,11 @@ fn test_create_vector_idempotent() {
     let config = default_dense_config(8);
 
     assert!(segment
-        .create_vector_name(100, "v2", &VectorNameConfig::Dense(config.clone()))
+        .create_vector_name(100, "v2", &VectorNameConfigInternal::Dense(config.clone()))
         .unwrap());
     // Second call returns false (already exists)
     assert!(!segment
-        .create_vector_name(101, "v2", &VectorNameConfig::Dense(config))
+        .create_vector_name(101, "v2", &VectorNameConfigInternal::Dense(config))
         .unwrap());
 }
 
@@ -334,7 +334,7 @@ fn test_delete_dense_vector_with_data() {
         .create_vector_name(
             100,
             "to_delete",
-            &VectorNameConfig::Dense(default_dense_config(new_dim)),
+            &VectorNameConfigInternal::Dense(default_dense_config(new_dim)),
         )
         .unwrap();
 
@@ -377,7 +377,7 @@ fn test_delete_sparse_vector_with_data() {
     let hw = hw();
 
     segment
-        .create_vector_name(100, "sp", &VectorNameConfig::Sparse(default_sparse_config()))
+        .create_vector_name(100, "sp", &VectorNameConfigInternal::Sparse(default_sparse_config()))
         .unwrap();
 
     // Insert a point with sparse data
@@ -419,7 +419,7 @@ fn test_persistence_after_create_with_data() {
         .create_vector_name(
             100,
             "persisted",
-            &VectorNameConfig::Dense(default_dense_config(new_dim)),
+            &VectorNameConfigInternal::Dense(default_dense_config(new_dim)),
         )
         .unwrap();
 
@@ -476,7 +476,7 @@ fn test_persistence_after_delete_with_data() {
         .create_vector_name(
             100,
             "temp",
-            &VectorNameConfig::Dense(default_dense_config(new_dim)),
+            &VectorNameConfigInternal::Dense(default_dense_config(new_dim)),
         )
         .unwrap();
 

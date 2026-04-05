@@ -16,7 +16,7 @@ use crate::segment_constructor::{
     get_vector_storage_path, open_vector_storage,
 };
 use crate::types::{
-    SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorNameConfig,
+    SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorNameConfigInternal,
     VectorStorageType,
 };
 use crate::vector_storage::dense::empty_dense_vector_storage::new_empty_dense_vector_storage;
@@ -29,7 +29,7 @@ impl Segment {
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
-        config: &VectorNameConfig,
+        config: &VectorNameConfigInternal,
     ) -> OperationResult<bool> {
         // Idempotent: if vector already exists, return false
         if self.vector_data.contains_key(vector_name) {
@@ -37,10 +37,10 @@ impl Segment {
         }
 
         match config {
-            VectorNameConfig::Dense(dense_config) => {
+            VectorNameConfigInternal::Dense(dense_config) => {
                 self.create_dense_vector(vector_name, dense_config)
             }
-            VectorNameConfig::Sparse(sparse_config) => {
+            VectorNameConfigInternal::Sparse(sparse_config) => {
                 self.create_sparse_vector(vector_name, sparse_config)
             }
         }?;

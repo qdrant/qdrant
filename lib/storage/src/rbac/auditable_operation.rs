@@ -59,6 +59,8 @@ impl AuditableOperation for CollectionMetaOperations {
             CollectionMetaOperations::DropShardKey(_) => "drop_shard_key",
             CollectionMetaOperations::CreatePayloadIndex(_) => "create_payload_index",
             CollectionMetaOperations::DropPayloadIndex(_) => "drop_payload_index",
+            CollectionMetaOperations::CreateNamedVector(_) => "create_named_vector",
+            CollectionMetaOperations::DeleteNamedVector(_) => "delete_named_vector",
             CollectionMetaOperations::Nop { .. } => "nop",
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(_) => "debug",
