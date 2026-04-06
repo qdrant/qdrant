@@ -297,6 +297,28 @@ fn get_optimizations(
     })
 }
 
+#[get("/collections/{collection_name}/memory")]
+fn get_collection_memory(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    ActixAuth(auth): ActixAuth,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        let pass = new_unchecked_verification_pass();
+        let collection_pass = auth.check_collection_access(
+            &collection.collection_name,
+            AccessRequirements::new(),
+            "get_collection_memory",
+        )?;
+        Ok(dispatcher
+            .toc(&auth, &pass)
+            .get_collection(&collection_pass)
+            .await?
+            .memory_report()
+            .await?)
+    })
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     // Ordering of services is important for correct path pattern matching
@@ -312,6 +334,7 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(get_collection_aliases)
         .service(get_cluster_info)
         .service(get_optimizations)
+        .service(get_collection_memory)
         .service(update_collection_cluster);
 }
 
