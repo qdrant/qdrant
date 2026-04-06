@@ -1,4 +1,17 @@
+use crate::operations::conversions::write_ordering_to_proto;
+use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
+use crate::operations::point_ops::{
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
+    WriteOrdering,
+};
+use crate::operations::types::CollectionResult;
+use crate::operations::vector_ops::UpdateVectorsOp;
+use crate::operations::{ClockTag, CreateIndex};
+use crate::shards::shard::ShardId;
+use crate::shards::shard_trait::WaitUntil;
 use api::conversions::json::payload_to_proto;
+use api::grpc;
+use api::grpc::NopOperationInternal;
 use api::grpc::conversions::convert_shard_key_from_grpc_opt;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
@@ -13,19 +26,8 @@ use api::grpc::qdrant::{
 use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint, VectorNameBuf};
+use shard::operations::NopOperation;
 use tonic::Status;
-
-use crate::operations::conversions::write_ordering_to_proto;
-use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
-use crate::operations::point_ops::{
-    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
-    WriteOrdering,
-};
-use crate::operations::types::CollectionResult;
-use crate::operations::vector_ops::UpdateVectorsOp;
-use crate::operations::{ClockTag, CreateIndex};
-use crate::shards::shard::ShardId;
-use crate::shards::shard_trait::WaitUntil;
 
 /// Convert `WaitUntil` to the proto `wait_override` field value.
 #[expect(clippy::unnecessary_wraps)]
@@ -490,6 +492,31 @@ pub fn internal_delete_index(
             collection_name,
             wait: Some(wait.needs_callback()),
             field_name: delete_index.to_string(),
+            ordering: ordering.map(write_ordering_to_proto),
+            timeout: wait_timeout,
+        }),
+    }
+}
+
+pub fn internal_nop_operation(
+    shard_id: Option<ShardId>,
+    clock_tag: Option<ClockTag>,
+    collection_name: String,
+    nop: NopOperation,
+    wait: WaitUntil,
+    wait_timeout: Option<u64>,
+    ordering: Option<WriteOrdering>,
+) -> NopOperationInternal {
+    let NopOperation { comment } = nop;
+
+    NopOperationInternal {
+        shard_id,
+        clock_tag: clock_tag.map(Into::into),
+        wait_override: wait_override_to_proto(wait),
+        nop: Some(grpc::NopOperation {
+            collection_name,
+            wait: Some(wait.needs_callback()),
+            comment,
             ordering: ordering.map(write_ordering_to_proto),
             timeout: wait_timeout,
         }),

@@ -3,7 +3,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use api::grpc::HardwareUsage;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
@@ -16,6 +15,7 @@ use api::grpc::qdrant::{
     SyncPointsInternal, UpdateBatchInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
 use api::grpc::update_operation::Update;
+use api::grpc::{HardwareUsage, NopOperationInternal};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
@@ -83,8 +83,8 @@ impl PointsInternalService {
             full_internal_auth(),
             inference_params,
         )
-        .await?
-        .into_inner();
+            .await?
+            .into_inner();
 
         Ok(Response::new(response))
     }
@@ -115,7 +115,7 @@ impl PointsInternalService {
             inference_params.clone(),
             hw_metrics,
         )
-        .await
+            .await
     }
 
     async fn delete_internal(
@@ -142,7 +142,7 @@ impl PointsInternalService {
             full_internal_auth(),
             hw_metrics,
         )
-        .await
+            .await
     }
 
     async fn update_vectors_internal(
@@ -171,7 +171,7 @@ impl PointsInternalService {
             inference_params.clone(),
             hw_metrics,
         )
-        .await
+            .await
     }
 
     async fn delete_vectors_internal(
@@ -198,7 +198,7 @@ impl PointsInternalService {
             full_internal_auth(),
             hw_metrics,
         )
-        .await
+            .await
     }
 
     async fn set_payload_internal(
@@ -225,7 +225,7 @@ impl PointsInternalService {
             full_internal_auth(),
             hw_metrics,
         )
-        .await
+            .await
     }
 
     async fn overwrite_payload_internal(
@@ -252,7 +252,7 @@ impl PointsInternalService {
             full_internal_auth(),
             hw_metrics,
         )
-        .await
+            .await
     }
 
     async fn delete_payload_internal(
@@ -279,7 +279,7 @@ impl PointsInternalService {
             full_internal_auth(),
             hw_metrics,
         )
-        .await
+            .await
     }
 
     async fn clear_payload_internal(
@@ -306,7 +306,7 @@ impl PointsInternalService {
             full_internal_auth(),
             hw_metrics,
         )
-        .await
+            .await
     }
 
     async fn create_field_index_internal(
@@ -325,7 +325,7 @@ impl PointsInternalService {
             extract_internal_request(create_field_index_collection)?,
             InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
         )
-        .await
+            .await
     }
 
     async fn delete_field_index_internal(
@@ -344,7 +344,34 @@ impl PointsInternalService {
             extract_internal_request(delete_field_index_collection)?,
             InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
         )
-        .await
+            .await
+    }
+
+    async fn nop_operation_internal(
+        &self,
+        nop_operation_internal: NopOperationInternal,
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
+        let NopOperationInternal {
+            nop,
+            shard_id,
+            clock_tag,
+            wait_override,
+        } = nop_operation_internal;
+
+        let nop = extract_internal_request(nop)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            nop.collection_name.clone(),
+        );
+
+        do_nop_operation_internal(
+            self.toc.clone(),
+            nop,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
+            full_internal_auth(),
+            hw_metrics,
+        )
+            .await
     }
 }
 
@@ -624,6 +651,9 @@ impl PointsInternal for PointsInternalService {
                     Update::DeleteFieldIndex(inner) => {
                         inner.wait_override.get_or_insert(batch_wo);
                     }
+                    Update::Nop(inner) => {
+                        inner.wait_override.get_or_insert(batch_wo);
+                    }
                 }
             }
 
@@ -664,6 +694,9 @@ impl PointsInternal for PointsInternalService {
                     }
                     Update::DeleteFieldIndex(delete_field_index) => {
                         self.delete_field_index_internal(delete_field_index).await?
+                    }
+                    Update::Nop(nop) => {
+                        self.nop_operation_internal(nop).await?
                     }
                 },
             };
@@ -723,7 +756,7 @@ impl PointsInternal for PointsInternalService {
             timeout,
             hw_data,
         )
-        .await?;
+            .await?;
 
         Ok(res)
     }
@@ -754,7 +787,7 @@ impl PointsInternal for PointsInternalService {
             full_internal_auth(),
             hw_data,
         )
-        .await?;
+            .await?;
 
         Ok(res)
     }
@@ -786,7 +819,7 @@ impl PointsInternal for PointsInternalService {
             full_internal_auth(),
             hw_data,
         )
-        .await
+            .await
     }
 
     async fn get(
@@ -816,7 +849,7 @@ impl PointsInternal for PointsInternalService {
             full_internal_auth(),
             hw_data,
         )
-        .await
+            .await
     }
 
     async fn count(
@@ -842,7 +875,7 @@ impl PointsInternal for PointsInternalService {
             full_internal_auth(),
             hw_data,
         )
-        .await?;
+            .await?;
         Ok(res)
     }
 
@@ -886,7 +919,7 @@ impl PointsInternal for PointsInternalService {
             timeout,
             hw_data,
         )
-        .await
+            .await
     }
 
     async fn facet(
@@ -900,6 +933,15 @@ impl PointsInternal for PointsInternalService {
             request_inner.collection_name.clone(),
         );
         facet_counts_internal(self.toc.as_ref(), request_inner, hw_data).await
+    }
+
+    async fn nop(
+        &self,
+        request: Request<NopOperationInternal>,
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
+        validate_and_log(request.get_ref());
+
+        self.nop_operation_internal(request.into_inner()).await
     }
 }
 

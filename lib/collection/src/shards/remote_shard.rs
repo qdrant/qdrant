@@ -47,7 +47,7 @@ use url::Url;
 
 use super::conversions::{
     internal_conditional_upsert_points, internal_delete_vectors, internal_delete_vectors_by_filter,
-    internal_update_vectors,
+    internal_nop_operation, internal_update_vectors,
 };
 use super::local_shard::clock_map::RecoveryPoint;
 use crate::operations::conversions::try_record_from_grpc;
@@ -448,6 +448,18 @@ impl RemoteShard {
                     // Vector name operations are applied through consensus, not shard forwarding
                     continue;
                 }
+                CollectionUpdateOperations::NopOperation(nop_operation) => {
+                    let request = internal_nop_operation(
+                        shard_id,
+                        operation.clock_tag,
+                        collection_name.clone(),
+                        nop_operation,
+                        wait,
+                        timeout,
+                        ordering,
+                    );
+                    Update::Nop(request)
+                }
                 #[cfg(feature = "staging")]
                 CollectionUpdateOperations::StagingOperation(_) => {
                     // Staging operations should not be forwarded to remote shards
@@ -816,6 +828,22 @@ impl RemoteShard {
                     status: crate::operations::types::UpdateStatus::Completed,
                     clock_tag: operation.clock_tag,
                 });
+            }
+            CollectionUpdateOperations::NopOperation(nop_ops) => {
+                let request = &internal_nop_operation(
+                    shard_id,
+                    operation.clock_tag,
+                    collection_name,
+                    nop_ops,
+                    wait,
+                    timeout,
+                    ordering,
+                );
+                self.with_points_client(|mut client| async move {
+                    client.nop(tonic::Request::new(request.clone())).await
+                })
+                .await?
+                .into_inner()
             }
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(staging_op) => {

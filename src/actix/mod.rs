@@ -42,6 +42,7 @@ use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
+use crate::actix::api::vector_name_api::config_vector_name_api;
 use crate::actix::auth::{AuthTransform, WhitelistItem};
 use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
 use crate::common::auth::AuthKeys;
@@ -147,6 +148,7 @@ pub fn init(
                 .app_data(audit_config_data.clone())
                 .service(index)
                 .configure(config_collections_api)
+                .configure(config_vector_name_api)
                 .configure(config_snapshots_api)
                 .configure(config_update_api)
                 .configure(config_cluster_api)

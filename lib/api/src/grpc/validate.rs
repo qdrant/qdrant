@@ -232,6 +232,7 @@ impl Validate for grpc::update_operation::Update {
             Update::ClearPayload(op) => op.validate(),
             Update::CreateFieldIndex(op) => op.validate(),
             Update::DeleteFieldIndex(op) => op.validate(),
+            Update::Nop(op) => op.validate(),
         }
     }
 }

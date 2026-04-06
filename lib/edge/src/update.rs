@@ -70,6 +70,7 @@ impl EdgeShard {
                     staging_operation,
                 )
             }
+            CollectionUpdateOperations::NopOperation(_) => Ok(0),
         };
 
         result.map(|_| ())

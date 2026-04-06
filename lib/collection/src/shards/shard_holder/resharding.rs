@@ -611,7 +611,8 @@ impl OperationsByMode {
             CollectionUpdateOperations::VectorOperation(_)
             | CollectionUpdateOperations::PayloadOperation(_)
             | CollectionUpdateOperations::FieldIndexOperation(_)
-            | CollectionUpdateOperations::VectorNameOperation(_) => {
+            | CollectionUpdateOperations::VectorNameOperation(_)
+            | CollectionUpdateOperations::NopOperation(_) => {
                 vec![operation]
             }
             #[cfg(feature = "staging")]

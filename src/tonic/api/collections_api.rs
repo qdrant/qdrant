@@ -341,7 +341,7 @@ impl Collections for CollectionsService {
 
         let CreateVectorNameRequest {
             collection_name,
-            wait: _,
+            wait,
             vector_name,
             vector_config,
             timeout,
@@ -353,7 +353,11 @@ impl Collections for CollectionsService {
 
         let config = VectorNameConfig::try_from(config)?;
 
-        let timeout = timeout.map(Duration::from_secs);
+        let params = crate::common::update::UpdateParams {
+            wait: wait.unwrap_or(false),
+            ordering: Default::default(),
+            timeout: timeout.map(Duration::from_secs),
+        };
 
         let timing = Instant::now();
         let result = crate::common::update::do_create_vector_name(
@@ -361,14 +365,16 @@ impl Collections for CollectionsService {
             collection_name,
             vector_name,
             config,
+            crate::common::update::InternalUpdateParams::default(),
+            params,
             auth,
-            timeout,
+            common::counter::hardware_accumulator::HwMeasurementAcc::disposable(),
         )
         .await
         .map_err(Status::from)?;
 
         Ok(Response::new(CollectionOperationResponse {
-            result,
+            result: result.status == collection::operations::types::UpdateStatus::Completed,
             time: timing.elapsed().as_secs_f64(),
         }))
     }
@@ -381,26 +387,32 @@ impl Collections for CollectionsService {
 
         let DeleteVectorNameRequest {
             collection_name,
-            wait: _,
+            wait,
             vector_name,
             timeout,
         } = request.into_inner();
 
-        let timeout = timeout.map(Duration::from_secs);
+        let params = crate::common::update::UpdateParams {
+            wait: wait.unwrap_or(false),
+            ordering: Default::default(),
+            timeout: timeout.map(Duration::from_secs),
+        };
 
         let timing = Instant::now();
         let result = crate::common::update::do_delete_vector_name(
             self.dispatcher.clone(),
             collection_name,
             vector_name,
+            crate::common::update::InternalUpdateParams::default(),
+            params,
             auth,
-            timeout,
+            common::counter::hardware_accumulator::HwMeasurementAcc::disposable(),
         )
         .await
         .map_err(Status::from)?;
 
         Ok(Response::new(CollectionOperationResponse {
-            result,
+            result: result.status == collection::operations::types::UpdateStatus::Completed,
             time: timing.elapsed().as_secs_f64(),
         }))
     }

@@ -10715,13 +10715,49 @@ pub struct DeleteFieldIndexCollectionInternal {
     pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NopOperation {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    /// Optional message to include in the request, for testing purposes
+    #[prost(string, tag = "3")]
+    pub comment: ::prost::alloc::string::String,
+    /// Write ordering guarantees
+    #[prost(message, optional, tag = "4")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Timeout for the request in seconds
+    #[prost(uint64, optional, tag = "5")]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NopOperationInternal {
+    #[prost(message, optional, tag = "1")]
+    pub nop: ::core::option::Option<NopOperation>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
+    /// When present, overrides the `wait` parameter of the wrapped public message.
+    /// When absent, falls back to `wait` (backward compatible with older nodes).
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
+}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateOperation {
     #[prost(
         oneof = "update_operation::Update",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14"
     )]
     #[validate(nested)]
     pub update: ::core::option::Option<update_operation::Update>,
@@ -10754,6 +10790,8 @@ pub mod update_operation {
         CreateFieldIndex(super::CreateFieldIndexCollectionInternal),
         #[prost(message, tag = "11")]
         DeleteFieldIndex(super::DeleteFieldIndexCollectionInternal),
+        #[prost(message, tag = "14")]
+        Nop(super::NopOperationInternal),
     }
 }
 #[derive(serde::Serialize)]
@@ -11740,6 +11778,30 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "DeleteFieldIndex"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn nop(
+            &mut self,
+            request: impl tonic::IntoRequest<super::NopOperationInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Nop",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.PointsInternal", "Nop"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn update_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateBatchInternal>,
@@ -12012,6 +12074,13 @@ pub mod points_internal_server {
         async fn delete_field_index(
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        >;
+        async fn nop(
+            &self,
+            request: tonic::Request<super::NopOperationInternal>,
         ) -> std::result::Result<
             tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
@@ -12643,6 +12712,52 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteFieldIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Nop" => {
+                    #[allow(non_camel_case_types)]
+                    struct NopSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::NopOperationInternal>
+                    for NopSvc<T> {
+                        type Response = super::PointsOperationResponseInternal;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::NopOperationInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::nop(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = NopSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

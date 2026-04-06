@@ -56,6 +56,9 @@ impl SplitByShard for CollectionUpdateOperations {
             operation @ CollectionUpdateOperations::VectorNameOperation(_) => {
                 OperationToShard::to_all(operation)
             }
+            operation @ CollectionUpdateOperations::NopOperation(_) => {
+                OperationToShard::to_all(operation)
+            }
             #[cfg(feature = "staging")]
             operation @ CollectionUpdateOperations::StagingOperation(_) => {
                 OperationToShard::to_all(operation)

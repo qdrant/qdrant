@@ -1,13 +1,19 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::common::inference::params::InferenceParams;
+use crate::common::inference::service::InferenceType;
+use crate::common::inference::update_requests::*;
+use crate::common::strict_mode::*;
 use api::rest::models::InferenceUsage;
 use api::rest::*;
 use collection::collection::Collection;
 use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::point_ops::*;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{CollectionError, CollectionResult, UpdateResult};
+use collection::operations::types::{
+    CollectionError, CollectionResult, UpdateResult, UpdateStatus,
+};
 use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::shards::shard::ShardId;
@@ -26,11 +32,6 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, Auth};
 use validator::Validate;
-
-use crate::common::inference::params::InferenceParams;
-use crate::common::inference::service::InferenceType;
-use crate::common::inference::update_requests::*;
-use crate::common::strict_mode::*;
 
 #[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
@@ -921,7 +922,7 @@ pub async fn do_create_index(
     // This function is required as long as we want to maintain interface compatibility
     // for `wait` parameter and return type.
     // The idea is to migrate from the point-like interface to consensus-like interface in the next few versions
-
+    // ToDo (v1.18.1+) Switch to Nop instead of repeating operation twice
     do_create_index_internal(
         toc,
         collection_name,
@@ -994,6 +995,7 @@ pub async fn do_delete_index(
         )
         .await?;
 
+    // ToDo (v1.18.1+) Switch to Nop instead of repeating operation twice
     do_delete_index_internal(
         toc,
         collection_name,
@@ -1030,48 +1032,125 @@ pub async fn do_delete_index_internal(
     .await
 }
 
+#[expect(clippy::too_many_arguments)]
 pub async fn do_create_vector_name(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
     vector_name: String,
     config: segment::data_types::vector_name_config::VectorNameConfig,
+    internal_params: InternalUpdateParams,
+    params: UpdateParams,
     auth: Auth,
-    wait_timeout: Option<Duration>,
-) -> Result<bool, StorageError> {
-    let consensus_op = storage::content_manager::collection_meta_ops::CreateNamedVector {
-        collection_name,
-        vector_name,
-        config,
+    hw_measurement_acc: HwMeasurementAcc,
+) -> Result<UpdateResult, StorageError> {
+    use collection::operations::verification::new_unchecked_verification_pass;
+
+    let UpdateParams {
+        wait,
+        ordering: _, // is not applicable to vector name operations, as they go via consensus
+        timeout,
+    } = &params;
+
+    let consensus_op = CreateNamedVector {
+        collection_name: collection_name.clone(),
+        vector_name: vector_name.clone(),
+        config: config.clone(),
     };
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&auth, &pass).clone();
 
     dispatcher
         .submit_collection_meta_op(
-            storage::content_manager::collection_meta_ops::CollectionMetaOperations::CreateNamedVector(consensus_op),
+            CollectionMetaOperations::CreateNamedVector(consensus_op),
+            auth.clone(),
+            params.timeout,
+        )
+        .await?;
+
+    if *wait {
+        dispatcher.await_consensus_sync(*timeout).await?;
+        let operation = CollectionUpdateOperations::NopOperation(NopOperation::new(format!(
+            "waiting creating vector {vector_name}"
+        )));
+
+        update(
+            &toc,
+            &collection_name,
+            operation,
+            internal_params,
+            params,
+            None,
             auth,
-            wait_timeout,
+            hw_measurement_acc,
         )
         .await
+    } else {
+        Ok(UpdateResult {
+            operation_id: None,
+            status: UpdateStatus::Acknowledged,
+            clock_tag: None,
+        })
+    }
 }
 
 pub async fn do_delete_vector_name(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
     vector_name: String,
+    internal_params: InternalUpdateParams,
+    params: UpdateParams,
     auth: Auth,
-    wait_timeout: Option<Duration>,
-) -> Result<bool, StorageError> {
-    let consensus_op = storage::content_manager::collection_meta_ops::DeleteNamedVector {
-        collection_name,
-        vector_name,
+    hw_measurement_acc: HwMeasurementAcc,
+) -> Result<UpdateResult, StorageError> {
+    use collection::operations::verification::new_unchecked_verification_pass;
+
+    let consensus_op = DeleteNamedVector {
+        collection_name: collection_name.clone(),
+        vector_name: vector_name.clone(),
     };
+
+    let UpdateParams {
+        wait,
+        ordering: _, // is not applicable to vector name operations, as they go via consensus
+        timeout,
+    } = &params;
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&auth, &pass).clone();
 
     dispatcher
         .submit_collection_meta_op(
-            storage::content_manager::collection_meta_ops::CollectionMetaOperations::DeleteNamedVector(consensus_op),
+            CollectionMetaOperations::DeleteNamedVector(consensus_op),
+            auth.clone(),
+            *timeout,
+        )
+        .await?;
+
+    if *wait {
+        dispatcher.await_consensus_sync(*timeout).await?;
+        let operation = CollectionUpdateOperations::NopOperation(NopOperation::new(format!(
+            "waiting deleting vector {vector_name}"
+        )));
+
+        update(
+            &toc,
+            &collection_name,
+            operation,
+            internal_params,
+            params,
+            None,
             auth,
-            wait_timeout,
+            hw_measurement_acc,
         )
         .await
+    } else {
+        Ok(UpdateResult {
+            operation_id: None,
+            status: UpdateStatus::Acknowledged,
+            clock_tag: None,
+        })
+    }
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -1117,7 +1196,9 @@ pub async fn update(
             }
         }
 
-        CollectionUpdateOperations::FieldIndexOperation(_) => {
+        CollectionUpdateOperations::FieldIndexOperation(_)
+        | CollectionUpdateOperations::VectorNameOperation(_)
+        | CollectionUpdateOperations::NopOperation(_) => {
             debug_assert_eq!(
                 shard_key, None,
                 "Field index operations can't specify shard key"
@@ -1128,8 +1209,14 @@ pub async fn update(
                 None => ShardSelectorInternal::All,
             }
         }
-
-        _ => get_shard_selector_for_update(shard_id, shard_key),
+        CollectionUpdateOperations::VectorOperation(_)
+        | CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(_))
+        | CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(_))
+        | CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { .. })
+        | CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(_))
+        | CollectionUpdateOperations::PayloadOperation(_) => {
+            get_shard_selector_for_update(shard_id, shard_key)
+        }
     };
 
     toc.update(

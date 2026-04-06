@@ -251,9 +251,21 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
         - name: timeout
           in: query
-          description: "Wait for operation commit timeout in seconds. If timeout is reached, the request will return with a service error."
+          description: "Timeout for the operation"
           required: false
           schema:
             type: integer
@@ -285,9 +297,21 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
         - name: timeout
           in: query
-          description: "Wait for operation commit timeout in seconds. If timeout is reached, the request will return with a service error."
+          description: "Timeout for the operation"
           required: false
           schema:
             type: integer

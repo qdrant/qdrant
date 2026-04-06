@@ -110,7 +110,8 @@ impl ShardOperation for DummyShard {
             // Allow (and ignore) field index and vector name operations.
             // These schemas are stored in collection config and will be recreated when recovered.
             CollectionUpdateOperations::FieldIndexOperation(_)
-            | CollectionUpdateOperations::VectorNameOperation(_) => Ok(UpdateResult {
+            | CollectionUpdateOperations::VectorNameOperation(_)
+            | CollectionUpdateOperations::NopOperation(_) => Ok(UpdateResult {
                 operation_id: None,
                 status: UpdateStatus::Acknowledged,
                 clock_tag: None,

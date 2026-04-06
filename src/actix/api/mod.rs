@@ -22,6 +22,7 @@ pub mod service_api;
 pub mod shards_api;
 pub mod snapshot_api;
 pub mod update_api;
+pub mod vector_name_api;
 
 /// A collection path with stricter validation
 ///

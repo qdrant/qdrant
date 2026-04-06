@@ -368,6 +368,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ClearPayloadPointsInternal.clear_payload_points", ""),
             ("CreateFieldIndexCollectionInternal.create_field_index_collection", ""),
             ("DeleteFieldIndexCollectionInternal.delete_field_index_collection", ""),
+            ("NopOperationInternal.comment", ""),
             ("UpdateOperation.update", ""),
             ("UpdateBatchInternal.operations", ""),
             ("SearchPointsInternal.search_points", ""),

@@ -12,7 +12,7 @@ use api::grpc::qdrant::{
     UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
     points_update_operation,
 };
-use api::grpc::{HardwareUsage, InferenceUsage, Usage};
+use api::grpc::{HardwareUsage, InferenceUsage, NopOperation, Usage};
 use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct};
 use collection::operations::CollectionUpdateOperations;
@@ -832,6 +832,38 @@ pub async fn delete_field_index_internal(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         HwMeasurementAcc::disposable(), // API unmeasured
+    )
+    .await?;
+
+    let response = points_operation_response_internal(timing, result, None);
+    Ok(Response::new(response))
+}
+
+pub async fn do_nop_operation_internal(
+    toc: Arc<TableOfContent>,
+    nop_operation: NopOperation,
+    internal_params: InternalUpdateParams,
+    auth: Auth,
+    request_hw_counter: RequestHwCounter,
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
+    let NopOperation {
+        collection_name,
+        wait,
+        comment,
+        ordering,
+        timeout,
+    } = nop_operation;
+
+    let timing = Instant::now();
+    let result = update(
+        &toc,
+        &collection_name,
+        CollectionUpdateOperations::NopOperation(shard::operations::NopOperation { comment }),
+        internal_params,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
+        None,
+        auth,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
