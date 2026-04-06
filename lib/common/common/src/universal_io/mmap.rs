@@ -176,7 +176,7 @@ impl MmapFile {
 
     /// Returns total file size on disk in bytes.
     pub fn disk_bytes(&self) -> std::io::Result<u64> {
-        Ok(fs::metadata(&self.path)?.len())
+        Ok(fs_err::metadata(&self.path)?.len())
     }
 
     /// Returns the number of bytes currently resident in RAM (page cache),
@@ -188,10 +188,9 @@ impl MmapFile {
             return Ok(0);
         }
 
-        let page_size = crate::mmap::advice::page_size().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::Other, "failed to determine page size")
-        })?;
-        let num_pages = (len + page_size - 1) / page_size;
+        let page_size = crate::mmap::advice::page_size()
+            .ok_or_else(|| std::io::Error::other("failed to determine page size"))?;
+        let num_pages = len.div_ceil(page_size);
         let mut vec = vec![0u8; num_pages];
 
         // SAFETY: `self.mmap.as_ptr()` is a valid page-aligned pointer for `len` bytes

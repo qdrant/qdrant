@@ -557,8 +557,8 @@ impl InMemoryGeoMapIndex {
         // points_map: BTreeMap entries + AHashSet per entry
         let hashset_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
         let pm_bytes: usize = points_map
-            .iter()
-            .map(|(_, set)| {
+            .values()
+            .map(|set| {
                 std::mem::size_of::<GeoHash>()
                     + btree_entry_overhead
                     + set.capacity()

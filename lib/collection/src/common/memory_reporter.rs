@@ -257,7 +257,7 @@ pub fn report_from_segment(
                 quantized,
             } = vr;
             Ok(NamedVectorMemoryReport {
-                name: name.to_string(),
+                name,
                 storage: measure_component(storage)?,
                 index: measure_component(index)?,
                 quantized: quantized.map(measure_component).transpose()?,
@@ -274,7 +274,7 @@ pub fn report_from_segment(
                 quantized: _,
             } = vr;
             Ok(NamedSparseVectorMemoryReport {
-                name: name.to_string(),
+                name,
                 storage: measure_component(storage)?,
                 index: measure_component(index)?,
             })

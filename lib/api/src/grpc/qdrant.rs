@@ -4116,10 +4116,10 @@ pub struct GetShardOptimizationsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-#[derive(validator::Validate)]
 pub struct GetShardMemoryReportRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
