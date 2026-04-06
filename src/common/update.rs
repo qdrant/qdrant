@@ -1218,6 +1218,10 @@ pub async fn update(
         | CollectionUpdateOperations::PayloadOperation(_) => {
             get_shard_selector_for_update(shard_id, shard_key)
         }
+        #[cfg(feature = "staging")]
+        CollectionUpdateOperations::StagingOperation(_) => {
+            get_shard_selector_for_update(shard_id, shard_key)
+        }
     };
 
     toc.update(
