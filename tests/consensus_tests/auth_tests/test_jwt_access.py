@@ -286,6 +286,22 @@ ACTION_ACCESS = {
         "qdrant.Points/DeleteFieldIndex",
         coll_prw=False,
     ),
+    "create_vector_name": EndpointAccess(
+        False,
+        True,
+        True,
+        "PUT /collections/{collection_name}/vectors/{vector_name}",
+        "qdrant.Collections/CreateVectorName",
+        coll_prw=False,
+    ),
+    "delete_vector_name": EndpointAccess(
+        False,
+        True,
+        True,
+        "DELETE /collections/{collection_name}/vectors/{vector_name}",
+        "qdrant.Collections/DeleteVectorName",
+        coll_prw=False,
+    ),
     ### Collection Snapshots ###
     "list_collection_snapshots": EndpointAccess(
         True,
