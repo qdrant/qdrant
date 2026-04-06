@@ -221,4 +221,27 @@ impl Segment {
 
         Ok(true)
     }
+
+    /// Reconcile named vectors in this segment to match the desired configuration.
+    ///
+    /// Creates vectors that are in `desired` but missing from the segment.
+    /// Does NOT delete extra vectors (segment may have vectors from ongoing operations).
+    ///
+    /// This is similar to `update_all_field_indices` for payload indexes.
+    pub fn update_all_vector_names(
+        &mut self,
+        desired: &[(crate::types::VectorNameBuf, VectorNameConfig)],
+    ) -> OperationResult<()> {
+        let version = self.version.unwrap_or(0);
+
+        for (name, config) in desired {
+            if self.vector_data.contains_key(name) {
+                continue;
+            }
+            log::warn!("Segment is missing vector '{name}', creating it now");
+            self.create_vector_name_impl(version, name, config)?;
+        }
+
+        Ok(())
+    }
 }

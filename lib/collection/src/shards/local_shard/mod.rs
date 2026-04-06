@@ -77,7 +77,7 @@ use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
-    ShardUpdateQueueInfo, check_sparse_compatible_with_segment_config,
+    ShardUpdateQueueInfo,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::shards::CollectionId;
@@ -406,9 +406,14 @@ impl LocalShard {
             })
             .map(|entry| entry.path());
 
+        // Build desired vector names from collection config for segment reconciliation
+        let desired_vector_names =
+            desired_vector_names_from_config(&collection_config_read.params);
+
         let mut segment_stream = futures::stream::iter(segment_paths)
             .map(|segment_path| {
                 let payload_index_schema = Arc::clone(&payload_index_schema);
+                let desired_vectors = desired_vector_names.clone();
                 let handle = tokio::task::spawn_blocking(move || {
                     let Some((segment_path, uuid)) = normalize_segment_dir(&segment_path)? else {
                         return CollectionResult::Ok(None);
@@ -428,6 +433,10 @@ impl LocalShard {
                         )?;
                     }
 
+                    // Reconcile named vectors: create vectors that exist in collection config
+                    // but are missing from the segment (e.g. after crash between config update and shard update)
+                    segment.update_all_vector_names(&desired_vectors)?;
+
                     CollectionResult::Ok(Some(segment))
                 });
                 AbortOnDropHandle::new(handle)
@@ -445,23 +454,6 @@ impl LocalShard {
             let Some(segment) = result?? else {
                 continue;
             };
-
-            collection_config_read
-                .params
-                .vectors
-                .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
-            collection_config_read
-                .params
-                .sparse_vectors
-                .as_ref()
-                .map(|sparse_vectors| {
-                    check_sparse_compatible_with_segment_config(
-                        sparse_vectors,
-                        &segment.config().sparse_vector_data,
-                        true,
-                    )
-                })
-                .unwrap_or(Ok(()))?;
 
             segment_holder.add_new(segment);
         }
@@ -1431,4 +1423,48 @@ impl LocalShardClocks {
     fn oldest_clocks_path(shard_path: &Path) -> PathBuf {
         shard::files::oldest_clocks_path(shard_path)
     }
+}
+
+/// Build a list of desired vector names from collection params for segment reconciliation.
+fn desired_vector_names_from_config(
+    params: &crate::config::CollectionParams,
+) -> Vec<(segment::types::VectorNameBuf, segment::data_types::vector_name_config::VectorNameConfig)>
+{
+    use segment::data_types::vector_name_config::{
+        DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
+    };
+
+    let mut desired = Vec::new();
+
+    for (name, vp) in params.vectors.params_iter() {
+        desired.push((
+            name.to_owned(),
+            VectorNameConfig::dense(DenseVectorConfig {
+                size: vp.size.get() as usize,
+                distance: vp.distance,
+                multivector_config: vp.multivector_config,
+                datatype: vp
+                    .datatype
+                    .map(segment::types::VectorStorageDatatype::from),
+            }),
+        ));
+    }
+
+    if let Some(sparse) = &params.sparse_vectors {
+        for (name, sp) in sparse {
+            desired.push((
+                name.clone(),
+                VectorNameConfig::sparse(SparseVectorConfig {
+                    modifier: sp.modifier,
+                    datatype: sp
+                        .index
+                        .as_ref()
+                        .and_then(|idx| idx.datatype)
+                        .map(segment::types::VectorStorageDatatype::from),
+                }),
+            ));
+        }
+    }
+
+    desired
 }
