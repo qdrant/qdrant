@@ -231,6 +231,69 @@ paths:
             minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
+  /collections/{collection_name}/vectors/{vector_name}:
+    put:
+      tags:
+        - Collections
+      summary: Create named vector
+      description: Create a new named vector on an existing collection
+      operationId: create_vector_name
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: vector_name
+          in: path
+          description: Name of the vector to create
+          required: true
+          schema:
+            type: string
+        - name: timeout
+          in: query
+          description: "Wait for operation commit timeout in seconds. If timeout is reached, the request will return with a service error."
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        description: Vector configuration - dense or sparse
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VectorNameConfig"
+      responses: #@ response(type("boolean"))
+
+    delete:
+      tags:
+        - Collections
+      summary: Delete named vector
+      description: Delete a named vector from a collection
+      operationId: delete_vector_name
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: vector_name
+          in: path
+          description: Name of the vector to delete
+          required: true
+          schema:
+            type: string
+        - name: timeout
+          in: query
+          description: "Wait for operation commit timeout in seconds. If timeout is reached, the request will return with a service error."
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(type("boolean"))
+
   /collections/{collection_name}/cluster:
     get:
       tags:

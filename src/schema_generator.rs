@@ -101,6 +101,7 @@ struct AllDefinitions {
     bo: ShardKeysResponse,
     bp: OptimizationsResponse,
     bq: DistributedTelemetryData,
+    br: segment::data_types::vector_name_config::VectorNameConfig,
 }
 
 fn save_schema<T: JsonSchema>() {
