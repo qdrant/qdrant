@@ -1041,7 +1041,7 @@ pub async fn do_create_vector_name(
     let consensus_op =
         storage::content_manager::collection_meta_ops::CreateNamedVector {
             collection_name,
-            vector_name: vector_name.into(),
+            vector_name,
             config,
         };
 
@@ -1064,7 +1064,7 @@ pub async fn do_delete_vector_name(
     let consensus_op =
         storage::content_manager::collection_meta_ops::DeleteNamedVector {
             collection_name,
-            vector_name: vector_name.into(),
+            vector_name,
         };
 
     dispatcher

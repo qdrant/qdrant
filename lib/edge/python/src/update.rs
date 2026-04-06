@@ -232,7 +232,7 @@ impl PyUpdateOperation {
             },
         );
         let operation = VectorNameOperations::CreateVectorName(CreateVectorName {
-            vector_name: vector_name.into(),
+            vector_name,
             config,
         });
         Self(CollectionUpdateOperations::VectorNameOperation(operation))
@@ -253,7 +253,7 @@ impl PyUpdateOperation {
             },
         );
         let operation = VectorNameOperations::CreateVectorName(CreateVectorName {
-            vector_name: vector_name.into(),
+            vector_name,
             config,
         });
         Self(CollectionUpdateOperations::VectorNameOperation(operation))
@@ -263,7 +263,7 @@ impl PyUpdateOperation {
     #[staticmethod]
     pub fn delete_vector_name(vector_name: String) -> Self {
         let operation = VectorNameOperations::DeleteVectorName(DeleteVectorName {
-            vector_name: vector_name.into(),
+            vector_name,
         });
         Self(CollectionUpdateOperations::VectorNameOperation(operation))
     }

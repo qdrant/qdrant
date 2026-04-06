@@ -368,7 +368,7 @@ impl Collection {
         if let Some(current_sparse) = &current_config.params.sparse_vectors {
             let target_sparse = target_config.params.sparse_vectors.as_ref();
             for vector_name in current_sparse.keys() {
-                if target_sparse.map_or(true, |t| !t.contains_key(vector_name)) {
+                if !target_sparse.is_some_and(|t| t.contains_key(vector_name)) {
                     to_delete.push(vector_name.clone());
                 }
             }

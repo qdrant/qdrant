@@ -3466,7 +3466,6 @@ impl TryFrom<grpc::create_vector_name_request::VectorConfig>
         use segment::data_types::vector_name_config::{
             DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
         };
-        use segment::types::VectorStorageDatatype;
 
         match config {
             grpc::create_vector_name_request::VectorConfig::DenseConfig(p) => {
@@ -3483,8 +3482,7 @@ impl TryFrom<grpc::create_vector_name_request::VectorConfig>
                     multivector_config: multivector_config
                         .map(|c| c.try_into())
                         .transpose()?,
-                    datatype: convert_datatype_from_proto(datatype)?
-                        .map(VectorStorageDatatype::from),
+                    datatype: convert_datatype_from_proto(datatype)?,
                 }))
             }
             grpc::create_vector_name_request::VectorConfig::SparseConfig(p) => {
@@ -3494,8 +3492,7 @@ impl TryFrom<grpc::create_vector_name_request::VectorConfig>
                     modifier: modifier
                         .and_then(|m| grpc::Modifier::try_from(m).ok())
                         .map(Modifier::from),
-                    datatype: convert_datatype_from_proto(datatype)?
-                        .map(VectorStorageDatatype::from),
+                    datatype: convert_datatype_from_proto(datatype)?,
                 }))
             }
         }
