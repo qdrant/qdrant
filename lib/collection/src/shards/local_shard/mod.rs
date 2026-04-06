@@ -407,8 +407,7 @@ impl LocalShard {
             .map(|entry| entry.path());
 
         // Build desired vector names from collection config for segment reconciliation
-        let desired_vector_names =
-            desired_vector_names_from_config(&collection_config_read.params);
+        let desired_vector_names = desired_vector_names_from_config(&collection_config_read.params);
 
         let mut segment_stream = futures::stream::iter(segment_paths)
             .map(|segment_path| {
@@ -1428,8 +1427,10 @@ impl LocalShardClocks {
 /// Build a list of desired vector names from collection params for segment reconciliation.
 fn desired_vector_names_from_config(
     params: &crate::config::CollectionParams,
-) -> Vec<(segment::types::VectorNameBuf, segment::data_types::vector_name_config::VectorNameConfig)>
-{
+) -> Vec<(
+    segment::types::VectorNameBuf,
+    segment::data_types::vector_name_config::VectorNameConfig,
+)> {
     use segment::data_types::vector_name_config::{
         DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
     };
@@ -1443,9 +1444,7 @@ fn desired_vector_names_from_config(
                 size: vp.size.get() as usize,
                 distance: vp.distance,
                 multivector_config: vp.multivector_config,
-                datatype: vp
-                    .datatype
-                    .map(segment::types::VectorStorageDatatype::from),
+                datatype: vp.datatype.map(segment::types::VectorStorageDatatype::from),
             }),
         ));
     }
