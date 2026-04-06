@@ -199,7 +199,7 @@ impl MmapFile {
             nix::libc::mincore(
                 self.mmap.as_ptr() as *mut nix::libc::c_void,
                 len,
-                vec.as_mut_ptr(),
+                vec.as_mut_ptr().cast(),
             )
         };
         if ret != 0 {

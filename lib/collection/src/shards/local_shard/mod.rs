@@ -1096,13 +1096,14 @@ impl LocalShard {
         tokio::task::spawn_blocking(move || {
             let segments_read = segments.read();
             let mut reports = Vec::new();
-            for (_id, segment) in segments_read.iter_original() {
-                let segment_guard = segment.read();
-                let seg_report = segment_guard.memory_report();
-                reports.push(crate::common::memory_reporter::report_from_segment(
-                    seg_report,
-                )?);
+
+            // Collect from all segments, including those wrapped in proxies.
+            // During optimization, original segments become proxy-wrapped while
+            // a new empty segment is built. We must report from both.
+            for (_id, locked_segment) in segments_read.iter() {
+                collect_memory_reports(locked_segment, &mut reports)?;
             }
+
             Ok(CollectionMemoryReport::merge_all(reports))
         })
         .await
@@ -1483,6 +1484,30 @@ fn desired_vector_names_from_config(
             ));
         }
     }
-
     desired
+}
+
+/// Recursively collect memory reports from a `LockedSegment`.
+///
+/// For `Original` segments, collects directly.
+/// For `Proxy` segments, collects from the wrapped segment
+/// (which is the real data holder during optimization).
+fn collect_memory_reports(
+    locked_segment: &LockedSegment,
+    reports: &mut Vec<CollectionMemoryReport>,
+) -> CollectionResult<()> {
+    match locked_segment {
+        LockedSegment::Original(segment) => {
+            let segment_guard = segment.read();
+            let seg_report = segment_guard.memory_report();
+            reports.push(crate::common::memory_reporter::report_from_segment(
+                seg_report,
+            )?);
+        }
+        LockedSegment::Proxy(proxy) => {
+            let proxy_guard = proxy.read();
+            collect_memory_reports(&proxy_guard.wrapped_segment, reports)?;
+        }
+    }
+    Ok(())
 }
