@@ -1038,12 +1038,11 @@ pub async fn do_create_vector_name(
     auth: Auth,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    let consensus_op =
-        storage::content_manager::collection_meta_ops::CreateNamedVector {
-            collection_name,
-            vector_name,
-            config,
-        };
+    let consensus_op = storage::content_manager::collection_meta_ops::CreateNamedVector {
+        collection_name,
+        vector_name,
+        config,
+    };
 
     dispatcher
         .submit_collection_meta_op(
@@ -1061,11 +1060,10 @@ pub async fn do_delete_vector_name(
     auth: Auth,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    let consensus_op =
-        storage::content_manager::collection_meta_ops::DeleteNamedVector {
-            collection_name,
-            vector_name,
-        };
+    let consensus_op = storage::content_manager::collection_meta_ops::DeleteNamedVector {
+        collection_name,
+        vector_name,
+    };
 
     dispatcher
         .submit_collection_meta_op(

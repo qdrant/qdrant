@@ -1,10 +1,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::validate;
-use crate::common::collections::*;
-use crate::tonic::api::collections_common::get;
-use crate::tonic::auth::extract_auth;
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
     ChangeAliases, CollectionClusterInfoRequest, CollectionClusterInfoResponse,
@@ -24,6 +20,11 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use segment::data_types::vector_name_config::VectorNameConfig;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
+
+use super::validate;
+use crate::common::collections::*;
+use crate::tonic::api::collections_common::get;
+use crate::tonic::auth::extract_auth;
 
 pub struct CollectionsService {
     dispatcher: Arc<Dispatcher>,

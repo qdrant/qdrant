@@ -6,13 +6,13 @@ use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::vector_name_config::{
+    DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
+};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
     StorageSegmentEntry as _,
-};
-use crate::data_types::vector_name_config::{
-    DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
 use crate::segment::Segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
@@ -103,10 +103,7 @@ fn build_immutable_segment_with_data(
 
     // Target config with Mmap storage -> non-appendable
     let target_config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            mmap_dense_config(DIM),
-        )]),
+        vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), mmap_dense_config(DIM))]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
@@ -116,9 +113,7 @@ fn build_immutable_segment_with_data(
         SegmentBuilder::new(temp_path, &target_config, &HnswGlobalConfig::default()).unwrap();
 
     let stopped = AtomicBool::new(false);
-    builder
-        .update(&[&source], &stopped, &hw())
-        .unwrap();
+    builder.update(&[&source], &stopped, &hw()).unwrap();
 
     let segment = builder.build_for_test(segments_path);
     assert!(!segment.appendable_flag);
@@ -182,10 +177,12 @@ fn test_create_sparse_vector_on_appendable_segment() {
         .create_vector_name(100, "sparse1", &sparse_vector_name_config())
         .unwrap();
     assert!(result);
-    assert!(segment
-        .segment_config
-        .sparse_vector_data
-        .contains_key("sparse1"));
+    assert!(
+        segment
+            .segment_config
+            .sparse_vector_data
+            .contains_key("sparse1")
+    );
 
     // Insert a point with sparse data
     let sparse_vec = SparseVector::new(vec![0, 2, 5], vec![1.0, 0.5, 0.3]).unwrap();
@@ -236,9 +233,7 @@ fn test_create_dense_vector_on_immutable_segment() {
 
     // Original default vector is still readable for all points
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = segment
-            .vector(DEFAULT_VECTOR_NAME, i.into(), &hw)
-            .unwrap();
+        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
         assert!(
             default_vec.is_some(),
             "point {i} should have default vector"
@@ -262,13 +257,12 @@ fn test_create_sparse_vector_on_immutable_segment() {
         .create_vector_name(100, "sp", &sparse_vector_name_config())
         .unwrap();
     assert!(result);
-    assert!(segment
-        .segment_config
-        .sparse_vector_data
-        .contains_key("sp"));
+    assert!(segment.segment_config.sparse_vector_data.contains_key("sp"));
 
     // Verify the index type was upgraded from MutableRam to Mmap
-    let stored_index_type = segment.segment_config.sparse_vector_data["sp"].index.index_type;
+    let stored_index_type = segment.segment_config.sparse_vector_data["sp"]
+        .index
+        .index_type;
     assert!(
         stored_index_type.is_immutable(),
         "expected immutable sparse index type on immutable segment, got {stored_index_type:?}"
@@ -289,9 +283,7 @@ fn test_create_sparse_vector_on_immutable_segment() {
 
     // Original default vector is still readable
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = segment
-            .vector(DEFAULT_VECTOR_NAME, i.into(), &hw)
-            .unwrap();
+        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
         assert!(
             default_vec.is_some(),
             "point {i} should have default vector"
@@ -310,13 +302,9 @@ fn test_create_vector_idempotent() {
 
     let config = dense_vector_name_config(8);
 
-    assert!(segment
-        .create_vector_name(100, "v2", &config)
-        .unwrap());
+    assert!(segment.create_vector_name(100, "v2", &config).unwrap());
     // Second call returns false (already exists)
-    assert!(!segment
-        .create_vector_name(101, "v2", &config)
-        .unwrap());
+    assert!(!segment.create_vector_name(101, "v2", &config).unwrap());
 }
 
 #[test]
@@ -340,11 +328,7 @@ fn test_delete_dense_vector_with_data() {
     // Create vector and insert data
     let new_dim = 8;
     segment
-        .create_vector_name(
-            100,
-            "to_delete",
-            &dense_vector_name_config(new_dim),
-        )
+        .create_vector_name(100, "to_delete", &dense_vector_name_config(new_dim))
         .unwrap();
 
     let mut vectors = NamedVectors::default();
@@ -364,17 +348,12 @@ fn test_delete_dense_vector_with_data() {
     assert!(segment.delete_vector_name(102, "to_delete").unwrap());
 
     assert!(!segment.vector_data.contains_key("to_delete"));
-    assert!(!segment
-        .segment_config
-        .vector_data
-        .contains_key("to_delete"));
+    assert!(!segment.segment_config.vector_data.contains_key("to_delete"));
 
     // Original points and the default vector are still intact
     assert_eq!(segment.available_point_count(), NUM_POINTS + 1);
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = segment
-            .vector(DEFAULT_VECTOR_NAME, i.into(), &hw)
-            .unwrap();
+        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
         assert!(default_vec.is_some());
     }
 }
@@ -406,10 +385,7 @@ fn test_delete_sparse_vector_with_data() {
 
     // Delete
     assert!(segment.delete_vector_name(102, "sp").unwrap());
-    assert!(!segment
-        .segment_config
-        .sparse_vector_data
-        .contains_key("sp"));
+    assert!(!segment.segment_config.sparse_vector_data.contains_key("sp"));
     assert!(!segment.vector_data.contains_key("sp"));
 }
 
@@ -425,11 +401,7 @@ fn test_persistence_after_create_with_data() {
 
     let new_dim = 6;
     segment
-        .create_vector_name(
-            100,
-            "persisted",
-            &dense_vector_name_config(new_dim),
-        )
+        .create_vector_name(100, "persisted", &dense_vector_name_config(new_dim))
         .unwrap();
 
     // Insert data into the new vector
@@ -450,10 +422,7 @@ fn test_persistence_after_create_with_data() {
     let loaded = load_segment(&segment_path, segment_uuid, None, &stopped).unwrap();
 
     // Config persisted
-    assert_eq!(
-        loaded.segment_config.vector_data["persisted"].size,
-        new_dim
-    );
+    assert_eq!(loaded.segment_config.vector_data["persisted"].size, new_dim);
     assert_eq!(loaded.available_point_count(), NUM_POINTS + 1);
 
     // Data persisted - vector is readable
@@ -464,9 +433,7 @@ fn test_persistence_after_create_with_data() {
 
     // Original data intact
     for i in 1..=NUM_POINTS as u64 {
-        let original = loaded
-            .vector(DEFAULT_VECTOR_NAME, i.into(), &hw)
-            .unwrap();
+        let original = loaded.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
         assert!(
             original.is_some(),
             "point {i} should have default vector after reload"
@@ -482,11 +449,7 @@ fn test_persistence_after_delete_with_data() {
 
     let new_dim = 8;
     segment
-        .create_vector_name(
-            100,
-            "temp",
-            &dense_vector_name_config(new_dim),
-        )
+        .create_vector_name(100, "temp", &dense_vector_name_config(new_dim))
         .unwrap();
 
     // Insert data, then delete the vector
@@ -513,9 +476,7 @@ fn test_persistence_after_delete_with_data() {
 
     // Original data still intact
     for i in 1..=NUM_POINTS as u64 {
-        let original = loaded
-            .vector(DEFAULT_VECTOR_NAME, i.into(), &hw)
-            .unwrap();
+        let original = loaded.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
         assert!(
             original.is_some(),
             "point {i} should have default vector after reload"

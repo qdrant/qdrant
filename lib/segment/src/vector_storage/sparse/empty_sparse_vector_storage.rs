@@ -49,10 +49,7 @@ pub fn new_empty_sparse_vector_storage(num_points: usize) -> VectorStorageEnum {
 }
 
 impl SparseVectorStorage for EmptySparseVectorStorage {
-    fn get_sparse<P: AccessPattern>(
-        &self,
-        _key: PointOffsetType,
-    ) -> OperationResult<SparseVector> {
+    fn get_sparse<P: AccessPattern>(&self, _key: PointOffsetType) -> OperationResult<SparseVector> {
         Ok(SparseVector::default())
     }
 
@@ -155,8 +152,17 @@ mod tests {
         assert!(storage.is_deleted_vector(499));
         assert!(storage.files().is_empty());
 
-        assert!(storage.get_vector_opt::<common::generic_consts::Random>(0).is_none());
-        assert!(storage.get_sparse_opt::<common::generic_consts::Random>(0).unwrap().is_none());
+        assert!(
+            storage
+                .get_vector_opt::<common::generic_consts::Random>(0)
+                .is_none()
+        );
+        assert!(
+            storage
+                .get_sparse_opt::<common::generic_consts::Random>(0)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

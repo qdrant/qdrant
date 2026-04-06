@@ -76,10 +76,7 @@ impl EdgeShard {
     }
 
     /// Update the edge shard config to reflect a vector name create/delete operation.
-    fn apply_vector_name_to_config(
-        &self,
-        operation: &VectorNameOperations,
-    ) -> OperationResult<()> {
+    fn apply_vector_name_to_config(&self, operation: &VectorNameOperations) -> OperationResult<()> {
         match operation {
             VectorNameOperations::CreateVectorName(create) => {
                 self.config

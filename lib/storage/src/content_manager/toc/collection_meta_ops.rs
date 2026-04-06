@@ -727,30 +727,20 @@ impl TableOfContent {
         Ok(())
     }
 
-    async fn create_named_vector(
-        &self,
-        operation: CreateNamedVector,
-    ) -> Result<(), StorageError> {
+    async fn create_named_vector(&self, operation: CreateNamedVector) -> Result<(), StorageError> {
         let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .create_named_vector(
-                operation.vector_name,
-                operation.config,
-                collection_hw_acc,
-            )
+            .create_named_vector(operation.vector_name, operation.config, collection_hw_acc)
             .await?;
 
         Ok(())
     }
 
-    async fn delete_named_vector(
-        &self,
-        operation: DeleteNamedVector,
-    ) -> Result<(), StorageError> {
+    async fn delete_named_vector(&self, operation: DeleteNamedVector) -> Result<(), StorageError> {
         self.get_collection_unchecked(&operation.collection_name)
             .await?
             .delete_named_vector(operation.vector_name)

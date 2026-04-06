@@ -317,7 +317,12 @@ impl Collection {
 
         // Dense vectors: delete those in current but not in target
         for (vector_name, _) in current_config.params.vectors.params_iter() {
-            if target_config.params.vectors.get_params(vector_name).is_none() {
+            if target_config
+                .params
+                .vectors
+                .get_params(vector_name)
+                .is_none()
+            {
                 to_delete.push(vector_name.to_owned());
             }
         }

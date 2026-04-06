@@ -15,9 +15,9 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::segment_record::SegmentRecord;
+use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::StorageSegmentEntry;
-use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
@@ -920,8 +920,10 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
         self.version = cmp::max(self.version, op_num);
 
-        self.changed_vector_names
-            .insert(vector_name.to_owned(), ProxyVectorNameChange::Delete(op_num));
+        self.changed_vector_names.insert(
+            vector_name.to_owned(),
+            ProxyVectorNameChange::Delete(op_num),
+        );
 
         Ok(true)
     }

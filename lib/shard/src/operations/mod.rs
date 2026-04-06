@@ -11,8 +11,9 @@ use segment::types::{PayloadFieldSchema, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
-pub use self::vector_name_ops::{VectorNameOperations, CreateVectorName, DeleteVectorName, VectorNameConfig};
-
+pub use self::vector_name_ops::{
+    CreateVectorName, DeleteVectorName, VectorNameConfig, VectorNameOperations,
+};
 use crate::PeerId;
 use crate::operations::point_ops::PointOperations;
 

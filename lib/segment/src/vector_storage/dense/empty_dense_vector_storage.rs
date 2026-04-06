@@ -171,8 +171,14 @@ mod tests {
 
     #[test]
     fn test_empty_dense_basic_contract() {
-        let storage =
-            EmptyDenseVectorStorage::new(128, Distance::Cosine, VectorStorageDatatype::Float32, true, None, 1000);
+        let storage = EmptyDenseVectorStorage::new(
+            128,
+            Distance::Cosine,
+            VectorStorageDatatype::Float32,
+            true,
+            None,
+            1000,
+        );
 
         assert_eq!(storage.distance(), Distance::Cosine);
         assert_eq!(storage.datatype(), VectorStorageDatatype::Float32);
@@ -188,18 +194,38 @@ mod tests {
         assert!(storage.multi_vector_config().is_none());
 
         // get_vector_opt always returns None
-        assert!(storage.get_vector_opt::<common::generic_consts::Random>(0).is_none());
-        assert!(storage.get_vector_opt::<common::generic_consts::Random>(500).is_none());
+        assert!(
+            storage
+                .get_vector_opt::<common::generic_consts::Random>(0)
+                .is_none()
+        );
+        assert!(
+            storage
+                .get_vector_opt::<common::generic_consts::Random>(500)
+                .is_none()
+        );
     }
 
     #[test]
     fn test_empty_dense_respects_on_disk_flag() {
-        let storage_on_disk =
-            EmptyDenseVectorStorage::new(64, Distance::Dot, VectorStorageDatatype::Float32, true, None, 0);
+        let storage_on_disk = EmptyDenseVectorStorage::new(
+            64,
+            Distance::Dot,
+            VectorStorageDatatype::Float32,
+            true,
+            None,
+            0,
+        );
         assert!(storage_on_disk.is_on_disk());
 
-        let storage_in_ram =
-            EmptyDenseVectorStorage::new(64, Distance::Dot, VectorStorageDatatype::Float32, false, None, 0);
+        let storage_in_ram = EmptyDenseVectorStorage::new(
+            64,
+            Distance::Dot,
+            VectorStorageDatatype::Float32,
+            false,
+            None,
+            0,
+        );
         assert!(!storage_in_ram.is_on_disk());
     }
 
@@ -221,8 +247,14 @@ mod tests {
 
     #[test]
     fn test_empty_dense_set_num_points() {
-        let mut storage =
-            EmptyDenseVectorStorage::new(64, Distance::Dot, VectorStorageDatatype::Float32, true, None, 0);
+        let mut storage = EmptyDenseVectorStorage::new(
+            64,
+            Distance::Dot,
+            VectorStorageDatatype::Float32,
+            true,
+            None,
+            0,
+        );
         assert_eq!(storage.total_vector_count(), 0);
         assert_eq!(storage.deleted_vector_count(), 0);
 
@@ -234,18 +266,33 @@ mod tests {
 
     #[test]
     fn test_empty_dense_insert_errors() {
-        let mut storage =
-            EmptyDenseVectorStorage::new(4, Distance::Cosine, VectorStorageDatatype::Float32, true, None, 10);
+        let mut storage = EmptyDenseVectorStorage::new(
+            4,
+            Distance::Cosine,
+            VectorStorageDatatype::Float32,
+            true,
+            None,
+            10,
+        );
         let vector = vec![1.0, 2.0, 3.0, 4.0];
-        let result =
-            storage.insert_vector(0, VectorRef::from(&vector), &HardwareCounterCell::disposable());
+        let result = storage.insert_vector(
+            0,
+            VectorRef::from(&vector),
+            &HardwareCounterCell::disposable(),
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn test_empty_dense_delete_is_noop() {
-        let mut storage =
-            EmptyDenseVectorStorage::new(4, Distance::Cosine, VectorStorageDatatype::Float32, true, None, 10);
+        let mut storage = EmptyDenseVectorStorage::new(
+            4,
+            Distance::Cosine,
+            VectorStorageDatatype::Float32,
+            true,
+            None,
+            10,
+        );
         // delete_vector returns false because it was already deleted
         assert!(!storage.delete_vector(0).unwrap());
     }

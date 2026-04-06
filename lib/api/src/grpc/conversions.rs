@@ -21,8 +21,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{
-    DateTimePayloadType, FloatPayloadType, VectorStorageDatatype,
-    default_quantization_ignore_value,
+    DateTimePayloadType, FloatPayloadType, VectorStorageDatatype, default_quantization_ignore_value,
 };
 use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
@@ -3479,9 +3478,7 @@ impl TryFrom<grpc::create_vector_name_request::VectorConfig>
                 Ok(VectorNameConfig::dense(DenseVectorConfig {
                     size: size as usize,
                     distance: from_grpc_dist(distance)?,
-                    multivector_config: multivector_config
-                        .map(|c| c.try_into())
-                        .transpose()?,
+                    multivector_config: multivector_config.map(|c| c.try_into()).transpose()?,
                     datatype: convert_datatype_from_proto(datatype)?,
                 }))
             }
@@ -3505,9 +3502,8 @@ fn convert_datatype_from_proto(
     let Some(dt) = datatype else {
         return Ok(None);
     };
-    let grpc_dt = grpc::Datatype::try_from(dt).map_err(|_| {
-        Status::invalid_argument(format!("Cannot convert datatype: {dt}"))
-    })?;
+    let grpc_dt = grpc::Datatype::try_from(dt)
+        .map_err(|_| Status::invalid_argument(format!("Cannot convert datatype: {dt}")))?;
     match grpc_dt {
         grpc::Datatype::Default => Ok(None),
         grpc::Datatype::Float32 => Ok(Some(VectorStorageDatatype::Float32)),

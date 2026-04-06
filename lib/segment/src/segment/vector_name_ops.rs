@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 
@@ -202,13 +202,17 @@ impl Segment {
         // Clean up disk files (best-effort)
         let storage_path = get_vector_storage_path(&self.segment_path, vector_name);
         let index_path = get_vector_index_path(&self.segment_path, vector_name);
-        if storage_path.exists() && let Err(e) = fs_err::remove_dir_all(&storage_path) {
+        if storage_path.exists()
+            && let Err(e) = fs_err::remove_dir_all(&storage_path)
+        {
             log::warn!(
                 "Failed to remove vector storage at {}: {e}",
                 storage_path.display()
             );
         }
-        if index_path.exists() && let Err(e) = fs_err::remove_dir_all(&index_path) {
+        if index_path.exists()
+            && let Err(e) = fs_err::remove_dir_all(&index_path)
+        {
             log::warn!(
                 "Failed to remove vector index at {}: {e}",
                 index_path.display()

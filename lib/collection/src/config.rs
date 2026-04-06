@@ -157,8 +157,6 @@ impl CollectionParams {
             sparse_vectors: _, // Sets may differ via named vector CRUD
         } = other;
 
-
-
         let this_sharding_method = self.sharding_method.unwrap_or_default();
         let other_sharding_method = sharding_method.unwrap_or_default();
 

@@ -3,7 +3,9 @@ use derive_more::Into;
 use pyo3::prelude::*;
 use segment::data_types::modifier::Modifier;
 use segment::json_path::JsonPath;
-use segment::types::{Distance, Filter, MultiVectorConfig, Payload, VectorNameBuf, VectorStorageDatatype};
+use segment::types::{
+    Distance, Filter, MultiVectorConfig, Payload, VectorNameBuf, VectorStorageDatatype,
+};
 use shard::operations::point_ops::{PointIdsList, PointInsertOperationsInternal, UpdateMode};
 use shard::operations::*;
 
@@ -223,14 +225,12 @@ impl PyUpdateOperation {
         multivector_config: Option<PyMultiVectorConfig>,
         datatype: Option<PyVectorStorageDatatype>,
     ) -> Self {
-        let config = vector_name_ops::VectorNameConfig::dense(
-            vector_name_ops::DenseVectorConfig {
-                size,
-                distance: Distance::from(distance),
-                multivector_config: multivector_config.map(MultiVectorConfig::from),
-                datatype: datatype.map(VectorStorageDatatype::from),
-            },
-        );
+        let config = vector_name_ops::VectorNameConfig::dense(vector_name_ops::DenseVectorConfig {
+            size,
+            distance: Distance::from(distance),
+            multivector_config: multivector_config.map(MultiVectorConfig::from),
+            datatype: datatype.map(VectorStorageDatatype::from),
+        });
         let operation = VectorNameOperations::CreateVectorName(CreateVectorName {
             vector_name,
             config,
@@ -246,12 +246,11 @@ impl PyUpdateOperation {
         modifier: Option<PyModifier>,
         datatype: Option<PyVectorStorageDatatype>,
     ) -> Self {
-        let config = vector_name_ops::VectorNameConfig::sparse(
-            vector_name_ops::SparseVectorConfig {
+        let config =
+            vector_name_ops::VectorNameConfig::sparse(vector_name_ops::SparseVectorConfig {
                 modifier: modifier.map(Modifier::from),
                 datatype: datatype.map(VectorStorageDatatype::from),
-            },
-        );
+            });
         let operation = VectorNameOperations::CreateVectorName(CreateVectorName {
             vector_name,
             config,
@@ -262,9 +261,7 @@ impl PyUpdateOperation {
     /// Delete a named vector from the collection.
     #[staticmethod]
     pub fn delete_vector_name(vector_name: String) -> Self {
-        let operation = VectorNameOperations::DeleteVectorName(DeleteVectorName {
-            vector_name,
-        });
+        let operation = VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name });
         Self(CollectionUpdateOperations::VectorNameOperation(operation))
     }
 }

@@ -5,8 +5,6 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-
-use crate::data_types::vector_name_config::VectorNameConfig;
 use common::fs::safe_delete_with_suffix;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
@@ -24,6 +22,7 @@ use crate::data_types::query_context::{
     FormulaContext, QueryContext, QueryIdfStats, SegmentQueryContext,
 };
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
+use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::{
     NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,

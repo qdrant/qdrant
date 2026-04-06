@@ -63,11 +63,7 @@ impl VersionTracker {
         self.vector_names_schema.get(vector_name).copied()
     }
 
-    pub fn set_vector_names_schema(
-        &mut self,
-        vector_name: &str,
-        version: Option<SeqNumberType>,
-    ) {
+    pub fn set_vector_names_schema(&mut self, vector_name: &str, version: Option<SeqNumberType>) {
         bump_key(&mut self.vector_names_schema, vector_name, version)
     }
 }

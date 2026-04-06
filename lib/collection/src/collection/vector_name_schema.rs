@@ -31,16 +31,17 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn delete_named_vector(
-        &self,
-        vector_name: VectorNameBuf,
-    ) -> CollectionResult<()> {
+    pub async fn delete_named_vector(&self, vector_name: VectorNameBuf) -> CollectionResult<()> {
         let operation = CollectionUpdateOperations::VectorNameOperation(
             VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name }),
         );
 
-        self.update_all_local(operation, WaitUntil::from(false), HwMeasurementAcc::disposable())
-            .await?;
+        self.update_all_local(
+            operation,
+            WaitUntil::from(false),
+            HwMeasurementAcc::disposable(),
+        )
+        .await?;
 
         Ok(())
     }

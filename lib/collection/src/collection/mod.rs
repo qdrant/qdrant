@@ -5,7 +5,6 @@ mod facet;
 pub mod mmr;
 pub mod payload_index_schema;
 mod point_ops;
-mod vector_name_schema;
 pub mod query;
 mod resharding;
 mod search;
@@ -14,6 +13,7 @@ mod sharding_keys;
 mod snapshots;
 mod state_management;
 mod telemetry;
+mod vector_name_schema;
 
 use std::collections::HashMap;
 use std::ops::Deref;
