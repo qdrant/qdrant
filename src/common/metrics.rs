@@ -52,6 +52,7 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{collection_name}/points/search/matrix/pairs",
     "/collections/{collection_name}/points/vectors",
     "/collections/{collection_name}/points/vectors/delete",
+    "/collections/{collection_name}/vectors/{vector_name}",
 ];
 
 /// Whitelist for GRPC endpoints in metrics output.
@@ -60,6 +61,8 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 ///
 /// This array *must* be sorted.
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
+    "/qdrant.Collections/CreateVectorName",
+    "/qdrant.Collections/DeleteVectorName",
     "/qdrant.Points/ClearPayload",
     "/qdrant.Points/Count",
     "/qdrant.Points/Delete",
