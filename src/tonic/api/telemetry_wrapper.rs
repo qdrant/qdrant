@@ -10,19 +10,19 @@ use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     CreateFullSnapshotRequest, CreateShardSnapshotRequest, CreateSnapshotRequest,
-    CreateSnapshotResponse, DeleteFieldIndexCollection, DeleteFullSnapshotRequest,
-    DeletePayloadPoints, DeletePointVectors, DeletePoints, DeleteShardSnapshotRequest,
-    DeleteSnapshotRequest, DeleteSnapshotResponse, DiscoverBatchPoints, DiscoverBatchResponse,
-    DiscoverPoints, DiscoverResponse, FacetCounts, FacetResponse, GetPoints, GetResponse,
-    ListFullSnapshotsRequest, ListShardSnapshotsRequest, ListSnapshotsRequest,
-    ListSnapshotsResponse, PointsOperationResponse, QueryBatchPoints, QueryBatchResponse,
-    QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse, RecommendBatchPoints,
-    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
-    RecommendResponse, RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints,
-    ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
-    SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups,
-    SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse,
-    UpdatePointVectors, UpsertPoints,
+    CreateSnapshotResponse, CreateVectorNameRequest, DeleteFieldIndexCollection,
+    DeleteFullSnapshotRequest, DeletePayloadPoints, DeletePointVectors, DeletePoints,
+    DeleteShardSnapshotRequest, DeleteSnapshotRequest, DeleteSnapshotResponse,
+    DeleteVectorNameRequest, DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints,
+    DiscoverResponse, FacetCounts, FacetResponse, GetPoints, GetResponse, ListFullSnapshotsRequest,
+    ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
+    PointsOperationResponse, QueryBatchPoints, QueryBatchResponse, QueryGroupsResponse,
+    QueryPointGroups, QueryPoints, QueryResponse, RecommendBatchPoints, RecommendBatchResponse,
+    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
+    RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollResponse,
+    SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse, SearchMatrixOffsetsResponse,
+    SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups, SearchPoints, SearchResponse,
+    SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use tonic::{Request, Response, Status};
 
@@ -154,6 +154,26 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
         let mut resp = self.inner.delete_field_index(request).await?;
+        resp.extensions_mut().insert(CollectionName(cn));
+        Ok(resp)
+    }
+
+    async fn create_vector_name(
+        &self,
+        request: Request<CreateVectorNameRequest>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        let cn = request.get_ref().collection_name.clone();
+        let mut resp = self.inner.create_vector_name(request).await?;
+        resp.extensions_mut().insert(CollectionName(cn));
+        Ok(resp)
+    }
+
+    async fn delete_vector_name(
+        &self,
+        request: Request<DeleteVectorNameRequest>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        let cn = request.get_ref().collection_name.clone();
+        let mut resp = self.inner.delete_vector_name(request).await?;
         resp.extensions_mut().insert(CollectionName(cn));
         Ok(resp)
     }
@@ -498,6 +518,8 @@ mod tests {
         update_batch(UpdateBatchPoints) -> UpdateBatchResponse,
         create_field_index(CreateFieldIndexCollection) -> PointsOperationResponse,
         delete_field_index(DeleteFieldIndexCollection) -> PointsOperationResponse,
+        create_vector_name(CreateVectorNameRequest) -> PointsOperationResponse,
+        delete_vector_name(DeleteVectorNameRequest) -> PointsOperationResponse,
         search(SearchPoints) -> SearchResponse,
         search_batch(SearchBatchPoints) -> SearchBatchResponse,
         search_groups(SearchPointGroups) -> SearchGroupsResponse,

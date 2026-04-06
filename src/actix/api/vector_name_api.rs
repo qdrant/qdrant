@@ -85,6 +85,5 @@ async fn delete_vector_name(
 }
 
 pub fn config_vector_name_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(create_vector_name)
-        .service(delete_vector_name);
+    cfg.service(create_vector_name).service(delete_vector_name);
 }

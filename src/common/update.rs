@@ -1,10 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::common::inference::params::InferenceParams;
-use crate::common::inference::service::InferenceType;
-use crate::common::inference::update_requests::*;
-use crate::common::strict_mode::*;
 use api::rest::models::InferenceUsage;
 use api::rest::*;
 use collection::collection::Collection;
@@ -32,6 +28,11 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, Auth};
 use validator::Validate;
+
+use crate::common::inference::params::InferenceParams;
+use crate::common::inference::service::InferenceType;
+use crate::common::inference::update_requests::*;
+use crate::common::strict_mode::*;
 
 #[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]

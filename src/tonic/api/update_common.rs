@@ -1051,3 +1051,71 @@ fn convert_field_type(
 
     Ok(field_schema)
 }
+
+pub async fn create_vector_name(
+    dispatcher: Arc<Dispatcher>,
+    request: api::grpc::qdrant::CreateVectorNameRequest,
+    internal_params: InternalUpdateParams,
+    auth: Auth,
+    request_hw_counter: RequestHwCounter,
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
+    let api::grpc::qdrant::CreateVectorNameRequest {
+        collection_name,
+        wait,
+        vector_name,
+        vector_config,
+        timeout,
+    } = request;
+
+    let config = segment::data_types::vector_name_config::VectorNameConfig::try_from(
+        vector_config.ok_or_else(|| {
+            Status::invalid_argument("vector_config is required (dense_config or sparse_config)")
+        })?,
+    )?;
+
+    let timing = Instant::now();
+    let result = do_create_vector_name(
+        dispatcher,
+        collection_name,
+        vector_name,
+        config,
+        internal_params,
+        UpdateParams::from_grpc(wait, None, timeout)?,
+        auth,
+        request_hw_counter.get_counter(),
+    )
+    .await?;
+
+    let response = points_operation_response_internal(timing, result, None);
+    Ok(Response::new(response))
+}
+
+pub async fn delete_vector_name(
+    dispatcher: Arc<Dispatcher>,
+    request: api::grpc::qdrant::DeleteVectorNameRequest,
+    internal_params: InternalUpdateParams,
+    auth: Auth,
+    request_hw_counter: RequestHwCounter,
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
+    let api::grpc::qdrant::DeleteVectorNameRequest {
+        collection_name,
+        wait,
+        vector_name,
+        timeout,
+    } = request;
+
+    let timing = Instant::now();
+    let result = do_delete_vector_name(
+        dispatcher,
+        collection_name,
+        vector_name,
+        internal_params,
+        UpdateParams::from_grpc(wait, None, timeout)?,
+        auth,
+        request_hw_counter.get_counter(),
+    )
+    .await?;
+
+    let response = points_operation_response_internal(timing, result, None);
+    Ok(Response::new(response))
+}

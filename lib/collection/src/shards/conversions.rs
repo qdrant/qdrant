@@ -1,14 +1,3 @@
-use crate::operations::conversions::write_ordering_to_proto;
-use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
-use crate::operations::point_ops::{
-    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
-    WriteOrdering,
-};
-use crate::operations::types::CollectionResult;
-use crate::operations::vector_ops::UpdateVectorsOp;
-use crate::operations::{ClockTag, CreateIndex};
-use crate::shards::shard::ShardId;
-use crate::shards::shard_trait::WaitUntil;
 use api::conversions::json::payload_to_proto;
 use api::grpc;
 use api::grpc::NopOperationInternal;
@@ -28,6 +17,18 @@ use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint, VectorNameBuf};
 use shard::operations::NopOperation;
 use tonic::Status;
+
+use crate::operations::conversions::write_ordering_to_proto;
+use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
+use crate::operations::point_ops::{
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
+    WriteOrdering,
+};
+use crate::operations::types::CollectionResult;
+use crate::operations::vector_ops::UpdateVectorsOp;
+use crate::operations::{ClockTag, CreateIndex};
+use crate::shards::shard::ShardId;
+use crate::shards::shard_trait::WaitUntil;
 
 /// Convert `WaitUntil` to the proto `wait_override` field value.
 #[expect(clippy::unnecessary_wraps)]

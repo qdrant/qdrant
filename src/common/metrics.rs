@@ -61,12 +61,12 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 ///
 /// This array *must* be sorted.
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
-    "/qdrant.Collections/CreateVectorName",
-    "/qdrant.Collections/DeleteVectorName",
     "/qdrant.Points/ClearPayload",
     "/qdrant.Points/Count",
+    "/qdrant.Points/CreateVectorName",
     "/qdrant.Points/Delete",
     "/qdrant.Points/DeletePayload",
+    "/qdrant.Points/DeleteVectorName",
     "/qdrant.Points/Discover",
     "/qdrant.Points/DiscoverBatch",
     "/qdrant.Points/Facet",

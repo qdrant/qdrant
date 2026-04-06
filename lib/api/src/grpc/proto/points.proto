@@ -352,6 +352,58 @@ message DeleteFieldIndexCollection {
   optional uint64 timeout = 5;
 }
 
+// Dense vector creation parameters.
+// Only includes immutable properties that define the vector space.
+// Storage type, index, and quantization are configured separately.
+message DenseVectorCreationConfig {
+  // Size/dimensionality of the vectors
+  uint64 size = 1;
+  // Distance function used for comparing vectors
+  Distance distance = 2;
+  // Configuration for multi-vector search (e.g., ColBERT)
+  optional MultiVectorConfig multivector_config = 3;
+  // Data type of the vectors (Float32, Float16, Uint8)
+  optional Datatype datatype = 4;
+}
+
+// Sparse vector creation parameters.
+// Only includes immutable properties that define the vector space.
+message SparseVectorCreationConfig {
+  // If set - apply modifier to the vector values (e.g., IDF)
+  optional Modifier modifier = 1;
+  // Data type used to store weights in the index
+  optional Datatype datatype = 2;
+}
+
+message CreateVectorNameRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Wait until the changes have been applied?
+  optional bool wait = 2;
+  // Name of the new vector
+  string vector_name = 3;
+  // Configuration for the new vector - either dense or sparse
+  oneof vector_config {
+    // Dense vector parameters
+    DenseVectorCreationConfig dense_config = 4;
+    // Sparse vector parameters
+    SparseVectorCreationConfig sparse_config = 5;
+  }
+  // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional uint64 timeout = 6;
+}
+
+message DeleteVectorNameRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Wait until the changes have been applied?
+  optional bool wait = 2;
+  // Name of the vector to delete
+  string vector_name = 3;
+  // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional uint64 timeout = 4;
+}
+
 message PayloadIncludeSelector {
   // List of payload keys to include into result
   repeated string fields = 1;

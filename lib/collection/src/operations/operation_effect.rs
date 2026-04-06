@@ -44,7 +44,6 @@ impl EstimateOperationEffectArea for CollectionUpdateOperations {
             CollectionUpdateOperations::NopOperation(_) => OperationEffectArea::Empty,
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(_) => OperationEffectArea::Empty,
-
         }
     }
 }

@@ -38,8 +38,4 @@ service Collections {
   rpc DeleteShardKey(DeleteShardKeyRequest) returns (DeleteShardKeyResponse) {}
   // List shard keys
   rpc ListShardKeys(ListShardKeysRequest) returns (ListShardKeysResponse) {}
-  // Create a new named vector on the collection
-  rpc CreateVectorName(CreateVectorNameRequest) returns (CollectionOperationResponse) {}
-  // Delete a named vector from the collection
-  rpc DeleteVectorName(DeleteVectorNameRequest) returns (CollectionOperationResponse) {}
 }

@@ -31,6 +31,10 @@ service Points {
   // Delete field index for collection
   rpc DeleteFieldIndex(DeleteFieldIndexCollection)
       returns (PointsOperationResponse) {}
+  // Create a new named vector on the collection
+  rpc CreateVectorName(CreateVectorNameRequest) returns (PointsOperationResponse) {}
+  // Delete a named vector from the collection
+  rpc DeleteVectorName(DeleteVectorNameRequest) returns (PointsOperationResponse) {}
   // Retrieve closest points based on vector similarity and given filtering
   // conditions
   rpc Search(SearchPoints) returns (SearchResponse) {}
