@@ -74,9 +74,9 @@ impl ImmutableIdTracker {
     pub fn ram_usage_bytes(&self) -> usize {
         let Self {
             path: _,
-            deleted_wrapper: _,              // mmap-backed, accounted via files
+            deleted_wrapper: _, // mmap-backed, accounted via files
             internal_to_version,
-            internal_to_version_wrapper: _,  // mmap-backed, accounted via files
+            internal_to_version_wrapper: _, // mmap-backed, accounted via files
             mappings,
         } = self;
 

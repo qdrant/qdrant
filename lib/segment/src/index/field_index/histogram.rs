@@ -760,6 +760,9 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         } = self;
 
         let btree_entry_overhead = std::mem::size_of::<usize>() * 3;
-        borders.len() * (std::mem::size_of::<Point<T>>() + std::mem::size_of::<Counts>() + btree_entry_overhead)
+        borders.len()
+            * (std::mem::size_of::<Point<T>>()
+                + std::mem::size_of::<Counts>()
+                + btree_entry_overhead)
     }
 }

@@ -1058,12 +1058,10 @@ impl RemoteShard {
         let res = self
             .with_collections_client(|mut client| async move {
                 client
-                    .get_shard_memory_report(
-                        api::grpc::qdrant::GetShardMemoryReportRequest {
-                            collection_name: self.collection_id.clone(),
-                            shard_id: self.id,
-                        },
-                    )
+                    .get_shard_memory_report(api::grpc::qdrant::GetShardMemoryReportRequest {
+                        collection_name: self.collection_id.clone(),
+                        shard_id: self.id,
+                    })
                     .await
             })
             .await?

@@ -194,8 +194,8 @@ impl MutableIdTracker {
             segment_path: _,
             internal_to_version,
             mappings,
-            pending_versions: _,  // transient, small
-            pending_mappings: _,  // transient, small
+            pending_versions: _, // transient, small
+            pending_mappings: _, // transient, small
             is_alive_lock: _,
             mappings_expected_len: _,
         } = self;

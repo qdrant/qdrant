@@ -519,7 +519,6 @@ impl InMemoryGeoMapIndex {
             }
         }
     }
-
 }
 
 impl MutableGeoMapIndex {
@@ -548,15 +547,24 @@ impl InMemoryGeoMapIndex {
 
         let btree_entry_overhead = std::mem::size_of::<usize>() * 3;
         let pph_bytes = points_per_hash.len()
-            * (std::mem::size_of::<GeoHash>() + std::mem::size_of::<usize>() + btree_entry_overhead);
+            * (std::mem::size_of::<GeoHash>()
+                + std::mem::size_of::<usize>()
+                + btree_entry_overhead);
         let vph_bytes = values_per_hash.len()
-            * (std::mem::size_of::<GeoHash>() + std::mem::size_of::<usize>() + btree_entry_overhead);
+            * (std::mem::size_of::<GeoHash>()
+                + std::mem::size_of::<usize>()
+                + btree_entry_overhead);
         // points_map: BTreeMap entries + AHashSet per entry
         let hashset_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
-        let pm_bytes: usize = points_map.iter().map(|(_, set)| {
-            std::mem::size_of::<GeoHash>() + btree_entry_overhead
-                + set.capacity() * (std::mem::size_of::<PointOffsetType>() + hashset_entry_overhead)
-        }).sum();
+        let pm_bytes: usize = points_map
+            .iter()
+            .map(|(_, set)| {
+                std::mem::size_of::<GeoHash>()
+                    + btree_entry_overhead
+                    + set.capacity()
+                        * (std::mem::size_of::<PointOffsetType>() + hashset_entry_overhead)
+            })
+            .sum();
         let ptv_bytes: usize = point_to_values.capacity() * std::mem::size_of::<Vec<GeoPoint>>()
             + point_to_values
                 .iter()

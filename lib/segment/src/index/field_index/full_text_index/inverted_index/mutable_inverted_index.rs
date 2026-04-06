@@ -294,7 +294,10 @@ impl MutableInvertedIndex {
 
         // PostingList contains compressed data, approximate by element count
         let postings_bytes: usize = postings.capacity() * std::mem::size_of::<PostingList>()
-            + postings.iter().map(|p| p.len() * std::mem::size_of::<PointOffsetType>()).sum::<usize>();
+            + postings
+                .iter()
+                .map(|p| p.len() * std::mem::size_of::<PointOffsetType>())
+                .sum::<usize>();
         let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
         let string_stack_size = std::mem::size_of::<String>();
         let vocab_bytes: usize = vocab.capacity()

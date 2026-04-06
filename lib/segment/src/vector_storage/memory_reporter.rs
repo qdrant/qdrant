@@ -39,9 +39,7 @@ impl MemoryReporter for VectorStorageEnum {
             }
 
             // Mmap dense variants: intent depends on populate config
-            VectorStorageEnum::DenseMemmap(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
-            }
+            VectorStorageEnum::DenseMemmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
             VectorStorageEnum::DenseMemmapByte(v) => {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
@@ -79,9 +77,7 @@ impl MemoryReporter for VectorStorageEnum {
                 ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
             }
             // Mmap sparse: intent depends on storage config
-            VectorStorageEnum::SparseMmap(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
-            }
+            VectorStorageEnum::SparseMmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
 
             // Volatile multi-dense: in-memory
             VectorStorageEnum::MultiDenseVolatile(v) => {

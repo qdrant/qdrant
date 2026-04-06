@@ -297,9 +297,8 @@ impl CollectionsInternal for CollectionsInternalService {
                 ))
             })?;
 
-        let memory_report_json = serde_json::to_vec(&memory_report).map_err(|err| {
-            Status::internal(format!("Failed to serialize memory report: {err}"))
-        })?;
+        let memory_report_json = serde_json::to_vec(&memory_report)
+            .map_err(|err| Status::internal(format!("Failed to serialize memory report: {err}")))?;
 
         let response = GetShardMemoryReportResponse {
             memory_report_json,

@@ -498,7 +498,9 @@ impl ImmutableInvertedIndex {
         // HashMap per-slot overhead: hash (u64) + metadata pointer
         let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
         let vocab_base_bytes = vocab.capacity()
-            * (std::mem::size_of::<String>() + std::mem::size_of::<TokenId>() + hashmap_entry_overhead);
+            * (std::mem::size_of::<String>()
+                + std::mem::size_of::<TokenId>()
+                + hashmap_entry_overhead);
         // Account for actual heap-allocated string data
         let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
         let pttc_bytes = point_to_tokens_count.capacity() * std::mem::size_of::<usize>();

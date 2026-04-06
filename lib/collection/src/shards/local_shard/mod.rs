@@ -66,13 +66,13 @@ use self::clock_map::{ClockMap, RecoveryPoint};
 use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::file_utils::{move_dir, move_file};
+use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::config::CollectionConfigInternal;
 use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -1099,7 +1099,9 @@ impl LocalShard {
             for (_id, segment) in segments_read.iter_original() {
                 let segment_guard = segment.read();
                 let seg_report = segment_guard.memory_report();
-                reports.push(crate::common::memory_reporter::report_from_segment(seg_report)?);
+                reports.push(crate::common::memory_reporter::report_from_segment(
+                    seg_report,
+                )?);
             }
             Ok(CollectionMemoryReport::merge_all(reports))
         })

@@ -38,11 +38,21 @@ impl ImmutablePostings {
         match self {
             ImmutablePostings::Ids(lists) => {
                 lists.capacity() * std::mem::size_of::<PostingList<()>>()
-                    + lists.iter().map(|p| p.len() * std::mem::size_of::<PointOffsetType>()).sum::<usize>()
+                    + lists
+                        .iter()
+                        .map(|p| p.len() * std::mem::size_of::<PointOffsetType>())
+                        .sum::<usize>()
             }
             ImmutablePostings::WithPositions(lists) => {
                 lists.capacity() * std::mem::size_of::<PostingList<Positions>>()
-                    + lists.iter().map(|p| p.len() * (std::mem::size_of::<PointOffsetType>() + std::mem::size_of::<Positions>())).sum::<usize>()
+                    + lists
+                        .iter()
+                        .map(|p| {
+                            p.len()
+                                * (std::mem::size_of::<PointOffsetType>()
+                                    + std::mem::size_of::<Positions>())
+                        })
+                        .sum::<usize>()
             }
         }
     }

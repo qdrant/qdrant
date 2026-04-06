@@ -386,7 +386,10 @@ impl ImmutableGeoMapIndex {
             * std::mem::size_of::<(GeoHash, AHashSet<PointOffsetType>)>()
             + points_map
                 .iter()
-                .map(|(_, set)| set.capacity() * (std::mem::size_of::<PointOffsetType>() + hashset_entry_overhead))
+                .map(|(_, set)| {
+                    set.capacity()
+                        * (std::mem::size_of::<PointOffsetType>() + hashset_entry_overhead)
+                })
                 .sum::<usize>();
         cph_bytes + pm_bytes + point_to_values.ram_usage_bytes()
     }

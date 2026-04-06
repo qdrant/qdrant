@@ -444,7 +444,7 @@ where
     /// Approximate RAM usage in bytes for in-memory index structures.
     pub fn ram_usage_bytes(&self) -> usize {
         let Self {
-            storage: _,  // disk-backed, accounted via files
+            storage: _, // disk-backed, accounted via files
             in_memory_index,
         } = self;
         in_memory_index.ram_usage_bytes()
@@ -457,7 +457,7 @@ impl<T: Encodable + Numericable> InMemoryNumericIndex<T> {
         let Self {
             map,
             histogram,
-            points_count: _,       // scalar
+            points_count: _,         // scalar
             max_values_per_point: _, // scalar
             point_to_values,
         } = self;

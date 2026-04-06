@@ -410,14 +410,10 @@ where
                 + std::mem::size_of::<ContainerSegment>()
                 + hashmap_entry_overhead);
         // Account for heap-allocated key data (e.g., long strings)
-        let vtp_heap_bytes: usize = value_to_points
-            .keys()
-            .map(|k| N::owned_heap_bytes(k))
-            .sum();
+        let vtp_heap_bytes: usize = value_to_points.keys().map(|k| N::owned_heap_bytes(k)).sum();
         let container_bytes =
             value_to_points_container.capacity() * std::mem::size_of::<PointOffsetType>();
-        let deleted_bytes =
-            deleted_value_to_points_container.capacity() / u8::BITS as usize;
+        let deleted_bytes = deleted_value_to_points_container.capacity() / u8::BITS as usize;
         vtp_base_bytes
             + vtp_heap_bytes
             + container_bytes

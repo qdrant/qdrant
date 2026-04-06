@@ -159,9 +159,7 @@ impl CompressedVersions {
         // AHashMap per-entry overhead: key + value + hash (u64) + metadata pointer
         let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
         let upper = upper_bytes.len()
-            * (std::mem::size_of::<u32>()
-                + std::mem::size_of::<u32>()
-                + hashmap_entry_overhead);
+            * (std::mem::size_of::<u32>() + std::mem::size_of::<u32>() + hashmap_entry_overhead);
         lower + upper
     }
 }

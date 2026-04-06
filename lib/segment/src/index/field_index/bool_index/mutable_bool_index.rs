@@ -265,8 +265,7 @@ impl MutableBoolIndex {
             trues_flags,
             falses_flags,
         } = storage;
-        trues_flags.get_bitmap().serialized_size()
-            + falses_flags.get_bitmap().serialized_size()
+        trues_flags.get_bitmap().serialized_size() + falses_flags.get_bitmap().serialized_size()
     }
 
     pub fn is_on_disk(&self) -> bool {

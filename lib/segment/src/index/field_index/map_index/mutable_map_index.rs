@@ -320,7 +320,7 @@ where
             point_to_values,
             indexed_points: _,
             values_count: _,
-            storage: _,  // disk-backed, accounted via files
+            storage: _, // disk-backed, accounted via files
         } = self;
 
         let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
