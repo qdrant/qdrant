@@ -5432,12 +5432,17 @@ pub struct SparseVectorCreationConfig {
     #[prost(enumeration = "Datatype", optional, tag = "2")]
     pub datatype: ::core::option::Option<i32>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateVectorNameRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -5467,12 +5472,17 @@ pub mod create_vector_name_request {
         SparseConfig(super::SparseVectorCreationConfig),
     }
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteVectorNameRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -10713,6 +10723,36 @@ pub struct DeleteFieldIndexCollectionInternal {
     pub wait_override: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateVectorNameInternal {
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub create_vector_name: ::core::option::Option<CreateVectorNameRequest>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteVectorNameInternal {
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub delete_vector_name: ::core::option::Option<DeleteVectorNameRequest>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(enumeration = "WaitUntil", optional, tag = "4")]
+    pub wait_override: ::core::option::Option<i32>,
+}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NopOperation {
@@ -10755,7 +10795,7 @@ pub struct NopOperationInternal {
 pub struct UpdateOperation {
     #[prost(
         oneof = "update_operation::Update",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14"
     )]
     #[validate(nested)]
     pub update: ::core::option::Option<update_operation::Update>,
@@ -10788,6 +10828,10 @@ pub mod update_operation {
         CreateFieldIndex(super::CreateFieldIndexCollectionInternal),
         #[prost(message, tag = "11")]
         DeleteFieldIndex(super::DeleteFieldIndexCollectionInternal),
+        #[prost(message, tag = "12")]
+        CreateVectorName(super::CreateVectorNameInternal),
+        #[prost(message, tag = "13")]
+        DeleteVectorName(super::DeleteVectorNameInternal),
         #[prost(message, tag = "14")]
         Nop(super::NopOperationInternal),
     }
@@ -11776,6 +11820,56 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "DeleteFieldIndex"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn create_vector_name(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateVectorNameInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/CreateVectorName",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "CreateVectorName"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn delete_vector_name(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteVectorNameInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/DeleteVectorName",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "DeleteVectorName"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn nop(
             &mut self,
             request: impl tonic::IntoRequest<super::NopOperationInternal>,
@@ -12072,6 +12166,20 @@ pub mod points_internal_server {
         async fn delete_field_index(
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        >;
+        async fn create_vector_name(
+            &self,
+            request: tonic::Request<super::CreateVectorNameInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        >;
+        async fn delete_vector_name(
+            &self,
+            request: tonic::Request<super::DeleteVectorNameInternal>,
         ) -> std::result::Result<
             tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
@@ -12710,6 +12818,100 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteFieldIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/CreateVectorName" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateVectorNameSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::CreateVectorNameInternal>
+                    for CreateVectorNameSvc<T> {
+                        type Response = super::PointsOperationResponseInternal;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateVectorNameInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::create_vector_name(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateVectorNameSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/DeleteVectorName" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteVectorNameSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::DeleteVectorNameInternal>
+                    for DeleteVectorNameSvc<T> {
+                        type Response = super::PointsOperationResponseInternal;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteVectorNameInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::delete_vector_name(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteVectorNameSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

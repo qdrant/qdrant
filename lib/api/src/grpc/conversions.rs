@@ -3511,3 +3511,58 @@ fn convert_datatype_from_proto(
         grpc::Datatype::Uint8 => Ok(Some(VectorStorageDatatype::Uint8)),
     }
 }
+
+impl From<segment::data_types::vector_name_config::VectorNameConfig>
+    for grpc::create_vector_name_request::VectorConfig
+{
+    fn from(config: segment::data_types::vector_name_config::VectorNameConfig) -> Self {
+        use segment::data_types::vector_name_config::{
+            DenseVectorConfig, DenseVectorNameConfig, SparseVectorConfig, SparseVectorNameConfig,
+            VectorNameConfig,
+        };
+        use segment::types::Distance;
+
+        match config {
+            VectorNameConfig::Dense(DenseVectorNameConfig {
+                dense:
+                    DenseVectorConfig {
+                        size,
+                        distance,
+                        multivector_config,
+                        datatype,
+                    },
+            }) => {
+                let distance = match distance {
+                    Distance::Cosine => grpc::Distance::Cosine,
+                    Distance::Euclid => grpc::Distance::Euclid,
+                    Distance::Dot => grpc::Distance::Dot,
+                    Distance::Manhattan => grpc::Distance::Manhattan,
+                };
+                grpc::create_vector_name_request::VectorConfig::DenseConfig(
+                    grpc::DenseVectorCreationConfig {
+                        size: size as u64,
+                        distance: i32::from(distance),
+                        multivector_config: multivector_config.map(grpc::MultiVectorConfig::from),
+                        datatype: datatype.map(|dt| i32::from(datatype_to_grpc(dt))),
+                    },
+                )
+            }
+            VectorNameConfig::Sparse(SparseVectorNameConfig {
+                sparse: SparseVectorConfig { modifier, datatype },
+            }) => grpc::create_vector_name_request::VectorConfig::SparseConfig(
+                grpc::SparseVectorCreationConfig {
+                    modifier: modifier.map(|m| i32::from(grpc::Modifier::from(m))),
+                    datatype: datatype.map(|dt| i32::from(datatype_to_grpc(dt))),
+                },
+            ),
+        }
+    }
+}
+
+fn datatype_to_grpc(dt: VectorStorageDatatype) -> grpc::Datatype {
+    match dt {
+        VectorStorageDatatype::Float32 => grpc::Datatype::Float32,
+        VectorStorageDatatype::Float16 => grpc::Datatype::Float16,
+        VectorStorageDatatype::Uint8 => grpc::Datatype::Uint8,
+    }
+}

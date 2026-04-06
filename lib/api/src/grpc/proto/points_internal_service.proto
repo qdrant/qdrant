@@ -27,6 +27,11 @@ service PointsInternal {
   rpc DeleteFieldIndex(DeleteFieldIndexCollectionInternal)
       returns (PointsOperationResponseInternal) {}
 
+  rpc CreateVectorName(CreateVectorNameInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc DeleteVectorName(DeleteVectorNameInternal)
+      returns (PointsOperationResponseInternal) {}
+
   rpc Nop(NopOperationInternal) returns (PointsOperationResponseInternal) {}
 
   rpc UpdateBatch(UpdateBatchInternal)
@@ -147,6 +152,20 @@ message DeleteFieldIndexCollectionInternal {
   optional WaitUntil wait_override = 4;
 }
 
+message CreateVectorNameInternal {
+  CreateVectorNameRequest create_vector_name = 1;
+  optional uint32 shard_id = 2;
+  optional ClockTag clock_tag = 3;
+  optional WaitUntil wait_override = 4;
+}
+
+message DeleteVectorNameInternal {
+  DeleteVectorNameRequest delete_vector_name = 1;
+  optional uint32 shard_id = 2;
+  optional ClockTag clock_tag = 3;
+  optional WaitUntil wait_override = 4;
+}
+
 message NopOperation {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
@@ -177,7 +196,8 @@ message UpdateOperation {
     ClearPayloadPointsInternal clear_payload = 9;
     CreateFieldIndexCollectionInternal create_field_index = 10;
     DeleteFieldIndexCollectionInternal delete_field_index = 11;
-
+    CreateVectorNameInternal create_vector_name = 12;
+    DeleteVectorNameInternal delete_vector_name = 13;
     NopOperationInternal nop = 14;
   }
 }

@@ -499,6 +499,49 @@ pub fn internal_delete_index(
     }
 }
 
+pub fn internal_create_vector_name(
+    shard_id: Option<ShardId>,
+    clock_tag: Option<ClockTag>,
+    collection_name: String,
+    create: shard::operations::CreateVectorName,
+    wait: WaitUntil,
+    wait_timeout: Option<u64>,
+) -> api::grpc::qdrant::CreateVectorNameInternal {
+    api::grpc::qdrant::CreateVectorNameInternal {
+        shard_id,
+        clock_tag: clock_tag.map(Into::into),
+        wait_override: wait_override_to_proto(wait),
+        create_vector_name: Some(api::grpc::qdrant::CreateVectorNameRequest {
+            collection_name,
+            wait: Some(wait.needs_callback()),
+            vector_name: create.vector_name,
+            vector_config: Some(create.config.into()),
+            timeout: wait_timeout,
+        }),
+    }
+}
+
+pub fn internal_delete_vector_name(
+    shard_id: Option<ShardId>,
+    clock_tag: Option<ClockTag>,
+    collection_name: String,
+    delete: shard::operations::DeleteVectorName,
+    wait: WaitUntil,
+    wait_timeout: Option<u64>,
+) -> api::grpc::qdrant::DeleteVectorNameInternal {
+    api::grpc::qdrant::DeleteVectorNameInternal {
+        shard_id,
+        clock_tag: clock_tag.map(Into::into),
+        wait_override: wait_override_to_proto(wait),
+        delete_vector_name: Some(api::grpc::qdrant::DeleteVectorNameRequest {
+            collection_name,
+            wait: Some(wait.needs_callback()),
+            vector_name: delete.vector_name,
+            timeout: wait_timeout,
+        }),
+    }
+}
+
 pub fn internal_nop_operation(
     shard_id: Option<ShardId>,
     clock_tag: Option<ClockTag>,
