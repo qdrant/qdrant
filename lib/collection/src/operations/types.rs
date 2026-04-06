@@ -1522,6 +1522,38 @@ impl VectorsConfig {
         }
     }
 
+    /// Insert or replace a named vector. Converts `Single` to `Multi` if needed.
+    pub fn insert(&mut self, name: VectorNameBuf, params: VectorParams) {
+        match self {
+            VectorsConfig::Single(_) => {
+                let mut multi = BTreeMap::new();
+                if let VectorsConfig::Single(existing) =
+                    std::mem::replace(self, VectorsConfig::empty())
+                {
+                    multi.insert(DEFAULT_VECTOR_NAME.to_owned(), existing);
+                }
+                multi.insert(name, params);
+                *self = VectorsConfig::Multi(multi);
+            }
+            VectorsConfig::Multi(vectors) => {
+                vectors.insert(name, params);
+            }
+        }
+    }
+
+    /// Remove a named vector. Converts `Single` to empty `Multi` if name matches.
+    pub fn remove(&mut self, name: &VectorName) {
+        match self {
+            VectorsConfig::Single(_) if name == DEFAULT_VECTOR_NAME => {
+                *self = VectorsConfig::Multi(Default::default());
+            }
+            VectorsConfig::Single(_) => {}
+            VectorsConfig::Multi(vectors) => {
+                vectors.remove(name);
+            }
+        }
+    }
+
     pub fn get_params_mut(&mut self, name: &VectorName) -> Option<&mut VectorParams> {
         match self {
             VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
