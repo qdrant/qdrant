@@ -90,3 +90,68 @@ impl LocalShard {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common::budget::ResourceBudget;
+    use common::save_on_disk::SaveOnDisk;
+    use tempfile::Builder;
+    use tokio::runtime::Handle;
+    use tokio::sync::RwLock;
+
+    use super::LocalShard;
+    use crate::shards::shard_trait::ShardOperation;
+    use crate::tests::fixtures::create_collection_config;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn optimizer_config_update_refreshes_prevent_unoptimized_flag() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+        let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+        let mut config = create_collection_config();
+        config.optimizer_config.prevent_unoptimized = Some(false);
+
+        let current_runtime: Handle = Handle::current();
+        let shard = LocalShard::build(
+            0,
+            "test".to_string(),
+            collection_dir.path(),
+            Arc::new(RwLock::new(config.clone())),
+            Arc::new(Default::default()),
+            payload_index_schema,
+            current_runtime.clone(),
+            current_runtime.clone(),
+            ResourceBudget::default(),
+            config.optimizer_config.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert!(!shard.update_handler.lock().await.prevent_unoptimized);
+
+        {
+            let mut shard_config = shard.collection_config.write().await;
+            shard_config.optimizer_config.prevent_unoptimized = Some(true);
+        }
+
+        shard.on_optimizer_config_update().await.unwrap();
+
+        assert!(shard.update_handler.lock().await.prevent_unoptimized);
+
+        {
+            let mut shard_config = shard.collection_config.write().await;
+            shard_config.optimizer_config.prevent_unoptimized = Some(false);
+        }
+
+        shard.on_optimizer_config_update().await.unwrap();
+
+        assert!(!shard.update_handler.lock().await.prevent_unoptimized);
+
+        shard.stop_gracefully().await;
+    }
+}
