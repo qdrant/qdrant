@@ -84,28 +84,28 @@ impl EdgeShard {
             VectorNameOperations::CreateVectorName(create) => {
                 self.config
                     .write(|config| match &create.config {
-                        VectorNameConfig::Dense(dense) => {
+                        VectorNameConfig::Dense(wrapper) => {
                             config.vectors.insert(
                                 create.vector_name.clone(),
                                 EdgeVectorParams {
-                                    size: dense.size,
-                                    distance: dense.distance,
+                                    size: wrapper.dense.size,
+                                    distance: wrapper.dense.distance,
                                     on_disk: None,
-                                    multivector_config: dense.multivector_config,
-                                    datatype: dense.datatype,
+                                    multivector_config: wrapper.dense.multivector_config,
+                                    datatype: wrapper.dense.datatype,
                                     quantization_config: None,
                                     hnsw_config: None,
                                 },
                             );
                         }
-                        VectorNameConfig::Sparse(sparse) => {
+                        VectorNameConfig::Sparse(wrapper) => {
                             config.sparse_vectors.insert(
                                 create.vector_name.clone(),
                                 EdgeSparseVectorParams {
                                     full_scan_threshold: None,
                                     on_disk: None,
-                                    modifier: sparse.modifier,
-                                    datatype: sparse.datatype,
+                                    modifier: wrapper.sparse.modifier,
+                                    datatype: wrapper.sparse.datatype,
                                 },
                             );
                         }

@@ -20,7 +20,10 @@ use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
-use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
+use segment::types::{
+    DateTimePayloadType, FloatPayloadType, VectorStorageDatatype,
+    default_quantization_ignore_value,
+};
 use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
@@ -3449,5 +3452,69 @@ impl From<Modifier> for grpc::Modifier {
             Modifier::None => grpc::Modifier::None,
             Modifier::Idf => grpc::Modifier::Idf,
         }
+    }
+}
+
+impl TryFrom<grpc::create_vector_name_request::VectorConfig>
+    for segment::data_types::vector_name_config::VectorNameConfig
+{
+    type Error = Status;
+
+    fn try_from(
+        config: grpc::create_vector_name_request::VectorConfig,
+    ) -> Result<Self, Self::Error> {
+        use segment::data_types::vector_name_config::{
+            DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
+        };
+        use segment::types::VectorStorageDatatype;
+
+        match config {
+            grpc::create_vector_name_request::VectorConfig::DenseConfig(p) => {
+                let grpc::DenseVectorCreationConfig {
+                    size,
+                    distance,
+                    multivector_config,
+                    datatype,
+                } = p;
+
+                Ok(VectorNameConfig::dense(DenseVectorConfig {
+                    size: size as usize,
+                    distance: from_grpc_dist(distance)?,
+                    multivector_config: multivector_config
+                        .map(|c| c.try_into())
+                        .transpose()?,
+                    datatype: convert_datatype_from_proto(datatype)?
+                        .map(VectorStorageDatatype::from),
+                }))
+            }
+            grpc::create_vector_name_request::VectorConfig::SparseConfig(p) => {
+                let grpc::SparseVectorCreationConfig { modifier, datatype } = p;
+
+                Ok(VectorNameConfig::sparse(SparseVectorConfig {
+                    modifier: modifier
+                        .and_then(|m| grpc::Modifier::try_from(m).ok())
+                        .map(Modifier::from),
+                    datatype: convert_datatype_from_proto(datatype)?
+                        .map(VectorStorageDatatype::from),
+                }))
+            }
+        }
+    }
+}
+
+fn convert_datatype_from_proto(
+    datatype: Option<i32>,
+) -> Result<Option<VectorStorageDatatype>, Status> {
+    let Some(dt) = datatype else {
+        return Ok(None);
+    };
+    let grpc_dt = grpc::Datatype::try_from(dt).map_err(|_| {
+        Status::invalid_argument(format!("Cannot convert datatype: {dt}"))
+    })?;
+    match grpc_dt {
+        grpc::Datatype::Default => Ok(None),
+        grpc::Datatype::Float32 => Ok(Some(VectorStorageDatatype::Float32)),
+        grpc::Datatype::Float16 => Ok(Some(VectorStorageDatatype::Float16)),
+        grpc::Datatype::Uint8 => Ok(Some(VectorStorageDatatype::Uint8)),
     }
 }

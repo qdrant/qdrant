@@ -270,7 +270,7 @@ impl Collection {
         target_config: &CollectionConfigInternal,
     ) -> CollectionResult<()> {
         use segment::data_types::vector_name_config::{
-            DenseVectorNameConfig, SparseVectorNameConfig, VectorNameConfig,
+            DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
         };
         use segment::types::VectorStorageDatatype;
 
@@ -281,7 +281,7 @@ impl Collection {
 
         // Dense vectors: compare target vs current
         for (vector_name, target_params) in target_config.params.vectors.params_iter() {
-            let target_dense = DenseVectorNameConfig {
+            let target_dense = DenseVectorConfig {
                 size: target_params.size.get() as usize,
                 distance: target_params.distance,
                 multivector_config: target_params.multivector_config,
@@ -293,12 +293,12 @@ impl Collection {
                     // New vector — create it
                     to_create.push((
                         vector_name.to_owned(),
-                        VectorNameConfig::Dense(target_dense),
+                        VectorNameConfig::dense(target_dense),
                     ));
                 }
                 Some(current_params) => {
                     // Exists in both — check if parameters changed (delete+recreate)
-                    let current_dense = DenseVectorNameConfig {
+                    let current_dense = DenseVectorConfig {
                         size: current_params.size.get() as usize,
                         distance: current_params.distance,
                         multivector_config: current_params.multivector_config,
@@ -308,7 +308,7 @@ impl Collection {
                         to_delete.push(vector_name.to_owned());
                         to_create.push((
                             vector_name.to_owned(),
-                            VectorNameConfig::Dense(target_dense),
+                            VectorNameConfig::dense(target_dense),
                         ));
                     }
                 }
@@ -326,7 +326,7 @@ impl Collection {
         if let Some(target_sparse) = &target_config.params.sparse_vectors {
             let current_sparse = current_config.params.sparse_vectors.as_ref();
             for (vector_name, target_params) in target_sparse {
-                let target_sparse_cfg = SparseVectorNameConfig {
+                let target_sparse_cfg = SparseVectorConfig {
                     modifier: target_params.modifier,
                     datatype: target_params
                         .index
@@ -340,11 +340,11 @@ impl Collection {
                     None => {
                         to_create.push((
                             vector_name.clone(),
-                            VectorNameConfig::Sparse(target_sparse_cfg),
+                            VectorNameConfig::sparse(target_sparse_cfg),
                         ));
                     }
                     Some(current_params) => {
-                        let current_sparse_cfg = SparseVectorNameConfig {
+                        let current_sparse_cfg = SparseVectorConfig {
                             modifier: current_params.modifier,
                             datatype: current_params
                                 .index
@@ -356,7 +356,7 @@ impl Collection {
                             to_delete.push(vector_name.clone());
                             to_create.push((
                                 vector_name.clone(),
-                                VectorNameConfig::Sparse(target_sparse_cfg),
+                                VectorNameConfig::sparse(target_sparse_cfg),
                             ));
                         }
                     }

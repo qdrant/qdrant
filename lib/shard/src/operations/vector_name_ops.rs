@@ -4,7 +4,7 @@ use strum::{EnumDiscriminants, EnumIter};
 
 // Re-export VectorNameConfig types from segment crate
 pub use segment::data_types::vector_name_config::{
-    DenseVectorNameConfig, SparseVectorNameConfig, VectorNameConfig,
+    DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
 
 /// Operations for creating and deleting named vectors at the shard level.

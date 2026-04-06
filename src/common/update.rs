@@ -1030,6 +1030,52 @@ pub async fn do_delete_index_internal(
     .await
 }
 
+pub async fn do_create_vector_name(
+    dispatcher: Arc<Dispatcher>,
+    collection_name: String,
+    vector_name: String,
+    config: segment::data_types::vector_name_config::VectorNameConfig,
+    auth: Auth,
+    wait_timeout: Option<Duration>,
+) -> Result<bool, StorageError> {
+    let consensus_op =
+        storage::content_manager::collection_meta_ops::CreateNamedVector {
+            collection_name,
+            vector_name: vector_name.into(),
+            config,
+        };
+
+    dispatcher
+        .submit_collection_meta_op(
+            storage::content_manager::collection_meta_ops::CollectionMetaOperations::CreateNamedVector(consensus_op),
+            auth,
+            wait_timeout,
+        )
+        .await
+}
+
+pub async fn do_delete_vector_name(
+    dispatcher: Arc<Dispatcher>,
+    collection_name: String,
+    vector_name: String,
+    auth: Auth,
+    wait_timeout: Option<Duration>,
+) -> Result<bool, StorageError> {
+    let consensus_op =
+        storage::content_manager::collection_meta_ops::DeleteNamedVector {
+            collection_name,
+            vector_name: vector_name.into(),
+        };
+
+    dispatcher
+        .submit_collection_meta_op(
+            storage::content_manager::collection_meta_ops::CollectionMetaOperations::DeleteNamedVector(consensus_op),
+            auth,
+            wait_timeout,
+        )
+        .await
+}
+
 #[expect(clippy::too_many_arguments)]
 pub async fn update(
     toc: &TableOfContent,

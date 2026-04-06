@@ -223,8 +223,8 @@ impl PyUpdateOperation {
         multivector_config: Option<PyMultiVectorConfig>,
         datatype: Option<PyVectorStorageDatatype>,
     ) -> Self {
-        let config = vector_name_ops::VectorNameConfig::Dense(
-            vector_name_ops::DenseVectorNameConfig {
+        let config = vector_name_ops::VectorNameConfig::dense(
+            vector_name_ops::DenseVectorConfig {
                 size,
                 distance: Distance::from(distance),
                 multivector_config: multivector_config.map(MultiVectorConfig::from),
@@ -246,8 +246,8 @@ impl PyUpdateOperation {
         modifier: Option<PyModifier>,
         datatype: Option<PyVectorStorageDatatype>,
     ) -> Self {
-        let config = vector_name_ops::VectorNameConfig::Sparse(
-            vector_name_ops::SparseVectorNameConfig {
+        let config = vector_name_ops::VectorNameConfig::sparse(
+            vector_name_ops::SparseVectorConfig {
                 modifier: modifier.map(Modifier::from),
                 datatype: datatype.map(VectorStorageDatatype::from),
             },

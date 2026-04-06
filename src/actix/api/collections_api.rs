@@ -297,6 +297,60 @@ fn get_optimizations(
     })
 }
 
+#[derive(Deserialize, Validate)]
+struct VectorNamePath {
+    #[validate(length(min = 1, max = 255))]
+    collection_name: String,
+    vector_name: String,
+}
+
+#[put("/collections/{collection_name}/vectors/{vector_name}")]
+async fn create_vector_name(
+    dispatcher: web::Data<Dispatcher>,
+    path: Path<VectorNamePath>,
+    body: web::Json<segment::data_types::vector_name_config::VectorNameConfig>,
+    params: Query<WaitTimeout>,
+    ActixAuth(auth): ActixAuth,
+) -> impl Responder {
+    let timing = Instant::now();
+    let path = path.into_inner();
+    let config = body.into_inner();
+
+    let response = crate::common::update::do_create_vector_name(
+        dispatcher.into_inner(),
+        path.collection_name,
+        path.vector_name,
+        config,
+        auth,
+        params.timeout(),
+    )
+    .await;
+
+    process_response(response, timing, None)
+}
+
+#[delete("/collections/{collection_name}/vectors/{vector_name}")]
+async fn delete_vector_name(
+    dispatcher: web::Data<Dispatcher>,
+    path: Path<VectorNamePath>,
+    params: Query<WaitTimeout>,
+    ActixAuth(auth): ActixAuth,
+) -> impl Responder {
+    let timing = Instant::now();
+    let path = path.into_inner();
+
+    let response = crate::common::update::do_delete_vector_name(
+        dispatcher.into_inner(),
+        path.collection_name,
+        path.vector_name,
+        auth,
+        params.timeout(),
+    )
+    .await;
+
+    process_response(response, timing, None)
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     // Ordering of services is important for correct path pattern matching
@@ -312,7 +366,9 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(get_collection_aliases)
         .service(get_cluster_info)
         .service(get_optimizations)
-        .service(update_collection_cluster);
+        .service(update_collection_cluster)
+        .service(create_vector_name)
+        .service(delete_vector_name);
 }
 
 #[cfg(test)]

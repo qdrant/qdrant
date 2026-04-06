@@ -1,13 +1,17 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::validate;
+use crate::common::collections::*;
+use crate::tonic::api::collections_common::get;
+use crate::tonic::auth::extract_auth;
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
     ChangeAliases, CollectionClusterInfoRequest, CollectionClusterInfoResponse,
     CollectionExistsRequest, CollectionExistsResponse, CollectionOperationResponse,
-    CreateCollection, CreateShardKeyRequest, CreateShardKeyResponse, DeleteCollection,
-    DeleteShardKeyRequest, DeleteShardKeyResponse, GetCollectionInfoRequest,
-    GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
+    CreateCollection, CreateShardKeyRequest, CreateShardKeyResponse, CreateVectorNameRequest,
+    DeleteCollection, DeleteShardKeyRequest, DeleteShardKeyResponse, DeleteVectorNameRequest,
+    GetCollectionInfoRequest, GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
     ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse,
     ListShardKeysRequest, ListShardKeysResponse, UpdateCollection,
     UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
@@ -17,13 +21,9 @@ use collection::operations::cluster_ops::{
 };
 use collection::operations::types::{AliasDescription, CollectionsAliasesResponse};
 use collection::operations::verification::new_unchecked_verification_pass;
+use segment::data_types::vector_name_config::VectorNameConfig;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
-
-use super::validate;
-use crate::common::collections::*;
-use crate::tonic::api::collections_common::get;
-use crate::tonic::auth::extract_auth;
 
 pub struct CollectionsService {
     dispatcher: Arc<Dispatcher>,
@@ -330,6 +330,78 @@ impl Collections for CollectionsService {
         .await?;
 
         Ok(Response::new(DeleteShardKeyResponse { result }))
+    }
+
+    async fn create_vector_name(
+        &self,
+        mut request: Request<CreateVectorNameRequest>,
+    ) -> Result<Response<CollectionOperationResponse>, Status> {
+        let auth = extract_auth(&mut request);
+
+        let CreateVectorNameRequest {
+            collection_name,
+            wait: _,
+            vector_name,
+            vector_config,
+            timeout,
+        } = request.into_inner();
+
+        let config = vector_config.ok_or_else(|| {
+            Status::invalid_argument("vector_config is required (dense_config or sparse_config)")
+        })?;
+
+        let config = VectorNameConfig::try_from(config)?;
+
+        let timeout = timeout.map(Duration::from_secs);
+
+        let timing = Instant::now();
+        let result = crate::common::update::do_create_vector_name(
+            self.dispatcher.clone(),
+            collection_name,
+            vector_name,
+            config,
+            auth,
+            timeout,
+        )
+        .await
+        .map_err(Status::from)?;
+
+        Ok(Response::new(CollectionOperationResponse {
+            result,
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
+    async fn delete_vector_name(
+        &self,
+        mut request: Request<DeleteVectorNameRequest>,
+    ) -> Result<Response<CollectionOperationResponse>, Status> {
+        let auth = extract_auth(&mut request);
+
+        let DeleteVectorNameRequest {
+            collection_name,
+            wait: _,
+            vector_name,
+            timeout,
+        } = request.into_inner();
+
+        let timeout = timeout.map(Duration::from_secs);
+
+        let timing = Instant::now();
+        let result = crate::common::update::do_delete_vector_name(
+            self.dispatcher.clone(),
+            collection_name,
+            vector_name,
+            auth,
+            timeout,
+        )
+        .await
+        .map_err(Status::from)?;
+
+        Ok(Response::new(CollectionOperationResponse {
+            result,
+            time: timing.elapsed().as_secs_f64(),
+        }))
     }
 }
 

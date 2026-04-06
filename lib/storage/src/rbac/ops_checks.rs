@@ -922,7 +922,7 @@ mod tests_ops {
     fn check_collection_update_operations_vector_name() {
         use segment::types::Distance;
         use shard::operations::vector_name_ops::{
-            DenseVectorNameConfig, VectorNameConfig, VectorNameOperationsDiscriminants,
+            DenseVectorConfig, VectorNameConfig, VectorNameOperationsDiscriminants,
         };
         use shard::operations::{CreateVectorName, DeleteVectorName, VectorNameOperations};
 
@@ -931,7 +931,7 @@ mod tests_ops {
                 VectorNameOperationsDiscriminants::CreateVectorName => {
                     VectorNameOperations::CreateVectorName(CreateVectorName {
                         vector_name: "test".into(),
-                        config: VectorNameConfig::Dense(DenseVectorNameConfig {
+                        config: VectorNameConfig::dense(DenseVectorConfig {
                             size: 4,
                             distance: Distance::Cosine,
                             multivector_config: None,

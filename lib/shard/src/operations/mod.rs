@@ -434,12 +434,12 @@ mod tests {
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             use crate::operations::vector_name_ops::{
-                self as vnops, DenseVectorNameConfig, SparseVectorNameConfig,
+                self as vnops, DenseVectorConfig, SparseVectorConfig,
             };
 
             let create_dense = Self::CreateVectorName(CreateVectorName {
                 vector_name: "test_vector".into(),
-                config: vnops::VectorNameConfig::Dense(DenseVectorNameConfig {
+                config: vnops::VectorNameConfig::dense(DenseVectorConfig {
                     size: 4,
                     distance: Distance::Cosine,
                     multivector_config: None,
@@ -449,7 +449,7 @@ mod tests {
 
             let create_sparse = Self::CreateVectorName(CreateVectorName {
                 vector_name: "sparse_test".into(),
-                config: vnops::VectorNameConfig::Sparse(SparseVectorNameConfig {
+                config: vnops::VectorNameConfig::sparse(SparseVectorConfig {
                     modifier: None,
                     datatype: None,
                 }),

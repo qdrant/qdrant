@@ -12,7 +12,7 @@ use crate::entry::entry_point::{
     StorageSegmentEntry as _,
 };
 use crate::data_types::vector_name_config::{
-    DenseVectorNameConfig, SparseVectorNameConfig, VectorNameConfig,
+    DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
 use crate::segment::Segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
@@ -45,7 +45,7 @@ fn mmap_dense_config(dim: usize) -> VectorDataConfig {
 }
 
 fn dense_vector_name_config(dim: usize) -> VectorNameConfig {
-    VectorNameConfig::Dense(DenseVectorNameConfig {
+    VectorNameConfig::dense(DenseVectorConfig {
         size: dim,
         distance: Distance::Dot,
         multivector_config: None,
@@ -54,7 +54,7 @@ fn dense_vector_name_config(dim: usize) -> VectorNameConfig {
 }
 
 fn sparse_vector_name_config() -> VectorNameConfig {
-    VectorNameConfig::Sparse(SparseVectorNameConfig {
+    VectorNameConfig::sparse(SparseVectorConfig {
         modifier: None,
         datatype: None,
     })

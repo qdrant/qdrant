@@ -37,12 +37,12 @@ impl Segment {
         }
 
         match config {
-            VectorNameConfig::Dense(dense_config) => {
-                let internal = dense_config.to_internal(false);
+            VectorNameConfig::Dense(wrapper) => {
+                let internal = wrapper.dense.to_internal(false);
                 self.create_dense_vector(vector_name, &internal)
             }
-            VectorNameConfig::Sparse(sparse_config) => {
-                let internal = sparse_config.to_internal();
+            VectorNameConfig::Sparse(wrapper) => {
+                let internal = wrapper.sparse.to_internal();
                 self.create_sparse_vector(vector_name, &internal)
             }
         }?;

@@ -747,7 +747,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
     }
 }
 
-fn convert_datatype_from_proto(datatype: Option<i32>) -> Result<Option<Datatype>, Status> {
+pub fn convert_datatype_from_proto(datatype: Option<i32>) -> Result<Option<Datatype>, Status> {
     if let Some(datatype_int) = datatype {
         let grpc_datatype = api::grpc::qdrant::Datatype::try_from(datatype_int);
         if let Ok(grpc_datatype) = grpc_datatype {
