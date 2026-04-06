@@ -41,6 +41,11 @@ impl TokenSet {
         &self.0
     }
 
+    /// Heap memory usage in bytes.
+    pub fn heap_bytes(&self) -> usize {
+        self.0.capacity() * std::mem::size_of::<TokenId>()
+    }
+
     pub fn inner(self) -> Vec<TokenId> {
         self.0
     }
@@ -112,6 +117,11 @@ impl Document {
         &self.0
     }
 
+    /// Heap memory usage in bytes.
+    pub fn heap_bytes(&self) -> usize {
+        self.0.capacity() * std::mem::size_of::<TokenId>()
+    }
+
     pub fn to_token_set(&self) -> TokenSet {
         self.0.iter().copied().collect()
     }
@@ -129,6 +139,10 @@ impl Document {
 
         // simple check for tokens in the same order as phrase
         doc.windows(phrase.len()).any(|window| window == phrase)
+    }
+
+    pub fn heap_size(&self) -> usize {
+        self.0.capacity() * std::mem::size_of::<TokenId>()
     }
 }
 

@@ -34,4 +34,9 @@ impl PostingList {
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
         self.list.iter()
     }
+
+    pub fn heap_bytes(&self) -> usize {
+        // Approximate heap usage with serialized size
+        self.list.serialized_size()
+    }
 }

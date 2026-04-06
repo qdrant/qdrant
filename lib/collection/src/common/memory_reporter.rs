@@ -65,6 +65,7 @@ pub struct OtherMemoryReport {
 /// Full collection memory report.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CollectionMemoryReport {
+    pub total: MemoryUsageReport,
     pub vectors: Vec<NamedVectorMemoryReport>,
     pub sparse_vectors: Vec<NamedSparseVectorMemoryReport>,
     pub payload: MemoryUsageReport,
@@ -79,12 +80,15 @@ impl CollectionMemoryReport {
 
         for report in reports {
             let CollectionMemoryReport {
+                total,
                 vectors,
                 sparse_vectors,
                 payload,
                 payload_index,
                 other: OtherMemoryReport { id_tracker },
             } = report;
+
+            result.total.merge(&total);
 
             // Merge vectors by name
             for vec_report in vectors {
@@ -292,13 +296,48 @@ pub fn report_from_segment(
         })
         .collect::<CollectionResult<Vec<_>>>()?;
 
+    let payload = measure_component(payload)?;
+    let other = OtherMemoryReport {
+        id_tracker: measure_component(id_tracker)?,
+    };
+
+    let mut total = MemoryUsageReport::default();
+    for v in &vectors {
+        let NamedVectorMemoryReport {
+            name: _,
+            storage,
+            index,
+            quantized,
+        } = v;
+        total.merge(storage);
+        total.merge(index);
+        if let Some(q) = quantized {
+            total.merge(q);
+        }
+    }
+    for sv in &sparse_vectors {
+        let NamedSparseVectorMemoryReport {
+            name: _,
+            storage,
+            index,
+        } = sv;
+        total.merge(storage);
+        total.merge(index);
+    }
+    total.merge(&payload);
+    for pi in &payload_index {
+        let NamedPayloadIndexMemoryReport { name: _, usage } = pi;
+        total.merge(usage);
+    }
+    let OtherMemoryReport { id_tracker: ref id } = other;
+    total.merge(id);
+
     Ok(CollectionMemoryReport {
+        total,
         vectors,
         sparse_vectors,
-        payload: measure_component(payload)?,
+        payload,
         payload_index,
-        other: OtherMemoryReport {
-            id_tracker: measure_component(id_tracker)?,
-        },
+        other,
     })
 }

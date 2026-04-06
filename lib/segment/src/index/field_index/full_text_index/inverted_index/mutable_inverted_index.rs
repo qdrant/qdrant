@@ -292,21 +292,33 @@ impl MutableInvertedIndex {
             points_count: _,
         } = self;
 
-        // PostingList contains compressed data, approximate by element count
         let postings_bytes: usize = postings.capacity() * std::mem::size_of::<PostingList>()
-            + postings
-                .iter()
-                .map(|p| p.len() * std::mem::size_of::<PointOffsetType>())
-                .sum::<usize>();
+            + postings.iter().map(|p| p.heap_bytes()).sum::<usize>();
         let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
-        let string_stack_size = std::mem::size_of::<String>();
-        let vocab_bytes: usize = vocab.capacity()
-            * (string_stack_size + std::mem::size_of::<TokenId>() + hashmap_entry_overhead);
-        let ptt_bytes = point_to_tokens.capacity() * std::mem::size_of::<Option<TokenSet>>();
-        let ptd_bytes = point_to_doc
+        let vocab_base_bytes = vocab.capacity()
+            * (std::mem::size_of::<String>()
+                + std::mem::size_of::<TokenId>()
+                + hashmap_entry_overhead);
+        // String heap data
+        let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
+        // TokenSet wraps Vec<TokenId> — account for heap allocation
+        let ptt_bytes: usize = point_to_tokens.capacity() * std::mem::size_of::<Option<TokenSet>>()
+            + point_to_tokens
+                .iter()
+                .filter_map(|opt| opt.as_ref())
+                .map(|ts| ts.heap_bytes())
+                .sum::<usize>();
+        // Document wraps Vec<TokenId> — account for heap allocation
+        let ptd_bytes: usize = point_to_doc
             .as_ref()
-            .map(|v| v.capacity() * std::mem::size_of::<Option<Document>>())
+            .map(|v| {
+                v.capacity() * std::mem::size_of::<Option<Document>>()
+                    + v.iter()
+                        .filter_map(|opt| opt.as_ref())
+                        .map(|doc| doc.heap_bytes())
+                        .sum::<usize>()
+            })
             .unwrap_or(0);
-        postings_bytes + vocab_bytes + ptt_bytes + ptd_bytes
+        postings_bytes + vocab_base_bytes + vocab_heap_bytes + ptt_bytes + ptd_bytes
     }
 }
