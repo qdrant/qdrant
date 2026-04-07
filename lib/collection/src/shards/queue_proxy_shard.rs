@@ -571,15 +571,15 @@ impl Inner {
 
             let mut raw_batch = Vec::new();
             let mut batch_bytes = 0usize;
-            for result in wal.read_raw_with_size(transfer_from) {
-                let (idx, size, raw) = result.map_err(|e| {
+            for result in wal.read_with_size(transfer_from) {
+                let (idx, size, op) = result.map_err(|e| {
                     CollectionError::service_error(format!(
                         "Failed to read WAL during queue proxy transfer: {e}"
                     ))
                 })?;
 
                 batch_bytes += size;
-                raw_batch.push((idx, raw));
+                raw_batch.push((idx, op));
 
                 // Always include at least one operation per batch
                 if batch_bytes > MAX_BATCH_BYTES || raw_batch.len() >= MAX_BATCH_OPS {
@@ -598,16 +598,7 @@ impl Inner {
         // Deserialize outside the WAL lock
         let batch: Vec<(u64, OperationWithClockTag)> = raw_batch
             .into_iter()
-            .map(|(idx, raw)| {
-                let record =
-                    shard::wal::WalRawRecord::<OperationWithClockTag>::deserialize_from(&raw)
-                        .map_err(|e| {
-                            CollectionError::service_error(format!(
-                                "Failed to deserialize WAL record during queue proxy transfer: {e}"
-                            ))
-                        })?;
-                Ok((idx, record))
-            })
+            .map(|(idx, record)| Ok((idx, record)))
             .collect::<CollectionResult<_>>()?;
 
         log::trace!(
