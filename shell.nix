@@ -44,7 +44,7 @@ mkShell {
     pkgs.jq # used in ./tests and ./tools
     pkgs.just # for lib/edge/Justfile
     pkgs.maturin # mentioned in lib/edge/python/README.md
-    pkgs.nixfmt-rfc-style # to format this file
+    pkgs.nixfmt # to format this file
     pkgs.npins # used in tools/nix/update.py
     pkgs.python3 # used in ./tests, ./tools, lib/edge
     pkgs.sccache # mentioned in shellHook
