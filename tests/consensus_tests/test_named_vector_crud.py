@@ -251,6 +251,26 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
         )
         delete_vector_name(peer_api_uris[0], COLLECTION_NAME, "tmp_vec")
 
+
+    # Upload 200 points with v1
+    for i in range(2):
+        points = [
+            {
+                "id": i * 100 + j,
+                "vector": {
+                    VECTOR_NAME: [float(x) / 1000 for x in range(VECTOR_DIM2)]
+
+                },
+                "payload": {"idx": i * 100 + j},
+            }
+            for j in range(100)
+        ]
+        r = requests.put(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points?wait=true",
+            json={"points": points},
+        )
+        assert_http_ok(r)
+
     # Restart the killed peer — it should recover via consensus snapshot
     new_url = start_peer(
         peer_dirs[-1], "peer_restarted.log", bootstrap_uri, port=21000, extra_env=env
