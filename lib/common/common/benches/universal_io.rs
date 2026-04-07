@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use common::generic_consts::{Random, Sequential};
-use common::universal_io::{IoUringFile, MmapFile, OpenOptions, ReadRange, UniversalRead};
+#[cfg(target_os = "linux")]
+use common::universal_io::IoUringFile;
+use common::universal_io::{MmapFile, OpenOptions, ReadRange, UniversalRead};
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
 use rand::rngs::StdRng;
