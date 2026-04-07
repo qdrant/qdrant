@@ -32,9 +32,7 @@ use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 /// ```
 #[repr(C)]
 #[derive(Default, Clone, Copy, Debug, PartialEq, Hash, Ord, PartialOrd, Eq)]
-pub struct GeoHash {
-    packed: u64,
-}
+pub struct GeoHash(u64);
 
 // code from geohash crate
 // the alphabet for the base32 encoding used in geohashing
@@ -58,7 +56,7 @@ impl Index<usize> for GeoHash {
 
     fn index(&self, i: usize) -> &Self::Output {
         assert!(i < self.len());
-        let index = (self.packed >> Self::shift_value(i)) & 0b11111;
+        let index = (self.0 >> Self::shift_value(i)) & 0b11111;
         &BASE32_CODES[index as usize]
     }
 }
@@ -91,21 +89,19 @@ impl Display for GeoHash {
     }
 }
 
-pub struct GeoHashIterator {
-    packed_chars: u64,
-}
+pub struct GeoHashIterator(u64);
 
 impl Iterator for GeoHashIterator {
     type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let len = self.packed_chars & 0b1111;
+        let len = self.0 & 0b1111;
         if len > 0 {
             // take first character from the packed value
-            let char_index = (self.packed_chars >> 59) & 0b11111;
+            let char_index = (self.0 >> 59) & 0b11111;
 
             // shift packed value to the left to get the next character
-            self.packed_chars = (self.packed_chars << 5) | (len - 1);
+            self.0 = (self.0 << 5) | (len - 1);
 
             // get character from the base32 alphabet
             Some(BASE32_CODES[char_index as usize])
@@ -130,16 +126,14 @@ impl GeoHash {
             packed |= index << Self::shift_value(i);
         }
         packed |= s.len() as u64;
-        Ok(Self { packed })
+        Ok(Self(packed))
     }
 
     pub fn iter(&self) -> GeoHashIterator {
         if !self.is_empty() {
-            GeoHashIterator {
-                packed_chars: self.packed,
-            }
+            GeoHashIterator(self.0)
         } else {
-            GeoHashIterator { packed_chars: 0 }
+            GeoHashIterator(0)
         }
     }
 
@@ -148,7 +142,7 @@ impl GeoHash {
     }
 
     pub fn len(&self) -> usize {
-        (self.packed & 0b1111) as usize
+        (self.0 & 0b1111) as usize
     }
 
     pub fn truncate(&self, new_len: usize) -> Self {
@@ -157,15 +151,15 @@ impl GeoHash {
             return *self;
         }
         if new_len == 0 {
-            return Self { packed: 0 };
+            return Self(0);
         }
 
-        let mut packed = self.packed;
+        let mut packed = self.0;
         // Clear all bits after `new_len`-th character and clear length bits
         let shift = Self::shift_value(new_len - 1);
         packed = (packed >> shift) << shift;
         packed |= new_len as u64; // set new length
-        Self { packed }
+        Self(packed)
     }
 
     pub fn starts_with(&self, other: GeoHash) -> bool {
@@ -178,8 +172,8 @@ impl GeoHash {
             return true;
         }
 
-        let self_shifted = self.packed >> Self::shift_value(other.len() - 1);
-        let other_shifted = other.packed >> Self::shift_value(other.len() - 1);
+        let self_shifted = self.0 >> Self::shift_value(other.len() - 1);
+        let other_shifted = other.0 >> Self::shift_value(other.len() - 1);
         self_shifted == other_shifted
     }
 
