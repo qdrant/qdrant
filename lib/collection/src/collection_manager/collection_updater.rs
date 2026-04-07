@@ -86,9 +86,6 @@ impl CollectionUpdater {
                 CollectionUpdateOperations::VectorNameOperation(vector_name_operation) => {
                     process_vector_name_operation(&segments_guard, op_num, &vector_name_operation)
                 }
-                CollectionUpdateOperations::NopOperation(_) => {
-                    Ok(0) // Nop operation, return success without doing anything
-                }
                 #[cfg(feature = "staging")]
                 CollectionUpdateOperations::StagingOperation(staging_operation) => {
                     shard::update::process_staging_operation(

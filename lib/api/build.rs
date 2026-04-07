@@ -372,7 +372,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteFieldIndexCollectionInternal.delete_field_index_collection", ""),
             ("CreateVectorNameInternal.create_vector_name", ""),
             ("DeleteVectorNameInternal.delete_vector_name", ""),
-            ("NopOperationInternal.comment", ""),
             ("UpdateOperation.update", ""),
             ("UpdateBatchInternal.operations", ""),
             ("SearchPointsInternal.search_points", ""),

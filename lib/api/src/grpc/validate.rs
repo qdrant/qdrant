@@ -234,7 +234,6 @@ impl Validate for grpc::update_operation::Update {
             Update::DeleteFieldIndex(op) => op.validate(),
             Update::CreateVectorName(op) => op.validate(),
             Update::DeleteVectorName(op) => op.validate(),
-            Update::Nop(op) => op.validate(),
         }
     }
 }

@@ -313,11 +313,6 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
                 manage: true,
                 extras: true,
             },
-            CollectionUpdateOperations::NopOperation(_) => AccessRequirements {
-                write: true,
-                manage: false,
-                extras: false,
-            },
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(_) => AccessRequirements {
                 write: true,
@@ -708,7 +703,6 @@ mod tests_ops {
             CollectionUpdateOperationsDiscriminants::VectorNameOperation => {
                 check_collection_update_operations_vector_name()
             }
-            CollectionUpdateOperationsDiscriminants::NopOperation => {}
             #[cfg(feature = "staging")]
             CollectionUpdateOperationsDiscriminants::StagingOperation => {
                 use shard::operations::staging::{StagingOperations, TestDelayOperation};

@@ -234,7 +234,6 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
         COLLECTION_NAME,
         VECTOR_NAME,
         {"dense": {"size": VECTOR_DIM2, "distance": "Dot"}},
-        wait=False,
     )
     sleep(1)  # Give consensus time to propagate to surviving peers
 
@@ -249,9 +248,8 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
         create_vector_name(
             peer_api_uris[0], COLLECTION_NAME, "tmp_vec",
             {"dense": {"size": 2, "distance": "Cosine"}},
-            wait=False,
         )
-        delete_vector_name(peer_api_uris[0], COLLECTION_NAME, "tmp_vec", wait=False)
+        delete_vector_name(peer_api_uris[0], COLLECTION_NAME, "tmp_vec")
 
     # Restart the killed peer — it should recover via consensus snapshot
     new_url = start_peer(

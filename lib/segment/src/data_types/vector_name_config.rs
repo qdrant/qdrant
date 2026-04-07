@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use crate::data_types::modifier::Modifier;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -79,6 +80,12 @@ pub struct SparseVectorConfig {
     /// Datatype used to store weights in the index
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
+}
+
+impl Validate for VectorNameConfig {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        Ok(())
+    }
 }
 
 // Convenience constructors for creating VectorNameConfig without wrappers

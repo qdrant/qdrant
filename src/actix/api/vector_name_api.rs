@@ -1,6 +1,6 @@
 use actix_web::rt::time::Instant;
 use actix_web::{Responder, delete, put, web};
-use actix_web_validator::{Path, Query};
+use actix_web_validator::{Json, Path, Query};
 use serde::Deserialize;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
@@ -21,7 +21,7 @@ struct VectorNamePath {
 async fn create_vector_name(
     dispatcher: web::Data<Dispatcher>,
     path: Path<VectorNamePath>,
-    body: web::Json<segment::data_types::vector_name_config::VectorNameConfig>,
+    body: Json<segment::data_types::vector_name_config::VectorNameConfig>,
     params: Query<UpdateParams>,
     ActixAuth(auth): ActixAuth,
     service_config: web::Data<ServiceConfig>,

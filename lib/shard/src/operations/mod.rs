@@ -26,7 +26,6 @@ pub enum CollectionUpdateOperations {
     PayloadOperation(payload_ops::PayloadOps),
     FieldIndexOperation(FieldIndexOperations),
     VectorNameOperation(VectorNameOperations),
-    NopOperation(NopOperation),
     /// Staging-only operations for testing and debugging purposes
     #[cfg(feature = "staging")]
     StagingOperation(staging::StagingOperations),
@@ -54,7 +53,6 @@ impl CollectionUpdateOperations {
             Self::PayloadOperation(op) => op.point_ids(),
             Self::FieldIndexOperation(_) => None,
             Self::VectorNameOperation(_) => None,
-            Self::NopOperation(_) => None,
             #[cfg(feature = "staging")]
             Self::StagingOperation(_) => None,
         }
@@ -77,7 +75,6 @@ impl CollectionUpdateOperations {
             Self::PayloadOperation(_) => None,
             Self::FieldIndexOperation(_) => None,
             Self::VectorNameOperation(_) => None,
-            Self::NopOperation(_) => None,
             #[cfg(feature = "staging")]
             Self::StagingOperation(_) => None,
         }
@@ -93,22 +90,9 @@ impl CollectionUpdateOperations {
             Self::PayloadOperation(op) => op.retain_point_ids(filter),
             Self::FieldIndexOperation(_) => (),
             Self::VectorNameOperation(_) => (),
-            Self::NopOperation(_) => (),
             #[cfg(feature = "staging")]
             Self::StagingOperation(_) => (),
         }
-    }
-}
-
-/// Operation, which does nothing, but can be awaited
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
-pub struct NopOperation {
-    pub comment: String,
-}
-
-impl NopOperation {
-    pub fn new(comment: String) -> NopOperation {
-        NopOperation { comment }
     }
 }
 

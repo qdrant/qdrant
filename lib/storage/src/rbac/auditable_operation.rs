@@ -39,7 +39,6 @@ impl AuditableOperation for CollectionUpdateOperations {
                 VectorNameOperations::CreateVectorName(_) => "create_vector_name",
                 VectorNameOperations::DeleteVectorName(_) => "delete_vector_name",
             },
-            CollectionUpdateOperations::NopOperation(_) => "nop",
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(_) => "debug",
         }

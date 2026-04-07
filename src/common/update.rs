@@ -7,9 +7,7 @@ use collection::collection::Collection;
 use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::point_ops::*;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{
-    CollectionError, CollectionResult, UpdateResult, UpdateStatus,
-};
+use collection::operations::types::{CollectionError, CollectionResult, UpdateResult};
 use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::shards::shard::ShardId;
@@ -920,10 +918,6 @@ pub async fn do_create_index(
         .submit_collection_meta_op(consensus_op, auth, params.timeout)
         .await?;
 
-    // This function is required as long as we want to maintain interface compatibility
-    // for `wait` parameter and return type.
-    // The idea is to migrate from the point-like interface to consensus-like interface in the next few versions
-    // ToDo (v1.18.1+) Switch to Nop instead of repeating operation twice
     do_create_index_internal(
         toc,
         collection_name,
@@ -996,7 +990,6 @@ pub async fn do_delete_index(
         )
         .await?;
 
-    // ToDo (v1.18.1+) Switch to Nop instead of repeating operation twice
     do_delete_index_internal(
         toc,
         collection_name,
@@ -1038,19 +1031,13 @@ pub async fn do_create_vector_name(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
     vector_name: String,
-    config: segment::data_types::vector_name_config::VectorNameConfig,
+    config: VectorNameConfig,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     use collection::operations::verification::new_unchecked_verification_pass;
-
-    let UpdateParams {
-        wait,
-        ordering: _, // is not applicable to vector name operations, as they go via consensus
-        timeout,
-    } = &params;
 
     let consensus_op = CreateNamedVector {
         collection_name: collection_name.clone(),
@@ -1064,35 +1051,50 @@ pub async fn do_create_vector_name(
     dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::CreateNamedVector(consensus_op),
-            auth.clone(),
+            auth,
             params.timeout,
         )
         .await?;
 
-    if *wait {
-        dispatcher.await_consensus_sync(*timeout).await?;
-        let operation = CollectionUpdateOperations::NopOperation(NopOperation::new(format!(
-            "waiting creating vector {vector_name}"
-        )));
+    do_create_vector_name_internal(
+        toc,
+        collection_name,
+        vector_name,
+        config,
+        internal_params,
+        params,
+        hw_measurement_acc,
+    )
+    .await
+}
 
-        update(
-            &toc,
-            &collection_name,
-            operation,
-            internal_params,
-            params,
-            None,
-            auth,
-            hw_measurement_acc,
-        )
-        .await
-    } else {
-        Ok(UpdateResult {
-            operation_id: None,
-            status: UpdateStatus::Acknowledged,
-            clock_tag: None,
-        })
-    }
+pub async fn do_create_vector_name_internal(
+    toc: Arc<TableOfContent>,
+    collection_name: String,
+    vector_name: String,
+    config: segment::data_types::vector_name_config::VectorNameConfig,
+    internal_params: InternalUpdateParams,
+    params: UpdateParams,
+    hw_measurement_acc: HwMeasurementAcc,
+) -> Result<UpdateResult, StorageError> {
+    let operation = CollectionUpdateOperations::VectorNameOperation(
+        VectorNameOperations::CreateVectorName(CreateVectorName {
+            vector_name,
+            config,
+        }),
+    );
+
+    update(
+        &toc,
+        &collection_name,
+        operation,
+        internal_params,
+        params,
+        None,
+        Auth::new_internal(Access::full("Internal API")),
+        hw_measurement_acc,
+    )
+    .await
 }
 
 pub async fn do_delete_vector_name(
@@ -1111,47 +1113,51 @@ pub async fn do_delete_vector_name(
         vector_name: vector_name.clone(),
     };
 
-    let UpdateParams {
-        wait,
-        ordering: _, // is not applicable to vector name operations, as they go via consensus
-        timeout,
-    } = &params;
-
     let pass = new_unchecked_verification_pass();
     let toc = dispatcher.toc(&auth, &pass).clone();
 
     dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::DeleteNamedVector(consensus_op),
-            auth.clone(),
-            *timeout,
+            auth,
+            params.timeout,
         )
         .await?;
 
-    if *wait {
-        dispatcher.await_consensus_sync(*timeout).await?;
-        let operation = CollectionUpdateOperations::NopOperation(NopOperation::new(format!(
-            "waiting deleting vector {vector_name}"
-        )));
+    do_delete_vector_name_internal(
+        toc,
+        collection_name,
+        vector_name,
+        internal_params,
+        params,
+        hw_measurement_acc,
+    )
+    .await
+}
 
-        update(
-            &toc,
-            &collection_name,
-            operation,
-            internal_params,
-            params,
-            None,
-            auth,
-            hw_measurement_acc,
-        )
-        .await
-    } else {
-        Ok(UpdateResult {
-            operation_id: None,
-            status: UpdateStatus::Acknowledged,
-            clock_tag: None,
-        })
-    }
+pub async fn do_delete_vector_name_internal(
+    toc: Arc<TableOfContent>,
+    collection_name: String,
+    vector_name: String,
+    internal_params: InternalUpdateParams,
+    params: UpdateParams,
+    hw_measurement_acc: HwMeasurementAcc,
+) -> Result<UpdateResult, StorageError> {
+    let operation = CollectionUpdateOperations::VectorNameOperation(
+        VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name }),
+    );
+
+    update(
+        &toc,
+        &collection_name,
+        operation,
+        internal_params,
+        params,
+        None,
+        Auth::new_internal(Access::full("Internal API")),
+        hw_measurement_acc,
+    )
+    .await
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -1198,8 +1204,7 @@ pub async fn update(
         }
 
         CollectionUpdateOperations::FieldIndexOperation(_)
-        | CollectionUpdateOperations::VectorNameOperation(_)
-        | CollectionUpdateOperations::NopOperation(_) => {
+        | CollectionUpdateOperations::VectorNameOperation(_) => {
             debug_assert_eq!(
                 shard_key, None,
                 "Field index operations can't specify shard key"

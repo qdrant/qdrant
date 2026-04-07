@@ -32,8 +32,6 @@ service PointsInternal {
   rpc DeleteVectorName(DeleteVectorNameInternal)
       returns (PointsOperationResponseInternal) {}
 
-  rpc Nop(NopOperationInternal) returns (PointsOperationResponseInternal) {}
-
   rpc UpdateBatch(UpdateBatchInternal)
       returns (PointsOperationResponseInternal) {}
   rpc CoreSearchBatch(CoreSearchBatchPointsInternal)
@@ -166,23 +164,6 @@ message DeleteVectorNameInternal {
   optional WaitUntil wait_override = 4;
 }
 
-message NopOperation {
-  string collection_name = 1; // name of the collection
-  optional bool wait = 2; // Wait until the changes have been applied?
-  string comment = 3; // Optional message to include in the request, for testing purposes
-  optional WriteOrdering ordering = 4; // Write ordering guarantees
-  optional uint64 timeout = 5; // Timeout for the request in seconds
-}
-
-message NopOperationInternal {
-    NopOperation nop = 1;
-    optional uint32 shard_id = 2;
-    optional ClockTag clock_tag = 3;
-    // When present, overrides the `wait` parameter of the wrapped public message.
-    // When absent, falls back to `wait` (backward compatible with older nodes).
-    optional WaitUntil wait_override = 4;
-}
-
 message UpdateOperation {
   oneof update {
     SyncPointsInternal sync = 1;
@@ -198,7 +179,6 @@ message UpdateOperation {
     DeleteFieldIndexCollectionInternal delete_field_index = 11;
     CreateVectorNameInternal create_vector_name = 12;
     DeleteVectorNameInternal delete_vector_name = 13;
-    NopOperationInternal nop = 14;
   }
 }
 
