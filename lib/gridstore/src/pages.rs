@@ -76,18 +76,53 @@ impl<S: UniversalRead<u8>> Pages<S> {
         page_path(&self.base_path, page_id)
     }
 
-    /// Computes the page ranges for reading or writing a value described by the given
-    /// [`ValuePointer`].
+    /// Computes the page ranges for reading or writing a value described by the
+    /// given [`ValuePointer`].
     ///
-    /// A value may span across two consecutive pages if it starts near the end of a page.
-    /// Returns `(buffer_offset, page_index, range)` entries that together cover the full
-    /// extent of the value.
+    /// Returns an iterator of tuples that together cover the full extent of the
+    /// value. Each tuple contains information about its chunk.
+    ///
+    /// Typically, the iterator contains only one entry (if value is within a
+    /// single page), or two entries if the value spans across two consecutive
+    /// pages.
+    ///
+    /// # Example
+    ///
+    /// Assume each page is 8×1K blocks. The requested [`ValuePointer`] spans
+    /// across two pages, so this function returns two tuples.
+    ///
+    /// ```text
+    ///                            ┌── ValuePointer ───┐
+    ///                            │ page_id:      123 │
+    ///                            │ block_offset: 6   │  ←  requested value
+    ///                            │ length:       5K  │
+    ///                            └─────────┬─────────┘
+    ///                           ╭──────────┴──────────╮
+    /// ┐ ┌───┬───┬── page 123 ───┬───┬───┐ ┌───┬───┬── page 124 ───┬───┬───┐ ┌
+    /// │ │ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ │ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ │
+    /// ┘ └───┴───┴───┴───┴───┴───┴───┴───┘ └───┴───┴───┴───┴───┴───┴───┴───┘ └
+    ///                           ╰───┬───╯ ╰─────┬─────╯
+    ///              ┌────── tuple 0 ─┴───┐ ┌─────┴ tuple 1 ─────┐
+    ///              │ buf_offset: 0      │ │ buf_offset: 2K     │  ←  returned
+    ///              │ page_id:    123    │ │ page_id:    124    │      tuples
+    ///              │ read_range: 6K..8K │ │ read_range: 0K..2K │
+    ///              └─────────────────┬──┘ └────┬───────────────┘
+    ///                            ┌───┴───┬─────┴─────┐
+    ///                            │ 0..2K │ 2K..5K    │  ←  value buffer
+    ///                            └───────┴───────────┘
+    /// ```
     fn get_page_value_ranges(
         pointer: ValuePointer,
         config: &StorageConfig,
-    ) -> impl Iterator<Item = (usize, FileIndex, ReadRange)> {
+    ) -> impl Iterator<
+        Item = (
+            usize, // buf_offset - byte offset within the value buffer
+            PageId,
+            ReadRange,
+        ),
+    > {
         let ValuePointer {
-            page_id,
+            mut page_id,
             block_offset,
             length,
         } = pointer;
@@ -99,26 +134,25 @@ impl<S: UniversalRead<u8>> Pages<S> {
         let value_start = u64::from(block_offset) * block_size_bytes;
         assert!(value_start < page_len);
 
-        let mut length_so_far = 0;
-        let mut page_idx = page_id as FileIndex;
+        let mut buf_offset = 0;
         let mut start = value_start;
 
         std::iter::from_fn(move || {
-            if length_so_far >= total_length {
+            if buf_offset >= total_length {
                 return None;
             }
-            let remaining = total_length - length_so_far;
+            let remaining = total_length - buf_offset;
             let available_on_page = page_len - start;
             let section_len = remaining.min(available_on_page);
 
-            let range = ReadRange {
+            let read_range = ReadRange {
                 byte_offset: start,
                 length: section_len,
             };
-            let result = (length_so_far as usize, page_idx, range);
+            let result = (buf_offset as usize, page_id, read_range);
 
-            length_so_far += section_len;
-            page_idx += 1;
+            buf_offset += section_len;
+            page_id += 1;
             start = 0;
             Some(result)
         })
@@ -133,7 +167,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
         let mut raw_value = vec![MaybeUninit::<u8>::uninit(); pointer.length as usize];
 
         let reads = Self::get_page_value_ranges(pointer, config)
-            .map(|(buf_offset, page_idx, range)| (buf_offset, &self.pages[page_idx], range));
+            .map(|(buf_offset, page, range)| (buf_offset, &self.pages[page as usize], range));
 
         S::read_multi::<P, _>(reads, |offset, slice| {
             raw_value[offset..offset + slice.len()].write_copy_of_slice(slice);
@@ -199,12 +233,9 @@ impl<S: UniversalWrite<u8>> Pages<S> {
         config: &StorageConfig,
     ) -> Result<()> {
         let writes =
-            Self::get_page_value_ranges(pointer, config).map(|(start, file_idx, range)| {
-                (
-                    file_idx,
-                    range.byte_offset,
-                    &value[start..start + range.length as usize],
-                )
+            Self::get_page_value_ranges(pointer, config).map(|(buf_offset, page, range)| {
+                let data = &value[buf_offset..buf_offset + range.length as usize];
+                (page as FileIndex, range.byte_offset, data)
             });
 
         // Execute writes (mutable borrow of self.pages)
