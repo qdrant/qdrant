@@ -17,6 +17,7 @@ tracing = ["dep:tracing", "segment/tracing"]
 [dependencies]
 ahash = { workspace = true }
 tonic = { workspace = true }
+tonic-prost = { workspace = true }
 prost = { workspace = true }
 prost-wkt-types = { workspace = true }
 serde = { workspace = true }
@@ -39,7 +40,7 @@ sparse = { path = "../sparse" }
 tracing = { workspace = true, optional = true }
 
 [build-dependencies]
-tonic-build = { workspace = true }
+tonic-prost-build = { workspace = true }
 prost-build = { workspace = true }
 common = { path = "../common/common" }
 

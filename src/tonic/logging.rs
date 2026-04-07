@@ -2,10 +2,11 @@ use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
 use tonic::Code;
-use tonic::body::BoxBody;
-use tonic::codegen::http::Response;
 use tower::Service;
 use tower_layer::Layer;
+
+type Request = http::Request<tonic::body::Body>;
+type Response = http::Response<tonic::body::Body>;
 
 #[derive(Clone)]
 pub struct LoggingMiddleware<T> {
@@ -21,10 +22,9 @@ impl LoggingMiddlewareLayer {
     }
 }
 
-impl<S> Service<tonic::codegen::http::Request<tonic::transport::Body>> for LoggingMiddleware<S>
+impl<S> Service<Request> for LoggingMiddleware<S>
 where
-    S: Service<tonic::codegen::http::Request<tonic::transport::Body>, Response = Response<BoxBody>>
-        + Clone,
+    S: Service<Request, Response = Response> + Clone,
     S::Future: Send + 'static,
 {
     type Response = S::Response;
@@ -35,10 +35,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(
-        &mut self,
-        request: tonic::codegen::http::Request<tonic::transport::Body>,
-    ) -> Self::Future {
+    fn call(&mut self, request: Request) -> Self::Future {
         let clone = self.inner.clone();
         let mut inner = std::mem::replace(&mut self.inner, clone);
 
