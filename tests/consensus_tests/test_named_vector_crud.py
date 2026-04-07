@@ -150,7 +150,7 @@ def test_create_vector_no_optimization(tmp_path: pathlib.Path):
     status_after_creation = get_optimizer_status(peer_api_uris[0], COLLECTION_NAME)
     print(f"Segments after creating sparse vector: {status_after_creation}")
     assert status_after_creation == status_before_creation, (
-        f"Segment count changed after creating dense vector: {status_before_creation} -> {status_after_creation}"
+        f"Segment count changed after creating sparse vector: {status_before_creation} -> {status_after_creation}"
     )
 
     # Verify sparse vector exists on all peers
@@ -236,6 +236,7 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
     # Verify v1 is gone on surviving peers
     for uri in peer_api_uris[:-1]:
         vectors = get_collection_vectors_config(uri, COLLECTION_NAME)
+        assert VECTOR_NAME not in vectors, f"{VECTOR_NAME} should be deleted on {uri}"
 
     # Create VECTOR_NAME with different dimensions
     create_vector_name(

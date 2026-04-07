@@ -3487,7 +3487,14 @@ impl TryFrom<grpc::create_vector_name_request::VectorConfig>
 
                 Ok(VectorNameConfig::sparse(SparseVectorConfig {
                     modifier: modifier
-                        .and_then(|m| grpc::Modifier::try_from(m).ok())
+                        .map(|m| {
+                            grpc::Modifier::try_from(m).map_err(|_| {
+                                Status::invalid_argument(format!(
+                                    "Cannot convert sparse modifier: {m}"
+                                ))
+                            })
+                        })
+                        .transpose()?
                         .map(Modifier::from),
                     datatype: convert_datatype_from_proto(datatype)?,
                 }))

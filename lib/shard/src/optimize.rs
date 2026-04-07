@@ -448,8 +448,13 @@ fn finish_optimization(
 
     // Apply vector name changes before index and point changes
     // New named vectors must exist before indexes or points reference them
+    let old_optimized_segment_version = optimized_segment.version();
     let vector_name_changes = proxy_vector_name_changes(&locked_proxies);
     for (vector_name, change) in vector_name_changes.iter_ordered() {
+        debug_assert!(
+            change.version() >= old_optimized_segment_version,
+            "proxied vector name change should have newer version than segment",
+        );
         match change {
             ProxyVectorNameChange::Create(config, version) => {
                 optimized_segment.create_vector_name(*version, vector_name, config)?;

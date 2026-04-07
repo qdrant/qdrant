@@ -341,6 +341,7 @@ impl Points for PointsService {
         &self,
         mut request: Request<CreateVectorNameRequest>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -361,6 +362,7 @@ impl Points for PointsService {
         &self,
         mut request: Request<DeleteVectorNameRequest>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
