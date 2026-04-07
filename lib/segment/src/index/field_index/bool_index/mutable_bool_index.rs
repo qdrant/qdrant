@@ -7,7 +7,6 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use roaring::RoaringBitmap;
 
-use super::BoolIndex;
 use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -344,7 +343,7 @@ impl MutableBoolIndex {
 pub struct MutableBoolIndexBuilder(MutableBoolIndex);
 
 impl FieldIndexBuilderTrait for MutableBoolIndexBuilder {
-    type FieldIndexType = BoolIndex;
+    type FieldIndexType = MutableBoolIndex;
 
     fn init(&mut self) -> OperationResult<()> {
         // After Self is created, it is already initialized
@@ -361,7 +360,7 @@ impl FieldIndexBuilderTrait for MutableBoolIndexBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(BoolIndex::Mmap(self.0))
+        Ok(self.0)
     }
 }
 
