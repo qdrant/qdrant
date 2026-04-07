@@ -30,9 +30,29 @@ use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 /// Decoded     'd'   'r'   '5'   'r'   'u'   'j'   '4'   '4'   '7'                      9
 /// Meaning     s[0]  s[1]  s[2]  s[3]  s[4]  s[5]  s[6]  s[7]  s[8]  s[9]  s[10] s[11]  length
 /// ```
-#[repr(C)]
 #[derive(Default, Clone, Copy, Debug, PartialEq, Hash, Ord, PartialOrd, Eq)]
 pub struct GeoHash(u64);
+
+/// Variation of [`GeoHash`] to serialize/deserialize without validation.
+///
+/// Unlike [`GeoHash`], it might contain invalid bit patterns, e.g. `length > GeoHash::MAX_LENGTH`,
+/// or non-zeroed unused bits in characters.
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+pub struct GeoHashRaw(pub u64);
+
+impl GeoHashRaw {
+    /// No-op, unless the raw value contains invalid bits.
+    pub fn normalize(self) -> GeoHash {
+        GeoHash::new_from_parts(self.0, self.0 & GeoHash::LEN_MASK)
+    }
+}
+
+impl From<GeoHash> for GeoHashRaw {
+    fn from(hash: GeoHash) -> GeoHashRaw {
+        GeoHashRaw(hash.0)
+    }
+}
 
 const LON_RANGE: Range<f64> = -180.0..180.0;
 const LAT_RANGE: Range<f64> = -90.0..90.0;
@@ -682,6 +702,39 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    #[expect(clippy::unusual_byte_groupings)]
+    fn geohash_normalize() {
+        let valid_samples: [&[u8]; _] = [
+            b"dr5ru",
+            b"uft56",
+            b"hhbcd",
+            b"uft560000000",
+            b"h",
+            b"hbcd",
+            b"887hh1234567",
+            b"",
+            b"hwx98",
+            b"hbc",
+            b"dr5rukz",
+        ];
+        // Normalization should not change valid hashes
+        for s in valid_samples {
+            let hash = GeoHash::new(s).unwrap();
+            assert_eq!(hash, GeoHashRaw::from(hash).normalize());
+        }
+
+        let raw = 0b_00001_00010_00011_00100_00101_00110_00111_01000_01001_01010_01100_01101__0011;
+        let fxd = 0b_00001_00010_00011_00000_00000_00000_00000_00000_00000_00000_00000_00000__0011;
+        // Zero-fill unused chars:     ^^^^^ ^^^^^ ^^^^^^^^^^^ ^^^^^ ^^^^^ ^^^^^ ^^^^^ ^^^^^
+        assert_eq!(GeoHashRaw(raw).normalize().0, fxd);
+
+        let raw = 0b_00001_00010_00011_00100_00101_00110_00111_01000_01001_01010_01100_01101__1111;
+        let fxd = 0b_00001_00010_00011_00100_00101_00110_00111_01000_01001_01010_01100_01101__1100;
+        // Truncate length:                                                                   ^^^^
+        assert_eq!(GeoHashRaw(raw).normalize().0, fxd);
     }
 
     #[test]

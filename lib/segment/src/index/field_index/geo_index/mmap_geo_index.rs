@@ -16,7 +16,7 @@ use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::stored_bitslice::MmapBitSlice;
-use crate::index::field_index::geo_hash::GeoHash;
+use crate::index::field_index::geo_hash::{GeoHash, GeoHashRaw};
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 use crate::types::GeoPoint;
 
@@ -29,7 +29,7 @@ const STATS_PATH: &str = "mmap_field_index_stats.json";
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub(super) struct Counts {
-    pub hash: GeoHash,
+    pub hash: GeoHashRaw,
     pub points: u32,
     pub values: u32,
 }
@@ -37,7 +37,7 @@ pub(super) struct Counts {
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub(super) struct PointKeyValue {
-    pub hash: GeoHash,
+    pub hash: GeoHashRaw,
     pub ids_start: u32,
     pub ids_end: u32,
 }
@@ -133,7 +133,7 @@ impl MmapGeoMapIndex {
 
             let mut ids_offset = 0;
             for (i, (hash, ids)) in dynamic_index.points_map.iter().enumerate() {
-                points_map[i].hash = *hash;
+                points_map[i].hash = GeoHashRaw::from(*hash);
                 points_map[i].ids_start = ids_offset as u32;
                 points_map[i].ids_end = (ids_offset + ids.len()) as u32;
                 points_map_ids[ids_offset..ids_offset + ids.len()].copy_from_slice(
@@ -162,7 +162,7 @@ impl MmapGeoMapIndex {
                 .zip(counts_per_hash.iter_mut())
             {
                 if let Some(values) = dynamic_index.values_per_hash.get(hash) {
-                    dst.hash = *hash;
+                    dst.hash = GeoHashRaw::from(*hash);
                     dst.points = *points as u32;
                     dst.values = *values as u32;
                 }
@@ -307,7 +307,7 @@ impl MmapGeoMapIndex {
         self.storage
             .counts_per_hash
             .iter()
-            .map(|counts| (counts.hash, counts.points as usize))
+            .map(|counts| (counts.hash.normalize(), counts.points as usize))
     }
 
     pub fn points_of_hash(&self, hash: GeoHash, hw_counter: &HardwareCounterCell) -> usize {
@@ -324,7 +324,7 @@ impl MmapGeoMapIndex {
         if let Ok(index) = self
             .storage
             .counts_per_hash
-            .binary_search_by(|x| x.hash.cmp(&hash))
+            .binary_search_by(|x| x.hash.normalize().cmp(&hash))
         {
             self.storage.counts_per_hash[index].points as usize
         } else {
@@ -346,7 +346,7 @@ impl MmapGeoMapIndex {
         if let Ok(index) = self
             .storage
             .counts_per_hash
-            .binary_search_by(|x| x.hash.cmp(&hash))
+            .binary_search_by(|x| x.hash.normalize().cmp(&hash))
         {
             self.storage.counts_per_hash[index].values as usize
         } else {
@@ -412,11 +412,13 @@ impl MmapGeoMapIndex {
         let start_index = self
             .storage
             .points_map
-            .binary_search_by(|point_key_value| point_key_value.hash.cmp(&geohash))
+            .binary_search_by(|point_key_value| point_key_value.hash.normalize().cmp(&geohash))
             .unwrap_or_else(|index| index);
         self.storage.points_map[start_index..]
             .iter()
-            .take_while(move |point_key_value| point_key_value.hash.starts_with(geohash))
+            .take_while(move |point_key_value| {
+                point_key_value.hash.normalize().starts_with(geohash)
+            })
             .filter_map(|point_key_value| {
                 Some(
                     self.storage

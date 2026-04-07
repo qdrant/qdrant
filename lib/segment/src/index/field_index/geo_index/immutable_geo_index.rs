@@ -28,7 +28,7 @@ impl From<super::mmap_geo_index::Counts> for Counts {
             values,
         } = counts;
         Self {
-            hash,
+            hash: hash.normalize(),
             points,
             values,
         }
@@ -74,7 +74,7 @@ impl ImmutableGeoMapIndex {
                     ids_end,
                 } = item;
                 (
-                    hash,
+                    hash.normalize(),
                     index.storage.points_map_ids[ids_start as usize..ids_end as usize]
                         .iter()
                         .copied()
