@@ -1296,6 +1296,27 @@ def test_delete_index():
     )
 
 
+def test_create_vector_name():
+    check_access(
+        "create_vector_name",
+        rest_request={"dense": {"size": 4, "distance": "Cosine"}},
+        path_params={"collection_name": COLL_NAME, "vector_name": "new_vec"},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "vector_name": "new_vec",
+            "dense_config": {"size": 4, "distance": 1},
+        },
+    )
+
+
+def test_delete_vector_name():
+    check_access(
+        "delete_vector_name",
+        path_params={"collection_name": COLL_NAME, "vector_name": "fake_vector_name"},
+        grpc_request={"collection_name": COLL_NAME, "vector_name": "fake_vector_name"},
+    )
+
+
 def test_list_collection_snapshots():
     check_access(
         "list_collection_snapshots",
