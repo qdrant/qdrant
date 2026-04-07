@@ -26,21 +26,21 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         })
     }
 
-    fn read_batch<'a, P: AccessPattern, RequestId: 'a>(
+    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
         &'a self,
-        ranges: impl IntoIterator<Item = (RequestId, ReadRange)>,
-        callback: impl FnMut(RequestId, &[T]) -> Result<()>,
+        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
+        callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>;
 
     /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator instead of
     /// accepting a callback.
-    fn read_iter<P: AccessPattern, RequestId>(
+    fn read_iter<P: AccessPattern, Meta>(
         &self,
-        ranges: impl IntoIterator<Item = (RequestId, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(RequestId, Cow<'_, [T]>)>> {
+        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>> {
         ranges
             .into_iter()
-            .map(move |(id, range)| self.read::<P>(range).map(|data| (id, data)))
+            .map(move |(meta, range)| self.read::<P>(range).map(|data| (meta, data)))
     }
 
     fn len(&self) -> Result<u64>;
@@ -56,16 +56,16 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn clear_ram_cache(&self) -> Result<()>;
 
     /// Read from multiple files in a single operation.
-    fn read_multi<'a, P: AccessPattern, RequestId: 'a>(
-        reads: impl IntoIterator<Item = (RequestId, &'a Self, ReadRange)>,
-        mut callback: impl FnMut(RequestId, &[T]) -> Result<()>,
+    fn read_multi<'a, P: AccessPattern, Meta: 'a>(
+        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
+        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
     where
         Self: 'a,
     {
-        for (id, file, range) in reads {
+        for (meta, file, range) in reads {
             let data = file.read::<P>(range)?;
-            callback(id, &data)?;
+            callback(meta, &data)?;
         }
 
         Ok(())
@@ -73,15 +73,15 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
 
     /// Like [`read_multi`](Self::read_multi), but returns a fallible iterator instead of
     /// accepting a callback.
-    fn read_multi_iter<'a, P: AccessPattern, RequestId>(
-        reads: impl IntoIterator<Item = (RequestId, &'a Self, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(RequestId, Cow<'a, [T]>)>>
+    fn read_multi_iter<'a, P: AccessPattern, Meta>(
+        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>
     where
         Self: 'a,
     {
-        reads.into_iter().map(move |(id, file, range)| {
+        reads.into_iter().map(move |(meta, file, range)| {
             let data = file.read::<P>(range)?;
-            Ok((id, data))
+            Ok((meta, data))
         })
     }
 

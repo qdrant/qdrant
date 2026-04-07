@@ -5,16 +5,16 @@ use ::io_uring::types::Fd;
 
 use super::*;
 
-pub struct IoUringReadIter<T: 'static, RequestId, I: Iterator> {
+pub struct IoUringReadIter<T: 'static, Meta, I: Iterator> {
     ranges: iter::Peekable<I>,
-    runtime: IoUringRuntime<'static, T, RequestId>,
+    runtime: IoUringRuntime<'static, T, Meta>,
     _phantom: PhantomData<*const ()>, // `!Send + !Sync`
 }
 
-impl<T, RequestId, I> IoUringReadIter<T, RequestId, I>
+impl<T, Meta, I> IoUringReadIter<T, Meta, I>
 where
     T: bytemuck::Pod,
-    I: Iterator<Item = (RequestId, Fd, bool, ReadRange)>,
+    I: Iterator<Item = (Meta, Fd, bool, ReadRange)>,
 {
     pub fn new(ranges: I) -> Result<Self> {
         let iter = Self {
@@ -26,15 +26,15 @@ where
         Ok(iter)
     }
 
-    fn next_impl(&mut self) -> Result<Option<(RequestId, Vec<T>)>> {
+    fn next_impl(&mut self) -> Result<Option<(Meta, Vec<T>)>> {
         if self.runtime.completion_is_empty()
             && (self.ranges.peek().is_some() || self.runtime.in_progress > 0)
         {
             self.runtime.enqueue_while(|state| {
-                let Some((id, fd, direct_io, range)) = self.ranges.next() else {
+                let Some((meta, fd, direct_io, range)) = self.ranges.next() else {
                     return Ok(None);
                 };
-                let entry = state.read(id, fd, range, direct_io);
+                let entry = state.read(meta, fd, range, direct_io);
                 Ok(Some(entry))
             })?;
 
@@ -46,18 +46,18 @@ where
             .completed()
             .next()
             .transpose()?
-            .map(|(id, resp)| (id, resp.expect_read()));
+            .map(|(meta, resp)| (meta, resp.expect_read()));
 
         Ok(next)
     }
 }
 
-impl<T, RequestId, I> Iterator for IoUringReadIter<T, RequestId, I>
+impl<T, Meta, I> Iterator for IoUringReadIter<T, Meta, I>
 where
     T: bytemuck::Pod,
-    I: Iterator<Item = (RequestId, Fd, bool, ReadRange)>,
+    I: Iterator<Item = (Meta, Fd, bool, ReadRange)>,
 {
-    type Item = Result<(RequestId, Vec<T>)>;
+    type Item = Result<(Meta, Vec<T>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_impl().transpose()

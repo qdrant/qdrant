@@ -45,20 +45,20 @@ where
     }
 
     #[inline]
-    fn read_batch<'a, P: AccessPattern, RequestId: 'a>(
+    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
         &'a self,
-        ranges: impl IntoIterator<Item = (RequestId, ReadRange)>,
-        callback: impl FnMut(RequestId, &[T]) -> Result<()>,
+        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
+        callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()> {
-        self.0.read_batch::<P, RequestId>(ranges, callback)
+        self.0.read_batch::<P, Meta>(ranges, callback)
     }
 
     #[inline]
-    fn read_iter<'a, P: AccessPattern, RequestId>(
+    fn read_iter<'a, P: AccessPattern, Meta>(
         &'a self,
-        ranges: impl IntoIterator<Item = (RequestId, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(RequestId, Cow<'a, [T]>)>> {
-        self.0.read_iter::<P, RequestId>(ranges)
+        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>> {
+        self.0.read_iter::<P, Meta>(ranges)
     }
 
     #[inline]
@@ -77,29 +77,29 @@ where
     }
 
     #[inline]
-    fn read_multi<'a, P: AccessPattern, RequestId: 'a>(
-        reads: impl IntoIterator<Item = (RequestId, &'a Self, ReadRange)>,
-        callback: impl FnMut(RequestId, &[T]) -> Result<()>,
+    fn read_multi<'a, P: AccessPattern, Meta: 'a>(
+        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
+        callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
     where
         Self: 'a,
     {
         let reads = reads
             .into_iter()
-            .map(|(id, file, range)| (id, &file.0, range));
+            .map(|(meta, file, range)| (meta, &file.0, range));
         S::read_multi::<P, _>(reads, callback)
     }
 
     #[inline]
-    fn read_multi_iter<'a, P: AccessPattern, RequestId>(
-        reads: impl IntoIterator<Item = (RequestId, &'a Self, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(RequestId, Cow<'a, [T]>)>>
+    fn read_multi_iter<'a, P: AccessPattern, Meta>(
+        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
+    ) -> impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>
     where
         Self: 'a,
     {
         let it = reads
             .into_iter()
-            .map(|(id, file, range)| (id, &file.0, range));
+            .map(|(meta, file, range)| (meta, &file.0, range));
         S::read_multi_iter::<P, _>(it)
     }
 }
