@@ -42,6 +42,15 @@ def get_collection_sparse_vectors_config(peer_url, collection_name):
     return info.get("config", {}).get("params", {}).get("sparse_vectors", {})
 
 
+def wait_collection_vector_config(peer_url, collection_name, vector_name, expected_size):
+    """Wait until a peer's collection config contains the given vector with the expected size."""
+    def check():
+        vectors = get_collection_vectors_config(peer_url, collection_name)
+        return vector_name in vectors and vectors[vector_name].get("size") == expected_size
+
+    wait_for(check)
+
+
 def get_optimizer_status(peer_url, collection_name):
     """Get optimizer status from collection info."""
     info = get_collection_info(peer_url, collection_name)
@@ -282,12 +291,8 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
         collection_name=COLLECTION_NAME, peer_api_uris=[new_url]
     )
 
-    # Verify the restarted node has the correct vector config
-    vectors = get_collection_vectors_config(new_url, COLLECTION_NAME)
-    assert VECTOR_NAME in vectors, f"{VECTOR_NAME} should exist on restarted node, got: {vectors}"
-    assert vectors[VECTOR_NAME]["size"] == VECTOR_DIM2, (
-        f"{VECTOR_NAME} should have size {VECTOR_DIM2}, got: {vectors[VECTOR_NAME]['size']}"
-    )
+    # Wait for the restarted node to sync the correct vector config via consensus
+    wait_collection_vector_config(new_url, COLLECTION_NAME, VECTOR_NAME, VECTOR_DIM2)
 
     # Verify point count is still correct
     wait_collection_points_count(new_url, COLLECTION_NAME, 1000)
