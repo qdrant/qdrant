@@ -62,7 +62,7 @@ impl Segment {
     ) -> OperationResult<()> {
         let num_points = self.id_tracker.borrow().total_point_count();
 
-        let vector_storage = if self.appendable_flag {
+        let mut vector_storage = if self.appendable_flag {
             // Appendable segment: create real writable storage
             let storage_path = get_vector_storage_path(&self.segment_path, vector_name);
             // Use the configured storage type for appendable segments
@@ -85,6 +85,10 @@ impl Segment {
                 num_points,
             )
         };
+
+        // Fill storage with deleted entries for all existing points so that
+        // total_vector_count matches the segment's point count.
+        vector_storage.prefill_deleted_entries(num_points)?;
 
         let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));
         let quantized_vectors = Arc::new(AtomicRefCell::new(None));
@@ -132,7 +136,7 @@ impl Segment {
         let mut effective_config = *config;
         effective_config.index.index_type = index_type;
 
-        let vector_storage = if self.appendable_flag {
+        let mut vector_storage = if self.appendable_flag {
             // Appendable: create real sparse mmap storage
             let storage_path = get_vector_storage_path(&self.segment_path, vector_name);
             create_sparse_vector_storage(&storage_path, &effective_config.storage_type)?
@@ -140,6 +144,10 @@ impl Segment {
             // Immutable: empty placeholder
             new_empty_sparse_vector_storage(num_points)
         };
+
+        // Fill storage with deleted entries for all existing points so that
+        // total_vector_count matches the segment's point count.
+        vector_storage.prefill_deleted_entries(num_points)?;
 
         let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));
         let quantized_vectors = Arc::new(AtomicRefCell::new(None));

@@ -577,6 +577,7 @@ impl VectorStorageEnum {
             "Vector layout is not implemented for this storage",
         ))
     }
+
 }
 
 impl VectorStorage for VectorStorageEnum {

@@ -1,5 +1,4 @@
 import pytest
-import time
 import requests
 
 from .helpers.helpers import request_with_validation
@@ -26,7 +25,7 @@ def setup(collection_name):
                 "vec_b": {"size": VECTOR_SIZE2, "distance": "Cosine"},
             },
             "optimizers_config": {
-                "indexing_threshold": 100,
+                "indexing_threshold": 1,
             },
         },
     )
@@ -64,9 +63,6 @@ def test_delete_recreate_vector_scroll(collection_name):
     )
     assert response.ok
 
-    # Wait for indexing to create immutable segments
-    wait_collection_green(collection_name)
-
     # Delete vec_a (use plain requests — OpenAPI response schema is mismatched)
     response = requests.delete(
         f"{QDRANT_HOST}/collections/{collection_name}/vectors/vec_a",
@@ -96,20 +92,3 @@ def test_delete_recreate_vector_scroll(collection_name):
     for point in result['points']:
         assert 'vec_b' in point['vector'], f"vec_b missing from point {point['id']}"
         assert len(point['vector']['vec_b']) == VECTOR_SIZE2
-
-
-def wait_collection_green(collection_name, timeout=30):
-    """Poll collection status until optimizer is idle."""
-    start = time.time()
-    while time.time() - start < timeout:
-        response = request_with_validation(
-            api='/collections/{collection_name}',
-            method="GET",
-            path_params={'collection_name': collection_name},
-        )
-        assert response.ok
-        status = response.json()['result']['status']
-        if status == 'green':
-            return
-        time.sleep(0.5)
-    raise TimeoutError(f"Collection {collection_name} did not turn green within {timeout}s")

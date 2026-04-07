@@ -468,14 +468,18 @@ fn create_segment(
         let vector_storage = vector_storages.remove(vector_name).unwrap();
 
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
-        // Warn when number of points between ID tracker and storage differs
+        // Ensure vector storage is sized to match the id_tracker's point count.
+        // This can be out of sync when a named vector was added to an existing segment.
         let point_count = id_tracker.borrow().total_point_count();
         let vector_count = vector_storage.borrow().total_vector_count();
         if vector_count != point_count {
             log::debug!(
-                "Mismatch of point and vector counts ({point_count} != {vector_count}, storage: {})",
+                "Mismatch of point and vector counts ({point_count} != {vector_count}, storage: {}), pre-filling deleted entries",
                 vector_storage_path.display(),
             );
+            vector_storage
+                .borrow_mut()
+                .prefill_deleted_entries(point_count)?;
         }
 
         let started = Instant::now();
@@ -532,14 +536,18 @@ fn create_segment(
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
         let vector_storage = vector_storages.remove(vector_name).unwrap();
 
-        // Warn when number of points between ID tracker and storage differs
+        // Ensure vector storage is sized to match the id_tracker's point count.
+        // This can be out of sync when a named vector was added to an existing segment.
         let point_count = id_tracker.borrow().total_point_count();
         let vector_count = vector_storage.borrow().total_vector_count();
         if vector_count != point_count {
             log::debug!(
-                "Mismatch of point and vector counts ({point_count} != {vector_count}, storage: {})",
+                "Mismatch of point and vector counts ({point_count} != {vector_count}, storage: {}), pre-filling deleted entries",
                 vector_storage_path.display(),
             );
+            vector_storage
+                .borrow_mut()
+                .prefill_deleted_entries(point_count)?;
         }
 
         let started = Instant::now();
