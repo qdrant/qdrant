@@ -99,6 +99,23 @@ impl RoaringFlags {
         }
     }
 
+    /// Set the value of a flag at the given index without changing the underlying storage.
+    /// Returns the previous value of the flag.
+    pub fn set_immutable(&mut self, index: PointOffsetType, value: bool) -> bool {
+        // update length if needed
+        let index_usize = index as usize;
+        if index_usize >= self.len {
+            self.len = index_usize + 1;
+        }
+
+        // update bitmap
+        if value {
+            !self.bitmap.insert(index)
+        } else {
+            self.bitmap.remove(index)
+        }
+    }
+
     pub fn clear_cache(&self) -> OperationResult<()> {
         let Self {
             storage,

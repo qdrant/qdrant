@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
@@ -98,10 +99,66 @@ impl MutableBoolIndex {
         })
     }
 
+    /// Open for an immutable index.
+    pub(crate) fn open_immutable(path: &Path, deleted: &BitSlice) -> OperationResult<Option<Self>> {
+        let index = Self::open(path, false)?.map(|mut idx| {
+            // Mark deleted points as not indexed
+            for id in deleted.iter_ones() {
+                idx.set_or_insert_immutable(id as u32, false, false);
+            }
+            idx
+        });
+
+        Ok(index)
+    }
+
     fn set_or_insert(&mut self, id: u32, has_true: bool, has_false: bool) {
         // Set or insert the flags
         let prev_true = self.storage.trues_flags.set(id, has_true);
         let prev_false = self.storage.falses_flags.set(id, has_false);
+
+        let was_indexed = prev_true || prev_false;
+        let is_indexed = has_true || has_false;
+
+        // update indexed_count
+        match (was_indexed, is_indexed) {
+            (false, true) => {
+                self.indexed_count += 1;
+            }
+            (true, false) => {
+                self.indexed_count = self.indexed_count.saturating_sub(1);
+            }
+            _ => {}
+        }
+
+        // update trues_count
+        match (prev_true, has_true) {
+            (false, true) => {
+                self.trues_count += 1;
+            }
+            (true, false) => {
+                self.trues_count = self.trues_count.saturating_sub(1);
+            }
+            _ => {}
+        }
+
+        // update falses_count
+        match (prev_false, has_false) {
+            (false, true) => {
+                self.falses_count += 1;
+            }
+            (true, false) => {
+                self.falses_count = self.falses_count.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+
+    /// Set or insert for an immutable index, without modifying the underlying storage.
+    pub(crate) fn set_or_insert_immutable(&mut self, id: u32, has_true: bool, has_false: bool) {
+        // Set or insert the flags
+        let prev_true = self.storage.trues_flags.set_immutable(id, has_true);
+        let prev_false = self.storage.falses_flags.set_immutable(id, has_false);
 
         let was_indexed = prev_true || prev_false;
         let is_indexed = has_true || has_false;
