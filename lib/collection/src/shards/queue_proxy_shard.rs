@@ -564,12 +564,12 @@ impl Inner {
         // Lock WAL, count pending items to transfer, grab raw batch up to byte budget.
         // We collect raw (not yet deserialized) bytes under the lock to minimize lock hold time,
         // then deserialize outside the lock.
-        let (reached_end, total, raw_batch) = {
+        let (reached_end, total, batch) = {
             let wal = self.wrapped_shard.wal.wal.lock().await;
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
 
-            let mut raw_batch = Vec::new();
+            let mut batch = Vec::new();
             let mut batch_bytes = 0usize;
             for result in wal.read_with_size(transfer_from) {
                 let (idx, size, op) = result.map_err(|e| {
@@ -579,27 +579,21 @@ impl Inner {
                 })?;
 
                 batch_bytes += size;
-                raw_batch.push((idx, op));
+                batch.push((idx, op));
 
                 // Always include at least one operation per batch
-                if batch_bytes > MAX_BATCH_BYTES || raw_batch.len() >= MAX_BATCH_OPS {
+                if batch_bytes > MAX_BATCH_BYTES || batch.len() >= MAX_BATCH_OPS {
                     break;
                 }
             }
 
-            let reached_end = raw_batch.len() as u64 >= items_left;
+            let reached_end = batch.len() as u64 >= items_left;
             debug_assert!(
-                raw_batch.len() as u64 <= items_left,
+                batch.len() as u64 <= items_left,
                 "batch cannot be larger than items_left",
             );
-            (reached_end, items_total, raw_batch)
+            (reached_end, items_total, batch)
         };
-
-        // Deserialize outside the WAL lock
-        let batch: Vec<(u64, OperationWithClockTag)> = raw_batch
-            .into_iter()
-            .map(|(idx, record)| Ok((idx, record)))
-            .collect::<CollectionResult<_>>()?;
 
         log::trace!(
             "Queue proxy transferring batch of {} updates to peer {}",
