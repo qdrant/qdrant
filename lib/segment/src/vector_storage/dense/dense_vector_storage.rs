@@ -44,6 +44,7 @@ where
     deleted_path: PathBuf,
     vectors: Option<ImmutableDenseVectors<T, S>>,
     distance: Distance,
+    populated: bool,
 }
 
 impl<T, S> DenseVectorStorageImpl<T, S>
@@ -173,6 +174,7 @@ where
         deleted_path,
         vectors: Some(vectors),
         distance,
+        populated: populate,
     };
 
     Ok(storage)
@@ -225,7 +227,7 @@ where
     }
 
     fn is_on_disk(&self) -> bool {
-        true
+        !self.populated
     }
 
     fn total_vector_count(&self) -> usize {

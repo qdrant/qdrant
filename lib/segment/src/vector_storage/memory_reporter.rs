@@ -5,18 +5,14 @@ use crate::vector_storage::vector_storage_base::{
     DenseVectorStorage as _, MultiVectorStorage as _, VectorStorage as _, VectorStorageEnum,
 };
 
-/// Build a `ComponentMemoryUsage` from files + `is_on_disk()`.
+/// Determine the file storage intent for mmap-based vector storage.
 ///
-/// Uses `is_on_disk()` which each concrete type implements based on its
-/// actual configuration (e.g., `ChunkedVectors` checks the populate flag).
+/// `is_on_disk() == true` means data is not populated — rely on OS page cache.
+/// `is_on_disk() == false` means data was populated on load — expected to be cached.
 fn from_files_with_on_disk(files: Vec<PathBuf>, is_on_disk: bool) -> ComponentMemoryUsage {
     let intent = if is_on_disk {
-        // Files are mmap'd but not expected to be fully resident
-        // (no populate, or explicitly on-disk).
         FileStorageIntent::OnDisk
     } else {
-        // Files are mmap'd and populated into RAM on load,
-        // expected to be fully resident.
         FileStorageIntent::Cached
     };
     ComponentMemoryUsage::from_files(files, intent)
