@@ -12,6 +12,7 @@ use api::grpc::qdrant::{
     ListShardKeysRequest, ListShardKeysResponse, UpdateCollection,
     UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
 };
+use collection::operations::types::AliasDescription;
 use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
 };
@@ -145,7 +146,7 @@ impl Collections for CollectionsService {
             do_list_collection_aliases(self.dispatcher.toc(&auth, &pass), &auth, &collection_name)
                 .await?;
         let response = ListAliasesResponse {
-            aliases: aliases.into_iter().map(Into::into).collect(),
+            aliases: aliases.into_iter().map(AliasDescription::into).collect(),
             time: timing.elapsed().as_secs_f64(),
         };
         Ok(Response::new(response))
@@ -165,7 +166,7 @@ impl Collections for CollectionsService {
         let CollectionsAliasesResponse { aliases } =
             do_list_aliases(self.dispatcher.toc(&auth, &pass), &auth).await?;
         let response = ListAliasesResponse {
-            aliases: aliases.into_iter().map(Into::into).collect(),
+            aliases: aliases.into_iter().map(AliasDescription::into).collect(),
             time: timing.elapsed().as_secs_f64(),
         };
         Ok(Response::new(response))

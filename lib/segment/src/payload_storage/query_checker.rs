@@ -613,17 +613,17 @@ mod tests {
         assert!(!payload_checker.check(0, &query));
 
         // id Filter
-        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(Into::into).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(u64::into).collect();
 
         let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(!payload_checker.check(2, &query));
 
-        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(Into::into).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(u64::into).collect();
 
         let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(payload_checker.check(10, &query));
 
-        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(Into::into).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(u64::into).collect();
 
         let query = Filter::new_must(Condition::HasId(ids.into()));
         assert!(payload_checker.check(2, &query));

@@ -216,7 +216,7 @@ pub fn try_discover_request_from_grpc(
         offset: offset.map(|x| x as usize),
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: Some(with_vectors.map(Into::into).unwrap_or_default()),
-        using: using.map(Into::into),
+        using: using.map(String::into),
         lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
     };
 
@@ -536,7 +536,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         wal_retain_closed: Some(wal_retain_closed as u64),
                     }
                 }),
-                quantization_config: quantization_config.map(Into::into),
+                quantization_config: quantization_config.map(QuantizationConfig::into),
                 strict_mode_config: strict_mode_config
                     .map(api::grpc::qdrant::StrictModeConfig::from),
                 metadata: metadata
@@ -951,7 +951,7 @@ impl From<UpdateResult> for api::grpc::qdrant::UpdateResultInternal {
         Self {
             operation_id,
             status: status.into(),
-            clock_tag: clock_tag.map(Into::into),
+            clock_tag: clock_tag.map(ClockTag::into),
         }
     }
 }
@@ -1058,10 +1058,10 @@ impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearch
         Self {
             collection_name: collection_id,
             query: Some(api::grpc::QueryEnum::from(query.clone())),
-            filter: filter.clone().map(Into::into),
+            filter: filter.clone().map(Filter::into),
             limit: *limit as u64,
             with_vectors: with_vector.clone().map(Into::into),
-            with_payload: with_payload.clone().map(Into::into),
+            with_payload: with_payload.clone().map(WithPayloadInterface::into),
             params: params.map(Into::into),
             score_threshold: *score_threshold,
             offset: Some(*offset as u64),
@@ -1282,7 +1282,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
             with_vector: Some(with_vectors.map(Into::into).unwrap_or_default()),
             score_threshold,
-            using: using.map(Into::into),
+            using: using.map(String::into),
             lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
         })
     }
@@ -1407,7 +1407,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             }
             .into(),
             hnsw_config: hnsw_config.map(Into::into),
-            quantization_config: quantization_config.map(Into::into),
+            quantization_config: quantization_config.map(QuantizationConfig::into),
             on_disk,
             datatype: datatype.map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
             multivector_config: multivector_config.map(api::grpc::qdrant::MultiVectorConfig::from),

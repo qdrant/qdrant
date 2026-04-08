@@ -10,6 +10,7 @@ use api::grpc::qdrant::{
     ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
     RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
+use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
@@ -80,7 +81,7 @@ impl Snapshots for SnapshotsService {
             do_list_snapshots(self.dispatcher.toc(&auth, &pass), &auth, &collection_name).await?;
 
         Ok(Response::new(ListSnapshotsResponse {
-            snapshot_descriptions: snapshots.into_iter().map(Into::into).collect(),
+            snapshot_descriptions: snapshots.into_iter().map(SnapshotDescription::into).collect(),
             time: timing.elapsed().as_secs_f64(),
         }))
     }
@@ -137,7 +138,7 @@ impl Snapshots for SnapshotsService {
 
         let snapshots = do_list_full_snapshots(self.dispatcher.toc(&auth, &pass), auth).await?;
         Ok(Response::new(ListSnapshotsResponse {
-            snapshot_descriptions: snapshots.into_iter().map(Into::into).collect(),
+            snapshot_descriptions: snapshots.into_iter().map(SnapshotDescription::into).collect(),
             time: timing.elapsed().as_secs_f64(),
         }))
     }
@@ -216,7 +217,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         .await?;
 
         Ok(Response::new(ListSnapshotsResponse {
-            snapshot_descriptions: snapshot_descriptions.into_iter().map(Into::into).collect(),
+            snapshot_descriptions: snapshot_descriptions.into_iter().map(SnapshotDescription::into).collect(),
             time: timing.elapsed().as_secs_f64(),
         }))
     }

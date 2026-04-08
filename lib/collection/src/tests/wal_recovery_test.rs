@@ -346,7 +346,7 @@ async fn test_truncate_unapplied_wal() {
     }
 
     // Count how many points were actually applied by trying to retrieve each point ID
-    let all_point_ids: Vec<_> = (0..num_points).map(Into::into).collect();
+    let all_point_ids: Vec<_> = (0..num_points).map(u64::into).collect();
     let request = Arc::new(PointRequestInternal {
         ids: all_point_ids,
         with_payload: None,

@@ -60,7 +60,7 @@ mod group_by {
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
         let batch = BatchPersisted {
-            ids: (0..docs * chunks).map(Into::into).collect_vec(),
+            ids: (0..docs * chunks).map(u64::into).collect_vec(),
             vectors: BatchVectorStructPersisted::Single(
                 (0..docs * chunks)
                     .map(|_| rand_dense_vector(&mut rng, 4))
@@ -527,7 +527,7 @@ mod group_by_builder {
         // insert chunk points
         {
             let batch = BatchPersisted {
-                ids: (0..docs * chunks_per_doc).map(Into::into).collect_vec(),
+                ids: (0..docs * chunks_per_doc).map(u64::into).collect_vec(),
                 vectors: BatchVectorStructPersisted::Single(
                     (0..docs * chunks_per_doc)
                         .map(|_| rand_dense_vector(&mut rng, 4))
@@ -565,7 +565,7 @@ mod group_by_builder {
         // insert doc points
         {
             let batch = BatchPersisted {
-                ids: (0..docs).map(Into::into).collect_vec(),
+                ids: (0..docs).map(u64::into).collect_vec(),
                 vectors: BatchVectorStructPersisted::Single(
                     (0..docs)
                         .map(|_| rand_dense_vector(&mut rng, 4))
