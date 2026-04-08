@@ -211,16 +211,16 @@ pub fn try_discover_request_from_grpc(
         target,
         context: Some(context),
         filter: filter.map(|f| f.try_into()).transpose()?,
-        params: params.map(|p| p.into()),
+        params: params.map(Into::into),
         limit: limit as usize,
         offset: offset.map(|x| x as usize),
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: Some(
             with_vectors
-                .map(|selector| selector.into())
+                .map(Into::into)
                 .unwrap_or_default(),
         ),
-        using: using.map(|u| u.into()),
+        using: using.map(Into::into),
         lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
     };
 
@@ -540,7 +540,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         wal_retain_closed: Some(wal_retain_closed as u64),
                     }
                 }),
-                quantization_config: quantization_config.map(|x| x.into()),
+                quantization_config: quantization_config.map(Into::into),
                 strict_mode_config: strict_mode_config
                     .map(api::grpc::qdrant::StrictModeConfig::from),
                 metadata: metadata
@@ -1062,11 +1062,11 @@ impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearch
         Self {
             collection_name: collection_id,
             query: Some(api::grpc::QueryEnum::from(query.clone())),
-            filter: filter.clone().map(|f| f.into()),
+            filter: filter.clone().map(Into::into),
             limit: *limit as u64,
-            with_vectors: with_vector.clone().map(|wv| wv.into()),
-            with_payload: with_payload.clone().map(|wp| wp.into()),
-            params: params.map(|sp| sp.into()),
+            with_vectors: with_vector.clone().map(Into::into),
+            with_payload: with_payload.clone().map(Into::into),
+            params: params.map(Into::into),
             score_threshold: *score_threshold,
             offset: Some(*offset as u64),
             vector_name: Some(query.get_vector_name().to_owned()),
@@ -1091,7 +1091,7 @@ impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookup {
                 .map(|wp| wp.try_into())
                 .transpose()?
                 .or_else(with_default_payload),
-            with_vectors: with_vectors.map(|wv| wv.into()),
+            with_vectors: with_vectors.map(Into::into),
         })
     }
 }
@@ -1280,17 +1280,17 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             negative,
             strategy: strategy.map(|s| s.try_into()).transpose()?,
             filter: filter.map(|f| f.try_into()).transpose()?,
-            params: params.map(|p| p.into()),
+            params: params.map(Into::into),
             limit: limit as usize,
             offset: offset.map(|x| x as usize),
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
             with_vector: Some(
                 with_vectors
-                    .map(|with_vectors| with_vectors.into())
+                    .map(Into::into)
                     .unwrap_or_default(),
             ),
             score_threshold,
-            using: using.map(|name| name.into()),
+            using: using.map(Into::into),
             lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
         })
     }
@@ -1551,19 +1551,19 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
         Self {
             peer_id,
             shard_count: shard_count as u64,
-            local_shards: local_shards.into_iter().map(|shard| shard.into()).collect(),
+            local_shards: local_shards.into_iter().map(Into::into).collect(),
             remote_shards: remote_shards
                 .into_iter()
-                .map(|shard| shard.into())
+                .map(Into::into)
                 .collect(),
             shard_transfers: shard_transfers
                 .into_iter()
-                .map(|shard| shard.into())
+                .map(Into::into)
                 .collect(),
             resharding_operations: resharding_operations
                 .into_iter()
                 .flatten()
-                .map(|info| info.into())
+                .map(Into::into)
                 .collect(),
         }
     }

@@ -145,7 +145,7 @@ where
                     entry.or_default().insert(idx);
                 }
 
-                let values = values.into_iter().map(|v| v.into()).collect::<Vec<_>>();
+                let values = values.into_iter().map(Into::into).collect::<Vec<_>>();
                 store
                     .put_value(idx, &values, hw_counter_ref)
                     .map_err(|err| {

@@ -1209,7 +1209,7 @@ where
         MapIndex::get_values(self, point_id, hw_counter)
             .into_iter()
             .flatten()
-            .map(|v| v.into())
+            .map(Into::into)
     }
 
     fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {

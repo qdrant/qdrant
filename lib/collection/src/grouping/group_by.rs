@@ -533,7 +533,7 @@ fn values_to_any_variants(values: &[Value]) -> Vec<AnyVariants> {
     // gather string values
     let strs: IndexSet<_, FnvBuildHasher> = values
         .iter()
-        .filter_map(|v| v.as_str().map(|s| s.into()))
+        .filter_map(|v| v.as_str().map(Into::into))
         .collect();
 
     if !strs.is_empty() {

@@ -80,7 +80,7 @@ impl Snapshots for SnapshotsService {
             do_list_snapshots(self.dispatcher.toc(&auth, &pass), &auth, &collection_name).await?;
 
         Ok(Response::new(ListSnapshotsResponse {
-            snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
+            snapshot_descriptions: snapshots.into_iter().map(Into::into).collect(),
             time: timing.elapsed().as_secs_f64(),
         }))
     }
@@ -137,7 +137,7 @@ impl Snapshots for SnapshotsService {
 
         let snapshots = do_list_full_snapshots(self.dispatcher.toc(&auth, &pass), auth).await?;
         Ok(Response::new(ListSnapshotsResponse {
-            snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
+            snapshot_descriptions: snapshots.into_iter().map(Into::into).collect(),
             time: timing.elapsed().as_secs_f64(),
         }))
     }

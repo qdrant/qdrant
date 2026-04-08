@@ -607,7 +607,7 @@ mod tests {
             min_should: None,
             must: None,
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: [1, 2, 3, 4, 5].into_iter().map(|x| x.into()).collect(),
+                has_id: [1, 2, 3, 4, 5].into_iter().map(Into::into).collect(),
             })]),
         };
 
@@ -638,7 +638,7 @@ mod tests {
                 }),
             ]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: [1, 2, 3, 4, 5].into_iter().map(|x| x.into()).collect(),
+                has_id: [1, 2, 3, 4, 5].into_iter().map(Into::into).collect(),
             })]),
         };
 

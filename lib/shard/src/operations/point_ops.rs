@@ -297,7 +297,7 @@ impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
                     Some(payload) => api::conversions::json::payload_to_proto(payload.clone()),
                 })
             });
-            let vectors: Option<VectorStructInternal> = vector.map(|v| v.into());
+            let vectors: Option<VectorStructInternal> = vector.map(Into::into);
 
             let point = api::grpc::qdrant::PointStruct {
                 id,

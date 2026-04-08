@@ -275,7 +275,7 @@ impl ConditionChecker for SimpleConditionChecker {
                 if payload_ref_cell.borrow().is_none() {
                     let payload_ptr = match payload_storage_guard.deref() {
                         PayloadStorageEnum::InMemoryPayloadStorage(s) => {
-                            s.payload_ptr(point_id).map(|x| x.into())
+                            s.payload_ptr(point_id).map(Into::into)
                         }
                         PayloadStorageEnum::MmapPayloadStorage(s) => {
                             let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
@@ -613,17 +613,17 @@ mod tests {
         assert!(!payload_checker.check(0, &query));
 
         // id Filter
-        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(Into::into).collect();
 
         let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(!payload_checker.check(2, &query));
 
-        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(Into::into).collect();
 
         let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(payload_checker.check(10, &query));
 
-        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(Into::into).collect();
 
         let query = Filter::new_must(Condition::HasId(ids.into()));
         assert!(payload_checker.check(2, &query));

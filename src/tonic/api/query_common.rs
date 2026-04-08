@@ -93,13 +93,13 @@ pub async fn search(
     let search_request = CoreSearchRequest {
         query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
         filter: filter.map(|f| f.try_into()).transpose()?,
-        params: params.map(|p| p.into()),
+        params: params.map(Into::into),
         limit: limit as usize,
         offset: offset.unwrap_or_default() as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: Some(
             with_vectors
-                .map(|selector| selector.into())
+                .map(Into::into)
                 .unwrap_or_default(),
         ),
         score_threshold,
@@ -132,7 +132,7 @@ pub async fn search(
     let response = SearchResponse {
         result: scored_points
             .into_iter()
-            .map(|point| point.into())
+            .map(Into::into)
             .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(hw_measurement_acc.to_grpc_api()).into_non_empty(),
@@ -179,7 +179,7 @@ pub async fn core_search_batch(
         result: scored_points
             .into_iter()
             .map(|points| BatchResult {
-                result: points.into_iter().map(|p| p.into()).collect(),
+                result: points.into_iter().map(Into::into).collect(),
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -239,7 +239,7 @@ pub async fn core_search_list(
         result: scored_points
             .into_iter()
             .map(|points| BatchResult {
-                result: points.into_iter().map(|p| p.into()).collect(),
+                result: points.into_iter().map(Into::into).collect(),
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -348,7 +348,7 @@ pub async fn recommend(
     let response = RecommendResponse {
         result: recommended_points
             .into_iter()
-            .map(|point| point.into())
+            .map(Into::into)
             .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
@@ -404,7 +404,7 @@ pub async fn recommend_batch(
         result: scored_points
             .into_iter()
             .map(|points| BatchResult {
-                result: points.into_iter().map(|p| p.into()).collect(),
+                result: points.into_iter().map(Into::into).collect(),
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -505,7 +505,7 @@ pub async fn discover(
     let response = DiscoverResponse {
         result: discovered_points
             .into_iter()
-            .map(|point| point.into())
+            .map(Into::into)
             .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
@@ -560,7 +560,7 @@ pub async fn discover_batch(
         result: scored_points
             .into_iter()
             .map(|points| BatchResult {
-                result: points.into_iter().map(|p| p.into()).collect(),
+                result: points.into_iter().map(Into::into).collect(),
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -596,7 +596,7 @@ pub async fn scroll(
         filter: filter.map(|f| f.try_into()).transpose()?,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: with_vectors
-            .map(|selector| selector.into())
+            .map(Into::into)
             .unwrap_or_default(),
         order_by: order_by
             .map(OrderBy::try_from)
@@ -640,7 +640,7 @@ pub async fn scroll(
     let points = points.map_err(|e| Status::internal(format!("Failed to convert points: {e}")))?;
 
     let response = ScrollResponse {
-        next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
+        next_page_offset: scrolled_points.next_page_offset.map(Into::into),
         result: points,
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
@@ -731,7 +731,7 @@ pub async fn get(
             .collect::<Result<_, _>>()?,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: with_vectors
-            .map(|selector| selector.into())
+            .map(Into::into)
             .unwrap_or_default(),
     };
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -764,7 +764,7 @@ pub async fn get(
     .await?;
 
     let response = GetResponse {
-        result: records.into_iter().map(|point| point.into()).collect(),
+        result: records.into_iter().map(Into::into).collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
@@ -819,7 +819,7 @@ pub async fn query(
     let response = QueryResponse {
         result: scored_points
             .into_iter()
-            .map(|point| point.into())
+            .map(Into::into)
             .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
@@ -878,7 +878,7 @@ pub async fn query_batch(
         result: scored_points
             .into_iter()
             .map(|points| BatchResult {
-                result: points.into_iter().map(|p| p.into()).collect(),
+                result: points.into_iter().map(Into::into).collect(),
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),

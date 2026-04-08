@@ -381,7 +381,7 @@ async fn test_delete_by_id_with_deferred_points() {
     let timeout = Duration::from_secs(30);
 
     // Delete all points by ID
-    let all_ids: Vec<PointIdType> = (0..NUM_POINTS).map(|i| i.into()).collect();
+    let all_ids: Vec<PointIdType> = (0..NUM_POINTS).map(Into::into).collect();
     shard
         .update(
             delete_by_ids_op(all_ids),

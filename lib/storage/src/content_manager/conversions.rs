@@ -97,8 +97,8 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
                 sparse_vectors: sparse_vectors_config
                     .map(|v| SparseVectorsConfig::try_from(v).map(|SparseVectorsConfig(x)| x))
                     .transpose()?,
-                hnsw_config: hnsw_config.map(|v| v.into()),
-                wal_config: wal_config.map(|v| v.into()),
+                hnsw_config: hnsw_config.map(Into::into),
+                wal_config: wal_config.map(Into::into),
                 optimizers_config: optimizers_config.map(TryFrom::try_from).transpose()?,
                 shard_number,
                 on_disk_payload,

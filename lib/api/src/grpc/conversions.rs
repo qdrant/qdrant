@@ -362,7 +362,7 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
         } = schema;
         PayloadSchemaInfo {
             data_type: PayloadSchemaType::from(data_type) as i32,
-            params: params.map(|p| p.into()),
+            params: params.map(Into::into),
             points: Some(points as u64),
         }
     }
@@ -921,7 +921,7 @@ impl From<SearchParams> for segment::types::SearchParams {
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as usize),
             exact: exact.unwrap_or(false),
-            quantization: quantization.map(|q| q.into()),
+            quantization: quantization.map(Into::into),
             indexed_only: indexed_only.unwrap_or(false),
             acorn: acorn.map(segment::types::AcornSearchParams::from),
         }
@@ -940,7 +940,7 @@ impl From<segment::types::SearchParams> for SearchParams {
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as u64),
             exact: Some(exact),
-            quantization: quantization.map(|q| q.into()),
+            quantization: quantization.map(Into::into),
             indexed_only: Some(indexed_only),
             acorn: acorn.map(AcornSearchParams::from),
         }
@@ -2167,7 +2167,7 @@ impl From<segment::data_types::order_by::OrderBy> for OrderBy {
         Self {
             key: key.to_string(),
             direction: direction.map(|d| Direction::from(d) as i32),
-            start_from: start_from.map(|start_from| start_from.into()),
+            start_from: start_from.map(Into::into),
         }
     }
 }
@@ -2596,7 +2596,7 @@ pub fn try_date_time_from_proto(
     date_time: prost_wkt_types::Timestamp,
 ) -> Result<DateTimePayloadType, Status> {
     chrono::DateTime::from_timestamp(date_time.seconds, date_time.nanos.try_into().unwrap_or(0))
-        .map(|date_time| date_time.into())
+        .map(Into::into)
         .ok_or_else(|| Status::invalid_argument(format!("Unable to parse timestamp: {date_time}")))
 }
 
@@ -2995,13 +2995,13 @@ impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
         Ok(Self {
             vector,
             filter: filter.map(|f| f.try_into()).transpose()?,
-            params: params.map(|p| p.into()),
+            params: params.map(Into::into),
             limit: limit as usize,
             offset: offset.map(|x| x as usize),
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
             with_vector: Some(
                 with_vectors
-                    .map(|with_vectors| with_vectors.into())
+                    .map(Into::into)
                     .unwrap_or_default(),
             ),
             score_threshold,
@@ -3112,7 +3112,7 @@ impl TryFrom<WithLookup> for rest::WithLookup {
                 .map(|wp| wp.try_into())
                 .transpose()?
                 .or_else(with_default_payload),
-            with_vectors: with_vectors.map(|wv| wv.into()),
+            with_vectors: with_vectors.map(Into::into),
         })
     }
 }

@@ -58,8 +58,8 @@ pub fn internal_sync_points(
                 .into_iter()
                 .map(api::grpc::qdrant::PointStruct::try_from)
                 .collect::<Result<Vec<_>, Status>>()?,
-            from_id: from_id.map(|x| x.into()),
-            to_id: to_id.map(|x| x.into()),
+            from_id: from_id.map(Into::into),
+            to_id: to_id.map(Into::into),
             ordering: ordering.map(write_ordering_to_proto),
             timeout: wait_timeout,
         }),
@@ -162,7 +162,7 @@ pub fn internal_delete_points(
             wait: Some(wait.needs_callback()),
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
-                    ids: ids.into_iter().map(|id| id.into()).collect(),
+                    ids: ids.into_iter().map(Into::into).collect(),
                 })),
             }),
             ordering: ordering.map(write_ordering_to_proto),
@@ -257,7 +257,7 @@ pub fn internal_delete_vectors(
             wait: Some(wait.needs_callback()),
             points_selector: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
-                    ids: ids.into_iter().map(|id| id.into()).collect(),
+                    ids: ids.into_iter().map(Into::into).collect(),
                 })),
             }),
             vectors: Some(VectorsSelector {
@@ -313,7 +313,7 @@ pub fn internal_set_payload(
     let points_selector = if let Some(points) = set_payload.points {
         Some(PointsSelector {
             points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
-                ids: points.into_iter().map(|id| id.into()).collect(),
+                ids: points.into_iter().map(Into::into).collect(),
             })),
         })
     } else {
@@ -351,7 +351,7 @@ pub fn internal_delete_payload(
     let points_selector = if let Some(points) = delete_payload.points {
         Some(PointsSelector {
             points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
-                ids: points.into_iter().map(|id| id.into()).collect(),
+                ids: points.into_iter().map(Into::into).collect(),
             })),
         })
     } else {
@@ -398,7 +398,7 @@ pub fn internal_clear_payload(
             wait: Some(wait.needs_callback()),
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
-                    ids: points.into_iter().map(|id| id.into()).collect(),
+                    ids: points.into_iter().map(Into::into).collect(),
                 })),
             }),
             ordering: ordering.map(write_ordering_to_proto),

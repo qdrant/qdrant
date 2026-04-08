@@ -92,7 +92,7 @@ impl PointMappings {
 
         self.internal_to_external
             .get(internal_id as usize)
-            .map(|i| i.into())
+            .map(Into::into)
     }
 
     pub(crate) fn drop(&mut self, external_id: PointIdType) -> Option<PointOffsetType> {

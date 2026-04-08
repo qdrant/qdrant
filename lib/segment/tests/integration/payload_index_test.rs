@@ -969,15 +969,15 @@ fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
 
         // Perform additional sort to break ties by score
         let mut plain_result_sorted_ties: Vec<ScoredPointTies> =
-            plain_result.iter().map(|x| x.into()).collect_vec();
+            plain_result.iter().map(Into::into).collect_vec();
         plain_result_sorted_ties.sort();
 
         let mut struct_result_sorted_ties: Vec<ScoredPointTies> =
-            struct_result.iter().map(|x| x.into()).collect_vec();
+            struct_result.iter().map(Into::into).collect_vec();
         struct_result_sorted_ties.sort();
 
         let mut mmap_result_sorted_ties: Vec<ScoredPointTies> =
-            mmap_result.iter().map(|x| x.into()).collect_vec();
+            mmap_result.iter().map(Into::into).collect_vec();
         mmap_result_sorted_ties.sort();
 
         ensure!(
