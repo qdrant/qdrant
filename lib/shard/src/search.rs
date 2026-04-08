@@ -146,12 +146,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
             limit: value.limit as usize,
             offset: value.offset.unwrap_or_default() as usize,
             with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: Some(
-                value
-                    .with_vectors
-                    .map(Into::into)
-                    .unwrap_or_default(),
-            ),
+            with_vector: Some(value.with_vectors.map(Into::into).unwrap_or_default()),
             score_threshold: value.score_threshold,
         })
     }

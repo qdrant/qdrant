@@ -97,11 +97,7 @@ pub async fn search(
         limit: limit as usize,
         offset: offset.unwrap_or_default() as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: Some(
-            with_vectors
-                .map(Into::into)
-                .unwrap_or_default(),
-        ),
+        with_vector: Some(with_vectors.map(Into::into).unwrap_or_default()),
         score_threshold,
     };
 
@@ -130,10 +126,7 @@ pub async fn search(
     .await?;
 
     let response = SearchResponse {
-        result: scored_points
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+        result: scored_points.into_iter().map(Into::into).collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(hw_measurement_acc.to_grpc_api()).into_non_empty(),
     };
@@ -346,10 +339,7 @@ pub async fn recommend(
         .await?;
 
     let response = RecommendResponse {
-        result: recommended_points
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+        result: recommended_points.into_iter().map(Into::into).collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
@@ -503,10 +493,7 @@ pub async fn discover(
         .await?;
 
     let response = DiscoverResponse {
-        result: discovered_points
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+        result: discovered_points.into_iter().map(Into::into).collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
@@ -595,9 +582,7 @@ pub async fn scroll(
         limit: limit.map(|l| l as usize),
         filter: filter.map(|f| f.try_into()).transpose()?,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vectors
-            .map(Into::into)
-            .unwrap_or_default(),
+        with_vector: with_vectors.map(Into::into).unwrap_or_default(),
         order_by: order_by
             .map(OrderBy::try_from)
             .transpose()?
@@ -730,9 +715,7 @@ pub async fn get(
             .map(|p| p.try_into())
             .collect::<Result<_, _>>()?,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vectors
-            .map(Into::into)
-            .unwrap_or_default(),
+        with_vector: with_vectors.map(Into::into).unwrap_or_default(),
     };
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
@@ -817,10 +800,7 @@ pub async fn query(
     .await?;
 
     let response = QueryResponse {
-        result: scored_points
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+        result: scored_points.into_iter().map(Into::into).collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
     };

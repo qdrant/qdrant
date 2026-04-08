@@ -215,11 +215,7 @@ pub fn try_discover_request_from_grpc(
         limit: limit as usize,
         offset: offset.map(|x| x as usize),
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: Some(
-            with_vectors
-                .map(Into::into)
-                .unwrap_or_default(),
-        ),
+        with_vector: Some(with_vectors.map(Into::into).unwrap_or_default()),
         using: using.map(Into::into),
         lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
     };
@@ -1284,11 +1280,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             limit: limit as usize,
             offset: offset.map(|x| x as usize),
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: Some(
-                with_vectors
-                    .map(Into::into)
-                    .unwrap_or_default(),
-            ),
+            with_vector: Some(with_vectors.map(Into::into).unwrap_or_default()),
             score_threshold,
             using: using.map(Into::into),
             lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
@@ -1552,14 +1544,8 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
             peer_id,
             shard_count: shard_count as u64,
             local_shards: local_shards.into_iter().map(Into::into).collect(),
-            remote_shards: remote_shards
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            shard_transfers: shard_transfers
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            remote_shards: remote_shards.into_iter().map(Into::into).collect(),
+            shard_transfers: shard_transfers.into_iter().map(Into::into).collect(),
             resharding_operations: resharding_operations
                 .into_iter()
                 .flatten()
