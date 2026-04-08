@@ -656,8 +656,10 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FloatGridstoreIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::GeoMmapIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::GeoGridstoreIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
-            Self::BoolGridstoreIndex(index) => FieldIndex::BoolIndex(index.finalize()?.into()),
-            Self::BoolMmapIndex(index) => FieldIndex::BoolIndex(index.finalize()?.into()),
+            Self::BoolGridstoreIndex(index) => {
+                FieldIndex::BoolIndex(BoolIndex::from(index.finalize()?))
+            }
+            Self::BoolMmapIndex(index) => FieldIndex::BoolIndex(BoolIndex::from(index.finalize()?)),
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::FullTextGridstoreIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),

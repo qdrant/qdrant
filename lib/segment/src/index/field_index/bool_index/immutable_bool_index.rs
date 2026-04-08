@@ -70,7 +70,20 @@ impl ValueIndexer for ImmutableBoolIndex {
         _values: Vec<Self::ValueType>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        unimplemented!("ImmutableBoolIndex is immutable, cannot add values");
+        Err(OperationError::service_error(
+            "ImmutableBoolIndex is immutable, cannot add values",
+        ))
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&serde_json::Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        Err(OperationError::service_error(
+            "ImmutableBoolIndex is immutable, cannot add values",
+        ))
     }
 
     #[inline]
@@ -122,8 +135,6 @@ impl PayloadFieldIndex for ImmutableBoolIndex {
 
 pub struct ImmutableBoolIndexBuilder(MutableBoolIndex);
 
-impl ImmutableBoolIndexBuilder {}
-
 impl FieldIndexBuilderTrait for ImmutableBoolIndexBuilder {
     type FieldIndexType = ImmutableBoolIndex;
 
@@ -142,7 +153,7 @@ impl FieldIndexBuilderTrait for ImmutableBoolIndexBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        self.0.flusher()()?; // Immutable index has noop fluser, so we have to ensure the data is flushed.
+        self.0.flusher()()?; // Immutable index has noop flusher, so we have to ensure the data is flushed now.
         Ok(ImmutableBoolIndex(self.0))
     }
 }
