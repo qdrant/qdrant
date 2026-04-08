@@ -21,12 +21,12 @@ use collection::operations::types::{CoreSearchRequest, PointRequestInternal};
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::FacetParams;
-use segment::types::{ExtendedPointId, ScoredPoint};
-use shard::retrieve::record_internal::RecordInternal;
 use segment::data_types::order_by::{OrderBy, OrderByInterface};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
+use segment::types::{ExtendedPointId, ScoredPoint};
 use shard::count::CountRequestInternal;
 use shard::query::query_enum::QueryEnum;
+use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use storage::content_manager::toc::TableOfContent;
@@ -99,7 +99,11 @@ pub async fn search(
         limit: limit as usize,
         offset: offset.unwrap_or_default() as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: Some(with_vectors.map(WithVectorsSelector::into).unwrap_or_default()),
+        with_vector: Some(
+            with_vectors
+                .map(WithVectorsSelector::into)
+                .unwrap_or_default(),
+        ),
         score_threshold,
     };
 
@@ -341,7 +345,10 @@ pub async fn recommend(
         .await?;
 
     let response = RecommendResponse {
-        result: recommended_points.into_iter().map(ScoredPoint::into).collect(),
+        result: recommended_points
+            .into_iter()
+            .map(ScoredPoint::into)
+            .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
@@ -495,7 +502,10 @@ pub async fn discover(
         .await?;
 
     let response = DiscoverResponse {
-        result: discovered_points.into_iter().map(ScoredPoint::into).collect(),
+        result: discovered_points
+            .into_iter()
+            .map(ScoredPoint::into)
+            .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
@@ -584,7 +594,9 @@ pub async fn scroll(
         limit: limit.map(|l| l as usize),
         filter: filter.map(|f| f.try_into()).transpose()?,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vectors.map(WithVectorsSelector::into).unwrap_or_default(),
+        with_vector: with_vectors
+            .map(WithVectorsSelector::into)
+            .unwrap_or_default(),
         order_by: order_by
             .map(OrderBy::try_from)
             .transpose()?
@@ -717,7 +729,9 @@ pub async fn get(
             .map(|p| p.try_into())
             .collect::<Result<_, _>>()?,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vectors.map(WithVectorsSelector::into).unwrap_or_default(),
+        with_vector: with_vectors
+            .map(WithVectorsSelector::into)
+            .unwrap_or_default(),
     };
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 

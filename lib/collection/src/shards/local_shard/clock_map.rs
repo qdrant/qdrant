@@ -424,7 +424,11 @@ struct ClockMapHelper {
 impl From<ClockMap> for ClockMapHelper {
     fn from(clock_map: ClockMap) -> Self {
         Self {
-            clocks: clock_map.clocks.into_iter().map(KeyClockHelper::from).collect(),
+            clocks: clock_map
+                .clocks
+                .into_iter()
+                .map(KeyClockHelper::from)
+                .collect(),
             snapshot: clock_map
                 .snapshot
                 .map(|clocks| clocks.into_iter().map(KeyClockHelper::from).collect()),
@@ -435,7 +439,11 @@ impl From<ClockMap> for ClockMapHelper {
 impl From<ClockMapHelper> for ClockMap {
     fn from(helper: ClockMapHelper) -> Self {
         Self {
-            clocks: helper.clocks.into_iter().map(KeyClockHelper::into).collect(),
+            clocks: helper
+                .clocks
+                .into_iter()
+                .map(KeyClockHelper::into)
+                .collect(),
             snapshot: helper
                 .snapshot
                 .map(|clocks| clocks.into_iter().map(KeyClockHelper::into).collect()),

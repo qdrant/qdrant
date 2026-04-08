@@ -1290,7 +1290,12 @@ impl ShardOperation for RemoteShard {
         let processed_timeout = Self::process_read_timeout(timeout, "retrieve")?;
         let get_points = GetPoints {
             collection_name: self.collection_id.clone(),
-            ids: request.ids.iter().copied().map(ExtendedPointId::into).collect(),
+            ids: request
+                .ids
+                .iter()
+                .copied()
+                .map(ExtendedPointId::into)
+                .collect(),
             with_payload: request.with_payload.clone().map(WithPayloadInterface::into),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,

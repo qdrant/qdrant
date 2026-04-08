@@ -2999,7 +2999,11 @@ impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
             limit: limit as usize,
             offset: offset.map(|x| x as usize),
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: Some(with_vectors.map(WithVectorsSelector::into).unwrap_or_default()),
+            with_vector: Some(
+                with_vectors
+                    .map(WithVectorsSelector::into)
+                    .unwrap_or_default(),
+            ),
             score_threshold,
         })
     }

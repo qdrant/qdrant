@@ -1544,8 +1544,14 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
             peer_id,
             shard_count: shard_count as u64,
             local_shards: local_shards.into_iter().map(LocalShardInfo::into).collect(),
-            remote_shards: remote_shards.into_iter().map(RemoteShardInfo::into).collect(),
-            shard_transfers: shard_transfers.into_iter().map(ShardTransferInfo::into).collect(),
+            remote_shards: remote_shards
+                .into_iter()
+                .map(RemoteShardInfo::into)
+                .collect(),
+            shard_transfers: shard_transfers
+                .into_iter()
+                .map(ShardTransferInfo::into)
+                .collect(),
             resharding_operations: resharding_operations
                 .into_iter()
                 .flatten()
