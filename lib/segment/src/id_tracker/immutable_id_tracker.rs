@@ -274,7 +274,7 @@ impl ImmutableIdTracker {
 
         let internal_to_version = CompressedVersions::from_slice(&internal_to_version_slice);
         let internal_to_version_wrapper =
-            SliceBufferedUpdateWrapper::new(internal_to_version_file)?;
+            SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
 
         let reader = BufReader::new(File::open(Self::mappings_file_path(segment_path))?);
         let mappings = Self::load_mapping(reader, Some(deleted_bitvec))?;
@@ -354,7 +354,7 @@ impl ImmutableIdTracker {
         debug_assert_eq!(internal_to_version.len(), mappings.total_point_count());
 
         let internal_to_version_wrapper =
-            SliceBufferedUpdateWrapper::new(internal_to_version_file)?;
+            SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
 
         // Write mappings to disk.
         let file = File::create(Self::mappings_file_path(path))?;

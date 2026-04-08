@@ -5,12 +5,10 @@ use parking_lot::{Mutex, RwLock};
 
 use crate::is_alive_lock::IsAliveLock;
 use crate::types::PointOffsetType;
-use crate::universal_io::{
-    Flusher, TypedStorage, UniversalIoError, UniversalRead as _, UniversalWrite,
-};
+use crate::universal_io::{Flusher, UniversalIoError, UniversalWrite};
 
-/// A wrapper around `TypedStorage<S, T>` that delays writing changes to the underlying file until they get
-/// flushed manually.
+/// A wrapper around [`UniversalWrite`] that delays writing changes to the
+/// underlying file until they get flushed manually.
 /// This expects the underlying storage not to grow in size.
 ///
 /// WARN: this structure is expected to be write-only.
@@ -19,7 +17,7 @@ pub struct SliceBufferedUpdateWrapper<S: UniversalWrite<T>, T: Copy>
 where
     T: 'static,
 {
-    slice: Arc<RwLock<TypedStorage<S, T>>>,
+    slice: Arc<RwLock<S>>,
     len: u64,
     pending_updates: Arc<Mutex<AHashMap<PointOffsetType, T>>>,
     is_alive_lock: IsAliveLock,
@@ -29,7 +27,7 @@ impl<S: UniversalWrite<T>, T: Copy> SliceBufferedUpdateWrapper<S, T>
 where
     T: 'static,
 {
-    pub fn new(slice_storage: TypedStorage<S, T>) -> Result<Self, UniversalIoError> {
+    pub fn new(slice_storage: S) -> Result<Self, UniversalIoError> {
         let len = slice_storage.len()?;
         Ok(Self {
             slice: Arc::new(RwLock::new(slice_storage)),
