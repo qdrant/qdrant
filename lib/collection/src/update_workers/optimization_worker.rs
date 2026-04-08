@@ -277,7 +277,7 @@ impl UpdateWorkers {
         let scheduled = plan_optimizations(&segments.read(), &optimizers);
         for (optimizer, segments_to_merge) in scheduled {
             // Return early if we reached the optimization job limit
-            if limit.map(|extra| handles.len() >= extra).unwrap_or(false) {
+            if limit.is_some_and(|extra| handles.len() >= extra) {
                 log::trace!("Reached optimization job limit, postponing other optimizations");
                 break;
             }

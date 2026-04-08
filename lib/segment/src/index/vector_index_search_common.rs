@@ -20,7 +20,7 @@ pub fn is_quantized_search(
         .and_then(|p| p.quantization)
         .map(|q| q.ignore)
         .unwrap_or(default_quantization_ignore_value());
-    let exact = params.map(|p| p.exact).unwrap_or(false);
+    let exact = params.is_some_and(|p| p.exact);
     quantized_storage.is_some() && !ignore_quantization && !exact
 }
 

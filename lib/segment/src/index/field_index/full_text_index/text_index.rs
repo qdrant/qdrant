@@ -336,7 +336,7 @@ impl FullTextIndex {
                 }
                 ParsedQuery::Phrase(query) => {
                     let document = self.parse_document(value, hw_counter);
-                    document.map(|doc| doc.has_phrase(query)).unwrap_or(false)
+                    document.is_some_and(|doc| doc.has_phrase(query))
                 }
                 ParsedQuery::AnyTokens(query) => {
                     let tokenset = self.parse_tokenset(value, hw_counter);

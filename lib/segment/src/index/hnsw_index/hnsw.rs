@@ -1418,7 +1418,7 @@ impl VectorIndex for HNSWIndex {
         // And if so, we need to fall back to plain search (optionally, with quantization).
 
         let is_hnsw_disabled = self.config.m == 0 && self.config.payload_m.unwrap_or(0) == 0;
-        let exact = params.map(|params| params.exact).unwrap_or(false);
+        let exact = params.is_some_and(|params| params.exact);
 
         let exact_params = if exact {
             params.map(|params| {

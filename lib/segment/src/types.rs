@@ -2733,7 +2733,7 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
             let keys = ["lt", "gt", "lte", "gte"];
             let has_string_bound = keys
                 .iter()
-                .any(|k| obj.get(*k).map(|v| v.is_string()).unwrap_or(false));
+                .any(|k| obj.get(*k).is_some_and(|v| v.is_string()));
 
             if has_string_bound {
                 return serde_json::from_value::<Range<DateTimePayloadType>>(value)

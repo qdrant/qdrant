@@ -80,8 +80,7 @@ pub mod pyro {
 
         fn is_jemalloc_profiling_enabled() -> bool {
             std::env::var("MALLOC_CONF")
-                .map(|conf| conf.split(',').any(|opt| opt.trim() == "prof:true"))
-                .unwrap_or(false)
+                .is_ok_and(|conf| conf.split(',').any(|opt| opt.trim() == "prof:true"))
         }
 
         pub fn from_config(config: Option<PyroscopeConfig>) -> Option<Self> {

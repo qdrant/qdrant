@@ -156,7 +156,7 @@ impl ValueChecker for Match {
                 (Value::Bool(stored), ValueVariants::Bool(val)) => stored == val,
                 (Value::String(stored), ValueVariants::String(val)) => stored == val,
                 (Value::Number(stored), ValueVariants::Integer(val)) => {
-                    stored.as_i64().map(|num| num == *val).unwrap_or(false)
+                    stored.as_i64().is_some_and(|num| num == *val)
                 }
                 _ => false,
             },
