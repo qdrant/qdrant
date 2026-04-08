@@ -141,7 +141,7 @@ pub struct SegmentFailedState {
 
 impl From<ThreadPoolBuildError> for OperationError {
     fn from(error: ThreadPoolBuildError) -> Self {
-        Self::service_error(format!("{error}"))
+        Self::service_error(error.to_string())
     }
 }
 
@@ -313,7 +313,7 @@ mod tests {
         // Test sub-second timeout (500ms)
         let timeout = Duration::from_millis(500);
         let error = OperationError::timeout(timeout, "test operation");
-        let error_msg = format!("{error}");
+        let error_msg = error.to_string();
         assert!(
             error_msg.contains("500ms"),
             "Expected '500ms' but got: {error_msg}"
@@ -322,7 +322,7 @@ mod tests {
         // Test exact second timeout (1000ms = 1s)
         let timeout = Duration::from_millis(1000);
         let error = OperationError::timeout(timeout, "test operation");
-        let error_msg = format!("{error}");
+        let error_msg = error.to_string();
         assert!(
             error_msg.contains("1s"),
             "Expected '1s' but got: {error_msg}"
@@ -331,7 +331,7 @@ mod tests {
         // Test multi-second timeout with sub-second precision (2500ms = 2.5s)
         let timeout = Duration::from_millis(2500);
         let error = OperationError::timeout(timeout, "test operation");
-        let error_msg = format!("{error}");
+        let error_msg = error.to_string();
         assert!(
             error_msg.contains("2.5s"),
             "Expected '2.5s' but got: {error_msg}"
@@ -340,7 +340,7 @@ mod tests {
         // Test large timeout (60000ms = 60s)
         let timeout = Duration::from_millis(60000);
         let error = OperationError::timeout(timeout, "test operation");
-        let error_msg = format!("{error}");
+        let error_msg = error.to_string();
         assert!(
             error_msg.contains("60s"),
             "Expected '60s' but got: {error_msg}"

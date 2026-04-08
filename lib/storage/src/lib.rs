@@ -34,7 +34,7 @@ pub mod serialize_peer_addresses {
         let addresses: HashMap<u64, String> = addresses
             .clone()
             .into_iter()
-            .map(|(id, address)| (id, format!("{address}")))
+            .map(|(id, address)| (id, address.to_string()))
             .collect();
         addresses.serialize(serializer)
     }

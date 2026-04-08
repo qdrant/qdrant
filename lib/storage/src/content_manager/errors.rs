@@ -191,10 +191,10 @@ impl From<CollectionError> for StorageError {
         match err {
             CollectionError::BadInput { description } => StorageError::BadInput { description },
             CollectionError::NotFound { .. } => StorageError::NotFound {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             CollectionError::PointNotFound { .. } => StorageError::NotFound {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             CollectionError::ServiceError { error, backtrace } => StorageError::ServiceError {
                 description: error,
@@ -213,21 +213,21 @@ impl From<CollectionError> for StorageError {
                 StorageError::BadRequest { description }
             }
             CollectionError::ForwardProxyError { error, .. } => {
-                let full_description = format!("{error}");
+                let full_description = error.to_string();
                 Self::from_inconsistent_shard_failure(*error, full_description)
             }
             CollectionError::OutOfMemory { .. } => StorageError::ServiceError {
-                description: format!("{err}"),
+                description: err.to_string(),
                 backtrace: None,
             },
             CollectionError::Timeout { .. } => StorageError::Timeout {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             CollectionError::PreConditionFailed { .. } => StorageError::PreconditionFailed {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             CollectionError::ObjectStoreError { .. } => StorageError::ServiceError {
-                description: format!("{err}"),
+                description: err.to_string(),
                 backtrace: None,
             },
             CollectionError::StrictMode { description } => StorageError::BadRequest { description },
@@ -250,7 +250,7 @@ impl From<CollectionError> for StorageError {
 
 impl From<IoError> for StorageError {
     fn from(err: IoError) -> Self {
-        Self::service_error(format!("{err}"))
+        Self::service_error(err.to_string())
     }
 }
 

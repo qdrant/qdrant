@@ -1124,10 +1124,10 @@ impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
             OperationError::WrongVectorDimension { .. } => Self::BadInput {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             OperationError::VectorNameNotExists { .. } => Self::BadInput {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             OperationError::PointIdError { missed_point_id } => {
                 Self::PointNotFound { missed_point_id }
@@ -1140,22 +1140,22 @@ impl From<OperationError> for CollectionError {
                 backtrace,
             },
             OperationError::TypeError { .. } => Self::BadInput {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             OperationError::Cancelled { description } => Self::Cancelled { description },
             OperationError::TypeInferenceError { .. } => Self::BadInput {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             OperationError::OutOfMemory { description, free } => {
                 Self::OutOfMemory { description, free }
             }
             OperationError::Timeout { description } => Self::Timeout { description },
             OperationError::InconsistentStorage { .. } => Self::ServiceError {
-                error: format!("{err}"),
+                error: err.to_string(),
                 backtrace: None,
             },
             OperationError::ValidationError { .. } => Self::BadInput {
-                description: format!("{err}"),
+                description: err.to_string(),
             },
             OperationError::WrongSparse => Self::BadInput {
                 description: "Conversion between sparse and regular vectors failed".to_string(),
@@ -1163,10 +1163,10 @@ impl From<OperationError> for CollectionError {
             OperationError::WrongMulti => Self::BadInput {
                 description: "Conversion between multi and regular vectors failed".to_string(),
             },
-            OperationError::MissingRangeIndexForOrderBy { .. } => Self::bad_input(format!("{err}")),
-            OperationError::MissingMapIndexForFacet { .. } => Self::bad_input(format!("{err}")),
-            OperationError::VariableTypeError { .. } => Self::bad_input(format!("{err}")),
-            OperationError::NonFiniteNumber { .. } => Self::bad_input(format!("{err}")),
+            OperationError::MissingRangeIndexForOrderBy { .. } => Self::bad_input(err.to_string()),
+            OperationError::MissingMapIndexForFacet { .. } => Self::bad_input(err.to_string()),
+            OperationError::VariableTypeError { .. } => Self::bad_input(err.to_string()),
+            OperationError::NonFiniteNumber { .. } => Self::bad_input(err.to_string()),
         }
     }
 }
@@ -1179,19 +1179,19 @@ impl From<CancelledError> for CollectionError {
 
 impl From<OneshotRecvError> for CollectionError {
     fn from(err: OneshotRecvError) -> Self {
-        Self::service_error(format!("{err}"))
+        Self::service_error(err.to_string())
     }
 }
 
 impl From<JoinError> for CollectionError {
     fn from(err: JoinError) -> Self {
-        Self::service_error(format!("{err}"))
+        Self::service_error(err.to_string())
     }
 }
 
 impl From<WalError> for CollectionError {
     fn from(err: WalError) -> Self {
-        Self::service_error(format!("{err}"))
+        Self::service_error(err.to_string())
     }
 }
 
@@ -1230,13 +1230,13 @@ impl From<tonic::Status> for CollectionError {
         match err.code() {
             tonic::Code::InvalidArgument => Self::bad_input(format!("InvalidArgument: {err}")),
             tonic::Code::AlreadyExists => Self::bad_input(format!("AlreadyExists: {err}")),
-            tonic::Code::NotFound => Self::not_found(format!("{err}")),
+            tonic::Code::NotFound => Self::not_found(err.to_string()),
             tonic::Code::Internal => Self::service_error(format!("Internal error: {err}")),
             tonic::Code::DeadlineExceeded => Self::Timeout {
                 description: format!("Deadline Exceeded: {err}"),
             },
-            tonic::Code::Cancelled => Self::cancelled(format!("{err}")),
-            tonic::Code::FailedPrecondition => Self::pre_condition_failed(format!("{err}")),
+            tonic::Code::Cancelled => Self::cancelled(err.to_string()),
+            tonic::Code::FailedPrecondition => Self::pre_condition_failed(err.to_string()),
             tonic::Code::ResourceExhausted => {
                 // extract retry-after from metadata
                 // the value is passed as a String containing an integer number of seconds
@@ -1254,7 +1254,7 @@ impl From<tonic::Status> for CollectionError {
                         .map(Duration::from_secs)
                 });
                 Self::RateLimitExceeded {
-                    description: format!("{err}"),
+                    description: err.to_string(),
                     retry_after,
                 }
             }
@@ -1308,7 +1308,7 @@ impl From<save_on_disk::Error> for CollectionError {
 
 impl From<validator::ValidationErrors> for CollectionError {
     fn from(err: validator::ValidationErrors) -> Self {
-        Self::bad_input(format!("{err}"))
+        Self::bad_input(err.to_string())
     }
 }
 

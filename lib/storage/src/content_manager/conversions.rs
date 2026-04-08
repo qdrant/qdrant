@@ -52,7 +52,7 @@ impl From<StorageError> for Status {
             StorageError::ShardUnavailable { .. } => tonic::Code::Unavailable,
             StorageError::EmptyPartialSnapshot { .. } => tonic::Code::FailedPrecondition,
         };
-        let mut status = Status::new(error_code, format!("{error}"));
+        let mut status = Status::new(error_code, error.to_string());
         // add metadata headers
         for (header_key, header_value) in metadata_headers {
             if let Ok(metadata) = MetadataValue::from_str(&header_value) {
