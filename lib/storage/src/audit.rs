@@ -145,9 +145,18 @@ struct AuditLogger {
 
 impl AuditLogger {
     fn new(config: &AuditConfig) -> anyhow::Result<(Self, WorkerGuard)> {
-        fs_err::create_dir_all(&config.dir)?;
+        let AuditConfig {
+            enabled: _,
+            dir,
+            rotation,
+            max_log_files,
+            trust_forwarded_headers: _,
+            log_api: _,
+        } = config;
 
-        let rotation = match config.rotation {
+        fs_err::create_dir_all(dir)?;
+
+        let rotation = match rotation {
             AuditRotation::Daily => Rotation::DAILY,
             AuditRotation::Hourly => Rotation::HOURLY,
         };
@@ -156,8 +165,8 @@ impl AuditLogger {
             .rotation(rotation)
             .filename_prefix("audit")
             .filename_suffix("log")
-            .max_log_files(config.max_log_files.max(1))
-            .build(&config.dir)
+            .max_log_files((*max_log_files).max(1))
+            .build(dir)
             .map_err(|err| anyhow::anyhow!("Failed to create audit log appender: {err}"))?;
 
         // Wrap the appender in a non-blocking writer.  The actual file I/O is
@@ -210,21 +219,30 @@ pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<
         return Ok(None);
     };
 
-    if !config.enabled {
+    let AuditConfig {
+        enabled,
+        dir,
+        rotation: _,
+        max_log_files: _,
+        trust_forwarded_headers,
+        log_api,
+    } = config;
+
+    if !enabled {
         return Ok(None);
     }
 
     // Persist flags so they are available globally even outside the audit
     // logger itself (e.g. in auth middleware).
-    let _ = TRUST_FORWARDED_HEADERS.set(config.trust_forwarded_headers);
-    let _ = LOG_API.set(config.log_api);
+    let _ = TRUST_FORWARDED_HEADERS.set(*trust_forwarded_headers);
+    let _ = LOG_API.set(*log_api);
 
     let (logger, guard) = AuditLogger::new(config)?;
     AUDIT_LOGGER
         .set(logger)
         .map_err(|_| anyhow::anyhow!("Audit logger already initialised"))?;
 
-    log::info!("Audit logging enabled, writing to {}", config.dir.display());
+    log::info!("Audit logging enabled, writing to {}", dir.display());
 
     Ok(Some(guard))
 }
