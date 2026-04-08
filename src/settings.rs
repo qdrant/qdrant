@@ -97,6 +97,13 @@ pub struct ServiceConfig {
     #[serde(default)]
     #[validate(custom(function = validate_metrics_prefix))]
     pub metrics_prefix: Option<String>,
+
+    /// Whether to allow snapshot recovery from remote URLs (http/https).
+    /// If disabled, snapshot recovery will only work with local files and uploads.
+    /// Disabling this can mitigate SSRF risks in environments where the Qdrant node
+    /// has access to internal resources that should not be reachable by users.
+    #[serde(default = "default_snapshot_url_recovery")]
+    pub enable_snapshot_url_recovery: bool,
 }
 
 impl ServiceConfig {
@@ -423,6 +430,10 @@ const fn default_telemetry_disabled() -> bool {
 }
 
 const fn default_cors() -> bool {
+    true
+}
+
+const fn default_snapshot_url_recovery() -> bool {
     true
 }
 
