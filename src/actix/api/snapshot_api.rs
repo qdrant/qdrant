@@ -463,14 +463,13 @@ async fn recover_shard_snapshot(
     let pass = new_unchecked_verification_pass();
 
     let future = async move {
-        if !service_config.enable_snapshot_url_recovery {
-            if let ShardSnapshotLocation::Url(url) = &request.location {
-                if matches!(url.scheme(), "http" | "https") {
-                    return Err(StorageError::forbidden(
-                        "Snapshot recovery from remote URLs is disabled in the configuration",
-                    ));
-                }
-            }
+        if !service_config.enable_snapshot_url_recovery
+            && let ShardSnapshotLocation::Url(url) = &request.location
+            && matches!(url.scheme(), "http" | "https")
+        {
+            return Err(StorageError::forbidden(
+                "Snapshot recovery from remote URLs is disabled in the configuration",
+            ));
         }
 
         let CollectionShardPath {
