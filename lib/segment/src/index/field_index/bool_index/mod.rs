@@ -6,7 +6,7 @@ use mutable_bool_index::MutableBoolIndex;
 use super::facet_index::FacetIndex;
 use super::map_index::IdIter;
 use super::{PayloadFieldIndex, ValueIndexer};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -271,7 +271,9 @@ impl ValueIndexer for BoolIndex {
     ) -> OperationResult<()> {
         match self {
             BoolIndex::Mmap(index) => index.add_many(id, values, hw_counter),
-            BoolIndex::Immutable(index) => index.add_many(id, values, hw_counter),
+            BoolIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable bool index",
+            )),
         }
     }
 

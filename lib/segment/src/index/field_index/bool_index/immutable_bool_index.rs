@@ -30,6 +30,12 @@ impl ImmutableBoolIndex {
     pub fn open(path: &Path, deleted: &BitSlice) -> OperationResult<Option<Self>> {
         Ok(MutableBoolIndex::open_immutable(path, deleted)?.map(Self))
     }
+
+    #[inline]
+    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.0.set_or_insert_immutable(id, false, false);
+        Ok(())
+    }
 }
 
 impl ImmutableBoolIndex {
@@ -58,43 +64,6 @@ impl ImmutableBoolIndex {
             pub fn populate(&self) -> OperationResult<()>;
             pub fn clear_cache(&self) -> OperationResult<()>;
         }
-    }
-}
-
-impl ValueIndexer for ImmutableBoolIndex {
-    type ValueType = bool;
-
-    fn add_many(
-        &mut self,
-        _id: PointOffsetType,
-        _values: Vec<Self::ValueType>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        Err(OperationError::service_error(
-            "ImmutableBoolIndex is immutable, cannot add values",
-        ))
-    }
-
-    fn add_point(
-        &mut self,
-        _id: PointOffsetType,
-        _payload: &[&serde_json::Value],
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        Err(OperationError::service_error(
-            "ImmutableBoolIndex is immutable, cannot add values",
-        ))
-    }
-
-    #[inline]
-    fn get_value(value: &serde_json::Value) -> Option<Self::ValueType> {
-        value.as_bool()
-    }
-
-    #[inline]
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.0.set_or_insert_immutable(id, false, false);
-        Ok(())
     }
 }
 
