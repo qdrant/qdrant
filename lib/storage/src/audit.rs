@@ -34,6 +34,9 @@ static AUDIT_LOGGER: OnceLock<AuditLogger> = OnceLock::new();
 /// Stored separately so it can be queried before/without an active logger.
 static TRUST_FORWARDED_HEADERS: OnceLock<bool> = OnceLock::new();
 
+/// Whether the audit logger should log the API method path.
+static LOG_API: OnceLock<bool> = OnceLock::new();
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -63,6 +66,11 @@ pub struct AuditConfig {
     /// Default: false
     #[serde(default)]
     pub trust_forwarded_headers: bool,
+
+    /// If true, log the API method path (REST path or gRPC method) in addition
+    /// to the internal operation name.  Default: false.
+    #[serde(default)]
+    pub log_api: bool,
 }
 
 fn default_audit_dir() -> PathBuf {
@@ -98,8 +106,14 @@ pub enum AuditResult {
 pub struct AuditEvent {
     /// ISO‑8601 timestamp.
     pub timestamp: DateTime<Utc>,
-    /// The API method / handler name.
-    pub method: String,
+    /// The internal operation name (e.g. `upsert_points`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// The API method path (REST path or gRPC method name).
+    /// Populated when the `log_api` audit config option is enabled,
+    /// or for denied authentication requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api: Option<String>,
     /// How the request was authenticated.
     pub auth_type: AuthType,
     /// The `subject` field from the JWT (if any).
@@ -200,9 +214,10 @@ pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<
         return Ok(None);
     }
 
-    // Persist the forwarded-headers flag so it is available globally even
-    // outside the audit logger itself (e.g. in auth middleware).
+    // Persist flags so they are available globally even outside the audit
+    // logger itself (e.g. in auth middleware).
     let _ = TRUST_FORWARDED_HEADERS.set(config.trust_forwarded_headers);
+    let _ = LOG_API.set(config.log_api);
 
     let (logger, guard) = AuditLogger::new(config)?;
     AUDIT_LOGGER
@@ -231,4 +246,9 @@ pub fn is_audit_enabled() -> bool {
 /// headers (`X-Forwarded-For`) for determining the client address.
 pub fn audit_trust_forwarded_headers() -> bool {
     TRUST_FORWARDED_HEADERS.get().copied().unwrap_or(false)
+}
+
+/// Returns `true` if the audit logger is configured to log API method paths.
+pub fn audit_log_api() -> bool {
+    LOG_API.get().copied().unwrap_or(false)
 }

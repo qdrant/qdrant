@@ -140,7 +140,9 @@ where
                 .await
             {
                 Ok((access, inference_token, auth_type, subject)) => {
-                    let auth = Auth::new(access, subject, remote, auth_type, tracing_id);
+                    let api_path = req.path().to_string();
+                    let auth = Auth::new(access, subject, remote, auth_type, tracing_id)
+                        .with_api(api_path);
                     let previous = req.extensions_mut().insert(auth);
                     req.extensions_mut().insert(inference_token);
                     debug_assert!(

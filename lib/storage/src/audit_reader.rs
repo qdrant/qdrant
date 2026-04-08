@@ -288,6 +288,7 @@ fn event_field_matches(event: &AuditEvent, key: &str, expected: &str) -> Option<
     let AuditEvent {
         timestamp: _, // filtered separately via time_from/time_to
         method,
+        api,
         auth_type,
         subject,
         remote,
@@ -298,7 +299,8 @@ fn event_field_matches(event: &AuditEvent, key: &str, expected: &str) -> Option<
     } = event;
 
     match key {
-        "method" => Some(method == expected),
+        "method" => Some(method.as_deref() == Some(expected)),
+        "api" => Some(api.as_deref() == Some(expected)),
         "auth_type" => {
             // Compare against the serde-serialized form of the enum variant.
             let serialized = serde_json::to_value(auth_type).ok()?;
@@ -326,7 +328,8 @@ mod tests {
     fn make_event() -> AuditEvent {
         AuditEvent {
             timestamp: "2024-06-15T10:30:00Z".parse().unwrap(),
-            method: "upsert_points".to_string(),
+            method: Some("upsert_points".to_string()),
+            api: None,
             auth_type: AuthType::ApiKey,
             subject: None,
             remote: None,
@@ -423,6 +426,7 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         let deserialized: AuditEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.method, event.method);
+        assert_eq!(deserialized.api, event.api);
         assert_eq!(deserialized.timestamp, event.timestamp);
         assert_eq!(deserialized.auth_type, event.auth_type);
         assert_eq!(deserialized.result, event.result);

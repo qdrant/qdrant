@@ -1,7 +1,7 @@
 use chrono::Utc;
 
 use super::{Access, AccessRequirements, AuthType, CollectionMultipass, CollectionPass};
-use crate::audit::{AuditEvent, AuditResult, audit_log, is_audit_enabled};
+use crate::audit::{AuditEvent, AuditResult, audit_log, audit_log_api, is_audit_enabled};
 use crate::content_manager::errors::StorageError;
 
 /// Per-request authentication context.
@@ -17,6 +17,8 @@ pub struct Auth {
     remote: Option<String>,
     auth_type: AuthType,
     tracing_id: Option<String>,
+    /// The API method path (REST path or gRPC method name).
+    api: Option<String>,
 }
 
 impl Auth {
@@ -33,7 +35,13 @@ impl Auth {
             remote,
             auth_type,
             tracing_id,
+            api: None,
         }
+    }
+
+    pub fn with_api(mut self, api: String) -> Self {
+        self.api = Some(api);
+        self
     }
 
     pub const fn new_internal(access: Access) -> Self {
@@ -43,6 +51,7 @@ impl Auth {
             remote: None,
             auth_type: AuthType::Internal,
             tracing_id: None,
+            api: None,
         }
     }
 
@@ -112,9 +121,16 @@ impl Auth {
             Err(e) => (AuditResult::Denied, Some(e.to_string())),
         };
 
+        let api = if audit_log_api() {
+            self.api.clone()
+        } else {
+            None
+        };
+
         audit_log(AuditEvent {
             timestamp: Utc::now(),
-            method: method.to_string(),
+            method: Some(method.to_string()),
+            api,
             auth_type: self.auth_type.clone(),
             subject: self.subject.clone(),
             remote: self.remote.clone(),
