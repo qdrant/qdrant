@@ -75,8 +75,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
             }
         })?;
 
-    let auth = Auth::new(access, subject, remote, auth_type, tracing_id)
-        .with_api(path.to_string());
+    let auth = Auth::new(access, subject, remote, auth_type, tracing_id).with_api(path.to_string());
 
     let previous = req.extensions_mut().insert(auth);
 
