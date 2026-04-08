@@ -24,6 +24,11 @@ struct AlignedBuf<const N: usize>([u8; N]);
 
 impl<const N: usize> AlignedBuf<N> {
     fn new() -> Self {
+        debug_assert_eq!(
+            N % 4096,
+            0,
+            "AlignedBuf size must be a multiple of 4096 for direct I/O",
+        );
         Self([0u8; N])
     }
 
