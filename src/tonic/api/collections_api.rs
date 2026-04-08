@@ -12,11 +12,10 @@ use api::grpc::qdrant::{
     ListShardKeysRequest, ListShardKeysResponse, UpdateCollection,
     UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
 };
-use collection::operations::types::AliasDescription;
 use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
 };
-use collection::operations::types::CollectionsAliasesResponse;
+use collection::operations::types::{AliasDescription, CollectionsAliasesResponse};
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};

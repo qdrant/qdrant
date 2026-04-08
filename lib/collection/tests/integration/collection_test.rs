@@ -42,10 +42,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let batch = BatchPersisted {
-        ids: vec![0, 1, 2, 3, 4]
-            .into_iter()
-            .map(u64::into)
-            .collect_vec(),
+        ids: vec![0, 1, 2, 3, 4].into_iter().map(u64::into).collect_vec(),
         vectors: BatchVectorStructPersisted::Single(vec![
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],
@@ -228,10 +225,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
         let batch = BatchPersisted {
-            ids: vec![0, 1, 2, 3, 4]
-                .into_iter()
-                .map(u64::into)
-                .collect_vec(),
+            ids: vec![0, 1, 2, 3, 4].into_iter().map(u64::into).collect_vec(),
             vectors: BatchVectorStructPersisted::Single(vec![
                 vec![1.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 1.0, 0.0],
@@ -820,10 +814,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let batch = BatchPersisted {
-        ids: vec![0, 1, 2, 3, 4]
-            .into_iter()
-            .map(u64::into)
-            .collect_vec(),
+        ids: vec![0, 1, 2, 3, 4].into_iter().map(u64::into).collect_vec(),
         vectors: BatchVectorStructPersisted::Single(vec![
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],

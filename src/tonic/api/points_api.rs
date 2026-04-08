@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use api::grpc::Usage;
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
@@ -16,7 +15,7 @@ use api::grpc::qdrant::{
     SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse,
     UpdatePointVectors, UpsertPoints,
 };
-use api::grpc::PointsOperationResponseInternal;
+use api::grpc::{PointsOperationResponseInternal, Usage};
 use collection::operations::types::CoreSearchRequest;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
