@@ -584,7 +584,7 @@ impl StructPayloadIndex {
     }
 
     pub fn populate(&self) -> OperationResult<()> {
-        for (_, field_indexes) in &self.field_indexes {
+        for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
                 index.populate()?;
             }
@@ -593,7 +593,7 @@ impl StructPayloadIndex {
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        for (_, field_indexes) in &self.field_indexes {
+        for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
                 index.clear_cache()?;
             }
@@ -602,7 +602,7 @@ impl StructPayloadIndex {
     }
 
     pub fn clear_cache_if_on_disk(&self) -> OperationResult<()> {
-        for (_, field_indexes) in &self.field_indexes {
+        for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
                 if index.is_on_disk() {
                     index.clear_cache()?;
