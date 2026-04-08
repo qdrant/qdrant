@@ -33,8 +33,7 @@ where
     N: PartialOrd + Serialize,
 {
     // If value is within bounds we're good
-    if min.as_ref().is_none_or(|min| &value >= min)
-        && max.as_ref().is_none_or(|max| &value <= max)
+    if min.as_ref().is_none_or(|min| &value >= min) && max.as_ref().is_none_or(|max| &value <= max)
     {
         return Ok(());
     }
