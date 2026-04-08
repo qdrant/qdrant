@@ -177,7 +177,7 @@ mod tests {
         let test = create_gpu_graph_test_data(num_vectors, dim, hnsw_m, ef, 0);
         let graph_layers_builders = build_gpu_graph(&test, 1, min_cpu_linked_points_count, true, 2);
 
-        for graph_layers_builder in graph_layers_builders.iter() {
+        for graph_layers_builder in &graph_layers_builders {
             compare_graph_layers_builders(&test.graph_layers_builder, graph_layers_builder);
         }
     }

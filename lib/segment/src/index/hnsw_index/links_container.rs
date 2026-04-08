@@ -303,7 +303,7 @@ mod tests {
         );
         let selected_candidates = links_container.links().to_vec();
 
-        for x in selected_candidates.iter() {
+        for x in &selected_candidates {
             eprintln!("selected_candidates = {x}");
         }
     }

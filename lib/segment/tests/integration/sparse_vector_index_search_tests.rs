@@ -751,7 +751,7 @@ fn check_sparse_vector_index_files<I: InvertedIndex>() {
     let files = index.files();
     // sparse index config + version + inverted index config + inverted index data + tracker
     assert_eq!(files.len(), 5);
-    for file in files.iter() {
+    for file in &files {
         assert!(file.exists(), "file {file:?} does not exist");
     }
 }

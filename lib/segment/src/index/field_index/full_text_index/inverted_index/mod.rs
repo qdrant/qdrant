@@ -533,7 +533,7 @@ mod tests {
         let imm_mmap = ImmutableInvertedIndex::from(&mmap);
 
         // Check same vocabulary
-        for (token, token_id) in immutable.vocab.iter() {
+        for (token, token_id) in &immutable.vocab {
             assert_eq!(mmap.get_token_id(token, &hw_counter), Some(*token_id));
             assert_eq!(imm_mmap.get_token_id(token, &hw_counter), Some(*token_id));
         }

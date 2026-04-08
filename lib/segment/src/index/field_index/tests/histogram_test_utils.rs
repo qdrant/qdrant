@@ -13,7 +13,7 @@ pub fn print_results<T: Numericable + Serialize + DeserializeOwned + Display>(
     histogram: &Histogram<T>,
     pnt: Option<Point<T>>,
 ) {
-    for point in points_index.iter() {
+    for point in points_index {
         if let Some(border_count) = histogram.borders().get(point) {
             if pnt.is_some() && pnt.as_ref().unwrap().idx == point.idx {
                 eprint!(" {}x{} ", border_count.left, border_count.right);

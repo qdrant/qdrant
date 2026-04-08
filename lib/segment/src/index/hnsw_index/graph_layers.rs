@@ -212,7 +212,7 @@ pub trait GraphLayersBase {
             });
 
             // Collect 2-hop neighbors (neighbors of neighbors)
-            for &hop1 in to_explore.iter() {
+            for &hop1 in &to_explore {
                 check_process_stopped(is_stopped)?;
 
                 let total_limit = to_score.len() + hop2_limit;

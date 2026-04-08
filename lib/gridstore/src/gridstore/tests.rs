@@ -124,7 +124,7 @@ fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usiz
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
-    for (point_offset, payload) in payloads.iter() {
+    for (point_offset, payload) in &payloads {
         storage
             .put_value(*point_offset, payload, hw_counter_ref)
             .unwrap();
@@ -138,7 +138,7 @@ fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usiz
 
     // read randomly
     payloads.shuffle(rng);
-    for (point_offset, payload) in payloads.iter() {
+    for (point_offset, payload) in &payloads {
         let stored_payload = storage
             .get_value::<Random>(*point_offset, &hw_counter)
             .unwrap();

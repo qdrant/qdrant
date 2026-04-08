@@ -196,7 +196,7 @@ fn test_apply_and_move_old_versions(
     let locked_segment_2 = holder.get(sid2).unwrap().get();
     let read_segment_2 = locked_segment_2.read();
 
-    for i in processed_points2.iter() {
+    for i in &processed_points2 {
         assert!(read_segment_2.has_point(*i));
     }
 

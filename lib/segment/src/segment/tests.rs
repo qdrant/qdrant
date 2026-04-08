@@ -611,7 +611,7 @@ fn test_vector_compatibility_checks() {
     ];
     let wrong_names = ["aa", "bb", ""];
 
-    for (vector_name, vector) in wrong_vectors_single.iter() {
+    for (vector_name, vector) in &wrong_vectors_single {
         let query_vector = vector.to_owned().into();
         check_vector(vector_name, &query_vector, &segment.segment_config)
             .err()
@@ -1418,7 +1418,7 @@ fn assert_deferred_points_excluded<F, R, T>(
             assert_eq!(search_res_deferred.len(), filter_set.expected_visible);
 
             // All points in result must always be non deferred.
-            for id_t in search_res_deferred.iter() {
+            for id_t in &search_res_deferred {
                 let external_id = to_external_id(id_t);
                 assert!(!segment.point_is_deferred(external_id));
             }

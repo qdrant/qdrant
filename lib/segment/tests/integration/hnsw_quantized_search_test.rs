@@ -295,7 +295,7 @@ fn check_rescoring(
     ef: usize,
     top: usize,
 ) {
-    for query in query_vectors.iter() {
+    for query in query_vectors {
         let index_result = hnsw_index
             .search(
                 &[query],

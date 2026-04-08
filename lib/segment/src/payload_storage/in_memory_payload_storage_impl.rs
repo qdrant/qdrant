@@ -113,7 +113,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        for (key, val) in self.payload.iter() {
+        for (key, val) in &self.payload {
             let do_continue = callback(*key, val)?;
             if !do_continue {
                 return Ok(());
@@ -128,7 +128,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
 
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         let mut estimated_size = 0;
-        for (_p_id, val) in self.payload.iter() {
+        for (_p_id, val) in &self.payload {
             // account for point_id
             estimated_size += size_of::<PointOffsetType>();
             for (key, val) in val.0.iter() {

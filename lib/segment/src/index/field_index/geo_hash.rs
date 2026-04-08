@@ -685,9 +685,9 @@ mod tests {
             b"uft5602",
             b"uft560200000",
         ];
-        for a in samples.iter() {
+        for a in &samples {
             let a_hash = GeoHash::new(a).unwrap();
-            for b in samples.iter() {
+            for b in &samples {
                 let b_hash = GeoHash::new(b).unwrap();
                 if a.starts_with(b) {
                     assert!(

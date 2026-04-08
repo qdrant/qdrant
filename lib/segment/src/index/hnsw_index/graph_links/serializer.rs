@@ -70,7 +70,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
     let mut total_offsets_len = 0;
     {
         let mut suffix_sum = point_count_by_level.iter().sum::<u64>();
-        for &value in point_count_by_level.iter() {
+        for &value in &point_count_by_level {
             writer.write_all(total_offsets_len.as_bytes())?;
             total_offsets_len += suffix_sum;
             suffix_sum -= value;

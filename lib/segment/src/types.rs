@@ -2446,12 +2446,12 @@ impl Hash for AnyVariants {
         mem::discriminant(self).hash(state);
         match self {
             AnyVariants::Strings(index_set) => {
-                for item in index_set.iter() {
+                for item in index_set {
                     item.hash(state);
                 }
             }
             AnyVariants::Integers(index_set) => {
-                for item in index_set.iter() {
+                for item in index_set {
                     item.hash(state);
                 }
             }

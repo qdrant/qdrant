@@ -103,7 +103,7 @@ pub trait ValueIndexer {
     ) -> OperationResult<()> {
         self.remove_point(id)?;
         let mut flatten_values: Vec<_> = vec![];
-        for value in payload.iter() {
+        for value in payload {
             match value {
                 Value::Array(values) => {
                     flatten_values.extend(values.iter().filter_map(|x| Self::get_value(x)));

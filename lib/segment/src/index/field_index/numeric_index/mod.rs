@@ -637,7 +637,7 @@ where
     ) -> OperationResult<()> {
         self.in_memory_index.remove_point(id);
         let mut flatten_values: Vec<_> = vec![];
-        for value in payload.iter() {
+        for value in payload {
             let payload_values = <NumericIndex<T, P> as ValueIndexer>::get_values(value);
             flatten_values.extend(payload_values);
         }

@@ -120,7 +120,7 @@ fn _test_filterable_hnsw(
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
         .map(Result::unwrap)
         .collect_vec();
-    for block in blocks.iter() {
+    for block in &blocks {
         assert!(
             block.condition.range.is_some(),
             "only range conditions should be generated for this type of payload"
@@ -307,7 +307,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
         .map(Result::unwrap)
         .collect_vec();
-    for block in blocks.iter() {
+    for block in &blocks {
         assert!(
             block.condition.range.is_some(),
             "only range conditions should be generated for this type of payload"

@@ -39,7 +39,7 @@ pub(crate) fn find_quantile_interval<'a>(
     let selected_vectors = take_random_vectors(vector_data, count, SAMPLE_SIZE, stopped)?;
     let selected_vectors_count = selected_vectors.len();
     let mut data_slice: Vec<f32> = Vec::with_capacity(selected_vectors_count * dim);
-    for vector in selected_vectors.iter() {
+    for vector in &selected_vectors {
         if stopped.load(Ordering::Relaxed) {
             return Err(EncodingError::Stopped);
         }
@@ -154,7 +154,7 @@ fn find_interval_per_coordinate_p2<'a>(
                 let max_quantile = 1.0 - min_quantile;
                 let mut max = P2Quantile::<P2_MARKERS>::new(max_quantile)?;
 
-                for vector in selected_vectors.iter() {
+                for vector in &selected_vectors {
                     if stopped.load(Ordering::Relaxed) {
                         return Err(EncodingError::Stopped);
                     }

@@ -576,7 +576,7 @@ impl GraphLayersBuilder {
     pub fn get_average_connectivity_on_level(&self, level: usize) -> f32 {
         let mut sum = 0;
         let mut count = 0;
-        for links in self.links_layers.iter() {
+        for links in &self.links_layers {
             if links.len() > level {
                 sum += links[level].read().links().len();
                 count += 1;

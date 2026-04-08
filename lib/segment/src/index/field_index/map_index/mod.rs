@@ -590,7 +590,7 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut flatten_values: Vec<_> = vec![];
-        for value in payload.iter() {
+        for value in payload {
             let payload_values = <MapIndex<N> as ValueIndexer>::get_values(value);
             flatten_values.extend(payload_values);
         }
