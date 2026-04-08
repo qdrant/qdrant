@@ -23,13 +23,15 @@ TOKEN_COLL_R = encode_jwt(
 )
 
 
-def read_audit_methods(peer_dir: Path) -> list[str]:
+def read_audit_methods(peer_dir: Path) -> list[str | None]:
     methods = []
     for log_file in sorted((peer_dir / "storage" / "audit").glob("audit.*.log")):
         for line in log_file.read_text().splitlines():
             if not line.strip():
                 continue
-            methods.append(json.loads(line)["method"])
+            # `method` is omitted for denied auth entries, where the middleware
+            # has no internal operation name yet — use .get() to tolerate this.
+            methods.append(json.loads(line).get("method"))
     return methods
 
 
