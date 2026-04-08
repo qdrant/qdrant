@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io;
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -17,6 +18,34 @@ use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, FileId};
 use crate::fs::clear_disk_cache;
 
 const UNUSED_BLOCKS_MARGIN: u64 = 16;
+
+#[repr(align(4096))]
+struct AlignedBuf<const N: usize>([u8; N]);
+
+impl<const N: usize> AlignedBuf<N> {
+    fn new() -> Self {
+        Self([0u8; N])
+    }
+
+    #[inline]
+    const fn as_ptr(&self) -> *const u8 {
+        self.0.as_ptr()
+    }
+}
+
+impl<const N: usize> Deref for AlignedBuf<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const N: usize> DerefMut for AlignedBuf<N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 /// Caching layer for files in a slow disk, to be mapped into a file in a fast disk.
 ///
@@ -166,7 +195,7 @@ impl CacheController {
                 // 1. Read from cold storage.
                 // --------------------------
 
-                let mut buf = [0u8; BLOCK_SIZE];
+                let mut buf = AlignedBuf::<BLOCK_SIZE>::new();
 
                 let files = self.files.read();
                 let file = files
