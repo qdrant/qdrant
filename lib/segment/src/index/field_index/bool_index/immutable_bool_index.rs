@@ -66,9 +66,9 @@ impl ValueIndexer for ImmutableBoolIndex {
 
     fn add_many(
         &mut self,
-        _id: common::types::PointOffsetType,
+        _id: PointOffsetType,
         _values: Vec<Self::ValueType>,
-        _hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         unimplemented!("ImmutableBoolIndex is immutable, cannot add values");
     }
@@ -79,7 +79,7 @@ impl ValueIndexer for ImmutableBoolIndex {
     }
 
     #[inline]
-    fn remove_point(&mut self, id: common::types::PointOffsetType) -> OperationResult<()> {
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         self.0.set_or_insert_immutable(id, false, false);
         Ok(())
     }
@@ -94,12 +94,12 @@ impl PayloadFieldIndex for ImmutableBoolIndex {
             fn filter<'a>(
                     &'a self,
                     condition: &'a crate::types::FieldCondition,
-                    hw_counter: &'a common::counter::hardware_counter::HardwareCounterCell,
-            ) -> OperationResult<Option<Box<dyn Iterator<Item = common::types::PointOffsetType> + 'a>>>;
+                    hw_counter: &'a HardwareCounterCell,
+            ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
             fn estimate_cardinality(
                     &self,
                     condition: &crate::types::FieldCondition,
-                    hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
+                    hw_counter: &HardwareCounterCell,
             ) -> OperationResult<Option<crate::index::field_index::CardinalityEstimation>>;
             fn payload_blocks(
                     &self,
