@@ -921,7 +921,7 @@ impl From<SearchParams> for segment::types::SearchParams {
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as usize),
             exact: exact.unwrap_or(false),
-            quantization: quantization.map(Into::into),
+            quantization: quantization.map(QuantizationSearchParams::into),
             indexed_only: indexed_only.unwrap_or(false),
             acorn: acorn.map(segment::types::AcornSearchParams::from),
         }
@@ -1763,7 +1763,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
         let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
 
-        let mut range = range.map(Into::into);
+        let mut range = range.map(Range::into);
         if range.is_none() {
             range = datetime_range
                 .map(segment::types::RangeInterface::try_from)
@@ -1777,7 +1777,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_bounding_box,
             geo_radius,
             geo_polygon,
-            values_count: values_count.map(Into::into),
+            values_count: values_count.map(ValuesCount::into),
             is_empty,
             is_null,
         })
@@ -1886,7 +1886,7 @@ impl TryFrom<GeoPolygon> for segment::types::GeoPolygon {
                 interiors,
             } => Ok(Self {
                 exterior: e.into(),
-                interiors: Some(interiors.into_iter().map(Into::into).collect()),
+                interiors: Some(interiors.into_iter().map(GeoLineString::into).collect()),
             }),
             _ => Err(Status::invalid_argument(
                 "Malformed GeoPolygon type - field `exterior` is required",
@@ -1926,7 +1926,7 @@ impl From<GeoLineString> for segment::types::GeoLineString {
     fn from(value: GeoLineString) -> Self {
         let GeoLineString { points } = value;
         Self {
-            points: points.into_iter().map(Into::into).collect(),
+            points: points.into_iter().map(GeoPoint::into).collect(),
         }
     }
 }
@@ -2596,7 +2596,7 @@ pub fn try_date_time_from_proto(
     date_time: prost_wkt_types::Timestamp,
 ) -> Result<DateTimePayloadType, Status> {
     chrono::DateTime::from_timestamp(date_time.seconds, date_time.nanos.try_into().unwrap_or(0))
-        .map(Into::into)
+        .map(DateTimePayloadType::from)
         .ok_or_else(|| Status::invalid_argument(format!("Unable to parse timestamp: {date_time}")))
 }
 
@@ -2702,7 +2702,7 @@ impl From<PointsOperationResponse> for PointsOperationResponseInternal {
             inference,
         } = usage.unwrap_or_default();
         Self {
-            result: result.map(Into::into),
+            result: result.map(UpdateResult::into),
             time,
             hardware_usage: hardware,
             inference_usage: inference,
@@ -2995,11 +2995,11 @@ impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
         Ok(Self {
             vector,
             filter: filter.map(|f| f.try_into()).transpose()?,
-            params: params.map(Into::into),
+            params: params.map(SearchParams::into),
             limit: limit as usize,
             offset: offset.map(|x| x as usize),
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: Some(with_vectors.map(Into::into).unwrap_or_default()),
+            with_vector: Some(with_vectors.map(WithVectorsSelector::into).unwrap_or_default()),
             score_threshold,
         })
     }
@@ -3108,7 +3108,7 @@ impl TryFrom<WithLookup> for rest::WithLookup {
                 .map(|wp| wp.try_into())
                 .transpose()?
                 .or_else(with_default_payload),
-            with_vectors: with_vectors.map(Into::into),
+            with_vectors: with_vectors.map(WithVectorsSelector::into),
         })
     }
 }

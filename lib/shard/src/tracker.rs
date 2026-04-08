@@ -146,7 +146,7 @@ impl Tracker {
         Optimization {
             optimizer: self.name.to_string(),
             uuid: self.uuid,
-            segments: self.segments.iter().map(Into::into).collect(),
+            segments: self.segments.iter().map(OptimizationSegmentInfo::from).collect(),
             status: self.state.lock().status.clone(),
             progress: self.progress_view.snapshot("Segment Optimizing"),
         }

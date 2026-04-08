@@ -1078,7 +1078,7 @@ impl ShardOperation for RemoteShard {
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),
             filter: filter.map(api::grpc::qdrant::Filter::from),
-            offset: offset.map(Into::into),
+            offset: offset.map(ExtendedPointId::into),
             limit: limit.map(|x| x as u32),
             with_payload: Some(WithPayloadSelector::from(with_payload)),
             with_vectors: Some(with_vector.clone().into()),
@@ -1234,7 +1234,7 @@ impl ShardOperation for RemoteShard {
         let processed_timeout = Self::process_read_timeout(timeout, "count")?;
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),
-            filter: request.filter.clone().map(Into::into),
+            filter: request.filter.clone().map(Filter::into),
             exact: Some(request.exact),
             read_consistency: None,
             shard_key_selector: None,
@@ -1290,8 +1290,8 @@ impl ShardOperation for RemoteShard {
         let processed_timeout = Self::process_read_timeout(timeout, "retrieve")?;
         let get_points = GetPoints {
             collection_name: self.collection_id.clone(),
-            ids: request.ids.iter().copied().map(Into::into).collect(),
-            with_payload: request.with_payload.clone().map(Into::into),
+            ids: request.ids.iter().copied().map(ExtendedPointId::into).collect(),
+            with_payload: request.with_payload.clone().map(WithPayloadInterface::into),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
             shard_key_selector: None,

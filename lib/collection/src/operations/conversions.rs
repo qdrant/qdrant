@@ -21,8 +21,8 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::{
-    Distance, Filter, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfigOutput,
-    WithPayloadInterface,
+    Distance, Filter, HnswConfig, MultiVectorConfig, QuantizationConfig, SearchParams,
+    StrictModeConfigOutput, WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
 use tonic::Status;
@@ -1060,9 +1060,9 @@ impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearch
             query: Some(api::grpc::QueryEnum::from(query.clone())),
             filter: filter.clone().map(Filter::into),
             limit: *limit as u64,
-            with_vectors: with_vector.clone().map(Into::into),
+            with_vectors: with_vector.clone().map(WithVector::into),
             with_payload: with_payload.clone().map(WithPayloadInterface::into),
-            params: params.map(Into::into),
+            params: params.map(SearchParams::into),
             score_threshold: *score_threshold,
             offset: Some(*offset as u64),
             vector_name: Some(query.get_vector_name().to_owned()),
@@ -1406,7 +1406,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 Distance::Manhattan => api::grpc::qdrant::Distance::Manhattan,
             }
             .into(),
-            hnsw_config: hnsw_config.map(Into::into),
+            hnsw_config: hnsw_config.map(HnswConfigDiff::into),
             quantization_config: quantization_config.map(QuantizationConfig::into),
             on_disk,
             datatype: datatype.map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
@@ -1543,13 +1543,13 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
         Self {
             peer_id,
             shard_count: shard_count as u64,
-            local_shards: local_shards.into_iter().map(Into::into).collect(),
-            remote_shards: remote_shards.into_iter().map(Into::into).collect(),
-            shard_transfers: shard_transfers.into_iter().map(Into::into).collect(),
+            local_shards: local_shards.into_iter().map(LocalShardInfo::into).collect(),
+            remote_shards: remote_shards.into_iter().map(RemoteShardInfo::into).collect(),
+            shard_transfers: shard_transfers.into_iter().map(ShardTransferInfo::into).collect(),
             resharding_operations: resharding_operations
                 .into_iter()
                 .flatten()
-                .map(Into::into)
+                .map(ReshardingInfo::into)
                 .collect(),
         }
     }

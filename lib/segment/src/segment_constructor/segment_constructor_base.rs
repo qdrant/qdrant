@@ -859,7 +859,7 @@ fn load_segment_state_v5(segment_path: &Path) -> OperationResult<SegmentState> {
     file.read_to_string(&mut contents)?;
 
     serde_json::from_str::<SegmentStateV5>(&contents)
-        .map(Into::into)
+        .map(SegmentStateV5::into)
         .map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to read segment {}. Error: {}",
