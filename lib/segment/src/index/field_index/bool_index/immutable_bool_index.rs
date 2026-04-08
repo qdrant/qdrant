@@ -77,9 +77,9 @@ impl ValueIndexer for ImmutableBoolIndex {
 
     fn add_point(
         &mut self,
-        id: PointOffsetType,
-        payload: &[&serde_json::Value],
-        hw_counter: &HardwareCounterCell,
+        _id: PointOffsetType,
+        _payload: &[&serde_json::Value],
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "ImmutableBoolIndex is immutable, cannot add values",
