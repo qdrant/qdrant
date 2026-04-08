@@ -206,7 +206,7 @@ impl From<CollectionError> for StorageError {
                 backtrace: None,
             },
             CollectionError::InconsistentShardFailure { ref first_err, .. } => {
-                let full_description = format!("{}", &err);
+                let full_description = err.to_string();
                 Self::from_inconsistent_shard_failure(*first_err.clone(), full_description)
             }
             CollectionError::BadShardSelection { description } => {

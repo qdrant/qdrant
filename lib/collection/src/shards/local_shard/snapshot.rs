@@ -285,7 +285,7 @@ pub fn snapshot_all_segments(
             } else {
                 None
             };
-            let segment_manifest_ref = request_segment_manifest.as_ref().map(|m| m.as_ref());
+            let segment_manifest_ref = request_segment_manifest.as_deref();
             read_segment.take_snapshot(temp_dir, tar, format, segment_manifest_ref)?;
             Ok(())
         },

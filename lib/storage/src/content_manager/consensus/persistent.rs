@@ -351,7 +351,7 @@ impl Persistent {
                 conf_state: ConfState::from((voters, vec![])),
             },
             apply_progress_queue: Default::default(),
-            first_voter: if first_peer { Some(this_peer_id) } else { None },
+            first_voter: first_peer.then_some(this_peer_id),
             peer_address_by_id: Default::default(),
             peer_metadata_by_id: Default::default(),
             cluster_metadata: Default::default(),
