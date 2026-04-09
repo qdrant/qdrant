@@ -228,11 +228,11 @@ mod tests {
     use std::sync::Arc;
 
     use atomic_refcell::AtomicRefCell;
+    use common::bitvec::BitVec;
     use common::counter::hardware_counter::HardwareCounterCell;
     use serde_json::{Value, from_value, json};
 
     use crate::common::utils::MultiValue;
-    use crate::id_tracker::{IdTracker, IdTrackerEnum};
     use crate::index::field_index::geo_index::GeoMapIndex;
     use crate::index::field_index::numeric_index::NumericIndex;
     use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait};
@@ -240,7 +240,7 @@ mod tests {
     use crate::index::query_optimization::rescore_formula::value_retriever::variable_retriever;
     use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
     use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-    use crate::types::{ExtendedPointId, Payload};
+    use crate::types::Payload;
 
     pub fn fixture_payload_provider() -> PayloadProvider {
         // Create an in-memory payload storage and populate it with some payload maps containing numbers and geo points.
@@ -346,27 +346,15 @@ mod tests {
             PayloadStorageEnum::InMemoryPayloadStorage(InMemoryPayloadStorage::default()),
         )));
         let hw_counter = HardwareCounterCell::new();
-        let id_tracker = Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
-            Default::default(),
-        )));
+        // No deletions in this test — sized to comfortably exceed the
+        // stored deletion bitslice for the few points added below.
+        let deleted_points = BitVec::repeat(false, 64);
 
         // Create a field index for a number.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = NumericIndex::builder_mmap(dir.path(), false, id_tracker.clone());
-        id_tracker
-            .borrow_mut()
-            .set_link(ExtendedPointId::NumId(0), 0)
-            .unwrap();
+        let mut builder = NumericIndex::builder_mmap(dir.path(), false, &deleted_points);
         builder.add_point(0, &[&42.into()], &hw_counter).unwrap();
-        id_tracker
-            .borrow_mut()
-            .set_link(ExtendedPointId::NumId(1), 1)
-            .unwrap();
         builder.add_point(1, &[], &hw_counter).unwrap();
-        id_tracker
-            .borrow_mut()
-            .set_link(ExtendedPointId::NumId(2), 2)
-            .unwrap();
         builder
             .add_point(2, &[&99.into(), &55.into()], &hw_counter)
             .unwrap();
@@ -389,7 +377,7 @@ mod tests {
 
         // Create a field index for datetime
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = NumericIndex::builder_mmap(dir.path(), false, id_tracker.clone());
+        let mut builder = NumericIndex::builder_mmap(dir.path(), false, &deleted_points);
 
         builder
             .add_point(0, &[&json!("2023-01-01T00:00:00Z")], &hw_counter)
