@@ -3,14 +3,16 @@
 //! See [`IntendedVector`] for the rationale behind the intent representation
 //! and [`ProxyVectorNameChanges`] for the per-proxy buffer.
 
-use ahash::AHashMap;
+use std::borrow::Cow;
+
+use ahash::{AHashMap, AHashSet};
 use itertools::Itertools as _;
 use segment::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
 use segment::types::{
     SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName,
-    VectorNameBuf,
+    VectorNameBuf, WithVector,
 };
 
 /// Desired end-state of a single named vector inside a [`super::ProxySegment`].
@@ -127,6 +129,83 @@ impl ProxyVectorNameChanges {
         self.intent
             .iter()
             .sorted_by_key(|(_, intent)| intent.version())
+    }
+
+    /// Drop any vector names from `with_vector` whose data the wrapped segment
+    /// can no longer be trusted to serve — either because the proxy intends
+    /// to delete them outright (`Absent`) or because it intends to replace
+    /// them with a different schema (`Present { supersedes_wrapped: true }`).
+    /// Read paths in `ProxySegment` use this to rewrite the parameter before
+    /// delegating to the wrapped segment, so a request like
+    /// `WithVector::Selector(["v_dropped"])` doesn't bring back stale data.
+    ///
+    /// `wrapped_config` is the config of the segment this proxy is wrapping;
+    /// it is the source of truth for "what does `Bool(true)` (= all vectors)
+    /// expand to?". It's passed in rather than stored on the buffer because
+    /// (a) `ProxySegment` already owns the canonical copy at
+    /// `self.wrapped_config`, (b) `ProxyVectorNameChanges` is a pure delta
+    /// buffer and adding base state to it would muddy its role and break
+    /// `merge` across proxies that wrap different segments, and (c) every
+    /// call site is inside `impl ProxySegment` and already has the config in
+    /// scope.
+    ///
+    /// Returns [`Cow::Borrowed`] when nothing needs to change (no tainted
+    /// names, or the request is `Bool(false)`, or none of the explicitly
+    /// requested names are tainted) and [`Cow::Owned`] only when at least
+    /// one name was actually dropped or `Bool(true)` had to be expanded to a
+    /// `Selector`.
+    pub fn redact_with_vector<'a>(
+        &self,
+        with_vector: &'a WithVector,
+        wrapped_config: &SegmentConfig,
+    ) -> Cow<'a, WithVector> {
+        let tainted: AHashSet<&str> = self
+            .intent
+            .iter()
+            .filter_map(|(name, intent)| intent.taints_wrapped().then(|| name.as_str()))
+            .collect();
+
+        if tainted.is_empty() {
+            return Cow::Borrowed(with_vector);
+        }
+
+        match with_vector {
+            // Nothing requested — nothing to redact.
+            WithVector::Bool(false) => Cow::Borrowed(with_vector),
+
+            // "All vectors" expands to whatever the wrapped knows minus the
+            // tainted set. Pending Creates of brand-new names are deliberately
+            // excluded: the wrapped has no data for them anyway, and asking
+            // it for them would error out.
+            WithVector::Bool(true) => {
+                let kept: Vec<VectorNameBuf> = wrapped_config
+                    .vector_data
+                    .keys()
+                    .chain(wrapped_config.sparse_vector_data.keys())
+                    .filter(|name| !tainted.contains(name.as_str()))
+                    .cloned()
+                    .collect();
+                Cow::Owned(WithVector::Selector(kept))
+            }
+
+            // Filter the explicit list. Skip the allocation if no requested
+            // name is actually tainted (the common case for an unrelated
+            // schema change happening in the background).
+            WithVector::Selector(requested) => {
+                let needs_redact = requested
+                    .iter()
+                    .any(|name| tainted.contains(name.as_str()));
+                if !needs_redact {
+                    return Cow::Borrowed(with_vector);
+                }
+                let kept: Vec<VectorNameBuf> = requested
+                    .iter()
+                    .filter(|name| !tainted.contains(name.as_str()))
+                    .cloned()
+                    .collect();
+                Cow::Owned(WithVector::Selector(kept))
+            }
+        }
     }
 
     /// Merge intents from another proxy into this one. Per name, the higher

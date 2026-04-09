@@ -67,6 +67,14 @@ impl ReadSegmentEntry for ProxySegment {
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        // Strip any vector names that the proxy intends to delete or replace
+        // with a different schema, so the wrapped segment doesn't return
+        // stale data for them. `Cow::Borrowed` in the common case.
+        let with_vector = self
+            .changed_vector_names
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let with_vector = with_vector.as_ref();
+
         // Some point might be deleted after temporary segment creation
         // We need to prevent them from being found by search request
         // That is why we need to pass additional filter for deleted points
@@ -217,6 +225,13 @@ impl ReadSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        // Strip any vector names that the proxy intends to delete or replace
+        // with a different schema before delegating to the wrapped segment.
+        let with_vector = self
+            .changed_vector_names
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let with_vector = with_vector.as_ref();
+
         let filtered_point_ids: Vec<PointIdType> = point_ids
             .iter()
             .copied()
