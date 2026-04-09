@@ -171,6 +171,18 @@ impl MetricsProvider for AppBuildTelemetry {
         self.features
             .iter()
             .for_each(|f| f.add_metrics(metrics, prefix));
+
+        if let Some(audit) = &self.audit
+            && let Some(size) = audit.dir_size_bytes
+        {
+            metrics.push_metric(metric_family(
+                "audit_log_dir_size_bytes",
+                "size of the audit log directory on disk in bytes",
+                MetricType::GAUGE,
+                vec![gauge(size as f64, &[])],
+                prefix,
+            ));
+        }
     }
 }
 

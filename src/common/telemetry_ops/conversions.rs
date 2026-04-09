@@ -37,6 +37,7 @@ impl TryFrom<grpc::AppTelemetry> for AppBuildTelemetry {
             system: None,
             jwt_rbac: None,
             hide_jwt_dashboard: None,
+            audit: None,
             startup: DateTime::from_timestamp_secs(startup)
                 .ok_or_else(|| Status::internal("startup time is out-of-range"))?,
         })
@@ -54,6 +55,7 @@ impl From<AppBuildTelemetry> for grpc::AppTelemetry {
             system: _,
             jwt_rbac: _,
             hide_jwt_dashboard: _,
+            audit: _,
             startup,
         } = value;
 
