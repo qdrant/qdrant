@@ -324,11 +324,9 @@ impl IndexSelector<'_> {
         Vec<T>: Blob,
     {
         Ok(match self {
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => NumericIndex::new_mmap(
-                &numeric_dir(dir, field),
-                *is_on_disk,
-                deleted_points,
-            )?,
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk, deleted_points)?
+            }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 NumericIndex::new_gridstore(numeric_dir(dir, field), create_if_missing)?
             }
@@ -347,13 +345,9 @@ impl IndexSelector<'_> {
         Vec<T>: Blob,
     {
         match self {
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
-                make_mmap(NumericIndex::builder_mmap(
-                    &numeric_dir(dir, field),
-                    *is_on_disk,
-                    deleted_points,
-                ))
-            }
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => make_mmap(
+                NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk, deleted_points),
+            ),
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 make_gridstore(NumericIndex::builder_gridstore(numeric_dir(dir, field)))
             }
