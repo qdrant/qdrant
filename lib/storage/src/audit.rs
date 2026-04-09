@@ -68,8 +68,8 @@ pub struct AuditConfig {
     pub trust_forwarded_headers: bool,
 
     /// If true, log the API method path (REST path or gRPC method) in addition
-    /// to the internal operation name.  Default: false.
-    #[serde(default)]
+    /// to the internal operation name.  Default: true.
+    #[serde(default = "default_log_api")]
     pub log_api: bool,
 }
 
@@ -79,6 +79,10 @@ fn default_audit_dir() -> PathBuf {
 
 const fn default_max_log_files() -> usize {
     7
+}
+
+const fn default_log_api() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
