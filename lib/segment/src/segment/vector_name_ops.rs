@@ -101,6 +101,12 @@ impl Segment {
             self.payload_index.clone(),
         ));
 
+        // Register the new storage with the payload index so `has_vector`
+        // filtering sees it immediately, not just after a restart.
+        self.payload_index
+            .borrow_mut()
+            .register_vector_storage(vector_name.to_owned(), vector_storage.clone());
+
         self.vector_data.insert(
             vector_name.to_owned(),
             VectorData {
@@ -166,6 +172,12 @@ impl Segment {
             deferred_internal_id: None,
         })?;
 
+        // Register the new storage with the payload index so `has_vector`
+        // filtering sees it immediately, not just after a restart.
+        self.payload_index
+            .borrow_mut()
+            .register_vector_storage(vector_name.to_owned(), vector_storage.clone());
+
         self.vector_data.insert(
             vector_name.to_owned(),
             VectorData {
@@ -192,6 +204,12 @@ impl Segment {
         if !self.vector_data.contains_key(vector_name) {
             return Ok(false);
         }
+
+        // Drop the storage from the payload index lookup so `has_vector`
+        // filtering stops matching against the deleted vector immediately.
+        self.payload_index
+            .borrow_mut()
+            .unregister_vector_storage(vector_name);
 
         // Remove from runtime data (drops VectorData - releases storage/index/quantized)
         self.vector_data.remove(vector_name);

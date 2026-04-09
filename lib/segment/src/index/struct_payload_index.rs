@@ -291,6 +291,28 @@ impl StructPayloadIndex {
         Ok(index)
     }
 
+    /// Register a vector storage for the `has_vector` filtering condition.
+    ///
+    /// Must be called whenever a new named vector is added to the segment after the
+    /// payload index has been opened, otherwise `has_vector` queries will see stale
+    /// state (no matches for the new vector) until the segment is reloaded.
+    pub fn register_vector_storage(
+        &mut self,
+        vector_name: VectorNameBuf,
+        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    ) {
+        self.vector_storages.insert(vector_name, vector_storage);
+    }
+
+    /// Drop a vector storage from the `has_vector` lookup map.
+    ///
+    /// Must be called whenever a named vector is removed from the segment, otherwise
+    /// `has_vector` queries will keep matching points against the deleted storage
+    /// until the segment is reloaded.
+    pub fn unregister_vector_storage(&mut self, vector_name: &str) {
+        self.vector_storages.remove(vector_name);
+    }
+
     pub fn build_field_indexes(
         &self,
         field: PayloadKeyTypeRef,
