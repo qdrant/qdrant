@@ -193,6 +193,37 @@ impl CreateCollectionOperation {
         collection_name: String,
         create_collection: CreateCollection,
     ) -> StorageResult<Self> {
+        // Apply the same vector-name validation that the
+        // `PUT /collections/{name}/vectors/{vector_name}` endpoint enforces
+        // (length 0..=255, no filesystem-unsafe characters), so both creation
+        // paths reject the same set of bad names. The `Validate` derive on
+        // `CreateCollection` only walks `BTreeMap` *values*, never keys, so this
+        // has to run imperatively here.
+        //
+        // The unnamed slot used by `VectorsConfig::Single` is exempt: its
+        // implicit key is the empty `DEFAULT_VECTOR_NAME` constant and a
+        // `Single` config has no user-supplied name to validate.
+        if let collection::operations::types::VectorsConfig::Multi(multi) =
+            &create_collection.vectors
+        {
+            for vector_name in multi.keys() {
+                common::validation::validate_vector_name(vector_name).map_err(|err| {
+                    StorageError::bad_input(format!(
+                        "Invalid dense vector name `{vector_name}`: {err}",
+                    ))
+                })?;
+            }
+        }
+        if let Some(sparse_config) = &create_collection.sparse_vectors {
+            for vector_name in sparse_config.keys() {
+                common::validation::validate_vector_name(vector_name).map_err(|err| {
+                    StorageError::bad_input(format!(
+                        "Invalid sparse vector name `{vector_name}`: {err}",
+                    ))
+                })?;
+            }
+        }
+
         // validate vector names are unique between dense and sparse vectors
         if let Some(sparse_config) = &create_collection.sparse_vectors {
             let mut dense_names = create_collection.vectors.params_iter().map(|p| p.0);

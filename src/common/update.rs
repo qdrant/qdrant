@@ -1039,6 +1039,12 @@ pub async fn do_create_vector_name(
 ) -> Result<UpdateResult, StorageError> {
     use collection::operations::verification::new_unchecked_verification_pass;
 
+    // Validate the vector name once at the single chokepoint that both REST and
+    // gRPC entrypoints land in (REST also runs the same check via `VectorNamePath`).
+    common::validation::validate_vector_name(&vector_name).map_err(|err| {
+        StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
+    })?;
+
     let consensus_op = CreateNamedVector {
         collection_name: collection_name.clone(),
         vector_name: vector_name.clone(),

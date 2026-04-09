@@ -57,23 +57,55 @@ pub fn validate_not_empty(value: &str) -> Result<(), ValidationError> {
     }
 }
 
+/// Filesystem-unsafe characters rejected for both collection and vector names.
+///
+/// These end up as path components on disk (collection directories,
+/// per-vector storage subdirectories — see
+/// `segment_constructor::get_vector_storage_path`), so they must be safe on both
+/// Linux and Windows filesystems.
+const INVALID_NAME_CHARS: [char; 11] =
+    ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0', '\u{1F}'];
+
+/// Reject any character from [`INVALID_NAME_CHARS`] in `value`. The `kind`
+/// argument is interpolated into the error message ("collection name" /
+/// "vector name") so callers get a context-appropriate error.
+fn check_invalid_name_chars(value: &str, kind: &str) -> Result<(), ValidationError> {
+    let Some(c) = INVALID_NAME_CHARS.into_iter().find(|c| value.contains(*c)) else {
+        return Ok(());
+    };
+    let mut err = ValidationError::new("does_not_contain");
+    err.add_param(Cow::from("pattern"), &c);
+    err.message
+        .replace(format!("{kind} cannot contain \"{c}\" char").into());
+    Err(err)
+}
+
 /// Validate the collection name contains no illegal characters
 ///
 /// This does not check the length of the name.
 pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
-    const INVALID_CHARS: [char; 11] =
-        ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0', '\u{1F}'];
+    check_invalid_name_chars(value, "collection name")
+}
 
-    match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
-        Some(c) => {
-            let mut err = ValidationError::new("does_not_contain");
-            err.add_param(Cow::from("pattern"), &c);
-            err.message
-                .replace(format!("collection name cannot contain \"{c}\" char").into());
-            Err(err)
-        }
-        None => Ok(()),
+/// Validate a named vector identifier.
+///
+/// Vector names become directory components on disk (see
+/// `segment_constructor::get_vector_storage_path`), so they are subject to the same
+/// rules as collection names: at most 255 bytes, and free of the
+/// filesystem-unsafe characters listed in [`INVALID_NAME_CHARS`].
+pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
+    const MAX_LEN: usize = 255;
+
+    if value.len() > MAX_LEN {
+        let mut err = ValidationError::new("length");
+        err.add_param(Cow::from("max"), &MAX_LEN);
+        err.add_param(Cow::from("actual"), &value.len());
+        err.message
+            .replace(format!("vector name must be at most {MAX_LEN} bytes long").into());
+        return Err(err);
     }
+
+    check_invalid_name_chars(value, "vector name")
 }
 
 /// Validate the collection name contains no illegal characters, legacy edition

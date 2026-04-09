@@ -1,6 +1,7 @@
 use actix_web::rt::time::Instant;
 use actix_web::{Responder, delete, put, web};
 use actix_web_validator::{Json, Path, Query};
+use common::validation::validate_vector_name;
 use serde::Deserialize;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
@@ -14,6 +15,7 @@ use crate::settings::ServiceConfig;
 struct VectorNamePath {
     #[validate(length(min = 1, max = 255))]
     collection_name: String,
+    #[validate(custom(function = "validate_vector_name"))]
     vector_name: String,
 }
 
