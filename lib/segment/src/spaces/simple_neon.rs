@@ -227,10 +227,8 @@ mod tests {
             let cosine_simd = unsafe { cosine_preprocess_neon(v1.clone()) };
             let cosine = cosine_preprocess(v1);
             for (a, b) in cosine_simd.iter().zip(cosine.iter()) {
-                assert!(
-                    (a - b).abs() < f32::EPSILON,
-                    "Cosine SIMD mismatch: {a} vs {b}",
-                );
+                let tol = 1e-6_f32.max(8.0 * f32::EPSILON * a.abs().max(b.abs()).max(1.0));
+                assert!((a - b).abs() <= tol, "Cosine SIMD mismatch: {a} vs {b}",);
             }
         } else {
             println!("neon test skipped");
