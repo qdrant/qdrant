@@ -91,10 +91,10 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
 ///
 /// Vector names become directory components on disk (see
 /// `segment_constructor::get_vector_storage_path`), so they are subject to the same
-/// rules as collection names: at most 255 bytes, and free of the
+/// rules as collection names: at most 200 bytes, and free of the
 /// filesystem-unsafe characters listed in [`INVALID_NAME_CHARS`].
 pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
-    const MAX_LEN: usize = 255;
+    const MAX_LEN: usize = 200;
 
     if value.len() > MAX_LEN {
         let mut err = ValidationError::new("length");

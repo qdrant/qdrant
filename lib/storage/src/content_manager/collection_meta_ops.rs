@@ -195,7 +195,7 @@ impl CreateCollectionOperation {
     ) -> StorageResult<Self> {
         // Apply the same vector-name validation that the
         // `PUT /collections/{name}/vectors/{vector_name}` endpoint enforces
-        // (length 0..=255, no filesystem-unsafe characters), so both creation
+        // (length 0..=200, no filesystem-unsafe characters), so both creation
         // paths reject the same set of bad names. The `Validate` derive on
         // `CreateCollection` only walks `BTreeMap` *values*, never keys, so this
         // has to run imperatively here.
