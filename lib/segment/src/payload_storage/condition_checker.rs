@@ -223,10 +223,11 @@ impl ValueChecker for Match {
 
 impl ValueChecker for Range<OrderedFloat<FloatPayloadType>> {
     fn check_match(&self, payload: &Value) -> bool {
+        let normalized = self.normalized_to_stored_precision();
         match payload {
             Value::Number(num) => num
                 .as_f64()
-                .map(|number| self.check_range(OrderedFloat(number)))
+                .map(|number| normalized.check_range(OrderedFloat(number)))
                 .unwrap_or(false),
             _ => false,
         }
@@ -315,7 +316,7 @@ mod tests {
 
     use super::*;
     use crate::json_path::JsonPath;
-    use crate::types::GeoPoint;
+    use crate::types::{FloatPayloadType, GeoPoint};
 
     #[test]
     fn test_geo_matching() {
@@ -475,5 +476,49 @@ mod tests {
         assert!(is_not_null.check(&string));
         assert!(is_not_null.check(&number));
         assert!(is_not_null.check(&bool));
+    }
+
+    #[test]
+    fn test_float_min_boundary_without_payload_index() {
+        let float_min = f64::from(f32::MIN);
+        let payload = json!(float_min);
+        let bound = OrderedFloat::<FloatPayloadType>(float_min);
+
+        let lte = Range {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(bound),
+        };
+        let lt = Range {
+            lt: Some(bound),
+            gt: None,
+            gte: None,
+            lte: None,
+        };
+        let gte = Range {
+            lt: None,
+            gt: None,
+            gte: Some(bound),
+            lte: None,
+        };
+        let gt = Range {
+            lt: None,
+            gt: Some(bound),
+            gte: None,
+            lte: None,
+        };
+        let eq = Range {
+            lt: None,
+            gt: None,
+            gte: Some(bound),
+            lte: Some(bound),
+        };
+
+        assert!(lte.check_match(&payload));
+        assert!(!lt.check_match(&payload));
+        assert!(gte.check_match(&payload));
+        assert!(!gt.check_match(&payload));
+        assert!(eq.check_match(&payload));
     }
 }

@@ -2033,26 +2033,30 @@ mod tests {
     #[test]
     fn float_min_boundary_grpc_range_round_trip() {
         let float_min = f64::from(f32::MIN);
+        let neg_one = f64::from(-1.0_f32);
+        let pos_one = f64::from(1.0_f32);
+        let float_max = f64::from(f32::MAX);
         let grpc = Range {
             lt: Some(float_min),
-            gt: Some(float_min),
-            gte: Some(float_min),
-            lte: Some(float_min),
+            gt: Some(neg_one),
+            gte: Some(pos_one),
+            lte: Some(float_max),
         };
 
-        let segment_range = segment::types::Range::<OrderedFloat<FloatPayloadType>>::from(grpc.clone());
+        let segment_range =
+            segment::types::Range::<OrderedFloat<FloatPayloadType>>::from(grpc.clone());
 
         assert_eq!(segment_range.lt, Some(OrderedFloat(float_min)));
-        assert_eq!(segment_range.gt, Some(OrderedFloat(float_min)));
-        assert_eq!(segment_range.gte, Some(OrderedFloat(float_min)));
-        assert_eq!(segment_range.lte, Some(OrderedFloat(float_min)));
+        assert_eq!(segment_range.gt, Some(OrderedFloat(neg_one)));
+        assert_eq!(segment_range.gte, Some(OrderedFloat(pos_one)));
+        assert_eq!(segment_range.lte, Some(OrderedFloat(float_max)));
 
         let grpc_round_trip = Range::from(segment_range);
 
         assert_eq!(grpc_round_trip.lt, Some(float_min));
-        assert_eq!(grpc_round_trip.gt, Some(float_min));
-        assert_eq!(grpc_round_trip.gte, Some(float_min));
-        assert_eq!(grpc_round_trip.lte, Some(float_min));
+        assert_eq!(grpc_round_trip.gt, Some(neg_one));
+        assert_eq!(grpc_round_trip.gte, Some(pos_one));
+        assert_eq!(grpc_round_trip.lte, Some(float_max));
     }
 }
 

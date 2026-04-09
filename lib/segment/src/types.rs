@@ -2819,7 +2819,9 @@ impl<T: Copy + PartialOrd> Range<T> {
 }
 
 impl Range<OrderedFloat<FloatPayloadType>> {
-    fn normalize_float_bound(bound: OrderedFloat<FloatPayloadType>) -> OrderedFloat<FloatPayloadType> {
+    fn normalize_float_bound(
+        bound: OrderedFloat<FloatPayloadType>,
+    ) -> OrderedFloat<FloatPayloadType> {
         let value = bound.0;
         let rounded = value as f32;
 

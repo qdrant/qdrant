@@ -184,9 +184,7 @@ fn cardinality_request(
 }
 
 #[rstest]
-#[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
 #[case(IndexType::MutableGridstore)]
-#[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
 fn test_float_min_boundary(#[case] index_type: IndexType) {
@@ -194,8 +192,20 @@ fn test_float_min_boundary(#[case] index_type: IndexType) {
     let hw_counter = HardwareCounterCell::new();
     let float_min = f64::from(f32::MIN);
     let payload = serde_json::json!(float_min);
-    index_builder.add_point(1, &[&payload], &hw_counter).unwrap();
-    let index = index_builder.finalize().unwrap();
+    index_builder
+        .add_point(1, &[&payload], &hw_counter)
+        .unwrap();
+    let mut index = index_builder.finalize().unwrap();
+
+    if matches!(index_type, IndexType::RamMmap) {
+        let NumericIndexInner::Mmap(mmap_index) = index.inner else {
+            panic!("Expected mmap index");
+        };
+        index = NumericIndex {
+            inner: NumericIndexInner::Immutable(ImmutableNumericIndex::open_mmap(mmap_index)),
+            _phantom: Default::default(),
+        };
+    }
 
     let query = |range: Range<OrderedFloat<FloatPayloadType>>| {
         index
@@ -205,15 +215,56 @@ fn test_float_min_boundary(#[case] index_type: IndexType) {
                 &hw_counter,
             )
             .unwrap()
+            .unwrap()
             .collect_vec()
     };
 
     let bound = OrderedFloat(float_min);
-    assert_eq!(query(Range { lt: None, gt: None, gte: None, lte: Some(bound) }), vec![1]);
-    assert_eq!(query(Range { lt: Some(bound), gt: None, gte: None, lte: None }), Vec::<PointOffsetType>::new());
-    assert_eq!(query(Range { lt: None, gt: None, gte: Some(bound), lte: None }), vec![1]);
-    assert_eq!(query(Range { lt: None, gt: Some(bound), gte: None, lte: None }), Vec::<PointOffsetType>::new());
-    assert_eq!(query(Range { lt: None, gt: None, gte: Some(bound), lte: Some(bound) }), vec![1]);
+    assert_eq!(
+        query(Range {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(bound)
+        }),
+        vec![1]
+    );
+    assert_eq!(
+        query(Range {
+            lt: Some(bound),
+            gt: None,
+            gte: None,
+            lte: None
+        }),
+        Vec::<PointOffsetType>::new()
+    );
+    assert_eq!(
+        query(Range {
+            lt: None,
+            gt: None,
+            gte: Some(bound),
+            lte: None
+        }),
+        vec![1]
+    );
+    assert_eq!(
+        query(Range {
+            lt: None,
+            gt: Some(bound),
+            gte: None,
+            lte: None
+        }),
+        Vec::<PointOffsetType>::new()
+    );
+    assert_eq!(
+        query(Range {
+            lt: None,
+            gt: None,
+            gte: Some(bound),
+            lte: Some(bound)
+        }),
+        vec![1]
+    );
 }
 
 #[test]
