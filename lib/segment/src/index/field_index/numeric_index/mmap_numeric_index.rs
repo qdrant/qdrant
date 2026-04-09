@@ -1,8 +1,8 @@
 use std::borrow::{Borrow, Cow};
-use std::ops::Bound;
+use std::ops::{BitOrAssign, Bound};
 use std::path::{Path, PathBuf};
 
-use common::bitvec::{BitSliceExt, BitVec};
+use common::bitvec::{BitSlice, BitSliceExt, BitVec};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -21,7 +21,6 @@ use super::Encodable;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::{StoredPointToValues, StoredValue};
@@ -59,7 +58,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         in_memory_index: InMemoryNumericIndex<T>,
         path: &Path,
         is_on_disk: bool,
-        id_tracker: &IdTrackerEnum,
+        deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
@@ -118,7 +117,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
             deleted.flusher()()?;
         }
 
-        Self::open(path, is_on_disk, id_tracker)?.ok_or_else(|| {
+        Self::open(path, is_on_disk, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open MmapNumericIndex after building it")
         })
     }
@@ -127,7 +126,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
     pub fn open(
         path: &Path,
         is_on_disk: bool,
-        id_tracker: &IdTrackerEnum,
+        deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let pairs_path = path.join(PAIRS_PATH);
         let deleted_path = path.join(DELETED_PATH);
@@ -153,15 +152,18 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         let pairs = TypedStorage::open(pairs_path, pairs_options)?;
 
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
+        let mut deleted = deleted_points.to_owned();
 
         let deleted_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
-        let mut deleted = id_tracker.deleted_point_bitslice().to_owned();
-        for idx in 0..deleted_mmap.element_len() {
-            let deleted_payload = deleted_mmap.get_bit(idx)?.unwrap_or(false);
-            if deleted_payload {
-                deleted.set(idx as usize, true);
-            }
+        let stored_bitslice = deleted_mmap.read_all()?;
+
+        if deleted.len() < stored_bitslice.len() {
+            // There are points in id_tracker, which was not constructed with payload index
+            // Assume they don't exist in payload index
+            deleted.resize(stored_bitslice.len(), true);
         }
+
+        deleted.bitor_assign(stored_bitslice.as_ref());
         let deleted_count = deleted.count_ones();
 
         Ok(Some(Self {

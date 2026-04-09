@@ -1,10 +1,10 @@
+use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 use segment::common::operation_error::OperationResult;
-use segment::id_tracker::{IdTracker, IdTrackerEnum};
 use segment::index::field_index::numeric_index::mmap_numeric_index::MmapNumericIndex;
 use segment::index::field_index::numeric_index::mutable_numeric_index::InMemoryNumericIndex;
 use tempfile::Builder;
@@ -33,15 +33,8 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
     let mut group = c.benchmark_group("numeric-check-values");
 
     let payloads: Vec<(PointOffsetType, f64)> = get_random_payloads(&mut rng, NUM_POINTS);
-    let mut id_tracker = IdTrackerEnum::InMemoryIdTracker(Default::default());
-    for point_id in 0..NUM_POINTS as PointOffsetType {
-        id_tracker
-            .set_link(
-                segment::types::ExtendedPointId::NumId(point_id.into()),
-                point_id,
-            )
-            .unwrap();
-    }
+    // No deletions in this benchmark — sized generously to cover the whole point set.
+    let deleted_points = BitVec::repeat(false, NUM_POINTS);
 
     let mutable_index: InMemoryNumericIndex<f64> = payloads
         .into_iter()
@@ -63,7 +56,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
     });
 
     let mmap_index =
-        MmapNumericIndex::build(mutable_index, dir.path(), false, &id_tracker).unwrap();
+        MmapNumericIndex::build(mutable_index, dir.path(), false, &deleted_points).unwrap();
 
     group.bench_function("mmap-numeric-index", |b| {
         b.iter(|| {
