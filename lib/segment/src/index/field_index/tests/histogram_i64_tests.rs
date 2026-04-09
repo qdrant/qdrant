@@ -191,10 +191,7 @@ fn test_build_i64_histogram() {
 
     // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
     let points: Vec<_> = (0..num_samples)
-        .map(|i| Point {
-            val: rand::random::<i64>(),
-            idx: i,
-        })
+        .map(|i| Point::new(rand::random::<i64>(), i))
         .collect();
 
     let (histogram, points_index) = build_histogram(max_bucket_size, precision, points);

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::Bound::{Excluded, Included, Unbounded};
+use std::fmt::Debug;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
@@ -24,22 +25,37 @@ pub struct Counts {
 }
 
 #[allow(clippy::derive_ord_xor_partial_ord)]
-#[derive(PartialEq, PartialOrd, Debug, Clone, Serialize, Deserialize)]
-#[repr(C)]
-pub struct Point<T> {
+#[derive(
+    PartialEq,
+    PartialOrd,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
+#[repr(C, packed)]
+pub struct Point<T: Numericable> {
     pub val: T,
     pub idx: PointOffsetType,
+    _padding: T::PointPadding,
 }
 
-impl<T> Point<T> {
+impl<T: Numericable> Point<T> {
     pub fn new(val: T, idx: PointOffsetType) -> Self {
-        Self { val, idx }
+        Self {
+            val,
+            idx,
+            _padding: bytemuck::Zeroable::zeroed(),
+        }
     }
 }
 
-impl<T: PartialEq> Eq for Point<T> {}
+impl<T: PartialEq + Numericable> Eq for Point<T> {}
 
-impl<T: PartialOrd + Copy> Ord for Point<T> {
+impl<T: PartialOrd + Copy + Numericable> Ord for Point<T> {
     fn cmp(&self, other: &Point<T>) -> std::cmp::Ordering {
         (self.val, self.idx)
             .partial_cmp(&(other.val, other.idx))
@@ -49,7 +65,18 @@ impl<T: PartialOrd + Copy> Ord for Point<T> {
 
 /// A trait that should represent common properties of integer and floating point types.
 /// In particular, i64 and f64.
-pub trait Numericable: Num + PartialEq + PartialOrd + Copy {
+pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod {
+    /// This is to be able to derive [`bytemuck::Pod`] for [`Point<T>`], which is required for safe de/serialization.
+    ///
+    /// Since we need ['Point<T>`] to be repr(packed), this padding must be picked to be the next multiple of the largest
+    /// field in the struct, which fits the entire struct.
+    type PointPadding: bytemuck::Pod
+        + Debug
+        + PartialEq
+        + PartialOrd
+        + Serialize
+        + for<'de> serde::Deserialize<'de>;
+
     fn min_value() -> Self;
     fn max_value() -> Self;
     fn to_f64(self) -> f64;
@@ -66,7 +93,24 @@ pub trait Numericable: Num + PartialEq + PartialOrd + Copy {
     }
 }
 
+/// Calculate the exact padding so that the [`Point<T>`] type would have explicit alignment, so that
+/// it is able to derive [`bytemuck::Pod`] and use #[repr(packed)] safely
+const fn derive_point_padding<T: bytemuck::Pod>() -> usize {
+    struct Pointy<T> {
+        _t: T,
+        _idx: PointOffsetType,
+    }
+    let align = std::mem::align_of::<Pointy<T>>();
+    if align <= 1 {
+        0
+    } else {
+        align - (std::mem::size_of::<T>() + std::mem::size_of::<PointOffsetType>()) % align
+    }
+}
+
 impl Numericable for i64 {
+    type PointPadding = [u8; derive_point_padding::<Self>()];
+
     fn min_value() -> Self {
         i64::MIN
     }
@@ -88,6 +132,8 @@ impl Numericable for i64 {
 }
 
 impl Numericable for f64 {
+    type PointPadding = [u8; derive_point_padding::<Self>()];
+
     fn min_value() -> Self {
         f64::MIN
     }
@@ -106,6 +152,8 @@ impl Numericable for f64 {
 }
 
 impl Numericable for u128 {
+    type PointPadding = [u8; derive_point_padding::<Self>()];
+
     fn min_value() -> Self {
         u128::MIN
     }
@@ -229,14 +277,8 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
     /// Returns `Unbounded` if there are no points stored
     pub fn get_range_by_size(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
         let from_ = match from {
-            Included(val) => Included(Point {
-                val,
-                idx: PointOffsetType::MIN,
-            }),
-            Excluded(val) => Excluded(Point {
-                val,
-                idx: PointOffsetType::MAX,
-            }),
+            Included(val) => Included(Point::new(val, PointOffsetType::MIN)),
+            Excluded(val) => Excluded(Point::new(val, PointOffsetType::MAX)),
             Unbounded => Unbounded,
         };
 
@@ -256,26 +298,14 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
 
     pub fn estimate(&self, from: Bound<T>, to: Bound<T>) -> (usize, usize, usize) {
         let from_ = match &from {
-            Included(val) => Included(Point {
-                val: *val,
-                idx: PointOffsetType::MIN,
-            }),
-            Excluded(val) => Excluded(Point {
-                val: *val,
-                idx: PointOffsetType::MAX,
-            }),
+            Included(val) => Included(Point::new(*val, PointOffsetType::MIN)),
+            Excluded(val) => Excluded(Point::new(*val, PointOffsetType::MAX)),
             Unbounded => Unbounded,
         };
 
         let to_ = match &to {
-            Included(val) => Included(Point {
-                val: *val,
-                idx: PointOffsetType::MAX,
-            }),
-            Excluded(val) => Excluded(Point {
-                val: *val,
-                idx: PointOffsetType::MIN,
-            }),
+            Included(val) => Included(Point::new(*val, PointOffsetType::MAX)),
+            Excluded(val) => Excluded(Point::new(*val, PointOffsetType::MIN)),
             Unbounded => Unbounded,
         };
 

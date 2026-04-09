@@ -298,7 +298,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
         end_bound: Bound<Point<T>>,
     ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
         self.values_range_iterator(start_bound, end_bound)
-            .map(|Point { val, idx }| (val, idx))
+            .map(|Point { val, idx, .. }| (val, idx))
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) {
