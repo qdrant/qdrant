@@ -40,9 +40,9 @@ def get_remote_shards(peer_api_uri):
     return r.json()["result"]['remote_shards']
 
 
-def recover_snapshot(peer_api_uri, snapshot_url):
+def recover_snapshot(peer_api_uri, snapshot_url, priority="snapshot"):
     r = requests.put(f"{peer_api_uri}/collections/{COLLECTION_NAME}/snapshots/recover",
-                     json={"location": snapshot_url})
+                     json={"location": snapshot_url, "priority": priority})
     assert_http_ok(r)
     return r.json()["result"]
 
@@ -55,7 +55,16 @@ def test_recover_from_snapshot_2(tmp_path: pathlib.Path):
     recover_from_snapshot(tmp_path, 2)
 
 
-def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
+def test_snapshot_priority_recovery_enters_non_active_phase_before_converging(tmp_path: pathlib.Path):
+    recover_from_snapshot(tmp_path, 2, point_count=3_000, assert_intermediate_recovery_phase=True)
+
+
+def recover_from_snapshot(
+    tmp_path: pathlib.Path,
+    n_replicas,
+    point_count: int = 100,
+    assert_intermediate_recovery_phase: bool = False,
+):
     assert_project_root()
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
@@ -67,7 +76,7 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    upsert_random_points(peer_api_uris[0], 100)
+    upsert_random_points(peer_api_uris[0], point_count)
 
     query_city = "London"
 
@@ -133,7 +142,23 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
 
     print(f"Recovering snapshot {snapshot_url} on {new_url}")
 
-    recover_snapshot(new_url, snapshot_url)
+    recover_snapshot(new_url, snapshot_url, priority="snapshot")
+
+    if assert_intermediate_recovery_phase:
+        # Snapshot-priority restore may activate the recovered local shard immediately, but the
+        # retained replicas must still go through recovery before they can legally become Active.
+        def cluster_has_non_active_replica():
+            for uri in peer_api_uris[:-1] + [new_url]:
+                try:
+                    info = get_collection_cluster_info(uri, COLLECTION_NAME)
+                except requests.exceptions.ConnectionError:
+                    continue
+                for shard in info["local_shards"] + info["remote_shards"]:
+                    if shard["state"] != "Active":
+                        return True
+            return False
+
+        wait_for(cluster_has_non_active_replica)
 
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=[new_url])
 

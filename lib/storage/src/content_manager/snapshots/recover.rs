@@ -57,6 +57,33 @@ pub async fn activate_shard(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SnapshotPriorityReplicaAction {
+    RemoveReplica(PeerId),
+    MarkReplicaDeadForRecovery(PeerId),
+}
+
+fn plan_snapshot_priority_snapshot_actions(
+    other_active_replicas: &[PeerId],
+    replicas_to_keep: u32,
+) -> Vec<SnapshotPriorityReplicaAction> {
+    let mut actions = Vec::with_capacity(other_active_replicas.len());
+    let mut replicas_to_remove = other_active_replicas
+        .len()
+        .saturating_sub(replicas_to_keep as usize);
+
+    for peer_id in other_active_replicas {
+        if replicas_to_remove > 0 {
+            replicas_to_remove -= 1;
+            actions.push(SnapshotPriorityReplicaAction::RemoveReplica(*peer_id));
+        } else {
+            actions.push(SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(*peer_id));
+        }
+    }
+
+    actions
+}
+
 /// # Cancel safety
 ///
 /// This method is cancel safe.
@@ -359,6 +386,7 @@ async fn _do_recover_from_snapshot(
 
                 peer_id != this_peer_id && is_active
             })
+            .map(|(&peer_id, _)| peer_id)
             .collect();
 
         if other_active_replicas.is_empty() {
@@ -375,39 +403,41 @@ async fn _do_recover_from_snapshot(
                     // Snapshot is the source of truth, we need to remove all other replicas
                     activate_shard(toc, &collection, this_peer_id, shard_id).await?;
 
-                    let replicas_to_keep =
-                        state.config.params.replication_factor.get().saturating_sub(1) as usize;
-                    let mut replicas_to_remove = other_active_replicas
-                        .len()
-                        .saturating_sub(replicas_to_keep);
-
-                    for (peer_id, _) in other_active_replicas {
-                        if replicas_to_remove > 0 {
-                            replicas_to_remove -= 1;
-
-                            // Don't need more replicas, remove this one.
-                            toc.request_remove_replica(
-                                collection_pass.to_string(),
-                                *shard_id,
-                                *peer_id,
-                            )?;
-                        } else {
-                            // Keep enough retained replicas active to satisfy replication factor
-                            // after activating the recovered local replica.
-                            toc.send_set_replica_state_proposal(
-                                collection_pass.to_string(),
-                                *peer_id,
-                                *shard_id,
-                                ReplicaState::Active,
-                                None,
-                            )?;
+                    let replicas_to_keep = state.config.params.replication_factor.get() - 1;
+                    for action in plan_snapshot_priority_snapshot_actions(
+                        &other_active_replicas,
+                        replicas_to_keep,
+                    ) {
+                        match action {
+                            SnapshotPriorityReplicaAction::RemoveReplica(peer_id) => {
+                                // Don't need more replicas, remove this one.
+                                toc.request_remove_replica(
+                                    collection_pass.to_string(),
+                                    *shard_id,
+                                    peer_id,
+                                )?;
+                            }
+                            SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(
+                                peer_id,
+                            ) => {
+                                // Retained replicas are still stale after restore. Mark them dead
+                                // and let the normal recovery machinery pick the transfer method
+                                // and concurrency envelope.
+                                toc.send_set_replica_state_proposal(
+                                    collection_pass.to_string(),
+                                    peer_id,
+                                    *shard_id,
+                                    ReplicaState::Dead,
+                                    None,
+                                )?;
+                            }
                         }
                     }
                 }
 
                 SnapshotPriority::Replica => {
                     // Replica is the source of truth, we need to sync recovered data with this replica
-                    let (replica_peer_id, _state) = other_active_replicas.into_iter().next().unwrap();
+                    let replica_peer_id = other_active_replicas.into_iter().next().unwrap();
                     log::debug!(
                         "Running synchronization for shard {shard_id} of collection {collection_pass} from {replica_peer_id}",
                     );
@@ -416,7 +446,7 @@ async fn _do_recover_from_snapshot(
                     toc.request_shard_transfer(
                         collection_pass.to_string(),
                         *shard_id,
-                        *replica_peer_id,
+                        replica_peer_id,
                         this_peer_id,
                         true,
                         None,
@@ -439,4 +469,36 @@ async fn _do_recover_from_snapshot(
     tokio_fs::remove_dir_all(&tmp_collection_dir).await?;
 
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SnapshotPriorityReplicaAction, plan_snapshot_priority_snapshot_actions};
+
+    #[test]
+    fn snapshot_priority_snapshot_removes_excess_replicas_before_reseeding() {
+        let actions = plan_snapshot_priority_snapshot_actions(&[11, 22, 33], 2);
+
+        assert_eq!(
+            actions,
+            vec![
+                SnapshotPriorityReplicaAction::RemoveReplica(11),
+                SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(22),
+                SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(33),
+            ]
+        );
+    }
+
+    #[test]
+    fn snapshot_priority_snapshot_marks_all_retained_replicas_dead_when_no_excess_exist() {
+        let actions = plan_snapshot_priority_snapshot_actions(&[11, 22], 2);
+
+        assert_eq!(
+            actions,
+            vec![
+                SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(11),
+                SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(22),
+            ]
+        );
+    }
 }
