@@ -1,5 +1,5 @@
 use std::borrow::Borrow;
-use std::ops::Bound;
+use std::ops::{BitOrAssign, Bound};
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitSliceExt, BitVec};
@@ -186,15 +186,18 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
             )?)?
         };
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
+        let mut deleted = id_tracker.deleted_point_bitslice().to_owned();
 
         let deleted_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
-        let mut deleted = id_tracker.deleted_point_bitslice().to_owned();
-        for idx in 0..deleted_mmap.element_len() {
-            let deleted_payload = deleted_mmap.get_bit(idx)?.unwrap_or(false);
-            if deleted_payload {
-                deleted.set(idx as usize, true);
-            }
+        let stored_bitslice = deleted_mmap.read_all()?;
+
+        if deleted.len() < stored_bitslice.len() {
+            // There are points in id_tracker, which was not constructed with payload index
+            // Assume they don't exist in payload index
+            deleted.resize(stored_bitslice.len(), true);
         }
+
+        deleted.bitor_assign(stored_bitslice.as_ref());
         let deleted_count = deleted.count_ones();
 
         Ok(Some(Self {
