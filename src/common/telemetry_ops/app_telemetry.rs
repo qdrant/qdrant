@@ -125,7 +125,11 @@ fn collect_audit_telemetry(
 ) -> Option<AuditTelemetry> {
     let config = audit.filter(|c| c.enabled)?;
     let dir_size_bytes = (detail.level > DetailsLevel::Level2)
-        .then(|| common::disk::dir_disk_size(&config.dir).ok().map(|v| v as usize))
+        .then(|| {
+            common::disk::dir_disk_size(&config.dir)
+                .ok()
+                .map(|v| v as usize)
+        })
         .flatten();
     let rotation = match config.rotation {
         AuditRotation::Daily => "daily",
