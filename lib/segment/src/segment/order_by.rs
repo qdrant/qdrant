@@ -113,7 +113,7 @@ impl Segment {
             })?;
 
         let range_iter = numeric_index
-            .stream_range(&order_by.as_range())
+            .stream_range(&order_by.as_range())?
             // We can't early stop the iterator for deferred points because the items are sorted lexicographically by type `(T, internalID)`.
             .filter(|&(_, internal_id)| {
                 deferred_behavior.include_all_points()

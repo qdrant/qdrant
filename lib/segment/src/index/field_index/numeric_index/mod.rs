@@ -14,6 +14,7 @@ use std::str::FromStr;
 
 use chrono::DateTime;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::TransposeResultIter;
 use common::types::PointOffsetType;
 use delegate::delegate;
 use gridstore::Blob;
@@ -55,7 +56,7 @@ pub trait StreamRange<T> {
     fn stream_range(
         &self,
         range: &RangeInterface,
-    ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
+    ) -> OperationResult<Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>>;
 }
 
 pub trait Encodable: Copy + Serialize + DeserializeOwned + 'static {
@@ -211,12 +212,12 @@ where
         }
     }
 
-    fn total_unique_values_count(&self) -> usize {
-        match self {
+    fn total_unique_values_count(&self) -> OperationResult<usize> {
+        Ok(match self {
             NumericIndexInner::Mutable(index) => index.total_unique_values_count(),
             NumericIndexInner::Immutable(index) => index.total_unique_values_count(),
-            NumericIndexInner::Mmap(index) => index.total_unique_values_count(),
-        }
+            NumericIndexInner::Mmap(index) => index.total_unique_values_count()?,
+        })
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -297,10 +298,10 @@ where
         }
     }
 
-    fn range_cardinality(&self, range: &RangeInterface) -> CardinalityEstimation {
+    fn range_cardinality(&self, range: &RangeInterface) -> OperationResult<CardinalityEstimation> {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
-            return CardinalityEstimation::exact(0);
+            return Ok(CardinalityEstimation::exact(0));
         }
 
         let range = match range {
@@ -330,7 +331,7 @@ where
         let min_estimation = histogram_estimation.0;
         let max_estimation = histogram_estimation.2;
 
-        let total_values = self.total_unique_values_count();
+        let total_values = self.total_unique_values_count()?;
         // Example: points_count = 1000, total values = 2000, values_count = 500
         // min = max(1, 500 - (2000 - 1000)) = 1
         // exp = 500 / (2000 / 1000) = 250
@@ -357,12 +358,12 @@ where
         )
         .round() as usize;
 
-        CardinalityEstimation {
+        Ok(CardinalityEstimation {
             primary_clauses: vec![],
             min: expected_min,
             exp: min(expected_max, max(estimation, expected_min)),
             max: expected_max,
-        }
+        })
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
@@ -387,33 +388,35 @@ where
         &'a self,
         value: T,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
-        match &self {
-            NumericIndexInner::Mutable(mutable) => {
-                Box::new(mutable.values_range(start, end).map(Ok))
-            }
-            NumericIndexInner::Immutable(immutable) => {
-                Box::new(immutable.values_range(start, end).map(Ok))
-            }
-            NumericIndexInner::Mmap(mmap) => {
-                Box::new(mmap.values_range(start, end, hw_counter).map(Ok))
-            }
-        }
+        Ok(match &self {
+            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
+            NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
+            NumericIndexInner::Mmap(mmap) => Box::new(
+                mmap.values_range(start, end, hw_counter)?
+                    // TODO: propagate error through iterator
+                    .filter_map(Result::ok),
+            ),
+        })
     }
 
     /// Tries to estimate the amount of points for a given key.
-    pub fn estimate_points(&self, value: &T, hw_counter: &HardwareCounterCell) -> usize {
+    pub fn estimate_points(
+        &self,
+        value: &T,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         let start = Bound::Included(Point::new(*value, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(*value, PointOffsetType::MAX));
 
         hw_counter
             .payload_index_io_read_counter()
             // We have to do 2 times binary search in mmap and immutable storage.
-            .incr_delta(2 * ((self.total_unique_values_count() as f32).log2().ceil() as usize));
+            .incr_delta(2 * ((self.total_unique_values_count()? as f32).log2().ceil() as usize));
 
-        match &self {
+        Ok(match &self {
             NumericIndexInner::Mutable(mutable) => {
                 let mut iter = mutable.map().range((start, end));
                 let first = iter.next();
@@ -428,22 +431,22 @@ where
             NumericIndexInner::Immutable(immutable) => {
                 let range_size = immutable.values_range_size(start, end);
                 if range_size == 0 {
-                    return 0;
+                    return Ok(0);
                 }
                 let avg_values_per_point =
-                    self.total_unique_values_count() as f32 / self.get_points_count() as f32;
+                    self.total_unique_values_count()? as f32 / self.get_points_count() as f32;
                 (range_size as f32 / avg_values_per_point).max(1.0).round() as usize
             }
             NumericIndexInner::Mmap(mmap) => {
-                let range_size = mmap.values_range_size(start, end);
+                let range_size = mmap.values_range_size(start, end)?;
                 if range_size == 0 {
-                    return 0;
+                    return Ok(0);
                 }
                 let avg_values_per_point =
-                    self.total_unique_values_count() as f32 / self.get_points_count() as f32;
+                    self.total_unique_values_count()? as f32 / self.get_points_count() as f32;
                 (range_size as f32 / avg_values_per_point).max(1.0).round() as usize
             }
-        }
+        })
     }
 
     /// Approximate RAM usage in bytes for in-memory structures.
@@ -788,7 +791,11 @@ where
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let value = T::from_u128(uuid.as_u128());
-                return Some(self.point_ids_by_value(value, hw_counter));
+                return Some(Box::new(
+                    self.point_ids_by_value(value, hw_counter)
+                        .map(|iter| iter.map(Ok))
+                        .into_result_iter(),
+                ));
             }
         }
 
@@ -818,7 +825,7 @@ where
             NumericIndexInner::Mmap(index) => Box::new(
                 index
                     .values_range(start_bound, end_bound, hw_counter)
-                    .map(Ok),
+                    .into_result_iter(),
             ),
         })
     }
@@ -836,7 +843,7 @@ where
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let key = T::from_u128(uuid.as_u128());
 
-                let estimated_count = self.estimate_points(&key, hw_counter);
+                let estimated_count = self.estimate_points(&key, hw_counter)?;
                 return Ok(Some(
                     CardinalityEstimation::exact(estimated_count).with_primary_clause(
                         PrimaryCondition::Condition(Box::new(condition.clone())),
@@ -845,13 +852,17 @@ where
             }
         }
 
-        Ok(condition.range.as_ref().map(|range| {
-            let mut cardinality = self.range_cardinality(range);
-            cardinality
-                .primary_clauses
-                .push(PrimaryCondition::Condition(Box::new(condition.clone())));
-            cardinality
-        }))
+        condition
+            .range
+            .as_ref()
+            .map(|range| {
+                let mut cardinality = self.range_cardinality(range)?;
+                cardinality
+                    .primary_clauses
+                    .push(PrimaryCondition::Condition(Box::new(condition.clone())));
+                Ok(cardinality)
+            })
+            .transpose()
     }
 
     fn payload_blocks(
@@ -859,70 +870,77 @@ where
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        let mut lower_bound = Unbounded;
-        let mut pre_lower_bound: Option<Bound<T>> = None;
-        let mut payload_conditions = Vec::new();
+        let inner = || -> OperationResult<Vec<PayloadBlockCondition>> {
+            let mut lower_bound = Unbounded;
+            let mut pre_lower_bound: Option<Bound<T>> = None;
+            let mut payload_conditions = Vec::new();
 
-        let value_per_point =
-            self.total_unique_values_count() as f64 / self.get_points_count() as f64;
-        let effective_threshold = (threshold as f64 * value_per_point) as usize;
+            let value_per_point =
+                self.total_unique_values_count()? as f64 / self.get_points_count() as f64;
+            let effective_threshold = (threshold as f64 * value_per_point) as usize;
 
-        loop {
-            let upper_bound = self
-                .get_histogram()
-                .get_range_by_size(lower_bound, effective_threshold / 2);
+            loop {
+                let upper_bound = self
+                    .get_histogram()
+                    .get_range_by_size(lower_bound, effective_threshold / 2);
 
-            if let Some(pre_lower_bound) = pre_lower_bound {
-                let range = Range {
-                    lt: match upper_bound {
-                        Excluded(val) => Some(OrderedFloat(val.to_f64())),
-                        _ => None,
-                    },
-                    gt: match pre_lower_bound {
-                        Excluded(val) => Some(OrderedFloat(val.to_f64())),
-                        _ => None,
-                    },
-                    gte: match pre_lower_bound {
-                        Included(val) => Some(OrderedFloat(val.to_f64())),
-                        _ => None,
-                    },
-                    lte: match upper_bound {
-                        Included(val) => Some(OrderedFloat(val.to_f64())),
-                        _ => None,
-                    },
-                };
-                let cardinality = self.range_cardinality(&RangeInterface::Float(range));
-                let condition = PayloadBlockCondition {
-                    condition: FieldCondition::new_range(key.clone(), range),
-                    cardinality: cardinality.exp,
-                };
-
-                payload_conditions.push(condition);
-            } else if upper_bound == Unbounded {
-                // One block covers all points
-                payload_conditions.push(PayloadBlockCondition {
-                    condition: FieldCondition::new_range(
-                        key.clone(),
-                        Range {
-                            gte: None,
-                            lte: None,
-                            lt: None,
-                            gt: None,
+                if let Some(pre_lower_bound) = pre_lower_bound {
+                    let range = Range {
+                        lt: match upper_bound {
+                            Excluded(val) => Some(OrderedFloat(val.to_f64())),
+                            _ => None,
                         },
-                    ),
-                    cardinality: self.get_points_count(),
-                });
+                        gt: match pre_lower_bound {
+                            Excluded(val) => Some(OrderedFloat(val.to_f64())),
+                            _ => None,
+                        },
+                        gte: match pre_lower_bound {
+                            Included(val) => Some(OrderedFloat(val.to_f64())),
+                            _ => None,
+                        },
+                        lte: match upper_bound {
+                            Included(val) => Some(OrderedFloat(val.to_f64())),
+                            _ => None,
+                        },
+                    };
+                    let cardinality = self.range_cardinality(&RangeInterface::Float(range))?;
+                    let condition = PayloadBlockCondition {
+                        condition: FieldCondition::new_range(key.clone(), range),
+                        cardinality: cardinality.exp,
+                    };
+
+                    payload_conditions.push(condition);
+                } else if upper_bound == Unbounded {
+                    // One block covers all points
+                    payload_conditions.push(PayloadBlockCondition {
+                        condition: FieldCondition::new_range(
+                            key.clone(),
+                            Range {
+                                gte: None,
+                                lte: None,
+                                lt: None,
+                                gt: None,
+                            },
+                        ),
+                        cardinality: self.get_points_count(),
+                    });
+                }
+
+                pre_lower_bound = Some(lower_bound);
+
+                lower_bound = match upper_bound {
+                    Included(val) => Excluded(val),
+                    Excluded(val) => Excluded(val),
+                    Unbounded => break,
+                };
             }
+            Ok(payload_conditions)
+        };
 
-            pre_lower_bound = Some(lower_bound);
-
-            lower_bound = match upper_bound {
-                Included(val) => Excluded(val),
-                Excluded(val) => Excluded(val),
-                Unbounded => break,
-            };
+        match inner() {
+            Ok(conditions) => Box::new(conditions.into_iter().map(Ok)),
+            Err(err) => Box::new(std::iter::once(Err(err))),
         }
-        Box::new(payload_conditions.into_iter().map(Ok))
     }
 }
 
@@ -1089,7 +1107,7 @@ where
     fn stream_range(
         &self,
         range: &RangeInterface,
-    ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
+    ) -> OperationResult<Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>> {
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
             RangeInterface::DateTime(datetime_range) => {
@@ -1101,19 +1119,22 @@ where
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Box::new(std::iter::empty());
+            return Ok(Box::new(std::iter::empty()));
         }
 
-        match self {
+        Ok(match self {
             NumericIndexInner::Mutable(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
-            NumericIndexInner::Mmap(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound))
-            }
-        }
+            NumericIndexInner::Mmap(index) => Box::new(
+                index
+                    .orderable_values_range(start_bound, end_bound)?
+                    // TODO: propagate error through iterator
+                    .filter_map(Result::ok),
+            ),
+        })
     }
 }

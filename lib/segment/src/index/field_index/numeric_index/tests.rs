@@ -118,7 +118,8 @@ fn cardinality_request(
 
     let estimation = index
         .inner()
-        .range_cardinality(&RangeInterface::Float(ordered_range));
+        .range_cardinality(&RangeInterface::Float(ordered_range))
+        .unwrap();
 
     let result = index
         .inner()
