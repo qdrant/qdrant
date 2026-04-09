@@ -92,7 +92,7 @@ pub(crate) unsafe fn manhattan_similarity_neon(
 }
 
 #[cfg(target_feature = "neon")]
-pub(crate) unsafe fn cosine_preprocess_neon(vector: DenseVector) -> DenseVector {
+pub(crate) unsafe fn cosine_preprocess_neon(mut vector: DenseVector) -> DenseVector {
     unsafe {
         let n = vector.len();
         let m = n - (n % 16);
@@ -119,15 +119,45 @@ pub(crate) unsafe fn cosine_preprocess_neon(vector: DenseVector) -> DenseVector 
             ptr = ptr.add(16);
             i += 16;
         }
-        let mut length = vaddvq_f32(sum1) + vaddvq_f32(sum2) + vaddvq_f32(sum3) + vaddvq_f32(sum4);
+
+        let mut length = vaddvq_f32(vaddq_f32(vaddq_f32(sum1, sum2), vaddq_f32(sum3, sum4)));
+
         for v in vector.iter().take(n).skip(m) {
             length += v.powi(2);
         }
         if is_length_zero_or_normalized(length) {
             return vector;
         }
-        let length = length.sqrt();
-        vector.into_iter().map(|x| x / length).collect()
+
+        let inv_length = 1.0 / length.sqrt();
+        let v_inv_length = vdupq_n_f32(inv_length);
+        let mut_ptr: *mut f32 = vector.as_mut_ptr();
+
+        let mut i: usize = 0;
+
+        while i + 15 < n {
+            let v1 = vld1q_f32(mut_ptr.add(i));
+            let v2 = vld1q_f32(mut_ptr.add(i + 4));
+            let v3 = vld1q_f32(mut_ptr.add(i + 8));
+            let v4 = vld1q_f32(mut_ptr.add(i + 12));
+            vst1q_f32(mut_ptr.add(i), vmulq_f32(v1, v_inv_length));
+            vst1q_f32(mut_ptr.add(i + 4), vmulq_f32(v2, v_inv_length));
+            vst1q_f32(mut_ptr.add(i + 8), vmulq_f32(v3, v_inv_length));
+            vst1q_f32(mut_ptr.add(i + 12), vmulq_f32(v4, v_inv_length));
+            i += 16;
+        }
+
+        while i + 3 < n {
+            let v = vld1q_f32(mut_ptr.add(i));
+            vst1q_f32(mut_ptr.add(i), vmulq_f32(v, v_inv_length));
+            i += 4;
+        }
+
+        for v in vector.iter_mut().take(n).skip(i) {
+            *v *= inv_length;
+        }
+
+        vector
     }
 }
 
@@ -196,7 +226,12 @@ mod tests {
 
             let cosine_simd = unsafe { cosine_preprocess_neon(v1.clone()) };
             let cosine = cosine_preprocess(v1);
-            assert_eq!(cosine_simd, cosine);
+            for (a, b) in cosine_simd.iter().zip(cosine.iter()) {
+                assert!(
+                    (a - b).abs() < f32::EPSILON,
+                    "Cosine SIMD mismatch: {a} vs {b}",
+                );
+            }
         } else {
             println!("neon test skipped");
         }
