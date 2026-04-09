@@ -34,7 +34,7 @@ use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
 use crate::proxy_segment::{
-    DeletedPoints, ProxyIndexChange, ProxyIndexChanges, ProxySegment, ProxyVectorNameChange,
+    DeletedPoints, IntendedVector, ProxyIndexChange, ProxyIndexChanges, ProxySegment,
     ProxyVectorNameChanges,
 };
 use crate::segment_holder::SegmentId;
@@ -450,17 +450,29 @@ fn finish_optimization(
     // New named vectors must exist before indexes or points reference them
     let old_optimized_segment_version = optimized_segment.version();
     let vector_name_changes = proxy_vector_name_changes(&locked_proxies);
-    for (vector_name, change) in vector_name_changes.iter_ordered() {
+    for (vector_name, intent) in vector_name_changes.iter_ordered() {
         debug_assert!(
-            change.version() >= old_optimized_segment_version,
+            intent.version() >= old_optimized_segment_version,
             "proxied vector name change should have newer version than segment",
         );
-        match change {
-            ProxyVectorNameChange::Create(config, version) => {
-                optimized_segment.create_vector_name(*version, vector_name, config)?;
-            }
-            ProxyVectorNameChange::Delete(version) => {
+        match intent {
+            IntendedVector::Absent { version } => {
                 optimized_segment.delete_vector_name(*version, vector_name)?;
+            }
+            IntendedVector::Present {
+                config,
+                version,
+                supersedes_wrapped,
+            } => {
+                if *supersedes_wrapped {
+                    // The optimised segment was built from the wrapped data,
+                    // so it currently carries the *old* schema for this name.
+                    // `create_vector_name_impl` is idempotent and would
+                    // silently keep that old storage; clear it first so the
+                    // new schema actually takes effect.
+                    optimized_segment.delete_vector_name(*version, vector_name)?;
+                }
+                optimized_segment.create_vector_name(*version, vector_name, config)?;
             }
         }
         check_process_stopped(stopped)?;

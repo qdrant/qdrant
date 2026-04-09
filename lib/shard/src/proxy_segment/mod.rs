@@ -1,5 +1,6 @@
 pub mod segment_entry;
 pub mod snapshot_entry;
+mod vector_name_changes;
 
 #[cfg(test)]
 mod tests;
@@ -10,9 +11,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools as _;
 use segment::common::operation_error::OperationResult;
-use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::types::*;
 
+pub use self::vector_name_changes::{IntendedVector, ProxyVectorNameChanges};
 use crate::locked_segment::LockedSegment;
 
 pub type DeletedPoints = AHashMap<PointIdType, ProxyDeletedPoint>;
@@ -218,17 +219,27 @@ impl ProxySegment {
         {
             if !self.changed_vector_names.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (vector_name, change) in self.changed_vector_names.iter_ordered() {
-                        match change {
-                            ProxyVectorNameChange::Create(config, version) => {
+                    for (vector_name, intent) in self.changed_vector_names.iter_ordered() {
+                        match intent {
+                            IntendedVector::Absent { version } => {
+                                wrapped_segment.delete_vector_name(*version, vector_name)?;
+                            }
+                            IntendedVector::Present {
+                                config,
+                                version,
+                                supersedes_wrapped,
+                            } => {
+                                if *supersedes_wrapped {
+                                    // `create_vector_name_impl` is idempotent and would
+                                    // silently keep the wrapped's stale storage. Clear it
+                                    // first so the new schema actually takes effect.
+                                    wrapped_segment.delete_vector_name(*version, vector_name)?;
+                                }
                                 wrapped_segment.create_vector_name(
                                     *version,
                                     vector_name,
                                     config,
                                 )?;
-                            }
-                            ProxyVectorNameChange::Delete(version) => {
-                                wrapped_segment.delete_vector_name(*version, vector_name)?;
                             }
                         }
                     }
@@ -361,54 +372,3 @@ impl ProxyIndexChange {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum ProxyVectorNameChange {
-    /// Create a new named vector with the given config
-    Create(VectorNameConfig, SeqNumberType),
-    /// Delete a named vector
-    Delete(SeqNumberType),
-}
-
-impl ProxyVectorNameChange {
-    pub fn version(&self) -> SeqNumberType {
-        match self {
-            ProxyVectorNameChange::Create(_, version) => *version,
-            ProxyVectorNameChange::Delete(version) => *version,
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct ProxyVectorNameChanges {
-    changes: AHashMap<VectorNameBuf, ProxyVectorNameChange>,
-}
-
-impl ProxyVectorNameChanges {
-    pub fn insert(&mut self, name: VectorNameBuf, change: ProxyVectorNameChange) {
-        self.changes.insert(name, change);
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.changes.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.changes.clear();
-    }
-
-    /// Iterate over proxy vector name changes in order of version.
-    ///
-    /// Changes must be applied in order because changes with an old version will silently be
-    /// rejected.
-    pub fn iter_ordered(&self) -> impl Iterator<Item = (&VectorNameBuf, &ProxyVectorNameChange)> {
-        self.changes
-            .iter()
-            .sorted_by_key(|(_, change)| change.version())
-    }
-
-    pub fn merge(&mut self, other: &Self) {
-        for (key, change) in &other.changes {
-            self.changes.insert(key.clone(), change.clone());
-        }
-    }
-}

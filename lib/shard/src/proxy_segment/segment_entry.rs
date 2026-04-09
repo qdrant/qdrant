@@ -25,7 +25,7 @@ use segment::telemetry::SegmentTelemetry;
 use segment::types::*;
 use uuid::Uuid;
 
-use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment, ProxyVectorNameChange};
+use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
 
 impl ReadSegmentEntry for ProxySegment {
@@ -901,9 +901,14 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
         self.version = cmp::max(self.version, op_num);
 
-        self.changed_vector_names.insert(
+        // `record_create` consults `wrapped_config` (and any earlier intent
+        // recorded for this name) to compute `supersedes_wrapped`, so the
+        // optimiser/propagator can clear stale wrapped storage when needed.
+        self.changed_vector_names.record_create(
             vector_name.to_owned(),
-            ProxyVectorNameChange::Create(vector_config.clone(), op_num),
+            vector_config.clone(),
+            op_num,
+            &self.wrapped_config,
         );
 
         Ok(true)
@@ -920,10 +925,8 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
         self.version = cmp::max(self.version, op_num);
 
-        self.changed_vector_names.insert(
-            vector_name.to_owned(),
-            ProxyVectorNameChange::Delete(op_num),
-        );
+        self.changed_vector_names
+            .record_delete(vector_name.to_owned(), op_num);
 
         Ok(true)
     }
