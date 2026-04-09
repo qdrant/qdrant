@@ -12240,6 +12240,16 @@
             "type": "boolean",
             "nullable": true
           },
+          "audit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuditTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "startup": {
             "type": "string",
             "format": "date-time"
@@ -12389,6 +12399,41 @@
         "properties": {
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "AuditTelemetry": {
+        "type": "object",
+        "required": [
+          "dir",
+          "log_api",
+          "max_log_files",
+          "rotation",
+          "trust_forwarded_headers"
+        ],
+        "properties": {
+          "dir": {
+            "type": "string"
+          },
+          "rotation": {
+            "type": "string"
+          },
+          "max_log_files": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "trust_forwarded_headers": {
+            "type": "boolean"
+          },
+          "log_api": {
+            "type": "boolean"
+          },
+          "dir_size_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
