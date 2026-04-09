@@ -154,16 +154,14 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
-        let stored_bitslice = deleted_mmap.read_all()?;
+        let deleted_payload_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+        let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
-        if deleted.len() < stored_bitslice.len() {
-            // There are points in id_tracker, which was not constructed with payload index
-            // Assume they don't exist in payload index
-            deleted.resize(stored_bitslice.len(), true);
-        }
+        // The `id_tracker`'s deleted mask can be shorter or longer, but `deleted` length must match the
+        // `point_to_values` length because it only tracks the index's contents.
+        deleted.resize(point_to_values.len(), true);
+        deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
 
-        deleted.bitor_assign(stored_bitslice.as_ref());
         let deleted_count = deleted.count_ones();
 
         Ok(Some(Self {
