@@ -183,6 +183,39 @@ fn cardinality_request(
     estimation
 }
 
+#[rstest]
+#[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
+#[case(IndexType::MutableGridstore)]
+#[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_float_min_boundary(#[case] index_type: IndexType) {
+    let (_temp_dir, mut index_builder) = get_index_builder(index_type);
+    let hw_counter = HardwareCounterCell::new();
+    let float_min = f64::from(f32::MIN);
+    let payload = serde_json::json!(float_min);
+    index_builder.add_point(1, &[&payload], &hw_counter).unwrap();
+    let index = index_builder.finalize().unwrap();
+
+    let query = |range: Range<OrderedFloat<FloatPayloadType>>| {
+        index
+            .inner()
+            .filter(
+                &FieldCondition::new_range(JsonPath::new("test"), range),
+                &hw_counter,
+            )
+            .unwrap()
+            .collect_vec()
+    };
+
+    let bound = OrderedFloat(float_min);
+    assert_eq!(query(Range { lt: None, gt: None, gte: None, lte: Some(bound) }), vec![1]);
+    assert_eq!(query(Range { lt: Some(bound), gt: None, gte: None, lte: None }), Vec::<PointOffsetType>::new());
+    assert_eq!(query(Range { lt: None, gt: None, gte: Some(bound), lte: None }), vec![1]);
+    assert_eq!(query(Range { lt: None, gt: Some(bound), gte: None, lte: None }), Vec::<PointOffsetType>::new());
+    assert_eq!(query(Range { lt: None, gt: None, gte: Some(bound), lte: Some(bound) }), vec![1]);
+}
+
 #[test]
 fn test_set_empty_payload() {
     let (_temp_dir, mut index) = random_index(1000, 1, IndexType::MutableGridstore);

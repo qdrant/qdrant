@@ -2818,6 +2818,29 @@ impl<T: Copy + PartialOrd> Range<T> {
     }
 }
 
+impl Range<OrderedFloat<FloatPayloadType>> {
+    fn normalize_float_bound(bound: OrderedFloat<FloatPayloadType>) -> OrderedFloat<FloatPayloadType> {
+        let value = bound.0;
+        let rounded = value as f32;
+
+        if rounded.is_finite() && FloatPayloadType::from(rounded) == value {
+            OrderedFloat(FloatPayloadType::from(rounded))
+        } else {
+            bound
+        }
+    }
+
+    pub fn normalized_to_stored_precision(&self) -> Self {
+        let Self { lt, gt, gte, lte } = *self;
+        Self {
+            lt: lt.map(Self::normalize_float_bound),
+            gt: gt.map(Self::normalize_float_bound),
+            gte: gte.map(Self::normalize_float_bound),
+            lte: lte.map(Self::normalize_float_bound),
+        }
+    }
+}
+
 /// Values count filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
