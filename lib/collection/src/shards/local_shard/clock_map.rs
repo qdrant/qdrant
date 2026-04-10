@@ -6,7 +6,6 @@ use api::grpc::qdrant::RecoveryPointClockTag;
 use serde::{Deserialize, Serialize};
 use tonic::Status;
 
-use crate::operations::types::CollectionError;
 use crate::operations::{ClockTag, ClockToken};
 use crate::shards::shard::PeerId;
 
@@ -21,10 +20,10 @@ pub struct ClockMap {
 }
 
 impl ClockMap {
-    pub fn load_or_default(path: &Path) -> Result<Self> {
+    pub fn load_or_default(path: &Path) -> std::io::Result<Self> {
         let result = Self::load(path);
 
-        if let Err(Error::Io(err)) = &result
+        if let Err(err) = &result
             && err.kind() == std::io::ErrorKind::NotFound
         {
             return Ok(Self::default());
@@ -33,18 +32,18 @@ impl ClockMap {
         result
     }
 
-    pub fn load(path: &Path) -> Result<Self> {
+    pub fn load(path: &Path) -> std::io::Result<Self> {
         let clock_map = common::fs::read_json(path)?;
         Ok(clock_map)
     }
 
-    pub fn store(&mut self, path: &Path) -> Result<()> {
+    pub fn store(&mut self, path: &Path) -> std::io::Result<()> {
         common::fs::atomic_save_json(path, self)?;
         self.changed = false;
         Ok(())
     }
 
-    pub fn store_if_changed(&mut self, path: &Path) -> Result<()> {
+    pub fn store_if_changed(&mut self, path: &Path) -> std::io::Result<()> {
         if self.changed {
             self.store(path)?;
         }
@@ -469,34 +468,6 @@ impl From<(Key, Clock)> for KeyClockHelper {
 impl From<KeyClockHelper> for (Key, Clock) {
     fn from(helper: KeyClockHelper) -> Self {
         (helper.key, helper.clock)
-    }
-}
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-#[derive(Debug, thiserror::Error)]
-#[error("failed to load/store the clock map: {0}")]
-pub enum Error {
-    Io(#[from] std::io::Error),
-    SerdeJson(#[from] serde_json::Error),
-}
-
-impl From<common::fs::FileOperationError> for Error {
-    fn from(err: common::fs::FileOperationError) -> Self {
-        match err {
-            common::fs::FileOperationError::Io(err) => err.into(),
-            common::fs::FileOperationError::SerdeJson(err) => err.into(),
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl From<Error> for CollectionError {
-    fn from(err: Error) -> Self {
-        match err {
-            Error::Io(err) => err.into(),
-            Error::SerdeJson(err) => err.into(),
-        }
     }
 }
 

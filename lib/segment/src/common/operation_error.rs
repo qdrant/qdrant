@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
-use common::fs::FileStorageError;
 use common::mmap::Error as MmapError;
 use common::universal_io::UniversalIoError;
 use gridstore::error::GridstoreError;
@@ -142,12 +141,6 @@ pub struct SegmentFailedState {
 impl From<ThreadPoolBuildError> for OperationError {
     fn from(error: ThreadPoolBuildError) -> Self {
         Self::service_error(error.to_string())
-    }
-}
-
-impl From<FileStorageError> for OperationError {
-    fn from(err: FileStorageError) -> Self {
-        Self::service_error(err.to_string())
     }
 }
 

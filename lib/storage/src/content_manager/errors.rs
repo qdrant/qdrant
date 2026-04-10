@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use collection::operations::types::CollectionError;
 use collection::shards::shard::ShardId;
-use common::fs::FileStorageError;
 use tempfile::PersistError;
 use thiserror::Error;
 
@@ -250,12 +249,6 @@ impl From<CollectionError> for StorageError {
 
 impl From<IoError> for StorageError {
     fn from(err: IoError) -> Self {
-        Self::service_error(err.to_string())
-    }
-}
-
-impl From<FileStorageError> for StorageError {
-    fn from(err: FileStorageError) -> Self {
         Self::service_error(err.to_string())
     }
 }

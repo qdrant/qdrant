@@ -12,7 +12,6 @@ use api::rest::{
     SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
 use common::ext::OptionExt;
-use common::fs::FileStorageError;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
@@ -1276,12 +1275,6 @@ impl From<tonic::Status> for CollectionError {
 impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
     fn from(err: std::sync::PoisonError<Guard>) -> Self {
         Self::service_error(format!("Mutex lock poisoned: {err}"))
-    }
-}
-
-impl From<FileStorageError> for CollectionError {
-    fn from(err: FileStorageError) -> Self {
-        Self::service_error(err.to_string())
     }
 }
 

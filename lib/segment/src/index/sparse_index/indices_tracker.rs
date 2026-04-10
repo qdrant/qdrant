@@ -18,7 +18,7 @@ pub struct IndicesTracker {
 impl IndicesTracker {
     pub fn open(path: &Path) -> std::io::Result<Self> {
         let path = Self::file_path(path);
-        Ok(read_json(&path)?)
+        read_json(&path)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
