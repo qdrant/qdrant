@@ -387,13 +387,19 @@ where
         &'a self,
         value: T,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
         let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
         match &self {
-            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
-            NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
-            NumericIndexInner::Mmap(mmap) => Box::new(mmap.values_range(start, end, hw_counter)),
+            NumericIndexInner::Mutable(mutable) => {
+                Box::new(mutable.values_range(start, end).map(Ok))
+            }
+            NumericIndexInner::Immutable(immutable) => {
+                Box::new(immutable.values_range(start, end).map(Ok))
+            }
+            NumericIndexInner::Mmap(mmap) => {
+                Box::new(mmap.values_range(start, end, hw_counter).map(Ok))
+            }
         }
     }
 
@@ -764,7 +770,7 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
         if let Some(Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
         })) = &condition.r#match
@@ -773,13 +779,11 @@ where
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let value = T::from_u128(uuid.as_u128());
-                return Ok(Some(self.point_ids_by_value(value, hw_counter)));
+                return Some(self.point_ids_by_value(value, hw_counter));
             }
         }
 
-        let Some(range_cond) = condition.range.as_ref() else {
-            return Ok(None);
-        };
+        let range_cond = condition.range.as_ref()?;
 
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
@@ -792,20 +796,22 @@ where
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Ok(Some(Box::new(std::iter::empty())));
+            return Some(Box::new(std::iter::empty()));
         }
 
-        Ok(Some(match self {
+        Some(match self {
             NumericIndexInner::Mutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound))
+                Box::new(index.values_range(start_bound, end_bound).map(Ok))
             }
             NumericIndexInner::Immutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound))
+                Box::new(index.values_range(start_bound, end_bound).map(Ok))
             }
-            NumericIndexInner::Mmap(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter))
-            }
-        }))
+            NumericIndexInner::Mmap(index) => Box::new(
+                index
+                    .values_range(start_bound, end_bound, hw_counter)
+                    .map(Ok),
+            ),
+        })
     }
 
     fn estimate_cardinality(

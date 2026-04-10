@@ -214,7 +214,7 @@ pub trait InvertedIndex {
         &'a self,
         query: ParsedQuery,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
+    ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>;
 
     fn get_posting_len(&self, token_id: TokenId, hw_counter: &HardwareCounterCell)
     -> Option<usize>;
@@ -695,10 +695,17 @@ mod tests {
                 // In this case both queries would filter to an empty set of documents.
                 continue;
             };
-            let mut_filtered = mut_index.filter(mut_query, hw_counter).collect::<Vec<_>>();
-            let imm_filtered = mmap_index.filter(imm_query, hw_counter).collect::<Vec<_>>();
+            let mut_filtered = mut_index
+                .filter(mut_query, hw_counter)
+                .map(|r| r.unwrap())
+                .collect::<Vec<_>>();
+            let imm_filtered = mmap_index
+                .filter(imm_query, hw_counter)
+                .map(|r| r.unwrap())
+                .collect::<Vec<_>>();
             let imm_mmap_filtered = imm_mmap_index
                 .filter(imm_mmap_query, hw_counter)
+                .map(|r| r.unwrap())
                 .collect::<Vec<_>>();
 
             assert_eq!(mut_filtered, imm_filtered);

@@ -344,7 +344,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect();
             assert_eq!(search_res, vec![0, 4]);
 
@@ -352,7 +352,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect();
             assert_eq!(search_res, vec![2]);
 
@@ -360,7 +360,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect();
             assert_eq!(search_res, vec![4]);
 
@@ -372,7 +372,7 @@ mod tests {
                 index
                     .filter(&filter_condition, &hw_counter)
                     .unwrap()
-                    .unwrap()
+                    .map(|r| r.unwrap())
                     .next()
                     .is_none()
             );
@@ -410,7 +410,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect();
             assert_eq!(search_res, vec![0]);
 
@@ -418,7 +418,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect();
             assert_eq!(search_res, vec![0, 1, 3, 4]);
 
@@ -428,7 +428,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect();
             assert!(search_res.is_empty());
             assert_eq!(index.count_indexed_points(), 3);
@@ -438,7 +438,7 @@ mod tests {
             let search_res: Vec<_> = index
                 .filter(&filter_condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect();
             assert_eq!(search_res, vec![1, 4]);
             assert_eq!(index.count_indexed_points(), 2);

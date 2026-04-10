@@ -352,9 +352,11 @@ fn test_congruence(
             assert_eq!(
                 index_a
                     .filter_query(parsed_query_a, &hw_counter)
+                    .map(|r| r.unwrap())
                     .collect::<HashSet<_>>(),
                 index_b
                     .filter_query(parsed_query_b, &hw_counter)
+                    .map(|r| r.unwrap())
                     .collect::<HashSet<_>>(),
             );
         }
@@ -394,9 +396,11 @@ fn test_congruence(
                 assert_eq!(
                     index_a
                         .filter_query(parsed_query_a, &hw_counter)
+                        .map(|r| r.unwrap())
                         .collect::<HashSet<_>>(),
                     index_b
                         .filter_query(parsed_query_b, &hw_counter)
+                        .map(|r| r.unwrap())
                         .collect::<HashSet<_>>(),
                 );
             }
@@ -453,6 +457,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
 
             let result = index
                 .filter_query(parsed_query, &hw_counter)
+                .map(|r| r.unwrap())
                 .collect::<HashSet<_>>();
 
             assert!(!result.is_empty());

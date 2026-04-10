@@ -262,11 +262,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &'a self,
         query: ParsedQuery,
         _hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
         match query {
-            ParsedQuery::AllTokens(tokens) => Box::new(self.filter_has_all(tokens)),
-            ParsedQuery::Phrase(tokens) => Box::new(self.filter_has_phrase(tokens)),
-            ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens)),
+            ParsedQuery::AllTokens(tokens) => Box::new(self.filter_has_all(tokens).map(Ok)),
+            ParsedQuery::Phrase(tokens) => Box::new(self.filter_has_phrase(tokens).map(Ok)),
+            ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens).map(Ok)),
         }
     }
 

@@ -8,7 +8,7 @@ use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use smallvec::SmallVec;
 
-use crate::common::operation_error::{CancellableResult, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
 use crate::payload_storage::FilterContext;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
@@ -351,7 +351,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         self,
         is_stopped: &AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let iter = self
             .filters
             .point_deleted
@@ -360,7 +360,8 @@ impl<'a> BatchFilteredSearcher<'a> {
             .take_while(|&point_id| {
                 // Early exit if we hit the max point ID (e.g. a deferred point).
                 point_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
-            });
+            })
+            .map(Ok);
 
         self.peek_top_iter(iter, is_stopped)
     }
@@ -368,9 +369,9 @@ impl<'a> BatchFilteredSearcher<'a> {
     /// This function expects deferred points to be already filtered from the iterator.
     pub fn peek_top_iter(
         mut self,
-        mut points: impl Iterator<Item = PointOffsetType>,
+        mut points: impl Iterator<Item = OperationResult<PointOffsetType>>,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         // Reuse the same buffer for all chunks, to avoid reallocation
         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
         let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
@@ -379,8 +380,9 @@ impl<'a> BatchFilteredSearcher<'a> {
             check_process_stopped(is_stopped)?;
 
             let mut chunk_size = 0;
-            for point_id in &mut points {
+            for point_result in &mut points {
                 check_process_stopped(is_stopped)?;
+                let point_id = point_result?;
 
                 if !self.filters.check_vector(point_id) {
                     continue;

@@ -183,7 +183,10 @@ fn test_prefix_search() {
             .unwrap();
     }
 
-    let res: Vec<_> = index.query("ROBO", &hw_counter).collect();
+    let res: Vec<_> = index
+        .query("ROBO", &hw_counter)
+        .map(|r| r.unwrap())
+        .collect();
 
     let query = index.parse_text_query("ROBO", &hw_counter).unwrap();
 
@@ -193,7 +196,10 @@ fn test_prefix_search() {
 
     assert_eq!(res.len(), 3);
 
-    let res: Vec<_> = index.query("q231", &hw_counter).collect();
+    let res: Vec<_> = index
+        .query("q231", &hw_counter)
+        .map(|r| r.unwrap())
+        .collect();
     assert!(res.is_empty());
 
     assert!(index.parse_text_query("q231", &hw_counter).is_none());
@@ -257,7 +263,10 @@ fn test_phrase_matching() {
         assert!(index.check_match(&text_query, 1));
         assert!(index.check_match(&text_query, 2));
 
-        let text_results: Vec<_> = index.filter_query(text_query, &hw_counter).collect();
+        let text_results: Vec<_> = index
+            .filter_query(text_query, &hw_counter)
+            .map(|r| r.unwrap())
+            .collect();
 
         // Should match documents 0, 1, and 2 (all contain "quick", "brown", "fox")
         assert_eq!(text_results.len(), 3);
@@ -272,7 +281,10 @@ fn test_phrase_matching() {
         assert!(index.check_match(&phrase_query, 0));
         assert!(index.check_match(&phrase_query, 2));
 
-        let phrase_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
+        let phrase_results: Vec<_> = index
+            .filter_query(phrase_query, &hw_counter)
+            .map(|r| r.unwrap())
+            .collect();
 
         // Should only match documents 0 and 2 (contain "quick brown fox" in that exact order)
         assert_eq!(phrase_results.len(), 2);
@@ -284,7 +296,10 @@ fn test_phrase_matching() {
         let missing_query = index
             .parse_phrase_query("fox brown quick", &hw_counter)
             .unwrap();
-        let missing_results: Vec<_> = index.filter_query(missing_query, &hw_counter).collect();
+        let missing_results: Vec<_> = index
+            .filter_query(missing_query, &hw_counter)
+            .map(|r| r.unwrap())
+            .collect();
 
         // Should match no documents (no document contains this exact phrase)
         assert_eq!(missing_results.len(), 0);
@@ -301,7 +316,10 @@ fn test_phrase_matching() {
         assert!(index.check_match(&phrase_query, 4));
 
         // Should only match document 4
-        let filter_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
+        let filter_results: Vec<_> = index
+            .filter_query(phrase_query, &hw_counter)
+            .map(|r| r.unwrap())
+            .collect();
         assert_eq!(filter_results.len(), 1);
         assert!(filter_results.contains(&4));
     };
@@ -370,6 +388,7 @@ fn test_ascii_folding_in_full_text_index_word() {
 
     let results_enabled: Vec<_> = index_enabled
         .filter_query(query_enabled, &hw_counter)
+        .map(|r| r.unwrap())
         .collect();
     assert!(results_enabled.contains(&0));
 
@@ -378,6 +397,7 @@ fn test_ascii_folding_in_full_text_index_word() {
     if let Some(query_disabled) = query_disabled_opt {
         let results_disabled: Vec<_> = index_disabled
             .filter_query(query_disabled, &hw_counter)
+            .map(|r| r.unwrap())
             .collect();
         assert!(!results_disabled.contains(&0));
     }
@@ -387,6 +407,7 @@ fn test_ascii_folding_in_full_text_index_word() {
     assert!(index_enabled.check_match(&query_acento, 0));
     let results_acento: Vec<_> = index_enabled
         .filter_query(query_acento, &hw_counter)
+        .map(|r| r.unwrap())
         .collect();
     assert!(results_acento.contains(&0));
 
@@ -395,6 +416,7 @@ fn test_ascii_folding_in_full_text_index_word() {
         .unwrap();
     let results_acento2: Vec<_> = index_disabled
         .filter_query(query_acento2, &hw_counter)
+        .map(|r| r.unwrap())
         .collect();
     assert!(results_acento2.contains(&0));
 }

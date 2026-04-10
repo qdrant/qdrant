@@ -376,8 +376,8 @@ impl PayloadFieldIndex for MutableBoolIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        Ok(match &condition.r#match {
+    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
+        match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
@@ -389,11 +389,12 @@ impl PayloadFieldIndex for MutableBoolIndex {
                         hw_counter.new_accumulator(),
                         u8::BITS as usize,
                         |i| i.payload_index_io_read_counter(),
-                    );
+                    )
+                    .map(Ok);
                 Some(Box::new(iter))
             }
             _ => None,
-        })
+        }
     }
 
     fn estimate_cardinality(

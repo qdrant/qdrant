@@ -228,30 +228,32 @@ impl GeoMapIndex {
         }
     }
 
-    #[expect(clippy::unnecessary_wraps, reason = "will return Err later")] // FIXME(uio-errors)
     fn iterator(
         &self,
         values: Vec<GeoHash>,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + '_> {
         match self {
-            GeoMapIndex::Mutable(index) => Ok(Box::new(
+            GeoMapIndex::Mutable(index) => Box::new(
                 values
                     .into_iter()
                     .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
-                    .unique(),
-            )),
-            GeoMapIndex::Immutable(index) => Ok(Box::new(
+                    .unique()
+                    .map(Ok),
+            ),
+            GeoMapIndex::Immutable(index) => Box::new(
                 values
                     .into_iter()
                     .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
-                    .unique(),
-            )),
-            GeoMapIndex::Mmap(index) => Ok(Box::new(
+                    .unique()
+                    .map(Ok),
+            ),
+            GeoMapIndex::Mmap(index) => Box::new(
                 values
                     .into_iter()
                     .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
-                    .unique(),
-            )),
+                    .unique()
+                    .map(Ok),
+            ),
         }
     }
 
@@ -523,51 +525,47 @@ impl PayloadFieldIndex for GeoMapIndex {
         &'a self,
         condition: &FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
-            let Some(geo_hashes) = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()
-            else {
-                return Ok(None);
-            };
+            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = *geo_bounding_box;
-            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
+            return Some(Box::new(self.iterator(geo_hashes).filter_map_ok(
                 move |point| {
-                    self.check_values_any(*point, hw_counter, |geo_point| {
+                    self.check_values_any(point, hw_counter, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
                     })
+                    .then_some(point)
                 },
-            ))));
+            )));
         }
 
         if let Some(geo_radius) = &condition.geo_radius {
-            let Some(geo_hashes) = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok() else {
-                return Ok(None);
-            };
+            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = *geo_radius;
-            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
+            return Some(Box::new(self.iterator(geo_hashes).filter_map_ok(
                 move |point| {
-                    self.check_values_any(*point, hw_counter, |geo_point| {
+                    self.check_values_any(point, hw_counter, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
                     })
+                    .then_some(point)
                 },
-            ))));
+            )));
         }
 
         if let Some(geo_polygon) = &condition.geo_polygon {
-            let Some(geo_hashes) = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION).ok() else {
-                return Ok(None);
-            };
+            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_polygon.convert();
-            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
+            return Some(Box::new(self.iterator(geo_hashes).filter_map_ok(
                 move |point| {
-                    self.check_values_any(*point, hw_counter, |geo_point| {
+                    self.check_values_any(point, hw_counter, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
                     })
+                    .then_some(point)
                 },
-            ))));
+            )));
         }
 
-        Ok(None)
+        None
     }
 
     fn estimate_cardinality(
@@ -837,7 +835,10 @@ mod tests {
             index_type: IndexType,
         ) {
             let (field_index, _, _) = build_random_index(500, 20, index_type);
-            let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
+            let exact_points_for_hashes = field_index
+                .iterator(hashes)
+                .map(|r| r.unwrap())
+                .collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
             let hw_counter = HardwareCounterCell::new();
@@ -911,7 +912,10 @@ mod tests {
             index_type: IndexType,
         ) {
             let (field_index, _, _) = build_random_index(500, 20, index_type);
-            let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
+            let exact_points_for_hashes = field_index
+                .iterator(hashes)
+                .map(|r| r.unwrap())
+                .collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
             let hw_counter = HardwareCounterCell::new();
@@ -986,7 +990,7 @@ mod tests {
             let mut indexed_matched_points = field_index
                 .filter(&field_condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect_vec();
 
             matched_points.sort_unstable();
@@ -1052,7 +1056,7 @@ mod tests {
             let block_points = field_index
                 .filter(&block.condition, &hw_counter)
                 .unwrap()
-                .unwrap()
+                .map(|r| r.unwrap())
                 .collect_vec();
             assert_eq!(block_points.len(), block.cardinality);
         });
@@ -1260,7 +1264,7 @@ mod tests {
         let point_offsets = new_index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .unwrap()
+            .map(|r| r.unwrap())
             .collect_vec();
         assert_eq!(point_offsets, vec![1]);
 
@@ -1272,7 +1276,7 @@ mod tests {
         let point_offsets = new_index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .unwrap()
+            .map(|r| r.unwrap())
             .collect_vec();
         assert_eq!(point_offsets, vec![1]);
     }
@@ -1464,7 +1468,7 @@ mod tests {
         let point_offsets = new_index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .unwrap()
+            .map(|r| r.unwrap())
             .collect_vec();
         // Only LOS_ANGELES is in the bounding box
         assert_eq!(point_offsets, vec![2]);
@@ -1523,7 +1527,7 @@ mod tests {
         let results = index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .unwrap()
+            .map(|r| r.unwrap())
             .collect_vec();
         assert_eq!(results, vec![1]);
 
@@ -1579,7 +1583,7 @@ mod tests {
         let results = index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .unwrap()
+            .map(|r| r.unwrap())
             .collect_vec();
         assert_eq!(results, vec![0]);
 
@@ -1665,11 +1669,11 @@ mod tests {
             assert_eq!(
                 indices[0]
                     .iterator(hashes.clone())
-                    .unwrap()
+                    .map(|r| r.unwrap())
                     .collect::<HashSet<_>>(),
                 index
                     .iterator(hashes.clone())
-                    .unwrap()
+                    .map(|r| r.unwrap())
                     .collect::<HashSet<_>>(),
             );
             for point_id in 0..POINT_COUNT {

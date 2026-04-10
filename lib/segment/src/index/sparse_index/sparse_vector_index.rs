@@ -320,7 +320,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let mut results = match filter {
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
-                let mut filtered_points = match prefiltered_points {
+                let filtered_points = match prefiltered_points {
                     // `prefiltered_points` always contains visible points only so we don't need additional filtering here.
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
@@ -334,7 +334,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
                 };
-                searcher.peek_top_iter(&mut filtered_points, &is_stopped)?
+                searcher.peek_top_iter(filtered_points.map(Ok), &is_stopped)?
             }
             None => {
                 searcher.peek_top_all(&is_stopped, vector_query_context.deferred_internal_id())?
