@@ -67,6 +67,18 @@ impl ReadSegmentEntry for ProxySegment {
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        // If the search target is a vector that the proxy queues for deletion
+        // or schema replacement, the wrapped segment's storage is stale (or
+        // would error on a dimensionality mismatch). Short-circuit to an
+        // empty result-per-query batch — semantically the new vector has no
+        // points indexed in this segment yet.
+        if self
+            .changed_vector_names
+            .is_wrapped_data_stale(vector_name)
+        {
+            return Ok(vec![Vec::new(); vectors.len()]);
+        }
+
         // Strip any vector names that the proxy intends to delete or replace
         // with a different schema, so the wrapped segment doesn't return
         // stale data for them. `Cow::Borrowed` in the common case.
@@ -164,6 +176,18 @@ impl ReadSegmentEntry for ProxySegment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
+        // The proxy queues a delete or schema-superseding create for this
+        // vector — the wrapped's stored data is no longer authoritative.
+        // Treat the lookup as if the point had no value for this vector.
+        // `all_vectors` enumerates names and skips `None`s, so this also
+        // hides stale entries from the per-point vector dump.
+        if self
+            .changed_vector_names
+            .is_wrapped_data_stale(vector_name)
+        {
+            return Ok(None);
+        }
+
         if self.deleted_points.contains_key(&point_id) {
             Ok(None)
         } else {
@@ -442,6 +466,18 @@ impl ReadSegmentEntry for ProxySegment {
     }
 
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
+        // Stale vectors contribute zero bytes to the size estimate: the
+        // wrapped's storage is doomed to be discarded by the optimiser, and
+        // any new schema has no points indexed in this segment yet. Also
+        // avoids calling into the wrapped with a name whose query may now
+        // mean a different shape.
+        if self
+            .changed_vector_names
+            .is_wrapped_data_stale(vector_name)
+        {
+            return Ok(0);
+        }
+
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
         let wrapped_size = wrapped_segment_guard.available_vectors_size_in_bytes(vector_name)?;

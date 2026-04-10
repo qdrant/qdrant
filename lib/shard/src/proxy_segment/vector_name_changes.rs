@@ -131,6 +131,22 @@ impl ProxyVectorNameChanges {
             .sorted_by_key(|(_, intent)| intent.version())
     }
 
+    /// Whether the wrapped segment's data for `vector_name` is no longer
+    /// authoritative — i.e. the proxy queues a `Delete` (`Absent`) or a
+    /// `Create` that supersedes the wrapped's existing schema. Read paths
+    /// in `ProxySegment` use this to short-circuit lookups against the
+    /// wrapped segment and return empty results instead of stale data.
+    ///
+    /// Returns `false` for names not touched by the proxy at all (the
+    /// wrapped is the source of truth) and for `Present { supersedes_wrapped:
+    /// false }` (a same-schema re-create or a brand-new name where wrapped
+    /// has nothing to be stale about).
+    pub fn is_wrapped_data_stale(&self, vector_name: &VectorName) -> bool {
+        self.intent
+            .get(vector_name)
+            .is_some_and(IntendedVector::taints_wrapped)
+    }
+
     /// Drop any vector names from `with_vector` whose data the wrapped segment
     /// can no longer be trusted to serve — either because the proxy intends
     /// to delete them outright (`Absent`) or because it intends to replace
