@@ -197,7 +197,8 @@ impl ProxyVectorNameChanges {
         let tainted: AHashSet<&str> = self
             .intent
             .iter()
-            .filter_map(|(name, intent)| intent.taints_wrapped().then(|| name.as_str()))
+            .filter(|(_, intent)| intent.taints_wrapped())
+            .map(|(name, _)| name.as_str())
             .collect();
 
         if tainted.is_empty() {
