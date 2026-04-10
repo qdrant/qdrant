@@ -98,6 +98,8 @@ impl MemoryReporter for VectorStorageEnum {
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
+            VectorStorageEnum::EmptyDense(_) => ComponentMemoryUsage::empty(),
+            VectorStorageEnum::EmptySparse(_) => ComponentMemoryUsage::empty(),
         }
     }
 }
