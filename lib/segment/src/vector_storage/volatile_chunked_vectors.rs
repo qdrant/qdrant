@@ -174,7 +174,12 @@ impl<T: Clone> TrySetCapacityExact for VolatileChunkedVectors<T> {
         self.chunks.resize_with(num_chunks, Vec::new);
         for chunk_idx in 0..num_chunks {
             if chunk_idx == last_chunk_idx {
-                let desired_capacity = (capacity % self.chunk_capacity) * self.dim;
+                let remainder = capacity % self.chunk_capacity;
+                let desired_capacity = if remainder == 0 {
+                    self.chunk_capacity * self.dim
+                } else {
+                    remainder * self.dim
+                };
                 self.chunks[chunk_idx].try_set_capacity_exact(desired_capacity)?;
             } else {
                 let desired_capacity = self.chunk_capacity * self.dim;
