@@ -267,6 +267,9 @@ pub struct FieldCondition {
     /// Check if field is null
     #[prost(bool, optional, tag = "10")]
     pub is_null: ::core::option::Option<bool>,
+    /// Check if points integer value lies in a given range (lossless for large i64)
+    #[prost(message, optional, tag = "11")]
+    pub integer_range: ::core::option::Option<IntegerRange>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -339,6 +342,19 @@ pub struct Range {
     pub gte: ::core::option::Option<f64>,
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegerRange {
+    #[prost(int64, optional, tag = "1")]
+    pub lt: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "2")]
+    pub gt: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "3")]
+    pub gte: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "4")]
+    pub lte: ::core::option::Option<i64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

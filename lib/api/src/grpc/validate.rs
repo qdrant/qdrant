@@ -243,6 +243,7 @@ impl Validate for grpc::FieldCondition {
             r#match,
             range,
             datetime_range,
+            integer_range,
             geo_bounding_box,
             geo_radius,
             geo_polygon,
@@ -254,6 +255,7 @@ impl Validate for grpc::FieldCondition {
         let all_fields_none = r#match.is_none()
             && range.is_none()
             && datetime_range.is_none()
+            && integer_range.is_none()
             && geo_bounding_box.is_none()
             && geo_radius.is_none()
             && geo_polygon.is_none()
@@ -267,10 +269,30 @@ impl Validate for grpc::FieldCondition {
                 "match",
                 ValidationError::new("At least one field condition must be specified"),
             );
-            Err(errors)
-        } else {
-            Ok(())
+            return Err(errors);
         }
+
+        let range_variants_set = [
+            range.is_some(),
+            integer_range.is_some(),
+            datetime_range.is_some(),
+        ]
+        .into_iter()
+        .filter(|is_set| *is_set)
+        .count();
+
+        if range_variants_set > 1 {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "range",
+                ValidationError::new(
+                    "Fields `range`, `integer_range`, and `datetime_range` are mutually exclusive",
+                ),
+            );
+            return Err(errors);
+        }
+
+        Ok(())
     }
 }
 
