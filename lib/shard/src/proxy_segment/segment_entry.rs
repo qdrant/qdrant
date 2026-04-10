@@ -84,6 +84,8 @@ impl ReadSegmentEntry for ProxySegment {
             .redact_with_vector(with_vector, &self.wrapped_config);
         let with_vector = with_vector.as_ref();
 
+        let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
+
         // Some point might be deleted after temporary segment creation
         // We need to prevent them from being found by search request
         // That is why we need to pass additional filter for deleted points
@@ -97,18 +99,16 @@ impl ReadSegmentEntry for ProxySegment {
                 let query_context_with_deleted =
                     query_context.fork().with_deleted_points(deleted_points);
 
-                let res = self.wrapped_segment.get().read().search_batch(
+                self.wrapped_segment.get().read().search_batch(
                     vector_name,
                     vectors,
                     with_payload,
                     with_vector,
-                    filter,
+                    filter.as_deref(),
                     top,
                     params,
                     &query_context_with_deleted,
-                );
-
-                res?
+                )?
             } else {
                 let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                     filter,
@@ -132,7 +132,7 @@ impl ReadSegmentEntry for ProxySegment {
                 vectors,
                 with_payload,
                 with_vector,
-                filter,
+                filter.as_deref(),
                 top,
                 params,
                 query_context,
@@ -201,6 +201,8 @@ impl ReadSegmentEntry for ProxySegment {
         let wrapped = self.wrapped_segment.get();
         let wrapped_guard = wrapped.read();
         let config = wrapped_guard.config();
+
+        // Tip: self.vector already handles dropped vector names
         let vector_names: Vec<_> = config
             .vector_data
             .keys()
@@ -281,11 +283,13 @@ impl ReadSegmentEntry for ProxySegment {
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
+        let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
+
         if self.deleted_points.is_empty() {
             self.wrapped_segment.get().read().read_filtered(
                 offset,
                 limit,
-                filter,
+                filter.as_deref(),
                 is_stopped,
                 hw_counter,
                 deferred_behavior,
@@ -315,10 +319,12 @@ impl ReadSegmentEntry for ProxySegment {
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
+        let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
+
         let read_points = if self.deleted_points.is_empty() {
             self.wrapped_segment.get().read().read_ordered_filtered(
                 limit,
-                filter,
+                filter.as_deref(),
                 order_by,
                 is_stopped,
                 hw_counter,
@@ -348,11 +354,13 @@ impl ReadSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
+        let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
+
         if self.deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_random_filtered(limit, filter, is_stopped, hw_counter)
+                .read_random_filtered(limit, filter.as_deref(), is_stopped, hw_counter)
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -387,11 +395,12 @@ impl ReadSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
+        let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
         let values = self
             .wrapped_segment
             .get()
             .read()
-            .unique_values(key, filter, is_stopped, hw_counter)?;
+            .unique_values(key, filter.as_deref(), is_stopped, hw_counter)?;
         Ok(values)
     }
 
@@ -401,14 +410,35 @@ impl ReadSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
+        let filter = request
+            .filter
+            .as_ref()
+            .map(|f| self.changed_vector_names.redact_filter(f));
+
         let hits = if self.deleted_points.is_empty() {
-            self.wrapped_segment
-                .get()
-                .read()
-                .facet(request, is_stopped, hw_counter)?
+            match filter {
+                // No filter, or filter unchanged — use original request as-is.
+                None | Some(std::borrow::Cow::Borrowed(_)) => {
+                    self.wrapped_segment
+                        .get()
+                        .read()
+                        .facet(request, is_stopped, hw_counter)?
+                }
+                // Filter was redacted — build a new request with the owned filter.
+                Some(std::borrow::Cow::Owned(f)) => {
+                    let new_request = FacetParams {
+                        filter: Some(f),
+                        ..request.clone()
+                    };
+                    self.wrapped_segment
+                        .get()
+                        .read()
+                        .facet(&new_request, is_stopped, hw_counter)?
+                }
+            }
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
-                request.filter.as_ref(),
+                filter,
                 self.deleted_points.keys().copied(),
             );
             let new_request = FacetParams {
@@ -494,6 +524,8 @@ impl ReadSegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
+        let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
+
         let deleted_point_count = self
             .deleted_points
             .len()
@@ -503,7 +535,7 @@ impl ReadSegmentEntry for ProxySegment {
             let wrapped_segment = self.wrapped_segment.get();
             let wrapped_segment_guard = wrapped_segment.read();
             (
-                wrapped_segment_guard.estimate_point_count(filter, hw_counter)?,
+                wrapped_segment_guard.estimate_point_count(filter.as_deref(), hw_counter)?,
                 wrapped_segment_guard.available_point_count_without_deferred(),
             )
         };

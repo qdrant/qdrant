@@ -5,6 +5,8 @@ mod vector_name_changes;
 #[cfg(test)]
 mod tests;
 
+use std::borrow::Cow;
+
 use ahash::AHashMap;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -133,8 +135,12 @@ impl ProxySegment {
         }
     }
 
+    /// Build a filter that excludes the given deleted points. Accepts
+    /// `Option<Cow<Filter>>` so that a filter already owned by the caller
+    /// (e.g. from [`ProxyVectorNameChanges::redact_filter`]) is reused
+    /// without an extra clone.
     fn add_deleted_points_condition_to_filter(
-        filter: Option<&Filter>,
+        filter: Option<Cow<'_, Filter>>,
         deleted_points: impl IntoIterator<Item = PointIdType>,
     ) -> Filter {
         #[allow(clippy::from_iter_instead_of_collect)]
@@ -142,10 +148,8 @@ impl ProxySegment {
         match filter {
             None => Filter::new_must_not(wrapper_condition),
             Some(f) => {
-                let mut new_filter = f.clone();
-                let must_not = new_filter.must_not;
-
-                let new_must_not = match must_not {
+                let mut new_filter = f.into_owned();
+                let new_must_not = match new_filter.must_not {
                     None => Some(vec![wrapper_condition]),
                     Some(mut conditions) => {
                         conditions.push(wrapper_condition);

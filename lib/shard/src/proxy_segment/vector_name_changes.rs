@@ -4,16 +4,35 @@
 //! and [`ProxyVectorNameChanges`] for the per-proxy buffer.
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use itertools::Itertools as _;
 use segment::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
+use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName,
-    VectorNameBuf, WithVector,
+    Condition, CustomIdCheckerCondition, ExtendedPointId, Filter, SegmentConfig, SeqNumberType,
+    SparseVectorDataConfig, VectorDataConfig, VectorName, VectorNameBuf, WithVector,
 };
+
+/// A [`CustomIdCheckerCondition`] that never matches any point. Used to
+/// replace `HasVector` conditions that reference a vector the proxy has
+/// deleted or superseded — the wrapped segment's storage for that vector is
+/// stale, so the condition must evaluate to `false` for every point.
+#[derive(Debug)]
+struct AlwaysFalseChecker;
+
+impl CustomIdCheckerCondition for AlwaysFalseChecker {
+    fn estimate_cardinality(&self, _points: usize) -> CardinalityEstimation {
+        CardinalityEstimation::exact(0)
+    }
+
+    fn check(&self, _point_id: ExtendedPointId) -> bool {
+        false
+    }
+}
 
 /// Desired end-state of a single named vector inside a [`super::ProxySegment`].
 ///
@@ -218,6 +237,116 @@ impl ProxyVectorNameChanges {
                     .cloned()
                     .collect();
                 Cow::Owned(WithVector::Selector(kept))
+            }
+        }
+    }
+
+    /// Rewrite a [`Filter`] so that any `HasVector` condition that references
+    /// a deleted or superseded vector name is replaced with a
+    /// [`Condition::CustomIdChecker`] that always returns `false`. This makes
+    /// queries like `must: [{ has_vector: "v_dropped" }]` correctly match
+    /// zero points in the proxy, instead of leaking through to the wrapped
+    /// segment's stale storage.
+    ///
+    /// Returns [`Cow::Borrowed`] when no `HasVector` in the filter tree
+    /// references a tainted name (the common case) and [`Cow::Owned`] only
+    /// when at least one condition was rewritten. The scan is a cheap
+    /// read-only pass; cloning only happens if a rewrite is actually needed.
+    pub fn redact_filter<'a>(&self, filter: &'a Filter) -> Cow<'a, Filter> {
+        if !self.filter_has_stale_has_vector(filter) {
+            return Cow::Borrowed(filter);
+        }
+        let mut owned = filter.clone();
+        self.redact_filter_inplace(&mut owned);
+        Cow::Owned(owned)
+    }
+
+    /// Recursive read-only scan: does the filter tree contain at least one
+    /// `HasVector` whose name is tainted?
+    fn filter_has_stale_has_vector(&self, filter: &Filter) -> bool {
+        let Filter {
+            should,
+            min_should,
+            must,
+            must_not,
+        } = filter;
+
+        let conditions = should
+            .iter()
+            .flatten()
+            .chain(must.iter().flatten())
+            .chain(must_not.iter().flatten())
+            .chain(min_should.iter().flat_map(|ms| ms.conditions.iter()));
+        for cond in conditions {
+            match cond {
+                Condition::HasVector(hv) => {
+                    if self.is_wrapped_data_stale(&hv.has_vector) {
+                        return true;
+                    }
+                }
+                Condition::Nested(nested) => {
+                    if self.filter_has_stale_has_vector(&nested.nested.filter) {
+                        return true;
+                    }
+                }
+                Condition::Filter(inner) => {
+                    if self.filter_has_stale_has_vector(inner) {
+                        return true;
+                    }
+                }
+                Condition::Field(_) => {}
+                Condition::IsEmpty(_) => {}
+                Condition::IsNull(_) => {}
+                Condition::HasId(_) => {}
+                Condition::CustomIdChecker(_) => {}
+            }
+        }
+        false
+    }
+
+    /// Walk a cloned filter tree in-place, replacing tainted `HasVector`
+    /// conditions with an always-false checker.
+    fn redact_filter_inplace(&self, filter: &mut Filter) {
+        let Filter {
+            should,
+            min_should,
+            must,
+            must_not,
+        } = filter;
+
+        if let Some(conds) = should {
+            self.redact_conditions_inplace(conds);
+        }
+        if let Some(conds) = must {
+            self.redact_conditions_inplace(conds);
+        }
+        if let Some(conds) = must_not {
+            self.redact_conditions_inplace(conds);
+        }
+        if let Some(ms) = min_should {
+            self.redact_conditions_inplace(&mut ms.conditions);
+        }
+    }
+
+    fn redact_conditions_inplace(&self, conditions: &mut [Condition]) {
+        for cond in conditions.iter_mut() {
+            match cond {
+                Condition::HasVector(hv) => {
+                    if self.is_wrapped_data_stale(&hv.has_vector) {
+                        *cond = Condition::new_custom(Arc::new(AlwaysFalseChecker));
+                    }
+                }
+                Condition::Nested(nested) => {
+                    self.redact_filter_inplace(&mut nested.nested.filter);
+                }
+                Condition::Filter(inner) => {
+                    self.redact_filter_inplace(inner);
+                }
+                Condition::Field(_) => {}
+                Condition::IsEmpty(_) => {}
+                Condition::IsNull(_) => {}
+                Condition::HasId(_) => {}
+                Condition::CustomIdChecker(_) => {}
             }
         }
     }
