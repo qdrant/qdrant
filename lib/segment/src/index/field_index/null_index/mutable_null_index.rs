@@ -84,9 +84,10 @@ impl MutableNullIndex {
             return Ok(None);
         }
 
+        // TODO should be an error if it doesn't exist.
         let mut mutable_null_index = Self::open_or_create(path, total_point_count)?;
         for pos in deleted.iter_ones() {
-            mutable_null_index.remove_point_immutable(pos as PointOffsetType)?;
+            mutable_null_index.remove_point_immutable(pos as PointOffsetType);
         }
         Ok(Some(mutable_null_index))
     }
@@ -189,7 +190,7 @@ impl MutableNullIndex {
         Ok(())
     }
 
-    pub(super) fn remove_point_immutable(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    pub(super) fn remove_point_immutable(&mut self, id: PointOffsetType) {
         // Update bitmaps immediately
         self.storage.has_values_flags.set_immutable(id, false);
         self.storage.is_null_flags.set_immutable(id, false);
@@ -202,8 +203,6 @@ impl MutableNullIndex {
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         // N.B. No I/O, do not update hw_counter.
-
-        Ok(())
     }
 
     pub fn values_count(&self, id: PointOffsetType) -> usize {

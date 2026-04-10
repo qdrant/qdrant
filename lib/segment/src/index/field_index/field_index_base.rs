@@ -13,6 +13,7 @@ use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexMmapBuilder};
+use super::null_index::immutable_null_index::ImmutableNullIndexBuilder;
 use super::numeric_index::{
     NumericIndex, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder, StreamRange,
 };
@@ -20,7 +21,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::geo_index::GeoMapIndex;
-use crate::index::field_index::null_index::MutableNullIndex;
+use crate::index::field_index::null_index::NullIndex;
 use crate::index::field_index::null_index::mutable_null_index::MutableNullIndexBuilder;
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -136,7 +137,7 @@ pub enum FieldIndex {
     BoolIndex(BoolIndex),
     UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
     UuidMapIndex(MapIndex<UuidIntType>),
-    NullIndex(MutableNullIndex),
+    NullIndex(NullIndex),
 }
 
 impl std::fmt::Debug for FieldIndex {
@@ -579,7 +580,8 @@ pub enum FieldIndexBuilder {
     BoolGridstoreIndex(MutableBoolIndexBuilder),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
     UuidGridstoreIndex(MapIndexGridstoreBuilder<UuidIntType>),
-    NullIndex(MutableNullIndexBuilder),
+    MutableNullIndex(MutableNullIndexBuilder),
+    ImmutableNullIndex(ImmutableNullIndexBuilder),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
@@ -605,7 +607,8 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextGridstoreIndex(builder) => builder.init(),
             Self::UuidMmapIndex(index) => index.init(),
             Self::UuidGridstoreIndex(index) => index.init(),
-            Self::NullIndex(index) => index.init(),
+            Self::MutableNullIndex(index) => index.init(),
+            Self::ImmutableNullIndex(index) => index.init(),
         }
     }
 
@@ -638,7 +641,8 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             }
             Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::NullIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::MutableNullIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::ImmutableNullIndex(index) => index.add_point(id, payload, hw_counter),
         }
     }
 
@@ -664,7 +668,12 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextGridstoreIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidGridstoreIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
-            Self::NullIndex(index) => FieldIndex::NullIndex(index.finalize()?),
+            Self::MutableNullIndex(index) => {
+                FieldIndex::NullIndex(NullIndex::from(index.finalize()?))
+            }
+            Self::ImmutableNullIndex(index) => {
+                FieldIndex::NullIndex(NullIndex::from(index.finalize()?))
+            }
         })
     }
 }

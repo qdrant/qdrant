@@ -162,12 +162,13 @@ impl StructPayloadIndex {
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
         create_if_missing: bool,
     ) -> OperationResult<(Vec<FieldIndex>, bool)> {
-        let total_point_count = self.id_tracker.borrow().total_point_count();
+        let id_tracker_borrow = self.id_tracker.borrow();
         let mut rebuild = false;
         let mut is_dirty = false;
 
         let mut indexes = if payload_schema.types.is_empty() {
-            let indexes = self.selector(&payload_schema.schema).new_index(
+            let selector = self.selector(&payload_schema.schema);
+            let indexes = selector.new_index(
                 field,
                 &payload_schema.schema,
                 create_if_missing,
@@ -183,11 +184,11 @@ impl StructPayloadIndex {
                 );
 
                 // Special null index complements every index.
-                if let Some(null_index) = IndexSelector::new_null_index(
+                if let Some(null_index) = selector.new_null_index(
                     &self.path,
                     field,
-                    total_point_count,
                     create_if_missing,
+                    &id_tracker_borrow,
                 )? {
                     indexes.push(null_index);
                 }
@@ -213,8 +214,6 @@ impl StructPayloadIndex {
                             field,
                             &payload_schema.schema,
                             index,
-                            &self.path,
-                            total_point_count,
                             create_if_missing,
                             &id_tracker_borrow,
                         )
@@ -322,16 +321,16 @@ impl StructPayloadIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut builders = self
-            .selector(payload_schema)
-            .index_builder(field, payload_schema)?;
+        let selector = self.selector(payload_schema);
+        let mut builders = selector.index_builder(field, payload_schema)?;
 
         // Special null index complements every index. Seed it with the segment's total
         // point count so `iter_falses()` returns points that are missing from payload
         // storage (e.g. after `clear_payload`), matching the regular "no value" points.
         // Bug: <https://github.com/qdrant/qdrant/issues/8723>
         let total_point_count = self.id_tracker.borrow().total_point_count();
-        let null_index = IndexSelector::null_builder(&self.path, field, total_point_count)?;
+        // Special null index complements every index.
+        let null_index = selector.null_builder(&self.path, field, total_point_count)?;
         builders.push(null_index);
 
         for index in &mut builders {
