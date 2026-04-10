@@ -46,7 +46,7 @@ use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
-use crate::content_manager::errors::StorageError;
+use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::toc::telemetry::TocTelemetryCollector;
 use crate::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
@@ -107,22 +107,19 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
-    ) -> Result<Self, StorageError> {
+    ) -> StorageResult<Self> {
         let collections_path = storage_config.storage_path.join(COLLECTIONS_DIR);
-        fs::create_dir_all(&collections_path).expect("Can't create Collections directory");
+        fs::create_dir_all(&collections_path)?;
         if let Some(path) = storage_config.temp_path.as_deref() {
-            fs::create_dir_all(path).expect("Can't create temporary files directory");
+            fs::create_dir_all(path)?;
         }
-        let collection_paths =
-            fs::read_dir(&collections_path).expect("Can't read Collections directory");
+        let collection_paths = fs::read_dir(&collections_path)?;
         let is_distributed = consensus_proposal_sender.is_some();
 
         // Collect valid collection paths for loading
         let mut collection_load_tasks = Vec::new();
         for entry in collection_paths {
-            let collection_path = entry
-                .expect("Can't access of one of the collection files")
-                .path();
+            let collection_path = entry?.path();
 
             if !CollectionConfigInternal::check(&collection_path) {
                 log::warn!(
@@ -134,9 +131,12 @@ impl TableOfContent {
 
             let collection_name = collection_path
                 .file_name()
-                .expect("Can't resolve a filename of one of the collection files")
-                .to_str()
-                .expect("A filename of one of the collection files is not a valid UTF-8")
+                .and_then(|os_str| os_str.to_str())
+                .ok_or_else(|| {
+                    StorageError::service_error(format!(
+                        "Can't resolve a filename of one of the collection files: {collection_path:?}",
+                    ))
+                })?
                 .to_string();
 
             let collection_snapshots_path =
@@ -206,13 +206,7 @@ impl TableOfContent {
         }
 
         let alias_path = storage_config.storage_path.join(ALIASES_PATH);
-        let alias_config_path = AliasPersistence::get_config_path(&alias_path);
-        let alias_persistence = AliasPersistence::open(&alias_path).map_err(|err| {
-            StorageError::service_error(format!(
-                "Failed to open aliases file at {}: {err}",
-                alias_config_path.display(),
-            ))
-        })?;
+        let alias_persistence = AliasPersistence::open(&alias_path)?;
 
         let rate_limiter = match storage_config.performance.update_rate_limit {
             Some(limit) => Some(Semaphore::new(limit)),
