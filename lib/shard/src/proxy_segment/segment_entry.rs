@@ -357,10 +357,12 @@ impl ReadSegmentEntry for ProxySegment {
         let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
 
         if self.deleted_points.is_empty() {
-            self.wrapped_segment
-                .get()
-                .read()
-                .read_random_filtered(limit, filter.as_deref(), is_stopped, hw_counter)
+            self.wrapped_segment.get().read().read_random_filtered(
+                limit,
+                filter.as_deref(),
+                is_stopped,
+                hw_counter,
+            )
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -396,11 +398,12 @@ impl ReadSegmentEntry for ProxySegment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
         let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
-        let values = self
-            .wrapped_segment
-            .get()
-            .read()
-            .unique_values(key, filter.as_deref(), is_stopped, hw_counter)?;
+        let values = self.wrapped_segment.get().read().unique_values(
+            key,
+            filter.as_deref(),
+            is_stopped,
+            hw_counter,
+        )?;
         Ok(values)
     }
 
@@ -418,12 +421,11 @@ impl ReadSegmentEntry for ProxySegment {
         let hits = if self.deleted_points.is_empty() {
             match filter {
                 // No filter, or filter unchanged — use original request as-is.
-                None | Some(std::borrow::Cow::Borrowed(_)) => {
-                    self.wrapped_segment
-                        .get()
-                        .read()
-                        .facet(request, is_stopped, hw_counter)?
-                }
+                None | Some(std::borrow::Cow::Borrowed(_)) => self
+                    .wrapped_segment
+                    .get()
+                    .read()
+                    .facet(request, is_stopped, hw_counter)?,
                 // Filter was redacted — build a new request with the owned filter.
                 Some(std::borrow::Cow::Owned(f)) => {
                     let new_request = FacetParams {
