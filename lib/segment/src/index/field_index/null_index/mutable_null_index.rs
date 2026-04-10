@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -69,6 +70,25 @@ impl MutableNullIndex {
         }
 
         Ok(Some(Self::open_or_create(path, total_point_count)?))
+    }
+
+    pub(super) fn open_immutable(
+        path: &Path,
+        total_point_count: usize,
+        deleted: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
+        let has_values_dir = path.join(HAS_VALUES_DIRNAME);
+
+        // If has values directory doesn't exist, assume the index doesn't exist on disk
+        if !has_values_dir.is_dir() {
+            return Ok(None);
+        }
+
+        let mut mutable_null_index = Self::open_or_create(path, total_point_count)?;
+        for pos in deleted.iter_ones() {
+            mutable_null_index.remove_point_immutable(pos as PointOffsetType)?;
+        }
+        Ok(Some(mutable_null_index))
     }
 
     fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
@@ -165,6 +185,23 @@ impl MutableNullIndex {
         // Account for I/O cost as if we were writing to disk now
         let hw_counter = HardwareCounterCell::disposable();
         hw_counter.payload_index_io_write_counter().incr_delta(2);
+
+        Ok(())
+    }
+
+    pub(super) fn remove_point_immutable(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        // Update bitmaps immediately
+        self.storage.has_values_flags.set_immutable(id, false);
+        self.storage.is_null_flags.set_immutable(id, false);
+
+        // Bump total points
+        // We MUST bump the total point count when removing a point too
+        // On upsert without this respective field, remove point is called rather than add point
+        // Bumping the total point count ensures we correctly estimate the number of points
+        // Bug: <https://github.com/qdrant/qdrant/pull/6882>
+        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
+
+        // N.B. No I/O, do not update hw_counter.
 
         Ok(())
     }
