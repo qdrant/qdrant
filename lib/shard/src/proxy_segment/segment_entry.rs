@@ -72,10 +72,7 @@ impl ReadSegmentEntry for ProxySegment {
         // would error on a dimensionality mismatch). Short-circuit to an
         // empty result-per-query batch — semantically the new vector has no
         // points indexed in this segment yet.
-        if self
-            .changed_vector_names
-            .is_wrapped_data_stale(vector_name)
-        {
+        if self.changed_vector_names.is_wrapped_data_stale(vector_name) {
             return Ok(vec![Vec::new(); vectors.len()]);
         }
 
@@ -181,10 +178,7 @@ impl ReadSegmentEntry for ProxySegment {
         // Treat the lookup as if the point had no value for this vector.
         // `all_vectors` enumerates names and skips `None`s, so this also
         // hides stale entries from the per-point vector dump.
-        if self
-            .changed_vector_names
-            .is_wrapped_data_stale(vector_name)
-        {
+        if self.changed_vector_names.is_wrapped_data_stale(vector_name) {
             return Ok(None);
         }
 
@@ -471,10 +465,7 @@ impl ReadSegmentEntry for ProxySegment {
         // any new schema has no points indexed in this segment yet. Also
         // avoids calling into the wrapped with a name whose query may now
         // mean a different shape.
-        if self
-            .changed_vector_names
-            .is_wrapped_data_stale(vector_name)
-        {
+        if self.changed_vector_names.is_wrapped_data_stale(vector_name) {
             return Ok(0);
         }
 

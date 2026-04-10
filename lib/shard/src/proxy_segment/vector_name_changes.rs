@@ -208,9 +208,7 @@ impl ProxyVectorNameChanges {
             // name is actually tainted (the common case for an unrelated
             // schema change happening in the background).
             WithVector::Selector(requested) => {
-                let needs_redact = requested
-                    .iter()
-                    .any(|name| tainted.contains(name.as_str()));
+                let needs_redact = requested.iter().any(|name| tainted.contains(name.as_str()));
                 if !needs_redact {
                     return Cow::Borrowed(with_vector);
                 }
