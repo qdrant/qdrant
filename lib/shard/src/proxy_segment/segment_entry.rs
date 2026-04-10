@@ -546,25 +546,48 @@ impl ReadSegmentEntry for ProxySegment {
     fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.get().read().info();
 
-        let vector_name_count =
-            self.config().vector_data.len() + self.config().sparse_vector_data.len();
+        // Remove vector-data entries for names that the proxy has deleted or
+        // superseded with a different schema — their counts and size reflect
+        // the old, stale storage and should not be surfaced.
+        let mut vector_data = wrapped_info.vector_data;
+        let mut removed_num_vectors = 0usize;
+        let mut removed_num_indexed = 0usize;
+        let mut removed_num_deleted = 0usize;
+        vector_data.retain(|name, info| {
+            if self.changed_vector_names.is_wrapped_data_stale(name) {
+                removed_num_vectors += info.num_vectors;
+                removed_num_indexed += info.num_indexed_vectors;
+                removed_num_deleted += info.num_deleted_vectors;
+                false
+            } else {
+                true
+            }
+        });
 
+        let vector_name_count = vector_data.len();
         let deleted_points_count = self.deleted_points.len();
 
-        // This is a best estimate
+        // Best estimate: start from wrapped aggregate, subtract what we just
+        // removed (stale vectors) and what the proxy deleted (per-point
+        // deletions × remaining vector names).
         let num_vectors = wrapped_info
             .num_vectors
+            .saturating_sub(removed_num_vectors)
             .saturating_sub(deleted_points_count * vector_name_count);
 
         let num_indexed_vectors = if wrapped_info.segment_type == SegmentType::Indexed {
             wrapped_info
-                .num_vectors
+                .num_indexed_vectors
+                .saturating_sub(removed_num_indexed)
                 .saturating_sub(deleted_points_count * vector_name_count)
         } else {
             0
         };
 
-        let vector_data = wrapped_info.vector_data;
+        let num_deleted_vectors = wrapped_info
+            .num_deleted_vectors
+            .saturating_sub(removed_num_deleted)
+            + deleted_points_count * vector_name_count;
 
         SegmentInfo {
             uuid: wrapped_info.uuid,
@@ -578,9 +601,8 @@ impl ReadSegmentEntry for ProxySegment {
                     num_deleted_deferred_points.saturating_add(self.deleted_deferred_count)
                 },
             ),
-            num_deleted_vectors: wrapped_info.num_deleted_vectors
-                + deleted_points_count * vector_name_count,
-            vectors_size_bytes: wrapped_info.vectors_size_bytes, //  + write_info.vectors_size_bytes,
+            num_deleted_vectors,
+            vectors_size_bytes: wrapped_info.vectors_size_bytes,
             payloads_size_bytes: wrapped_info.payloads_size_bytes,
             ram_usage_bytes: wrapped_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes,
