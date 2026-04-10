@@ -37,10 +37,10 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn read_iter<P: AccessPattern, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>> {
-        ranges
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
+        Ok(ranges
             .into_iter()
-            .map(move |(meta, range)| self.read::<P>(range).map(|data| (meta, data)))
+            .map(move |(meta, range)| self.read::<P>(range).map(|data| (meta, data))))
     }
 
     fn len(&self) -> Result<u64>;
@@ -75,14 +75,14 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     /// accepting a callback.
     fn read_multi_iter<'a, P: AccessPattern, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
-    ) -> impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>>
     where
         Self: 'a,
     {
-        reads.into_iter().map(move |(meta, file, range)| {
+        Ok(reads.into_iter().map(move |(meta, file, range)| {
             let data = file.read::<P>(range)?;
             Ok((meta, data))
-        })
+        }))
     }
 
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
