@@ -130,11 +130,11 @@ impl TableOfContent {
         data: consensus_manager::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
-            let mut collections = self.collections.write().await;
+            let mut existing_collections = self.collections.write().await;
 
             for (id, state) in &data.collections {
-                if let Some(collection) = collections.get(id) {
-                    let collection_uuid = collection.uuid().await;
+                if let Some(existing_collection) = existing_collections.get(id) {
+                    let collection_uuid = existing_collection.uuid().await;
 
                     let recreate_collection = if collection_uuid != state.config.uuid {
                         log::warn!(
@@ -145,7 +145,7 @@ impl TableOfContent {
                         );
 
                         true
-                    } else if let Err(err) = collection.check_config_compatible(&state.config).await {
+                    } else if let Err(err) = existing_collection.check_config_compatible(&state.config).await {
                         log::warn!(
                             "Recreating collection {id}, because collection config is incompatible: \
                              {err}",
@@ -158,17 +158,17 @@ impl TableOfContent {
 
                     if recreate_collection {
                         // Drop `collections` lock
-                        drop(collections);
+                        drop(existing_collections);
 
                         // Delete collection
                         self.delete_collection(id).await?;
 
                         // Re-acquire `collections` lock 🙄
-                        collections = self.collections.write().await;
+                        existing_collections = self.collections.write().await;
                     }
                 }
 
-                let collection_exists = collections.contains_key(id);
+                let collection_exists = existing_collections.contains_key(id);
 
                 // Create collection if not present locally
                 if !collection_exists {
@@ -207,16 +207,16 @@ impl TableOfContent {
                         self.storage_config.optimizers_overwrite.clone(),
                     )
                     .await?;
-                    collections.validate_collection_not_exists(id)?;
-                    collections.insert(id.clone(), Arc::new(collection));
+                    existing_collections.validate_collection_not_exists(id)?;
+                    existing_collections.insert(id.clone(), Arc::new(collection));
                 }
 
-                let Some(collection) = collections.get(id) else {
+                let Some(existing_collection) = existing_collections.get(id) else {
                     unreachable!()
                 };
 
                 // Update collection state
-                if &collection.state().await != state {
+                if &existing_collection.state().await != state {
                     if let Some(proposal_sender) = self.consensus_proposal_sender.clone() {
                         // In some cases on state application it might be needed to abort the transfer
                         let abort_transfer = |transfer| {
@@ -232,7 +232,7 @@ impl TableOfContent {
                                 )
                             };
                         };
-                        collection
+                        existing_collection
                             .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
                             .await?;
                     } else {
@@ -243,8 +243,8 @@ impl TableOfContent {
                 // Mark local shards as dead (to initiate shard transfer),
                 // if collection has been created during snapshot application
                 if !collection_exists {
-                    for shard_id in collection.get_local_shards().await {
-                        let shard_holder = collection.shards_holder().read_owned().await;
+                    for shard_id in existing_collection.get_local_shards().await {
+                        let shard_holder = existing_collection.shards_holder().read_owned().await;
 
                         let Some(replica_set) = shard_holder.get_shard(shard_id) else {
                             continue;
@@ -258,10 +258,10 @@ impl TableOfContent {
             }
 
             // Collect names of collections that are present locally
-            let collection_names: Vec<_> = collections.keys().cloned().collect();
+            let collection_names: Vec<_> = existing_collections.keys().cloned().collect();
 
             // Drop `collections` lock
-            drop(collections);
+            drop(existing_collections);
 
             // Remove collections that are present locally, but are not in the snapshot state
             for collection_name in &collection_names {

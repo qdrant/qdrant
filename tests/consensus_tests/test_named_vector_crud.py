@@ -297,3 +297,44 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
 
     # Verify point count is still correct
     wait_collection_points_count(new_url, COLLECTION_NAME, 1000)
+
+    # Verify the restarted peer actually stores vectors with the new schema.
+    # Points 0–199 were upserted with VECTOR_DIM2 after the delete+create;
+    # their vectors must be retrievable with the correct dimensionality.
+    r = requests.post(
+        f"{new_url}/collections/{COLLECTION_NAME}/points/scroll",
+        json={
+            "limit": 10,
+            "with_vector": [VECTOR_NAME],
+            "filter": {"must": [{"key": "idx", "range": {"lte": 9}}]},
+        },
+    )
+    assert_http_ok(r)
+    scroll_result = r.json()["result"]["points"]
+    assert len(scroll_result) > 0, "Expected at least one point from scroll"
+
+    for point in scroll_result:
+        vec = point.get("vector", {}).get(VECTOR_NAME)
+        assert vec is not None, (
+            f"Point {point['id']} on restarted peer has no vector '{VECTOR_NAME}'"
+        )
+        assert len(vec) == VECTOR_DIM2, (
+            f"Point {point['id']}: expected dim {VECTOR_DIM2}, got {len(vec)}"
+        )
+
+    # Also verify that a search with the new dimensionality works on the restarted peer
+    r = requests.post(
+        f"{new_url}/collections/{COLLECTION_NAME}/points/search",
+        json={
+            "vector": {
+                "name": VECTOR_NAME,
+                "vector": [0.1] * VECTOR_DIM2,
+            },
+            "limit": 5,
+        },
+    )
+    assert_http_ok(r)
+    search_result = r.json()["result"]
+    assert len(search_result) > 0, (
+        "Search with new vector schema returned no results on restarted peer"
+    )

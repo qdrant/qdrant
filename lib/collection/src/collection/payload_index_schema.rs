@@ -64,7 +64,7 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(create_index_operation, WaitUntil::from(wait), hw_acc)
+        self.update_all_local(create_index_operation, WaitUntil::from(wait), hw_acc, false)
             .await
     }
 
@@ -85,6 +85,7 @@ impl Collection {
                 delete_index_operation,
                 WaitUntil::from(false),
                 HwMeasurementAcc::disposable(), // Unmeasured API
+                false,
             )
             .await?;
 

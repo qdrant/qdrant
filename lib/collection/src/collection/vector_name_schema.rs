@@ -34,7 +34,7 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(operation, WaitUntil::from(false), hw_acc)
+        self.update_all_local(operation, WaitUntil::from(false), hw_acc, true)
             .await?;
 
         Ok(())
@@ -53,8 +53,9 @@ impl Collection {
 
         self.update_all_local(
             operation,
-            WaitUntil::from(false),
+            WaitUntil::from(true),
             HwMeasurementAcc::disposable(),
+            true, // Delete even in dead shards
         )
         .await?;
 

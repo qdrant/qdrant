@@ -8,7 +8,7 @@ use futures::stream::FuturesUnordered;
 use crate::collection::Collection;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
-use crate::config::CollectionConfigInternal;
+use crate::config::{CollectionConfigInternal, CollectionParams};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::resharding::ReshardState;
@@ -44,6 +44,9 @@ impl Collection {
             payload_index_schema,
         } = state;
 
+        // Used to detect which named vectors have changed after applying new config
+        let old_collection_config = self.collection_config.read().await.params.clone();
+
         // Apply config first — this updates the collection-level vector definitions
         let new_config = config.clone();
         self.apply_config(config).await?;
@@ -55,7 +58,8 @@ impl Collection {
             .await?;
         // Reconcile named vectors at the segment level to match the new config.
         // This ensures segments have the correct vector storages after a Raft snapshot.
-        self.apply_vector_name_schema(&new_config).await?;
+        self.apply_vector_name_schema(old_collection_config, &new_config)
+            .await?;
         Ok(())
     }
 
@@ -267,14 +271,13 @@ impl Collection {
     /// original create/delete vector name operations.
     async fn apply_vector_name_schema(
         &self,
+        old_collection_params: CollectionParams,
         target_config: &CollectionConfigInternal,
     ) -> CollectionResult<()> {
         use segment::data_types::vector_name_config::{
             DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
         };
         use segment::types::VectorStorageDatatype;
-
-        let current_config = self.collection_config.read().await;
 
         let mut to_create: Vec<(segment::types::VectorNameBuf, VectorNameConfig)> = Vec::new();
         let mut to_delete: Vec<segment::types::VectorNameBuf> = Vec::new();
@@ -288,7 +291,7 @@ impl Collection {
                 datatype: target_params.datatype.map(VectorStorageDatatype::from),
             };
 
-            match current_config.params.vectors.get_params(vector_name) {
+            match old_collection_params.vectors.get_params(vector_name) {
                 None => {
                     // New vector — create it
                     to_create.push((
@@ -316,7 +319,7 @@ impl Collection {
         }
 
         // Dense vectors: delete those in current but not in target
-        for (vector_name, _) in current_config.params.vectors.params_iter() {
+        for (vector_name, _) in old_collection_params.vectors.params_iter() {
             if target_config
                 .params
                 .vectors
@@ -329,7 +332,7 @@ impl Collection {
 
         // Sparse vectors: compare target vs current
         if let Some(target_sparse) = &target_config.params.sparse_vectors {
-            let current_sparse = current_config.params.sparse_vectors.as_ref();
+            let current_sparse = old_collection_params.sparse_vectors.as_ref();
             for (vector_name, target_params) in target_sparse {
                 let target_sparse_cfg = SparseVectorConfig {
                     modifier: target_params.modifier,
@@ -370,7 +373,7 @@ impl Collection {
         }
 
         // Sparse vectors: delete those in current but not in target
-        if let Some(current_sparse) = &current_config.params.sparse_vectors {
+        if let Some(current_sparse) = &old_collection_params.sparse_vectors {
             let target_sparse = target_config.params.sparse_vectors.as_ref();
             for vector_name in current_sparse.keys() {
                 if !target_sparse.is_some_and(|t| t.contains_key(vector_name)) {
@@ -378,9 +381,6 @@ impl Collection {
                 }
             }
         }
-
-        // Release lock before mutating
-        drop(current_config);
 
         // Delete first (includes changed vectors), then create
         for vector_name in to_delete {

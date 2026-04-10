@@ -34,6 +34,7 @@ impl Collection {
         operation: CollectionUpdateOperations,
         wait: WaitUntil,
         hw_measurement_acc: HwMeasurementAcc,
+        force: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
@@ -59,7 +60,7 @@ impl Collection {
                             wait,
                             None,
                             hw_measurement_acc.clone(),
-                            false,
+                            force,
                         )
                     })
                     .collect();
