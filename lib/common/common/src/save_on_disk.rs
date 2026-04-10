@@ -83,8 +83,12 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     where
         F: Fn(&T) -> bool,
     {
-        let start = std::time::Instant::now();
-        while start.elapsed() < timeout {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return false;
+            }
             let mut data_read_guard = self.data.read();
             if check(&data_read_guard) {
                 return true;
@@ -94,10 +98,9 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             RwLockReadGuard::unlocked(&mut data_read_guard, || {
                 // Move the guard in so it gets unlocked before we re-lock the RwLock read guard
                 let mut guard = notification_guard;
-                self.change_notification.wait_for(&mut guard, timeout);
+                self.change_notification.wait_for(&mut guard, remaining);
             });
         }
-        false
     }
 
     /// Perform an operation over the stored data,
