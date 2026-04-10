@@ -421,7 +421,7 @@ pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> OperationResult<
     if geo_bounding_box.top_left.lat.is_nan()
         || geo_bounding_box.top_left.lon.is_nan()
         || geo_bounding_box.bottom_right.lat.is_nan()
-        || geo_bounding_box.bottom_right.lat.is_nan()
+        || geo_bounding_box.bottom_right.lon.is_nan()
     {
         return Err(OperationError::service_error("Invalid circle"));
     }
