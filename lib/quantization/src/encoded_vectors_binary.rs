@@ -944,6 +944,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         files
     }
 
+    fn heap_size_bytes(&self) -> usize {
+        self.encoded_vectors.heap_size_bytes()
+    }
+
     type SupportsBytes = True;
 
     fn score_bytes(

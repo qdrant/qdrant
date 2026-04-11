@@ -705,6 +705,16 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         files
     }
 
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            encoded_vectors,
+            metadata: _,
+            metadata_path: _,
+        } = self;
+
+        encoded_vectors.heap_size_bytes()
+    }
+
     type SupportsBytes = True;
     fn score_bytes(
         &self,

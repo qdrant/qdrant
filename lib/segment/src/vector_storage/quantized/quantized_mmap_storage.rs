@@ -101,6 +101,16 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
     }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            mmap: _,
+            quantized_vector_size: _,
+            path: _,
+        } = self;
+
+        0
+    }
 }
 
 impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {

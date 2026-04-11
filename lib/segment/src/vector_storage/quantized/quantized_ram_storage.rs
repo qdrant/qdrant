@@ -35,6 +35,7 @@ impl QuantizedRamStorage {
             })?;
         }
         reader.into_inner().drop_cache()?;
+        vectors.shrink_last_chunk();
         Ok(QuantizedRamStorage {
             vectors,
             path: path.to_path_buf(),
@@ -78,6 +79,11 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self { vectors, path: _ } = self;
+        vectors.heap_size_bytes()
     }
 }
 

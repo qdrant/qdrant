@@ -172,6 +172,32 @@ impl QuantizedVectorStorage {
     }
 }
 
+impl QuantizedVectorStorage {
+    /// Heap memory used by this storage that is not tracked in files.
+    pub fn heap_size_bytes(&self) -> usize {
+        match &self {
+            QuantizedVectorStorage::ScalarRam(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::ScalarMmap(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::ScalarChunkedMmap(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::PQRam(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::PQMmap(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::PQChunkedMmap(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::BinaryRam(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::BinaryMmap(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::BinaryChunkedMmap(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::ScalarRamMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::ScalarMmapMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::PQRamMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::PQMmapMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::PQChunkedMmapMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::BinaryRamMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::BinaryMmapMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => q.heap_size_bytes(),
+        }
+    }
+}
+
 impl fmt::Debug for QuantizedVectorStorage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("QuantizedVectorStorage").finish()
@@ -1988,6 +2014,7 @@ impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
         use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};
 
         let files = self.files();
+        let heap_bytes = self.storage_impl.heap_size_bytes() as u64;
         let intent =
             if self.config.quantization_config.always_ram() || !self.storage_impl.is_on_disk() {
                 // Data is in RAM: either always_ram config is set,
@@ -1997,6 +2024,10 @@ impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
                 // On-disk quantization: mmap'd but not populated into RAM.
                 FileStorageIntent::OnDisk
             };
-        ComponentMemoryUsage::from_files(files, intent)
+        if heap_bytes > 0 {
+            ComponentMemoryUsage::from_files_and_ram(files, intent, heap_bytes)
+        } else {
+            ComponentMemoryUsage::from_files(files, intent)
+        }
     }
 }

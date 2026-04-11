@@ -41,6 +41,30 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
         self.len == 0
     }
 
+    /// Shrink the last chunk's allocation to match its used length.
+    /// Call after bulk loading is complete to avoid wasting up to CHUNK_SIZE
+    /// bytes in the last partially-filled chunk.
+    pub fn shrink_last_chunk(&mut self) {
+        if let Some(last) = self.chunks.last_mut() {
+            last.shrink_to_fit();
+        }
+    }
+
+    /// Total heap bytes allocated by the chunks (capacity, not just used length).
+    pub fn heap_size_bytes(&self) -> usize {
+        let heap_size = self
+            .chunks
+            .iter()
+            .map(|chunk| chunk.capacity() * mem::size_of::<T>())
+            .sum();
+
+        eprintln!(
+            "self.len * dim = {} * {} -> {heap_size}",
+            self.len, self.dim
+        );
+        heap_size
+    }
+
     pub fn get(&self, key: VectorOffsetType) -> &[T] {
         self.get_opt(key).expect("vector not found")
     }

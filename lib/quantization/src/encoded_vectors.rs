@@ -71,6 +71,12 @@ pub trait EncodedVectors: Sized {
 
     fn immutable_files(&self) -> Vec<PathBuf>;
 
+    /// Additional heap memory used by this encoded vectors instance
+    /// beyond what's tracked in files (storage heap + metadata).
+    fn heap_size_bytes(&self) -> usize {
+        0
+    }
+
     type SupportsBytes: TBool;
     fn score_bytes(
         &self,

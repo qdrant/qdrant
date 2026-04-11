@@ -57,6 +57,8 @@ pub trait MultivectorOffsetsStorage: Sized {
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<PathBuf>;
+
+    fn heap_size_bytes(&self) -> usize;
 }
 
 pub struct MultivectorOffsetsStorageRam {
@@ -124,6 +126,11 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
     }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self { offsets, path: _ } = self;
+        offsets.capacity() * std::mem::size_of::<MultivectorOffset>()
+    }
 }
 
 #[derive(Debug)]
@@ -189,6 +196,14 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            offsets: _,
+            path: _,
+        } = self;
+        0
     }
 }
 
@@ -270,6 +285,11 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.data.immutable_files()
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self { data: _ } = self;
+        0
     }
 }
 
@@ -512,6 +532,17 @@ where
         let mut files = self.quantized_storage.immutable_files();
         files.extend(self.offsets.immutable_files());
         files
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            quantized_storage,
+            offsets,
+            dim: _,
+            multi_vector_config: _,
+        } = self;
+
+        quantized_storage.heap_size_bytes() + offsets.heap_size_bytes()
     }
 
     type SupportsBytes = False;

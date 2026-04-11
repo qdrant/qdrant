@@ -78,6 +78,11 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     fn immutable_files(&self) -> Vec<PathBuf> {
         ChunkedVectors::immutable_files(&self.data)
     }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self { data } = self;
+        data.heap_size_bytes()
+    }
 }
 
 #[allow(dead_code)]

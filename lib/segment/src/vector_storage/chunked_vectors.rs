@@ -397,6 +397,17 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
         }
         Ok(())
     }
+
+    pub fn heap_size_bytes(&self) -> usize {
+        let Self {
+            config: _,
+            status: _,
+            chunks: _,
+            directory: _,
+        } = self;
+
+        0
+    }
 }
 
 /// Checks if the file name matches the pattern for mmap chunks

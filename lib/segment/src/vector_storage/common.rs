@@ -19,9 +19,4 @@ pub const PAGE_SIZE_BYTES: usize = 4096;
 /// in case we need to score an iterator of vector ids
 pub const VECTOR_READ_BATCH_SIZE: usize = 64;
 
-#[cfg(debug_assertions)]
-pub const CHUNK_SIZE: usize = 512 * 1024;
-
-/// Vector storage chunk size in bytes
-#[cfg(not(debug_assertions))]
 pub const CHUNK_SIZE: usize = 32 * 1024 * 1024;
