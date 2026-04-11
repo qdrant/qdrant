@@ -52,17 +52,16 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
 
     /// Total heap bytes allocated by the chunks (capacity, not just used length).
     pub fn heap_size_bytes(&self) -> usize {
-        let heap_size = self
-            .chunks
+        let Self {
+            dim: _,
+            len: _,
+            chunk_capacity: _,
+            chunks,
+        } = self;
+        chunks
             .iter()
             .map(|chunk| chunk.capacity() * mem::size_of::<T>())
-            .sum();
-
-        eprintln!(
-            "self.len * dim = {} * {} -> {heap_size}",
-            self.len, self.dim
-        );
-        heap_size
+            .sum()
     }
 
     pub fn get(&self, key: VectorOffsetType) -> &[T] {
