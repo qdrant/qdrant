@@ -287,3 +287,7 @@ def test_memory_reporting_accuracy():
         f"Estimated {fmt_bytes(total_estimated_freed)} freed, "
         f"actual {fmt_bytes(total_actual_freed)} freed."
     )
+
+
+if __name__ == "__main__":
+    test_memory_reporting_accuracy()
