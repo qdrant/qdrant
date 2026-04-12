@@ -9,13 +9,37 @@ jemalloc allocated_bytes (from /telemetry).
 Assumes Qdrant is already running on localhost:6333.
 """
 
+import os
 import time
+from pathlib import Path
 
 import requests
 
-SNAPSHOT_URL = "https://storage.googleapis.com/qdrant-benchmark-snapshots/all-components/all-payloads-3183147373348658-2026-04-08-15-08-54.snapshot"
+SNAPSHOT_URL = "https://storage.googleapis.com/qdrant-benchmark-snapshots/all-components/all-payloads-5761161004893096-2026-04-12-13-53-30.snapshot"
 COLLECTION_NAME = "memory_test"
 BASE_URL = "http://localhost:6333"
+CACHE_DIR = Path(__file__).parent / ".snapshot_cache"
+
+
+def get_cached_snapshot() -> Path:
+    """Download the snapshot once and cache it locally; return the local path."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached_path = CACHE_DIR / Path(SNAPSHOT_URL).name
+    if cached_path.exists() and cached_path.stat().st_size > 0:
+        print(f"Using cached snapshot: {cached_path} ({cached_path.stat().st_size} bytes)")
+        return cached_path
+
+    print(f"Downloading snapshot from {SNAPSHOT_URL}...")
+    tmp_path = cached_path.with_suffix(cached_path.suffix + ".tmp")
+    with requests.get(SNAPSHOT_URL, stream=True, timeout=600) as r:
+        r.raise_for_status()
+        with open(tmp_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+    os.replace(tmp_path, cached_path)
+    print(f"Cached snapshot to {cached_path} ({cached_path.stat().st_size} bytes)")
+    return cached_path
 
 
 def get_allocated_bytes() -> int:
@@ -90,14 +114,18 @@ def test_memory_reporting_accuracy():
     # Clean up any leftover collection from a previous run
     requests.delete(f"{BASE_URL}/collections/{COLLECTION_NAME}", params={"wait": "true"})
 
-    # Recover snapshot from URL
-    print(f"\nRecovering snapshot from {SNAPSHOT_URL}...")
-    resp = requests.put(
-        f"{BASE_URL}/collections/{COLLECTION_NAME}/snapshots/recover",
-        json={"location": SNAPSHOT_URL},
-        params={"wait": "true"},
-        timeout=300,
-    )
+    # Get snapshot from local cache (download once if needed)
+    snapshot_path = get_cached_snapshot()
+
+    # Upload snapshot to Qdrant
+    print(f"\nUploading snapshot to Qdrant...")
+    with open(snapshot_path, "rb") as f:
+        resp = requests.post(
+            f"{BASE_URL}/collections/{COLLECTION_NAME}/snapshots/upload",
+            files={"snapshot": (snapshot_path.name, f, "application/octet-stream")},
+            params={"wait": "true"},
+            timeout=600,
+        )
     resp.raise_for_status()
     print("Snapshot recovered.")
 
