@@ -186,15 +186,15 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
     }
 
     fn add_to_map(map: &mut BTreeSet<Point<T>>, histogram: &mut Histogram<T>, key: Point<T>) {
-        let was_added = map.insert(key.clone());
+        let was_added = map.insert(key);
         // Histogram works with unique values (idx + value) only, so we need to
         // make sure that we don't add the same value twice.
         // key is a combination of value + idx, so we can use it to ensure than the pair is unique
         if was_added {
             histogram.insert(
                 key,
-                |x| Self::get_histogram_left_neighbor(map, x.clone()),
-                |x| Self::get_histogram_right_neighbor(map, x.clone()),
+                |x| Self::get_histogram_left_neighbor(map, *x),
+                |x| Self::get_histogram_right_neighbor(map, *x),
             );
         }
     }
@@ -204,18 +204,18 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         if was_removed {
             histogram.remove(
                 &key,
-                |x| Self::get_histogram_left_neighbor(map, x.clone()),
-                |x| Self::get_histogram_right_neighbor(map, x.clone()),
+                |x| Self::get_histogram_left_neighbor(map, *x),
+                |x| Self::get_histogram_right_neighbor(map, *x),
             );
         }
     }
 
     fn get_histogram_left_neighbor(map: &BTreeSet<Point<T>>, key: Point<T>) -> Option<Point<T>> {
-        map.range((Unbounded, Excluded(key))).next_back().cloned()
+        map.range((Unbounded, Excluded(key))).next_back().copied()
     }
 
     fn get_histogram_right_neighbor(map: &BTreeSet<Point<T>>, key: Point<T>) -> Option<Point<T>> {
-        map.range((Excluded(key), Unbounded)).next().cloned()
+        map.range((Excluded(key), Unbounded)).next().copied()
     }
 
     pub fn get_histogram(&self) -> &Histogram<T> {

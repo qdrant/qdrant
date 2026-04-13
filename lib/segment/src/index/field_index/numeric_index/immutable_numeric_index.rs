@@ -149,7 +149,7 @@ impl<T: Encodable + Numericable> Iterator for NumericKeySortedVecIterator<'_, T>
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
-            let key = self.set.data[self.start_index].clone();
+            let key = self.set.data[self.start_index];
             let deleted = self.set.deleted.get_bit(self.start_index).unwrap_or(true);
             self.start_index += 1;
             if deleted {
@@ -164,7 +164,7 @@ impl<T: Encodable + Numericable> Iterator for NumericKeySortedVecIterator<'_, T>
 impl<T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIterator<'_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
-            let key = self.set.data[self.end_index - 1].clone();
+            let key = self.set.data[self.end_index - 1];
             let deleted = self.set.deleted.get_bit(self.end_index - 1).unwrap_or(true);
             self.end_index -= 1;
             if deleted {
@@ -353,7 +353,7 @@ where
         map: &NumericKeySortedVec<T>,
         point: &Point<T>,
     ) -> Option<Point<T>> {
-        map.values_range(Bound::Unbounded, Bound::Excluded(point.clone()))
+        map.values_range(Bound::Unbounded, Bound::Excluded(*point))
             .next_back()
     }
 
@@ -361,7 +361,7 @@ where
         map: &NumericKeySortedVec<T>,
         point: &Point<T>,
     ) -> Option<Point<T>> {
-        map.values_range(Bound::Excluded(point.clone()), Bound::Unbounded)
+        map.values_range(Bound::Excluded(*point), Bound::Unbounded)
             .next()
     }
 
@@ -388,7 +388,7 @@ mod tests {
         end_bound: Bound<Point<FloatPayloadType>>,
     ) {
         let set1 = key_set
-            .values_range(start_bound.clone(), end_bound.clone())
+            .values_range(start_bound, end_bound)
             .collect::<Vec<_>>();
 
         let set2 = encoded_map

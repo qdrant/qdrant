@@ -63,7 +63,7 @@ impl<T: Encodable + Numericable> Iterator for NumericIndexPairsIterator<'_, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
-            let key = self.pairs[self.start_index].clone();
+            let key = self.pairs[self.start_index];
             let deleted = self.deleted.get(key.idx as usize).unwrap_or(true);
             self.start_index += 1;
             if deleted {
@@ -78,7 +78,7 @@ impl<T: Encodable + Numericable> Iterator for NumericIndexPairsIterator<'_, T> {
 impl<T: Encodable + Numericable> DoubleEndedIterator for NumericIndexPairsIterator<'_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
-            let key = self.pairs[self.end_index - 1].clone();
+            let key = self.pairs[self.end_index - 1];
             let deleted = self.deleted.get(key.idx as usize).unwrap_or(true);
             self.end_index -= 1;
             if deleted {
@@ -128,7 +128,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
             let pairs_mmap = unsafe { MmapMut::map_mut(&pairs_file)? };
             let mut pairs = unsafe { MmapSlice::<Point<T>>::try_from(pairs_mmap)? };
             for (src, dst) in in_memory_index.map.iter().zip(pairs.iter_mut()) {
-                *dst = src.clone();
+                *dst = *src;
             }
         }
 

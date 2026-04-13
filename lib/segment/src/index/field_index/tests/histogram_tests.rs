@@ -48,10 +48,10 @@ fn test_build_histogram_small() {
     let mut histogram = Histogram::new(max_bucket_size, precision);
 
     for point in &points {
-        points_index.insert(point.clone());
+        points_index.insert(*point);
         // print_results(&points_index, &histogram, Some(point.clone()));
         histogram.insert(
-            point.clone(),
+            *point,
             |x| {
                 points_index
                     .range((Unbounded, Excluded(x)))
@@ -63,7 +63,7 @@ fn test_build_histogram_small() {
     }
 
     for point in &points {
-        print_results(&points_index, &histogram, Some(point.clone()));
+        print_results(&points_index, &histogram, Some(*point));
         points_index.remove(point);
         histogram.remove(
             point,
@@ -202,7 +202,7 @@ pub fn build_histogram<T: Numericable + Serialize + DeserializeOwned + std::fmt:
 
     let read_counter = Cell::new(0);
     for point in points {
-        points_index.insert(point.clone());
+        points_index.insert(point);
         // print_results(&points_index, &histogram, Some(point.clone()));
         histogram.insert(
             point,
