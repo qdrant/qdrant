@@ -5,7 +5,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 
 use crate::common::Flusher;
-use crate::common::operation_error::OperationError;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::stored_bitslice::MmapBitSlice;
 
 /// A wrapper around [`MmapBitSliceStorage`] that delays writing changes to the underlying file
@@ -75,6 +75,18 @@ impl MmapBitSliceBufferedUpdateWrapper {
         pending_updates
             .write()
             .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
+    }
+
+    /// Hint to the OS that pages backing the underlying mmap can be reclaimed.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let Self {
+            bitslice,
+            len: _,
+            pending_updates: _,
+            is_alive_flush_lock: _,
+        } = self;
+        bitslice.read().clear_ram_cache()?;
+        Ok(())
     }
 
     pub fn flusher(&self) -> Flusher {

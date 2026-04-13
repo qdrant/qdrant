@@ -355,6 +355,19 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
         self.mmap.populate();
         Ok(())
     }
+
+    /// Hint to the OS that pages backing this mmap can be reclaimed.
+    pub fn clear_cache(&self) -> io::Result<()> {
+        let Self {
+            mmap,
+            header: _,
+            phf: _,
+            _phantom_key,
+            _phantom_value,
+        } = self;
+        mmap.clear_cache();
+        Ok(())
+    }
 }
 
 /// A key that can be stored in the hash map.

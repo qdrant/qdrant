@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::{atomic_save_json, clear_disk_cache};
+use common::fs::atomic_save_json;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{
@@ -391,9 +391,14 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        for chunk_idx in 0..self.chunks.len() {
-            let file_path = chunk_name(&self.directory, chunk_idx);
-            clear_disk_cache(&file_path)?;
+        let Self {
+            config: _,
+            status: _,
+            chunks,
+            directory: _,
+        } = self;
+        for chunk in chunks {
+            chunk.clear_ram_cache()?;
         }
         Ok(())
     }

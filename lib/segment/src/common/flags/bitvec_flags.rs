@@ -99,7 +99,12 @@ impl BitvecFlags {
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.clear_cache()?;
+        let Self {
+            storage,
+            bitvec: _,
+            len: _,
+        } = self;
+        storage.clear_cache()?;
         Ok(())
     }
 

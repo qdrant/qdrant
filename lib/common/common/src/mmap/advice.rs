@@ -135,6 +135,58 @@ pub trait Madviseable {
     }
 
     fn populate_simple_impl(&self);
+
+    /// Hint to the OS that pages backing this memory map can be reclaimed.
+    ///
+    /// Uses `madvise(MADV_PAGEOUT)` on Linux 5.4+, which writes back any dirty
+    /// pages and frees the resident memory while keeping the mapping valid.
+    /// On older kernels or non-Linux platforms this is a no-op, since there is
+    /// no portable userspace equivalent.
+    fn clear_cache(&self) {
+        #[cfg(target_os = "linux")]
+        {
+            use std::sync::LazyLock;
+
+            /// True if `MADV_PAGEOUT` is supported (added in Linux 5.4).
+            /// Probed by calling `madvise` with a zero-length range, which
+            /// validates the advice value without touching any memory.
+            static PAGEOUT_IS_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
+                let res =
+                    unsafe { nix::libc::madvise(std::ptr::null_mut(), 0, nix::libc::MADV_PAGEOUT) };
+                res == 0
+            });
+
+            if *PAGEOUT_IS_SUPPORTED {
+                self.pageout_impl();
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn pageout_impl(&self);
+}
+
+/// Issue `madvise(MADV_PAGEOUT)` for the given memory region.
+///
+/// Mmap base addresses are always page-aligned, so callers do not need to
+/// adjust the slice. The kernel will write back any dirty pages and reclaim
+/// the resident memory while keeping the mapping valid.
+#[cfg(target_os = "linux")]
+fn pageout_slice(slice: &[u8]) {
+    if slice.is_empty() {
+        return;
+    }
+    let res = unsafe {
+        nix::libc::madvise(
+            slice.as_ptr() as *mut _,
+            slice.len(),
+            nix::libc::MADV_PAGEOUT,
+        )
+    };
+    if res != 0 {
+        let err = io::Error::last_os_error();
+        log::warn!("Failed to call madvise(MADV_PAGEOUT): {err}");
+    }
 }
 
 impl Madviseable for memmap2::Mmap {
@@ -145,6 +197,11 @@ impl Madviseable for memmap2::Mmap {
 
     fn populate_simple_impl(&self) {
         populate_simple(self);
+    }
+
+    #[cfg(target_os = "linux")]
+    fn pageout_impl(&self) {
+        pageout_slice(self);
     }
 }
 
@@ -157,6 +214,11 @@ impl Madviseable for memmap2::MmapMut {
     fn populate_simple_impl(&self) {
         populate_simple(self);
     }
+
+    #[cfg(target_os = "linux")]
+    fn pageout_impl(&self) {
+        pageout_slice(self);
+    }
 }
 
 impl Madviseable for memmap2::MmapRaw {
@@ -168,6 +230,12 @@ impl Madviseable for memmap2::MmapRaw {
     fn populate_simple_impl(&self) {
         let mmap = unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) };
         populate_simple(mmap);
+    }
+
+    #[cfg(target_os = "linux")]
+    fn pageout_impl(&self) {
+        let mmap = unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) };
+        pageout_slice(mmap);
     }
 }
 

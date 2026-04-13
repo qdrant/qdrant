@@ -7,7 +7,7 @@ use ahash::HashMap;
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
-use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::fs::{atomic_save_json, read_json};
 use common::mmap::create_and_ensure_length;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
@@ -394,13 +394,21 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        let value_to_points_path = self.path.join(HASHMAP_PATH);
-        let deleted_path = self.path.join(DELETED_PATH);
-
-        clear_disk_cache(&value_to_points_path)?;
-        clear_disk_cache(&deleted_path)?;
-
-        self.storage.point_to_values.clear_cache()?;
+        let Self {
+            path: _,
+            storage,
+            deleted_count: _,
+            total_key_value_pairs: _,
+            is_on_disk: _,
+        } = self;
+        let Storage {
+            value_to_points,
+            point_to_values,
+            deleted,
+        } = storage;
+        value_to_points.clear_cache()?;
+        deleted.clear_cache()?;
+        point_to_values.clear_cache()?;
         Ok(())
     }
 }

@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use common::fs::clear_disk_cache;
 use common::mmap::{
     Advice, AdviceSetting, MmapFlusher, MmapSlice, create_and_ensure_length, open_write_mmap,
 };
@@ -261,7 +260,12 @@ impl BitmaskGaps {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> std::io::Result<()> {
-        clear_disk_cache(&self.path)?;
+        let Self {
+            path: _,
+            config: _,
+            mmap_slice,
+        } = self;
+        mmap_slice.clear_cache()?;
         Ok(())
     }
 }

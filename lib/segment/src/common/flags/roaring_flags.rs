@@ -100,7 +100,12 @@ impl RoaringFlags {
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.clear_cache()?;
+        let Self {
+            storage,
+            bitmap: _,
+            len: _,
+        } = self;
+        storage.clear_cache()?;
         Ok(())
     }
 

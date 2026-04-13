@@ -101,7 +101,12 @@ where
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
-        crate::fs::clear_disk_cache(&self.path)?;
+        let Self {
+            path: _,
+            mmap,
+            mmap_seq: _,
+        } = self;
+        mmap.clear_cache();
         Ok(())
     }
 }

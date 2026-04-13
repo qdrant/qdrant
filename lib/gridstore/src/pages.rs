@@ -188,7 +188,11 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> Result<()> {
-        for page in &self.pages {
+        let Self {
+            base_path: _,
+            pages,
+        } = self;
+        for page in pages {
             page.clear_ram_cache()?;
         }
         Ok(())

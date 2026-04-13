@@ -18,6 +18,13 @@ impl MmapPostingsEnum {
         }
     }
 
+    pub fn clear_cache(&self) {
+        match self {
+            MmapPostingsEnum::Ids(postings) => postings.clear_cache(),
+            MmapPostingsEnum::WithPositions(postings) => postings.clear_cache(),
+        }
+    }
+
     pub fn posting_len(&self, token_id: TokenId) -> Option<usize> {
         match self {
             MmapPostingsEnum::Ids(postings) => postings.get(token_id).map(|view| view.len()),

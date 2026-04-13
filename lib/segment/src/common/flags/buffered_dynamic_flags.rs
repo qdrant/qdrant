@@ -42,7 +42,12 @@ impl BufferedDynamicFlags {
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.lock().clear_cache()?;
+        let Self {
+            storage,
+            buffer: _,
+            is_alive_flush_lock: _,
+        } = self;
+        storage.lock().clear_cache()?;
         Ok(())
     }
 

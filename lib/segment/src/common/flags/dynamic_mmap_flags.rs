@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::fs::clear_disk_cache;
 use common::mmap::{
     AdviceSetting, Madviseable as _, MmapBitSlice, MmapType, advice, create_and_ensure_length,
     open_write_mmap,
@@ -289,8 +288,12 @@ impl DynamicMmapFlags {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        let flags_file = self.directory.join(FLAGS_FILE);
-        clear_disk_cache(&flags_file)?;
+        let Self {
+            flags,
+            status: _,
+            directory: _,
+        } = self;
+        flags.clear_cache()?;
         Ok(())
     }
 }

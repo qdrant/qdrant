@@ -34,6 +34,11 @@ impl QuantizedChunkedMmapStorage {
     pub fn populate(&self) -> OperationResult<()> {
         self.data.populate()
     }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let Self { data } = self;
+        data.clear_cache()
+    }
 }
 
 impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {

@@ -142,7 +142,14 @@ impl<V> GridstoreReader<V> {
 
     /// Drop disk cache for pages.
     pub fn clear_cache(&self) -> crate::Result<()> {
-        self.pages.clear_cache()?;
+        let Self {
+            config: _,
+            tracker: _,
+            pages,
+            base_path: _,
+            _value_type,
+        } = self;
+        pages.clear_cache()?;
         Ok(())
     }
 }

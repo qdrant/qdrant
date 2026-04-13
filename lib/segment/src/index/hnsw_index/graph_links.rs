@@ -344,6 +344,15 @@ impl GraphLinks {
         };
         Ok(())
     }
+
+    /// Hint to the OS that pages backing this mmap can be reclaimed.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self.borrow_owner() {
+            GraphLinksEnum::Mmap(mmap) => mmap.clear_cache(),
+            GraphLinksEnum::Ram(_) => {}
+        };
+        Ok(())
+    }
 }
 
 /// Sort the first `m` values in `links` and return them. Used to compare stored

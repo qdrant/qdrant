@@ -11,7 +11,6 @@ use common::cow::BoxCow;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::flags::FeatureFlags;
-use common::fs::clear_disk_cache;
 use common::progress_tracker::ProgressTracker;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
@@ -1394,9 +1393,18 @@ impl HNSWIndex {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        for file in self.graph.files(&self.path) {
-            clear_disk_cache(&file)?
-        }
+        let Self {
+            id_tracker: _,
+            vector_storage: _,
+            quantized_vectors: _,
+            payload_index: _,
+            config: _,
+            path: _,
+            graph,
+            searches_telemetry: _,
+            is_on_disk: _,
+        } = self;
+        graph.clear_cache()?;
         Ok(())
     }
 }

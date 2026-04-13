@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
 use common::bitvec::BitSlice;
-use common::fs::clear_disk_cache;
 use common::mmap::{
     Advice, AdviceSetting, MmapBitSlice, create_and_ensure_length, open_write_mmap,
 };
@@ -543,8 +542,14 @@ impl Bitmask {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> std::io::Result<()> {
-        clear_disk_cache(&self.path)?;
-        self.regions_gaps.clear_cache()?;
+        let Self {
+            config: _,
+            regions_gaps,
+            bitslice,
+            path: _,
+        } = self;
+        bitslice.clear_cache()?;
+        regions_gaps.clear_cache()?;
         Ok(())
     }
 }

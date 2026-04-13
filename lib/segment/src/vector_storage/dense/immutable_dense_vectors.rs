@@ -212,6 +212,19 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             log::error!("Failed to populate vector storage: {err}");
         }
     }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let Self {
+            dim: _,
+            num_vectors: _,
+            storage,
+            deleted,
+            deleted_count: _,
+        } = self;
+        storage.clear_ram_cache()?;
+        deleted.clear_cache()?;
+        Ok(())
+    }
 }
 
 /// Ensure the given mmap file exists and is the given size.

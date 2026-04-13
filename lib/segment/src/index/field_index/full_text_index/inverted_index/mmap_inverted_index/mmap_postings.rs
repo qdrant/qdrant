@@ -284,6 +284,17 @@ impl<V: MmapPostingValue> MmapPostings<V> {
         self.mmap.populate();
     }
 
+    /// Hint to the OS that pages backing this mmap can be reclaimed.
+    pub fn clear_cache(&self) {
+        let Self {
+            _path,
+            mmap,
+            header: _,
+            _value_type,
+        } = self;
+        mmap.clear_cache();
+    }
+
     /// Iterate over posting lists, returning a view for each
     pub fn iter_postings<'a>(&'a self) -> impl Iterator<Item = PostingListView<'a, V>> {
         (0..self.header.posting_count as u32)

@@ -162,6 +162,11 @@ impl MultivectorOffsetsStorageMmap {
     pub fn populate(&self) -> std::io::Result<()> {
         self.offsets.populate()
     }
+
+    pub fn clear_cache(&self) -> std::io::Result<()> {
+        let Self { offsets, path: _ } = self;
+        offsets.clear_cache()
+    }
 }
 
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
@@ -243,6 +248,11 @@ impl MultivectorOffsetsStorageChunkedMmap {
 
     pub fn populate(&self) -> OperationResult<()> {
         self.data.populate()
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let Self { data } = self;
+        data.clear_cache()
     }
 }
 

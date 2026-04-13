@@ -6,7 +6,7 @@ use bitvec::vec::BitVec;
 use common::binary_search::binary_search_by;
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
@@ -583,18 +583,26 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        let deleted_path = self.path.join(DELETED_PATH);
-        let counts_per_hash_path = self.path.join(COUNTS_PER_HASH);
-        let points_map_path = self.path.join(POINTS_MAP);
-        let points_map_ids_path = self.path.join(POINTS_MAP_IDS);
-
-        clear_disk_cache(&deleted_path)?;
-        clear_disk_cache(&counts_per_hash_path)?;
-        clear_disk_cache(&points_map_path)?;
-        clear_disk_cache(&points_map_ids_path)?;
-
-        self.storage.point_to_values.clear_cache()?;
-
+        let Self {
+            path: _,
+            storage,
+            deleted_count: _,
+            points_values_count: _,
+            max_values_per_point: _,
+            is_on_disk: _,
+        } = self;
+        let Storage {
+            counts_per_hash,
+            points_map,
+            points_map_ids,
+            point_to_values,
+            deleted,
+        } = storage;
+        deleted.clear_cache()?;
+        counts_per_hash.clear_ram_cache()?;
+        points_map.clear_ram_cache()?;
+        points_map_ids.clear_ram_cache()?;
+        point_to_values.clear_cache()?;
         Ok(())
     }
 }

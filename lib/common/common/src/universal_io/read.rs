@@ -89,7 +89,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
 
     /// Ask to evict related data from RAM cache, if applicable for this implementation.
     ///
-    /// For example in MMAP-based files we do `fadvise` with `POSIX_FADV_DONTNEED`.
+    /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.
     fn clear_ram_cache(&self) -> Result<()>;
 
     /// Read from multiple files in a single operation.

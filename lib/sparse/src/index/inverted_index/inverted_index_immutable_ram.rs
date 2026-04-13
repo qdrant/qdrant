@@ -49,6 +49,8 @@ impl InvertedIndex for InvertedIndexImmutableRam {
             });
         }
 
+        mmap_inverted_index.clear_cache()?;
+
         inverted_index.total_sparse_size = inverted_index.total_posting_elements_size();
 
         Ok(InvertedIndexImmutableRam {

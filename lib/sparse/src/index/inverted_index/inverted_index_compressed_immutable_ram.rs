@@ -57,6 +57,8 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
             inverted_index.postings.push(posting_list.to_owned());
         }
 
+        mmap_inverted_index.clear_cache()?;
+
         Ok(inverted_index)
     }
 

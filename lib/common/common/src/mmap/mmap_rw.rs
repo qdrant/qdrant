@@ -187,6 +187,13 @@ where
         self.mmap.populate();
         Ok(())
     }
+
+    /// Hint to the OS that pages backing this mmap can be reclaimed.
+    pub fn clear_cache(&self) -> std::io::Result<()> {
+        let Self { r#type: _, mmap } = self;
+        mmap.clear_cache();
+        Ok(())
+    }
 }
 
 impl<T> Deref for MmapType<T>
@@ -305,6 +312,13 @@ impl<T> MmapSlice<T> {
         self.mmap.populate()?;
         Ok(())
     }
+
+    /// Hint to the OS that pages backing this mmap can be reclaimed.
+    pub fn clear_cache(&self) -> std::io::Result<()> {
+        let Self { mmap } = self;
+        mmap.clear_cache()?;
+        Ok(())
+    }
 }
 
 impl<T> Deref for MmapSlice<T> {
@@ -415,6 +429,13 @@ impl MmapBitSlice {
     /// Block until all pages are populated.
     pub fn populate(&self) -> std::io::Result<()> {
         self.mmap.populate()?;
+        Ok(())
+    }
+
+    /// Hint to the OS that pages backing this mmap can be reclaimed.
+    pub fn clear_cache(&self) -> std::io::Result<()> {
+        let Self { mmap } = self;
+        mmap.clear_cache()?;
         Ok(())
     }
 }

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::fs::{atomic_save_json, read_json};
 use common::mmap::{Advice, AdviceSetting, Madviseable};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{
@@ -388,7 +388,14 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> std::io::Result<()> {
-        clear_disk_cache(&self.path)
+        let Self {
+            path: _,
+            mmap,
+            file_header: _,
+            _phantom,
+        } = self;
+        mmap.clear_cache();
+        Ok(())
     }
 }
 

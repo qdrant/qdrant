@@ -515,8 +515,17 @@ impl<V> Gridstore<V> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> crate::Result<()> {
-        self.pages.read().clear_cache()?;
-        self.bitmask.read().clear_cache()?;
+        let Self {
+            config: _,
+            tracker: _,
+            pages,
+            bitmask,
+            base_path: _,
+            _value_type,
+            is_alive_flush_lock: _,
+        } = self;
+        pages.read().clear_cache()?;
+        bitmask.read().clear_cache()?;
         Ok(())
     }
 }

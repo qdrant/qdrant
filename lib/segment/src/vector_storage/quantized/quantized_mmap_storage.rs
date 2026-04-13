@@ -20,6 +20,15 @@ impl QuantizedMmapStorage {
     pub fn populate(&self) {
         self.mmap.populate();
     }
+
+    pub fn clear_cache(&self) {
+        let Self {
+            mmap,
+            quantized_vector_size: _,
+            path: _,
+        } = self;
+        mmap.clear_cache();
+    }
 }
 
 pub struct QuantizedMmapStorageBuilder {

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
@@ -1888,8 +1888,47 @@ impl QuantizedVectors {
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        for file in self.files() {
-            clear_disk_cache(&file)?;
+        match &self.storage_impl {
+            QuantizedVectorStorage::ScalarRam(_) => {} // not mmap
+            QuantizedVectorStorage::ScalarMmap(storage) => storage.storage().clear_cache(),
+            QuantizedVectorStorage::ScalarChunkedMmap(storage) => {
+                storage.storage().clear_cache()?
+            }
+            QuantizedVectorStorage::PQRam(_) => {}
+            QuantizedVectorStorage::PQMmap(storage) => storage.storage().clear_cache(),
+            QuantizedVectorStorage::PQChunkedMmap(storage) => storage.storage().clear_cache()?,
+            QuantizedVectorStorage::BinaryRam(_) => {}
+            QuantizedVectorStorage::BinaryMmap(storage) => storage.storage().clear_cache(),
+            QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
+                storage.storage().clear_cache()?
+            }
+            QuantizedVectorStorage::ScalarRamMulti(_) => {}
+            QuantizedVectorStorage::ScalarMmapMulti(storage) => {
+                storage.storage().storage().clear_cache();
+                storage.offsets_storage().clear_cache()?;
+            }
+            QuantizedVectorStorage::ScalarChunkedMmapMulti(storage) => {
+                storage.storage().storage().clear_cache()?;
+                storage.offsets_storage().clear_cache()?;
+            }
+            QuantizedVectorStorage::PQRamMulti(_) => {}
+            QuantizedVectorStorage::PQMmapMulti(storage) => {
+                storage.storage().storage().clear_cache();
+                storage.offsets_storage().clear_cache()?;
+            }
+            QuantizedVectorStorage::PQChunkedMmapMulti(storage) => {
+                storage.storage().storage().clear_cache()?;
+                storage.offsets_storage().clear_cache()?;
+            }
+            QuantizedVectorStorage::BinaryRamMulti(_) => {}
+            QuantizedVectorStorage::BinaryMmapMulti(storage) => {
+                storage.storage().storage().clear_cache();
+                storage.offsets_storage().clear_cache()?;
+            }
+            QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
+                storage.storage().storage().clear_cache()?;
+                storage.offsets_storage().clear_cache()?;
+            }
         }
         Ok(())
     }

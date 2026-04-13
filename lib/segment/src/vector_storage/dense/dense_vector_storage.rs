@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::clear_disk_cache;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
@@ -62,8 +61,16 @@ where
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        clear_disk_cache(&self.vectors_path)?;
-        clear_disk_cache(&self.deleted_path)?;
+        let Self {
+            vectors_path: _,
+            deleted_path: _,
+            vectors,
+            distance: _,
+            populated: _,
+        } = self;
+        if let Some(vectors) = vectors {
+            vectors.clear_cache()?;
+        }
         Ok(())
     }
 }

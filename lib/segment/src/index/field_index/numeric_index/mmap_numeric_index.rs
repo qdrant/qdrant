@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
-use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::fs::{atomic_save_json, read_json};
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
@@ -400,14 +400,22 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        let pairs_path = self.path.join(PAIRS_PATH);
-        let deleted_path = self.path.join(DELETED_PATH);
-
-        clear_disk_cache(&pairs_path)?;
-        clear_disk_cache(&deleted_path)?;
-
-        self.storage.point_to_values.clear_cache()?;
-
+        let Self {
+            path: _,
+            storage,
+            histogram: _,
+            deleted_count: _,
+            max_values_per_point: _,
+            is_on_disk: _,
+        } = self;
+        let Storage {
+            deleted,
+            pairs,
+            point_to_values,
+        } = storage;
+        pairs.clear_cache()?;
+        deleted.clear_cache()?;
+        point_to_values.clear_cache()?;
         Ok(())
     }
 }

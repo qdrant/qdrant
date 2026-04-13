@@ -709,6 +709,17 @@ impl GraphLayers {
         self.links.populate()?;
         Ok(())
     }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let Self {
+            hnsw_m: _,
+            links,
+            entry_points: _,
+            visited_pool: _,
+        } = self;
+        links.clear_cache()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

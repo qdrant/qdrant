@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::clear_disk_cache;
 use common::mmap::{self, AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
@@ -392,11 +391,22 @@ impl MmapInvertedIndex {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        let files = self.files();
-        for file in files {
-            clear_disk_cache(&file)?;
-        }
-
+        let Self {
+            path: _,
+            storage,
+            active_points_count: _,
+            is_on_disk: _,
+        } = self;
+        let Storage {
+            postings,
+            vocab,
+            point_to_tokens_count,
+            deleted_points,
+        } = storage;
+        postings.clear_cache();
+        vocab.clear_cache()?;
+        point_to_tokens_count.clear_cache()?;
+        deleted_points.clear_cache()?;
         Ok(())
     }
 }

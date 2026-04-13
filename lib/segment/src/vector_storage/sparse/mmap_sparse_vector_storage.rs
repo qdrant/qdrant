@@ -167,8 +167,14 @@ impl MmapSparseVectorStorage {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.deleted.clear_cache()?;
-        self.storage.clear_cache()?;
+        let Self {
+            storage,
+            deleted,
+            deleted_count: _,
+            next_point_offset: _,
+        } = self;
+        deleted.clear_cache()?;
+        storage.clear_cache()?;
         Ok(())
     }
 }
