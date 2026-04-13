@@ -54,13 +54,11 @@ impl HadamardRotation {
         // TODO: Can we use f32?
 
         let mut buf = Vec::with_capacity(self.padded_dim);
-        buf.extend(x.iter().map(|&v| v as f64));
-        buf.resize(self.padded_dim, 0.0);
 
-        // Apply random signs
-        for (b, &s) in buf.iter_mut().zip(self.signs1.iter()) {
-            *b *= s;
-        }
+        // Update `buf` with the vector and signs applied.
+        buf.extend(x.iter().zip(&self.signs1).map(|(&v, &s)| v as f64 * s));
+
+        buf.resize(self.padded_dim, 0.0);
 
         // Apply hadamard
         for chunk in buf.chunks_mut(self.chunk_size) {
@@ -78,24 +76,31 @@ impl HadamardRotation {
             }
         }
 
-        // Apply second random signs.
-        for (b, &s) in buf.iter_mut().zip(self.signs2.iter()) {
-            *b *= s;
-        }
+        // Merge second random signs and normalization.
+        let norm = self.normalization_factor();
+        let signs_and_norm_iter = self.signs2.iter().map(|&s| s * norm);
 
-        buf.iter().map(|&v| v as f32).collect()
+        buf.iter()
+            // Apply merged signs and norm.
+            .zip(signs_and_norm_iter)
+            .map(|(&v, sn)| (v * sn) as f32)
+            .collect()
     }
 
     pub fn apply_inverse(&self, y: &[f32], original_dim: usize) -> Vec<f32> {
         debug_assert!(original_dim <= self.padded_dim);
-        let mut buf = Vec::with_capacity(self.padded_dim);
-        buf.extend(y.iter().map(|&v| v as f64));
-        buf.resize(self.padded_dim, 0.0);
 
-        // Apply signs 2
-        for (b, &s) in buf.iter_mut().zip(self.signs2.iter()) {
-            *b *= s;
-        }
+        let mut buf = Vec::with_capacity(self.padded_dim);
+
+        // Apply second random signs, normalization, and f32->f64 conversion in one pass.
+        let norm = self.normalization_factor();
+        buf.extend(
+            y.iter()
+                .zip(&self.signs2)
+                .map(|(&v, &s)| v as f64 * s * norm),
+        );
+
+        buf.resize(self.padded_dim, 0.0);
 
         // First hadamard
         for chunk in buf.chunks_mut(self.chunk_size) {
@@ -114,16 +119,24 @@ impl HadamardRotation {
             }
         }
 
-        // Apply signs 1
-        for (b, &s) in buf.iter_mut().zip(self.signs1.iter()) {
-            *b *= s;
-        }
+        buf[..original_dim]
+            .iter()
+            // Apply signs 1
+            .zip(&self.signs1)
+            .map(|(&v, &sign)| (v * sign) as f32)
+            .collect()
+    }
 
-        buf[..original_dim].iter().map(|&v| v as f32).collect()
+    /// Combined normalization for 4 unnormalized WHTs: 1 / sqrt(n)^4 = 1 / n^2.
+    fn normalization_factor(&self) -> f64 {
+        // 1 initial WHT + N_PERMUTATIONS = 4 total. Update exponent if this changes.
+        static_assertions::const_assert_eq!(N_PERMUTATIONS, 3);
+        1.0 / (self.chunk_size * self.chunk_size) as f64
     }
 }
 
-/// In-place normalized Walsh-Hadamard Transform in f64. Self-inverse: WHT(WHT(x)) = x.
+/// In-place unnormalized Walsh-Hadamard Transform in f64.
+/// Normalization is applied externally in `apply`/`apply_inverse`.
 /// Input length must be a power of 2.
 pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
     let n = x.len();
@@ -139,10 +152,6 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
             }
         }
         h *= 2;
-    }
-    let norm = (n as f64).sqrt();
-    for val in x.iter_mut() {
-        *val /= norm;
     }
 }
 

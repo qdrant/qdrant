@@ -1,8 +1,8 @@
 use std::hint::black_box;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use quantization::turboquant::rotation::{
-    get_chunk_size, in_place_walsh_hadamard_transform, HadamardRotation,
+    HadamardRotation, get_chunk_size, in_place_walsh_hadamard_transform,
 };
 
 const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
