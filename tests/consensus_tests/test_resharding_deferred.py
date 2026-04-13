@@ -307,8 +307,8 @@ def test_resharding_transfer_deferred_points(tmp_path: pathlib.Path, direction: 
                     }
                 },
             )
-        assert_http_ok(resp)
-        time.sleep(1)
+            assert_http_ok(resp)
+            time.sleep(1)
 
     # Complete resharding: commit hash rings and finish.
     resp = commit_read_hashring(peer_api_uris[0])
