@@ -1,3 +1,5 @@
+pub mod rotation;
+
 use std::alloc::Layout;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};

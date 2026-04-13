@@ -1,0 +1,58 @@
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use quantization::turboquant::rotation::{
+    get_chunk_size, in_place_walsh_hadamard_transform, HadamardRotation,
+};
+
+const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
+
+fn bench_wht(c: &mut Criterion) {
+    let mut group = c.benchmark_group("walsh_hadamard_transform");
+
+    for &dim in DIMS {
+        let chunk_size = get_chunk_size(dim);
+        let mut data: Vec<f64> = (0..chunk_size).map(|i| i as f64 * 0.01).collect();
+
+        group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
+            b.iter(|| {
+                in_place_walsh_hadamard_transform(black_box(&mut data));
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_apply(c: &mut Criterion) {
+    let mut group = c.benchmark_group("hadamard_apply");
+
+    for &dim in DIMS {
+        let rot = HadamardRotation::new(42, dim);
+        let input: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.1).collect();
+
+        group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
+            b.iter(|| black_box(rot.apply(black_box(&input))));
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_apply_inverse(c: &mut Criterion) {
+    let mut group = c.benchmark_group("hadamard_apply_inverse");
+
+    for &dim in DIMS {
+        let rot = HadamardRotation::new(42, dim);
+        let input: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.1).collect();
+        let rotated = rot.apply(&input);
+
+        group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
+            b.iter(|| black_box(rot.apply_inverse(black_box(&rotated), dim)));
+        });
+    }
+
+    group.finish();
+}
+criterion_group!(benches, bench_wht, bench_apply, bench_apply_inverse,);
+criterion_main!(benches);
