@@ -49,8 +49,6 @@ impl ImmutableNullIndex {
     // N.B.: these operations are immutable.
     delegate! {
         to self.0 {
-            // TODO telemetry should overwrite a text tag.
-            pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry;
             pub fn values_count(&self, point_id: PointOffsetType) -> usize;
             pub fn values_is_empty(&self, id: PointOffsetType) -> bool;
             pub fn values_is_null(&self, id: PointOffsetType) -> bool;
@@ -58,6 +56,18 @@ impl ImmutableNullIndex {
             pub fn populate(&self) -> OperationResult<()>;
             pub fn clear_cache(&self) -> OperationResult<()>;
             pub fn get_storage_type(&self) -> StorageType;
+        }
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        let points_count = self.count_indexed_points();
+
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count,
+            points_values_count: points_count,
+            histogram_bucket_size: None,
+            index_type: "immutable_null_index",
         }
     }
 }

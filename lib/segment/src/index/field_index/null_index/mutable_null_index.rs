@@ -77,19 +77,16 @@ impl MutableNullIndex {
         total_point_count: usize,
         deleted: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let has_values_dir = path.join(HAS_VALUES_DIRNAME);
-
-        // If has values directory doesn't exist, assume the index doesn't exist on disk
-        if !has_values_dir.is_dir() {
-            return Ok(None);
+        let mutable_null_index = Self::open(path, total_point_count, false)?;
+        match mutable_null_index {
+            Some(mut mutable_null_index) => {
+                for pos in deleted.iter_ones() {
+                    mutable_null_index.remove_point_immutable(pos as PointOffsetType);
+                }
+                Ok(Some(mutable_null_index))
+            }
+            None => Ok(None),
         }
-
-        // TODO should be an error if it doesn't exist.
-        let mut mutable_null_index = Self::open_or_create(path, total_point_count)?;
-        for pos in deleted.iter_ones() {
-            mutable_null_index.remove_point_immutable(pos as PointOffsetType);
-        }
-        Ok(Some(mutable_null_index))
     }
 
     fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
@@ -195,12 +192,8 @@ impl MutableNullIndex {
         self.storage.has_values_flags.set_immutable(id, false);
         self.storage.is_null_flags.set_immutable(id, false);
 
-        // Bump total points
-        // We MUST bump the total point count when removing a point too
-        // On upsert without this respective field, remove point is called rather than add point
-        // Bumping the total point count ensures we correctly estimate the number of points
-        // Bug: <https://github.com/qdrant/qdrant/pull/6882>
-        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
+        // N.B. We do not update total_point_count because it comes from the id tracker and is not not changed
+        // in non-appendable segments.
 
         // N.B. No I/O, do not update hw_counter.
     }
