@@ -604,12 +604,7 @@ impl Collection {
 
         let mut reports = Vec::new();
         while let Some(result) = futures::StreamExt::next(&mut futures).await {
-            match result {
-                Ok(report) => reports.push(report),
-                Err(err) => {
-                    log::warn!("Failed to collect memory report from shard: {err}");
-                }
-            }
+            reports.push(result?);
         }
 
         Ok(CollectionMemoryReport::merge_all(reports))

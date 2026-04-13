@@ -1445,8 +1445,12 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
         match local.as_ref() {
             Some(Shard::Local(local_shard)) => local_shard.memory_report().await,
-            // Proxy shards are temporary (during transfers), skip them
-            _ => Ok(crate::common::memory_reporter::CollectionMemoryReport::default()),
+            Some(Shard::Proxy(proxy_shard)) => proxy_shard.memory_report().await,
+            Some(Shard::ForwardProxy(forward_shard)) => forward_shard.memory_report().await,
+            Some(Shard::QueueProxy(queue_shard)) => queue_shard.memory_report().await,
+            Some(Shard::Dummy(_)) | None => {
+                Ok(crate::common::memory_reporter::CollectionMemoryReport::default())
+            }
         }
     }
 
@@ -1461,7 +1465,6 @@ impl ShardReplicaSet {
             let remotes = self.remotes.read().await;
             let futures: Vec<_> = remotes
                 .iter()
-                .filter(|remote| self.peer_is_updatable(remote.peer_id))
                 .map(|remote| remote.memory_report())
                 .collect();
             futures::future::try_join_all(futures).await

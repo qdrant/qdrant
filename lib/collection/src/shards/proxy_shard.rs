@@ -26,6 +26,7 @@ use tokio::time::timeout;
 
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::operations::OperationWithClockTag;
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
@@ -183,6 +184,10 @@ impl ProxyShard {
 
     pub async fn set_normal_wal_retention(&self) {
         self.wrapped_shard.set_normal_wal_retention().await;
+    }
+
+    pub async fn memory_report(&self) -> CollectionResult<CollectionMemoryReport> {
+        self.wrapped_shard.memory_report().await
     }
 }
 

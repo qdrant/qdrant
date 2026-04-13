@@ -163,7 +163,7 @@ pub fn measure_component(
         extra_ram_bytes,
     } = usage;
 
-    let mut ram_bytes = extra_ram_bytes.unwrap_or(0);
+    let ram_bytes = extra_ram_bytes.unwrap_or(0);
     let mut disk_bytes = 0u64;
     let mut cached_bytes = 0u64;
     let mut expected_cache_bytes = 0u64;
@@ -179,9 +179,6 @@ pub fn measure_component(
 
         disk_bytes += file_disk;
         match intent {
-            FileStorageIntent::Pinned => {
-                ram_bytes += file_resident;
-            }
             FileStorageIntent::Cached => {
                 expected_cache_bytes += file_disk;
                 cached_bytes += file_resident;

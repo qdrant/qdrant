@@ -2015,15 +2015,11 @@ impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
 
         let files = self.files();
         let heap_bytes = self.storage_impl.heap_size_bytes() as u64;
-        let intent =
-            if self.config.quantization_config.always_ram() || !self.storage_impl.is_on_disk() {
-                // Data is in RAM: either always_ram config is set,
-                // or storage is a RAM variant.
-                FileStorageIntent::Pinned
-            } else {
-                // On-disk quantization: mmap'd but not populated into RAM.
-                FileStorageIntent::OnDisk
-            };
+
+        // Either always_ram, then we only load on in ram and track heap_bytes
+        // Or full on_disk, and we don't preload anything
+        let intent = FileStorageIntent::OnDisk;
+
         if heap_bytes > 0 {
             ComponentMemoryUsage::from_files_and_ram(files, intent, heap_bytes)
         } else {

@@ -28,6 +28,7 @@ use super::transfer::driver::MAX_RETRY_COUNT;
 use super::transfer::transfer_tasks_pool::TransferTaskProgress;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::operations::OperationWithClockTag;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
@@ -288,6 +289,13 @@ impl QueueProxyShard {
         if let Some(inner) = &self.inner {
             inner.wrapped_shard.set_normal_wal_retention().await;
         }
+    }
+
+    pub async fn memory_report(&self) -> CollectionResult<CollectionMemoryReport> {
+        if let Some(inner) = &self.inner {
+            return inner.wrapped_shard.memory_report().await;
+        }
+        Ok(CollectionMemoryReport::default())
     }
 }
 
