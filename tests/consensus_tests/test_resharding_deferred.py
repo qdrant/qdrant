@@ -293,6 +293,22 @@ def test_resharding_transfer_deferred_points(tmp_path: pathlib.Path, direction: 
         )
         assert_http_ok(resp)
         time.sleep(1)
+    else:
+        # Without this, the replicas stays in "ReshardingScaleDown" state
+        for shard_id in range(target_shard_id):
+            peer_id, _ = find_replica(shard_id, info, peer_api_uris, peer_ids)
+
+            resp = requests.post(
+                f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
+                json={
+                    "finish_migrating_points": {
+                        "peer_id": peer_id,
+                        "shard_id": shard_id,
+                    }
+                },
+            )
+        assert_http_ok(resp)
+        time.sleep(1)
 
     # Complete resharding: commit hash rings and finish.
     resp = commit_read_hashring(peer_api_uris[0])
