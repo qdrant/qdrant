@@ -942,12 +942,7 @@ impl PayloadIndex for StructPayloadIndex {
 
         Box::new(move || {
             for flusher in flushers {
-                flusher().map_err(|err| match err {
-                    OperationError::Cancelled { .. } => err,
-                    _ => OperationError::service_error(format!(
-                        "Failed to flush payload_index: {err}",
-                    )),
-                })?;
+                flusher()?;
             }
             Ok(())
         })

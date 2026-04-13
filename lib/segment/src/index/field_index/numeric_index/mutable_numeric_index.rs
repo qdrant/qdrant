@@ -332,17 +332,7 @@ where
         match &self.storage {
             Storage::Gridstore(store) => {
                 let storage_flusher = store.flusher();
-                Box::new(move || {
-                    storage_flusher().map_err(|err| {
-                        let op_err: OperationError = err.into();
-                        match op_err {
-                            OperationError::Cancelled { .. } => op_err,
-                            _ => OperationError::service_error(format!(
-                                "Failed to flush mutable numeric index gridstore: {op_err}"
-                            )),
-                        }
-                    })
-                })
+                Box::new(move || storage_flusher().map_err(OperationError::from))
             }
         }
     }
