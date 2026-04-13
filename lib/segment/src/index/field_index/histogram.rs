@@ -8,6 +8,7 @@ use common::fs::{atomic_save_bin, atomic_save_json, read_bin, read_json};
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use num_traits::Num;
+pub use point::Point;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -24,42 +25,66 @@ pub struct Counts {
     pub right: usize,
 }
 
-#[allow(clippy::derive_ord_xor_partial_ord)]
-#[derive(
-    PartialEq,
-    PartialOrd,
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    bytemuck::Pod,
-    bytemuck::Zeroable,
-)]
-#[repr(C, packed)]
-pub struct Point<T: Numericable> {
-    pub val: T,
-    pub idx: PointOffsetType,
-    _padding: T::PointPadding,
-}
+// bytemuck macros expand to code that triggers this clippy lint
+// The only reason this is its own module is so that we scope the lint suppression
+#[expect(clippy::multiple_bound_locations)]
+mod point {
+    use common::types::PointOffsetType;
 
-impl<T: Numericable> Point<T> {
-    pub fn new(val: T, idx: PointOffsetType) -> Self {
-        Self {
-            val,
-            idx,
-            _padding: bytemuck::Zeroable::zeroed(),
+    use crate::index::field_index::histogram::Numericable;
+
+    #[expect(clippy::derive_ord_xor_partial_ord)]
+    #[derive(
+        PartialEq,
+        PartialOrd,
+        Debug,
+        Clone,
+        Copy,
+        serde::Serialize,
+        serde::Deserialize,
+        bytemuck::Pod,
+        bytemuck::Zeroable,
+    )]
+    #[repr(C, packed)]
+    pub struct Point<T: Numericable> {
+        pub val: T,
+        pub idx: PointOffsetType,
+        _padding: T::PointPadding,
+    }
+
+    impl<T: Numericable> Point<T> {
+        pub fn new(val: T, idx: PointOffsetType) -> Self {
+            Self {
+                val,
+                idx,
+                _padding: bytemuck::Zeroable::zeroed(),
+            }
+        }
+    }
+
+    impl<T: PartialEq + Numericable> Eq for Point<T> {}
+
+    impl<T: PartialOrd + Copy + Numericable> Ord for Point<T> {
+        fn cmp(&self, other: &Point<T>) -> std::cmp::Ordering {
+            (self.val, self.idx)
+                .partial_cmp(&(other.val, other.idx))
+                .unwrap()
         }
     }
 }
 
-impl<T: PartialEq + Numericable> Eq for Point<T> {}
-
-impl<T: PartialOrd + Copy + Numericable> Ord for Point<T> {
-    fn cmp(&self, other: &Point<T>) -> std::cmp::Ordering {
-        (self.val, self.idx)
-            .partial_cmp(&(other.val, other.idx))
-            .unwrap()
+/// Calculate the exact padding so that the [`Point<T>`] type would have explicit alignment, so that
+/// it is able to derive [`bytemuck::Pod`] and use #[repr(packed)] safely
+const fn derive_point_padding<T: bytemuck::Pod>() -> usize {
+    struct Point<T> {
+        _t: T,
+        _idx: PointOffsetType,
+    }
+    let align = std::mem::align_of::<Point<T>>();
+    if align <= 1 {
+        0
+    } else {
+        align - (std::mem::size_of::<T>() + std::mem::size_of::<PointOffsetType>()) % align
     }
 }
 
@@ -90,21 +115,6 @@ pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod {
     }
     fn abs_diff(self, b: Self) -> Self {
         if self > b { self - b } else { b - self }
-    }
-}
-
-/// Calculate the exact padding so that the [`Point<T>`] type would have explicit alignment, so that
-/// it is able to derive [`bytemuck::Pod`] and use #[repr(packed)] safely
-const fn derive_point_padding<T: bytemuck::Pod>() -> usize {
-    struct Point<T> {
-        _t: T,
-        _idx: PointOffsetType,
-    }
-    let align = std::mem::align_of::<Point<T>>();
-    if align <= 1 {
-        0
-    } else {
-        align - (std::mem::size_of::<T>() + std::mem::size_of::<PointOffsetType>()) % align
     }
 }
 
