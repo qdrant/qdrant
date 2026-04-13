@@ -53,7 +53,7 @@ jobs:
           manylinux: ${{ matrix.manylinux }}
 
       - name: Upload Python wheel
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qdrant-edge-${{ matrix.manylinux }}-${{ matrix.arch || matrix.target }}-${{ matrix.python }}
           path: lib/edge/python/dist
@@ -94,7 +94,7 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Upload Python wheel
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qdrant-edge-macos-${{ matrix.target }}-${{ matrix.python.label || matrix.python }}
           path: lib/edge/python/dist
@@ -135,7 +135,7 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Upload Python wheel
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qdrant-edge-windows-${{ matrix.target }}-${{ matrix.python.label || matrix.python }}
           path: lib/edge/python/dist
@@ -209,7 +209,7 @@ jobs:
 
     steps:
       - name: Merge release artifacts
-        uses: actions/upload-artifact/merge@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact/merge@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qdrant-edge
           pattern: qdrant-edge-*
