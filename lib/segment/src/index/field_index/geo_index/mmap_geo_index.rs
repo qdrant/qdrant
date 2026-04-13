@@ -322,7 +322,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         Ok(self
             .storage
             .counts_per_hash
-            .read_iter_autobatched(once(ReadRange {
+            .read_iter_autochunks(once(ReadRange {
                 byte_offset: 0,
                 length: self.storage.counts_per_hash.len()?,
             }))?
@@ -337,8 +337,10 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         hash: GeoHash,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        let (points, _) = self.counts_of_hash(hash, hw_counter)?;
-        Ok(points)
+        Ok(self
+            .counts_of_hash(hash, hw_counter)?
+            .map(|c| c.points as usize)
+            .unwrap_or(0))
     }
 
     pub fn values_of_hash(
@@ -346,15 +348,17 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         hash: GeoHash,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        let (_, values) = self.counts_of_hash(hash, hw_counter)?;
-        Ok(values)
+        Ok(self
+            .counts_of_hash(hash, hw_counter)?
+            .map(|c| c.values as usize)
+            .unwrap_or(0))
     }
 
     fn counts_of_hash(
         &self,
         hash: GeoHash,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<(usize, usize)> {
+    ) -> OperationResult<Option<Counts>> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
         let len = self.storage.counts_per_hash.len()? as usize;
 
@@ -374,10 +378,9 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         })?;
 
         if let Ok(index) = found {
-            let counts = read_one(index)?;
-            Ok((counts.points as usize, counts.values as usize))
+            read_one(index).map(|c| Some(c))
         } else {
-            Ok((0, 0))
+            Ok(None)
         }
     }
 
@@ -489,21 +492,23 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
             .iter_autochunks::<PointKeyValue>()
             .enumerate(),
         )?;
+
+        // 128 - Guesstimate to avoid extra allocations on first iterations
         let mut point_map_ranges: Vec<ReadRange> = Vec::with_capacity(128);
-        let mut end_chunk = None;
+        let mut end_chunk_idx = None;
         let mut received_chunks = BitVec::<usize>::EMPTY;
 
         for chunk_result in chunks {
-            let (chunk, entries) = chunk_result?;
-            if end_chunk.is_some_and(|end_chunk| chunk > end_chunk) {
+            let (chunk_idx, entries) = chunk_result?;
+            if end_chunk_idx.is_some_and(|end_chunk| chunk_idx > end_chunk) {
                 continue;
             }
 
             // Mark chunk as received.
-            if chunk >= received_chunks.len() {
-                received_chunks.resize(chunk + 1, false);
+            if chunk_idx >= received_chunks.len() {
+                received_chunks.resize(chunk_idx + 1, false);
             }
-            received_chunks.set(chunk, true);
+            received_chunks.set(chunk_idx, true);
 
             for &entry in entries.iter() {
                 if entry.hash.normalize().starts_with(geohash_prefix) {
@@ -513,13 +518,14 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
                         length: u64::from(entry.ids_end.saturating_sub(entry.ids_start)),
                     });
                 } else {
-                    end_chunk = Some(end_chunk.map_or(chunk, |end_chunk| end_chunk.min(chunk)));
+                    end_chunk_idx =
+                        Some(end_chunk_idx.map_or(chunk_idx, |end_chunk| end_chunk.min(chunk_idx)));
                     break;
                 }
             }
 
-            if let Some(end_chunk) = end_chunk
-                && received_chunks[..end_chunk].all()
+            if let Some(end_chunk_idx) = end_chunk_idx
+                && received_chunks[..end_chunk_idx].all()
             {
                 break;
             }
@@ -529,7 +535,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         Ok(self
             .storage
             .points_map_ids
-            .read_iter_autobatched(point_map_ranges)?
+            .read_iter_autochunks(point_map_ranges)?
             .filter_map(|res| match res {
                 Ok(point_id) if !self.storage.deleted.get(point_id as usize).unwrap_or(true) => {
                     Some(Ok(point_id))

@@ -43,7 +43,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
             .map(move |(meta, range)| self.read::<P>(range).map(|data| (meta, data))))
     }
 
-    fn read_iter_autobatched(
+    fn read_iter_autochunks(
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
     ) -> Result<impl Iterator<Item = Result<T>>> {
