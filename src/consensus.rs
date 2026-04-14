@@ -352,10 +352,10 @@ impl Consensus {
             port: Some(u32::from(p2p_port)),
             id: this_peer_id,
         });
-        if let Some(key) = api_key {
-            if let Ok(val) = key.parse() {
-                request.metadata_mut().insert("api-key", val);
-            }
+        if let Some(key) = api_key
+            && let Ok(val) = key.parse()
+        {
+            request.metadata_mut().insert("api-key", val);
         }
         let all_peers = client
             .add_peer_to_known(request)
@@ -1438,10 +1438,10 @@ impl RaftMessageSender {
         .context("Failed to create who-is channel")?;
 
         let mut request = tonic::Request::new(GrpcPeerId { id: peer_id });
-        if let Some(ref key) = self.api_key {
-            if let Ok(val) = key.parse() {
-                request.metadata_mut().insert("api-key", val);
-            }
+        if let Some(ref key) = self.api_key
+            && let Ok(val) = key.parse()
+        {
+            request.metadata_mut().insert("api-key", val);
         }
 
         let uri = RaftClient::new(channel)
