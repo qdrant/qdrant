@@ -621,11 +621,9 @@ fn main() -> anyhow::Result<()> {
     // gRPC server
     //
 
-    #[cfg(all(unix, debug_assertions))]
-    let sigusr1_runtime_handle = runtime_handle.clone();
-
     if let Some(grpc_port) = settings.service.grpc_port {
         let settings = settings.clone();
+        let runtime_handle = runtime_handle.clone();
         let handle = thread::Builder::new()
             .name("grpc".to_string())
             .spawn(move || {
@@ -685,11 +683,12 @@ fn main() -> anyhow::Result<()> {
     touch_started_file_indicator();
 
     #[cfg(all(unix, debug_assertions))]
-    let _sigusr1 = {
-        let _guard = sigusr1_runtime_handle.enter();
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())
-            .expect("Failed to install SIGUSR1 handler")
-    };
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+
+        let _guard = runtime_handle.enter();
+        let _ = signal(SignalKind::user_defined1()).expect("installed SIGUSR1 handler");
+    }
 
     for handle in handles {
         log::debug!(
