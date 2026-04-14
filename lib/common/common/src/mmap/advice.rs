@@ -150,6 +150,10 @@ pub trait Madviseable {
             /// True if `MADV_PAGEOUT` is supported (added in Linux 5.4).
             /// Probed by calling `madvise` with a zero-length range, which
             /// validates the advice value without touching any memory.
+            ///
+            /// As shown in madvise man pages:
+            /// > `madvise(0, 0, advice)` will return zero iff advice is supported by the kernel
+            /// > and can be relied on to probe for support.
             static PAGEOUT_IS_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
                 let res =
                     unsafe { nix::libc::madvise(std::ptr::null_mut(), 0, nix::libc::MADV_PAGEOUT) };
