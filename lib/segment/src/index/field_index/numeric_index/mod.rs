@@ -394,11 +394,7 @@ where
         Ok(match &self {
             NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
             NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
-            NumericIndexInner::Mmap(mmap) => Box::new(
-                mmap.values_range(start, end, hw_counter)?
-                    // TODO: propagate error through iterator
-                    .filter_map(Result::ok),
-            ),
+            NumericIndexInner::Mmap(mmap) => Box::new(mmap.values_range(start, end, hw_counter)?),
         })
     }
 
@@ -825,6 +821,7 @@ where
             NumericIndexInner::Mmap(index) => Box::new(
                 index
                     .values_range(start_bound, end_bound, hw_counter)
+                    .map(|iter| iter.map(Ok))
                     .into_result_iter(),
             ),
         })
@@ -1129,12 +1126,9 @@ where
             NumericIndexInner::Immutable(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
-            NumericIndexInner::Mmap(index) => Box::new(
-                index
-                    .orderable_values_range(start_bound, end_bound)?
-                    // TODO: propagate error through iterator
-                    .filter_map(Result::ok),
-            ),
+            NumericIndexInner::Mmap(index) => {
+                Box::new(index.orderable_values_range(start_bound, end_bound)?)
+            }
         })
     }
 }
