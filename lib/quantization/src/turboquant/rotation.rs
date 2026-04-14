@@ -51,12 +51,11 @@ impl HadamardRotation {
 
     pub fn apply(&self, x: &[f32]) -> Vec<f32> {
         debug_assert!(x.len() <= self.padded_dim);
-        // TODO: Can we use f32?
 
         let mut buf = Vec::with_capacity(self.padded_dim);
 
         // Update `buf` with the vector and signs applied.
-        buf.extend(x.iter().zip(&self.signs1).map(|(&v, &s)| v as f64 * s));
+        buf.extend(x.iter().zip(&self.signs1).map(|(&v, &s)| f64::from(v) * s));
 
         buf.resize(self.padded_dim, 0.0);
 
@@ -97,7 +96,7 @@ impl HadamardRotation {
         buf.extend(
             y.iter()
                 .zip(&self.signs2)
-                .map(|(&v, &s)| v as f64 * s * norm),
+                .map(|(&v, &s)| f64::from(v) * s * norm),
         );
 
         buf.resize(self.padded_dim, 0.0);
@@ -161,12 +160,12 @@ pub fn apply_permutation(buf: &mut [f64], tmp: &mut [f64], perm: &[usize]) {
     for (i, &p) in perm.iter().enumerate() {
         tmp[p] = buf[i];
     }
-    buf.copy_from_slice(&tmp);
+    buf.copy_from_slice(tmp);
 }
 
 /// Round up to the nearest multiple of `chunk_size`.
 pub fn compute_padded_dim(dim: usize, chunk_size: usize) -> usize {
-    (dim + chunk_size - 1) / chunk_size * chunk_size
+    dim.div_ceil(chunk_size) * chunk_size
 }
 
 /// Pick a power-of-two chunk size for block-wise Hadamard rotation.
@@ -216,6 +215,8 @@ pub fn generate_permutation(rng: &mut StdRng, n: usize) -> (Vec<usize>, Vec<usiz
 
 #[cfg(test)]
 mod test {
+    use rand::Rng;
+
     use super::*;
 
     #[test]
@@ -241,7 +242,7 @@ mod test {
         use crate::VectorParameters;
         use crate::vector_stats::VectorStats;
 
-        for dim in [100, 300, 384, 1024, 1586] {
+        for dim in [100, 300, 384, 512, 1024, 1586] {
             let n_vectors = 200;
             let rot = HadamardRotation::new(42, dim);
 
@@ -315,18 +316,29 @@ mod test {
 
     #[test]
     fn hadamard_roundtrip() {
-        for dim in [50, 127, 128, 500, 1024, 1025] {
-            let rot = HadamardRotation::new(42, dim);
-            let input: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.1).collect();
-            let transformed = rot.apply(&input);
-            let recovered = rot.apply_inverse(&transformed, dim);
-            for (a, b) in input.iter().zip(recovered.iter()) {
-                assert!(
-                    (a - b).abs() < 1e-5,
-                    "hadamard roundtrip failed: {} vs {}",
-                    a,
-                    b
-                );
+        let power_of_two_dims = [128, 512, 1024, 4096];
+        let rand_dims = [50, 127, 300, 500, 1025];
+
+        let dim_iter = power_of_two_dims.iter().chain(&rand_dims);
+
+        for &dim in dim_iter {
+            for seed in [0, 10, 42, 100] {
+                let rot = HadamardRotation::new(seed, dim);
+                let mut rng = StdRng::seed_from_u64(seed);
+
+                let input: Vec<f32> = (0..dim)
+                    .map(|_| ((rng.next_u32() % 1_000) as f32) / 100.0)
+                    .collect();
+
+                let recovered = rot.apply_inverse(&rot.apply(&input), dim);
+
+                // Original input and recovered should be the same.
+                for (orig, recovered) in input.iter().zip(recovered.iter()) {
+                    assert!(
+                        (orig - recovered).abs() < 1e-5,
+                        "hadamard roundtrip failed: {orig} vs {recovered}",
+                    );
+                }
             }
         }
     }
