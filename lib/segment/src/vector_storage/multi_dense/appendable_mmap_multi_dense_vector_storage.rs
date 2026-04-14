@@ -89,9 +89,19 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.vectors.clear_cache()?;
-        self.offsets.clear_cache()?;
-        self.deleted.clear_cache()?;
+        let Self {
+            vectors,
+            offsets,
+            deleted,
+            distance: _,
+            multi_vector_config: _,
+            deleted_count: _,
+            _phantom,
+        } = self;
+
+        vectors.clear_cache()?;
+        offsets.clear_cache()?;
+        deleted.clear_cache()?;
         Ok(())
     }
 }
