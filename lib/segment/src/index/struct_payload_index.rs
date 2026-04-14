@@ -12,7 +12,6 @@ use common::either_variant::EitherVariant;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use fs_err as fs;
-use itertools::Itertools;
 use schemars::_serde_json::Value;
 
 use super::field_index::facet_index::FacetIndexEnum;
@@ -101,19 +100,23 @@ impl StructPayloadIndex {
         &'a self,
         condition: &'a PrimaryCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         match condition {
             PrimaryCondition::Condition(field_condition) => {
-                let field_key = &field_condition.key;
-                let field_indexes = self.field_indexes.get(field_key)?;
+                let Some(field_indexes) = self.field_indexes.get(&field_condition.key) else {
+                    return Ok(None);
+                };
                 field_indexes
                     .iter()
-                    .find_map(|field_index| field_index.filter(field_condition, hw_counter))
+                    .find_map(|field_index| {
+                        field_index.filter(field_condition, hw_counter).transpose()
+                    })
+                    .transpose()
             }
             PrimaryCondition::Ids(ids) => {
-                Some(Box::new(ids.resolved_point_offsets.iter().copied().map(Ok)))
+                Ok(Some(Box::new(ids.resolved_point_offsets.iter().copied())))
             }
-            PrimaryCondition::HasVector(_) => None,
+            PrimaryCondition::HasVector(_) => Ok(None),
         }
     }
 
@@ -478,7 +481,7 @@ impl StructPayloadIndex {
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> OperationResult<impl Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
 
@@ -486,8 +489,7 @@ impl StructPayloadIndex {
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
                 .stop_if(is_stopped)
-                .filter(move |i| struct_filtered_context.check(*i))
-                .map(Ok);
+                .filter(move |i| struct_filtered_context.check(*i));
 
             Ok(EitherVariant::A(matched_points))
         } else {
@@ -496,13 +498,13 @@ impl StructPayloadIndex {
 
             // If even one iterator is None, we should replace the whole thing with
             // an iterator over all ids.
-            let primary_clause_iterators: Option<Vec<_>> = query_cardinality
+            let primary_clause_iterators: OperationResult<Option<Vec<_>>> = query_cardinality
                 .primary_clauses
                 .iter()
                 .map(|clause| self.query_field(clause, hw_counter))
                 .collect();
 
-            if let Some(primary_iterators) = primary_clause_iterators {
+            if let Some(primary_iterators) = primary_clause_iterators? {
                 let all_conditions_are_primary = filter
                     .iter_conditions()
                     .all(|condition| query_cardinality.is_primary(condition));
@@ -512,7 +514,7 @@ impl StructPayloadIndex {
                     // Filter out deferred points.
                     // This iterator (and each primary iterator too) can yield items in non sorted order, depending on the type of index and primary condition.
                     .flatten()
-                    .filter_ok(move |&internal_id| {
+                    .filter(move |&internal_id| {
                         internal_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
                     })
                     .stop_if(is_stopped);
@@ -521,13 +523,13 @@ impl StructPayloadIndex {
                     // All conditions are primary clauses,
                     // We can avoid post-filtering
                     let iter = joined_primary_iterator
-                        .filter_ok(move |&id| !visited_list.check_and_update_visited(id));
+                        .filter(move |&id| !visited_list.check_and_update_visited(id));
                     EitherVariant::B(iter)
                 } else {
                     // Some conditions are primary clauses, some are not
                     let struct_filtered_context =
                         self.struct_filtered_context(filter, hw_counter)?;
-                    let iter = joined_primary_iterator.filter_ok(move |&id| {
+                    let iter = joined_primary_iterator.filter(move |&id| {
                         !visited_list.check_and_update_visited(id)
                             && struct_filtered_context.check(id)
                     });
@@ -548,8 +550,7 @@ impl StructPayloadIndex {
                 })
                 .filter(move |&id| {
                     !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
-                })
-                .map(Ok);
+                });
 
             Ok(EitherVariant::D(iter))
         }
@@ -779,16 +780,18 @@ impl PayloadIndex for StructPayloadIndex {
         let query_cardinality = self.estimate_cardinality(filter, hw_counter)?;
         let id_tracker = self.id_tracker.borrow();
         let point_mappings = id_tracker.point_mappings();
-        self.iter_filtered_points(
-            filter,
-            &id_tracker,
-            &point_mappings,
-            &query_cardinality,
-            hw_counter,
-            is_stopped,
-            deferred_internal_id,
-        )?
-        .collect()
+        let result = self
+            .iter_filtered_points(
+                filter,
+                &id_tracker,
+                &point_mappings,
+                &query_cardinality,
+                hw_counter,
+                is_stopped,
+                deferred_internal_id,
+            )?
+            .collect();
+        Ok(result)
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {

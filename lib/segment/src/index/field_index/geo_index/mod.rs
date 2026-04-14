@@ -2,10 +2,9 @@ use std::cmp::{max, min};
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::{FallibleIteratorExt as _, TransposeResultIter as _};
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use mutable_geo_index::InMemoryGeoMapIndex;
 use serde_json::Value;
 
@@ -231,30 +230,33 @@ impl GeoMapIndex {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
-    ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + '_> {
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
         match self {
-            GeoMapIndex::Mutable(index) => Box::new(
+            GeoMapIndex::Mutable(index) => Ok(Either::Left(Either::Right(
                 values
                     .into_iter()
                     .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
-                    .unique()
-                    .map(Ok),
-            ),
-            GeoMapIndex::Immutable(index) => Box::new(
+                    .unique(),
+            ))),
+            GeoMapIndex::Immutable(index) => Ok(Either::Left(Either::Left(
                 values
                     .into_iter()
                     .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
-                    .unique()
-                    .map(Ok),
-            ),
-            GeoMapIndex::Storage(index) => Box::new(
-                values
-                    .into_iter()
-                    .flat_map(|top_geo_hash| {
-                        index.stored_sub_regions(top_geo_hash).into_result_iter()
-                    })
-                    .unique_ok(),
-            ),
+                    .unique(),
+            ))),
+            GeoMapIndex::Storage(index) => {
+                let mut seen = std::collections::HashSet::new();
+                let mut result: Vec<PointOffsetType> = Vec::new();
+                for top_geo_hash in values {
+                    for point in index.stored_sub_regions(top_geo_hash)? {
+                        let point = point?;
+                        if seen.insert(point) {
+                            result.push(point);
+                        }
+                    }
+                }
+                Ok(Either::Right(result.into_iter()))
+            }
         }
     }
 
@@ -534,47 +536,44 @@ impl PayloadFieldIndex for GeoMapIndex {
         &'a self,
         condition: &FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
-            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
+            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
             let geo_condition_copy = *geo_bounding_box;
-            return Some(Box::new(self.iterator(geo_hashes).filter_map_ok(
-                move |point| {
+            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
+                move |&point| {
                     self.check_values_any(point, hw_counter, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
                     })
-                    .then_some(point)
                 },
-            )));
+            ))));
         }
 
         if let Some(geo_radius) = &condition.geo_radius {
-            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
+            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
             let geo_condition_copy = *geo_radius;
-            return Some(Box::new(self.iterator(geo_hashes).filter_map_ok(
-                move |point| {
+            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
+                move |&point| {
                     self.check_values_any(point, hw_counter, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
                     })
-                    .then_some(point)
                 },
-            )));
+            ))));
         }
 
         if let Some(geo_polygon) = &condition.geo_polygon {
-            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION).ok()?;
+            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION)?;
             let geo_condition_copy = geo_polygon.convert();
-            return Some(Box::new(self.iterator(geo_hashes).filter_map_ok(
-                move |point| {
+            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
+                move |&point| {
                     self.check_values_any(point, hw_counter, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
                     })
-                    .then_some(point)
                 },
-            )));
+            ))));
         }
 
-        None
+        Ok(None)
     }
 
     fn estimate_cardinality(
@@ -847,10 +846,7 @@ mod tests {
             index_type: IndexType,
         ) {
             let (field_index, _, _) = build_random_index(500, 20, index_type);
-            let exact_points_for_hashes = field_index
-                .iterator(hashes)
-                .map(|r| r.unwrap())
-                .collect_vec();
+            let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
             let hw_counter = HardwareCounterCell::new();
@@ -924,10 +920,7 @@ mod tests {
             index_type: IndexType,
         ) {
             let (field_index, _, _) = build_random_index(500, 20, index_type);
-            let exact_points_for_hashes = field_index
-                .iterator(hashes)
-                .map(|r| r.unwrap())
-                .collect_vec();
+            let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
             let hw_counter = HardwareCounterCell::new();
@@ -1002,7 +995,7 @@ mod tests {
             let mut indexed_matched_points = field_index
                 .filter(&field_condition, &hw_counter)
                 .unwrap()
-                .map(|r| r.unwrap())
+                .unwrap()
                 .collect_vec();
 
             matched_points.sort_unstable();
@@ -1065,7 +1058,7 @@ mod tests {
             let block_points = field_index
                 .filter(&block.condition, &hw_counter)
                 .unwrap()
-                .map(|r| r.unwrap())
+                .unwrap()
                 .collect_vec();
             assert_eq!(block_points.len(), block.cardinality);
         });
@@ -1273,7 +1266,7 @@ mod tests {
         let point_offsets = new_index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![1]);
 
@@ -1285,7 +1278,7 @@ mod tests {
         let point_offsets = new_index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![1]);
     }
@@ -1477,7 +1470,7 @@ mod tests {
         let point_offsets = new_index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         // Only LOS_ANGELES is in the bounding box
         assert_eq!(point_offsets, vec![2]);
@@ -1536,7 +1529,7 @@ mod tests {
         let results = index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert_eq!(results, vec![1]);
 
@@ -1592,7 +1585,7 @@ mod tests {
         let results = index
             .filter(&field_condition, &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert_eq!(results, vec![0]);
 
@@ -1678,11 +1671,11 @@ mod tests {
             assert_eq!(
                 indices[0]
                     .iterator(hashes.clone())
-                    .map(|r| r.unwrap())
+                    .unwrap()
                     .collect::<HashSet<_>>(),
                 index
                     .iterator(hashes.clone())
-                    .map(|r| r.unwrap())
+                    .unwrap()
                     .collect::<HashSet<_>>(),
             );
             for point_id in 0..POINT_COUNT {

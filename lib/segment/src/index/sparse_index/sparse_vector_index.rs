@@ -334,7 +334,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
                 };
-                searcher.peek_top_iter(filtered_points.map(Ok), &is_stopped)?
+                searcher.peek_top_iter(filtered_points, &is_stopped)?
             }
             None => {
                 searcher.peek_top_all(&is_stopped, vector_query_context.deferred_internal_id())?

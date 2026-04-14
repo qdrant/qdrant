@@ -144,8 +144,7 @@ impl VectorIndex for PlainVectorIndex {
                     &is_stopped,
                     deferred_internal_id,
                 )?;
-                batch_searcher
-                    .peek_top_iter(filtered_ids_vec.iter().copied().map(Ok), &is_stopped)?
+                batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => batch_searcher.peek_top_all(&is_stopped, deferred_internal_id)?,
         };

@@ -360,8 +360,7 @@ impl<'a> BatchFilteredSearcher<'a> {
             .take_while(|&point_id| {
                 // Early exit if we hit the max point ID (e.g. a deferred point).
                 point_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
-            })
-            .map(Ok);
+            });
 
         self.peek_top_iter(iter, is_stopped)
     }
@@ -369,7 +368,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     /// This function expects deferred points to be already filtered from the iterator.
     pub fn peek_top_iter(
         mut self,
-        mut points: impl Iterator<Item = OperationResult<PointOffsetType>>,
+        mut points: impl Iterator<Item = PointOffsetType>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         // Reuse the same buffer for all chunks, to avoid reallocation
@@ -380,9 +379,8 @@ impl<'a> BatchFilteredSearcher<'a> {
             check_process_stopped(is_stopped)?;
 
             let mut chunk_size = 0;
-            for point_result in &mut points {
+            for point_id in &mut points {
                 check_process_stopped(is_stopped)?;
-                let point_id = point_result?;
 
                 if !self.filters.check_vector(point_id) {
                     continue;

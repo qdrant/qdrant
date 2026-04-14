@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::DeferredBehavior;
-use itertools::Itertools;
 
 use super::Segment;
 use crate::common::operation_error::OperationResult;
@@ -130,7 +129,7 @@ impl Segment {
                 is_stopped,
                 effective_deferred_id,
             )?
-            .filter_map_ok(|internal_id| {
+            .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id)?;
                 match offset {
                     Some(offset) if external_id < offset => None,
@@ -138,13 +137,11 @@ impl Segment {
                 }
             });
 
-        ids_iterator.process_results(|iter| {
-            let mut page = match limit {
-                Some(limit) => peek_top_smallest_iterable(iter, limit),
-                None => iter.collect(),
-            };
-            page.sort_unstable();
-            page
-        })
+        let mut page = match limit {
+            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
+            None => ids_iterator.collect(),
+        };
+        page.sort_unstable();
+        Ok(page)
     }
 }

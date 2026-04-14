@@ -156,7 +156,7 @@ impl PayloadFieldIndex for BoolIndex {
         &'a self,
         condition: &'a crate::types::FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         match self {
             BoolIndex::Mmap(index) => index.filter(condition, hw_counter),
         }
@@ -317,8 +317,8 @@ mod tests {
         let count = index
             .filter(&match_bool(match_on), &hw_counter)
             .unwrap()
-            .process_results(|it| it.count())
-            .unwrap();
+            .unwrap()
+            .count();
 
         assert_eq!(count, expected_count);
     }
@@ -378,14 +378,14 @@ mod tests {
         let point_offsets = new_index
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![1, 2, 3, 5, 6, 10]);
 
         let point_offsets = new_index
             .filter(&match_bool(true), &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![0, 2, 3, 4, 6, 11]);
 
@@ -415,7 +415,7 @@ mod tests {
         let point_offsets = index
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
 
@@ -424,13 +424,13 @@ mod tests {
         let point_offsets = index
             .filter(&match_bool(true), &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
         let point_offsets = index
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect_vec();
         assert!(point_offsets.is_empty());
     }

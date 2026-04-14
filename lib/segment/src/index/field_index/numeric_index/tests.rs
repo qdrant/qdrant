@@ -128,7 +128,7 @@ fn cardinality_request(
             &hw_counter,
         )
         .unwrap()
-        .map(|r| r.unwrap())
+        .unwrap()
         .unique()
         .collect_vec();
 
@@ -542,7 +542,7 @@ fn test_cond<
     let offsets = index
         .filter(&condition, &hw_counter)
         .unwrap()
-        .map(|r| r.unwrap())
+        .unwrap()
         .collect_vec();
     assert_eq!(offsets, result);
 }

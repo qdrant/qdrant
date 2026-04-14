@@ -269,7 +269,7 @@ impl PayloadFieldIndex for MutableNullIndex {
         &'a self,
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         let FieldCondition {
             key: _,
             r#match: _,
@@ -282,27 +282,28 @@ impl PayloadFieldIndex for MutableNullIndex {
             is_null,
         } = condition;
 
-        if let Some(is_empty) = is_empty {
-            if *is_empty {
-                // Return points that don't have values
-                Some(Box::new(
-                    self.storage.has_values_flags.iter_falses().map(Ok),
-                ))
+        let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> =
+            if let Some(is_empty) = is_empty {
+                if *is_empty {
+                    // Return points that don't have values
+                    Some(Box::new(self.storage.has_values_flags.iter_falses()))
+                } else {
+                    // Return points that have values
+                    Some(Box::new(self.storage.has_values_flags.iter_trues()))
+                }
+            } else if let Some(is_null) = is_null {
+                if *is_null {
+                    // Return points that have null values
+                    Some(Box::new(self.storage.is_null_flags.iter_trues()))
+                } else {
+                    // Return points that don't have null values
+                    Some(Box::new(self.storage.is_null_flags.iter_falses()))
+                }
             } else {
-                // Return points that have values
-                Some(Box::new(self.storage.has_values_flags.iter_trues().map(Ok)))
-            }
-        } else if let Some(is_null) = is_null {
-            if *is_null {
-                // Return points that have null values
-                Some(Box::new(self.storage.is_null_flags.iter_trues().map(Ok)))
-            } else {
-                // Return points that don't have null values
-                Some(Box::new(self.storage.is_null_flags.iter_falses().map(Ok)))
-            }
-        } else {
-            None
-        }
+                None
+            };
+
+        Ok(result)
     }
 
     fn estimate_cardinality(
@@ -462,12 +463,12 @@ mod tests {
         let is_null_values: Vec<_> = null_index
             .filter(&filter_is_null, &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect();
         let not_empty_values: Vec<_> = null_index
             .filter(&filter_is_not_empty, &hw_counter)
             .unwrap()
-            .map(|r| r.unwrap())
+            .unwrap()
             .collect();
 
         let is_empty_values: Vec<_> = (0..n)

@@ -62,20 +62,16 @@ impl Segment {
                         is_stopped,
                         self.deferred_internal_id(),
                     )?
-                    .filter_ok(|&point_id| !id_tracker.is_deleted_point(point_id))
-                    .try_fold(
-                        HashMap::new(),
-                        |mut map, point_result| -> OperationResult<_> {
-                            let point_id = point_result?;
-                            facet_index
-                                .get_point_values(point_id, hw_counter)
-                                .unique()
-                                .for_each(|value| {
-                                    *map.entry(value).or_insert(0) += 1;
-                                });
-                            Ok(map)
-                        },
-                    )?
+                    .filter(|&point_id| !id_tracker.is_deleted_point(point_id))
+                    .fold(HashMap::new(), |mut map, point_id| {
+                        facet_index
+                            .get_point_values(point_id, hw_counter)
+                            .unique()
+                            .for_each(|value| {
+                                *map.entry(value).or_insert(0) += 1;
+                            });
+                        map
+                    })
                     .into_iter()
                     .map(|(value, count)| FacetHit { value, count });
 
@@ -163,15 +159,11 @@ impl Segment {
                     is_stopped,
                     self.deferred_internal_id(),
                 )?
-                .filter_ok(|&point_id| !id_tracker.is_deleted_point(point_id))
-                .try_fold(
-                    BTreeSet::new(),
-                    |mut set, point_result| -> OperationResult<_> {
-                        let point_id = point_result?;
-                        set.extend(facet_index.get_point_values(point_id, hw_counter));
-                        Ok(set)
-                    },
-                )?
+                .filter(|&point_id| !id_tracker.is_deleted_point(point_id))
+                .fold(BTreeSet::new(), |mut set, point_id| {
+                    set.extend(facet_index.get_point_values(point_id, hw_counter));
+                    set
+                })
                 .into_iter()
                 .map(|value| value.to_owned())
                 .collect()

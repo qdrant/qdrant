@@ -14,7 +14,6 @@ use std::str::FromStr;
 
 use chrono::DateTime;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::TransposeResultIter;
 use common::types::PointOffsetType;
 use delegate::delegate;
 use gridstore::Blob;
@@ -778,7 +777,7 @@ where
         &'a self,
         condition: &FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         if let Some(Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
         })) = &condition.r#match
@@ -787,15 +786,13 @@ where
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let value = T::from_u128(uuid.as_u128());
-                return Some(Box::new(
-                    self.point_ids_by_value(value, hw_counter)
-                        .map(|iter| iter.map(Ok))
-                        .into_result_iter(),
-                ));
+                return Ok(Some(self.point_ids_by_value(value, hw_counter)?));
             }
         }
 
-        let range_cond = condition.range.as_ref()?;
+        let Some(range_cond) = condition.range.as_ref() else {
+            return Ok(None);
+        };
 
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
@@ -808,23 +805,23 @@ where
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Some(Box::new(std::iter::empty()));
+            return Ok(Some(Box::new(std::iter::empty())));
         }
 
-        Some(match self {
+        let result: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
             NumericIndexInner::Mutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound).map(Ok))
+                Box::new(index.values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound).map(Ok))
+                Box::new(index.values_range(start_bound, end_bound))
             }
-            NumericIndexInner::Mmap(index) => Box::new(
-                index
-                    .values_range(start_bound, end_bound, hw_counter)
-                    .map(|iter| iter.map(Ok))
-                    .into_result_iter(),
-            ),
-        })
+
+            NumericIndexInner::Mmap(index) => {
+                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
+            }
+        };
+
+        Ok(Some(result))
     }
 
     fn estimate_cardinality(

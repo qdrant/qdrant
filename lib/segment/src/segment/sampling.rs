@@ -2,7 +2,6 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use itertools::Itertools;
 use rand::seq::{IteratorRandom, SliceRandom};
 
 use super::Segment;
@@ -34,14 +33,12 @@ impl Segment {
                 is_stopped,
                 self.deferred_internal_id(),
             )?
-            .filter_map_ok(|internal_id| id_tracker.external_id(internal_id));
+            .filter_map(|internal_id| id_tracker.external_id(internal_id));
 
         let mut rng = rand::rng();
-        ids_iterator.process_results(|iter| {
-            let mut shuffled = iter.sample(&mut rng, limit);
-            shuffled.shuffle(&mut rng);
-            shuffled
-        })
+        let mut shuffled = ids_iterator.sample(&mut rng, limit);
+        shuffled.shuffle(&mut rng);
+        Ok(shuffled)
     }
 
     pub fn filtered_read_by_random_stream(

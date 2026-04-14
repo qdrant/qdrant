@@ -392,7 +392,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
@@ -405,11 +405,10 @@ impl PayloadFieldIndex for MutableBoolIndex {
                         hw_counter.new_accumulator(),
                         u8::BITS as usize,
                         |i| i.payload_index_io_read_counter(),
-                    )
-                    .map(Ok);
-                Some(Box::new(iter))
+                    );
+                Ok(Some(Box::new(iter)))
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 

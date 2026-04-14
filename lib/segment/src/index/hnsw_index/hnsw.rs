@@ -14,7 +14,7 @@ use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
-use itertools::{EitherOrBoth, Itertools};
+use itertools::EitherOrBoth;
 use log::{debug, trace};
 use parking_lot::Mutex;
 use rand::Rng;
@@ -753,7 +753,7 @@ impl HNSWIndex {
             payload_index.estimate_cardinality(&filter, &disposed_hw_counter)?;
         let point_mappings = id_tracker.point_mappings();
 
-        payload_index
+        Ok(payload_index
             .iter_filtered_points(
                 &filter,
                 id_tracker,
@@ -763,8 +763,8 @@ impl HNSWIndex {
                 stopped,
                 None,
             )?
-            .filter_ok(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
-            .collect()
+            .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
+            .collect())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1209,7 +1209,7 @@ impl HNSWIndex {
     fn search_plain_iterator_batched(
         &self,
         query_vectors: &[&QueryVector],
-        points: impl Iterator<Item = OperationResult<PointOffsetType>>,
+        points: impl Iterator<Item = PointOffsetType>,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
@@ -1254,7 +1254,7 @@ impl HNSWIndex {
     fn search_plain_batched(
         &self,
         vectors: &[&QueryVector],
-        filtered_points: impl Iterator<Item = OperationResult<PointOffsetType>>,
+        filtered_points: impl Iterator<Item = PointOffsetType>,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
@@ -1276,7 +1276,7 @@ impl HNSWIndex {
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let id_tracker = self.id_tracker.borrow();
-        let ids_iterator = id_tracker.point_mappings().iter_internal().map(Ok);
+        let ids_iterator = id_tracker.point_mappings().iter_internal();
         self.search_plain_iterator_batched(vectors, ids_iterator, top, params, vector_query_context)
     }
 

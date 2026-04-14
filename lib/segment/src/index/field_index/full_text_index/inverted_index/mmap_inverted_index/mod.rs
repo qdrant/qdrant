@@ -189,7 +189,7 @@ impl MmapInvertedIndex {
     pub fn filter_has_all<'a>(
         &'a self,
         tokens: TokenSet,
-    ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // in case of mmap immutable index, deleted points are still in the postings
         let filter = move |idx| self.is_active(idx);
 
@@ -197,7 +197,7 @@ impl MmapInvertedIndex {
             postings: &'a MmapPostings<V>,
             tokens: TokenSet,
             filter: impl Fn(u32) -> bool + 'a,
-        ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
+        ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
             let postings_opt: Option<Vec<_>> = tokens
                 .tokens()
                 .iter()
@@ -214,7 +214,10 @@ impl MmapInvertedIndex {
                 return Box::new(std::iter::empty());
             }
 
-            Box::new(intersect_compressed_postings_iterator(posting_readers, filter).map(Ok))
+            Box::new(intersect_compressed_postings_iterator(
+                posting_readers,
+                filter,
+            ))
         }
 
         match &self.storage.postings {
@@ -463,11 +466,11 @@ impl InvertedIndex for MmapInvertedIndex {
         &'a self,
         query: ParsedQuery,
         _hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match query {
-            ParsedQuery::AllTokens(tokens) => self.filter_has_all(tokens),
-            ParsedQuery::Phrase(phrase) => Box::new(self.filter_has_phrase(phrase).map(Ok)),
-            ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens).map(Ok)),
+            ParsedQuery::AllTokens(tokens) => Ok(self.filter_has_all(tokens)),
+            ParsedQuery::Phrase(phrase) => Ok(Box::new(self.filter_has_phrase(phrase))),
+            ParsedQuery::AnyTokens(tokens) => Ok(Box::new(self.filter_has_any(tokens))),
         }
     }
 

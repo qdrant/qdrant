@@ -513,7 +513,7 @@ mod tests {
             2,
         );
         let res = searcher
-            .peek_top_iter([0, 1, 2, 3, 4].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+            .peek_top_iter([0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
             .unwrap()
             .into_iter()
             .exactly_one()
@@ -585,7 +585,7 @@ mod tests {
         );
 
         let closest = searcher
-            .peek_top_iter([0, 1, 2, 3, 4].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+            .peek_top_iter([0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
             .unwrap()
             .into_iter()
             .exactly_one()
@@ -614,7 +614,7 @@ mod tests {
             5,
         );
         let closest = searcher
-            .peek_top_iter([0, 1, 2, 3, 4].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+            .peek_top_iter([0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
             .unwrap()
             .into_iter()
             .exactly_one()
@@ -703,7 +703,7 @@ mod tests {
             5,
         );
         let closest = searcher
-            .peek_top_iter([0, 1, 2, 3, 4].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+            .peek_top_iter([0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
             .unwrap()
             .into_iter()
             .exactly_one()

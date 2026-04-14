@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType};
-use itertools::{Either, Itertools};
+use itertools::Either;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -53,27 +53,24 @@ impl Segment {
                 is_stopped,
                 effective_deferred_id,
             )?
-            .flat_map(|point_result| match point_result {
-                Err(e) => Either::Left(std::iter::once(Err(e))),
-                Ok(internal_id) => Either::Right(
-                    // Repeat a point for as many values as it has
-                    numeric_index
-                        .get_ordering_values(internal_id)
-                        // But only those which start from `start_from`
-                        .filter(|value| match order_by.direction() {
-                            Direction::Asc => value >= &start_from,
-                            Direction::Desc => value <= &start_from,
-                        })
-                        .map(move |ordering_value| Ok((ordering_value, internal_id))),
-                ),
+            .flat_map(|internal_id| {
+                // Repeat a point for as many values as it has
+                numeric_index
+                    .get_ordering_values(internal_id)
+                    // But only those which start from `start_from`
+                    .filter(|value| match order_by.direction() {
+                        Direction::Asc => value >= &start_from,
+                        Direction::Desc => value <= &start_from,
+                    })
+                    .map(move |ordering_value| (ordering_value, internal_id))
             })
-            .filter_map_ok(|(value, internal_id)| {
+            .filter_map(|(value, internal_id)| {
                 id_tracker
                     .external_id(internal_id)
                     .map(|external_id| (value, external_id))
             });
 
-        values_ids_iterator.process_results(|values_ids_iterator| match order_by.direction() {
+        Ok(match order_by.direction() {
             Direction::Asc => {
                 let mut page = match limit {
                     Some(limit) => peek_top_smallest_iterable(values_ids_iterator, limit),

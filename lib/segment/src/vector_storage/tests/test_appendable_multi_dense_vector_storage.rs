@@ -129,7 +129,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
         5,
     );
     let closest = searcher
-        .peek_top_iter([0, 1, 2, 3, 4].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+        .peek_top_iter([0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
         .pop()
         .unwrap();
@@ -156,7 +156,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
         5,
     );
     let closest = searcher
-        .peek_top_iter([0, 1, 2, 3, 4].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+        .peek_top_iter([0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
         .pop()
         .unwrap();
@@ -244,7 +244,7 @@ fn do_test_update_from_delete_points(
         5,
     );
     let closest = searcher
-        .peek_top_iter([0, 1, 2, 3, 4].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+        .peek_top_iter([0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
         .pop()
         .unwrap();

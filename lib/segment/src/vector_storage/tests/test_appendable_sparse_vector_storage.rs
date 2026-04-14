@@ -80,7 +80,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         5,
     );
     let closest = searcher
-        .peek_top_iter([0, 1, 2, 3, 4].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+        .peek_top_iter([0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
         .into_iter()
         .exactly_one()
@@ -172,7 +172,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         5,
     );
     let results = searcher
-        .peek_top_iter([0, 1, 2, 3, 4, 5].iter().cloned().map(Ok), &DEFAULT_STOPPED)
+        .peek_top_iter([0, 1, 2, 3, 4, 5].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap();
 
     let closest = results.into_iter().exactly_one().unwrap();
