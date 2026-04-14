@@ -38,7 +38,7 @@ pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized> {
     pub(super) value_to_points: MmapHashMap<N, PointOffsetType>,
     point_to_values: StoredPointToValues<N, MmapFile>,
-    pub(super) deleted: BufferedUpdateBitSlice,
+    pub(super) deleted: BufferedUpdateBitSlice<MmapFile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

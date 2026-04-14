@@ -7,22 +7,22 @@ use parking_lot::RwLock;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::stored_bitslice::MmapBitSlice;
+use crate::common::stored_bitslice::StoredBitSlice;
 
-/// A wrapper around [`MmapBitSliceStorage`] that delays writing changes to the underlying file
+/// A wrapper around [`StoredBitSlice`] that delays writing changes to the underlying storage
 /// until they get flushed manually.
 /// This expects the underlying storage not to grow in size.
 #[derive(Debug)]
-pub struct BufferedUpdateBitSlice {
-    bitslice: Arc<RwLock<MmapBitSlice>>,
+pub struct BufferedUpdateBitSlice<S> {
+    bitslice: Arc<RwLock<StoredBitSlice<S>>>,
     len: usize,
     pending_updates: Arc<RwLock<AHashMap<usize, bool>>>,
     /// Lock to prevent concurrent flush and drop
     is_alive_flush_lock: common::is_alive_lock::IsAliveLock,
 }
 
-impl BufferedUpdateBitSlice {
-    pub fn new(bitslice: MmapBitSlice) -> Self {
+impl<S: UniversalWrite<u64> + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
+    pub fn new(bitslice: StoredBitSlice<S>) -> Self {
         let len = bitslice.bit_len() as usize;
         Self {
             bitslice: Arc::new(RwLock::new(bitslice)),
@@ -110,9 +110,9 @@ impl BufferedUpdateBitSlice {
                 pending_updates_weak.upgrade(),
             ) else {
                 // Already dropped, skip flush
-                log::trace!("MmapBitsliceBuffered was dropped, cancelling flush");
+                log::trace!("BufferedUpdateBitSlice was dropped, cancelling flush");
                 return Err(OperationError::cancelled(
-                    "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance",
+                    "Aborted flushing on a dropped BufferedUpdateBitSlice instance",
                 ));
             };
 

@@ -98,7 +98,7 @@ pub(super) struct Storage<S: StoredGeoMapIndexStorage> {
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
     pub(super) point_to_values: StoredPointToValues<GeoPoint, S>,
     /// Deleted flags for each PointOffsetType
-    pub(super) deleted: BufferedUpdateBitSlice,
+    pub(super) deleted: BufferedUpdateBitSlice<MmapFile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

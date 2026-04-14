@@ -57,7 +57,7 @@ impl ExternalIdType {
 pub struct ImmutableIdTracker {
     path: PathBuf,
 
-    deleted_wrapper: BufferedUpdateBitSlice,
+    deleted_wrapper: BufferedUpdateBitSlice<MmapFile>,
 
     internal_to_version: CompressedVersions,
     internal_to_version_wrapper: SliceBufferedUpdateWrapper<MmapFile, SeqNumberType>,

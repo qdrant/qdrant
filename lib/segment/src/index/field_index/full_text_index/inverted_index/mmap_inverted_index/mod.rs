@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{self, AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
-use common::universal_io::OpenOptions;
+use common::universal_io::{MmapFile, OpenOptions};
 use itertools::Either;
 use mmap_postings::{MmapPostingValue, MmapPostings};
 
@@ -48,7 +48,7 @@ pub(in crate::index::field_index::full_text_index) struct Storage {
     pub(in crate::index::field_index::full_text_index) vocab: MmapHashMap<str, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: MmapSlice<usize>,
     pub(in crate::index::field_index::full_text_index) deleted_points:
-        BufferedUpdateBitSlice,
+        BufferedUpdateBitSlice<MmapFile>,
 }
 
 impl MmapInvertedIndex {

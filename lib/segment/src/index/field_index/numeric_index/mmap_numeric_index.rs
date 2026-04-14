@@ -40,7 +40,7 @@ pub(super) struct Storage<
     T: Encodable + Numericable + Default + StoredValue + 'static,
     S: UniversalRead<u8>,
 > {
-    deleted: BufferedUpdateBitSlice,
+    deleted: BufferedUpdateBitSlice<MmapFile>,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pairs: MmapSlice<Point<T>>,
     pub(super) point_to_values: StoredPointToValues<T, S>,
@@ -53,7 +53,7 @@ struct MmapNumericIndexConfig {
 
 pub(super) struct NumericIndexPairsIterator<'a, T: Encodable + Numericable> {
     pairs: &'a [Point<T>],
-    deleted: &'a BufferedUpdateBitSlice,
+    deleted: &'a BufferedUpdateBitSlice<MmapFile>,
     start_index: usize,
     end_index: usize,
 }
