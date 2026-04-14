@@ -1,3 +1,4 @@
+mod lloyd_max;
 mod permutation;
 pub mod rotation;
 
