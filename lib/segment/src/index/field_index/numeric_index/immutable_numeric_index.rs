@@ -71,7 +71,8 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
             deleted,
             deleted_count: _,
         } = self;
-        data.capacity() * std::mem::size_of::<Point<T>>() + deleted.capacity() / u8::BITS as usize
+        data.capacity() * std::mem::size_of::<Point<T>>()
+            + deleted.capacity().div_ceil(u8::BITS as usize)
     }
 
     fn from_btree_set(map: BTreeSet<Point<T>>) -> Self {

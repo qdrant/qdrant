@@ -236,8 +236,8 @@ impl CompressedExternalToInternal {
         } = self;
 
         num_ids.capacity() * std::mem::size_of::<(u64, PointOffsetType)>()
-            + num_ids_removed.capacity() / u8::BITS as usize
+            + num_ids_removed.capacity().div_ceil(u8::BITS as usize)
             + uuids.capacity() * std::mem::size_of::<(Uuid, PointOffsetType)>()
-            + uuids_removed.capacity() / u8::BITS as usize
+            + uuids_removed.capacity().div_ceil(u8::BITS as usize)
     }
 }

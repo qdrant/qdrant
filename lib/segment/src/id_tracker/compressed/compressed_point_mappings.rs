@@ -265,7 +265,7 @@ impl CompressedPointMappings {
             external_to_internal,
         } = self;
 
-        deleted.capacity() / u8::BITS as usize
+        deleted.capacity().div_ceil(u8::BITS as usize)
             + internal_to_external.ram_usage_bytes()
             + external_to_internal.ram_usage_bytes()
     }

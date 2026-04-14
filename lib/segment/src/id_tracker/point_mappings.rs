@@ -351,7 +351,7 @@ impl PointMappings {
             external_to_internal_uuid,
         } = self;
 
-        let deleted_bytes = deleted.capacity() / u8::BITS as usize;
+        let deleted_bytes = deleted.capacity().div_ceil(u8::BITS as usize);
         let internal_to_external_bytes =
             internal_to_external.capacity() * std::mem::size_of::<PointIdType>();
         // BTreeMap node overhead: key + value + 2 child pointers + parent pointer + metadata.
