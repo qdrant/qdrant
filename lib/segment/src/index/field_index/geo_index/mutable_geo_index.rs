@@ -560,6 +560,7 @@ impl InMemoryGeoMapIndex {
             .values()
             .map(|set| {
                 std::mem::size_of::<GeoHash>()
+                    + std::mem::size_of::<AHashSet<PointOffsetType>>()
                     + btree_entry_overhead
                     + set.capacity()
                         * (std::mem::size_of::<PointOffsetType>() + hashset_entry_overhead)
