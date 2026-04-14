@@ -268,9 +268,10 @@ impl CollectionsInternal for CollectionsInternalService {
 
     async fn get_shard_memory_report(
         &self,
-        request: Request<GetShardMemoryReportRequest>,
+        mut request: Request<GetShardMemoryReportRequest>,
     ) -> Result<Response<GetShardMemoryReportResponse>, Status> {
         validate_and_log(request.get_ref());
+        let auth = extract_auth(&mut request);
 
         let timing = Instant::now();
         let GetShardMemoryReportRequest {
@@ -280,7 +281,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection(&full_access_pass(&collection_name)?)
+            .get_collection(&access_pass(&auth, &collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
