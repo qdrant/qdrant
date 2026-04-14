@@ -58,10 +58,11 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
             chunk_capacity: _,
             chunks,
         } = self;
-        chunks
-            .iter()
-            .map(|chunk| chunk.capacity() * mem::size_of::<T>())
-            .sum()
+        chunks.capacity() * mem::size_of::<Vec<T>>()
+            + chunks
+                .iter()
+                .map(|chunk| chunk.capacity() * mem::size_of::<T>())
+                .sum::<usize>()
     }
 
     pub fn get(&self, key: VectorOffsetType) -> &[T] {
