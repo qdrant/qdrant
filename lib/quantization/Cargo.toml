@@ -31,7 +31,6 @@ bytemuck = { workspace = true }
 parking_lot = { workspace = true }
 ordered-float = { workspace = true }
 arrayvec = "0.7.6"
-static_assertions = "1.1.0"
 
 [dev-dependencies]
 fs-err = { workspace = true, features = ["debug"] }

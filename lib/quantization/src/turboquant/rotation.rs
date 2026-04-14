@@ -3,14 +3,20 @@
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 
+use crate::turboquant::permutation::Permutation;
+
 const N_PERMUTATIONS: usize = 3;
 
 /// Hadamard rotation implementation customized for TurboQuant.
 pub struct HadamardRotation {
+    /// Random signs applied before the rotation
     signs1: Vec<f64>,
+
+    /// Random signs applied after the rotation
     signs2: Vec<f64>,
 
-    permutations: [(Vec<usize>, Vec<usize>); N_PERMUTATIONS],
+    /// Random (but shared) permutations.
+    permutations: [Permutation; N_PERMUTATIONS],
 
     /// Original dimension.
     dim: usize,
@@ -30,7 +36,7 @@ impl HadamardRotation {
         let signs2 = generate_signs(&mut rng, dim);
 
         let permutations: [_; N_PERMUTATIONS] =
-            std::array::from_fn(|_| generate_permutation(&mut rng, dim));
+            std::array::from_fn(|_| Permutation::new(&mut rng, dim));
 
         Self {
             signs1,
@@ -39,14 +45,6 @@ impl HadamardRotation {
             dim,
             chunk_sizes,
         }
-    }
-
-    pub fn dim(&self) -> usize {
-        self.dim
-    }
-
-    pub fn chunk_sizes(&self) -> &[usize] {
-        &self.chunk_sizes
     }
 
     pub fn apply(&self, x: &[f32]) -> Vec<f32> {
@@ -65,8 +63,8 @@ impl HadamardRotation {
         let mut tmp = vec![0.0f64; buf.len()];
 
         // Permute then WHT+normalize for each permutation.
-        for perm in &self.permutations {
-            apply_permutation(&mut buf, &mut tmp, &perm.0);
+        for permutation in &self.permutations {
+            permutation.apply(&mut buf, &mut tmp, true);
             self.wht_normalized_chunks(&mut buf);
         }
 
@@ -92,8 +90,8 @@ impl HadamardRotation {
         let mut tmp = vec![0.0f64; buf.len()];
 
         // Apply inverse permutations backwards.
-        for perm in self.permutations.iter().rev() {
-            apply_permutation(&mut buf, &mut tmp, &perm.1);
+        for permutation in self.permutations.iter().rev() {
+            permutation.apply(&mut buf, &mut tmp, false);
             self.wht_normalized_chunks(&mut buf);
         }
 
@@ -140,15 +138,6 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
     }
 }
 
-/// Apply a permutation out-of-place: element at index `i` moves to `perm[i]`.
-pub fn apply_permutation(buf: &mut [f64], tmp: &mut [f64], perm: &[usize]) {
-    debug_assert_eq!(tmp.len(), buf.len());
-    for (i, &p) in perm.iter().enumerate() {
-        tmp[p] = buf[i];
-    }
-    buf.copy_from_slice(tmp);
-}
-
 /// Decompose `dim` into a sequence of decreasing power-of-2 chunk sizes
 /// that sum to exactly `dim`. No padding is needed.
 ///
@@ -181,7 +170,7 @@ pub fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
 }
 
 /// Generate a random sign vector (±1.0).
-pub fn generate_signs(rng: &mut StdRng, n: usize) -> Vec<f64> {
+fn generate_signs(rng: &mut StdRng, n: usize) -> Vec<f64> {
     (0..n)
         .map(|_| {
             if rng.random::<bool>() {
@@ -191,20 +180,6 @@ pub fn generate_signs(rng: &mut StdRng, n: usize) -> Vec<f64> {
             }
         })
         .collect()
-}
-
-/// Generate a random permutation and its inverse using Fisher-Yates shuffle.
-pub fn generate_permutation(rng: &mut StdRng, n: usize) -> (Vec<usize>, Vec<usize>) {
-    let mut perm: Vec<usize> = (0..n).collect();
-    for i in (1..n).rev() {
-        let j = rng.random_range(0..=i);
-        perm.swap(i, j);
-    }
-    let mut inv = vec![0usize; n];
-    for (i, &p) in perm.iter().enumerate() {
-        inv[p] = i;
-    }
-    (perm, inv)
 }
 
 #[cfg(test)]
@@ -276,7 +251,7 @@ mod test {
 
             let stats_before = VectorStats::build(vectors.iter(), &params);
 
-            params.dim = rot.dim();
+            params.dim = rot.dim;
             let stats_after = VectorStats::build(rotated.iter(), &params);
 
             // Measure how uniform the per-dimension stddevs are by looking at

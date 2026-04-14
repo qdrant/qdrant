@@ -1,3 +1,4 @@
+mod permutation;
 pub mod rotation;
 
 use std::alloc::Layout;
