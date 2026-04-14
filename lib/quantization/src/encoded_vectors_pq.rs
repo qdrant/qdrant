@@ -642,14 +642,19 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
     fn heap_size_bytes(&self) -> usize {
         let storage_heap = self.encoded_vectors.heap_size_bytes();
-        // PQ centroids: Vec<Vec<f32>> — each inner Vec holds dim floats
-        let centroids_heap: usize = self
-            .metadata
-            .centroids
-            .iter()
-            .map(|c| c.capacity() * std::mem::size_of::<f32>())
-            .sum();
-        storage_heap + centroids_heap
+        // PQ centroids: Vec<Vec<f32>> — outer Vec holds inner Vec structs,
+        // each inner Vec holds centroid floats
+        let centroids_heap: usize = self.metadata.centroids.capacity()
+            * std::mem::size_of::<Vec<f32>>()
+            + self
+                .metadata
+                .centroids
+                .iter()
+                .map(|c| c.capacity() * std::mem::size_of::<f32>())
+                .sum::<usize>();
+        let vector_division_heap =
+            self.metadata.vector_division.capacity() * std::mem::size_of::<Range<usize>>();
+        storage_heap + centroids_heap + vector_division_heap
     }
 
     type SupportsBytes = True;
