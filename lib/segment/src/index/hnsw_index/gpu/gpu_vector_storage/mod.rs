@@ -141,7 +141,7 @@ impl GpuVectorStorage {
     ) -> OperationResult<Self> {
         if let Some(quantized_storage) = quantized_storage {
             let gpu_vector_storage = Self::new_quantized(
-                device,
+                device.clone(),
                 vector_storage.distance(),
                 quantized_storage.get_storage(),
                 stopped,
@@ -164,7 +164,7 @@ impl GpuVectorStorage {
         quantized_storage: &QuantizedVectorStorage,
         stopped: &AtomicBool,
     ) -> OperationResult<Option<Self>> {
-        Some(match quantized_storage {
+        let gpu_vector_storage = match quantized_storage {
             QuantizedVectorStorage::ScalarRam(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
@@ -315,7 +315,8 @@ impl GpuVectorStorage {
             QuantizedVectorStorage::PQRamMulti(quantized_storage) => return Ok(None),
             QuantizedVectorStorage::PQMmapMulti(quantized_storage) => return Ok(None),
             QuantizedVectorStorage::PQChunkedMmapMulti(quantized_storage) => return Ok(None),
-        })
+        }?;
+        Ok(Some(gpu_vector_storage))
     }
 
     pub fn new_sq<TStorage: EncodedStorage>(
