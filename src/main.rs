@@ -681,6 +681,10 @@ fn main() -> anyhow::Result<()> {
 
     touch_started_file_indicator();
 
+    #[cfg(all(unix, debug_assertions))]
+    let _sigusr1 = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())
+        .expect("Failed to install SIGUSR1 handler");
+
     for handle in handles {
         log::debug!(
             "Waiting for thread {} to finish",
