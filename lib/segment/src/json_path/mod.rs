@@ -55,6 +55,18 @@ impl JsonPath {
         result
     }
 
+    /// Like [`Self::value_get`], but pairs each value with the first wildcard's array index.
+    pub fn value_get_with_element_index<'a>(
+        &self,
+        json_map: &'a serde_json::Map<String, Value>,
+    ) -> Vec<(&'a Value, u32)> {
+        let mut result = Vec::new();
+        if let Some(value) = json_map.get(&self.first_key) {
+            value_get_with_element_index(&self.rest, Some(value), None, &mut result);
+        }
+        result
+    }
+
     /// Set values at a given JSON path in a JSON map.
     pub fn value_set<'a>(
         path: Option<&Self>,
@@ -338,6 +350,36 @@ fn value_get<'a>(
         }
     } else if let Some(value) = value {
         result.push(value);
+    }
+}
+
+fn value_get_with_element_index<'a>(
+    path: &[JsonPathItem],
+    value: Option<&'a Value>,
+    element_idx: Option<u32>,
+    result: &mut Vec<(&'a Value, u32)>,
+) {
+    if let Some((head, tail)) = path.split_first() {
+        match (head, value) {
+            (JsonPathItem::Key(key), Some(Value::Object(map))) => {
+                value_get_with_element_index(tail, map.get(key), element_idx, result)
+            }
+            (JsonPathItem::Index(index), Some(Value::Array(array))) => {
+                if let Some(value) = array.get(*index) {
+                    value_get_with_element_index(tail, Some(value), element_idx, result);
+                }
+            }
+            (JsonPathItem::WildcardIndex, Some(Value::Array(array))) => {
+                for (idx, value) in array.iter().enumerate() {
+                    // First wildcard determines the element index
+                    let elem = element_idx.unwrap_or(idx as u32);
+                    value_get_with_element_index(tail, Some(value), Some(elem), result);
+                }
+            }
+            _ => (),
+        }
+    } else if let Some(value) = value {
+        result.push((value, element_idx.unwrap_or(0)));
     }
 }
 

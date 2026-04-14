@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::id_tracker::IdTracker;
 use crate::index::field_index::FieldIndex;
+use crate::index::field_index::nested_element_index::{self, ElementIndices, NestedElementIndex};
 use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
@@ -20,7 +21,8 @@ use crate::payload_storage::query_checker::{
 };
 use crate::types::{
     Condition, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon,
-    GeoRadius, IntPayloadType, OwnedPayloadRef, PayloadContainer, Range, RangeInterface,
+    GeoRadius, IntPayloadType, OwnedPayloadRef, PayloadContainer, PayloadKeyType, Range,
+    RangeInterface,
 };
 use crate::vector_storage::VectorStorage;
 
@@ -151,38 +153,218 @@ impl StructPayloadIndex {
 
                 let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
 
-                let hw = hw_counter.fork();
-                Box::new(move |point_id| {
-                    payload_provider.with_payload(
-                        point_id,
-                        |payload| {
-                            let field_values = payload.get_value(&nested_path);
+                // Try element position indexes before falling back to payload read
+                self.ensure_nested_element_indexes();
 
-                            for value in field_values {
-                                if let Value::Object(object) = value {
-                                    let get_payload = || OwnedPayloadRef::from(object);
-                                    if check_payload(
-                                        Box::new(get_payload),
-                                        // None because has_id in nested is not supported. So retrieving
-                                        // IDs through the tracker would always return None.
-                                        None,
-                                        // Same as above, nested conditions don't support has_vector.
-                                        &HashMap::new(),
-                                        &nested.nested.filter,
-                                        point_id,
-                                        &nested_indexes,
-                                        &hw,
-                                    ) {
-                                        // If at least one nested object matches, return true
-                                        return true;
-                                    }
+                let nei_snapshot = self.nested_element_indexes_snapshot();
+
+                let extract_key = |m: &crate::types::Match| -> Option<String> {
+                    match m {
+                        crate::types::Match::Value(mv) => match &mv.value {
+                            crate::types::ValueVariants::String(s) => Some(format!("s:{s}")),
+                            crate::types::ValueVariants::Integer(i) => Some(format!("n:{i}")),
+                            crate::types::ValueVariants::Bool(b) => Some(format!("b:{b}")),
+                        },
+                        crate::types::Match::Text(_)
+                        | crate::types::Match::TextAny(_)
+                        | crate::types::Match::Phrase(_)
+                        | crate::types::Match::Any(_)
+                        | crate::types::Match::Except(_) => None,
+                    }
+                };
+
+                let mut must_checkers: Vec<(String, PayloadKeyType)> = Vec::new();
+                let mut has_unresolved_must = false;
+                if let Some(conditions) = nested.nested.filter.must.as_ref() {
+                    for cond in conditions {
+                        if let Condition::Field(field_cond) = cond {
+                            let match_value = field_cond.r#match.as_ref().and_then(&extract_key);
+                            let full_path = nested_path.extend(&field_cond.key);
+                            if let Some(val) = match_value {
+                                if nei_snapshot.contains_key(&full_path) {
+                                    must_checkers.push((val, full_path));
+                                    continue;
                                 }
                             }
+                        }
+                        has_unresolved_must = true;
+                    }
+                }
+
+                let mut must_not_checkers: Vec<(String, PayloadKeyType)> = Vec::new();
+                let mut has_unresolved_must_not = false;
+                if let Some(conditions) = nested.nested.filter.must_not.as_ref() {
+                    for cond in conditions {
+                        if let Condition::Field(field_cond) = cond {
+                            let match_value = field_cond.r#match.as_ref().and_then(&extract_key);
+                            let full_path = nested_path.extend(&field_cond.key);
+                            if let Some(val) = match_value {
+                                if nei_snapshot.contains_key(&full_path) {
+                                    must_not_checkers.push((val, full_path));
+                                    continue;
+                                }
+                            }
+                        }
+                        has_unresolved_must_not = true;
+                    }
+                }
+
+                let has_extra_conditions = has_unresolved_must
+                    || has_unresolved_must_not
+                    || nested.nested.filter.should.is_some()
+                    || nested.nested.filter.min_should.is_some();
+
+                if !must_checkers.is_empty() {
+                    let nei = nei_snapshot.clone();
+                    if !has_extra_conditions {
+                        Box::new(move |point_id| {
+                            let nei: &HashMap<PayloadKeyType, NestedElementIndex> = &nei;
+                            let mut sets: Vec<&ElementIndices> =
+                                Vec::with_capacity(must_checkers.len());
+                            for (match_value, full_path) in &must_checkers {
+                                if let Some(index) = nei.get(full_path) {
+                                    if let Some(indices) =
+                                        index.get_indices(point_id, match_value.as_str())
+                                    {
+                                        sets.push(indices);
+                                    } else {
+                                        return false;
+                                    }
+                                } else {
+                                    return false;
+                                }
+                            }
+                            if must_not_checkers.is_empty() {
+                                return nested_element_index::intersect_element_indices(&sets);
+                            }
+                            let candidates = nested_element_index::intersect_to_vec(&sets);
+                            if candidates.is_empty() {
+                                return false;
+                            }
+                            'candidate: for elem_idx in candidates {
+                                for (excl_value, excl_path) in &must_not_checkers {
+                                    if let Some(index) = nei.get(excl_path) {
+                                        if let Some(excl_indices) =
+                                            index.get_indices(point_id, excl_value.as_str())
+                                        {
+                                            if excl_indices.contains(&elem_idx) {
+                                                continue 'candidate;
+                                            }
+                                        }
+                                    } else {
+                                        continue 'candidate;
+                                    }
+                                }
+                                return true;
+                            }
                             false
-                        },
-                        &hw,
-                    )
-                })
+                        })
+                    } else {
+                        let hw = hw_counter.fork();
+                        Box::new(move |point_id| {
+                            let nei: &HashMap<PayloadKeyType, NestedElementIndex> = &nei;
+                            let mut sets: Vec<&ElementIndices> =
+                                Vec::with_capacity(must_checkers.len());
+                            for (match_value, full_path) in &must_checkers {
+                                if let Some(index) = nei.get(full_path) {
+                                    if let Some(indices) =
+                                        index.get_indices(point_id, match_value.as_str())
+                                    {
+                                        sets.push(indices);
+                                    } else {
+                                        return false;
+                                    }
+                                } else {
+                                    return false;
+                                }
+                            }
+
+                            if sets.is_empty() {
+                                return false;
+                            }
+                            let mut candidates = nested_element_index::intersect_to_vec(&sets);
+                            if candidates.is_empty() {
+                                return false;
+                            }
+                            candidates.retain(|elem_idx| {
+                                for (excl_value, excl_path) in &must_not_checkers {
+                                    if let Some(index) = nei.get(excl_path) {
+                                        if let Some(excl_indices) =
+                                            index.get_indices(point_id, excl_value.as_str())
+                                        {
+                                            if excl_indices.contains(elem_idx) {
+                                                return false;
+                                            }
+                                        }
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                                true
+                            });
+                            if candidates.is_empty() {
+                                return false;
+                            }
+
+                            payload_provider.with_payload(
+                                point_id,
+                                |payload| {
+                                    let field_values = payload.get_value(&nested_path);
+
+                                    for &elem_idx in &candidates {
+                                        if let Some(Value::Object(object)) =
+                                            field_values.get(elem_idx as usize)
+                                        {
+                                            let get_payload = || OwnedPayloadRef::from(object);
+                                            if check_payload(
+                                                Box::new(get_payload),
+                                                None,
+                                                &HashMap::new(),
+                                                &nested.nested.filter,
+                                                point_id,
+                                                &nested_indexes,
+                                                &hw,
+                                            ) {
+                                                return true;
+                                            }
+                                        }
+                                    }
+                                    false
+                                },
+                                &hw,
+                            )
+                        })
+                    }
+                } else {
+                    let hw = hw_counter.fork();
+                    Box::new(move |point_id| {
+                        payload_provider.with_payload(
+                            point_id,
+                            |payload| {
+                                let field_values = payload.get_value(&nested_path);
+
+                                for value in field_values {
+                                    if let Value::Object(object) = value {
+                                        let get_payload = || OwnedPayloadRef::from(object);
+                                        if check_payload(
+                                            Box::new(get_payload),
+                                            None,
+                                            &HashMap::new(),
+                                            &nested.nested.filter,
+                                            point_id,
+                                            &nested_indexes,
+                                            &hw,
+                                        ) {
+                                            return true;
+                                        }
+                                    }
+                                }
+                                false
+                            },
+                            &hw,
+                        )
+                    })
+                }
             }
             Condition::CustomIdChecker(cond) => {
                 let segment_ids: AHashSet<_> = id_tracker
