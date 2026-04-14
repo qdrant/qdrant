@@ -417,10 +417,15 @@ fn test_io_uring_eintr_handling() -> Result<()> {
         // Evict pages so reads actually block in io_uring_enter.
         file.clear_ram_cache().ok();
 
-        let ranges: Vec<ReadRange> = (0..RANGES_PER_ROUND)
-            .map(|i| ReadRange {
-                byte_offset: i * chunk_size * elem,
-                length: chunk_size,
+        let ranges: Vec<(u64, ReadRange)> = (0..RANGES_PER_ROUND)
+            .map(|i| {
+                (
+                    i,
+                    ReadRange {
+                        byte_offset: i * chunk_size * elem,
+                        length: chunk_size,
+                    },
+                )
             })
             .collect();
 
@@ -428,7 +433,11 @@ fn test_io_uring_eintr_handling() -> Result<()> {
         // which panics when in-flight requests leak due to EINTR.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut errors = 0u64;
-            for record in file.read_iter::<Sequential>(ranges) {
+            let iter = match file.read_iter::<Sequential, _>(ranges) {
+                Ok(iter) => iter,
+                Err(_) => return 1,
+            };
+            for record in iter {
                 if record.is_err() {
                     errors += 1;
                     break;
