@@ -950,9 +950,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
             .metadata
             .vector_stats
             .as_ref()
-            .map(|vs| {
-                vs.elements_stats.capacity() * std::mem::size_of::<VectorElementStats>()
-            })
+            .map(|vs| vs.elements_stats.capacity() * std::mem::size_of::<VectorElementStats>())
             .unwrap_or(0);
         storage_heap + vector_stats_heap
     }
