@@ -730,9 +730,7 @@ impl PointsInternal for PointsInternalService {
                         self.upsert_internal(upsert, auth.clone(), inference_params.clone())
                             .await?
                     }
-                    Update::Delete(delete) => {
-                        self.delete_internal(delete, auth.clone()).await?
-                    }
+                    Update::Delete(delete) => self.delete_internal(delete, auth.clone()).await?,
                     Update::UpdateVectors(update_vectors) => {
                         self.update_vectors_internal(
                             update_vectors,

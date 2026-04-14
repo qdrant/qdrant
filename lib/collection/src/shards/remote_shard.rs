@@ -17,7 +17,7 @@ use api::grpc::qdrant::{
     RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, SearchBatchResponse,
     ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
-use api::grpc::transport_channel_pool::{PoolInterceptor, MAX_GRPC_CHANNEL_TIMEOUT};
+use api::grpc::transport_channel_pool::{MAX_GRPC_CHANNEL_TIMEOUT, PoolInterceptor};
 use api::grpc::update_operation::Update;
 use api::grpc::{UpdateBatchInternal, UpdateOperation, WithPayloadSelector};
 use async_trait::async_trait;
