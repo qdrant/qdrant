@@ -178,8 +178,7 @@ impl ShardHolder {
         match self.resharding_state.read().deref() {
             None => {
                 log::warn!(
-                    "commit_read_hashring: no resharding in progress for {resharding_key}, \
-                     treating as already committed (idempotent)"
+                    "commit_read_hashring: no resharding in progress for {resharding_key}, treating as already committed",
                 );
                 return Ok(());
             }
@@ -188,8 +187,7 @@ impl ShardHolder {
                     && state.stage >= ReshardingStage::ReadHashRingCommitted =>
             {
                 log::warn!(
-                    "commit_read_hashring: read hashring already committed for \
-                     {resharding_key}, skipping (idempotent)"
+                    "commit_read_hashring: read hashring already committed for {resharding_key}, skipping",
                 );
                 return Ok(());
             }
@@ -218,8 +216,7 @@ impl ShardHolder {
         match self.resharding_state.read().deref() {
             None => {
                 log::warn!(
-                    "commit_write_hashring: no resharding in progress for {resharding_key}, \
-                     treating as already committed (idempotent)"
+                    "commit_write_hashring: no resharding in progress for {resharding_key}, treating as already committed",
                 );
                 return Ok(());
             }
@@ -228,8 +225,7 @@ impl ShardHolder {
                     && state.stage >= ReshardingStage::WriteHashRingCommitted =>
             {
                 log::warn!(
-                    "commit_write_hashring: write hashring already committed for \
-                     {resharding_key}, skipping (idempotent)"
+                    "commit_write_hashring: write hashring already committed for {resharding_key}, skipping",
                 );
                 return Ok(());
             }
@@ -259,8 +255,7 @@ impl ShardHolder {
         // Idempotent: if no resharding is active, finish was already applied.
         if self.resharding_state.read().is_none() {
             log::warn!(
-                "check_finish_resharding: no resharding in progress for {resharding_key}, \
-                 treating as already finished (idempotent)"
+                "check_finish_resharding: no resharding in progress for {resharding_key}, treating as already finished",
             );
             return Ok(());
         }
@@ -335,8 +330,7 @@ impl ShardHolder {
             // Returning an error here would be silently swallowed by apply_entries,
             // causing permanent state divergence between peers.
             log::warn!(
-                "check_abort_resharding: no resharding in progress for {resharding_key}, \
-                 treating as already aborted (idempotent)"
+                "check_abort_resharding: no resharding in progress for {resharding_key}, treating as already aborted",
             );
             return Ok(());
         };
@@ -345,8 +339,7 @@ impl ShardHolder {
             // Idempotent: a different resharding is active, so the one we're
             // trying to abort was already handled. Same reasoning as above.
             log::warn!(
-                "check_abort_resharding: resharding {resharding_key} not found, \
-                 current resharding has key {}, treating as already aborted (idempotent)",
+                "check_abort_resharding: resharding {resharding_key} not found, current resharding has key {}, treating as already aborted",
                 state.key(),
             );
             return Ok(());
@@ -826,7 +819,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "check_abort_resharding must return Ok when no resharding is active \
-             (idempotent: already aborted or never started), got error: {result:?}"
+             (idempotent: already aborted or never started), got error: {result:?}",
         );
     }
 
@@ -874,8 +867,7 @@ mod tests {
         let result = holder.commit_read_hashring(&key);
         assert!(
             result.is_ok(),
-            "commit_read_hashring must return Ok when no resharding is active \
-             (idempotent), got error: {result:?}"
+            "commit_read_hashring must return Ok when no resharding is active, got error: {result:?}",
         );
     }
 
@@ -891,8 +883,7 @@ mod tests {
         let result = holder.commit_write_hashring(&key);
         assert!(
             result.is_ok(),
-            "commit_write_hashring must return Ok when no resharding is active \
-             (idempotent), got error: {result:?}"
+            "commit_write_hashring must return Ok when no resharding is active, got error: {result:?}",
         );
     }
 
@@ -908,8 +899,7 @@ mod tests {
         let result = holder.check_finish_resharding(&key);
         assert!(
             result.is_ok(),
-            "check_finish_resharding must return Ok when no resharding is active \
-             (idempotent: already finished), got error: {result:?}"
+            "check_finish_resharding must return Ok when no resharding is active (idempotent: already finished), got error: {result:?}",
         );
     }
 

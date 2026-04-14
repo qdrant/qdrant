@@ -48,8 +48,7 @@ impl Collection {
                 && state.matches(&resharding_key)
             {
                 log::warn!(
-                    "Resharding {resharding_key} is already in progress, \
-                         skipping start (idempotent re-apply)"
+                    "Resharding {resharding_key} is already in progress, skipping start (idempotent re-apply)",
                 );
                 return Ok(());
             }
@@ -113,10 +112,7 @@ impl Collection {
         // Idempotent: skip if no resharding or already past this stage
         match shards_holder.resharding_state() {
             None => {
-                log::warn!(
-                    "commit_read_hashring: no resharding in progress, \
-                     skipping (idempotent)"
-                );
+                log::warn!("commit_read_hashring: no resharding in progress, skipping");
                 return Ok(());
             }
             Some(state)
@@ -124,8 +120,7 @@ impl Collection {
                     && state.stage >= ReshardingStage::ReadHashRingCommitted =>
             {
                 log::warn!(
-                    "commit_read_hashring: already at stage {:?}, \
-                     skipping (idempotent)",
+                    "commit_read_hashring: already at stage {:?}, skipping",
                     state.stage,
                 );
                 return Ok(());
@@ -169,10 +164,7 @@ impl Collection {
         // Idempotent: skip if no resharding or already past this stage
         match shards_holder.resharding_state() {
             None => {
-                log::warn!(
-                    "commit_write_hashring: no resharding in progress, \
-                     skipping (idempotent)"
-                );
+                log::warn!("commit_write_hashring: no resharding in progress, skipping");
                 return Ok(());
             }
             Some(state)
@@ -180,8 +172,7 @@ impl Collection {
                     && state.stage >= ReshardingStage::WriteHashRingCommitted =>
             {
                 log::warn!(
-                    "commit_write_hashring: already at stage {:?}, \
-                     skipping (idempotent)",
+                    "commit_write_hashring: already at stage {:?}, skipping",
                     state.stage,
                 );
                 return Ok(());
@@ -201,10 +192,7 @@ impl Collection {
 
         // Idempotent: if no resharding is in progress, finish was already applied
         if shard_holder.resharding_state().is_none() {
-            log::warn!(
-                "finish_resharding: no resharding in progress, \
-                 skipping (idempotent)"
-            );
+            log::warn!("finish_resharding: no resharding in progress, skipping");
             return Ok(());
         }
 
@@ -263,10 +251,7 @@ impl Collection {
 
         // Idempotent: if no resharding is in progress, abort was already applied
         if shard_holder.resharding_state().is_none() {
-            log::warn!(
-                "abort_resharding: no resharding in progress, \
-                 skipping (idempotent)"
-            );
+            log::warn!("abort_resharding: no resharding in progress, skipping");
             return Ok(());
         }
 
