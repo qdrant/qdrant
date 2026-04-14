@@ -91,6 +91,7 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.vectors.clear_cache()?;
         self.offsets.clear_cache()?;
+        self.deleted.clear_cache()?;
         Ok(())
     }
 }
