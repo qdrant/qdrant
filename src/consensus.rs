@@ -225,6 +225,7 @@ impl Consensus {
                 tls_config.clone(),
                 &runtime,
                 leader_established_in_ms,
+                channel_service.api_key.as_deref(),
             )
             .context("Failed to initialize Consensus for new Raft state")?;
         } else {
@@ -235,6 +236,7 @@ impl Consensus {
                     p2p_port,
                     &config,
                     tls_config.clone(),
+                    channel_service.api_key.as_deref(),
                 ))
                 .context("Failed to recover Consensus from existing Raft state")?;
 
@@ -265,6 +267,7 @@ impl Consensus {
             config.clone(),
             node.store().clone(),
             channel_service.channel_pool,
+            channel_service.api_key,
         );
 
         let consensus = Self {
@@ -293,6 +296,7 @@ impl Consensus {
         tls_config: Option<ClientTlsConfig>,
         runtime: &Handle,
         leader_established_in_ms: u64,
+        api_key: Option<&str>,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
             log::debug!("Bootstrapping from peer with address: {bootstrap_peer}");
@@ -303,6 +307,7 @@ impl Consensus {
                 p2p_port,
                 config,
                 tls_config,
+                api_key,
             ))?;
             Ok(())
         } else {
@@ -330,6 +335,7 @@ impl Consensus {
         p2p_port: u16,
         config: &ConsensusConfig,
         tls_config: Option<ClientTlsConfig>,
+        api_key: Option<&str>,
     ) -> anyhow::Result<AllPeers> {
         // Use dedicated transport channel for bootstrapping because of specific timeout
         let channel = make_grpc_channel(
@@ -341,14 +347,18 @@ impl Consensus {
         .await
         .context("Failed to create timeout channel")?;
         let mut client = RaftClient::new(channel);
+        let mut request = tonic::Request::new(api::grpc::qdrant::AddPeerToKnownMessage {
+            uri: current_uri,
+            port: Some(u32::from(p2p_port)),
+            id: this_peer_id,
+        });
+        if let Some(key) = api_key {
+            if let Ok(val) = key.parse() {
+                request.metadata_mut().insert("api-key", val);
+            }
+        }
         let all_peers = client
-            .add_peer_to_known(tonic::Request::new(
-                api::grpc::qdrant::AddPeerToKnownMessage {
-                    uri: current_uri,
-                    port: Some(u32::from(p2p_port)),
-                    id: this_peer_id,
-                },
-            ))
+            .add_peer_to_known(request)
             .await
             .context("Failed to add peer to known")?
             .into_inner();
@@ -363,6 +373,7 @@ impl Consensus {
         p2p_port: u16,
         config: &ConsensusConfig,
         tls_config: Option<ClientTlsConfig>,
+        api_key: Option<&str>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
         let mut peer_to_uri = state_ref
@@ -390,6 +401,7 @@ impl Consensus {
                         p2p_port,
                         config,
                         tls_config.clone(),
+                        api_key,
                     )
                     .await;
                     if res.is_err() {
@@ -431,6 +443,7 @@ impl Consensus {
         p2p_port: u16,
         config: &ConsensusConfig,
         tls_config: Option<ClientTlsConfig>,
+        api_key: Option<&str>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
         let all_peers = Self::add_peer_to_known_for(
@@ -440,6 +453,7 @@ impl Consensus {
             p2p_port,
             config,
             tls_config,
+            api_key,
         )
         .await?;
 
@@ -1093,6 +1107,7 @@ struct RaftMessageBroker {
     consensus_config: Arc<ConsensusConfig>,
     consensus_state: ConsensusStateRef,
     transport_channel_pool: Arc<TransportChannelPool>,
+    api_key: Option<String>,
 }
 
 impl RaftMessageBroker {
@@ -1103,6 +1118,7 @@ impl RaftMessageBroker {
         consensus_config: ConsensusConfig,
         consensus_state: ConsensusStateRef,
         transport_channel_pool: Arc<TransportChannelPool>,
+        api_key: Option<String>,
     ) -> Self {
         Self {
             senders: HashMap::new(),
@@ -1112,6 +1128,7 @@ impl RaftMessageBroker {
             consensus_config: consensus_config.into(),
             consensus_state,
             transport_channel_pool,
+            api_key,
         }
     }
 
@@ -1190,6 +1207,7 @@ impl RaftMessageBroker {
             consensus_config: self.consensus_config.clone(),
             consensus_state: self.consensus_state.clone(),
             transport_channel_pool: self.transport_channel_pool.clone(),
+            api_key: self.api_key.clone(),
         };
 
         let handle = RaftMessageSenderHandle {
@@ -1240,6 +1258,7 @@ struct RaftMessageSender {
     consensus_config: Arc<ConsensusConfig>,
     consensus_state: ConsensusStateRef,
     transport_channel_pool: Arc<TransportChannelPool>,
+    api_key: Option<String>,
 }
 
 impl RaftMessageSender {
@@ -1418,8 +1437,15 @@ impl RaftMessageSender {
         .await
         .context("Failed to create who-is channel")?;
 
+        let mut request = tonic::Request::new(GrpcPeerId { id: peer_id });
+        if let Some(ref key) = self.api_key {
+            if let Ok(val) = key.parse() {
+                request.metadata_mut().insert("api-key", val);
+            }
+        }
+
         let uri = RaftClient::new(channel)
-            .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
+            .who_is(request)
             .await?
             .into_inner()
             .uri

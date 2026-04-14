@@ -10,19 +10,15 @@ use api::grpc::qdrant::{
 };
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::{Access, AccessRequirements, Auth, CollectionPass};
+use storage::rbac::{AccessRequirements, Auth, CollectionPass};
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
 use crate::tonic::api::collections_common::get;
+use crate::tonic::auth::extract_auth;
 
-fn full_internal_auth() -> Auth {
-    Auth::new_internal(Access::full("Internal API"))
-}
-
-fn full_access_pass(collection_name: &str) -> Result<CollectionPass<'_>, Status> {
-    full_internal_auth()
-        .check_collection_access(
+fn access_pass<'a>(auth: &'a Auth, collection_name: &'a str) -> Result<CollectionPass<'a>, Status> {
+    auth.check_collection_access(
             collection_name,
             AccessRequirements::new(),
             "internal_collection_access",
@@ -44,9 +40,10 @@ impl CollectionsInternalService {
 impl CollectionsInternal for CollectionsInternalService {
     async fn get(
         &self,
-        request: Request<GetCollectionInfoRequestInternal>,
+        mut request: Request<GetCollectionInfoRequestInternal>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         validate_and_log(request.get_ref());
+        let auth = extract_auth(&mut request);
         let GetCollectionInfoRequestInternal {
             get_collection_info_request,
             shard_id,
@@ -55,7 +52,6 @@ impl CollectionsInternal for CollectionsInternalService {
         let get_collection_info_request = get_collection_info_request
             .ok_or_else(|| Status::invalid_argument("GetCollectionInfoRequest is missing"))?;
 
-        let auth = full_internal_auth();
         get(
             self.toc.as_ref(),
             get_collection_info_request,
@@ -92,8 +88,9 @@ impl CollectionsInternal for CollectionsInternalService {
 
     async fn wait_for_shard_state(
         &self,
-        request: Request<WaitForShardStateRequest>,
+        mut request: Request<WaitForShardStateRequest>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+        let auth = extract_auth(&mut request);
         let request = request.into_inner();
         validate_and_log(&request);
 
@@ -109,7 +106,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection(&full_access_pass(&collection_name)?)
+            .get_collection(&access_pass(&auth, &collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
@@ -136,9 +133,10 @@ impl CollectionsInternal for CollectionsInternalService {
 
     async fn get_shard_recovery_point(
         &self,
-        request: Request<GetShardRecoveryPointRequest>,
+        mut request: Request<GetShardRecoveryPointRequest>,
     ) -> Result<Response<GetShardRecoveryPointResponse>, Status> {
         validate_and_log(request.get_ref());
+        let auth = extract_auth(&mut request);
 
         let timing = Instant::now();
         let GetShardRecoveryPointRequest {
@@ -148,7 +146,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection(&full_access_pass(&collection_name)?)
+            .get_collection(&access_pass(&auth, &collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
@@ -175,9 +173,10 @@ impl CollectionsInternal for CollectionsInternalService {
 
     async fn update_shard_cutoff_point(
         &self,
-        request: Request<UpdateShardCutoffPointRequest>,
+        mut request: Request<UpdateShardCutoffPointRequest>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         validate_and_log(request.get_ref());
+        let auth = extract_auth(&mut request);
 
         let timing = Instant::now();
         let UpdateShardCutoffPointRequest {
@@ -190,7 +189,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection(&full_access_pass(&collection_name)?)
+            .get_collection(&access_pass(&auth, &collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
@@ -217,9 +216,10 @@ impl CollectionsInternal for CollectionsInternalService {
 
     async fn get_shard_optimizations(
         &self,
-        request: Request<GetShardOptimizationsRequest>,
+        mut request: Request<GetShardOptimizationsRequest>,
     ) -> Result<Response<GetShardOptimizationsResponse>, Status> {
         validate_and_log(request.get_ref());
+        let auth = extract_auth(&mut request);
 
         let timing = Instant::now();
         let GetShardOptimizationsRequest {
@@ -238,7 +238,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection(&full_access_pass(&collection_name)?)
+            .get_collection(&access_pass(&auth, &collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(

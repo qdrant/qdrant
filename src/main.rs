@@ -389,6 +389,7 @@ fn main() -> anyhow::Result<()> {
             connection_timeout,
             settings.cluster.p2p.connection_pool_size,
             tls_config,
+            settings.service.api_key.clone(),
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
         channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();

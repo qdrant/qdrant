@@ -17,7 +17,7 @@ use api::grpc::qdrant::{
     RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, SearchBatchResponse,
     ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
-use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
+use api::grpc::transport_channel_pool::{PoolInterceptor, MAX_GRPC_CHANNEL_TIMEOUT};
 use api::grpc::update_operation::Update;
 use api::grpc::{UpdateBatchInternal, UpdateOperation, WithPayloadSelector};
 use async_trait::async_trait;
@@ -137,7 +137,7 @@ impl RemoteShard {
 
     async fn with_points_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(PointsInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
+        f: impl Fn(PointsInternalClient<InterceptedService<Channel, PoolInterceptor>>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
@@ -153,7 +153,7 @@ impl RemoteShard {
 
     async fn with_collections_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(CollectionsInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
+        f: impl Fn(CollectionsInternalClient<InterceptedService<Channel, PoolInterceptor>>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
@@ -169,7 +169,7 @@ impl RemoteShard {
 
     async fn with_shard_snapshots_client_timeout<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(ShardSnapshotsClient<InterceptedService<Channel, AddTimeout>>) -> O,
+        f: impl Fn(ShardSnapshotsClient<InterceptedService<Channel, PoolInterceptor>>) -> O,
         timeout: Option<Duration>,
         retries: usize,
     ) -> CollectionResult<T> {
@@ -192,7 +192,7 @@ impl RemoteShard {
 
     async fn with_qdrant_client<T, Fut: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(QdrantClient<InterceptedService<Channel, AddTimeout>>) -> Fut,
+        f: impl Fn(QdrantClient<InterceptedService<Channel, PoolInterceptor>>) -> Fut,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service

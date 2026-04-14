@@ -72,21 +72,29 @@ enum RequestFailure {
     RequestConnection(TonicError),
 }
 
-/// Intercepts gRPC requests and adds a default timeout if it wasn't already set.
-pub struct AddTimeout {
+/// Interceptor applied to all outgoing internal gRPC requests.
+/// Adds a default timeout and optionally injects an API key for cluster authentication.
+pub struct PoolInterceptor {
     default_timeout: Duration,
+    api_key: Option<tonic::metadata::MetadataValue<tonic::metadata::Ascii>>,
 }
 
-impl AddTimeout {
-    pub fn new(default_timeout: Duration) -> Self {
-        Self { default_timeout }
+impl PoolInterceptor {
+    fn new(default_timeout: Duration, api_key: Option<String>) -> Self {
+        Self {
+            default_timeout,
+            api_key: api_key.and_then(|k| k.parse().ok()),
+        }
     }
 }
 
-impl Interceptor for AddTimeout {
+impl Interceptor for PoolInterceptor {
     fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
         if request.metadata().get("grpc-timeout").is_none() {
             request.set_timeout(self.default_timeout);
+        }
+        if let Some(ref api_key) = self.api_key {
+            request.metadata_mut().insert("api-key", api_key.clone());
         }
         Ok(request)
     }
@@ -101,6 +109,7 @@ pub struct TransportChannelPool {
     grpc_timeout: Duration,
     connection_timeout: Duration,
     tls_config: Option<ClientTlsConfig>,
+    api_key: Option<String>,
 }
 
 impl Default for TransportChannelPool {
@@ -111,6 +120,7 @@ impl Default for TransportChannelPool {
             grpc_timeout: DEFAULT_GRPC_TIMEOUT,
             connection_timeout: DEFAULT_CONNECT_TIMEOUT,
             tls_config: None,
+            api_key: None,
         }
     }
 }
@@ -121,6 +131,7 @@ impl TransportChannelPool {
         connection_timeout: Duration,
         pool_size: usize,
         tls_config: Option<ClientTlsConfig>,
+        api_key: Option<String>,
     ) -> Self {
         Self {
             uri_to_pool: Default::default(),
@@ -128,6 +139,7 @@ impl TransportChannelPool {
             connection_timeout,
             pool_size: NonZeroUsize::new(pool_size).unwrap(),
             tls_config,
+            api_key,
         }
     }
 
@@ -237,7 +249,7 @@ impl TransportChannelPool {
     async fn make_request<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: &impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
+        f: &impl Fn(InterceptedService<Channel, PoolInterceptor>) -> O,
         timeout: Duration,
     ) -> Result<T, RequestFailure> {
         let channel = match self.get_or_create_pooled_channel(uri).await {
@@ -247,8 +259,10 @@ impl TransportChannelPool {
             }
         };
 
-        let intercepted_channel =
-            InterceptedService::new(channel.item().clone(), AddTimeout::new(timeout));
+        let intercepted_channel = InterceptedService::new(
+            channel.item().clone(),
+            PoolInterceptor::new(timeout, self.api_key.clone()),
+        );
 
         let result: RequestFailure = select! {
             res = f(intercepted_channel) => {
@@ -283,7 +297,7 @@ impl TransportChannelPool {
     pub async fn with_channel_timeout<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
+        f: impl Fn(InterceptedService<Channel, PoolInterceptor>) -> O,
         timeout: Option<Duration>,
         retries: usize,
     ) -> Result<T, RequestError<Status>> {
@@ -399,7 +413,7 @@ impl TransportChannelPool {
     pub async fn with_channel<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
+        f: impl Fn(InterceptedService<Channel, PoolInterceptor>) -> O,
     ) -> Result<T, RequestError<Status>> {
         self.with_channel_timeout(uri, f, None, DEFAULT_RETRIES)
             .await

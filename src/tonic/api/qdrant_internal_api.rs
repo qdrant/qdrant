@@ -13,12 +13,12 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use storage::audit::AuditConfig;
 use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
-use storage::rbac::{Access, Auth};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::Settings;
+use crate::tonic::auth::extract_auth;
 
 pub struct QdrantInternalService {
     /// Telemetry collector
@@ -78,8 +78,9 @@ impl QdrantInternal for QdrantInternalService {
 
     async fn get_telemetry(
         &self,
-        request: Request<GetTelemetryRequest>,
+        mut request: Request<GetTelemetryRequest>,
     ) -> Result<Response<GetTelemetryResponse>, Status> {
+        let auth = extract_auth(&mut request);
         let GetTelemetryRequest {
             details_level,
             collections_selector,
@@ -105,8 +106,6 @@ impl QdrantInternal for QdrantInternalService {
 
         let timing = Instant::now();
         let timeout = Duration::from_secs(timeout);
-
-        let auth = Auth::new_internal(Access::full("internal service"));
 
         let telemetry_collector = self.telemetry_collector.lock().await;
         let telemetry_data = telemetry_collector

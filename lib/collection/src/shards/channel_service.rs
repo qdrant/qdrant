@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
-use api::grpc::transport_channel_pool::{AddTimeout, TransportChannelPool};
+use api::grpc::transport_channel_pool::{PoolInterceptor, TransportChannelPool};
 use futures::Future;
 use futures::future::try_join_all;
 use semver::Version;
@@ -153,7 +153,7 @@ impl ChannelService {
     pub async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
         peer_id: PeerId,
-        f: impl Fn(QdrantInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
+        f: impl Fn(QdrantInternalClient<InterceptedService<Channel, PoolInterceptor>>) -> O,
     ) -> CollectionResult<T> {
         let address = self
             .id_to_address

@@ -28,7 +28,7 @@ use segment::types::{
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, Auth};
+use storage::rbac::Auth;
 use tonic::{Response, Status};
 
 use crate::common::inference::params::InferenceParams;
@@ -1062,6 +1062,7 @@ pub async fn create_vector_name_internal(
     toc: Arc<TableOfContent>,
     request: api::grpc::qdrant::CreateVectorNameRequest,
     internal_params: InternalUpdateParams,
+    auth: Auth,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let api::grpc::qdrant::CreateVectorNameRequest {
         collection_name,
@@ -1094,7 +1095,7 @@ pub async fn create_vector_name_internal(
         internal_params,
         UpdateParams::from_grpc(wait, None, timeout)?,
         None,
-        Auth::new_internal(Access::full("Internal API")),
+        auth,
         HwMeasurementAcc::disposable(),
     )
     .await?;
@@ -1107,6 +1108,7 @@ pub async fn delete_vector_name_internal(
     toc: Arc<TableOfContent>,
     request: api::grpc::qdrant::DeleteVectorNameRequest,
     internal_params: InternalUpdateParams,
+    auth: Auth,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let api::grpc::qdrant::DeleteVectorNameRequest {
         collection_name,
@@ -1129,7 +1131,7 @@ pub async fn delete_vector_name_internal(
         internal_params,
         UpdateParams::from_grpc(wait, None, timeout)?,
         None,
-        Auth::new_internal(Access::full("Internal API")),
+        auth,
         HwMeasurementAcc::disposable(),
     )
     .await?;
