@@ -32,31 +32,76 @@ pub fn get_centroids(bits: u8) -> &'static [f32] {
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::PI;
-
     use super::*;
 
-    /// Gaussian approximation N(0, 1/d) for the coordinate distribution
-    /// after random rotation of a d-dimensional unit vector.
-    /// Accurate for d >= 64.
-    fn gaussian_pdf(x: f64, d: usize) -> f64 {
-        let sigma2 = 1.0 / d as f64;
-        (1.0 / (2.0 * PI * sigma2).sqrt()) * (-x * x / (2.0 * sigma2)).exp()
+    /// Standard normal PDF: φ(x) = exp(-x²/2) / √(2π).
+    fn std_normal_pdf(x: f64) -> f64 {
+        (-0.5 * x * x).exp() / (2.0 * std::f64::consts::PI).sqrt()
     }
 
-    /// Composite Simpson's rule for numerical integration of `f` over `[a, b]`.
-    fn integrate(f: impl Fn(f64) -> f64, a: f64, b: f64) -> f64 {
-        // Use enough points for good accuracy on smooth functions.
-        const N: usize = 4096;
-        let h = (b - a) / N as f64;
+    /// Approximate error function (Abramowitz & Stegun 7.1.26, max error 1.5e-7).
+    fn erf_approx(x: f64) -> f64 {
+        let a = x.abs();
+        let t = 1.0 / (1.0 + 0.3275911 * a);
+        let poly = t
+            * (0.254829592
+                + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+        let result = 1.0 - poly * (-a * a).exp();
+        if x >= 0.0 { result } else { -result }
+    }
 
-        let mut sum = f(a) + f(b);
-        for i in 1..N {
-            let x = a + i as f64 * h;
-            let weight = if i % 2 == 0 { 2.0 } else { 4.0 };
-            sum += weight * f(x);
+    /// Standard normal CDF: Φ(x) = (1 + erf(x/√2)) / 2.
+    fn std_normal_cdf(x: f64) -> f64 {
+        0.5 * (1.0 + erf_approx(x / std::f64::consts::SQRT_2))
+    }
+
+    /// Approximate inverse of the standard normal CDF (Abramowitz & Stegun 26.2.23).
+    fn inv_std_normal_cdf(p: f64) -> f64 {
+        if p <= 0.0 {
+            return f64::NEG_INFINITY;
         }
-        sum * h / 3.0
+        if p >= 1.0 {
+            return f64::INFINITY;
+        }
+        let t = if p < 0.5 {
+            (-2.0 * p.ln()).sqrt()
+        } else {
+            (-2.0 * (1.0 - p).ln()).sqrt()
+        };
+        let result = t
+            - (2.515517 + 0.802853 * t + 0.010328 * t * t)
+                / (1.0 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
+        if p < 0.5 { -result } else { result }
+    }
+
+    /// E[X | a < X < b] where X ~ N(0, σ²), using the closed-form:
+    ///   σ · (φ(a/σ) − φ(b/σ)) / (Φ(b/σ) − Φ(a/σ))
+    fn gaussian_conditional_expectation(sigma: f64, a: f64, b: f64) -> f64 {
+        let a_std = if a.is_finite() { a / sigma } else { a };
+        let b_std = if b.is_finite() { b / sigma } else { b };
+
+        let prob = if a_std.is_infinite() && a_std < 0.0 {
+            std_normal_cdf(b_std)
+        } else if b_std.is_infinite() && b_std > 0.0 {
+            1.0 - std_normal_cdf(a_std)
+        } else {
+            std_normal_cdf(b_std) - std_normal_cdf(a_std)
+        };
+
+        if prob < 1e-15 {
+            return if a.is_finite() && b.is_finite() {
+                (a + b) / 2.0
+            } else if a.is_finite() {
+                a + sigma
+            } else if b.is_finite() {
+                b - sigma
+            } else {
+                0.0
+            };
+        }
+
+        let pdf_diff = std_normal_pdf(a_std) - std_normal_pdf(b_std);
+        sigma * pdf_diff / prob
     }
 
     /// Solve the Lloyd-Max optimal scalar quantizer for N(0, 1/d).
@@ -69,51 +114,40 @@ mod tests {
         let n_levels = 1usize << bits;
         let sigma = 1.0 / (d as f64).sqrt();
 
-        // Initialize centroids uniformly in [-3.5*sigma, 3.5*sigma].
-        let lo = -3.5 * sigma;
-        let hi = 3.5 * sigma;
-        let mut centroids: Vec<f64> = (0..n_levels)
-            .map(|i| lo + (hi - lo) * (i as f64 + 0.5) / n_levels as f64)
+        // Initialize boundaries at equal-probability quantiles.
+        let mut boundaries: Vec<f64> = (1..n_levels)
+            .map(|i| sigma * inv_std_normal_cdf(i as f64 / n_levels as f64))
             .collect();
 
-        let mut boundaries = Vec::with_capacity(n_levels - 1);
+        let mut centroids = vec![0.0f64; n_levels];
 
         for _iter in 0..MAX_ITER {
-            // Step 1: boundaries = midpoints between adjacent centroids.
-            boundaries.clear();
-            for i in 0..n_levels - 1 {
-                boundaries.push((centroids[i] + centroids[i + 1]) / 2.0);
-            }
-
-            // Step 2: update centroids as conditional expectations E[X | X in partition_i].
-            let far_lo = lo * 3.0;
-            let far_hi = hi * 3.0;
-
+            // Update centroids as conditional expectations.
             let mut max_shift: f64 = 0.0;
 
             for i in 0..n_levels {
-                let a = if i == 0 { far_lo } else { boundaries[i - 1] };
+                let a = if i == 0 {
+                    f64::NEG_INFINITY
+                } else {
+                    boundaries[i - 1]
+                };
                 let b = if i == n_levels - 1 {
-                    far_hi
+                    f64::INFINITY
                 } else {
                     boundaries[i]
                 };
-
-                let numerator = integrate(|x| x * gaussian_pdf(x, d), a, b);
-                let denominator = integrate(|x| gaussian_pdf(x, d), a, b);
-
-                let new_c = if denominator > 1e-15 {
-                    numerator / denominator
-                } else {
-                    centroids[i]
-                };
-
+                let new_c = gaussian_conditional_expectation(sigma, a, b);
                 max_shift = max_shift.max((new_c - centroids[i]).abs());
                 centroids[i] = new_c;
             }
 
             if max_shift < TOL {
                 break;
+            }
+
+            // Update boundaries as midpoints.
+            for i in 0..n_levels - 1 {
+                boundaries[i] = (centroids[i] + centroids[i + 1]) / 2.0;
             }
         }
 
