@@ -9,7 +9,9 @@ use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::Random;
 use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalRead};
+use common::universal_io::{
+    MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalRead, UniversalWrite,
+};
 use fs_err as fs;
 use itertools::Either;
 use memmap2::MmapMut;
@@ -40,9 +42,9 @@ pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue +
 
 pub(super) struct Storage<
     T: Encodable + Numericable + Default + StoredValue + 'static,
-    S: UniversalRead<u8>,
+    S: UniversalWrite<u64> + UniversalRead<Point<T>> + UniversalRead<u8>,
 > {
-    deleted: BufferedUpdateBitSlice<MmapFile>,
+    deleted: BufferedUpdateBitSlice<S>,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pairs: TypedStorage<S, Point<T>>,
     pub(super) point_to_values: StoredPointToValues<T, S>,
