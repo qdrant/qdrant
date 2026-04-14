@@ -145,7 +145,7 @@ def test_memory_reporting_accuracy():
     dense_vector_names = list(vectors_config.keys()) if isinstance(vectors_config, dict) else []
     sparse_vector_names = list(sparse_vectors_config.keys()) if isinstance(sparse_vectors_config, dict) else []
 
-    print(f"\nCollection has:")
+    print("\nCollection has:")
     print(f"  Indexed payload fields: {indexed_fields}")
     print(f"  Dense vector fields: {dense_vector_names}")
     print(f"  Sparse vector fields: {sparse_vector_names}")
