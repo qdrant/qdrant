@@ -10,6 +10,7 @@ use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
+use quantization::turboquant::EncodedVectorsTQ;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
@@ -126,6 +127,20 @@ type BinaryChunkedMmapMulti = QuantizedMultivectorStorage<
     MultivectorOffsetsStorageChunkedMmap,
 >;
 
+type TQRamMulti = QuantizedMultivectorStorage<
+    EncodedVectorsTQ<QuantizedRamStorage>,
+    MultivectorOffsetsStorageRam,
+>;
+type TQMmapMulti = QuantizedMultivectorStorage<
+    EncodedVectorsTQ<QuantizedMmapStorage>,
+    MultivectorOffsetsStorageMmap,
+>;
+
+type TQChunkedMmapMulti = QuantizedMultivectorStorage<
+    EncodedVectorsTQ<QuantizedChunkedMmapStorage>,
+    MultivectorOffsetsStorageChunkedMmap,
+>;
+
 pub enum QuantizedVectorStorage {
     ScalarRam(EncodedVectorsU8<QuantizedRamStorage>),
     ScalarMmap(EncodedVectorsU8<QuantizedMmapStorage>),
@@ -136,6 +151,9 @@ pub enum QuantizedVectorStorage {
     BinaryRam(EncodedVectorsBin<u128, QuantizedRamStorage>),
     BinaryMmap(EncodedVectorsBin<u128, QuantizedMmapStorage>),
     BinaryChunkedMmap(EncodedVectorsBin<u128, QuantizedChunkedMmapStorage>),
+    TQRam(EncodedVectorsTQ<QuantizedRamStorage>),
+    TQMmap(EncodedVectorsTQ<QuantizedMmapStorage>),
+    TQChunkedMmap(EncodedVectorsTQ<QuantizedChunkedMmapStorage>),
     ScalarRamMulti(ScalarRamMulti),
     ScalarMmapMulti(ScalarMmapMulti),
     ScalarChunkedMmapMulti(ScalarChunkedMmapMulti),
@@ -145,6 +163,9 @@ pub enum QuantizedVectorStorage {
     BinaryRamMulti(BinaryRamMulti),
     BinaryMmapMulti(BinaryMmapMulti),
     BinaryChunkedMmapMulti(BinaryChunkedMmapMulti),
+    TQRamMulti(TQRamMulti),
+    TQMmapMulti(TQMmapMulti),
+    TQChunkedMmapMulti(TQChunkedMmapMulti),
 }
 
 impl QuantizedVectorStorage {
@@ -159,6 +180,9 @@ impl QuantizedVectorStorage {
             QuantizedVectorStorage::BinaryRam(q) => q.is_on_disk(),
             QuantizedVectorStorage::BinaryMmap(q) => q.is_on_disk(),
             QuantizedVectorStorage::BinaryChunkedMmap(q) => q.is_on_disk(),
+            QuantizedVectorStorage::TQRam(q) => q.is_on_disk(),
+            QuantizedVectorStorage::TQMmap(q) => q.is_on_disk(),
+            QuantizedVectorStorage::TQChunkedMmap(q) => q.is_on_disk(),
             QuantizedVectorStorage::ScalarRamMulti(q) => q.is_on_disk(),
             QuantizedVectorStorage::ScalarMmapMulti(q) => q.is_on_disk(),
             QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => q.is_on_disk(),
@@ -168,6 +192,9 @@ impl QuantizedVectorStorage {
             QuantizedVectorStorage::BinaryRamMulti(q) => q.is_on_disk(),
             QuantizedVectorStorage::BinaryMmapMulti(q) => q.is_on_disk(),
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => q.is_on_disk(),
+            QuantizedVectorStorage::TQRamMulti(q) => q.is_on_disk(),
+            QuantizedVectorStorage::TQMmapMulti(q) => q.is_on_disk(),
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.is_on_disk(),
         }
     }
 }
@@ -185,6 +212,9 @@ impl QuantizedVectorStorage {
             QuantizedVectorStorage::BinaryRam(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::BinaryMmap(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::BinaryChunkedMmap(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::TQRam(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::TQMmap(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::TQChunkedMmap(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::ScalarRamMulti(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::ScalarMmapMulti(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => q.heap_size_bytes(),
@@ -194,6 +224,9 @@ impl QuantizedVectorStorage {
             QuantizedVectorStorage::BinaryRamMulti(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::BinaryMmapMulti(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::TQRamMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::TQMmapMulti(q) => q.heap_size_bytes(),
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.heap_size_bytes(),
         }
     }
 }
@@ -229,6 +262,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(_) => true,
             QuantizedVectorStorage::BinaryMmap(_) => true,
             QuantizedVectorStorage::BinaryChunkedMmap(_) => true,
+            QuantizedVectorStorage::TQRam(_) => false,
+            QuantizedVectorStorage::TQMmap(_) => false,
+            QuantizedVectorStorage::TQChunkedMmap(_) => false,
             QuantizedVectorStorage::ScalarRamMulti(_) => false,
             QuantizedVectorStorage::ScalarMmapMulti(_) => false,
             QuantizedVectorStorage::ScalarChunkedMmapMulti(_) => false,
@@ -238,6 +274,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRamMulti(_) => true,
             QuantizedVectorStorage::BinaryMmapMulti(_) => true,
             QuantizedVectorStorage::BinaryChunkedMmapMulti(_) => true,
+            QuantizedVectorStorage::TQRamMulti(_) => false,
+            QuantizedVectorStorage::TQMmapMulti(_) => false,
+            QuantizedVectorStorage::TQChunkedMmapMulti(_) => false,
         }
     }
 
@@ -252,6 +291,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(_) => false,
             QuantizedVectorStorage::BinaryMmap(_) => false,
             QuantizedVectorStorage::BinaryChunkedMmap(_) => false,
+            QuantizedVectorStorage::TQRam(_) => false,
+            QuantizedVectorStorage::TQMmap(_) => false,
+            QuantizedVectorStorage::TQChunkedMmap(_) => false,
             QuantizedVectorStorage::ScalarRamMulti(_) => true,
             QuantizedVectorStorage::ScalarMmapMulti(_) => true,
             QuantizedVectorStorage::ScalarChunkedMmapMulti(_) => true,
@@ -261,6 +303,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRamMulti(_) => true,
             QuantizedVectorStorage::BinaryMmapMulti(_) => true,
             QuantizedVectorStorage::BinaryChunkedMmapMulti(_) => true,
+            QuantizedVectorStorage::TQRamMulti(_) => true,
+            QuantizedVectorStorage::TQMmapMulti(_) => true,
+            QuantizedVectorStorage::TQChunkedMmapMulti(_) => true,
         }
     }
 
@@ -278,6 +323,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(storage) => Ok(storage.layout()),
             QuantizedVectorStorage::BinaryMmap(storage) => Ok(storage.layout()),
             QuantizedVectorStorage::BinaryChunkedMmap(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::TQRam(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::TQMmap(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::TQChunkedMmap(storage) => Ok(storage.layout()),
             QuantizedVectorStorage::ScalarRamMulti(_)
             | QuantizedVectorStorage::ScalarMmapMulti(_)
             | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
@@ -286,11 +334,12 @@ impl QuantizedVectors {
             | QuantizedVectorStorage::PQChunkedMmapMulti(_)
             | QuantizedVectorStorage::BinaryRamMulti(_)
             | QuantizedVectorStorage::BinaryMmapMulti(_)
-            | QuantizedVectorStorage::BinaryChunkedMmapMulti(_) => {
-                Err(OperationError::service_error(
-                    "Cannot get quantized vector layout from multivector storage",
-                ))
-            }
+            | QuantizedVectorStorage::BinaryChunkedMmapMulti(_)
+            | QuantizedVectorStorage::TQRamMulti(_)
+            | QuantizedVectorStorage::TQMmapMulti(_)
+            | QuantizedVectorStorage::TQChunkedMmapMulti(_) => Err(OperationError::service_error(
+                "Cannot get quantized vector layout from multivector storage",
+            )),
         }
     }
 
@@ -305,6 +354,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(storage) => storage.get_quantized_vector(id),
             QuantizedVectorStorage::BinaryMmap(storage) => storage.get_quantized_vector(id),
             QuantizedVectorStorage::BinaryChunkedMmap(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::TQRam(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::TQMmap(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::TQChunkedMmap(storage) => storage.get_quantized_vector(id),
             QuantizedVectorStorage::ScalarRamMulti(_)
             | QuantizedVectorStorage::ScalarMmapMulti(_)
             | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
@@ -313,7 +365,10 @@ impl QuantizedVectors {
             | QuantizedVectorStorage::PQChunkedMmapMulti(_)
             | QuantizedVectorStorage::BinaryRamMulti(_)
             | QuantizedVectorStorage::BinaryMmapMulti(_)
-            | QuantizedVectorStorage::BinaryChunkedMmapMulti(_) => {
+            | QuantizedVectorStorage::BinaryChunkedMmapMulti(_)
+            | QuantizedVectorStorage::TQRamMulti(_)
+            | QuantizedVectorStorage::TQMmapMulti(_)
+            | QuantizedVectorStorage::TQChunkedMmapMulti(_) => {
                 panic!("Cannot get quantized vector from multivector storage");
             }
         }
@@ -376,6 +431,11 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
                 build(point_id, storage, hardware_counter)
             }
+            QuantizedVectorStorage::TQRam(storage) => build(point_id, storage, hardware_counter),
+            QuantizedVectorStorage::TQMmap(storage) => build(point_id, storage, hardware_counter),
+            QuantizedVectorStorage::TQChunkedMmap(storage) => {
+                build(point_id, storage, hardware_counter)
+            }
             QuantizedVectorStorage::ScalarRamMulti(storage) => {
                 build(point_id, storage, hardware_counter)
             }
@@ -401,6 +461,15 @@ impl QuantizedVectors {
                 build(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
+                build(point_id, storage, hardware_counter)
+            }
+            QuantizedVectorStorage::TQRamMulti(storage) => {
+                build(point_id, storage, hardware_counter)
+            }
+            QuantizedVectorStorage::TQMmapMulti(storage) => {
+                build(point_id, storage, hardware_counter)
+            }
+            QuantizedVectorStorage::TQChunkedMmapMulti(storage) => {
                 build(point_id, storage, hardware_counter)
             }
         }
@@ -439,6 +508,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(q) => q.files(),
             QuantizedVectorStorage::BinaryMmap(q) => q.files(),
             QuantizedVectorStorage::BinaryChunkedMmap(q) => q.files(),
+            QuantizedVectorStorage::TQRam(q) => q.files(),
+            QuantizedVectorStorage::TQMmap(q) => q.files(),
+            QuantizedVectorStorage::TQChunkedMmap(q) => q.files(),
             QuantizedVectorStorage::ScalarRamMulti(q) => q.files(),
             QuantizedVectorStorage::ScalarMmapMulti(q) => q.files(),
             QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => q.files(),
@@ -448,6 +520,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRamMulti(q) => q.files(),
             QuantizedVectorStorage::BinaryMmapMulti(q) => q.files(),
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => q.files(),
+            QuantizedVectorStorage::TQRamMulti(q) => q.files(),
+            QuantizedVectorStorage::TQMmapMulti(q) => q.files(),
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.files(),
         };
         files.push(self.path.join(QUANTIZED_CONFIG_PATH));
         files
@@ -464,6 +539,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(q) => q.immutable_files(),
             QuantizedVectorStorage::BinaryMmap(q) => q.immutable_files(),
             QuantizedVectorStorage::BinaryChunkedMmap(q) => q.immutable_files(),
+            QuantizedVectorStorage::TQRam(q) => q.immutable_files(),
+            QuantizedVectorStorage::TQMmap(q) => q.immutable_files(),
+            QuantizedVectorStorage::TQChunkedMmap(q) => q.immutable_files(),
             QuantizedVectorStorage::ScalarRamMulti(q) => q.immutable_files(),
             QuantizedVectorStorage::ScalarMmapMulti(q) => q.immutable_files(),
             QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => q.immutable_files(),
@@ -473,6 +551,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRamMulti(q) => q.immutable_files(),
             QuantizedVectorStorage::BinaryMmapMulti(q) => q.immutable_files(),
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => q.immutable_files(),
+            QuantizedVectorStorage::TQRamMulti(q) => q.immutable_files(),
+            QuantizedVectorStorage::TQMmapMulti(q) => q.immutable_files(),
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.immutable_files(),
         };
         files.push(self.path.join(QUANTIZED_CONFIG_PATH));
         files
@@ -1856,6 +1937,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(_) => {}
             QuantizedVectorStorage::BinaryMmap(storage) => storage.storage().populate(),
             QuantizedVectorStorage::BinaryChunkedMmap(storage) => storage.storage().populate()?,
+            QuantizedVectorStorage::TQRam(_) => {}
+            QuantizedVectorStorage::TQMmap(storage) => storage.storage().populate(),
+            QuantizedVectorStorage::TQChunkedMmap(storage) => storage.storage().populate()?,
             QuantizedVectorStorage::ScalarRamMulti(_) => {}
             QuantizedVectorStorage::ScalarMmapMulti(storage) => {
                 storage.storage().storage().populate();
@@ -1880,6 +1964,15 @@ impl QuantizedVectors {
                 storage.offsets_storage().populate()?;
             }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
+                storage.storage().storage().populate()?;
+                storage.offsets_storage().populate()?;
+            }
+            QuantizedVectorStorage::TQRamMulti(_) => {}
+            QuantizedVectorStorage::TQMmapMulti(storage) => {
+                storage.storage().storage().populate();
+                storage.offsets_storage().populate()?;
+            }
+            QuantizedVectorStorage::TQChunkedMmapMulti(storage) => {
                 storage.storage().storage().populate()?;
                 storage.offsets_storage().populate()?;
             }
@@ -1902,6 +1995,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
                 storage.storage().clear_cache()?
             }
+            QuantizedVectorStorage::TQRam(_) => {}
+            QuantizedVectorStorage::TQMmap(storage) => storage.storage().clear_cache(),
+            QuantizedVectorStorage::TQChunkedMmap(storage) => storage.storage().clear_cache()?,
             QuantizedVectorStorage::ScalarRamMulti(_) => {}
             QuantizedVectorStorage::ScalarMmapMulti(storage) => {
                 storage.storage().storage().clear_cache();
@@ -1929,6 +2025,15 @@ impl QuantizedVectors {
                 storage.storage().storage().clear_cache()?;
                 storage.offsets_storage().clear_cache()?;
             }
+            QuantizedVectorStorage::TQRamMulti(_) => {}
+            QuantizedVectorStorage::TQMmapMulti(storage) => {
+                storage.storage().storage().clear_cache();
+                storage.offsets_storage().clear_cache()?;
+            }
+            QuantizedVectorStorage::TQChunkedMmapMulti(storage) => {
+                storage.storage().storage().clear_cache()?;
+                storage.offsets_storage().clear_cache()?;
+            }
         }
         Ok(())
     }
@@ -1944,6 +2049,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(q) => q.flusher(),
             QuantizedVectorStorage::BinaryMmap(q) => q.flusher(),
             QuantizedVectorStorage::BinaryChunkedMmap(q) => q.flusher(),
+            QuantizedVectorStorage::TQRam(q) => q.flusher(),
+            QuantizedVectorStorage::TQMmap(q) => q.flusher(),
+            QuantizedVectorStorage::TQChunkedMmap(q) => q.flusher(),
             QuantizedVectorStorage::ScalarRamMulti(q) => q.flusher(),
             QuantizedVectorStorage::ScalarMmapMulti(q) => q.flusher(),
             QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => q.flusher(),
@@ -1953,6 +2061,9 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRamMulti(q) => q.flusher(),
             QuantizedVectorStorage::BinaryMmapMulti(q) => q.flusher(),
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => q.flusher(),
+            QuantizedVectorStorage::TQRamMulti(q) => q.flusher(),
+            QuantizedVectorStorage::TQMmapMulti(q) => q.flusher(),
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.flusher(),
         };
         Box::new(move || flusher().map_err(OperationError::from))
     }
@@ -1991,6 +2102,15 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryChunkedMmap(q) => {
                 Self::upsert_vector_dense(q, id, vector, hw_counter)
             }
+            QuantizedVectorStorage::TQRam(q) => {
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
+            }
+            QuantizedVectorStorage::TQMmap(q) => {
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
+            }
+            QuantizedVectorStorage::TQChunkedMmap(q) => {
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
+            }
             QuantizedVectorStorage::ScalarRamMulti(q) => {
                 Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
@@ -2016,6 +2136,15 @@ impl QuantizedVectors {
                 Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => {
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
+            }
+            QuantizedVectorStorage::TQRamMulti(q) => {
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
+            }
+            QuantizedVectorStorage::TQMmapMulti(q) => {
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
+            }
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => {
                 Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
         }

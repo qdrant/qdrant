@@ -140,12 +140,19 @@ impl GpuVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         if let Some(quantized_storage) = quantized_storage {
-            Self::new_quantized(
+            let gpu_vector_storage = Self::new_quantized(
                 device,
                 vector_storage.distance(),
                 quantized_storage.get_storage(),
                 stopped,
-            )
+            )?;
+            if let Some(gpu_vector_storage) = gpu_vector_storage {
+                Ok(gpu_vector_storage)
+            } else {
+                // Quantized storage is not supported, fallback to vector storage.
+                // Force half precision for `f32` vectors if supported by device.
+                Self::new_from_vector_storage(device, vector_storage, true, stopped)
+            }
         } else {
             Self::new_from_vector_storage(device, vector_storage, force_half_precision, stopped)
         }
@@ -156,8 +163,8 @@ impl GpuVectorStorage {
         distance: Distance,
         quantized_storage: &QuantizedVectorStorage,
         stopped: &AtomicBool,
-    ) -> OperationResult<Self> {
-        match quantized_storage {
+    ) -> OperationResult<Option<Self>> {
+        Some(match quantized_storage {
             QuantizedVectorStorage::ScalarRam(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
@@ -230,6 +237,9 @@ impl GpuVectorStorage {
                 None,
                 stopped,
             ),
+            QuantizedVectorStorage::TQRam(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::TQMmap(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::TQChunkedMmap(quantized_storage) => return Ok(None),
             QuantizedVectorStorage::ScalarRamMulti(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
@@ -302,7 +312,10 @@ impl GpuVectorStorage {
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
             ),
-        }
+            QuantizedVectorStorage::PQRamMulti(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::PQMmapMulti(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::PQChunkedMmapMulti(quantized_storage) => return Ok(None),
+        })
     }
 
     pub fn new_sq<TStorage: EncodedStorage>(
