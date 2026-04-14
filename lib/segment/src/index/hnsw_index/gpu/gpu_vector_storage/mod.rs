@@ -312,9 +312,9 @@ impl GpuVectorStorage {
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
             ),
-            QuantizedVectorStorage::PQRamMulti(quantized_storage) => return Ok(None),
-            QuantizedVectorStorage::PQMmapMulti(quantized_storage) => return Ok(None),
-            QuantizedVectorStorage::PQChunkedMmapMulti(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::TQRamMulti(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::TQMmapMulti(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::TQChunkedMmapMulti(quantized_storage) => return Ok(None),
         }?;
         Ok(Some(gpu_vector_storage))
     }
