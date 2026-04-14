@@ -433,9 +433,8 @@ fn test_io_uring_eintr_handling() -> Result<()> {
         // which panics when in-flight requests leak due to EINTR.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut errors = 0u64;
-            let iter = match file.read_iter::<Sequential, _>(ranges) {
-                Ok(iter) => iter,
-                Err(_) => return 1,
+            let Ok(iter) = file.read_iter::<Sequential, _>(ranges) else {
+                return 1;
             };
             for record in iter {
                 if record.is_err() {
