@@ -11,6 +11,7 @@ pub(super) mod on_final_count;
 
 mod check_stopped;
 mod fallible;
+pub mod ordering_iterator;
 pub mod stoppable_iter;
 
 pub use fallible::{FallibleIteratorExt, TransposeResultIter};
