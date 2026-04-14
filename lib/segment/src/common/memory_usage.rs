@@ -79,7 +79,7 @@ impl ComponentMemoryUsage {
         match (self.extra_ram_bytes, other.extra_ram_bytes) {
             (Some(a), Some(b)) => self.extra_ram_bytes = Some(a + b),
             (None, Some(b)) => self.extra_ram_bytes = Some(b),
-            _ => {}
+            (_, None) => {}
         }
     }
 }
