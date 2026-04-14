@@ -12,125 +12,111 @@ pub struct HadamardRotation {
 
     permutations: [(Vec<usize>, Vec<usize>); N_PERMUTATIONS],
 
-    /// Rotated dimension.
-    padded_dim: usize,
+    /// Original dimension.
+    dim: usize,
 
-    /// Size of each chunk depending on the original dimension.
-    chunk_size: usize,
+    /// Sequence of power-of-2 chunk sizes that exactly cover `dim`.
+    /// Produced by greedily taking the largest power-of-2 that fits the remainder.
+    chunk_sizes: Vec<usize>,
 }
 
 impl HadamardRotation {
     pub fn new(seed: u64, dim: usize) -> Self {
-        let chunk_size = get_chunk_size(dim);
-        let padded_dim = compute_padded_dim(dim, chunk_size);
+        let chunk_sizes = compute_chunk_sizes(dim);
 
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let signs1 = generate_signs(&mut rng, padded_dim);
-        let signs2 = generate_signs(&mut rng, padded_dim);
+        let signs1 = generate_signs(&mut rng, dim);
+        let signs2 = generate_signs(&mut rng, dim);
 
         let permutations: [_; N_PERMUTATIONS] =
-            std::array::from_fn(|_| generate_permutation(&mut rng, padded_dim));
+            std::array::from_fn(|_| generate_permutation(&mut rng, dim));
 
         Self {
             signs1,
             signs2,
             permutations,
-            padded_dim,
-            chunk_size,
+            dim,
+            chunk_sizes,
         }
     }
 
-    pub fn padded_dim(&self) -> usize {
-        self.padded_dim
+    pub fn dim(&self) -> usize {
+        self.dim
     }
 
-    pub fn chunk_size(&self) -> usize {
-        self.chunk_size
+    pub fn chunk_sizes(&self) -> &[usize] {
+        &self.chunk_sizes
     }
 
     pub fn apply(&self, x: &[f32]) -> Vec<f32> {
-        debug_assert!(x.len() <= self.padded_dim);
+        debug_assert_eq!(x.len(), self.dim);
 
-        let mut buf = Vec::with_capacity(self.padded_dim);
+        let mut buf: Vec<f64> = x
+            .iter()
+            .zip(&self.signs1)
+            .map(|(&v, &s)| f64::from(v) * s)
+            .collect();
 
-        // Update `buf` with the vector and signs applied.
-        buf.extend(x.iter().zip(&self.signs1).map(|(&v, &s)| f64::from(v) * s));
-
-        buf.resize(self.padded_dim, 0.0);
-
-        // Apply hadamard
-        for chunk in buf.chunks_mut(self.chunk_size) {
-            in_place_walsh_hadamard_transform(chunk);
-        }
+        // Apply WHT + normalize to each variable-size chunk.
+        self.wht_normalized_chunks(&mut buf);
 
         // Temp vector for `apply_permutation`.
         let mut tmp = vec![0.0f64; buf.len()];
 
-        // Apply hadamard for each permutation.
+        // Permute then WHT+normalize for each permutation.
         for perm in &self.permutations {
             apply_permutation(&mut buf, &mut tmp, &perm.0);
-            for chunk in buf.chunks_mut(self.chunk_size) {
-                in_place_walsh_hadamard_transform(chunk);
-            }
+            self.wht_normalized_chunks(&mut buf);
         }
 
-        // Merge second random signs and normalization.
-        let norm = self.normalization_factor();
-        let signs_and_norm_iter = self.signs2.iter().map(|&s| s * norm);
-
         buf.iter()
-            // Apply merged signs and norm.
-            .zip(signs_and_norm_iter)
-            .map(|(&v, sn)| (v * sn) as f32)
+            .zip(&self.signs2)
+            .map(|(&v, &s)| (v * s) as f32)
             .collect()
     }
 
-    pub fn apply_inverse(&self, y: &[f32], original_dim: usize) -> Vec<f32> {
-        debug_assert!(original_dim <= self.padded_dim);
+    pub fn apply_inverse(&self, y: &[f32]) -> Vec<f32> {
+        debug_assert_eq!(y.len(), self.dim);
 
-        let mut buf = Vec::with_capacity(self.padded_dim);
+        let mut buf: Vec<f64> = y
+            .iter()
+            .zip(&self.signs2)
+            .map(|(&v, &s)| f64::from(v) * s)
+            .collect();
 
-        // Apply second random signs, normalization, and f32->f64 conversion in one pass.
-        let norm = self.normalization_factor();
-        buf.extend(
-            y.iter()
-                .zip(&self.signs2)
-                .map(|(&v, &s)| f64::from(v) * s * norm),
-        );
-
-        buf.resize(self.padded_dim, 0.0);
-
-        // First hadamard
-        for chunk in buf.chunks_mut(self.chunk_size) {
-            in_place_walsh_hadamard_transform(chunk);
-        }
+        // WHT + normalize
+        self.wht_normalized_chunks(&mut buf);
 
         // Temp vector for `apply_permutation`.
         let mut tmp = vec![0.0f64; buf.len()];
 
-        // Apply permutations (backwards)
+        // Apply inverse permutations backwards.
         for perm in self.permutations.iter().rev() {
             apply_permutation(&mut buf, &mut tmp, &perm.1);
-
-            for chunk in buf.chunks_mut(self.chunk_size) {
-                in_place_walsh_hadamard_transform(chunk);
-            }
+            self.wht_normalized_chunks(&mut buf);
         }
 
-        buf[..original_dim]
+        buf[..self.dim]
             .iter()
-            // Apply signs 1
             .zip(&self.signs1)
             .map(|(&v, &sign)| (v * sign) as f32)
             .collect()
     }
 
-    /// Combined normalization for 4 unnormalized WHTs: 1 / sqrt(n)^4 = 1 / n^2.
-    fn normalization_factor(&self) -> f64 {
-        // 1 initial WHT + N_PERMUTATIONS = 4 total. Update exponent if this changes.
-        static_assertions::const_assert_eq!(N_PERMUTATIONS, 3);
-        1.0 / (self.chunk_size * self.chunk_size) as f64
+    /// Apply WHT + normalization to variable-size chunks.
+    fn wht_normalized_chunks(&self, buf: &mut [f64]) {
+        let mut offset = 0;
+        for &size in &self.chunk_sizes {
+            let chunk = &mut buf[offset..offset + size];
+            in_place_walsh_hadamard_transform(chunk);
+            let norm = 1.0 / (size as f64).sqrt();
+            for v in chunk.iter_mut() {
+                *v *= norm;
+            }
+            offset += size;
+        }
+        debug_assert_eq!(offset, buf.len());
     }
 }
 
@@ -163,27 +149,35 @@ pub fn apply_permutation(buf: &mut [f64], tmp: &mut [f64], perm: &[usize]) {
     buf.copy_from_slice(tmp);
 }
 
-/// Round up to the nearest multiple of `chunk_size`.
-pub fn compute_padded_dim(dim: usize, chunk_size: usize) -> usize {
-    dim.div_ceil(chunk_size) * chunk_size
-}
-
-/// Pick a power-of-two chunk size for block-wise Hadamard rotation.
-/// Divides dim by 4 and rounds up to the next power of two, yielding ~3-5 chunks.
+/// Decompose `dim` into a sequence of decreasing power-of-2 chunk sizes
+/// that sum to exactly `dim`. No padding is needed.
 ///
-///  dim  | chunk | padded | #chunks | overhead
-/// ------|-------|--------|---------|----------
-///   128 |    32 |    128 |       4 |     0.0%
-///   300 |   128 |    384 |       3 |    28.0%
-///   384 |   128 |    384 |       3 |     0.0%
-///   768 |   256 |    768 |       3 |     0.0%
-///  1024 |   256 |   1024 |       4 |     0.0%
-///  1280 |   512 |   1536 |       3 |    20.0%
-///  1536 |   512 |   1536 |       3 |     0.0%
-///  3072 |  1024 |   3072 |       3 |     0.0%
-///  4096 |  1024 |   4096 |       4 |     0.0%
-pub fn get_chunk_size(dim: usize) -> usize {
-    (dim >> 2).next_power_of_two()
+/// Greedily takes the largest power-of-2 that fits the remaining length.
+///
+/// ```text
+///  dim  | chunks
+/// ------|--------
+///   128 | [128]
+///   300 | [256, 32, 8, 4]
+///   700 | [512, 128, 32, 16, 8, 4]
+///  1536 | [1024, 512]
+///  4096 | [4096]
+/// ```
+pub fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
+    debug_assert!(dim > 0);
+    let mut sizes = Vec::with_capacity(1);
+    let mut remaining = dim;
+    while remaining > 0 {
+        let next_pow2 = remaining.next_power_of_two();
+        let chunk = if next_pow2 == remaining {
+            remaining
+        } else {
+            next_pow2 >> 1
+        };
+        sizes.push(chunk);
+        remaining -= chunk;
+    }
+    sizes
 }
 
 /// Generate a random sign vector (±1.0).
@@ -220,19 +214,31 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_picking_chunk_size() {
-        for i in [5, 128, 129, 712, 1536] {
-            assert!(get_chunk_size(i).is_power_of_two());
+    fn test_compute_chunk_sizes() {
+        // All chunks must be powers of two.
+        for dim in [5, 128, 129, 300, 700, 712, 1536, 4096] {
+            let sizes = compute_chunk_sizes(dim);
+            assert!(
+                sizes.iter().all(|s| s.is_power_of_two()),
+                "dim={dim}: not all power-of-2: {sizes:?}"
+            );
+            assert_eq!(
+                sizes.iter().sum::<usize>(),
+                dim,
+                "dim={dim}: chunks don't sum to dim: {sizes:?}"
+            );
+            // Chunks should be in decreasing order.
+            assert!(
+                sizes.windows(2).all(|w| w[0] >= w[1]),
+                "dim={dim}: not decreasing: {sizes:?}"
+            );
         }
 
-        assert_eq!(get_chunk_size(5), 1);
-        assert_eq!(get_chunk_size(100), 32);
-        assert_eq!(get_chunk_size(128), 32);
-        assert_eq!(get_chunk_size(129), 32);
-        assert_eq!(get_chunk_size(300), 128);
-        assert_eq!(get_chunk_size(712), 256);
-        assert_eq!(get_chunk_size(1536), 512);
-        assert_eq!(get_chunk_size(4096), 1024);
+        // Specific cases.
+        assert_eq!(compute_chunk_sizes(128), vec![128]);
+        assert_eq!(compute_chunk_sizes(700), vec![512, 128, 32, 16, 8, 4]);
+        assert_eq!(compute_chunk_sizes(1536), vec![1024, 512]);
+        assert_eq!(compute_chunk_sizes(4096), vec![4096]);
     }
 
     /// Test that Hadamard rotation spreads energy across dimensions,
@@ -270,7 +276,7 @@ mod test {
 
             let stats_before = VectorStats::build(vectors.iter(), &params);
 
-            params.dim = rot.padded_dim;
+            params.dim = rot.dim();
             let stats_after = VectorStats::build(rotated.iter(), &params);
 
             // Measure how uniform the per-dimension stddevs are by looking at
@@ -330,7 +336,7 @@ mod test {
                     .map(|_| ((rng.next_u32() % 1_000) as f32) / 100.0)
                     .collect();
 
-                let recovered = rot.apply_inverse(&rot.apply(&input), dim);
+                let recovered = rot.apply_inverse(&rot.apply(&input));
 
                 // Original input and recovered should be the same.
                 for (orig, recovered) in input.iter().zip(recovered.iter()) {

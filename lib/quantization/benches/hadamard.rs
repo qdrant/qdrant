@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use quantization::turboquant::rotation::{
-    HadamardRotation, get_chunk_size, in_place_walsh_hadamard_transform,
+    HadamardRotation, compute_chunk_sizes, in_place_walsh_hadamard_transform,
 };
 
 const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
@@ -11,7 +11,7 @@ fn bench_wht(c: &mut Criterion) {
     let mut group = c.benchmark_group("walsh_hadamard_transform");
 
     for &dim in DIMS {
-        let chunk_size = get_chunk_size(dim);
+        let chunk_size = *compute_chunk_sizes(dim).first().unwrap();
         let mut data: Vec<f64> = (0..chunk_size).map(|i| i as f64 * 0.01).collect();
 
         group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
@@ -48,7 +48,7 @@ fn bench_apply_inverse(c: &mut Criterion) {
         let rotated = rot.apply(&input);
 
         group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
-            b.iter(|| black_box(rot.apply_inverse(black_box(&rotated), dim)));
+            b.iter(|| black_box(rot.apply_inverse(black_box(&rotated))));
         });
     }
 
