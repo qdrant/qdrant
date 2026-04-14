@@ -164,6 +164,7 @@ impl UpdateWorkers {
                             &optimize_sender,
                             &mut optimization_finished_receiver,
                             &cancel,
+                            sender.as_ref(),
                         )
                         .await;
                         // Waiting for deferred points should never error out as it would mark the shard as dead
@@ -211,7 +212,8 @@ impl UpdateWorkers {
     /// Returns `Ok(())` when all deferred points have been optimized.
     ///
     /// Returns an error if the cancellation token is triggered (e.g. update
-    /// handler restarted due to a config change via consensus).
+    /// handler restarted due to a config change via consensus), or if the
+    /// caller is no longer waiting for the result (e.g. client timeout).
     ///
     /// # Cancel safety
     ///
@@ -221,8 +223,18 @@ impl UpdateWorkers {
         optimize_sender: &Sender<OptimizerSignal>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
         cancel: &CancellationToken,
+        feedback_sender: Option<&oneshot::Sender<CollectionResult<InternalUpdateResult>>>,
     ) -> CollectionResult<()> {
         loop {
+            // If the caller dropped their receiver (e.g. client timeout),
+            // stop waiting to avoid blocking the update worker pipeline.
+            if feedback_sender.is_some_and(|s| s.is_closed()) {
+                log::debug!("wait_for_deferred_points_ready: caller no longer waiting");
+                return Err(CollectionError::cancelled(
+                    "Deferred points wait interrupted: caller timed out",
+                ));
+            }
+
             let locked_segments = segments.clone();
             let has_deferred_points =
                 AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
