@@ -46,16 +46,16 @@ pub(super) struct PointKeyValue {
     pub ids_end: u32,
 }
 
-/// An alias to set of traits required by `MmapGeoMapIndex`.
+/// An alias to set of traits required by [`StoredGeoMapIndex`].
 #[expect(private_bounds)]
-pub trait MmapGeoMapIndexStorage:
+pub trait StoredGeoMapIndexStorage:
     UniversalRead<u8>
     + UniversalRead<Counts>
     + UniversalRead<PointKeyValue>
     + UniversalRead<PointOffsetType>
 {
 }
-impl<T> MmapGeoMapIndexStorage for T where
+impl<T> StoredGeoMapIndexStorage for T where
     T: UniversalRead<u8>
         + UniversalRead<Counts>
         + UniversalRead<PointKeyValue>
@@ -77,7 +77,7 @@ impl<T> MmapGeoMapIndexStorage for T where
 ///  └─────────────────────────────────────────────────────────┘
 ///   points_map_ids
 ///
-pub struct MmapGeoMapIndex<S: MmapGeoMapIndexStorage> {
+pub struct StoredGeoMapIndex<S: StoredGeoMapIndexStorage> {
     path: PathBuf,
     pub(super) storage: Storage<S>,
     pub(super) deleted_count: usize,
@@ -86,7 +86,7 @@ pub struct MmapGeoMapIndex<S: MmapGeoMapIndexStorage> {
     is_on_disk: bool,
 }
 
-pub(super) struct Storage<S: MmapGeoMapIndexStorage> {
+pub(super) struct Storage<S: StoredGeoMapIndexStorage> {
     /// Stores GeoHash, points count and values count.
     /// Sorted by geohash, so we binary search the region.
     pub(super) counts_per_hash: TypedStorage<S, Counts>,
@@ -102,12 +102,12 @@ pub(super) struct Storage<S: MmapGeoMapIndexStorage> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct MmapGeoMapIndexStat {
+struct StoredGeoMapIndexStat {
     points_values_count: usize,
     max_values_per_point: usize,
 }
 
-impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
+impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
     pub fn build(
         dynamic_index: InMemoryGeoMapIndex,
         path: &Path,
@@ -121,7 +121,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
-        // Create the point-to-value mapping and persist in the mmap file
+        // Create the point-to-value mapping and persist in the file
         StoredPointToValues::<GeoPoint, MmapFile>::from_iter(
             path,
             dynamic_index
@@ -213,14 +213,14 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
 
         atomic_save_json(
             &stats_path,
-            &MmapGeoMapIndexStat {
+            &StoredGeoMapIndexStat {
                 points_values_count: dynamic_index.points_values_count,
                 max_values_per_point: dynamic_index.max_values_per_point,
             },
         )?;
 
         Self::open(path, is_on_disk)?.ok_or_else(|| {
-            OperationError::service_error("Failed to open MmapGeoMapIndex after building it")
+            OperationError::service_error("Failed to open StoredGeoMapIndex after building it")
         })
     }
 
@@ -237,7 +237,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         }
 
         let populate = !is_on_disk;
-        let stats: MmapGeoMapIndexStat = read_json(&stats_path)?;
+        let stats: StoredGeoMapIndexStat = read_json(&stats_path)?;
 
         let open_options = OpenOptions {
             writeable: false,
@@ -322,7 +322,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         Ok(self
             .storage
             .counts_per_hash
-            .read_iter_autochunks(once(ReadRange {
+            .read_iter_autobatched(once(ReadRange {
                 byte_offset: 0,
                 length: self.storage.counts_per_hash.len()?,
             }))?
@@ -378,7 +378,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         })?;
 
         if let Ok(index) = found {
-            read_one(index).map(|c| Some(c))
+            read_one(index).map(Some)
         } else {
             Ok(None)
         }
@@ -387,7 +387,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
     pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let path = self.path.clone();
-        // drop mmap handles before deleting files
+        // drop storage handles before deleting files
         drop(self);
         for file in files {
             fs::remove_file(file)?;
@@ -535,7 +535,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         Ok(self
             .storage
             .points_map_ids
-            .read_iter_autochunks(point_map_ranges)?
+            .read_iter_autobatched(point_map_ranges)?
             .filter_map(|res| match res {
                 Ok(point_id) if !self.storage.deleted.get(point_id as usize).unwrap_or(true) => {
                     Some(Ok(point_id))
@@ -571,7 +571,7 @@ impl<S: MmapGeoMapIndexStorage> MmapGeoMapIndex<S> {
         self.is_on_disk
     }
 
-    /// Populate all pages in the mmap.
+    /// Populate all pages in the storage.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         self.storage.counts_per_hash.populate()?;

@@ -43,7 +43,14 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
             .map(move |(meta, range)| self.read::<P>(range).map(|data| (meta, data))))
     }
 
-    fn read_iter_autochunks(
+    /// Iterates over the provided ranges, reading a few elements at a time,
+    /// but returning in a per-element basis.
+    ///
+    /// The provided ranges can span many elements, they will be auto-chunked
+    /// by this function to ensure each read is not too big. The argument is an
+    /// iterator just so that it is possible to read from non-contiguous regions
+    /// in the same output iterator.
+    fn read_iter_autobatched(
         &self,
         ranges: impl IntoIterator<Item = ReadRange>,
     ) -> Result<impl Iterator<Item = Result<T>>> {

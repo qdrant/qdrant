@@ -6,7 +6,7 @@ use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, ReadRange, UniversalRead};
 
-use super::mmap_geo_index::MmapGeoMapIndex;
+use super::mmap_geo_index::StoredGeoMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
@@ -49,12 +49,12 @@ pub struct ImmutableGeoMapIndex {
 }
 
 enum Storage {
-    Mmap(Box<MmapGeoMapIndex<MmapFile>>),
+    Mmap(Box<StoredGeoMapIndex<MmapFile>>),
 }
 
 impl ImmutableGeoMapIndex {
     /// Open and load immutable geo index from mmap storage
-    pub fn open_mmap(index: MmapGeoMapIndex<MmapFile>) -> OperationResult<Self> {
+    pub fn open_mmap(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
         let counts_per_hash = index
             .storage
             .counts_per_hash

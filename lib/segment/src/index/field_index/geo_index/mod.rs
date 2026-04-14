@@ -10,7 +10,7 @@ use mutable_geo_index::InMemoryGeoMapIndex;
 use serde_json::Value;
 
 use self::immutable_geo_index::ImmutableGeoMapIndex;
-use self::mmap_geo_index::MmapGeoMapIndex;
+use self::mmap_geo_index::StoredGeoMapIndex;
 use self::mutable_geo_index::MutableGeoMapIndex;
 use super::FieldIndexBuilderTrait;
 use crate::common::Flusher;
@@ -38,18 +38,18 @@ const GEO_QUERY_MAX_REGION: usize = 12;
 pub enum GeoMapIndex {
     Mutable(MutableGeoMapIndex),
     Immutable(ImmutableGeoMapIndex),
-    Mmap(Box<MmapGeoMapIndex<MmapFile>>),
+    Storage(Box<StoredGeoMapIndex<MmapFile>>),
 }
 
 impl GeoMapIndex {
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
-        let Some(mmap_index) = MmapGeoMapIndex::open(path, is_on_disk)? else {
+        let Some(mmap_index) = StoredGeoMapIndex::open(path, is_on_disk)? else {
             // Files don't exist, cannot load
             return Ok(None);
         };
 
         let index = if is_on_disk {
-            GeoMapIndex::Mmap(Box::new(mmap_index))
+            GeoMapIndex::Storage(Box::new(mmap_index))
         } else {
             GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(mmap_index)?)
         };
@@ -77,7 +77,7 @@ impl GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.points_count(),
             GeoMapIndex::Immutable(index) => index.points_count(),
-            GeoMapIndex::Mmap(index) => index.points_count(),
+            GeoMapIndex::Storage(index) => index.points_count(),
         }
     }
 
@@ -85,7 +85,7 @@ impl GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.points_values_count(),
             GeoMapIndex::Immutable(index) => index.points_values_count(),
-            GeoMapIndex::Mmap(index) => index.points_values_count(),
+            GeoMapIndex::Storage(index) => index.points_values_count(),
         }
     }
 
@@ -98,7 +98,7 @@ impl GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.max_values_per_point(),
             GeoMapIndex::Immutable(index) => index.max_values_per_point(),
-            GeoMapIndex::Mmap(index) => index.max_values_per_point(),
+            GeoMapIndex::Storage(index) => index.max_values_per_point(),
         }
     }
 
@@ -110,7 +110,7 @@ impl GeoMapIndex {
         Ok(match self {
             GeoMapIndex::Mutable(index) => index.points_of_hash(hash),
             GeoMapIndex::Immutable(index) => index.points_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.points_of_hash(hash, hw_counter)?,
+            GeoMapIndex::Storage(index) => index.points_of_hash(hash, hw_counter)?,
         })
     }
 
@@ -122,7 +122,7 @@ impl GeoMapIndex {
         Ok(match self {
             GeoMapIndex::Mutable(index) => index.values_of_hash(hash),
             GeoMapIndex::Immutable(index) => index.values_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.values_of_hash(hash, hw_counter)?,
+            GeoMapIndex::Storage(index) => index.values_of_hash(hash, hw_counter)?,
         })
     }
 
@@ -135,7 +135,7 @@ impl GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
             GeoMapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
-            GeoMapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
+            GeoMapIndex::Storage(index) => index.check_values_any(idx, hw_counter, check_fn),
         }
     }
 
@@ -143,7 +143,7 @@ impl GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.values_count(idx),
             GeoMapIndex::Immutable(index) => index.values_count(idx),
-            GeoMapIndex::Mmap(index) => index.values_count(idx),
+            GeoMapIndex::Storage(index) => index.values_count(idx),
         }
     }
 
@@ -156,7 +156,7 @@ impl GeoMapIndex {
             GeoMapIndex::Immutable(index) => {
                 index.get_values(idx).map(|x| Box::new(x.cloned()) as _)
             }
-            GeoMapIndex::Mmap(index) => index.get_values(idx).map(|x| Box::new(x) as _),
+            GeoMapIndex::Storage(index) => index.get_values(idx).map(|x| Box::new(x) as _),
         }
     }
 
@@ -223,7 +223,7 @@ impl GeoMapIndex {
             index_type: match self {
                 GeoMapIndex::Mutable(_) => "mutable_geo",
                 GeoMapIndex::Immutable(_) => "immutable_geo",
-                GeoMapIndex::Mmap(_) => "mmap_geo",
+                GeoMapIndex::Storage(_) => "mmap_geo",
             },
         }
     }
@@ -247,7 +247,7 @@ impl GeoMapIndex {
                     .unique()
                     .map(Ok),
             ),
-            GeoMapIndex::Mmap(index) => Box::new(
+            GeoMapIndex::Storage(index) => Box::new(
                 values
                     .into_iter()
                     .flat_map(|top_geo_hash| {
@@ -274,7 +274,7 @@ impl GeoMapIndex {
                 .points_per_hash()
                 .filter(filter_condition)
                 .collect_vec(),
-            GeoMapIndex::Mmap(index) => index
+            GeoMapIndex::Storage(index) => index
                 .points_per_hash()?
                 .process_results(|iter| iter.filter(filter_condition).collect_vec())?,
         };
@@ -304,7 +304,7 @@ impl GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(_) => false,
             GeoMapIndex::Immutable(_) => false,
-            GeoMapIndex::Mmap(index) => index.is_on_disk(),
+            GeoMapIndex::Storage(index) => index.is_on_disk(),
         }
     }
 
@@ -314,7 +314,7 @@ impl GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(_) => {}   // Not a mmap
             GeoMapIndex::Immutable(_) => {} // Not a mmap
-            GeoMapIndex::Mmap(index) => index.populate()?,
+            GeoMapIndex::Storage(index) => index.populate()?,
         }
         Ok(())
     }
@@ -326,7 +326,7 @@ impl GeoMapIndex {
             GeoMapIndex::Mutable(index) => index.clear_cache(),
             // Only clears backing mmap storage if used, not in-memory representation
             GeoMapIndex::Immutable(index) => index.clear_cache(),
-            GeoMapIndex::Mmap(index) => index.clear_cache(),
+            GeoMapIndex::Storage(index) => index.clear_cache(),
         }
     }
 
@@ -334,7 +334,7 @@ impl GeoMapIndex {
         match self {
             Self::Mutable(_) => IndexMutability::Mutable,
             Self::Immutable(_) => IndexMutability::Immutable,
-            Self::Mmap(_) => IndexMutability::Immutable,
+            Self::Storage(_) => IndexMutability::Immutable,
         }
     }
 
@@ -342,7 +342,7 @@ impl GeoMapIndex {
         match self {
             Self::Mutable(index) => index.storage_type(),
             Self::Immutable(index) => index.storage_type(),
-            Self::Mmap(index) => StorageType::Mmap {
+            Self::Storage(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
         }
@@ -377,7 +377,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::build(
+        Ok(GeoMapIndex::Storage(Box::new(StoredGeoMapIndex::build(
             self.in_memory_index,
             &self.path,
             self.is_on_disk,
@@ -399,7 +399,7 @@ impl ValueIndexer for GeoMapIndex {
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable geo index",
             )),
-            GeoMapIndex::Mmap(_) => Err(OperationError::service_error(
+            GeoMapIndex::Storage(_) => Err(OperationError::service_error(
                 "Can't add values to mmap geo index",
             )),
         }
@@ -424,7 +424,7 @@ impl ValueIndexer for GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.remove_point(id),
             GeoMapIndex::Immutable(index) => index.remove_point(id),
-            GeoMapIndex::Mmap(index) => {
+            GeoMapIndex::Storage(index) => {
                 index.remove_point(id);
                 Ok(())
             }
@@ -493,7 +493,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.wipe(),
             GeoMapIndex::Immutable(index) => index.wipe(),
-            GeoMapIndex::Mmap(index) => index.wipe(),
+            GeoMapIndex::Storage(index) => index.wipe(),
         }
     }
 
@@ -501,7 +501,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.flusher(),
             GeoMapIndex::Immutable(index) => index.flusher(),
-            GeoMapIndex::Mmap(index) => index.flusher(),
+            GeoMapIndex::Storage(index) => index.flusher(),
         }
     }
 
@@ -509,7 +509,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         match &self {
             GeoMapIndex::Mutable(index) => index.files(),
             GeoMapIndex::Immutable(index) => index.files(),
-            GeoMapIndex::Mmap(index) => index.files(),
+            GeoMapIndex::Storage(index) => index.files(),
         }
     }
 
@@ -517,7 +517,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         match &self {
             GeoMapIndex::Mutable(_) => vec![],
             GeoMapIndex::Immutable(index) => index.immutable_files(),
-            GeoMapIndex::Mmap(index) => index.immutable_files(),
+            GeoMapIndex::Storage(index) => index.immutable_files(),
         }
     }
 
@@ -702,7 +702,7 @@ mod tests {
                 IndexBuilder::MutableGridstore(builder) => builder.finalize(),
                 IndexBuilder::Mmap(builder) => builder.finalize(),
                 IndexBuilder::RamMmap(builder) => {
-                    let GeoMapIndex::Mmap(index) = builder.finalize()? else {
+                    let GeoMapIndex::Storage(index) = builder.finalize()? else {
                         panic!("expected mmap index");
                     };
 
@@ -1244,7 +1244,7 @@ mod tests {
                 .unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(
                 ImmutableGeoMapIndex::open_mmap(
-                    MmapGeoMapIndex::open(temp_dir.path(), false)
+                    StoredGeoMapIndex::open(temp_dir.path(), false)
                         .unwrap()
                         .unwrap(),
                 )
@@ -1327,7 +1327,7 @@ mod tests {
                 .unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(
                 ImmutableGeoMapIndex::open_mmap(
-                    MmapGeoMapIndex::open(temp_dir.path(), false)
+                    StoredGeoMapIndex::open(temp_dir.path(), false)
                         .unwrap()
                         .unwrap(),
                 )
