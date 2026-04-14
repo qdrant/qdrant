@@ -159,10 +159,8 @@ impl Collection {
     }
 
     pub async fn commit_write_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        let shards_holder = self.shards_holder.read().await;
-
         // Idempotent: skip if no resharding or already past this stage
-        match shards_holder.resharding_state() {
+        match self.shards_holder.read().await.resharding_state() {
             None => {
                 log::warn!("commit_write_hashring: no resharding in progress, skipping");
                 return Ok(());
@@ -180,7 +178,6 @@ impl Collection {
             _ => {}
         }
 
-        drop(shards_holder);
         self.shards_holder
             .write()
             .await
