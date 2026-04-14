@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;
 use crate::common::Flusher;
-use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::geo_hash::{GeoHash, GeoHashRaw};
@@ -98,7 +98,7 @@ pub(super) struct Storage<S: StoredGeoMapIndexStorage> {
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
     pub(super) point_to_values: StoredPointToValues<GeoPoint, S>,
     /// Deleted flags for each PointOffsetType
-    pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
+    pub(super) deleted: BufferedUpdateBitSlice,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,7 +269,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
                 points_map,
                 points_map_ids,
                 point_to_values,
-                deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
+                deleted: BufferedUpdateBitSlice::new(deleted),
             },
             deleted_count,
             points_values_count: stats.points_values_count,

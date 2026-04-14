@@ -6,7 +6,7 @@ use common::universal_io::OpenOptions;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::*;
 use rand::rngs::StdRng;
-use segment::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use segment::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use segment::common::stored_bitslice::MmapBitSlice;
 use tempfile::tempdir;
 
@@ -14,10 +14,10 @@ const SIZE: usize = 4 * 1024 * 1024;
 const FLAG_COUNT: usize = 1_000_000;
 const LOOKUP_COUNT: usize = 1_000_000;
 
-fn mmap_bitslice_buffered_update_wrapper(c: &mut Criterion) {
+fn buffered_update_bitslice(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     let dir = tempdir().unwrap();
-    let path = dir.path().join("bitslice.mmap");
+    let path = dir.path().join("bitslice.bin");
 
     let _ = create_and_ensure_length(
         &path,
@@ -27,17 +27,15 @@ fn mmap_bitslice_buffered_update_wrapper(c: &mut Criterion) {
     .unwrap();
 
     let bitslice_storage = MmapBitSlice::open(&path, OpenOptions::default()).unwrap();
-    let mmap_bitslice_buffered_update_wrapper =
-        MmapBitSliceBufferedUpdateWrapper::new(bitslice_storage);
+    let buffered_update_bitslice = BufferedUpdateBitSlice::new(bitslice_storage);
 
     // Set random flags and persist
     for _ in 0..FLAG_COUNT {
-        mmap_bitslice_buffered_update_wrapper
-            .set(rng.random::<u64>() as usize % SIZE, rng.random());
+        buffered_update_bitslice.set(rng.random::<u64>() as usize % SIZE, rng.random());
     }
-    mmap_bitslice_buffered_update_wrapper.flusher()().unwrap();
+    buffered_update_bitslice.flusher()().unwrap();
 
-    let mut group = c.benchmark_group("mmap-bitslice-buffered-update-wrapper");
+    let mut group = c.benchmark_group("buffered-update-bitslice");
 
     let lookups: Vec<_> = iter::repeat_with(|| rng.random::<u64>() as usize % SIZE)
         .take(LOOKUP_COUNT)
@@ -46,21 +44,20 @@ fn mmap_bitslice_buffered_update_wrapper(c: &mut Criterion) {
     group.bench_function("lookup-without-pending-changes", |b| {
         b.iter(|| {
             for lookup in &lookups {
-                black_box(mmap_bitslice_buffered_update_wrapper.get(*lookup).unwrap());
+                black_box(buffered_update_bitslice.get(*lookup).unwrap());
             }
         });
     });
 
     // Set random flags and keep them in pending changes list
     for _ in 0..FLAG_COUNT {
-        mmap_bitslice_buffered_update_wrapper
-            .set(rng.random::<u64>() as usize % SIZE, rng.random());
+        buffered_update_bitslice.set(rng.random::<u64>() as usize % SIZE, rng.random());
     }
 
     group.bench_function("lookup-with-pending-changes", |b| {
         b.iter(|| {
             for lookup in &lookups {
-                black_box(mmap_bitslice_buffered_update_wrapper.get(*lookup).unwrap());
+                black_box(buffered_update_bitslice.get(*lookup).unwrap());
             }
         });
     });
@@ -69,7 +66,7 @@ fn mmap_bitslice_buffered_update_wrapper(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = mmap_bitslice_buffered_update_wrapper
+    targets = buffered_update_bitslice
 }
 
 criterion_main!(benches);

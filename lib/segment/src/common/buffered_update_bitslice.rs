@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::universal_io::UniversalWrite;
 use itertools::Itertools;
 use parking_lot::RwLock;
 
@@ -12,7 +13,7 @@ use crate::common::stored_bitslice::MmapBitSlice;
 /// until they get flushed manually.
 /// This expects the underlying storage not to grow in size.
 #[derive(Debug)]
-pub struct MmapBitSliceBufferedUpdateWrapper {
+pub struct BufferedUpdateBitSlice {
     bitslice: Arc<RwLock<MmapBitSlice>>,
     len: usize,
     pending_updates: Arc<RwLock<AHashMap<usize, bool>>>,
@@ -20,7 +21,7 @@ pub struct MmapBitSliceBufferedUpdateWrapper {
     is_alive_flush_lock: common::is_alive_lock::IsAliveLock,
 }
 
-impl MmapBitSliceBufferedUpdateWrapper {
+impl BufferedUpdateBitSlice {
     pub fn new(bitslice: MmapBitSlice) -> Self {
         let len = bitslice.bit_len() as usize;
         Self {

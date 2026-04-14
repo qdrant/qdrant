@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
-use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
@@ -38,7 +38,7 @@ pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized> {
     pub(super) value_to_points: MmapHashMap<N, PointOffsetType>,
     point_to_values: StoredPointToValues<N, MmapFile>,
-    pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
+    pub(super) deleted: BufferedUpdateBitSlice,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,7 +79,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             storage: Storage {
                 value_to_points: hashmap,
                 point_to_values,
-                deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
+                deleted: BufferedUpdateBitSlice::new(deleted),
             },
             deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,

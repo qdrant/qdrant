@@ -196,7 +196,7 @@ name = "in_memory_id_tracker"
 harness = false
 
 [[bench]]
-name = "mmap_bitslice_buffered_update_wrapper"
+name = "buffered_update_bitslice"
 harness = false
 
 [[bench]]

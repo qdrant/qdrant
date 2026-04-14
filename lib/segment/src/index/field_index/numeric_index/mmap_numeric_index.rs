@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use super::Encodable;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use crate::common::Flusher;
-use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
@@ -40,7 +40,7 @@ pub(super) struct Storage<
     T: Encodable + Numericable + Default + StoredValue + 'static,
     S: UniversalRead<u8>,
 > {
-    deleted: MmapBitSliceBufferedUpdateWrapper,
+    deleted: BufferedUpdateBitSlice,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pairs: MmapSlice<Point<T>>,
     pub(super) point_to_values: StoredPointToValues<T, S>,
@@ -53,7 +53,7 @@ struct MmapNumericIndexConfig {
 
 pub(super) struct NumericIndexPairsIterator<'a, T: Encodable + Numericable> {
     pairs: &'a [Point<T>],
-    deleted: &'a MmapBitSliceBufferedUpdateWrapper,
+    deleted: &'a BufferedUpdateBitSlice,
     start_index: usize,
     end_index: usize,
 }
@@ -187,7 +187,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
             path: path.to_path_buf(),
             storage: Storage {
                 pairs: map,
-                deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
+                deleted: BufferedUpdateBitSlice::new(deleted),
                 point_to_values,
             },
             histogram,

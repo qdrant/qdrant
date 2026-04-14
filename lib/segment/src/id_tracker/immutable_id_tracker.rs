@@ -13,7 +13,7 @@ use fs_err::File;
 use uuid::Uuid;
 
 use crate::common::Flusher;
-use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::stored_bitslice::MmapBitSlice;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
@@ -57,7 +57,7 @@ impl ExternalIdType {
 pub struct ImmutableIdTracker {
     path: PathBuf,
 
-    deleted_wrapper: MmapBitSliceBufferedUpdateWrapper,
+    deleted_wrapper: BufferedUpdateBitSlice,
 
     internal_to_version: CompressedVersions,
     internal_to_version_wrapper: SliceBufferedUpdateWrapper<MmapFile, SeqNumberType>,
@@ -273,7 +273,7 @@ impl ImmutableIdTracker {
         let mut deleted_bitvec = BitVec::new();
         deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
 
-        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
+        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
         let internal_to_version_file = TypedStorage::<MmapFile, SeqNumberType>::open(
             Self::version_mapping_file_path(segment_path),
@@ -334,7 +334,7 @@ impl ImmutableIdTracker {
 
         deleted_storage.flusher()()?;
 
-        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
+        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
         // Create mmap file for internal-to-version list
         let version_filepath = Self::version_mapping_file_path(path);
