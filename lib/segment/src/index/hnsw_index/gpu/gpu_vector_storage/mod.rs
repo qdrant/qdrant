@@ -237,9 +237,9 @@ impl GpuVectorStorage {
                 None,
                 stopped,
             ),
-            QuantizedVectorStorage::TQRam(quantized_storage) => return Ok(None),
-            QuantizedVectorStorage::TQMmap(quantized_storage) => return Ok(None),
-            QuantizedVectorStorage::TQChunkedMmap(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::TQRam(_) => return Ok(None),
+            QuantizedVectorStorage::TQMmap(_) => return Ok(None),
+            QuantizedVectorStorage::TQChunkedMmap(_) => return Ok(None),
             QuantizedVectorStorage::ScalarRamMulti(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
@@ -312,9 +312,9 @@ impl GpuVectorStorage {
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
             ),
-            QuantizedVectorStorage::TQRamMulti(quantized_storage) => return Ok(None),
-            QuantizedVectorStorage::TQMmapMulti(quantized_storage) => return Ok(None),
-            QuantizedVectorStorage::TQChunkedMmapMulti(quantized_storage) => return Ok(None),
+            QuantizedVectorStorage::TQRamMulti(_) => return Ok(None),
+            QuantizedVectorStorage::TQMmapMulti(_) => return Ok(None),
+            QuantizedVectorStorage::TQChunkedMmapMulti(_) => return Ok(None),
         }?;
         Ok(Some(gpu_vector_storage))
     }
