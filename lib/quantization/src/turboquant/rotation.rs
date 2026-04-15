@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
+use rand::RngExt;
 use rand::prelude::StdRng;
-use rand::{RngExt, SeedableRng};
 
 use crate::turboquant::permutation::Permutation;
 
@@ -24,7 +24,7 @@ pub struct HadamardRotation {
 }
 
 impl HadamardRotation {
-    pub fn new(seed: u64, dim: usize) -> Self {
+    pub fn new(dim: usize) -> Self {
         let chunk_sizes = compute_chunk_sizes(dim);
 
         let chunk_norms: Vec<f64> = chunk_sizes
@@ -32,10 +32,8 @@ impl HadamardRotation {
             .map(|&s| 1.0 / (s as f64).sqrt())
             .collect();
 
-        let mut rng = StdRng::seed_from_u64(seed);
-
         let permutations: [_; N_PERMUTATIONS] =
-            std::array::from_fn(|_| Permutation::new(&mut rng, dim));
+            std::array::from_fn(|index| Permutation::new(index as u64 + 42, dim));
 
         Self {
             permutations,
@@ -53,12 +51,9 @@ impl HadamardRotation {
         // Apply WHT + normalize to each variable-size chunk.
         self.wht_normalized_chunks(&mut buf);
 
-        // Temp vector for `apply_permutation`.
-        let mut tmp = vec![0.0f64; buf.len()];
-
         // Permute then WHT+normalize for each permutation.
         for permutation in &self.permutations {
-            permutation.apply(&mut buf, &mut tmp, true);
+            permutation.permute(&mut buf);
             self.wht_normalized_chunks(&mut buf);
         }
 
@@ -73,12 +68,9 @@ impl HadamardRotation {
         // WHT + normalize
         self.wht_normalized_chunks(&mut buf);
 
-        // Temp vector for `apply_permutation`.
-        let mut tmp = vec![0.0f64; buf.len()];
-
         // Apply inverse permutations backwards.
         for permutation in self.permutations.iter().rev() {
-            permutation.apply(&mut buf, &mut tmp, false);
+            permutation.unpermute(&mut buf);
             self.wht_normalized_chunks(&mut buf);
         }
 
@@ -161,7 +153,7 @@ fn generate_signs(rng: &mut StdRng, n: usize) -> Vec<f64> {
 
 #[cfg(test)]
 mod test {
-    use rand::Rng;
+    use rand::{Rng, SeedableRng};
 
     use super::*;
 
@@ -202,7 +194,7 @@ mod test {
 
         for dim in [100, 300, 384, 512, 1024, 1586] {
             let n_vectors = 200;
-            let rot = HadamardRotation::new(42, dim);
+            let rot = HadamardRotation::new(dim);
 
             // Generate distorted vectors: energy concentrated in first few dims.
             let mut rng = StdRng::seed_from_u64(42);
@@ -281,7 +273,7 @@ mod test {
 
         for &dim in dim_iter {
             for seed in [0, 10, 42, 100] {
-                let rot = HadamardRotation::new(seed, dim);
+                let rot = HadamardRotation::new(dim);
                 let mut rng = StdRng::seed_from_u64(seed);
 
                 let input: Vec<f32> = (0..dim)
