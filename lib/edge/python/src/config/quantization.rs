@@ -55,6 +55,10 @@ impl<'py> IntoPyObject<'py> for PyQuantizationConfig {
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
                 PyBinaryQuantizationConfig(binary).into_bound_py_any(py)
             }
+            QuantizationConfig::Turbo(_) => {
+                // TODO(turbo): Implement for edge.
+                unimplemented!("TurboQuant not yet implemented for edge")
+            }
         }
     }
 }
@@ -70,6 +74,10 @@ impl Repr for PyQuantizationConfig {
             }
             QuantizationConfig::Binary(binary) => {
                 PyBinaryQuantizationConfig::wrap_ref(&binary.binary).fmt(f)
+            }
+            QuantizationConfig::Turbo(_) => {
+                // TODO(turbo): Implement for edge.
+                unimplemented!("TurboQuant not yet implemented for edge")
             }
         }
     }

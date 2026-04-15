@@ -728,6 +728,10 @@ impl QuantizedVectors {
                 on_disk_vector_storage,
                 stopped,
             )?,
+            QuantizationConfig::Turbo(_turbo) => {
+                // TODO(turbo): Implement
+                todo!()
+            }
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -849,6 +853,10 @@ impl QuantizedVectors {
                 on_disk_vector_storage,
                 stopped,
             )?,
+            QuantizationConfig::Turbo(_turbo) => {
+                // TODO(turbo): Implement
+                todo!()
+            }
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -927,6 +935,10 @@ impl QuantizedVectors {
                         multivector_config,
                     )?
                 }
+                QuantizationConfig::Turbo(_turbo) => {
+                    // TODO(turbo): Implement
+                    todo!()
+                }
             }
         } else {
             match &config.quantization_config {
@@ -938,6 +950,10 @@ impl QuantizedVectors {
                 }
                 QuantizationConfig::Binary(BinaryQuantization { binary }) => {
                     Self::load_binary(vector_storage, path, &config, binary)?
+                }
+                QuantizationConfig::Turbo(_turbo) => {
+                    // TODO(turbo): Implement
+                    todo!()
                 }
             }
         };

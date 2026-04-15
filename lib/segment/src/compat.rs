@@ -323,6 +323,9 @@ mod tests {
                 QuantizationConfig::Binary(_) => {
                     panic!("expected scalar quantization")
                 }
+                QuantizationConfig::Turbo(turbo) => {
+                    panic!("expected scalar quantization")
+                }
             },
             _ => {
                 panic!("expected quantization")

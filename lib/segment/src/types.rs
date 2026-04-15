@@ -868,6 +868,37 @@ pub struct BinaryQuantization {
     pub binary: BinaryQuantizationConfig,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TurboQuantBitSize {
+    Bits1,
+    Bits1_5,
+    Bits2,
+    #[default]
+    Bits4,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct TurboQuantQuantizationConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+
+    // TODO(turbo): Remove before release
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plus: Option<bool>,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bits: Option<TurboQuantBitSize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct TurboQuantization {
+    #[validate(nested)]
+    pub turbo: TurboQuantQuantizationConfig,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(untagged, rename_all = "snake_case")]
 #[anonymize(false)]
@@ -875,6 +906,7 @@ pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
     Binary(BinaryQuantization),
+    Turbo(TurboQuantization),
 }
 
 impl QuantizationConfig {
@@ -896,7 +928,10 @@ impl QuantizationConfig {
     }
 
     pub fn supports_appendable(&self) -> bool {
-        matches!(self, QuantizationConfig::Binary(_))
+        matches!(
+            self,
+            QuantizationConfig::Binary(_) | QuantizationConfig::Turbo(_)
+        )
     }
 
     pub fn always_ram(&self) -> bool {
@@ -904,6 +939,7 @@ impl QuantizationConfig {
             QuantizationConfig::Scalar(s) => s.scalar.always_ram == Some(true),
             QuantizationConfig::Product(p) => p.product.always_ram == Some(true),
             QuantizationConfig::Binary(b) => b.binary.always_ram == Some(true),
+            QuantizationConfig::Turbo(t) => t.turbo.always_ram == Some(true),
         }
     }
 }
@@ -914,6 +950,7 @@ impl Validate for QuantizationConfig {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
             QuantizationConfig::Product(product) => product.validate(),
             QuantizationConfig::Binary(binary) => binary.validate(),
+            QuantizationConfig::Turbo(turbo) => turbo.validate(),
         }
     }
 }

@@ -488,6 +488,7 @@ impl CollectionParams {
                     QuantizationConfigDiff::Binary(binary) => {
                         Some(QuantizationConfig::Binary(binary))
                     }
+                    QuantizationConfigDiff::Turbo(turbo) => Some(QuantizationConfig::Turbo(turbo)),
                     QuantizationConfigDiff::Disabled(_) => None,
                 }
             }

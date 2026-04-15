@@ -36,7 +36,8 @@ use super::qdrant::{
     MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
     SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, StartFrom,
     StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
-    UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
+    TurboQuantBitSize, TurboQuantization, UuidIndexParams, VectorsOutput, WithLookup, raw_query,
+    start_from,
 };
 use super::stemming_algorithm::StemmingParams;
 use super::{Expression, Formula, RecoQuery, SnowballParams, StemmingAlgorithm, Usage};
@@ -1344,6 +1345,64 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
     }
 }
 
+impl From<segment::types::TurboQuantBitSize> for TurboQuantBitSize {
+    fn from(value: segment::types::TurboQuantBitSize) -> Self {
+        match value {
+            segment::types::TurboQuantBitSize::Bits1 => TurboQuantBitSize::Bits1,
+            segment::types::TurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits15,
+            segment::types::TurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
+            segment::types::TurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
+        }
+    }
+}
+
+fn turbo_quant_bit_size_from_i32(value: i32) -> Result<segment::types::TurboQuantBitSize, Status> {
+    let grpc_bits = TurboQuantBitSize::try_from(value)
+        .map_err(|_| Status::invalid_argument("Unknown turbo quantization bit size"))?;
+    Ok(match grpc_bits {
+        TurboQuantBitSize::Bits1 => segment::types::TurboQuantBitSize::Bits1,
+        TurboQuantBitSize::Bits15 => segment::types::TurboQuantBitSize::Bits1_5,
+        TurboQuantBitSize::Bits2 => segment::types::TurboQuantBitSize::Bits2,
+        TurboQuantBitSize::Bits4 => segment::types::TurboQuantBitSize::Bits4,
+    })
+}
+
+impl From<segment::types::TurboQuantization> for TurboQuantization {
+    fn from(value: segment::types::TurboQuantization) -> Self {
+        let segment::types::TurboQuantization { turbo } = value;
+        let segment::types::TurboQuantQuantizationConfig {
+            always_ram,
+            plus,
+            bits,
+        } = turbo;
+        TurboQuantization {
+            always_ram,
+            bits: bits.map(|b| i32::from(TurboQuantBitSize::from(b))),
+            plus,
+        }
+    }
+}
+
+impl TryFrom<TurboQuantization> for segment::types::TurboQuantization {
+    type Error = Status;
+
+    fn try_from(value: TurboQuantization) -> Result<Self, Self::Error> {
+        let TurboQuantization {
+            always_ram,
+            bits,
+            plus,
+        } = value;
+        let bits = bits.map(turbo_quant_bit_size_from_i32).transpose()?;
+        Ok(segment::types::TurboQuantization {
+            turbo: segment::types::TurboQuantQuantizationConfig {
+                always_ram,
+                plus,
+                bits,
+            },
+        })
+    }
+}
+
 impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
@@ -1361,6 +1420,11 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Binary(
                     binary.into(),
                 )),
+            },
+            segment::types::QuantizationConfig::Turbo(turbo) => Self {
+                quantization: Some(
+                    super::qdrant::quantization_config::Quantization::Turboquant(turbo.into()),
+                ),
             },
         }
     }
@@ -1382,6 +1446,9 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             ),
             super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
                 segment::types::QuantizationConfig::Binary(config.try_into()?),
+            ),
+            super::qdrant::quantization_config::Quantization::Turboquant(config) => Ok(
+                segment::types::QuantizationConfig::Turbo(config.try_into()?),
             ),
         }
     }

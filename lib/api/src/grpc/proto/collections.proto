@@ -361,11 +361,27 @@ message BinaryQuantization {
   optional BinaryQuantizationQueryEncoding query_encoding = 3;
 }
 
+message TurboQuantization{
+  optional bool always_ram = 1;
+  optional TurboQuantBitSize bits = 2;
+
+  // TODO(turbo): Remove before release
+  optional bool plus = 3;
+}
+
+enum TurboQuantBitSize{
+  Bits1 = 0;
+  Bits1_5 = 1;
+  Bits2 = 2;
+  Bits4 = 3;
+}
+
 message QuantizationConfig {
   oneof quantization {
     ScalarQuantization scalar = 1;
     ProductQuantization product = 2;
     BinaryQuantization binary = 3;
+    TurboQuantization turboquant = 4;
   }
 }
 
@@ -377,6 +393,7 @@ message QuantizationConfigDiff {
     ProductQuantization product = 2;
     Disabled disabled = 3;
     BinaryQuantization binary = 4;
+    TurboQuantization turboquant = 5;
   }
 }
 

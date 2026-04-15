@@ -375,6 +375,7 @@ impl TryFrom<api::grpc::qdrant::QuantizationConfigDiff> for QuantizationConfigDi
                 Quantization::Scalar(scalar) => Ok(Self::Scalar(scalar.try_into()?)),
                 Quantization::Product(product) => Ok(Self::Product(product.try_into()?)),
                 Quantization::Binary(binary) => Ok(Self::Binary(binary.try_into()?)),
+                Quantization::Turboquant(turbo) => Ok(Self::Turbo(turbo.try_into()?)),
                 Quantization::Disabled(_) => Ok(Self::new_disabled()),
             },
         }
@@ -846,6 +847,9 @@ fn grpc_to_segment_quantization_config(
         }
         api::grpc::qdrant::quantization_config::Quantization::Binary(config) => {
             Ok(QuantizationConfig::Binary(config.try_into()?))
+        }
+        api::grpc::qdrant::quantization_config::Quantization::Turboquant(config) => {
+            Ok(QuantizationConfig::Turbo(config.try_into()?))
         }
     }
 }

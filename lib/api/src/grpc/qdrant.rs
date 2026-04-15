@@ -972,8 +972,21 @@ pub struct BinaryQuantization {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TurboQuantization {
+    #[prost(bool, optional, tag = "1")]
+    pub always_ram: ::core::option::Option<bool>,
+    #[prost(enumeration = "TurboQuantBitSize", optional, tag = "2")]
+    pub bits: ::core::option::Option<i32>,
+    /// TODO(turbo): Remove before release
+    #[prost(bool, optional, tag = "3")]
+    pub plus: ::core::option::Option<bool>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
-    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3")]
+    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3, 4")]
     #[validate(nested)]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
@@ -989,6 +1002,8 @@ pub mod quantization_config {
         Product(super::ProductQuantization),
         #[prost(message, tag = "3")]
         Binary(super::BinaryQuantization),
+        #[prost(message, tag = "4")]
+        Turboquant(super::TurboQuantization),
     }
 }
 #[derive(validator::Validate)]
@@ -1001,7 +1016,7 @@ pub struct Disabled {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfigDiff {
-    #[prost(oneof = "quantization_config_diff::Quantization", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "quantization_config_diff::Quantization", tags = "1, 2, 3, 4, 5")]
     #[validate(nested)]
     pub quantization: ::core::option::Option<quantization_config_diff::Quantization>,
 }
@@ -1019,6 +1034,8 @@ pub mod quantization_config_diff {
         Disabled(super::Disabled),
         #[prost(message, tag = "4")]
         Binary(super::BinaryQuantization),
+        #[prost(message, tag = "5")]
+        Turboquant(super::TurboQuantization),
     }
 }
 #[derive(validator::Validate)]
@@ -2419,6 +2436,39 @@ impl BinaryQuantizationEncoding {
             "OneBit" => Some(Self::OneBit),
             "TwoBits" => Some(Self::TwoBits),
             "OneAndHalfBits" => Some(Self::OneAndHalfBits),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TurboQuantBitSize {
+    Bits1 = 0,
+    Bits15 = 1,
+    Bits2 = 2,
+    Bits4 = 3,
+}
+impl TurboQuantBitSize {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            TurboQuantBitSize::Bits1 => "Bits1",
+            TurboQuantBitSize::Bits15 => "Bits1_5",
+            TurboQuantBitSize::Bits2 => "Bits2",
+            TurboQuantBitSize::Bits4 => "Bits4",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Bits1" => Some(Self::Bits1),
+            "Bits1_5" => Some(Self::Bits15),
+            "Bits2" => Some(Self::Bits2),
+            "Bits4" => Some(Self::Bits4),
             _ => None,
         }
     }

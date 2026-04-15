@@ -158,6 +158,11 @@ impl Collection {
                         .quantization_config
                         .replace(QuantizationConfig::Binary(binary));
                 }
+                QuantizationConfigDiff::Turbo(turbo) => {
+                    config
+                        .quantization_config
+                        .replace(QuantizationConfig::Turbo(turbo));
+                }
                 QuantizationConfigDiff::Disabled(_) => {
                     config.quantization_config = None;
                 }
