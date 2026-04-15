@@ -1691,4 +1691,117 @@ mod tests {
             }
         }
     }
+
+    /// Cross-check that [`StoredGeoMapIndex::all_points`] produces the same
+    /// point set as the mutable and immutable index implementations for a
+    /// variety of prefix configurations (single region, disjoint regions,
+    /// overlapping ancestor/descendant prefixes).
+    #[test]
+    fn test_all_points_congruence() {
+        const POINT_COUNT: usize = 500;
+
+        let (mutable_index, _mutable_tmp, _) =
+            build_random_index(POINT_COUNT, 20, IndexType::MutableGridstore);
+        let (immutable_index, _immutable_tmp, _) =
+            build_random_index(POINT_COUNT, 20, IndexType::RamMmap);
+        let (mmap_index, _mmap_tmp, _) =
+            build_random_index(POINT_COUNT, 20, IndexType::Mmap);
+
+        let GeoMapIndex::Storage(storage_index) = &mmap_index else {
+            panic!("expected Mmap variant to build into Storage");
+        };
+
+        // Case 1: single contiguous region (Europe-ish polygon).
+        let europe_polygon = GeoPolygon {
+            exterior: GeoLineString {
+                points: vec![
+                    GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
+                    GeoPoint::new_unchecked(2.4664944437317615, 61.852748225727254),
+                    GeoPoint::new_unchecked(2.713789718828849, 51.80793869181895),
+                    GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
+                ],
+            },
+            interiors: None,
+        };
+        let europe_hashes = polygon_hashes(&europe_polygon, GEO_QUERY_MAX_REGION).unwrap();
+
+        // Case 2: two disjoint regions (NYC + Tokyo). Forces the prefix
+        // cursor inside `all_points` to traverse non-matching entries
+        // between the two prefix groups.
+        let nyc_circle = GeoRadius {
+            center: NYC,
+            radius: OrderedFloat(300_000.0),
+        };
+        let tokyo_circle = GeoRadius {
+            center: TOKYO,
+            radius: OrderedFloat(300_000.0),
+        };
+        let mut disjoint_hashes = circle_hashes(&nyc_circle, GEO_QUERY_MAX_REGION).unwrap();
+        disjoint_hashes.extend(circle_hashes(&tokyo_circle, GEO_QUERY_MAX_REGION).unwrap());
+
+        // Case 3: same set as Case 1 but with every prefix duplicated and
+        // with a shorter ancestor prefix added for the first hash. This
+        // exercises both the exact-duplicate `dedup()` and the
+        // ancestor-subsumption `dedup_by` paths in `all_points`.
+        let mut overlapping_hashes = europe_hashes.clone();
+        overlapping_hashes.extend(europe_hashes.iter().copied());
+        if let Some(first) = europe_hashes.first() {
+            let len = first.len();
+            if len > 2 {
+                overlapping_hashes.push(first.truncate(len - 1));
+                overlapping_hashes.push(first.truncate(len - 2));
+            }
+        }
+
+        // Case 4: a very large region (global-ish polygon) to stress the
+        // full-range traversal path where the cursor reaches the last
+        // prefix and keeps scanning deep into the points_map.
+        let global_polygon = GeoPolygon {
+            exterior: GeoLineString {
+                points: vec![
+                    GeoPoint::new_unchecked(-170.0, -80.0),
+                    GeoPoint::new_unchecked(170.0, -80.0),
+                    GeoPoint::new_unchecked(170.0, 80.0),
+                    GeoPoint::new_unchecked(-170.0, 80.0),
+                    GeoPoint::new_unchecked(-170.0, -80.0),
+                ],
+            },
+            interiors: None,
+        };
+        let global_hashes = polygon_hashes(&global_polygon, GEO_QUERY_MAX_REGION).unwrap();
+
+        let cases: Vec<(&str, Vec<GeoHash>)> = vec![
+            ("europe_single_region", europe_hashes),
+            ("nyc_plus_tokyo_disjoint", disjoint_hashes),
+            ("overlapping_and_duplicated", overlapping_hashes),
+            ("global_large_region", global_hashes),
+        ];
+
+        for (name, hashes) in cases {
+            let mutable_result: HashSet<PointOffsetType> = mutable_index
+                .iterator(hashes.clone())
+                .unwrap()
+                .collect();
+
+            let immutable_result: HashSet<PointOffsetType> = immutable_index
+                .iterator(hashes.clone())
+                .unwrap()
+                .collect();
+
+            let all_points_result: HashSet<PointOffsetType> = storage_index
+                .all_points(hashes)
+                .unwrap()
+                .into_iter()
+                .collect();
+
+            assert_eq!(
+                mutable_result, immutable_result,
+                "case `{name}`: mutable vs immutable differ",
+            );
+            assert_eq!(
+                mutable_result, all_points_result,
+                "case `{name}`: mutable vs all_points differ",
+            );
+        }
+    }
 }
