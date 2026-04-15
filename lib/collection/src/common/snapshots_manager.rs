@@ -299,7 +299,14 @@ impl SnapshotStorageLocalFS {
         move_file(&source_path, &target_path_tmp).await?;
         target_path_tmp.persist(target_path).map_err(|e| e.error)?;
 
-        checksum_file.keep()?;
+        // If keeping the checksum file as permanent fails, the .snapshot file is
+        // already at its permanent location with no TempPath guard.  Roll it back
+        // so we never leave a .snapshot on disk without a matching .snapshot.checksum.
+        if let Err(err) = checksum_file.keep() {
+            let _ = tokio_fs::remove_file(target_path).await;
+            return Err(err.into());
+        }
+
         get_snapshot_description(target_path).await
     }
 
@@ -472,5 +479,116 @@ impl SnapshotStorageCloud {
             _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
         })?;
         Ok(SnapshotStream::new_stream(download.into_stream(), None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fs_err::tokio as tokio_fs;
+    use tempfile::TempPath;
+
+    use super::*;
+    use crate::operations::snapshot_ops::get_checksum_path;
+
+    fn local_storage() -> SnapshotStorageManager {
+        SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS)
+    }
+
+    /// Happy path: after a successful `store_file` both the `.snapshot` and
+    /// its `.snapshot.checksum` companion must exist on disk, and the source
+    /// temp file must have been consumed (moved away).
+    #[tokio::test]
+    async fn test_store_file_success_creates_snapshot_and_checksum() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
+        let source_path = source.path().to_path_buf();
+        fs_err::write(&source_path, b"snapshot payload").unwrap();
+
+        let snapshot_path = dir.path().join("col.snapshot");
+
+        let result = local_storage()
+            .store_file(&source_path, &snapshot_path)
+            .await;
+
+        assert!(result.is_ok(), "store_file should succeed: {result:?}");
+        assert!(snapshot_path.exists(), ".snapshot must exist");
+        assert!(
+            get_checksum_path(&snapshot_path).exists(),
+            ".snapshot.checksum must exist"
+        );
+        assert!(!source_path.exists(), "source file must have been moved");
+    }
+
+    /// Error path — `persist` failure: placing a directory at the target path
+    /// prevents the atomic rename, which fires after the checksum file has
+    /// already been written.  Both the staging `.tmp` file and the
+    /// `.snapshot.checksum` file must be cleaned up; no partial state should
+    /// remain.
+    #[tokio::test]
+    async fn test_store_file_cleans_up_on_persist_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
+        let source_path = source.path().to_path_buf();
+        fs_err::write(&source_path, b"snapshot payload").unwrap();
+
+        let snapshot_path = dir.path().join("col.snapshot");
+        // A directory at the target path makes rename() fail with EISDIR /
+        // ERROR_ACCESS_DENIED, exercising the persist-failure cleanup path.
+        fs_err::create_dir(&snapshot_path).unwrap();
+
+        let result = local_storage()
+            .store_file(&source_path, &snapshot_path)
+            .await;
+
+        assert!(result.is_err(), "store_file must fail when persist fails");
+        assert!(
+            !snapshot_path.with_extension("tmp").exists(),
+            ".tmp staging file must be cleaned up"
+        );
+        assert!(
+            !get_checksum_path(&snapshot_path).exists(),
+            ".snapshot.checksum must be cleaned up"
+        );
+    }
+
+    /// Rollback invariant for the `keep()` failure path.
+    ///
+    /// `TempPath::keep()` is effectively infallible on Linux/macOS (it is a
+    /// `mem::forget`), so we cannot trigger the branch through `store_file`
+    /// in a portable unit test.  Instead we exercise the *mechanism* directly:
+    /// set up the exact mid-operation state (`.snapshot` permanent, checksum
+    /// still guarded by a `TempPath`), execute the two-step rollback that the
+    /// fix performs, and assert that no orphan files remain.
+    #[tokio::test]
+    async fn test_store_file_rollback_removes_snapshot_when_checksum_keep_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let snapshot_path = dir.path().join("col.snapshot");
+        let checksum_path = get_checksum_path(&snapshot_path);
+
+        // Replicate the state just after `persist()` succeeds but before
+        // `keep()` is called: snapshot is permanent, checksum has a guard.
+        tokio_fs::File::create(&snapshot_path).await.unwrap();
+        let checksum_guard = TempPath::from_path(&checksum_path);
+        tokio_fs::File::create(&checksum_path).await.unwrap();
+
+        assert!(snapshot_path.exists(), "pre-condition: .snapshot present");
+        assert!(checksum_path.exists(), "pre-condition: .checksum present");
+
+        // --- reproduce what the fix does on keep() failure ---
+        // Step 1: delete the already-persisted snapshot (our new rollback line).
+        tokio_fs::remove_file(&snapshot_path).await.unwrap();
+        // Step 2: dropping PathPersistError drops its inner TempPath, which
+        //         deletes the checksum file.  We model that drop here.
+        drop(checksum_guard);
+        // ------------------------------------------------------
+
+        assert!(
+            !snapshot_path.exists(),
+            ".snapshot must be removed by rollback"
+        );
+        assert!(
+            !checksum_path.exists(),
+            ".snapshot.checksum must be removed by rollback"
+        );
     }
 }

@@ -152,7 +152,7 @@ impl Collection {
         })?;
 
         let snapshot_manager = self.get_snapshots_storage_manager()?;
-        snapshot_manager
+        let result = snapshot_manager
             .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
             .await
             .map_err(|err| {
@@ -160,7 +160,13 @@ impl Collection {
                     "failed to store snapshot archive to {}: {err}",
                     snapshot_temp_arc_file.path().display()
                 ))
-            })
+            });
+        // store_file moves the source on success; prevent NamedTempFile from
+        // attempting to delete an already-moved path.
+        if result.is_ok() {
+            let _ = snapshot_temp_arc_file.keep();
+        }
+        result
     }
 
     /// Restore collection from snapshot
