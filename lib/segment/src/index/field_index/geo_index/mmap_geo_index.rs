@@ -1,13 +1,13 @@
 use std::borrow::Cow;
-use std::iter::once;
 use std::path::{Path, PathBuf};
 
-use bitvec::vec::BitVec;
+use ahash::AHashSet;
 use common::binary_search::binary_search_by;
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::{Random, Sequential};
+use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalRead};
@@ -318,18 +318,20 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
 
     pub(super) fn points_per_hash(
         &self,
-    ) -> OperationResult<impl Iterator<Item = OperationResult<(GeoHash, usize)>> + '_> {
-        Ok(self
-            .storage
-            .counts_per_hash
-            .read_iter_autobatched(once(ReadRange {
-                byte_offset: 0,
-                length: self.storage.counts_per_hash.len()?,
-            }))?
-            .map(|c| match c {
-                Ok(c) => Ok((c.hash.normalize(), c.points as usize)),
-                Err(e) => Err(OperationError::from(e)),
-            }))
+        filter: impl Fn(&(GeoHash, usize)) -> bool,
+    ) -> OperationResult<Vec<(GeoHash, usize)>> {
+        let counts = self.storage.counts_per_hash.read::<Sequential>(ReadRange {
+            byte_offset: 0,
+            length: self.storage.counts_per_hash.len()?,
+        })?;
+        let mut results = Vec::with_capacity(counts.len());
+        for count in counts.iter() {
+            let pair = (count.hash.normalize(), count.points as usize);
+            if filter(&pair) {
+                results.push(pair);
+            }
+        }
+        Ok(results)
     }
 
     pub fn points_of_hash(
@@ -433,57 +435,56 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         }
     }
 
-    /// Returns an iterator over all point IDs which have the geohash prefix.
-    /// Note. Point ID may be repeated multiple times in the iterator.
-    pub(super) fn stored_sub_regions(
+    /// Return all unique point IDs which have any of the geo-hash prefixes.
+    pub(super) fn all_points(
         &self,
-        geohash_prefix: GeoHash,
-    ) -> OperationResult<impl Iterator<Item = OperationResult<PointOffsetType>> + '_> {
+        mut geo_hashes: Vec<GeoHash>,
+    ) -> OperationResult<AHashSet<PointOffsetType>> {
+        if geo_hashes.is_empty() {
+            return Ok(AHashSet::default());
+        }
+
         let len = self.storage.points_map.len()?;
 
-        // The `points_map` file is sorted by heohash. That means, we need to
-        // find this range `start..end`, where
-        // - `start` is the first entry which geohash is >= geohash_prefix.
-        // - `end` is the first entry past the start which geohash is not within
-        //    the geohash_prefix.
-        // 0                             start      end                    EOF
-        // ├───────────────────────────────┼─────────┼──────────────────────┤
-        // │<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<│.........│>>>>>>>>>>>>>>>>>>>>>>│
-        // │ entries < geohash_prefix      │ result  │ entries past the end │
-        // └───────────────────────────────┴─────────┴──────────────────────┘
+        geo_hashes.sort_unstable();
+        geo_hashes.dedup();
+        // Drop any prefix that is already subsumed by an earlier (shorter)
+        // one. After this pass the remaining prefixes are pairwise
+        // incomparable — no prefix is a prefix of another — so at most one of
+        // them can match any given entry.
+        geo_hashes.dedup_by(|later, earlier| later.starts_with(*earlier));
+
+        let smallest_hash = *geo_hashes.first().unwrap();
+
+        // The `points_map` file is sorted by geohash. We want to collect every
+        // entry whose hash has any of `geo_hashes` as a prefix. Since entries
+        // are sorted, the matching entries live between:
+        // - `start`: the first entry with geohash >= smallest_hash, and
+        // - `end`:   the first entry whose geohash is strictly greater than
+        //            the last prefix and is not covered by it.
+        //
+        // Non-matching entries may be interleaved with matching ones when
+        // multiple disjoint prefixes are requested, so we must check each
+        // entry individually instead of stopping at the first miss.
+        //
+        // 0                             start                end           EOF
+        // ├───────────────────────────────┼───────────────────┼─────────────┤
+        // │<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<│..m..m.mm.....m.mmm│>>>>>>>>>>>>>│
+        // │ entries < smallest_hash       │ m = matching      │ past end    │
+        // └───────────────────────────────┴───────────────────┴─────────────┘
 
         // Step 1: binary search to find the index of the `start` entry.
         let start_idx = binary_search_by(0..len, |idx| {
             let range = ReadRange::one(idx * size_of::<PointKeyValue>() as u64);
             let value = self.storage.points_map.read::<Random>(range)?;
-            OperationResult::Ok(value[0].hash.normalize().cmp(&geohash_prefix))
+            OperationResult::Ok(value[0].hash.normalize().cmp(&smallest_hash))
         })?
         .unwrap_or_else(|index| index);
 
-        // Step 2: Read entries in chunks starting from `start` until we stumble
-        // into a chunk with an `end` entry.
-        //
-        //     start                                 end
-        // ─────┬┴──────┬───────┬───────┬───────┬─────┴─┬───────┬───────┬───────
-        // …<<<<│.......│.......│.......│.......│.....>>│>>>>>>>│>>>>>>>│>>>>>>…
-        // ─────┴── 0 ──┴── 1 ──┴── 2 ──┴── 3 ──┴── 4 ──┴── 5 ──┴── 6 ──┴── 7 ──
-        //
-        // The problem is that UniversalRead iterator gives us chunks in an
-        // arbitrary order, and we don't know where `end` is.
-        // Suppose chunks arrived in this order:
-        //
-        // ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐
-        // │.......│ │>>>>>>>│ │.......│ │.....>>│ │.......│ │.......│ │>>>>>>>│
-        // └── 0 ──┘ └── 6 ──┘ └── 1 ──┘ └── 4 ──┘ └── 3 ──┘ └── 2 ──┘ └── 5 ──┘
-        //              (a)                 (b)                 (c)
-        //
-        // (a) When we see chunk 6, we know that it's past the end, but we still
-        //     need to wait for chunks 0..5 to be completed.
-        // (b) Similar, but now we know we need to wait for chunks 0..3.
-        // (c) Only at this point we received all "good" chunks, so we can stop
-        //     here.
-        //
-        // TODO: make this step lazy/merge into the next step.
+        // Step 2: read entries in chunks starting from `start`. Chunks may
+        // arrive out of order from the underlying IO, so we reorder them with
+        // `OrderingIterator` before inspecting their contents; this lets us
+        // stop reading as soon as we walk past the last prefix.
         let chunks = self.storage.points_map.read_iter::<Sequential, _>(
             ReadRange {
                 byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
@@ -493,56 +494,55 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
             .enumerate(),
         )?;
 
+        let ordered_chunks = OrderingIterator::new(chunks);
+
         // 128 - Guesstimate to avoid extra allocations on first iterations
         let mut point_map_ranges: Vec<ReadRange> = Vec::with_capacity(128);
-        let mut end_chunk_idx = None;
-        let mut received_chunks = BitVec::<usize>::EMPTY;
 
-        for chunk_result in chunks {
-            let (chunk_idx, entries) = chunk_result?;
-            if end_chunk_idx.is_some_and(|end_chunk| chunk_idx > end_chunk) {
-                continue;
-            }
+        // `prefix_cursor` tracks the largest prefix <= current entry's hash.
+        // Since entries are processed in sorted order and prefixes are sorted
+        // and pairwise incomparable, the cursor only ever moves forward,
+        // giving amortized O(1) matching per entry instead of O(|prefixes|).
+        let mut prefix_cursor = 0usize;
 
-            // Mark chunk as received.
-            if chunk_idx >= received_chunks.len() {
-                received_chunks.resize(chunk_idx + 1, false);
-            }
-            received_chunks.set(chunk_idx, true);
+        'outer: for chunk_result in ordered_chunks {
+            let (_chunk_idx, entries) = chunk_result?;
+            for entry in entries.iter() {
+                let hash = entry.hash.normalize();
 
-            for &entry in entries.iter() {
-                if entry.hash.normalize().starts_with(geohash_prefix) {
+                while prefix_cursor + 1 < geo_hashes.len() && geo_hashes[prefix_cursor + 1] <= hash
+                {
+                    prefix_cursor += 1;
+                }
+
+                let current_prefix = geo_hashes[prefix_cursor];
+
+                if hash.starts_with(current_prefix) {
                     point_map_ranges.push(ReadRange {
                         byte_offset: u64::from(entry.ids_start)
                             * size_of::<PointOffsetType>() as u64,
                         length: u64::from(entry.ids_end.saturating_sub(entry.ids_start)),
                     });
-                } else {
-                    end_chunk_idx =
-                        Some(end_chunk_idx.map_or(chunk_idx, |end_chunk| end_chunk.min(chunk_idx)));
-                    break;
+                } else if prefix_cursor + 1 == geo_hashes.len() {
+                    // Past the last prefix with no match: no further entry
+                    // can start with any prefix, so we're done.
+                    break 'outer;
                 }
-            }
-
-            if let Some(end_chunk_idx) = end_chunk_idx
-                && received_chunks[..end_chunk_idx].all()
-            {
-                break;
             }
         }
 
-        // Step 3: read ranges from `point_map_ranges`.
-        Ok(self
-            .storage
-            .points_map_ids
-            .read_iter_autobatched(point_map_ranges)?
-            .filter_map(|res| match res {
-                Ok(point_id) if !self.storage.deleted.get(point_id as usize).unwrap_or(true) => {
-                    Some(Ok(point_id))
-                }
-                Ok(_) => None,
-                Err(e) => Some(Err(OperationError::from(e))),
-            }))
+        // Step 3: read the collected ranges and accumulate unique,
+        // non-deleted point ids.
+        let mut points = AHashSet::new();
+        self.storage.points_map_ids.read_batch::<Random, _>(
+            point_map_ranges.into_iter().enumerate(),
+            |_idx, values| {
+                points.extend(values.iter().copied());
+                Ok(())
+            },
+        )?;
+
+        Ok(points)
     }
 
     pub fn points_count(&self) -> usize {

@@ -1,7 +1,6 @@
 use std::cmp::{max, min};
 use std::path::{Path, PathBuf};
 
-use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
@@ -246,13 +245,7 @@ impl GeoMapIndex {
                     .unique(),
             ))),
             GeoMapIndex::Storage(index) => {
-                let mut result = AHashSet::new();
-                for top_geo_hash in values {
-                    for point in index.stored_sub_regions(top_geo_hash)? {
-                        let point = point?;
-                        result.insert(point);
-                    }
-                }
+                let result = index.all_points(values)?;
                 Ok(Either::Right(result.into_iter()))
             }
         }
@@ -274,9 +267,7 @@ impl GeoMapIndex {
                 .points_per_hash()
                 .filter(filter_condition)
                 .collect_vec(),
-            GeoMapIndex::Storage(index) => index
-                .points_per_hash()?
-                .process_results(|iter| iter.filter(filter_condition).collect_vec())?,
+            GeoMapIndex::Storage(index) => index.points_per_hash(filter_condition)?,
         };
 
         // smallest regions first

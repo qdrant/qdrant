@@ -43,43 +43,6 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
             .map(move |(meta, range)| self.read::<P>(range).map(|data| (meta, data))))
     }
 
-    /// Iterates over the provided ranges, reading a few elements at a time,
-    /// but returning in a per-element basis.
-    ///
-    /// The provided ranges can span many elements, they will be auto-chunked
-    /// by this function to ensure each read is not too big. The argument is an
-    /// iterator just so that it is possible to read from non-contiguous regions
-    /// in the same output iterator.
-    fn read_iter_autobatched(
-        &self,
-        ranges: impl IntoIterator<Item = ReadRange>,
-    ) -> Result<impl Iterator<Item = Result<T>>> {
-        let ranges = ranges
-            .into_iter()
-            .flat_map(|range| range.iter_autochunks::<T>())
-            .map(|chunk| ((), chunk));
-        let mut iter = self.read_iter::<Sequential, _>(ranges)?;
-        let mut current_chunk: Cow<'_, [T]> = Cow::Borrowed(&[]);
-        let mut current_chunk_pos = 0;
-        Ok(std::iter::from_fn(move || {
-            loop {
-                if current_chunk_pos < current_chunk.len() {
-                    let pos = current_chunk_pos;
-                    current_chunk_pos += 1;
-                    return Some(Ok(current_chunk[pos]));
-                }
-                match iter.next() {
-                    Some(Ok(((), next_chunk))) => {
-                        current_chunk = next_chunk;
-                        current_chunk_pos = 0;
-                    }
-                    Some(Err(e)) => return Some(Err(e)),
-                    None => return None,
-                }
-            }
-        }))
-    }
-
     fn len(&self) -> Result<u64>;
 
     /// Fill RAM cache with related data, if applicable for this implementation.
