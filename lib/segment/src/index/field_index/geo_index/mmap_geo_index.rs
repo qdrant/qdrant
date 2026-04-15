@@ -537,7 +537,12 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         self.storage.points_map_ids.read_batch::<Random, _>(
             point_map_ranges.into_iter().enumerate(),
             |_idx, values| {
-                points.extend(values.iter().copied());
+                points.extend(
+                    values
+                        .iter()
+                        .copied()
+                        .filter(|&id| !self.storage.deleted.get(id as usize).unwrap_or(true)),
+                );
                 Ok(())
             },
         )?;

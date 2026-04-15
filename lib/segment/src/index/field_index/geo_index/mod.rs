@@ -649,6 +649,7 @@ mod tests {
     use std::ops::Range;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::universal_io::MmapFile;
     use itertools::Itertools;
     use ordered_float::OrderedFloat;
     use rand::SeedableRng;
@@ -1700,11 +1701,11 @@ mod tests {
     fn test_all_points_congruence() {
         const POINT_COUNT: usize = 500;
 
-        let (mutable_index, _mutable_tmp, _) =
+        let (mut mutable_index, _mutable_tmp, _) =
             build_random_index(POINT_COUNT, 20, IndexType::MutableGridstore);
-        let (immutable_index, _immutable_tmp, _) =
+        let (mut immutable_index, _immutable_tmp, _) =
             build_random_index(POINT_COUNT, 20, IndexType::RamMmap);
-        let (mmap_index, _mmap_tmp, _) = build_random_index(POINT_COUNT, 20, IndexType::Mmap);
+        let (mut mmap_index, _mmap_tmp, _) = build_random_index(POINT_COUNT, 20, IndexType::Mmap);
 
         let GeoMapIndex::Storage(storage_index) = &mmap_index else {
             panic!("expected Mmap variant to build into Storage");
@@ -1776,27 +1777,62 @@ mod tests {
             ("global_large_region", global_hashes),
         ];
 
-        for (name, hashes) in cases {
-            let mutable_result: HashSet<PointOffsetType> =
-                mutable_index.iterator(hashes.clone()).unwrap().collect();
+        let assert_all_points_match =
+            |mutable_index: &GeoMapIndex,
+             immutable_index: &GeoMapIndex,
+             storage_index: &super::mmap_geo_index::StoredGeoMapIndex<MmapFile>,
+             cases: &[(&str, Vec<GeoHash>)],
+             phase: &str| {
+                for (name, hashes) in cases {
+                    let hashes = hashes.clone();
+                    let mutable_result: HashSet<PointOffsetType> =
+                        mutable_index.iterator(hashes.clone()).unwrap().collect();
 
-            let immutable_result: HashSet<PointOffsetType> =
-                immutable_index.iterator(hashes.clone()).unwrap().collect();
+                    let immutable_result: HashSet<PointOffsetType> =
+                        immutable_index.iterator(hashes.clone()).unwrap().collect();
 
-            let all_points_result: HashSet<PointOffsetType> = storage_index
-                .all_points(hashes)
-                .unwrap()
-                .into_iter()
-                .collect();
+                    let all_points_result: HashSet<PointOffsetType> = storage_index
+                        .all_points(hashes)
+                        .unwrap()
+                        .into_iter()
+                        .collect();
 
-            assert_eq!(
-                mutable_result, immutable_result,
-                "case `{name}`: mutable vs immutable differ",
-            );
-            assert_eq!(
-                mutable_result, all_points_result,
-                "case `{name}`: mutable vs all_points differ",
-            );
+                    assert_eq!(
+                        mutable_result, immutable_result,
+                        "{phase}: case `{name}`: mutable vs immutable differ",
+                    );
+                    assert_eq!(
+                        mutable_result, all_points_result,
+                        "{phase}: case `{name}`: mutable vs all_points differ",
+                    );
+                }
+            };
+
+        assert_all_points_match(
+            &mutable_index,
+            &immutable_index,
+            storage_index,
+            &cases,
+            "baseline",
+        );
+
+        const DELETED_POINT_IDS: &[PointOffsetType] = &[10, 11, 12, 100, 150];
+        for &id in DELETED_POINT_IDS {
+            mutable_index.remove_point(id).unwrap();
+            immutable_index.remove_point(id).unwrap();
+            mmap_index.remove_point(id).unwrap();
         }
+
+        let GeoMapIndex::Storage(storage_index) = &mmap_index else {
+            panic!("expected Mmap variant to build into Storage");
+        };
+
+        assert_all_points_match(
+            &mutable_index,
+            &immutable_index,
+            storage_index,
+            &cases,
+            "after point deletions",
+        );
     }
 }
