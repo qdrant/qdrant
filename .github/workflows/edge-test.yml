@@ -80,17 +80,14 @@ jobs:
         run: just prepare-data
 
       - name: 🦀 Check Rust
-        if: false # TODO: re-enable once core2 0.4.0 yank (libflate transitive dep) is resolved
         working-directory: lib/edge
         run: just rs-check
 
       - name: 🦀 Build Rust examples
-        if: false # TODO: re-enable once core2 0.4.0 yank (libflate transitive dep) is resolved
         working-directory: lib/edge
         run: just rs-examples-build
 
       - name: 🦀 Run Rust examples
-        if: false # TODO: re-enable once core2 0.4.0 yank (libflate transitive dep) is resolved
         working-directory: lib/edge
         run: just rs-examples
 
