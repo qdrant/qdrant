@@ -33,7 +33,7 @@ impl HadamardRotation {
             .collect();
 
         let permutations: [_; N_PERMUTATIONS] =
-            std::array::from_fn(|index| Permutation::new(index as u64 + 42, dim));
+            std::array::from_fn(|index| Permutation::new(index as u64, dim));
 
         Self {
             permutations,
