@@ -6,9 +6,9 @@ use ordered_float::OrderedFloat;
 use serde_json::Value;
 
 use crate::types::{
-    AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, Fuzzy, GeoBoundingBox,
-    GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchFuzzy, MatchPhrase,
-    MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
+    AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
+    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny,
+    MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -172,25 +172,8 @@ impl ValueChecker for Match {
                     .any(|token| stored.contains(token)),
                 _ => false,
             },
-            Match::Fuzzy(MatchFuzzy { fuzzy }) => fuzzy.iter().all(|fuzzy| match fuzzy {
-                Fuzzy::Text { text, params: _ }
-                | crate::types::Fuzzy::Phrase {
-                    phrase: text,
-                    params: _,
-                } => match payload {
-                    Value::String(stored) => stored.contains(text),
-                    _ => false,
-                },
-                crate::types::Fuzzy::TextAny {
-                    text_any,
-                    params: _,
-                } => match payload {
-                    Value::String(stored) => text_any
-                        .split_whitespace()
-                        .any(|token| stored.contains(token)),
-                    _ => false,
-                },
-            }),
+            Match::Fuzzy(_) => false, // Fuzzy matching is not supported in payload conditions
+            Match::Wildcard(_) => false, // Wildcard matching is not supported in payload conditions
             Match::Any(MatchAny { any }) => match (payload, any) {
                 (Value::String(stored), AnyVariants::Strings(list)) => {
                     if list.len() < INDEXSET_ITER_THRESHOLD {

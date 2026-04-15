@@ -8,7 +8,7 @@ use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
     AnyVariants, Fuzzy, Match, MatchAny, MatchExcept, MatchFuzzy, MatchPhrase, MatchText,
-    MatchTextAny, MatchValue, ValueVariants,
+    MatchTextAny, MatchValue, MatchWildcard, ValueVariants,
 };
 
 pub fn get_match_checkers(
@@ -30,6 +30,12 @@ pub fn get_match_checkers(
         Match::Fuzzy(MatchFuzzy { fuzzy }) => {
             get_match_text_checker(String::new(), TextQueryType::Fuzzy(fuzzy), index, hw_acc)
         }
+        Match::Wildcard(wildcard) => get_match_text_checker(
+            String::new(),
+            TextQueryType::Wildcard(wildcard),
+            index,
+            hw_acc,
+        ),
         Match::Any(MatchAny { any }) => get_match_any_checker(any, index, hw_acc),
         Match::Except(MatchExcept { except }) => get_match_except_checker(except, index, hw_acc),
     }
@@ -263,6 +269,7 @@ enum TextQueryType {
     Text,
     TextAny,
     Fuzzy(Vec<Fuzzy>),
+    Wildcard(MatchWildcard),
 }
 
 fn get_match_text_checker(
@@ -287,6 +294,19 @@ fn get_match_text_checker(
                 Some(Box::new(move |point_id: PointOffsetType| {
                     full_text_index.check_match(&fuzzy_query, point_id)
                 }))
+            } else if matches!(&query_type, TextQueryType::Wildcard(_)) {
+                let match_wildcard = match query_type {
+                    TextQueryType::Wildcard(w) => w,
+                    _ => unreachable!(),
+                };
+                let Some(wildcard_query) =
+                    full_text_index.parse_wildcard_query(&match_wildcard, &hw_counter)
+                else {
+                    return Some(Box::new(|_| false));
+                };
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    full_text_index.check_match(&wildcard_query, point_id)
+                }))
             } else {
                 let query_opt = match query_type {
                     TextQueryType::Phrase => full_text_index.parse_phrase_query(&text, &hw_counter),
@@ -294,7 +314,7 @@ fn get_match_text_checker(
                     TextQueryType::TextAny => {
                         full_text_index.parse_text_any_query(&text, &hw_counter)
                     }
-                    TextQueryType::Fuzzy(_) => unreachable!(),
+                    TextQueryType::Fuzzy(_) | TextQueryType::Wildcard(_) => unreachable!(),
                 };
                 let Some(parsed_query) = query_opt else {
                     return Some(Box::new(|_| false));

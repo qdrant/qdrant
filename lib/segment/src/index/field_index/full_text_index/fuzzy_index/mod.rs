@@ -1,4 +1,4 @@
-mod automaton;
+pub mod automaton;
 mod immutable_fuzzy_index;
 mod mmap_fuzzy_index;
 mod mutable_fuzzy_index;
@@ -7,7 +7,7 @@ pub(super) use immutable_fuzzy_index::ImmutableFuzzyIndex;
 pub(super) use mmap_fuzzy_index::MmapFuzzyIndex;
 pub(super) use mutable_fuzzy_index::MutableFuzzyIndex;
 
-use crate::types::FuzzyParams;
+use crate::types::{FuzzyParams, WildcardParams};
 
 pub(super) fn prefix_char_boundary(query: &str, prefix_len: usize) -> usize {
     query
@@ -44,5 +44,9 @@ impl FuzzyCandidate {
 /// Each inverted-index implementation provides a `FuzzyIndex` impl that handles
 /// fuzzy query filtering and matching using the same internal postings data.
 pub trait FuzzyIndex {
-    fn search(&self, query: &str, params: &FuzzyParams) -> Vec<FuzzyCandidate>;
+    fn search_levenshtein(&self, query: &str, params: &FuzzyParams) -> Vec<FuzzyCandidate>;
+
+    /// Search for terms matching a wildcard pattern.
+    /// Returns matching term strings (no scoring — wildcard is binary match).
+    fn search_wildcard(&self, pattern: &str, params: &WildcardParams) -> Vec<String>;
 }

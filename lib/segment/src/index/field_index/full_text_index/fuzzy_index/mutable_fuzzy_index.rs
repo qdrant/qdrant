@@ -5,7 +5,10 @@ use strsim::levenshtein;
 
 use super::{FuzzyIndex, prefix_chars};
 use crate::index::field_index::full_text_index::fuzzy_index::FuzzyCandidate;
-use crate::types::FuzzyParams;
+use crate::index::field_index::full_text_index::fuzzy_index::automaton::{
+    extract_literal_prefix, wildcard_matches,
+};
+use crate::types::{FuzzyParams, WildcardParams};
 
 pub struct MutableFuzzyIndex {
     terms: BTreeSet<String>,
@@ -50,7 +53,7 @@ impl Default for MutableFuzzyIndex {
 }
 
 impl FuzzyIndex for MutableFuzzyIndex {
-    fn search(&self, query: &str, params: &FuzzyParams) -> Vec<FuzzyCandidate> {
+    fn search_levenshtein(&self, query: &str, params: &FuzzyParams) -> Vec<FuzzyCandidate> {
         let max = params.max_expansions as usize;
         let max_edits = u32::from(params.max_edits);
         let mut buckets: Vec<Vec<FuzzyCandidate>> = (0..=max_edits).map(|_| Vec::new()).collect();
@@ -96,6 +99,30 @@ impl FuzzyIndex for MutableFuzzyIndex {
 
         let mut results: Vec<FuzzyCandidate> = buckets.into_iter().flatten().collect();
         results.truncate(max);
+        results
+    }
+
+    fn search_wildcard(&self, pattern: &str, params: &WildcardParams) -> Vec<String> {
+        let max = params.max_expansions as usize;
+        let prefix_bytes = extract_literal_prefix(pattern);
+        let prefix = std::str::from_utf8(&prefix_bytes).unwrap_or("");
+
+        let mut results = Vec::new();
+
+        let range_start = Bound::Included(prefix.to_string());
+        for term in self.terms.range((range_start, Bound::Unbounded)) {
+            if !prefix.is_empty() && !term.starts_with(prefix) {
+                break;
+            }
+
+            if wildcard_matches(pattern, term) {
+                results.push(term.clone());
+                if results.len() >= max {
+                    break;
+                }
+            }
+        }
+
         results
     }
 }

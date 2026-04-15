@@ -225,7 +225,7 @@ fn bench_fst_expansion(c: &mut Criterion) {
         ("mutable/e1_x100", &params_e1_x100),
     ] {
         group.bench_with_input(BenchmarkId::new(label, &query_word), params, |b, p| {
-            b.iter(|| black_box(fuzzy_mutable.search(&query_word, p)))
+            b.iter(|| black_box(fuzzy_mutable.search_levenshtein(&query_word, p)))
         });
     }
 
@@ -237,7 +237,7 @@ fn bench_fst_expansion(c: &mut Criterion) {
         ("immutable/e1_x100", &params_e1_x100),
     ] {
         group.bench_with_input(BenchmarkId::new(label, &query_word), params, |b, p| {
-            b.iter(|| black_box(fuzzy_immutable.search(&query_word, p)))
+            b.iter(|| black_box(fuzzy_immutable.search_levenshtein(&query_word, p)))
         });
     }
 

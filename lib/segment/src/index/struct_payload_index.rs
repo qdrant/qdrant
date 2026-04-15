@@ -1205,6 +1205,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::atomic::AtomicBool;
 
+    use atomic_refcell::AtomicRefCell;
     use tempfile::Builder;
     use uuid::Uuid;
 

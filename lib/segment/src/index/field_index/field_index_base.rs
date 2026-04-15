@@ -199,6 +199,16 @@ impl FieldIndex {
                             }),
                     )
                 }
+                Some(Match::Wildcard(match_wildcard)) => {
+                    let query = full_text_index.parse_wildcard_query(match_wildcard, hw_counter)?;
+                    Some(
+                        FullTextIndex::get_values(payload_value)
+                            .iter()
+                            .any(|value| {
+                                full_text_index.check_value_match(&query, value, hw_counter)
+                            }),
+                    )
+                }
                 _ => None,
             },
             FieldIndex::UuidIndex(_) => None,

@@ -117,6 +117,8 @@ message Match {
     string text_any = 10;
     // Match multiple fuzzy clauses with independent parameters
     RepeatedFuzzy fuzzy = 11;
+    // Match term with wildcard pattern (* and ?)
+    WildcardMatch wildcard = 12;
   }
 }
 
@@ -146,6 +148,20 @@ message FuzzyMatch {
 
 message RepeatedFuzzy {
   repeated FuzzyMatch fuzzy = 1;
+}
+
+// Parameters for wildcard pattern matching
+message WildcardParams {
+  // Max number of matching terms to expand. Default 30, capped at 100.
+  optional uint32 max_expansions = 1;
+}
+
+// Wildcard pattern match
+message WildcardMatch {
+  // Wildcard pattern (supports * and ?)
+  string pattern = 1;
+  // Wildcard matching parameters
+  optional WildcardParams params = 2;
 }
 
 message RepeatedStrings {

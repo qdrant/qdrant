@@ -2075,8 +2075,15 @@ impl TryFrom<Match> for segment::types::Match {
                 }
                 MatchValue::Fuzzy(fuzzy) => {
                     segment::types::Match::Fuzzy(segment::types::MatchFuzzy {
-                        fuzzy: grpc_fuzzy_matches_to_segment(fuzzy.fuzzy)?,
+                        fuzzy: fuzzy
+                            .fuzzy
+                            .into_iter()
+                            .map(TryInto::try_into)
+                            .collect::<Result<_, _>>()?,
                     })
+                }
+                MatchValue::Wildcard(wildcard) => {
+                    segment::types::Match::Wildcard(wildcard.try_into()?)
                 }
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
@@ -2123,9 +2130,10 @@ impl From<segment::types::Match> for Match {
             }
             segment::types::Match::Fuzzy(segment::types::MatchFuzzy { fuzzy }) => {
                 MatchValue::Fuzzy(grpc::RepeatedFuzzy {
-                    fuzzy: fuzzy.into_iter().map(segment_fuzzy_match_to_grpc).collect(),
+                    fuzzy: fuzzy.into_iter().map(Into::into).collect(),
                 })
             }
+            segment::types::Match::Wildcard(wildcard) => MatchValue::Wildcard(wildcard.into()),
         };
         Self {
             match_value: Some(match_value),
@@ -2133,42 +2141,79 @@ impl From<segment::types::Match> for Match {
     }
 }
 
-fn grpc_fuzzy_matches_to_segment(
-    fuzzy: Vec<grpc::FuzzyMatch>,
-) -> Result<Vec<segment::types::Fuzzy>, Status> {
-    fuzzy.into_iter().map(grpc_fuzzy_match_to_segment).collect()
-}
+impl TryFrom<grpc::FuzzyMatch> for segment::types::Fuzzy {
+    type Error = Status;
 
-fn grpc_fuzzy_match_to_segment(fuzzy: grpc::FuzzyMatch) -> Result<segment::types::Fuzzy, Status> {
-    let params: Option<segment::types::FuzzyParams> = fuzzy.params.map(|p| p.into());
-    match fuzzy.value {
-        Some(grpc::fuzzy_match::Value::Text(text)) => {
-            Ok(segment::types::Fuzzy::Text { text, params })
+    fn try_from(fuzzy: grpc::FuzzyMatch) -> Result<Self, Self::Error> {
+        let params: Option<segment::types::FuzzyParams> = fuzzy.params.map(Into::into);
+        match fuzzy.value {
+            Some(grpc::fuzzy_match::Value::Text(text)) => {
+                Ok(segment::types::Fuzzy::Text { text, params })
+            }
+            Some(grpc::fuzzy_match::Value::Phrase(phrase)) => {
+                Ok(segment::types::Fuzzy::Phrase { phrase, params })
+            }
+            Some(grpc::fuzzy_match::Value::TextAny(text_any)) => {
+                Ok(segment::types::Fuzzy::TextAny { text_any, params })
+            }
+            None => Err(Status::invalid_argument("Malformed fuzzy match condition")),
         }
-        Some(grpc::fuzzy_match::Value::Phrase(phrase)) => {
-            Ok(segment::types::Fuzzy::Phrase { phrase, params })
-        }
-        Some(grpc::fuzzy_match::Value::TextAny(text_any)) => {
-            Ok(segment::types::Fuzzy::TextAny { text_any, params })
-        }
-        None => Err(Status::invalid_argument("Malformed fuzzy match condition")),
     }
 }
 
-fn segment_fuzzy_match_to_grpc(fuzzy: segment::types::Fuzzy) -> grpc::FuzzyMatch {
-    match fuzzy {
-        segment::types::Fuzzy::Text { text, params } => grpc::FuzzyMatch {
-            value: Some(grpc::fuzzy_match::Value::Text(text)),
-            params: params.as_ref().map(Into::into),
-        },
-        segment::types::Fuzzy::Phrase { phrase, params } => grpc::FuzzyMatch {
-            value: Some(grpc::fuzzy_match::Value::Phrase(phrase)),
-            params: params.as_ref().map(Into::into),
-        },
-        segment::types::Fuzzy::TextAny { text_any, params } => grpc::FuzzyMatch {
-            value: Some(grpc::fuzzy_match::Value::TextAny(text_any)),
-            params: params.as_ref().map(Into::into),
-        },
+impl From<segment::types::Fuzzy> for grpc::FuzzyMatch {
+    fn from(fuzzy: segment::types::Fuzzy) -> Self {
+        match fuzzy {
+            segment::types::Fuzzy::Text { text, params } => grpc::FuzzyMatch {
+                value: Some(grpc::fuzzy_match::Value::Text(text)),
+                params: params.as_ref().map(Into::into),
+            },
+            segment::types::Fuzzy::Phrase { phrase, params } => grpc::FuzzyMatch {
+                value: Some(grpc::fuzzy_match::Value::Phrase(phrase)),
+                params: params.as_ref().map(Into::into),
+            },
+            segment::types::Fuzzy::TextAny { text_any, params } => grpc::FuzzyMatch {
+                value: Some(grpc::fuzzy_match::Value::TextAny(text_any)),
+                params: params.as_ref().map(Into::into),
+            },
+        }
+    }
+}
+
+impl TryFrom<grpc::WildcardMatch> for segment::types::MatchWildcard {
+    type Error = Status;
+
+    fn try_from(wildcard: grpc::WildcardMatch) -> Result<Self, Self::Error> {
+        let params = wildcard.params.map(|p| segment::types::WildcardParams {
+            max_expansions: p.max_expansions.unwrap_or(30) as u16,
+        });
+        Ok(segment::types::MatchWildcard {
+            wildcard: segment::types::Wildcard::Pattern {
+                pattern: wildcard.pattern,
+                params,
+            },
+        })
+    }
+}
+
+impl From<segment::types::MatchWildcard> for grpc::WildcardMatch {
+    fn from(wildcard: segment::types::MatchWildcard) -> Self {
+        match wildcard.wildcard {
+            segment::types::Wildcard::Simple(pattern) => grpc::WildcardMatch {
+                pattern,
+                params: Some(grpc::WildcardParams {
+                    max_expansions: Some(u32::from(
+                        segment::types::WildcardParams::default().max_expansions,
+                    )),
+                }),
+            },
+            segment::types::Wildcard::Pattern { pattern, params } => grpc::WildcardMatch {
+                pattern,
+                params: Some(grpc::WildcardParams {
+                    max_expansions: Some(u32::from(params.unwrap_or_default().max_expansions)),
+                }),
+            },
+        }
     }
 }
 

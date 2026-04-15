@@ -8192,6 +8192,11 @@
             "type": "boolean",
             "nullable": true
           },
+          "fuzzy_matching": {
+            "description": "If true, build an FST index for fuzzy matching. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
           "stopwords": {
             "description": "Ignore this set of tokens. Can select from predefined languages and/or provide a custom set.",
             "anyOf": [
@@ -9175,6 +9180,12 @@
             "$ref": "#/components/schemas/MatchPhrase"
           },
           {
+            "$ref": "#/components/schemas/MatchFuzzy"
+          },
+          {
+            "$ref": "#/components/schemas/MatchWildcard"
+          },
+          {
             "$ref": "#/components/schemas/MatchAny"
           },
           {
@@ -9241,6 +9252,174 @@
         "properties": {
           "phrase": {
             "type": "string"
+          }
+        }
+      },
+      "MatchFuzzy": {
+        "description": "Fuzzy match condition: supports approximate full-text matching with the given parameters.",
+        "type": "object",
+        "required": [
+          "fuzzy"
+        ],
+        "properties": {
+          "fuzzy": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Fuzzy"
+            }
+          }
+        }
+      },
+      "Fuzzy": {
+        "description": "Fuzzy match condition: supports approximate full-text matching with the given parameters.",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "text"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "params": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FuzzyParams"
+                  },
+                  {
+                    "nullable": true
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "phrase"
+            ],
+            "properties": {
+              "phrase": {
+                "type": "string"
+              },
+              "params": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FuzzyParams"
+                  },
+                  {
+                    "nullable": true
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "text_any"
+            ],
+            "properties": {
+              "text_any": {
+                "type": "string"
+              },
+              "params": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FuzzyParams"
+                  },
+                  {
+                    "nullable": true
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "FuzzyParams": {
+        "description": "Parameters for fuzzy (approximate) full-text matching.",
+        "type": "object",
+        "properties": {
+          "max_edits": {
+            "description": "Max Levenshtein edit distance (0..=2).",
+            "default": 0,
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          },
+          "prefix_length": {
+            "description": "Number of initial characters that must match exactly. Default: 0.",
+            "default": 0,
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          },
+          "max_expansions": {
+            "description": "Max number of similar terms to collect per query token. Default: 30.",
+            "default": 30,
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          }
+        }
+      },
+      "MatchWildcard": {
+        "description": "Match filter request",
+        "type": "object",
+        "required": [
+          "wildcard"
+        ],
+        "properties": {
+          "wildcard": {
+            "$ref": "#/components/schemas/Wildcard"
+          }
+        }
+      },
+      "Wildcard": {
+        "description": "Wildcard match condition: supports `*` (any sequence) and `?` (one Unicode code point).",
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "required": [
+              "pattern"
+            ],
+            "properties": {
+              "pattern": {
+                "type": "string"
+              },
+              "params": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WildcardParams"
+                  },
+                  {
+                    "nullable": true
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "WildcardParams": {
+        "description": "Parameters for wildcard pattern matching.",
+        "type": "object",
+        "properties": {
+          "max_expansions": {
+            "description": "Max number of matching terms to expand. Default: 30, capped at 100.",
+            "default": 30,
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
           }
         }
       },
@@ -16020,6 +16199,9 @@
           },
           {
             "$ref": "#/components/schemas/GaussDecayExpression"
+          },
+          {
+            "$ref": "#/components/schemas/StrDistExpression"
           }
         ]
       },
@@ -16289,6 +16471,43 @@
             "$ref": "#/components/schemas/DecayParamsExpression"
           }
         }
+      },
+      "StrDistExpression": {
+        "type": "object",
+        "required": [
+          "str_dist"
+        ],
+        "properties": {
+          "str_dist": {
+            "$ref": "#/components/schemas/StrDistParamsExpression"
+          }
+        }
+      },
+      "StrDistParamsExpression": {
+        "type": "object",
+        "required": [
+          "field",
+          "func",
+          "query"
+        ],
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "func": {
+            "$ref": "#/components/schemas/StrDistFunc"
+          }
+        }
+      },
+      "StrDistFunc": {
+        "type": "string",
+        "enum": [
+          "levenshtein",
+          "jaro_winkler"
+        ]
       },
       "SampleQuery": {
         "type": "object",

@@ -272,7 +272,10 @@ pub struct FieldCondition {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(
+        oneof = "r#match::MatchValue",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+    )]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -314,6 +317,9 @@ pub mod r#match {
         /// Match multiple fuzzy clauses with independent parameters
         #[prost(message, tag = "11")]
         Fuzzy(super::RepeatedFuzzy),
+        /// Match term with wildcard pattern (\* and ?)
+        #[prost(message, tag = "12")]
+        Wildcard(super::WildcardMatch),
     }
 }
 /// Parameters for fuzzy (approximate) matching
@@ -365,6 +371,27 @@ pub mod fuzzy_match {
 pub struct RepeatedFuzzy {
     #[prost(message, repeated, tag = "1")]
     pub fuzzy: ::prost::alloc::vec::Vec<FuzzyMatch>,
+}
+/// Parameters for wildcard pattern matching
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WildcardParams {
+    /// Max number of matching terms to expand. Default 30, capped at 100.
+    #[prost(uint32, optional, tag = "1")]
+    pub max_expansions: ::core::option::Option<u32>,
+}
+/// Wildcard pattern match
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WildcardMatch {
+    /// Wildcard pattern (supports * and ?)
+    #[prost(string, tag = "1")]
+    pub pattern: ::prost::alloc::string::String,
+    /// Wildcard matching parameters
+    #[prost(message, optional, tag = "2")]
+    pub params: ::core::option::Option<WildcardParams>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

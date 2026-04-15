@@ -35,7 +35,7 @@ use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, Fuzzy, FuzzyParams, Match, MatchFuzzy, MatchPhrase, MatchText, MatchTextAny,
-    PayloadKeyType,
+    MatchWildcard, PayloadKeyType,
 };
 
 pub enum FullTextIndex {
@@ -350,6 +350,44 @@ impl FullTextIndex {
         self.parse_multi_fuzzy_query(match_fuzzy, hw_counter)
     }
 
+    pub fn parse_wildcard_query(
+        &self,
+        match_wildcard: &MatchWildcard,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ParsedQuery> {
+        let tokenizer = self.get_tokenizer().tokens_processor();
+        let lowercase = tokenizer.lowercase;
+        let max_token_len = tokenizer.max_token_len.unwrap_or(255);
+        let pattern = match_wildcard.pattern();
+        if pattern.len() <= 0 || pattern.len() > max_token_len {
+            return None;
+        }
+        let pattern = match lowercase {
+            true => Cow::Owned(pattern.to_lowercase()),
+            false => Cow::Borrowed(pattern),
+        };
+        let params = match_wildcard.params().validate();
+
+        let fuzzy_index: &dyn FuzzyIndex = match self {
+            Self::Mutable(index) => index.get_fuzzy_index()?,
+            Self::Immutable(index) => index.get_fuzzy_index()?,
+            Self::Mmap(index) => index.get_fuzzy_index()?,
+        };
+
+        let matched_terms = fuzzy_index.search_wildcard(pattern.as_ref(), &params);
+
+        let token_ids: AHashSet<TokenId> = matched_terms
+            .iter()
+            .filter_map(|term| self.get_token(term, hw_counter))
+            .collect();
+
+        if token_ids.is_empty() {
+            return None;
+        }
+
+        Some(ParsedQuery::AnyTokens(TokenSet::from(token_ids)))
+    }
+
     fn parse_multi_fuzzy_query(
         &self,
         match_fuzzy: &MatchFuzzy,
@@ -608,7 +646,7 @@ impl FullTextIndex {
 
         Some(
             fuzzy_index
-                .search(token, params)
+                .search_levenshtein(token, params)
                 .into_iter()
                 .filter_map(|candidate| self.get_token(&candidate.term, hw_counter))
                 .collect(),
@@ -936,6 +974,7 @@ impl PayloadFieldIndex for FullTextIndex {
                 self.parse_text_any_query(text_any, hw_counter)
             }
             Some(Match::Fuzzy(fuzzy)) => self.parse_fuzzy_query(fuzzy, hw_counter),
+            Some(Match::Wildcard(wildcard)) => self.parse_wildcard_query(wildcard, hw_counter),
             _ => return Ok(None),
         };
 
@@ -960,6 +999,7 @@ impl PayloadFieldIndex for FullTextIndex {
                 self.parse_text_any_query(text_any, hw_counter)
             }
             Some(Match::Fuzzy(fuzzy)) => self.parse_fuzzy_query(fuzzy, hw_counter),
+            Some(Match::Wildcard(wildcard)) => self.parse_wildcard_query(wildcard, hw_counter),
             _ => return Ok(None),
         };
 

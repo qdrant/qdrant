@@ -2616,11 +2616,74 @@ impl FuzzyParams {
     }
 }
 
+/// Fuzzy match condition: supports approximate full-text matching with the given parameters.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct MatchFuzzy {
     pub fuzzy: Vec<Fuzzy>,
 }
 
+/// Parameters for wildcard pattern matching.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct WildcardParams {
+    /// Max number of matching terms to expand. Default: 30, capped at 100.
+    #[serde(default = "WildcardParams::default_max_expansions")]
+    pub max_expansions: u16,
+}
+
+impl Default for WildcardParams {
+    fn default() -> Self {
+        Self {
+            max_expansions: Self::default_max_expansions(),
+        }
+    }
+}
+
+impl WildcardParams {
+    pub const MAX_EXPANSIONS_CAP: u16 = 255;
+    pub const MAX_PATTERN_LENGTH: usize = 256;
+
+    fn default_max_expansions() -> u16 {
+        30
+    }
+
+    /// Validate and clamp parameters to safe ranges.
+    pub fn validate(&self) -> Self {
+        WildcardParams {
+            max_expansions: self.max_expansions.clamp(1, Self::MAX_EXPANSIONS_CAP),
+        }
+    }
+}
+
+/// Wildcard match condition: supports `*` (any sequence) and `?` (one Unicode code point).
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum Wildcard {
+    Simple(String),
+    Pattern {
+        pattern: String,
+        #[serde(default)]
+        params: Option<WildcardParams>,
+    },
+}
+
+impl MatchWildcard {
+    pub fn pattern(&self) -> &str {
+        match &self.wildcard {
+            Wildcard::Simple(s) => s,
+            Wildcard::Pattern { pattern, .. } => pattern,
+        }
+    }
+
+    pub fn params(&self) -> WildcardParams {
+        match &self.wildcard {
+            Wildcard::Simple(_) => WildcardParams::default(),
+            Wildcard::Pattern { params, .. } => params.unwrap_or_default(),
+        }
+    }
+}
+
+/// Fuzzy match condition: supports approximate full-text matching with the given parameters.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum Fuzzy {
@@ -2642,6 +2705,13 @@ pub enum Fuzzy {
 }
 
 /// Match filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchWildcard {
+    pub wildcard: Wildcard,
+}
+
+/// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum MatchInterface {
@@ -2650,6 +2720,7 @@ pub enum MatchInterface {
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Fuzzy(MatchFuzzy),
+    Wildcard(MatchWildcard),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -2663,6 +2734,7 @@ pub enum Match {
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Fuzzy(MatchFuzzy),
+    Wildcard(MatchWildcard),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -2715,6 +2787,7 @@ impl From<MatchInterface> for Match {
             }),
             MatchInterface::Phrase(MatchPhrase { phrase }) => Self::Phrase(MatchPhrase { phrase }),
             MatchInterface::Fuzzy(fuzzy) => Self::Fuzzy(fuzzy),
+            MatchInterface::Wildcard(wildcard) => Self::Wildcard(wildcard),
         }
     }
 }
@@ -3323,6 +3396,7 @@ impl FieldCondition {
             Match::Phrase(_) => 0,
             Match::TextAny(_) => 0,
             Match::Fuzzy(_) => 0,
+            Match::Wildcard(_) => 0,
         }
     }
 }

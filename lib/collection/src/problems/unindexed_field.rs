@@ -235,7 +235,8 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
             Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
             Match::TextAny(_match_text_any) => vec![FieldIndexType::Text],
-            Match::Fuzzy(_match_fuzzy) => vec![FieldIndexType::Text],
+            Match::Fuzzy(_match_fuzzy) => vec![FieldIndexType::TextFuzzy],
+            Match::Wildcard(_match_wildcard) => vec![FieldIndexType::TextFuzzy],
         })
     }
     if let Some(range_interface) = range {
@@ -546,6 +547,7 @@ enum FieldIndexType {
     FloatRange,
     Text,
     TextPhrase,
+    TextFuzzy,
     BoolMatch,
     UuidMatch,
     UuidRange,
@@ -596,10 +598,15 @@ fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
             PayloadSchemaParams::Float(_) => index_types.insert(FieldIndexType::FloatRange),
             PayloadSchemaParams::Geo(_) => index_types.insert(FieldIndexType::Geo),
             PayloadSchemaParams::Text(TextIndexParams {
-                phrase_matching, ..
+                phrase_matching,
+                fuzzy_matching,
+                ..
             }) => {
                 if phrase_matching.unwrap_or_default() {
                     index_types.insert(FieldIndexType::TextPhrase);
+                }
+                if fuzzy_matching.unwrap_or_default() {
+                    index_types.insert(FieldIndexType::TextFuzzy);
                 }
                 index_types.insert(FieldIndexType::Text)
             }
@@ -624,6 +631,13 @@ impl From<FieldIndexType> for PayloadFieldSchema {
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
                     r#type: TextIndexType::Text,
                     phrase_matching: Some(true),
+                    ..Default::default()
+                }))
+            }
+            FieldIndexType::TextFuzzy => {
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+                    r#type: TextIndexType::Text,
+                    fuzzy_matching: Some(true),
                     ..Default::default()
                 }))
             }
