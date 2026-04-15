@@ -12,9 +12,6 @@ pub struct HadamardRotation {
     /// Random signs applied before the rotation
     signs1: Vec<f64>,
 
-    /// Random signs applied after the rotation
-    signs2: Vec<f64>,
-
     /// Random (but shared) permutations.
     permutations: [Permutation; N_PERMUTATIONS],
 
@@ -32,15 +29,13 @@ impl HadamardRotation {
 
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let signs1 = generate_signs(&mut rng, dim);
-        let signs2 = generate_signs(&mut rng, dim);
+        let signs = generate_signs(&mut rng, dim);
 
         let permutations: [_; N_PERMUTATIONS] =
             std::array::from_fn(|_| Permutation::new(&mut rng, dim));
 
         Self {
-            signs1,
-            signs2,
+            signs1: signs,
             permutations,
             dim,
             chunk_sizes,
@@ -68,20 +63,13 @@ impl HadamardRotation {
             self.wht_normalized_chunks(&mut buf);
         }
 
-        buf.iter()
-            .zip(&self.signs2)
-            .map(|(&v, &s)| (v * s) as f32)
-            .collect()
+        buf.iter().map(|&v| v as f32).collect()
     }
 
     pub fn apply_inverse(&self, y: &[f32]) -> Vec<f32> {
         debug_assert_eq!(y.len(), self.dim);
 
-        let mut buf: Vec<f64> = y
-            .iter()
-            .zip(&self.signs2)
-            .map(|(&v, &s)| f64::from(v) * s)
-            .collect();
+        let mut buf: Vec<f64> = y.iter().map(|&v| f64::from(v)).collect();
 
         // WHT + normalize
         self.wht_normalized_chunks(&mut buf);
@@ -231,12 +219,13 @@ mod test {
             let mut rng = StdRng::seed_from_u64(42);
             let vectors: Vec<Vec<f32>> = (0..n_vectors)
                 .map(|_| {
-                    (0..dim)
+                    let random_vector: Vec<f32> = (0..dim)
                         .map(|d| {
                             let scale = if d < 5 { 100.0 } else { 0.01 };
                             rng.random_range(-1.0f32..1.0) * scale
                         })
-                        .collect()
+                        .collect();
+                    cosine_preprocess(random_vector)
                 })
                 .collect();
 
@@ -322,5 +311,18 @@ mod test {
                 }
             }
         }
+    }
+
+    fn is_length_zero_or_normalized(length: f32) -> bool {
+        length < f32::EPSILON || (length - 1.0).abs() <= 1.0e-6
+    }
+
+    fn cosine_preprocess(vector: Vec<f32>) -> Vec<f32> {
+        let mut length: f32 = vector.iter().map(|x| x * x).sum();
+        if is_length_zero_or_normalized(length) {
+            return vector;
+        }
+        length = length.sqrt();
+        vector.iter().map(|x| x / length).collect()
     }
 }
