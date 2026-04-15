@@ -9,9 +9,6 @@ const N_PERMUTATIONS: usize = 3;
 
 /// Hadamard rotation implementation customized for TurboQuant.
 pub struct HadamardRotation {
-    /// Random signs applied before the rotation
-    signs1: Vec<f64>,
-
     /// Random (but shared) permutations.
     permutations: [Permutation; N_PERMUTATIONS],
 
@@ -29,13 +26,10 @@ impl HadamardRotation {
 
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let signs = generate_signs(&mut rng, dim);
-
         let permutations: [_; N_PERMUTATIONS] =
             std::array::from_fn(|_| Permutation::new(&mut rng, dim));
 
         Self {
-            signs1: signs,
             permutations,
             dim,
             chunk_sizes,
@@ -45,11 +39,7 @@ impl HadamardRotation {
     pub fn apply(&self, x: &[f32]) -> Vec<f32> {
         debug_assert_eq!(x.len(), self.dim);
 
-        let mut buf: Vec<f64> = x
-            .iter()
-            .zip(&self.signs1)
-            .map(|(&v, &s)| f64::from(v) * s)
-            .collect();
+        let mut buf: Vec<f64> = x.iter().map(|&v| f64::from(v)).collect();
 
         // Apply WHT + normalize to each variable-size chunk.
         self.wht_normalized_chunks(&mut buf);
@@ -83,11 +73,7 @@ impl HadamardRotation {
             self.wht_normalized_chunks(&mut buf);
         }
 
-        buf[..self.dim]
-            .iter()
-            .zip(&self.signs1)
-            .map(|(&v, &sign)| (v * sign) as f32)
-            .collect()
+        buf[..self.dim].iter().map(|&v| v as f32).collect()
     }
 
     /// Apply WHT + normalization to variable-size chunks.
@@ -142,17 +128,12 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
 /// ```
 pub fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
     debug_assert!(dim > 0);
-    let mut sizes = Vec::with_capacity(1);
-    let mut remaining = dim;
-    while remaining > 0 {
-        let next_pow2 = remaining.next_power_of_two();
-        let chunk = if next_pow2 == remaining {
-            remaining
-        } else {
-            next_pow2 >> 1
-        };
-        sizes.push(chunk);
-        remaining -= chunk;
+    let mut sizes = Vec::with_capacity(dim.count_ones() as usize);
+    let mut bits = dim;
+    while bits != 0 {
+        let highest = 1 << (usize::BITS - 1 - bits.leading_zeros());
+        sizes.push(highest);
+        bits ^= highest; // clear that bit
     }
     sizes
 }
@@ -288,7 +269,6 @@ mod test {
     fn hadamard_roundtrip() {
         let power_of_two_dims = [128, 512, 1024, 4096];
         let rand_dims = [50, 127, 300, 500, 1025];
-
         let dim_iter = power_of_two_dims.iter().chain(&rand_dims);
 
         for &dim in dim_iter {
