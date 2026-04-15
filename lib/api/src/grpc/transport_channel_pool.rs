@@ -83,7 +83,10 @@ impl PoolInterceptor {
     fn new(default_timeout: Duration, api_key: Option<String>) -> Self {
         Self {
             default_timeout,
-            api_key: api_key.and_then(|k| k.parse().ok()),
+            api_key: api_key.map(|k| {
+                k.parse()
+                    .expect("API key contains invalid characters for gRPC metadata")
+            }),
         }
     }
 }
