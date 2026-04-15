@@ -761,6 +761,7 @@ pub struct PartialSnapshotRecoverFrom {
 async fn recover_partial_snapshot_from(
     dispatcher: web::Data<Dispatcher>,
     http_client: web::Data<HttpClient>,
+    service_config: web::Data<ServiceConfig>,
     path: valid::Path<CollectionShardPath>,
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<PartialSnapshotRecoverFrom>,
@@ -772,6 +773,18 @@ async fn recover_partial_snapshot_from(
     } = path.into_inner();
     let PartialSnapshotRecoverFrom { peer_url, api_key } = request;
     let SnapshottingParam { wait } = query.into_inner();
+
+    if !service_config.enable_snapshot_url_recovery
+        && matches!(peer_url.scheme(), "http" | "https")
+    {
+        return helpers::process_response_error(
+            StorageError::forbidden(
+                "Snapshot recovery from remote URLs is disabled in the configuration",
+            ),
+            tokio::time::Instant::now(),
+            None,
+        );
+    }
 
     // nothing to verify
     let pass = new_unchecked_verification_pass();
