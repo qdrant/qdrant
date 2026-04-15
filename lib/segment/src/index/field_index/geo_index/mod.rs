@@ -1704,8 +1704,7 @@ mod tests {
             build_random_index(POINT_COUNT, 20, IndexType::MutableGridstore);
         let (immutable_index, _immutable_tmp, _) =
             build_random_index(POINT_COUNT, 20, IndexType::RamMmap);
-        let (mmap_index, _mmap_tmp, _) =
-            build_random_index(POINT_COUNT, 20, IndexType::Mmap);
+        let (mmap_index, _mmap_tmp, _) = build_random_index(POINT_COUNT, 20, IndexType::Mmap);
 
         let GeoMapIndex::Storage(storage_index) = &mmap_index else {
             panic!("expected Mmap variant to build into Storage");
@@ -1778,15 +1777,11 @@ mod tests {
         ];
 
         for (name, hashes) in cases {
-            let mutable_result: HashSet<PointOffsetType> = mutable_index
-                .iterator(hashes.clone())
-                .unwrap()
-                .collect();
+            let mutable_result: HashSet<PointOffsetType> =
+                mutable_index.iterator(hashes.clone()).unwrap().collect();
 
-            let immutable_result: HashSet<PointOffsetType> = immutable_index
-                .iterator(hashes.clone())
-                .unwrap()
-                .collect();
+            let immutable_result: HashSet<PointOffsetType> =
+                immutable_index.iterator(hashes.clone()).unwrap().collect();
 
             let all_points_result: HashSet<PointOffsetType> = storage_index
                 .all_points(hashes)
