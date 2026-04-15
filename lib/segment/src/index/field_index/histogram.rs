@@ -49,6 +49,7 @@ mod point {
     pub struct Point<T: Numericable> {
         pub val: T,
         pub idx: PointOffsetType,
+        #[serde(skip)]
         _padding: T::PointPadding,
     }
 
@@ -97,6 +98,7 @@ pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod {
     /// field in the struct, which fits the entire struct.
     type PointPadding: bytemuck::Pod
         + Debug
+        + Default
         + PartialEq
         + PartialOrd
         + Serialize
