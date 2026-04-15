@@ -18,11 +18,19 @@ pub struct HadamardRotation {
     /// Sequence of power-of-2 chunk sizes that exactly cover `dim`.
     /// Produced by greedily taking the largest power-of-2 that fits the remainder.
     chunk_sizes: Vec<usize>,
+
+    /// Precomputed normalization factors: `1.0 / sqrt(chunk_size)` for each chunk.
+    chunk_norms: Vec<f64>,
 }
 
 impl HadamardRotation {
     pub fn new(seed: u64, dim: usize) -> Self {
         let chunk_sizes = compute_chunk_sizes(dim);
+
+        let chunk_norms: Vec<f64> = chunk_sizes
+            .iter()
+            .map(|&s| 1.0 / (s as f64).sqrt())
+            .collect();
 
         let mut rng = StdRng::seed_from_u64(seed);
 
@@ -33,6 +41,7 @@ impl HadamardRotation {
             permutations,
             dim,
             chunk_sizes,
+            chunk_norms,
         }
     }
 
@@ -79,10 +88,9 @@ impl HadamardRotation {
     /// Apply WHT + normalization to variable-size chunks.
     fn wht_normalized_chunks(&self, buf: &mut [f64]) {
         let mut offset = 0;
-        for &size in &self.chunk_sizes {
+        for (&size, &norm) in self.chunk_sizes.iter().zip(&self.chunk_norms) {
             let chunk = &mut buf[offset..offset + size];
             in_place_walsh_hadamard_transform(chunk);
-            let norm = 1.0 / (size as f64).sqrt();
             for v in chunk.iter_mut() {
                 *v *= norm;
             }
@@ -131,9 +139,9 @@ pub fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
     let mut sizes = Vec::with_capacity(dim.count_ones() as usize);
     let mut bits = dim;
     while bits != 0 {
-        let highest = 1 << (usize::BITS - 1 - bits.leading_zeros());
+        let highest = 1 << bits.ilog2();
         sizes.push(highest);
-        bits ^= highest; // clear that bit
+        bits ^= highest;
     }
     sizes
 }
