@@ -7607,6 +7607,9 @@
           },
           {
             "$ref": "#/components/schemas/BinaryQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/TurboQuantization"
           }
         ]
       },
@@ -7743,6 +7746,49 @@
           "binary",
           "scalar4bits",
           "scalar8bits"
+        ]
+      },
+      "TurboQuantization": {
+        "type": "object",
+        "required": [
+          "turbo"
+        ],
+        "properties": {
+          "turbo": {
+            "$ref": "#/components/schemas/TurboQuantQuantizationConfig"
+          }
+        }
+      },
+      "TurboQuantQuantizationConfig": {
+        "type": "object",
+        "properties": {
+          "always_ram": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "plus": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "bits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurboQuantBitSize"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "TurboQuantBitSize": {
+        "type": "string",
+        "enum": [
+          "bits1",
+          "bits1_5",
+          "bits2",
+          "bits4"
         ]
       },
       "Datatype": {
@@ -10972,6 +11018,9 @@
           },
           {
             "$ref": "#/components/schemas/BinaryQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/TurboQuantization"
           },
           {
             "$ref": "#/components/schemas/Disabled"
