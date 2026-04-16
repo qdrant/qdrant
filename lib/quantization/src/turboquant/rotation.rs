@@ -4,7 +4,10 @@ use crate::turboquant::permutation::Permutation;
 
 const N_PERMUTATIONS: usize = 3;
 
-/// Random seeds for Permutation. The values were picked arbitrarily, but they must not be changed.
+/// Random seeds for Permutation. The values were picked arbitrarily.
+///
+/// WARNING: DO NOT CHANGE THESE VALUES. They are baked into the encoding of every quantized vector.
+/// Changing them would silently corrupt all existing quantized vectors.
 const PERMUTATION_SEEDS: [u64; 3] = [654605292835415893, 8636605637963351413, 1775280196666917949];
 
 /// Hadamard rotation implementation customized for TurboQuant.
@@ -99,7 +102,10 @@ impl HadamardRotation {
 }
 
 /// In-place unnormalized Walsh-Hadamard Transform in f64.
+///
+/// The transform is its own inverse: calling it twice recovers the original data (up to a scale factor).
 /// Normalization is applied externally in `apply`/`apply_inverse`.
+///
 /// Input length must be a power of 2.
 pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
     let n = x.len();
@@ -132,7 +138,7 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
 ///  1536 | [1024, 512]
 ///  4096 | [4096]
 /// ```
-pub fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
+fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
     debug_assert!(dim > 0);
     let mut sizes = Vec::with_capacity(dim.count_ones() as usize);
     let mut bits = dim;
