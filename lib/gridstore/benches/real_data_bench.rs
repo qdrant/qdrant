@@ -18,6 +18,7 @@ fn append_csv_data(storage: &mut gridstore::Gridstore<Payload>, csv_path: &Path)
     let mut point_offset = storage.max_point_offset();
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    #[allow(clippy::explicit_counter_loop)]
     for result in rdr.records() {
         let record = result.unwrap();
         let mut payload = Payload::default();
