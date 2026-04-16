@@ -324,7 +324,11 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     pub fn for_each_in_batch<F: FnMut(usize, &[T]), O: VectorOffset>(&self, keys: &[O], mut f: F) {
         #[cfg(target_os = "linux")]
         if S::kind() == common::universal_io::UniversalKind::IoUring {
-            return self.for_each_in_batch_async(keys, f);
+            for (idx, vectors) in self.iter(keys) {
+                f(idx, &vectors);
+            }
+
+            return;
         }
 
         // The `f` is most likely a scorer function. Fetching all vectors first, and then scoring
@@ -352,25 +356,21 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     }
 
     #[allow(dead_code)] // only used on Linux
-    fn for_each_in_batch_async<O, F>(&self, keys: &[O], mut callback: F)
+    fn iter<O>(&self, offsets: &[O]) -> impl Iterator<Item = (usize, Cow<'_, [T]>)>
     where
         O: VectorOffset,
-        F: FnMut(usize, &[T]),
     {
-        let reads = keys.iter().enumerate().map(|(idx, offset)| {
+        let reads = offsets.iter().enumerate().map(|(idx, offset)| {
             let (chunk_idx, range) = self.read_range(offset.offset(), 1).expect("vector exists");
             let chunk = &self.chunks[chunk_idx];
 
             (idx, chunk, range)
         });
 
-        let callback = move |idx, vector: &[T]| {
-            callback(idx, vector);
-            Ok(())
-        };
-
         // access pattern does not matter for io_uring
-        UniversalRead::read_multi::<Random, _>(reads, callback).expect("vector read");
+        UniversalRead::read_multi_iter::<Random, _>(reads)
+            .expect("iterator initialized")
+            .map(|result| result.expect("vector read"))
     }
 
     pub fn flusher(&self) -> Flusher {
