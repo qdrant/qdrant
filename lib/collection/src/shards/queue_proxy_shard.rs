@@ -554,25 +554,21 @@ impl Inner {
             .await?;
 
         loop {
-            // Before exiting on an empty read, acquire `update_lock` and re-read to confirm.
-            // Without the lock, a concurrent write could have committed between our read and
-            // our return, leaving entries behind.
-            if batch.batch.is_empty() && update_lock.is_none() {
+            // Once a batch reaches the end of the WAL (or appears empty), acquire `update_lock`
+            // and hold it for the rest of the transfer so no new writes can accumulate.
+            // If the batch was empty without the lock, re-read under lock to confirm — otherwise
+            // a concurrent write could have committed between our read and our return.
+            if (batch.batch.is_empty() || batch.reached_end) && update_lock.is_none() {
                 update_lock = Some(self.update_lock.lock().await);
-                batch = self
-                    .read_wal_batch(self.transfer_from.load(Ordering::Relaxed))
-                    .await?;
+                if batch.batch.is_empty() {
+                    batch = self
+                        .read_wal_batch(self.transfer_from.load(Ordering::Relaxed))
+                        .await?;
+                }
             }
 
             if batch.batch.is_empty() {
                 break;
-            }
-
-            // Once we see a batch that reaches the end of the WAL, hold `update_lock` for the rest
-            // of the transfer so no new writes can accumulate. Acquiring the lock synchronously
-            // before the `tokio::join!` guarantees the next read runs under the lock.
-            if batch.reached_end && update_lock.is_none() {
-                update_lock = Some(self.update_lock.lock().await);
             }
 
             // Send the current batch and prefetch the next one concurrently. This overlaps the
