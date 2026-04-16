@@ -355,8 +355,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
         }
     }
 
-    #[allow(dead_code)] // only used on Linux
-    fn iter<O>(&self, offsets: &[O]) -> impl Iterator<Item = (usize, Cow<'_, [T]>)>
+    pub fn iter<O>(&self, offsets: &[O]) -> impl Iterator<Item = (usize, Cow<'_, [T]>)>
     where
         O: VectorOffset,
     {
