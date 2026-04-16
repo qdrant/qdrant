@@ -46,44 +46,30 @@ impl HadamardRotation {
         }
     }
 
-    pub fn apply(&self, x: &[f32], buf: &mut [f64]) -> Vec<f32> {
+    pub fn apply(&self, x: &mut [f64]) {
         debug_assert_eq!(x.len(), self.dim);
-        debug_assert_eq!(self.dim, buf.len());
-
-        for (idx, &component) in x.iter().enumerate() {
-            buf[idx] = f64::from(component);
-        }
 
         // Apply WHT + normalize to each variable-size chunk.
-        self.wht_normalized_chunks(buf);
+        self.wht_normalized_chunks(x);
 
         // Permute then WHT+normalize for each permutation.
         for permutation in &self.permutations {
-            permutation.permute(buf);
-            self.wht_normalized_chunks(buf);
+            permutation.permute(x);
+            self.wht_normalized_chunks(x);
         }
-
-        buf.iter().map(|&v| v as f32).collect()
     }
 
-    pub fn apply_inverse(&self, y: &[f32], buf: &mut [f64]) -> Vec<f32> {
+    pub fn apply_inverse(&self, y: &mut [f64]) {
         debug_assert_eq!(y.len(), self.dim);
-        debug_assert_eq!(self.dim, buf.len());
-
-        for (idx, &component) in y.iter().enumerate() {
-            buf[idx] = f64::from(component);
-        }
 
         // WHT + normalize
-        self.wht_normalized_chunks(buf);
+        self.wht_normalized_chunks(y);
 
         // Apply inverse permutations backwards.
         for permutation in self.permutations.iter().rev() {
-            permutation.unpermute(buf);
-            self.wht_normalized_chunks(buf);
+            permutation.unpermute(y);
+            self.wht_normalized_chunks(y);
         }
-
-        buf.iter().map(|&v| v as f32).collect()
     }
 
     /// Apply WHT + normalization to variable-size chunks.
@@ -198,21 +184,32 @@ mod test {
 
             // Generate distorted vectors: energy concentrated in first few dims.
             let mut rng = StdRng::seed_from_u64(42);
-            let vectors: Vec<Vec<f32>> = (0..n_vectors)
+            let vectors: Vec<Vec<f64>> = (0..n_vectors)
                 .map(|_| {
-                    let random_vector: Vec<f32> = (0..dim)
+                    let random_vector: Vec<f64> = (0..dim)
                         .map(|d| {
                             let scale = if d < 5 { 100.0 } else { 0.01 };
-                            rng.random_range(-1.0f32..1.0) * scale
+                            rng.random_range(-1.0f64..1.0) * scale
                         })
                         .collect();
                     cosine_preprocess(random_vector)
                 })
                 .collect();
 
-            let mut buf = vec![0.0f64; dim];
+            let mut rotated = vectors.clone();
+            for vector in rotated.iter_mut() {
+                rot.apply(vector);
+            }
 
-            let rotated: Vec<Vec<f32>> = vectors.iter().map(|v| rot.apply(v, &mut buf)).collect();
+            let rotated: Vec<_> = rotated
+                .into_iter()
+                .map(|v| v.into_iter().map(|i| i as f32).collect::<Vec<_>>())
+                .collect();
+
+            let vectors: Vec<_> = vectors
+                .into_iter()
+                .map(|v| v.into_iter().map(|i| i as f32).collect::<Vec<_>>())
+                .collect();
 
             let mut params = VectorParameters {
                 dim,
@@ -278,15 +275,16 @@ mod test {
                 let rot = HadamardRotation::new(dim);
                 let mut rng = StdRng::seed_from_u64(seed);
 
-                let input: Vec<f32> = (0..dim)
-                    .map(|_| ((rng.next_u32() % 1_000) as f32) / 100.0)
+                let input: Vec<f64> = (0..dim)
+                    .map(|_| f64::from(rng.next_u32() % 1_000) / 100.0)
                     .collect();
 
-                let mut buf = vec![0.0f64; dim];
-                let recovered = rot.apply_inverse(&rot.apply(&input, &mut buf), &mut buf);
+                let mut rotated = input.clone();
+                rot.apply(&mut rotated);
+                rot.apply_inverse(&mut rotated);
 
                 // Original input and recovered should be the same.
-                for (orig, recovered) in input.iter().zip(recovered.iter()) {
+                for (orig, recovered) in input.iter().zip(rotated.iter()) {
                     assert!(
                         (orig - recovered).abs() < 1e-5,
                         "hadamard roundtrip failed: {orig} vs {recovered}",
@@ -296,12 +294,12 @@ mod test {
         }
     }
 
-    fn is_length_zero_or_normalized(length: f32) -> bool {
-        length < f32::EPSILON || (length - 1.0).abs() <= 1.0e-6
+    fn is_length_zero_or_normalized(length: f64) -> bool {
+        length < f64::EPSILON || (length - 1.0).abs() <= 1.0e-6
     }
 
-    fn cosine_preprocess(vector: Vec<f32>) -> Vec<f32> {
-        let mut length: f32 = vector.iter().map(|x| x * x).sum();
+    fn cosine_preprocess(vector: Vec<f64>) -> Vec<f64> {
+        let mut length: f64 = vector.iter().map(|x| x * x).sum();
         if is_length_zero_or_normalized(length) {
             return vector;
         }
