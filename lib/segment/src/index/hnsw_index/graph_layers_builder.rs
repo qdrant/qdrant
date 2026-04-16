@@ -153,6 +153,7 @@ impl GraphLayersBuilder {
 
         // Retry loop, in case some budget is left.
         loop {
+            let budget_before_iteration = spent_budget;
             visited.set(entry_point as usize, true);
 
             // Points visited in the previous layer (Get used as entry point in the iteration over the next layer)
@@ -189,8 +190,12 @@ impl GraphLayersBuilder {
                 }
             }
 
-            // Budget exhausted, don't retry.
-            if spent_budget > SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET {
+            // Budget exhausted, don't retry. Also stop if this iteration made no
+            // progress: BFS traversed zero edges, so retrying cannot discover more
+            // (the graph is immutable and coin flips only gate enumerated links).
+            if spent_budget > SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET
+                || spent_budget == budget_before_iteration
+            {
                 break;
             }
 
@@ -941,5 +946,42 @@ mod tests {
             .sum();
         let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
         eprintln!("avg_connectivity = {avg_connectivity:#?}");
+    }
+
+    /// Regression test: `subgraph_connectivity` must not hang when the chosen
+    /// entry point has no outgoing links on any of its layers. In that case the
+    /// inner BFS iterates zero edges, so `spent_budget` stays at 0 and the
+    /// retry `loop` never observes `spent_budget > SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET`.
+    #[test]
+    fn test_subgraph_connectivity_isolated_entry_point_does_not_hang() {
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        // Points exist at level 0 but no edges have been inserted yet.
+        const NUM_POINTS: PointOffsetType = 4;
+        let mut builder =
+            GraphLayersBuilder::new(NUM_POINTS as usize, HnswM::new2(M), 16, 10, false);
+        for idx in 0..NUM_POINTS {
+            builder.set_levels(idx, 0);
+        }
+        let builder = Arc::new(builder);
+        let points: Vec<PointOffsetType> = (0..NUM_POINTS).collect();
+
+        // Run on a background thread so the test can bound wall-clock time
+        // rather than hanging the whole test runner.
+        let builder_clone = Arc::clone(&builder);
+        let points_clone = points.clone();
+        let handle = thread::spawn(move || builder_clone.subgraph_connectivity(&points_clone, 0.5));
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !handle.is_finished() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        assert!(
+            handle.is_finished(),
+            "subgraph_connectivity hung on an isolated entry point",
+        );
     }
 }
