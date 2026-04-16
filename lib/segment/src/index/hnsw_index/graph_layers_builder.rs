@@ -952,27 +952,33 @@ mod tests {
     /// entry point has no outgoing links on any of its layers. In that case the
     /// inner BFS iterates zero edges, so `spent_budget` stays at 0 and the
     /// retry `loop` never observes `spent_budget > SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET`.
+    ///
+    /// The state is reachable through normal graph construction: the very first
+    /// point inserted via `link_new_point` has no pre-existing neighbors, so it
+    /// is registered in `EntryPoints` with empty `links_layers` on every layer.
     #[test]
     fn test_subgraph_connectivity_isolated_entry_point_does_not_hang() {
         use std::sync::Arc;
         use std::thread;
         use std::time::{Duration, Instant};
 
-        // Points exist at level 0 but no edges have been inserted yet.
-        const NUM_POINTS: PointOffsetType = 4;
-        let mut builder =
-            GraphLayersBuilder::new(NUM_POINTS as usize, HnswM::new2(M), 16, 10, false);
-        for idx in 0..NUM_POINTS {
-            builder.set_levels(idx, 0);
-        }
+        const DIM: usize = 4;
+        let mut rng = StdRng::seed_from_u64(42);
+
+        // Build a one-point graph the normal way. `link_new_point` sees an
+        // empty entry-points list, takes the "new empty entry" branch, and
+        // registers point 0 with no outgoing links on any of its layers.
+        let vector_holder = TestRawScorerProducer::new(DIM, Distance::Cosine, 1, false, &mut rng);
+        let mut builder = GraphLayersBuilder::new(1, HnswM::new2(M), 16, 10, false);
+        let level = builder.get_random_layer(&mut rng);
+        builder.set_levels(0, level);
+        builder.link_new_point(0, vector_holder.internal_scorer(0));
         let builder = Arc::new(builder);
-        let points: Vec<PointOffsetType> = (0..NUM_POINTS).collect();
 
         // Run on a background thread so the test can bound wall-clock time
         // rather than hanging the whole test runner.
         let builder_clone = Arc::clone(&builder);
-        let points_clone = points.clone();
-        let handle = thread::spawn(move || builder_clone.subgraph_connectivity(&points_clone, 0.5));
+        let handle = thread::spawn(move || builder_clone.subgraph_connectivity(&[0], 0.5));
 
         let deadline = Instant::now() + Duration::from_secs(2);
         while !handle.is_finished() && Instant::now() < deadline {
