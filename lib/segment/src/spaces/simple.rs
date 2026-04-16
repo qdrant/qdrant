@@ -172,7 +172,7 @@ impl Metric<VectorElementType> for CosineMetric {
     }
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        DotProductMetric::similarity(v1, v2)
+        DotProductMetric::similarity(v1, v2).clamp(-1.0, 1.0)
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {

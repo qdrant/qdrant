@@ -27,6 +27,28 @@ use segment::types::{
 use tempfile::Builder;
 
 #[test]
+fn exact_cosine_self_score_is_bounded() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let vector = vec![0.5111364722251892_f32, 0.26978665590286255_f32];
+    let query = vector.clone().into();
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Cosine).unwrap();
+    segment
+        .upsert_point(1, 1.into(), only_default_vector(&vector), &hw_counter)
+        .unwrap();
+
+    let result = segment.vector_data[DEFAULT_VECTOR_NAME]
+        .vector_index
+        .borrow()
+        .search(&[&query], None, 1, None, &Default::default())
+        .unwrap();
+
+    assert_eq!(result[0][0].score, 1.0);
+}
+
+#[test]
 fn exact_search_test() {
     let stopped = AtomicBool::new(false);
 

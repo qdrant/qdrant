@@ -141,7 +141,7 @@ pub fn is_read_with_prefetch_efficient<O: VectorOffset>(ids: &[O]) -> bool {
 mod tests {
     use super::*;
     use crate::data_types::vectors::MultiDenseVectorInternal;
-    use crate::spaces::simple::EuclidMetric;
+    use crate::spaces::simple::{CosineMetric, EuclidMetric};
 
     #[test]
     fn test_check_ids_rather_contiguous() {
@@ -178,5 +178,13 @@ mod tests {
         let score = score_max_similarity::<f32, EuclidMetric>((&a).into(), (&b).into());
         // proper value according to theory should be `5.9777255` but we do not apply post-processing step
         assert_eq!(score, -19.);
+    }
+
+    #[test]
+    fn test_score_multi_cosine_can_exceed_one() {
+        let a = MultiDenseVectorInternal::try_from(vec![vec![1.0, 0.0], vec![0.0, 1.0]]).unwrap();
+        let score = score_max_similarity::<f32, CosineMetric>((&a).into(), (&a).into());
+
+        assert_eq!(score, 2.0);
     }
 }
