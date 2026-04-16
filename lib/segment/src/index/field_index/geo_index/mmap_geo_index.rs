@@ -447,8 +447,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         let len = self.storage.points_map.len()?;
 
         geo_hashes.sort_unstable();
-        geo_hashes.dedup();
-        // Drop any prefix that is already subsumed by an earlier (shorter)
+        // Drop any prefix that is already subsumed by or equal to an earlier (shorter)
         // one. After this pass the remaining prefixes are pairwise
         // incomparable — no prefix is a prefix of another — so at most one of
         // them can match any given entry.
