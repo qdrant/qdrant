@@ -372,7 +372,7 @@ mod unit_tests {
         ];
 
         for ((expected_key, expected_group_points), group) in
-            expected_groups.into_iter().zip(groups.into_iter())
+            expected_groups.into_iter().zip(groups)
         {
             assert_eq!(expected_key, group.key);
             let expected_id_score: Vec<_> = expected_group_points
@@ -439,9 +439,7 @@ mod unit_tests {
                 ],
             ),
         ];
-        for ((key, expected_group_points), group) in
-            expected_groups.into_iter().zip(groups.into_iter())
-        {
+        for ((key, expected_group_points), group) in expected_groups.into_iter().zip(groups) {
             assert_eq!(key, group.key);
             let expected_id_score: Vec<_> = expected_group_points
                 .into_iter()
