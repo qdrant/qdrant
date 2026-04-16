@@ -33,10 +33,7 @@ MatchType = Union[
 ]
 RangeType = Union["RangeFloat", "RangeDateTime"]
 QuantizationConfigType = Union[
-    "ScalarQuantizationConfig",
-    "ProductQuantizationConfig",
-    "BinaryQuantizationConfig",
-    "TurboQuantizationConfig",
+    "ScalarQuantizationConfig", "ProductQuantizationConfig", "BinaryQuantizationConfig"
 ]
 IndexType = Union["PlainIndexConfig", "HnswIndexConfig"]
 StartFromType = Union[int, float, str]
@@ -641,40 +638,6 @@ class BinaryQuantizationConfig:
         """Query encoding."""
         ...
 
-class TurboQuantizationConfig:
-    """Configuration for turbo quantization."""
-
-    def __init__(
-        self,
-        always_ram: Optional[bool] = None,
-        plus: Optional[bool] = None,
-        bits: Optional["TurboQuantBitSize"] = None,
-    ) -> None:
-        """
-        Create a TurboQuantizationConfig.
-
-        Args:
-            always_ram: Whether to keep in RAM.
-            plus: Whether to enable plus mode.
-            bits: Bit size for quantization.
-        """
-        ...
-
-    @property
-    def always_ram(self) -> Optional[bool]:
-        """Always RAM flag."""
-        ...
-
-    @property
-    def plus(self) -> Optional[bool]:
-        """Plus mode flag."""
-        ...
-
-    @property
-    def bits(self) -> Optional["TurboQuantBitSize"]:
-        """Bit size."""
-        ...
-
 # ============================================================================
 # Enums
 # ============================================================================
@@ -712,14 +675,6 @@ class CompressionRatio(Enum):
     X16 = ...
     X32 = ...
     X64 = ...
-
-class TurboQuantBitSize(Enum):
-    """Turbo quantization bit sizes."""
-
-    Bits1 = ...
-    Bits1_5 = ...
-    Bits2 = ...
-    Bits4 = ...
 
 class BinaryQuantizationEncoding(Enum):
     """Binary quantization encoding types."""
