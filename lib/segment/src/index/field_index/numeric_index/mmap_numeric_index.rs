@@ -20,7 +20,8 @@ use crate::common::Flusher;
 use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::stored_bitslice::MmapBitSlice;
-use crate::index::field_index::histogram::{Histogram, Numericable, Point};
+use crate::index::field_index::histogram::Histogram;
+use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::{StoredPointToValues, StoredValue};
 
 const PAIRS_PATH: &str = "data.bin";

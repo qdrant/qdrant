@@ -11,8 +11,9 @@ use super::mmap_numeric_index::MmapNumericIndex;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::histogram::{Histogram, Numericable, Point};
+use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
+use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::payload_config::StorageType;
 

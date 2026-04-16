@@ -5,7 +5,6 @@ use gridstore::Blob;
 use super::bool_index::BoolIndex;
 use super::bool_index::mutable_bool_index::MutableBoolIndex;
 use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
-use super::histogram::Numericable;
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder};
 use super::numeric_index::{
     Encodable, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue, NumericIndexMmapBuilder,
@@ -19,6 +18,7 @@ use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
+use crate::index::field_index::numeric_point::Numericable;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};

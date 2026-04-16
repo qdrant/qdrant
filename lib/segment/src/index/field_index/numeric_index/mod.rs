@@ -27,12 +27,12 @@ use uuid::Uuid;
 
 use self::immutable_numeric_index::ImmutableNumericIndex;
 use super::FieldIndexBuilderTrait;
-use super::histogram::Point;
 use super::stored_point_to_values::StoredValue;
 use super::utils::{check_boundaries, value_to_integer};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::histogram::{Histogram, Numericable};
+use crate::index::field_index::histogram::Histogram;
+use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,

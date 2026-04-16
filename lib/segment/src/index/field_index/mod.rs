@@ -18,6 +18,7 @@ pub mod map_index;
 mod memory_reporter;
 pub mod null_index;
 pub mod numeric_index;
+mod numeric_point;
 mod stat_tools;
 mod stored_point_to_values;
 #[cfg(test)]
