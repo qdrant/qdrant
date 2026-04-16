@@ -247,8 +247,8 @@ where
         // Select coordinates of accepted items, avoiding copying
         let resolved_coords: HashSet<_> = resolver
             .items
-            .into_iter()
-            .filter_map(|(_, points)| {
+            .into_values()
+            .filter_map(|points| {
                 points
                     .into_iter()
                     .find(|point| point.count >= resolution_count)
