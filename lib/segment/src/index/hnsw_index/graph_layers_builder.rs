@@ -989,5 +989,8 @@ mod tests {
             handle.is_finished(),
             "subgraph_connectivity hung on an isolated entry point",
         );
+        handle
+            .join()
+            .expect("subgraph_connectivity thread panicked");
     }
 }
