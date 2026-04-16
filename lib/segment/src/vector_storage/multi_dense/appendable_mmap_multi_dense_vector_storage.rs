@@ -1,8 +1,8 @@
 use std::borrow::Cow;
-use std::mem;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::{fmt, mem};
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -31,7 +31,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
 };
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{
-    MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    MultiVectorStorage, VectorOffset, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -44,6 +44,22 @@ pub struct MultivectorMmapOffset {
     offset: u32,
     count: u32,
     capacity: u32,
+}
+
+impl fmt::Display for MultivectorMmapOffset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}x{}", self.offset, self.count)
+    }
+}
+
+impl VectorOffset for MultivectorMmapOffset {
+    fn offset(self) -> VectorOffsetType {
+        self.offset as _
+    }
+
+    fn multi_vector_count(self) -> usize {
+        self.count as _
+    }
 }
 
 #[derive(Debug)]

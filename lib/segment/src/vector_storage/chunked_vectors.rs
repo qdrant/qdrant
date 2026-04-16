@@ -342,8 +342,8 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             let (vectors, _) = maybe_uninit_fill_from(
                 &mut vectors_buffer,
                 keys.iter().map(|&key| {
-                    self.get_many_impl(key.offset(), 1, force_sequential)
-                        .unwrap_or_else(|| panic!("Vector {key} not found"))
+                    self.get_many_impl(key.offset(), key.multi_vector_count(), force_sequential)
+                        .expect("vectors read")
                 }),
             );
 
@@ -361,9 +361,11 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
         O: VectorOffset,
     {
         let reads = offsets.iter().enumerate().map(|(idx, offset)| {
-            let (chunk_idx, range) = self.read_range(offset.offset(), 1).expect("vector exists");
-            let chunk = &self.chunks[chunk_idx];
+            let (chunk_idx, range) = self
+                .read_range(offset.offset(), offset.multi_vector_count())
+                .expect("vectors exist");
 
+            let chunk = &self.chunks[chunk_idx];
             (idx, chunk, range)
         });
 
