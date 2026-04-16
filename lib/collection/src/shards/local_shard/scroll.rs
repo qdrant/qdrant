@@ -300,7 +300,7 @@ impl LocalShard {
         .map_err(|_| CollectionError::timeout(timeout, "scroll_by_field"))??;
 
         let (values, point_ids): (Vec<_>, Vec<_>) =
-            itertools::process_results(all_reads.into_iter(), |iter| {
+            itertools::process_results(all_reads, |iter| {
                 iter.kmerge_by(|a, b| match order_by.direction() {
                     Direction::Asc => a <= b,
                     Direction::Desc => a >= b,

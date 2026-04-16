@@ -263,10 +263,8 @@ impl Collection {
                 .await?;
             // update timeout
             let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
-            let filled_results = without_payload_results
-                .into_iter()
-                .zip(requests_batch.into_iter())
-                .map(|(without_payload_result, req)| {
+            let filled_results = without_payload_results.into_iter().zip(requests_batch).map(
+                |(without_payload_result, req)| {
                     self.fill_search_result_with_payload(
                         without_payload_result,
                         Some(req.with_payload),
@@ -276,7 +274,8 @@ impl Collection {
                         timeout,
                         hw_measurement_acc.clone(),
                     )
-                });
+                },
+            );
             future::try_join_all(filled_results).await
         } else {
             self.do_query_batch_impl(

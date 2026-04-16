@@ -128,7 +128,7 @@ impl SegmentsSearcher {
                     .last()
                     .map(|x| x.score)
                     .unwrap_or_else(f32::min_value);
-                result_aggregator.update_batch_results(batch_req_idx, query_res.into_iter());
+                result_aggregator.update_batch_results(batch_req_idx, query_res);
             }
         }
 
@@ -362,13 +362,11 @@ impl SegmentsSearcher {
 
             for ((_segment_id, batch_ids), segments_result) in searches_to_rerun
                 .into_iter()
-                .zip(secondary_search_results_per_segment.into_iter())
+                .zip(secondary_search_results_per_segment)
             {
-                for (batch_id, secondary_batch_result) in
-                    batch_ids.into_iter().zip(segments_result.into_iter())
+                for (batch_id, secondary_batch_result) in batch_ids.into_iter().zip(segments_result)
                 {
-                    result_aggregator
-                        .update_batch_results(batch_id, secondary_batch_result.into_iter());
+                    result_aggregator.update_batch_results(batch_id, secondary_batch_result);
                 }
             }
         }

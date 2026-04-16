@@ -160,7 +160,7 @@ impl InvertedIndexRam {
 
         let new_vector_size = vector.len() * size_of::<PostingElementEx>();
 
-        for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
+        for (dim_id, weight) in vector.indices.into_iter().zip(vector.values) {
             let dim_id = dim_id as usize;
             match self.postings.get_mut(dim_id) {
                 Some(posting) => {

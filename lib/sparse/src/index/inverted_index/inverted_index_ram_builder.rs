@@ -33,7 +33,7 @@ impl InvertedIndexBuilder {
     /// Add a vector to the inverted index builder
     pub fn add(&mut self, id: PointOffsetType, vector: RemappedSparseVector) {
         let sparse_size = vector.len() * size_of::<PostingElementEx>();
-        for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
+        for (dim_id, weight) in vector.indices.into_iter().zip(vector.values) {
             let dim_id = dim_id as usize;
             self.posting_builders.resize_with(
                 max(dim_id + 1, self.posting_builders.len()),

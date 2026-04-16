@@ -102,7 +102,7 @@ impl From<CollectionSearchMatrixResponse> for SearchMatrixPairsResponse {
         let pairs_len = nearests.iter().map(|n| n.len()).sum();
         let mut pairs = Vec::with_capacity(pairs_len);
 
-        for (a, scored_points) in sample_ids.into_iter().zip(nearests.into_iter()) {
+        for (a, scored_points) in sample_ids.into_iter().zip(nearests) {
             for scored_point in scored_points {
                 pairs.push(SearchMatrixPair {
                     a,
