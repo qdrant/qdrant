@@ -30,9 +30,10 @@ fn bench_apply(c: &mut Criterion) {
     for &dim in DIMS {
         let rot = HadamardRotation::new(dim);
         let input: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.1).collect();
+        let mut buf = vec![0.0f64; dim];
 
         group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
-            b.iter(|| black_box(rot.apply(black_box(&input))));
+            b.iter(|| black_box(rot.apply(black_box(&input), &mut buf)));
         });
     }
 
@@ -45,10 +46,11 @@ fn bench_apply_inverse(c: &mut Criterion) {
     for &dim in DIMS {
         let rot = HadamardRotation::new(dim);
         let input: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.1).collect();
-        let rotated = rot.apply(&input);
+        let mut buf = vec![0.0f64; dim];
+        let rotated = rot.apply(&input, &mut buf);
 
         group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
-            b.iter(|| black_box(rot.apply_inverse(black_box(&rotated))));
+            b.iter(|| black_box(rot.apply_inverse(black_box(&rotated), &mut buf)));
         });
     }
 

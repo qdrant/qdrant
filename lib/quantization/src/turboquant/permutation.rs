@@ -21,20 +21,24 @@ impl ReversibleLcg {
     fn new(seed: u64) -> Self {
         Self { state: seed }
     }
+}
 
-    /// Advance the generator and return the new state.
+impl Iterator for ReversibleLcg {
+    type Item = u64;
+
     #[inline]
-    fn next(&mut self) -> u64 {
+    fn next(&mut self) -> Option<Self::Item> {
         self.state = self.state.wrapping_mul(Self::A).wrapping_add(Self::C);
-        self.state
+        Some(self.state)
     }
+}
 
-    /// Return the current state and step the generator backward.
+impl DoubleEndedIterator for ReversibleLcg {
     #[inline]
-    fn prev(&mut self) -> u64 {
+    fn next_back(&mut self) -> Option<Self::Item> {
         let val = self.state;
         self.state = self.state.wrapping_sub(Self::C).wrapping_mul(Self::A_INV);
-        val
+        Some(val)
     }
 }
 
@@ -70,9 +74,9 @@ impl Permutation {
     /// Apply the forward permutation in-place (Fisher-Yates replay).
     pub fn permute(&self, arr: &mut [f64]) {
         debug_assert_eq!(arr.len(), self.count);
-        let mut rng = ReversibleLcg::new(self.seed);
-        for i in (1..self.count).rev() {
-            let j = Self::bounded_rand(rng.next(), i as u64 + 1) as usize;
+        let rng = ReversibleLcg::new(self.seed);
+        for (i, rand) in ((1..self.count).rev()).zip(rng) {
+            let j = Self::bounded_rand(rand, i as u64 + 1) as usize;
             arr.swap(i, j);
         }
     }
@@ -80,11 +84,9 @@ impl Permutation {
     /// Apply the inverse permutation in-place (reversed Fisher-Yates).
     pub fn unpermute(&self, arr: &mut [f64]) {
         debug_assert_eq!(arr.len(), self.count);
-        let mut rng = ReversibleLcg {
-            state: self.end_state,
-        };
-        for i in 1..self.count {
-            let j = Self::bounded_rand(rng.prev(), i as u64 + 1) as usize;
+        let rng = ReversibleLcg::new(self.end_state);
+        for (i, rand) in (1..self.count).zip(rng.rev()) {
+            let j = Self::bounded_rand(rand, i as u64 + 1) as usize;
             arr.swap(i, j);
         }
     }
@@ -106,11 +108,11 @@ mod tests {
     #[test]
     fn lcg_reversibility() {
         let mut rng = ReversibleLcg::new(12345);
-        let values: Vec<u64> = (0..100).map(|_| rng.next()).collect();
+        let values: Vec<u64> = (0..100).map(|_| rng.next().unwrap()).collect();
 
         // Walking backward should recover every value in reverse order.
         for v in values.iter().rev() {
-            assert_eq!(rng.prev(), *v);
+            assert_eq!(rng.next_back().unwrap(), *v);
         }
     }
 

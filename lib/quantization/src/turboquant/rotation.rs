@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use rand::RngExt;
-use rand::prelude::StdRng;
-
 use crate::turboquant::permutation::Permutation;
 
 const N_PERMUTATIONS: usize = 3;
+
+/// Random seeds for Permutation. The values were picked arbitrarily, but they must not be changed.
+const PERMUTATION_SEEDS: [u64; 3] = [654605292835415893, 8636605637963351413, 1775280196666917949];
 
 /// Hadamard rotation implementation customized for TurboQuant.
 pub struct HadamardRotation {
@@ -33,7 +33,7 @@ impl HadamardRotation {
             .collect();
 
         let permutations: [_; N_PERMUTATIONS] =
-            std::array::from_fn(|index| Permutation::new(index as u64, dim));
+            std::array::from_fn(|index| Permutation::new(PERMUTATION_SEEDS[index], dim));
 
         Self {
             permutations,
@@ -43,38 +43,44 @@ impl HadamardRotation {
         }
     }
 
-    pub fn apply(&self, x: &[f32]) -> Vec<f32> {
+    pub fn apply(&self, x: &[f32], buf: &mut [f64]) -> Vec<f32> {
         debug_assert_eq!(x.len(), self.dim);
+        debug_assert_eq!(self.dim, buf.len());
 
-        let mut buf: Vec<f64> = x.iter().map(|&v| f64::from(v)).collect();
+        for (idx, &component) in x.iter().enumerate() {
+            buf[idx] = f64::from(component);
+        }
 
         // Apply WHT + normalize to each variable-size chunk.
-        self.wht_normalized_chunks(&mut buf);
+        self.wht_normalized_chunks(buf);
 
         // Permute then WHT+normalize for each permutation.
         for permutation in &self.permutations {
-            permutation.permute(&mut buf);
-            self.wht_normalized_chunks(&mut buf);
+            permutation.permute(buf);
+            self.wht_normalized_chunks(buf);
         }
 
         buf.iter().map(|&v| v as f32).collect()
     }
 
-    pub fn apply_inverse(&self, y: &[f32]) -> Vec<f32> {
+    pub fn apply_inverse(&self, y: &[f32], buf: &mut [f64]) -> Vec<f32> {
         debug_assert_eq!(y.len(), self.dim);
+        debug_assert_eq!(self.dim, buf.len());
 
-        let mut buf: Vec<f64> = y.iter().map(|&v| f64::from(v)).collect();
+        for (idx, &component) in y.iter().enumerate() {
+            buf[idx] = f64::from(component);
+        }
 
         // WHT + normalize
-        self.wht_normalized_chunks(&mut buf);
+        self.wht_normalized_chunks(buf);
 
         // Apply inverse permutations backwards.
         for permutation in self.permutations.iter().rev() {
-            permutation.unpermute(&mut buf);
-            self.wht_normalized_chunks(&mut buf);
+            permutation.unpermute(buf);
+            self.wht_normalized_chunks(buf);
         }
 
-        buf[..self.dim].iter().map(|&v| v as f32).collect()
+        buf.iter().map(|&v| v as f32).collect()
     }
 
     /// Apply WHT + normalization to variable-size chunks.
@@ -138,22 +144,10 @@ pub fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
     sizes
 }
 
-/// Generate a random sign vector (±1.0).
-fn generate_signs(rng: &mut StdRng, n: usize) -> Vec<f64> {
-    (0..n)
-        .map(|_| {
-            if rng.random::<bool>() {
-                1.0f64
-            } else {
-                -1.0f64
-            }
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod test {
-    use rand::{Rng, SeedableRng};
+    use rand::prelude::StdRng;
+    use rand::{Rng, RngExt, SeedableRng};
 
     use super::*;
 
@@ -210,7 +204,9 @@ mod test {
                 })
                 .collect();
 
-            let rotated: Vec<Vec<f32>> = vectors.iter().map(|v| rot.apply(v)).collect();
+            let mut buf = vec![0.0f64; dim];
+
+            let rotated: Vec<Vec<f32>> = vectors.iter().map(|v| rot.apply(v, &mut buf)).collect();
 
             let mut params = VectorParameters {
                 dim,
@@ -280,7 +276,8 @@ mod test {
                     .map(|_| ((rng.next_u32() % 1_000) as f32) / 100.0)
                     .collect();
 
-                let recovered = rot.apply_inverse(&rot.apply(&input));
+                let mut buf = vec![0.0f64; dim];
+                let recovered = rot.apply_inverse(&rot.apply(&input, &mut buf), &mut buf);
 
                 // Original input and recovered should be the same.
                 for (orig, recovered) in input.iter().zip(recovered.iter()) {
