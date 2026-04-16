@@ -6,7 +6,8 @@ use std::io::Write;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::index::field_index::histogram::{Histogram, Numericable, Point};
+use crate::index::field_index::histogram::Histogram;
+use crate::index::field_index::numeric_point::{Numericable, Point};
 
 pub fn print_results<T: Numericable + Serialize + DeserializeOwned + Display>(
     points_index: &BTreeSet<Point<T>>,

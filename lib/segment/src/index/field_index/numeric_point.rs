@@ -63,11 +63,12 @@ const fn derive_point_padding<T: bytemuck::Pod>() -> usize {
         _idx: PointOffsetType,
     }
     let align = std::mem::align_of::<Point<T>>();
-    if align <= 1 {
-        0
-    } else {
-        align - (std::mem::size_of::<T>() + std::mem::size_of::<PointOffsetType>()) % align
-    }
+
+    // Since we are adding padding at the end, we need to ensure that the align of T is larger the one
+    // of PointOffsetType, so that there is no inter-field padding
+    assert!(std::mem::align_of::<T>() >= std::mem::align_of::<PointOffsetType>());
+
+    align - (std::mem::size_of::<T>() + std::mem::size_of::<PointOffsetType>()) % align
 }
 
 /// A trait that should represent common properties of integer and floating point types.

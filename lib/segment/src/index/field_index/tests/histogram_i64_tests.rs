@@ -4,7 +4,8 @@ use std::collections::Bound::Included;
 use common::types::PointOffsetType;
 use rand::prelude::SliceRandom;
 
-use crate::index::field_index::histogram::{Histogram, Point};
+use crate::index::field_index::histogram::Histogram;
+use crate::index::field_index::numeric_point::Point;
 use crate::index::field_index::tests::histogram_test_utils::print_results;
 use crate::index::field_index::tests::histogram_tests::{build_histogram, count_range};
 
