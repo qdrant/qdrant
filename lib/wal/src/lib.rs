@@ -170,7 +170,7 @@ impl Wal {
         }
 
         // Validate the closed segments. They must be non-overlapping, and contiguous.
-        closed_segments.sort_by(|a, b| a.start_index.cmp(&b.start_index));
+        closed_segments.sort_by_key(|s| s.start_index);
         let mut next_start_index = closed_segments
             .first()
             .map_or(0, |segment| segment.start_index);
@@ -200,7 +200,7 @@ impl Wal {
         }
 
         // Validate the open segments.
-        open_segments.sort_by(|a, b| a.id.cmp(&b.id));
+        open_segments.sort_by_key(|s| s.id);
 
         // The latest open segment, may already have segments.
         let mut open_segment: Option<OpenSegment> = None;
