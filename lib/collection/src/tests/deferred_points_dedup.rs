@@ -118,12 +118,17 @@ async fn wait_optimization(shard: &LocalShard, timeout: Duration) {
     let start = std::time::Instant::now();
     loop {
         let (status, _) = shard.local_shard_status().await;
-        if status == ShardStatus::Green {
+        let has_proxy = shard
+            .segments()
+            .read()
+            .iter()
+            .any(|(_, segment)| !segment.is_original());
+        if status == ShardStatus::Green && !has_proxy {
             return;
         }
         assert!(
             start.elapsed() < timeout,
-            "Timeout waiting for optimizations to finish (status: {status:?})",
+            "Timeout waiting for optimizations to finish (status: {status:?}, has_proxy: {has_proxy})",
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
