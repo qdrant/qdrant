@@ -107,7 +107,12 @@ impl GraphLayersBuilder {
     ///  - Return the fraction of reachable nodes to the total number of nodes in the sub-graph.
     ///
     /// Coin probability `q` is a parameter of this function. By default, it is 0.5.
-    pub fn subgraph_connectivity(&self, points: &[PointOffsetType], q: f32) -> f32 {
+    pub fn subgraph_connectivity<R: Rng + ?Sized>(
+        &self,
+        rng: &mut R,
+        points: &[PointOffsetType],
+        q: f32,
+    ) -> f32 {
         if points.is_empty() {
             return 1.0;
         }
@@ -121,14 +126,12 @@ impl GraphLayersBuilder {
             point_selection.set(*point_id as usize, true);
         }
 
-        let mut rnd = rand::rng();
-
         // Try to get entry point from the entry points list
         // If not found, select the point with the highest level
         let entry_point = self
             .entry_points
             .lock()
-            .get_random_entry_point(&mut rnd, |point_id| {
+            .get_random_entry_point(rng, |point_id| {
                 point_selection.get_bit(point_id as usize).unwrap_or(false)
             })
             .map(|ep| ep.point_id);
@@ -172,7 +175,7 @@ impl GraphLayersBuilder {
                         spent_budget += 1;
 
                         // Flip a coin to decide if the edge is removed or not
-                        let coin_flip = rnd.random_range(0.0..1.0);
+                        let coin_flip = rng.random_range(0.0..1.0);
                         if coin_flip < q {
                             continue;
                         }

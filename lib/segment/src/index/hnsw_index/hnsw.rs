@@ -529,9 +529,9 @@ impl HNSWIndex {
 
             let required_connectivity = if average_links_per_0_level_int >= 4 {
                 let global_graph_connectivity = [
-                    graph_layers_builder.subgraph_connectivity(&all_points, percolation),
-                    graph_layers_builder.subgraph_connectivity(&all_points, percolation),
-                    graph_layers_builder.subgraph_connectivity(&all_points, percolation),
+                    graph_layers_builder.subgraph_connectivity(rng, &all_points, percolation),
+                    graph_layers_builder.subgraph_connectivity(rng, &all_points, percolation),
+                    graph_layers_builder.subgraph_connectivity(rng, &all_points, percolation),
                 ];
 
                 debug!("graph connectivity: {global_graph_connectivity:?} @ {percolation}");
@@ -625,8 +625,11 @@ impl HNSWIndex {
                         && let Some(required_connectivity) = required_connectivity
                     {
                         // Always build for tenants
-                        let graph_connectivity = graph_layers_builder
-                            .subgraph_connectivity(&points_to_index, percolation);
+                        let graph_connectivity = graph_layers_builder.subgraph_connectivity(
+                            rng,
+                            &points_to_index,
+                            percolation,
+                        );
 
                         if graph_connectivity >= required_connectivity {
                             trace!(
