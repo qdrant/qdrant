@@ -1,7 +1,6 @@
 use std::alloc::Layout;
 use std::borrow::Cow;
 use std::fmt;
-use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -9,7 +8,6 @@ use std::sync::atomic::AtomicBool;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
-use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
@@ -28,11 +26,10 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVectorInternal, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
-    VectorInternal, VectorRef,
+    MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
+    VectorElementTypeHalf, VectorInternal, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 
 /// In case of simple vector storage, vector offset is the same as [`PointOffsetType`].
@@ -209,21 +206,17 @@ pub trait SparseVectorStorage: VectorStorage {
 
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
+
     fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> CowMultiVector<'_, T>;
     fn get_multi_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
     ) -> Option<CowMultiVector<'_, T>>;
-    fn get_batch_multi<'a>(
-        &'a self,
-        keys: &[PointOffsetType],
-        vectors: &'a mut [MaybeUninit<CowMultiVector<'a, T>>],
-    ) -> &'a [CowMultiVector<'a, T>] {
-        debug_assert_eq!(keys.len(), vectors.len());
-        debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
-        let iter = keys.iter().map(|key| self.get_multi::<Random>(*key));
-        maybe_uninit_fill_from(vectors, iter).0
-    }
+
+    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], callback: F)
+    where
+        F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>);
+
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 

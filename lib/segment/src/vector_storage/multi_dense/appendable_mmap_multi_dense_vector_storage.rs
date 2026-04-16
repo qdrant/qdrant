@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::mem;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -6,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
+use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
@@ -22,10 +24,12 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_full,
     open_appendable_memmap_vector_storage_half,
 };
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{
     MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
@@ -140,6 +144,25 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
                     dim: self.vectors.dim(),
                 }),
             })
+    }
+
+    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    where
+        F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
+    {
+        let mut vectors_buffer = [const { mem::MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
+
+        let vectors = if is_read_with_prefetch_efficient(keys) {
+            let iter = keys.iter().map(|&key| self.get_multi::<Sequential>(key));
+            maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+        } else {
+            let iter = keys.iter().map(|&key| self.get_multi::<Random>(key));
+            maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+        };
+
+        for (idx, vector) in vectors.iter().enumerate() {
+            callback(idx, vector.as_ref())
+        }
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {

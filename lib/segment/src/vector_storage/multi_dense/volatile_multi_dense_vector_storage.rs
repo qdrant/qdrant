@@ -174,6 +174,16 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         self.set_deleted(key, is_deleted);
         Ok(())
     }
+
+    fn get_multi_impl(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<'_, T>> {
+        let &MultiVectorMetadata {
+            start,
+            inner_vectors_count,
+            ..
+        } = self.vectors_metadata.get(key as usize)?;
+        let vectors = self.vectors.get_many(start, inner_vectors_count)?;
+        Some(TypedMultiDenseVectorRef::new(vectors, self.dim))
+    }
 }
 
 impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVectorStorage<T> {
@@ -192,16 +202,17 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
         key: PointOffsetType,
     ) -> Option<CowMultiVector<'_, T>> {
         // No sequential optimizations available for in memory storage.
-        self.vectors_metadata.get(key as usize).map(|metadata| {
-            let flattened_vectors = self
-                .vectors
-                .get_many(metadata.start, metadata.inner_vectors_count)
-                .unwrap_or_else(|| panic!("Vectors does not contain data for {metadata:?}"));
-            CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
-                flattened_vectors,
-                dim: self.dim,
-            })
-        })
+        self.get_multi_impl(key).map(CowMultiVector::Borrowed)
+    }
+
+    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    where
+        F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
+    {
+        for (idx, &key) in keys.iter().enumerate() {
+            let vector = self.get_multi_impl(key).expect("multi vector exists");
+            callback(idx, vector);
+        }
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {

@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
@@ -14,7 +13,6 @@ use crate::data_types::vectors::{
 };
 use crate::spaces::metric::Metric;
 use crate::vector_storage::MultiVectorStorage;
-use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -126,24 +124,24 @@ impl<
         self.score_ref(stored.as_ref())
     }
 
-    fn score_stored_batch_impl(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
         debug_assert_eq!(ids.len(), scores.len());
 
-        let mut vectors = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
-        let vectors = self
-            .vector_storage
-            .get_batch_multi(ids, &mut vectors[..ids.len()]);
+        let vectors_read = self.hardware_counter.vector_io_read();
+        self.vector_storage
+            .for_each_in_batch_multi(ids, |idx, vector| {
+                vectors_read.incr_delta(vector.vectors_count());
+                scores[idx] = self.score_ref(vector);
+            });
+    }
 
-        let total_loaded_vectors: usize = vectors.iter().map(|v| v.as_ref().vectors_count()).sum();
+    fn score_stored_batch_impl(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert!(
+            false,
+            "score_stored_batch_impl should not be used, use score_stored_batch instead"
+        );
 
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(total_loaded_vectors);
-
-        for idx in 0..ids.len() {
-            scores[idx] = self.score_ref(vectors[idx].as_ref());
-        }
+        self.score_stored_batch(ids, scores); // fallback
     }
 
     #[inline]

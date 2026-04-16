@@ -421,6 +421,15 @@ pub struct TypedMultiDenseVectorRef<'a, T> {
 }
 
 impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
+    pub fn new(flattened_vectors: &'a [T], dim: usize) -> Self {
+        debug_assert_eq!(flattened_vectors.len() % dim, 0);
+
+        Self {
+            flattened_vectors,
+            dim,
+        }
+    }
+
     /// Slices the multi vector into the underlying individual vectors
     pub fn multi_vectors(self) -> impl Iterator<Item = &'a [T]> {
         self.flattened_vectors.chunks_exact(self.dim)
