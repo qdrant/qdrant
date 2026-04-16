@@ -113,6 +113,12 @@ impl TableOfContent {
         if let Some(path) = storage_config.temp_path.as_deref() {
             fs::create_dir_all(path)?;
         }
+
+        // Clean up stale temporary directories before loading collections.
+        // Must happen before WAL application to avoid interference from leftover
+        // temp files (e.g. interrupted snapshot transfers from a previous run).
+        temp_directories::clear_tmp_directories(storage_config)?;
+
         let collection_paths = fs::read_dir(&collections_path)?;
         let is_distributed = consensus_proposal_sender.is_some();
 

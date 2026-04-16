@@ -398,8 +398,6 @@ fn main() -> anyhow::Result<()> {
         propose_operation_sender.clone(),
     )?;
 
-    toc.clear_all_tmp_directories()?;
-
     // Here we load all stored collections.
     runtime_handle.block_on(async {
         for collection in toc.all_collections(&FULL_ACCESS).await {

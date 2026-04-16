@@ -4,9 +4,40 @@ use collection::operations::types::{CollectionError, CollectionResult};
 use fs_err as fs;
 
 use crate::content_manager::toc::TableOfContent;
+use crate::types::StorageConfig;
 
 const TEMP_SUBDIR_NAME: &str = "tmp";
 const FILE_UPLOAD_SUBDIR_NAME: &str = "upload";
+
+/// Remove all temporary directories based on storage configuration.
+///
+/// Should be called early during startup, before loading collection data and
+/// applying WAL, to ensure no stale temp files (e.g. from interrupted snapshot
+/// transfers) interfere with recovery.
+pub fn clear_tmp_directories(storage_config: &StorageConfig) -> CollectionResult<()> {
+    let snapshots_temp = storage_config.snapshots_path.join(TEMP_SUBDIR_NAME);
+    let storage_temp = storage_config.storage_path.join(TEMP_SUBDIR_NAME);
+    let optional_temp = storage_config
+        .temp_path
+        .as_deref()
+        .map(|p| Path::new(p).join(TEMP_SUBDIR_NAME));
+
+    for path in [Some(snapshots_temp), Some(storage_temp), optional_temp]
+        .into_iter()
+        .flatten()
+    {
+        if path.exists() {
+            fs::remove_dir_all(&path).map_err(|e| {
+                CollectionError::service_error(format!(
+                    "Failed to remove temp directory at {}: {e:?}",
+                    path.display(),
+                ))
+            })?;
+        }
+    }
+
+    Ok(())
+}
 
 /// Functions for managing temporary storages of TOC.
 ///
@@ -140,42 +171,6 @@ impl TableOfContent {
     }
 
     pub fn clear_all_tmp_directories(&self) -> CollectionResult<()> {
-        let snapshots_temp_path = self.get_snapshots_temp_path();
-        let storage_temp_path = self.get_storage_temp_path();
-        let optional_temp_path = self.get_optional_temp_path();
-
-        if snapshots_temp_path.exists() {
-            fs::remove_dir_all(&snapshots_temp_path).map_err(|e| {
-                CollectionError::service_error(format!(
-                    "Failed to remove snapshots temp directory at {}: {:?}",
-                    snapshots_temp_path.display(),
-                    e,
-                ))
-            })?;
-        }
-
-        if storage_temp_path.exists() {
-            fs::remove_dir_all(&storage_temp_path).map_err(|e| {
-                CollectionError::service_error(format!(
-                    "Failed to remove storage temp directory at {}: {:?}",
-                    storage_temp_path.display(),
-                    e,
-                ))
-            })?;
-        }
-
-        if let Some(path) = optional_temp_path
-            && path.exists()
-        {
-            fs::remove_dir_all(&path).map_err(|e| {
-                CollectionError::service_error(format!(
-                    "Failed to remove optional temp directory at {}: {:?}",
-                    path.display(),
-                    e,
-                ))
-            })?;
-        }
-
-        Ok(())
+        clear_tmp_directories(&self.storage_config)
     }
 }
