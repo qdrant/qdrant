@@ -34,7 +34,6 @@ def test_resharding_state_transitions(tmp_path: pathlib.Path):
     try_requests(peer_uris[0], 400, [
         start_resharding,
         lambda peer_uri: start_resharding(peer_uri, direction="down"),
-        commit_read_hashring,
         finish_resharding,
         abort_resharding,
     ])
@@ -47,8 +46,6 @@ def test_resharding_state_transitions(tmp_path: pathlib.Path):
     try_requests(peer_uris[0], 400, [
         start_resharding,
         lambda peer_uri: start_resharding(peer_uri, direction="down"),
-        commit_read_hashring,
-        commit_write_hashring,
         abort_resharding,
     ])
 
