@@ -60,3 +60,7 @@ harness = false
 [[bench]]
 name = "hadamard"
 harness = false
+
+[[bench]]
+name = "turboquant"
+harness = false

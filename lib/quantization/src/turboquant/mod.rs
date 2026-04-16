@@ -1,5 +1,6 @@
-mod lloyd_max;
+pub mod lloyd_max;
 mod permutation;
+pub mod quantization;
 pub mod rotation;
 
 use std::alloc::Layout;
@@ -26,6 +27,32 @@ pub enum TQBits {
     Bits2,
     Bits1_5,
     Bits1,
+}
+
+impl TQBits {
+    #[inline]
+    pub fn get_centroids(&self) -> &'static [f32] {
+        let bit_size = self.bit_size();
+        lloyd_max::get_centroids(bit_size)
+    }
+
+    #[inline]
+    pub fn get_centroid_boundaries(&self) -> &'static [f32] {
+        let bit_size = self.bit_size();
+        lloyd_max::get_centroid_boundaries(bit_size)
+    }
+
+    #[inline]
+    pub fn bit_size(&self) -> u8 {
+        match self {
+            TQBits::Bits4 => 4,
+            TQBits::Bits2 => 2,
+            TQBits::Bits1_5 => {
+                unimplemented!()
+            }
+            TQBits::Bits1 => 1,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
