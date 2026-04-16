@@ -244,37 +244,31 @@ where
     let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
 
     match &filter.must {
-        None => {}
-        Some(conditions) => {
-            if !conditions.is_empty() {
-                filter_estimations.push(estimate_must(estimator, conditions, total)?);
-            }
+        Some(conditions) if !conditions.is_empty() => {
+            filter_estimations.push(estimate_must(estimator, conditions, total)?);
         }
+        Some(_) | None => {}
     }
     match &filter.should {
-        None => {}
-        Some(conditions) => {
-            if !conditions.is_empty() {
-                filter_estimations.push(estimate_should(estimator, conditions, total)?);
-            }
+        Some(conditions) if !conditions.is_empty() => {
+            filter_estimations.push(estimate_should(estimator, conditions, total)?);
         }
+        Some(_) | None => {}
     }
-    match &filter.min_should {
-        None => {}
-        Some(MinShould {
-            conditions,
-            min_count,
-        }) => filter_estimations.push(estimate_min_should(
+    if let Some(MinShould {
+        conditions,
+        min_count,
+    }) = &filter.min_should
+    {
+        filter_estimations.push(estimate_min_should(
             estimator, conditions, *min_count, total,
-        )?),
+        )?)
     }
     match &filter.must_not {
-        None => {}
-        Some(conditions) => {
-            if !conditions.is_empty() {
-                filter_estimations.push(estimate_must_not(estimator, conditions, total)?)
-            }
+        Some(conditions) if !conditions.is_empty() => {
+            filter_estimations.push(estimate_must_not(estimator, conditions, total)?)
         }
+        Some(_) | None => {}
     }
 
     Ok(combine_must_estimations(&filter_estimations, total))
