@@ -981,7 +981,10 @@ mod tests {
         // Run on a background thread so the test can bound wall-clock time
         // rather than hanging the whole test runner.
         let builder_clone = Arc::clone(&builder);
-        let handle = thread::spawn(move || builder_clone.subgraph_connectivity(&[0], 0.5));
+        let handle = thread::spawn(move || {
+            let mut rng = rand::rng();
+            builder_clone.subgraph_connectivity(&mut rng, &[0], 0.5)
+        });
 
         let deadline = Instant::now() + Duration::from_secs(2);
         while !handle.is_finished() && Instant::now() < deadline {
