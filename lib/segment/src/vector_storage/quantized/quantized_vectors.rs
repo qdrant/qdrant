@@ -995,6 +995,14 @@ impl QuantizedVectors {
             return Ok(None);
         }
 
+        // Only quantization methods that support appendable storage can be auto-created
+        // here with `Mutable` storage type. Other methods (Scalar, Product) would fail
+        // inside `create_impl`/`create_multi_impl` because their `create_*` helpers reject
+        // `Mutable`.
+        if !quantization_config.supports_appendable() {
+            return Ok(None);
+        }
+
         let quantized_vectors = Self::create(
             vector_storage,
             quantization_config,
@@ -1412,44 +1420,59 @@ impl QuantizedVectors {
         config: &QuantizedVectorsConfig,
         turbo_config: &TurboQuantQuantizationConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
-        if !config.storage_type.is_immutable() {
-            return Err(OperationError::service_error(
-                "Mutable quantized storage is not supported for Turbo Quant",
-            ));
-        }
-
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
         let mode = Self::convert_tq_mode(turbo_config.plus);
 
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
-        if Self::is_ram(turbo_config.always_ram, on_disk_vector_storage) {
-            let quantized_vector_size =
-                EncodedVectorsTQ::<QuantizedRamStorage>::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
-            let quantized_vectors_storage =
-                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-            Ok(QuantizedVectorStorage::TQRam(EncodedVectorsTQ::load(
-                quantized_vectors_storage,
-                &meta_path,
-            )?))
-        } else {
-            let quantized_vector_size =
-                EncodedVectorsTQ::<QuantizedMmapStorage>::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
-            let quantized_vectors_storage =
-                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-            Ok(QuantizedVectorStorage::TQMmap(EncodedVectorsTQ::load(
-                quantized_vectors_storage,
-                &meta_path,
-            )?))
+        let in_ram = Self::is_ram(turbo_config.always_ram, on_disk_vector_storage);
+
+        match (in_ram, config.storage_type) {
+            (_, QuantizedVectorsStorageType::Mutable) => {
+                let quantized_vector_size =
+                    EncodedVectorsTQ::<QuantizedChunkedMmapStorage>::get_quantized_vector_size(
+                        &config.vector_parameters,
+                        bits,
+                        mode,
+                    );
+                let quantization_storage = QuantizedChunkedMmapStorage::new(
+                    data_path.as_path(),
+                    quantized_vector_size,
+                    in_ram,
+                )?;
+                Ok(QuantizedVectorStorage::TQChunkedMmap(
+                    EncodedVectorsTQ::load(quantization_storage, meta_path.as_path())?,
+                ))
+            }
+            (true, QuantizedVectorsStorageType::Immutable) => {
+                let quantized_vector_size =
+                    EncodedVectorsTQ::<QuantizedRamStorage>::get_quantized_vector_size(
+                        &config.vector_parameters,
+                        bits,
+                        mode,
+                    );
+                let quantized_vectors_storage =
+                    QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                Ok(QuantizedVectorStorage::TQRam(EncodedVectorsTQ::load(
+                    quantized_vectors_storage,
+                    &meta_path,
+                )?))
+            }
+            (false, QuantizedVectorsStorageType::Immutable) => {
+                let quantized_vector_size =
+                    EncodedVectorsTQ::<QuantizedMmapStorage>::get_quantized_vector_size(
+                        &config.vector_parameters,
+                        bits,
+                        mode,
+                    );
+                let quantized_vectors_storage =
+                    QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                Ok(QuantizedVectorStorage::TQMmap(EncodedVectorsTQ::load(
+                    quantized_vectors_storage,
+                    &meta_path,
+                )?))
+            }
         }
     }
 
@@ -1460,12 +1483,6 @@ impl QuantizedVectors {
         turbo_config: &TurboQuantQuantizationConfig,
         multivector_config: &MultiVectorConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
-        if !config.storage_type.is_immutable() {
-            return Err(OperationError::service_error(
-                "Mutable quantized multivector storage is not supported for Turbo Quant",
-            ));
-        }
-
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
         let mode = Self::convert_tq_mode(turbo_config.plus);
 
@@ -1473,44 +1490,77 @@ impl QuantizedVectors {
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         let offsets_path = Self::get_offsets_path(path, config.storage_type);
-        if Self::is_ram(turbo_config.always_ram, on_disk_vector_storage) {
-            let quantized_vector_size =
-                EncodedVectorsTQ::<QuantizedRamStorage>::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
-            let inner_vectors_storage =
-                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-            let inner_vectors_storage = EncodedVectorsTQ::load(inner_vectors_storage, &meta_path)?;
-            let offsets = MultivectorOffsetsStorageRam::load(&offsets_path)?;
-            Ok(QuantizedVectorStorage::TQRamMulti(
-                QuantizedMultivectorStorage::new(
-                    config.vector_parameters.dim,
-                    inner_vectors_storage,
-                    offsets,
-                    *multivector_config,
-                ),
-            ))
-        } else {
-            let quantized_vector_size =
-                EncodedVectorsTQ::<QuantizedMmapStorage>::get_quantized_vector_size(
-                    &config.vector_parameters,
-                    bits,
-                    mode,
-                );
-            let inner_vectors_storage =
-                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-            let inner_vectors_storage = EncodedVectorsTQ::load(inner_vectors_storage, &meta_path)?;
-            let offsets = MultivectorOffsetsStorageMmap::load(&offsets_path)?;
-            Ok(QuantizedVectorStorage::TQMmapMulti(
-                QuantizedMultivectorStorage::new(
-                    config.vector_parameters.dim,
-                    inner_vectors_storage,
-                    offsets,
-                    *multivector_config,
-                ),
-            ))
+        let in_ram = Self::is_ram(turbo_config.always_ram, on_disk_vector_storage);
+
+        match (in_ram, config.storage_type) {
+            (_, QuantizedVectorsStorageType::Mutable) => {
+                let quantized_vector_size =
+                    EncodedVectorsTQ::<QuantizedChunkedMmapStorage>::get_quantized_vector_size(
+                        &config.vector_parameters,
+                        bits,
+                        mode,
+                    );
+                let quantization_storage = QuantizedChunkedMmapStorage::new(
+                    data_path.as_path(),
+                    quantized_vector_size,
+                    in_ram,
+                )?;
+                let inner_storage =
+                    EncodedVectorsTQ::load(quantization_storage, meta_path.as_path())?;
+                let offsets_storage =
+                    MultivectorOffsetsStorageChunkedMmap::load(offsets_path.as_path(), in_ram)?;
+
+                Ok(QuantizedVectorStorage::TQChunkedMmapMulti(
+                    QuantizedMultivectorStorage::new(
+                        config.vector_parameters.dim,
+                        inner_storage,
+                        offsets_storage,
+                        *multivector_config,
+                    ),
+                ))
+            }
+            (true, QuantizedVectorsStorageType::Immutable) => {
+                let quantized_vector_size =
+                    EncodedVectorsTQ::<QuantizedRamStorage>::get_quantized_vector_size(
+                        &config.vector_parameters,
+                        bits,
+                        mode,
+                    );
+                let inner_vectors_storage =
+                    QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                let inner_vectors_storage =
+                    EncodedVectorsTQ::load(inner_vectors_storage, &meta_path)?;
+                let offsets = MultivectorOffsetsStorageRam::load(&offsets_path)?;
+                Ok(QuantizedVectorStorage::TQRamMulti(
+                    QuantizedMultivectorStorage::new(
+                        config.vector_parameters.dim,
+                        inner_vectors_storage,
+                        offsets,
+                        *multivector_config,
+                    ),
+                ))
+            }
+            (false, QuantizedVectorsStorageType::Immutable) => {
+                let quantized_vector_size =
+                    EncodedVectorsTQ::<QuantizedMmapStorage>::get_quantized_vector_size(
+                        &config.vector_parameters,
+                        bits,
+                        mode,
+                    );
+                let inner_vectors_storage =
+                    QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                let inner_vectors_storage =
+                    EncodedVectorsTQ::load(inner_vectors_storage, &meta_path)?;
+                let offsets = MultivectorOffsetsStorageMmap::load(&offsets_path)?;
+                Ok(QuantizedVectorStorage::TQMmapMulti(
+                    QuantizedMultivectorStorage::new(
+                        config.vector_parameters.dim,
+                        inner_vectors_storage,
+                        offsets,
+                        *multivector_config,
+                    ),
+                ))
+            }
         }
     }
 
@@ -2083,12 +2133,6 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
-        if !storage_type.is_immutable() {
-            return Err(OperationError::service_error(
-                "Mutable turbo quant is not supported",
-            ));
-        }
-
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
         let mode = Self::convert_tq_mode(turbo_config.plus);
         let quantized_vector_size =
@@ -2101,57 +2145,88 @@ impl QuantizedVectors {
         let data_path = Self::get_data_path(path, storage_type);
         let offsets_path = Self::get_offsets_path(path, storage_type);
         let in_ram = Self::is_ram(turbo_config.always_ram, on_disk_vector_storage);
-        if in_ram {
-            let storage_builder = QuantizedRamStorageBuilder::new(
-                data_path.as_path(),
-                inner_vectors_count,
-                quantized_vector_size,
-            )?;
-            let quantized_storage = EncodedVectorsTQ::encode(
-                vectors,
-                storage_builder,
-                vector_parameters,
-                inner_vectors_count,
-                bits,
-                mode,
-                Some(meta_path.as_path()),
-                stopped,
-            )?;
-            let offsets = MultivectorOffsetsStorageRam::create(&offsets_path, offsets)?;
-            Ok(QuantizedVectorStorage::TQRamMulti(
-                QuantizedMultivectorStorage::new(
-                    vector_parameters.dim,
-                    quantized_storage,
-                    offsets,
-                    multi_vector_config,
-                ),
-            ))
-        } else {
-            let storage_builder = QuantizedMmapStorageBuilder::new(
-                data_path.as_path(),
-                inner_vectors_count,
-                quantized_vector_size,
-            )?;
-            let quantized_storage = EncodedVectorsTQ::encode(
-                vectors,
-                storage_builder,
-                vector_parameters,
-                inner_vectors_count,
-                bits,
-                mode,
-                Some(meta_path.as_path()),
-                stopped,
-            )?;
-            let offsets =
-                MultivectorOffsetsStorageMmap::create(&offsets_path, offsets, vectors_count)?;
-            Ok(QuantizedVectorStorage::TQMmapMulti(
-                QuantizedMultivectorStorage::new(
-                    vector_parameters.dim,
-                    quantized_storage,
-                    offsets,
-                    multi_vector_config,
-                ),
-            ))
+
+        match (in_ram, storage_type) {
+            (_, QuantizedVectorsStorageType::Mutable) => {
+                let storage_builder = QuantizedChunkedMmapStorageBuilder::new(
+                    data_path.as_path(),
+                    quantized_vector_size,
+                    in_ram,
+                )?;
+                let quantized_storage = EncodedVectorsTQ::encode(
+                    vectors,
+                    storage_builder,
+                    vector_parameters,
+                    inner_vectors_count,
+                    bits,
+                    mode,
+                    Some(meta_path.as_path()),
+                    stopped,
+                )?;
+                let offsets =
+                    MultivectorOffsetsStorageChunkedMmap::create(&offsets_path, offsets, in_ram)?;
+                Ok(QuantizedVectorStorage::TQChunkedMmapMulti(
+                    QuantizedMultivectorStorage::new(
+                        vector_parameters.dim,
+                        quantized_storage,
+                        offsets,
+                        multi_vector_config,
+                    ),
+                ))
+            }
+            (true, QuantizedVectorsStorageType::Immutable) => {
+                let storage_builder = QuantizedRamStorageBuilder::new(
+                    data_path.as_path(),
+                    inner_vectors_count,
+                    quantized_vector_size,
+                )?;
+                let quantized_storage = EncodedVectorsTQ::encode(
+                    vectors,
+                    storage_builder,
+                    vector_parameters,
+                    inner_vectors_count,
+                    bits,
+                    mode,
+                    Some(meta_path.as_path()),
+                    stopped,
+                )?;
+                let offsets = MultivectorOffsetsStorageRam::create(&offsets_path, offsets)?;
+                Ok(QuantizedVectorStorage::TQRamMulti(
+                    QuantizedMultivectorStorage::new(
+                        vector_parameters.dim,
+                        quantized_storage,
+                        offsets,
+                        multi_vector_config,
+                    ),
+                ))
+            }
+            (false, QuantizedVectorsStorageType::Immutable) => {
+                let storage_builder = QuantizedMmapStorageBuilder::new(
+                    data_path.as_path(),
+                    inner_vectors_count,
+                    quantized_vector_size,
+                )?;
+                let quantized_storage = EncodedVectorsTQ::encode(
+                    vectors,
+                    storage_builder,
+                    vector_parameters,
+                    inner_vectors_count,
+                    bits,
+                    mode,
+                    Some(meta_path.as_path()),
+                    stopped,
+                )?;
+                let offsets =
+                    MultivectorOffsetsStorageMmap::create(&offsets_path, offsets, vectors_count)?;
+                Ok(QuantizedVectorStorage::TQMmapMulti(
+                    QuantizedMultivectorStorage::new(
+                        vector_parameters.dim,
+                        quantized_storage,
+                        offsets,
+                        multi_vector_config,
+                    ),
+                ))
+            }
         }
     }
 
