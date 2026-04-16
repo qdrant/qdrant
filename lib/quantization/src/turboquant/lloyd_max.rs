@@ -15,7 +15,7 @@ const CENTROIDS_4BIT: [f32; 16] = [
 const CENTROIDS_4BIT_BOUNDARIES: [f32; 15] = calculate_boundaries(CENTROIDS_4BIT);
 
 /// Const evaluation of centroid boundaries. With this function we can have constant
-/// boundaries that are always derived from the original centroids all done at compiletime.
+/// boundaries that are always derived from the original centroids all done at compile time.
 const fn calculate_boundaries<const N: usize, const B: usize>(centroids: [f32; N]) -> [f32; B] {
     assert!(B + 1 == N, "B must equal N - 1");
     let mut out = [0.0; B];
