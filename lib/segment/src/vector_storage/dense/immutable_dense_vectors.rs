@@ -154,13 +154,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             let vectors = if is_read_with_prefetch_efficient(keys) {
                 let iter = keys
                     .iter()
-                    .map(|&point_id| self.get_vector::<Sequential>(point_id));
+                    .map(|&point_offset| self.get_vector::<Sequential>(point_offset));
 
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             } else {
                 let iter = keys
                     .iter()
-                    .map(|&point_id| self.get_vector::<Random>(point_id));
+                    .map(|&point_offset| self.get_vector::<Random>(point_offset));
 
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             };
@@ -178,9 +178,9 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
     where
         F: FnMut(usize, &[T]),
     {
-        let ranges = keys.iter().enumerate().map(|(idx, &point_id)| {
+        let ranges = keys.iter().enumerate().map(|(idx, &point_offset)| {
             let range = ReadRange {
-                byte_offset: self.data_offset(point_id).expect("point exists") as _,
+                byte_offset: self.data_offset(point_offset).expect("point exists") as _,
                 length: self.dim as _,
             };
 
