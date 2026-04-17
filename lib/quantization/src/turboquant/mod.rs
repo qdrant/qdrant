@@ -49,6 +49,7 @@ impl TQBits {
             TQBits::Bits4 => 4,
             TQBits::Bits2 => 2,
             TQBits::Bits1_5 => {
+                // TODO(turbo): Implement
                 unimplemented!()
             }
             TQBits::Bits1 => 1,

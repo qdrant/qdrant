@@ -37,6 +37,7 @@ impl TurboQuantizer {
     /// Quantize a given vector with TurboQuant.
     pub fn quantize(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
         if !matches!(self.distance, DistanceType::Dot) {
+            // TODO(turbo): implement for other metrics too.
             unimplemented!("Quantization currently only implemented for dot product");
         }
 
@@ -83,6 +84,7 @@ impl TurboQuantizer {
     /// with the given `bits` and `distance`.
     pub(super) fn quantized_size_for(dim: usize, bits: TQBits, distance: DistanceType) -> usize {
         if !matches!(distance, DistanceType::Dot) {
+            // TODO(turbo): implement for other metrics too.
             unimplemented!("Quantization currently only implemented for dot product");
         }
         (dim * bits.bit_size() as usize).div_ceil(8)
