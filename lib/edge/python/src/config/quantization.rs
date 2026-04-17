@@ -21,6 +21,7 @@ impl FromPyObject<'_, '_> for PyQuantizationConfig {
             Scalar(PyScalarQuantizationConfig),
             Product(PyProductQuantizationConfig),
             Binary(PyBinaryQuantizationConfig),
+            Turbo(PyTurboQuantQuantizationConfig),
         }
 
         let conf = match conf.extract()? {
@@ -32,6 +33,9 @@ impl FromPyObject<'_, '_> for PyQuantizationConfig {
             }),
             Helper::Binary(binary) => QuantizationConfig::Binary(BinaryQuantization {
                 binary: BinaryQuantizationConfig::from(binary),
+            }),
+            Helper::Turbo(turbo) => QuantizationConfig::Turbo(TurboQuantization {
+                turbo: TurboQuantQuantizationConfig::from(turbo),
             }),
         };
 
@@ -55,9 +59,8 @@ impl<'py> IntoPyObject<'py> for PyQuantizationConfig {
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
                 PyBinaryQuantizationConfig(binary).into_bound_py_any(py)
             }
-            QuantizationConfig::Turbo(_) => {
-                // TODO(turbo): Implement for edge.
-                unimplemented!("TurboQuant not yet implemented for edge")
+            QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
+                PyTurboQuantQuantizationConfig(turbo).into_bound_py_any(py)
             }
         }
     }
@@ -75,9 +78,8 @@ impl Repr for PyQuantizationConfig {
             QuantizationConfig::Binary(binary) => {
                 PyBinaryQuantizationConfig::wrap_ref(&binary.binary).fmt(f)
             }
-            QuantizationConfig::Turbo(_) => {
-                // TODO(turbo): Implement for edge.
-                unimplemented!("TurboQuant not yet implemented for edge")
+            QuantizationConfig::Turbo(turbo) => {
+                PyTurboQuantQuantizationConfig::wrap_ref(&turbo.turbo).fmt(f)
             }
         }
     }
@@ -429,6 +431,110 @@ impl From<PyBinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding
             PyBinaryQuantizationQueryEncoding::Scalar8Bits => {
                 BinaryQuantizationQueryEncoding::Scalar8Bits
             }
+        }
+    }
+}
+
+#[pyclass(name = "TurboQuantQuantizationConfig", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyTurboQuantQuantizationConfig(TurboQuantQuantizationConfig);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyTurboQuantQuantizationConfig {
+    #[new]
+    #[pyo3(signature = (always_ram = None, plus = None, bits = None))]
+    pub fn new(
+        always_ram: Option<bool>,
+        plus: Option<bool>,
+        bits: Option<PyTurboQuantBitSize>,
+    ) -> Self {
+        Self(TurboQuantQuantizationConfig {
+            always_ram,
+            plus,
+            bits: bits.map(TurboQuantBitSize::from),
+        })
+    }
+
+    #[getter]
+    pub fn always_ram(&self) -> Option<bool> {
+        self.0.always_ram
+    }
+
+    #[getter]
+    pub fn plus(&self) -> Option<bool> {
+        self.0.plus
+    }
+
+    #[getter]
+    pub fn bits(&self) -> Option<PyTurboQuantBitSize> {
+        self.0.bits.map(PyTurboQuantBitSize::from)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyTurboQuantQuantizationConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let TurboQuantQuantizationConfig {
+            always_ram: _,
+            plus: _,
+            bits: _,
+        } = self.0;
+    }
+}
+
+#[pyclass(name = "TurboQuantBitSize", from_py_object)]
+#[derive(Copy, Clone, Debug)]
+pub enum PyTurboQuantBitSize {
+    Bits1,
+    Bits1_5,
+    Bits2,
+    Bits4,
+}
+
+#[pymethods]
+impl PyTurboQuantBitSize {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyTurboQuantBitSize {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Bits1 => "Bits1",
+            Self::Bits1_5 => "Bits1_5",
+            Self::Bits2 => "Bits2",
+            Self::Bits4 => "Bits4",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
+}
+
+impl From<TurboQuantBitSize> for PyTurboQuantBitSize {
+    fn from(bits: TurboQuantBitSize) -> Self {
+        match bits {
+            TurboQuantBitSize::Bits1 => PyTurboQuantBitSize::Bits1,
+            TurboQuantBitSize::Bits1_5 => PyTurboQuantBitSize::Bits1_5,
+            TurboQuantBitSize::Bits2 => PyTurboQuantBitSize::Bits2,
+            TurboQuantBitSize::Bits4 => PyTurboQuantBitSize::Bits4,
+        }
+    }
+}
+
+impl From<PyTurboQuantBitSize> for TurboQuantBitSize {
+    fn from(bits: PyTurboQuantBitSize) -> Self {
+        match bits {
+            PyTurboQuantBitSize::Bits1 => TurboQuantBitSize::Bits1,
+            PyTurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits1_5,
+            PyTurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
+            PyTurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
         }
     }
 }

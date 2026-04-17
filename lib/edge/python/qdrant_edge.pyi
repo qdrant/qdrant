@@ -33,7 +33,10 @@ MatchType = Union[
 ]
 RangeType = Union["RangeFloat", "RangeDateTime"]
 QuantizationConfigType = Union[
-    "ScalarQuantizationConfig", "ProductQuantizationConfig", "BinaryQuantizationConfig"
+    "ScalarQuantizationConfig",
+    "ProductQuantizationConfig",
+    "BinaryQuantizationConfig",
+    "TurboQuantQuantizationConfig",
 ]
 IndexType = Union["PlainIndexConfig", "HnswIndexConfig"]
 StartFromType = Union[int, float, str]
@@ -638,6 +641,40 @@ class BinaryQuantizationConfig:
         """Query encoding."""
         ...
 
+class TurboQuantQuantizationConfig:
+    """Configuration for TurboQuant quantization."""
+
+    def __init__(
+        self,
+        always_ram: Optional[bool] = None,
+        plus: Optional[bool] = None,
+        bits: Optional["TurboQuantBitSize"] = None,
+    ) -> None:
+        """
+        Create a TurboQuantQuantizationConfig.
+
+        Args:
+            always_ram: Whether to keep in RAM.
+            plus: Enable the TurboQuant+ variant.
+            bits: Bit size used for compressed codes.
+        """
+        ...
+
+    @property
+    def always_ram(self) -> Optional[bool]:
+        """Always RAM flag."""
+        ...
+
+    @property
+    def plus(self) -> Optional[bool]:
+        """TurboQuant+ flag."""
+        ...
+
+    @property
+    def bits(self) -> Optional["TurboQuantBitSize"]:
+        """Bit size."""
+        ...
+
 # ============================================================================
 # Enums
 # ============================================================================
@@ -690,6 +727,14 @@ class BinaryQuantizationQueryEncoding(Enum):
     Binary = ...
     Scalar4Bits = ...
     Scalar8Bits = ...
+
+class TurboQuantBitSize(Enum):
+    """TurboQuant bit size for compressed codes."""
+
+    Bits1 = ...
+    Bits1_5 = ...
+    Bits2 = ...
+    Bits4 = ...
 
 class Modifier(Enum):
     """Sparse vector modifiers."""

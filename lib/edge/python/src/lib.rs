@@ -38,7 +38,8 @@ mod qdrant_edge {
     use super::config::quantization::{
         PyBinaryQuantizationConfig, PyBinaryQuantizationEncoding,
         PyBinaryQuantizationQueryEncoding, PyCompressionRatio, PyProductQuantizationConfig,
-        PyScalarQuantizationConfig, PyScalarType,
+        PyScalarQuantizationConfig, PyScalarType, PyTurboQuantBitSize,
+        PyTurboQuantQuantizationConfig,
     };
     #[pymodule_export]
     use super::config::sparse_vector_data::{PyEdgeSparseVectorParams, PyModifier};
