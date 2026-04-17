@@ -262,7 +262,9 @@ impl Persistent {
     }
 
     pub fn get_cluster_metadata_keys(&self) -> Vec<String> {
-        self.cluster_metadata.keys().cloned().collect()
+        let mut keys: Vec<String> = self.cluster_metadata.keys().cloned().collect();
+        keys.sort_unstable();
+        keys
     }
 
     pub fn get_cluster_metadata_key(&self, key: &str) -> serde_json::Value {

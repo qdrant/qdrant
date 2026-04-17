@@ -343,7 +343,8 @@ impl ShardHolder {
             }
         }
 
-        let all_shard_ids = self.shards.keys().cloned().collect::<HashSet<_>>();
+        let mut all_shard_ids: Vec<ShardId> = self.shards.keys().copied().collect();
+        all_shard_ids.sort_unstable();
 
         self.set_shard_key_mappings(shard_key_mapping)?;
 

@@ -116,7 +116,9 @@ pub async fn handle_existing_collections(
 
                     for shard_id in shard_ids {
                         let shard_info = shards.get(shard_id).unwrap();
-                        placement.push(shard_info.replicas.keys().copied().collect());
+                        let mut replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
+                        replicas.sort_unstable();
+                        placement.push(replicas);
                     }
 
                     consensus_operations.push(CollectionMetaOperations::CreateShardKey(

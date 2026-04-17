@@ -226,7 +226,8 @@ impl Collection {
                         .await?;
                 }
                 None => {
-                    let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
+                    let mut shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
+                    shard_replicas.sort_unstable();
                     let mut replica_set = self
                         .create_replica_set(shard_id, shard_key.clone(), &shard_replicas, None)
                         .await?;

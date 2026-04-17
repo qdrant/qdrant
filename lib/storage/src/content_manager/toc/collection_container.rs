@@ -258,7 +258,8 @@ impl TableOfContent {
             }
 
             // Collect names of collections that are present locally
-            let collection_names: Vec<_> = existing_collections.keys().cloned().collect();
+            let mut collection_names: Vec<_> = existing_collections.keys().cloned().collect();
+            collection_names.sort_unstable();
 
             // Drop `collections` lock
             drop(existing_collections);
