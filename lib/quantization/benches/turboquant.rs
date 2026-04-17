@@ -44,8 +44,8 @@ fn bench_quantize(c: &mut Criterion) {
 
             group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
                 b.iter_batched(
-                    || random_vector(dim, &mut rng),
-                    |vec| tq.quantize(black_box(&vec)),
+                    || (random_vector(dim, &mut rng), vec![0.0f64; dim]),
+                    |(vec, mut buf)| tq.quantize(black_box(&vec), &mut buf),
                     criterion::BatchSize::SmallInput,
                 );
             });
