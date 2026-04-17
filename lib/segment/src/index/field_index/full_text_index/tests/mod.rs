@@ -10,7 +10,7 @@ use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::index::field_index::full_text_index::inverted_index::ParsedQuery;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait as _, ValueIndexer};
-use crate::types::{Fuzzy, FuzzyParams, MatchFuzzy, MatchWildcard, Wildcard, WildcardParams};
+use crate::types::{Fuzzy, FuzzyParams, MatchFuzzy};
 
 fn movie_titles() -> Vec<String> {
     vec![

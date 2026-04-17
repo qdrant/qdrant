@@ -327,7 +327,7 @@ pub mod r#match {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FuzzyParams {
-    /// Maximum edit distance (Levenshtein). 0..=2, default 1.
+    /// Maximum edit distance (Levenshtein). 0..=2, default 0.
     #[prost(uint32, optional, tag = "1")]
     pub max_edits: ::core::option::Option<u32>,
     /// Number of initial characters that must match exactly. Default 0.
@@ -377,7 +377,6 @@ pub struct RepeatedFuzzy {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WildcardParams {
-    /// Max number of matching terms to expand. Default 30, capped at 100.
     #[prost(uint32, optional, tag = "1")]
     pub max_expansions: ::core::option::Option<u32>,
 }

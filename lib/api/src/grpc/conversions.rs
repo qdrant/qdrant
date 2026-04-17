@@ -2027,7 +2027,7 @@ impl From<segment::types::ValuesCount> for ValuesCount {
 impl From<grpc::FuzzyParams> for segment::types::FuzzyParams {
     fn from(params: grpc::FuzzyParams) -> Self {
         Self {
-            max_edits: params.max_edits.unwrap_or(1) as u8,
+            max_edits: params.max_edits.unwrap_or(0) as u8,
             prefix_length: params.prefix_length.unwrap_or(0) as u8,
             max_expansions: params.max_expansions.unwrap_or(30) as u8,
         }
@@ -2184,8 +2184,13 @@ impl TryFrom<grpc::WildcardMatch> for segment::types::MatchWildcard {
     type Error = Status;
 
     fn try_from(wildcard: grpc::WildcardMatch) -> Result<Self, Self::Error> {
+        let default_max_expansions =
+            u32::from(segment::types::WildcardParams::default().max_expansions);
         let params = wildcard.params.map(|p| segment::types::WildcardParams {
-            max_expansions: p.max_expansions.unwrap_or(30) as u16,
+            max_expansions: p
+                .max_expansions
+                .unwrap_or(default_max_expansions)
+                .min(u32::from(u16::MAX)) as u16,
         });
         Ok(segment::types::MatchWildcard {
             wildcard: segment::types::Wildcard::Pattern {

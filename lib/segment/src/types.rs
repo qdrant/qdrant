@@ -2626,7 +2626,7 @@ pub struct MatchFuzzy {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct WildcardParams {
-    /// Max number of matching terms to expand. Default: 30, capped at 100.
+    /// Max number of matching terms to expand. Default: 1024. Supports the full `u16` range.
     #[serde(default = "WildcardParams::default_max_expansions")]
     pub max_expansions: u16,
 }
@@ -2640,18 +2640,21 @@ impl Default for WildcardParams {
 }
 
 impl WildcardParams {
-    pub const MAX_EXPANSIONS_CAP: u16 = 255;
     pub const MAX_PATTERN_LENGTH: usize = 256;
 
     fn default_max_expansions() -> u16 {
-        30
+        1024
     }
 
-    /// Validate and clamp parameters to safe ranges.
+    /// Normalize parameters to runtime ranges.
     pub fn validate(&self) -> Self {
         WildcardParams {
-            max_expansions: self.max_expansions.clamp(1, Self::MAX_EXPANSIONS_CAP),
+            max_expansions: self.max_expansions.max(1),
         }
+    }
+
+    pub fn validate_pattern(pattern: &str) -> bool {
+        !pattern.is_empty() && pattern.len() <= Self::MAX_PATTERN_LENGTH
     }
 }
 
@@ -4394,6 +4397,31 @@ mod tests {
         let nested_json = r#"{"nested": {"key": "items", "filter": {"must": []}}}"#;
         let condition: Condition = serde_json::from_str(nested_json).unwrap();
         assert!(matches!(condition, Condition::Nested(_)));
+    }
+
+    #[test]
+    fn test_wildcard_params_validate_preserves_u16_max() {
+        let params = WildcardParams {
+            max_expansions: u16::MAX,
+        };
+
+        assert_eq!(params.validate().max_expansions, u16::MAX);
+    }
+
+    #[test]
+    fn test_wildcard_params_validate_clamps_zero_to_one() {
+        let params = WildcardParams { max_expansions: 0 };
+
+        assert_eq!(params.validate().max_expansions, 1);
+    }
+
+    #[test]
+    fn test_wildcard_pattern_validate_rejects_empty_or_too_long_patterns() {
+        assert!(!WildcardParams::validate_pattern(""));
+        assert!(WildcardParams::validate_pattern("abc*"));
+        assert!(!WildcardParams::validate_pattern(
+            &"a".repeat(WildcardParams::MAX_PATTERN_LENGTH + 1)
+        ));
     }
 
     #[test]

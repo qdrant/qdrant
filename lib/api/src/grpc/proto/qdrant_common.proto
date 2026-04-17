@@ -124,7 +124,7 @@ message Match {
 
 // Parameters for fuzzy (approximate) matching
 message FuzzyParams {
-  // Maximum edit distance (Levenshtein). 0..=2, default 1.
+  // Maximum edit distance (Levenshtein). 0..=2, default 0.
   optional uint32 max_edits = 1;
   // Number of initial characters that must match exactly. Default 0.
   optional uint32 prefix_length = 2;
@@ -152,7 +152,6 @@ message RepeatedFuzzy {
 
 // Parameters for wildcard pattern matching
 message WildcardParams {
-  // Max number of matching terms to expand. Default 30, capped at 100.
   optional uint32 max_expansions = 1;
 }
 

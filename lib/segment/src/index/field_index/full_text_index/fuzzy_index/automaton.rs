@@ -6,8 +6,8 @@ use fst::automaton::Levenshtein;
 use smallvec::SmallVec;
 
 use super::prefix_chars;
+use crate::types::WildcardParams;
 
-pub const MAX_PATTERN_LENGTH: usize = 256;
 pub const WILDCARD_ANY: char = '*';
 pub const WILDCARD_ONE: char = '?';
 
@@ -109,7 +109,7 @@ fn parse_wildcard_pattern(pattern: &str) -> Vec<WildcardToken> {
         "wildcard patterns are validated by the API layer"
     );
     debug_assert!(
-        pattern.len() <= MAX_PATTERN_LENGTH,
+        pattern.len() <= WildcardParams::MAX_PATTERN_LENGTH,
         "wildcard patterns are length-limited by the API layer"
     );
 

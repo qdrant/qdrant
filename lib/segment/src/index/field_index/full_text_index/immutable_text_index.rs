@@ -172,7 +172,7 @@ impl ImmutableFullTextIndex {
     }
 
     #[cfg(feature = "rocksdb")]
-    pub fn from_rocksdb_mutable(mutable: MutableFullTextIndex) -> OperationResult<Self> {
+    pub fn from_rocksdb_mutable(mutable: MutableFullTextIndex) -> Self {
         let MutableFullTextIndex {
             inverted_index,
             fuzzy_index,
@@ -187,14 +187,20 @@ impl ImmutableFullTextIndex {
             );
         };
 
-        let immutable_fuzzy = fuzzy_index.map(ImmutableFuzzyIndex::try_from).transpose()?;
+        let immutable_fuzzy = fuzzy_index
+            .map(ImmutableFuzzyIndex::try_from)
+            .transpose()
+            .unwrap_or_else(|err| {
+                log::warn!("Failed to build immutable fuzzy index from RocksDB mutable: {err}");
+                None
+            });
 
-        Ok(Self {
+        Self {
             inverted_index: ImmutableInvertedIndex::from(inverted_index),
             fuzzy_index: immutable_fuzzy,
             tokenizer,
             storage: Storage::RocksDb(db),
-        })
+        }
     }
 
     pub fn get_fuzzy_index(&self) -> Option<&dyn FuzzyIndex> {

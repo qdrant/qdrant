@@ -195,7 +195,7 @@ impl FieldIndex {
                         FullTextIndex::get_values(payload_value)
                             .iter()
                             .any(|value| {
-                                full_text_index.check_value_match(&query, value, hw_counter)
+                                full_text_index.check_text_value_match(&query, value, hw_counter)
                             }),
                     )
                 }
@@ -205,7 +205,7 @@ impl FieldIndex {
                         FullTextIndex::get_values(payload_value)
                             .iter()
                             .any(|value| {
-                                full_text_index.check_value_match(&query, value, hw_counter)
+                                full_text_index.check_text_value_match(&query, value, hw_counter)
                             }),
                     )
                 }

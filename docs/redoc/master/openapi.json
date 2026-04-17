@@ -9415,8 +9415,8 @@
         "type": "object",
         "properties": {
           "max_expansions": {
-            "description": "Max number of matching terms to expand. Default: 30, capped at 100.",
-            "default": 30,
+            "description": "Max number of matching terms to expand. Default: 1024. Supports the full `u16` range.",
+            "default": 1024,
             "type": "integer",
             "format": "uint16",
             "minimum": 0

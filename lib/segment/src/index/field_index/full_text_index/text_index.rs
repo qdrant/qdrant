@@ -35,7 +35,7 @@ use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, Fuzzy, FuzzyParams, Match, MatchFuzzy, MatchPhrase, MatchText, MatchTextAny,
-    MatchWildcard, PayloadKeyType,
+    MatchWildcard, PayloadKeyType, WildcardParams,
 };
 
 pub enum FullTextIndex {
@@ -356,13 +356,13 @@ impl FullTextIndex {
         hw_counter: &HardwareCounterCell,
     ) -> Option<ParsedQuery> {
         let tokenizer = self.get_tokenizer().tokens_processor();
-        let lowercase = tokenizer.lowercase;
-        let max_token_len = tokenizer.max_token_len.unwrap_or(255);
         let pattern = match_wildcard.pattern();
-        if pattern.len() <= 0 || pattern.len() > max_token_len {
+
+        if !WildcardParams::validate_pattern(pattern) {
             return None;
         }
-        let pattern = match lowercase {
+
+        let pattern = match tokenizer.lowercase {
             true => Cow::Owned(pattern.to_lowercase()),
             false => Cow::Borrowed(pattern),
         };
@@ -746,7 +746,7 @@ impl FullTextIndex {
     }
 
     /// Checks whether a raw text value matches the given parsed query.
-    pub fn check_value_match(
+    pub fn check_text_value_match(
         &self,
         query: &ParsedQuery,
         value: &str,
@@ -882,7 +882,7 @@ impl FieldIndexBuilderTrait for FullTextIndexRocksDbBuilder {
         }
 
         Ok(FullTextIndex::Immutable(
-            ImmutableFullTextIndex::from_rocksdb_mutable(self.mutable_index)?,
+            ImmutableFullTextIndex::from_rocksdb_mutable(self.mutable_index),
         ))
     }
 }
