@@ -198,7 +198,7 @@ impl TableOfContent {
                 .get(),
         );
 
-        let mut collections: HashMap<String, Arc<Collection>> = Default::default();
+        let mut collections: Collections = Default::default();
         general_runtime.block_on(async {
             while let Some((collection_name, collection)) = collection_stream.next().await {
                 collections.insert(collection_name, Arc::new(collection));

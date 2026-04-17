@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use collection::collection::Collection;
@@ -6,7 +6,9 @@ use collection::shards::CollectionId;
 
 use crate::content_manager::errors::StorageError;
 
-pub type Collections = HashMap<CollectionId, Arc<Collection>>;
+/// `BTreeMap` for deterministic iteration order by `CollectionId` — iteration is externally
+/// observable (list API, consensus state apply, snapshot enumeration, telemetry).
+pub type Collections = BTreeMap<CollectionId, Arc<Collection>>;
 
 pub trait Checker {
     fn collection_exists(&self, collection_name: &str) -> bool;
