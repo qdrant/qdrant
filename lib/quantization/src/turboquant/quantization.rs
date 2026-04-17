@@ -14,42 +14,56 @@ pub struct TurboQuantizer {
 
 impl TurboQuantizer {
     /// Initialize a new TurboQuantizer.
-    pub fn new(metadata: &Metadata) -> TurboQuantizer {
-        let rotation = HadamardRotation::new(metadata.vector_parameters.dim);
+    pub fn new(dim: usize, bits: TQBits, mode: TQMode, distance: DistanceType) -> Self {
+        let rotation = HadamardRotation::new(dim);
         TurboQuantizer {
             rotation,
-            bits: metadata.bits,
-            _mode: metadata.mode,
-            distance: metadata.vector_parameters.distance_type,
+            bits,
+            _mode: mode,
+            distance,
         }
     }
 
+    /// Initialize a new TurboQuantizer from metadata.
+    pub fn new_from_metadata(metadata: &Metadata) -> Self {
+        Self::new(
+            metadata.vector_parameters.dim,
+            metadata.bits,
+            metadata.mode,
+            metadata.vector_parameters.distance_type,
+        )
+    }
+
     /// Quantize a given vector with TurboQuant.
-    pub fn quantize(&self, vec: &[f32]) -> Vec<u8> {
+    pub fn quantize(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
         if !matches!(self.distance, DistanceType::Dot) {
             unimplemented!("Quantization currently only implemented for dot product");
         }
 
+        debug_assert_eq!(vec.len(), buf.len());
+
         // Rotate the vector
-        let mut rotated_vec = vec.iter().map(|i| f64::from(*i)).collect::<Vec<_>>();
-        self.rotation.apply(&mut rotated_vec);
+        for (i, &component) in vec.iter().enumerate() {
+            buf[i] = f64::from(component);
+        }
+        self.rotation.apply(buf);
 
         // Find rotated vectors centroids.
         let boundaries = self.bits.get_centroid_boundaries();
-        let encoded = rotated_vec
+        let encoded = buf
             .iter()
             .map(|&val| boundaries.partition_point(|&b| val > f64::from(b)) as u8);
 
         // Encode centroid indices and return packed vector.
-        self.pack_vector(encoded, vec.len())
+        self.pack_vector(encoded)
     }
 
     /// Bit-pack an iterator of centroid indices into a compact byte vector.
-    fn pack_vector<I>(&self, centroids: I, dim: usize) -> Vec<u8>
+    fn pack_vector<I>(&self, centroids: I) -> Vec<u8>
     where
         I: Iterator<Item = u8>,
     {
-        let mut out = Vec::with_capacity(self.bytes_required(dim));
+        let mut out = Vec::with_capacity(self.quantized_size());
         let mut bit_writer = BitWriter::new(&mut out);
 
         let bits = self.bits.bit_size();
@@ -60,9 +74,18 @@ impl TurboQuantizer {
         out
     }
 
-    /// Returns the amount of bytes required for the given dimension.
-    fn bytes_required(&self, dim: usize) -> usize {
-        (dim * self.bits.bit_size() as usize).div_ceil(8)
+    /// Size in bytes of a vector quantized by this quantizer.
+    pub(super) fn quantized_size(&self) -> usize {
+        Self::quantized_size_for(self.rotation.dim(), self.bits, self.distance)
+    }
+
+    /// Size in bytes a vector of `dim` dimensions would occupy when quantized
+    /// with the given `bits` and `distance`.
+    pub(super) fn quantized_size_for(dim: usize, bits: TQBits, distance: DistanceType) -> usize {
+        if !matches!(distance, DistanceType::Dot) {
+            unimplemented!("Quantization currently only implemented for dot product");
+        }
+        (dim * bits.bit_size() as usize).div_ceil(8)
     }
 }
 
@@ -85,7 +108,7 @@ mod tests {
             bits,
             mode: TQMode::Normal,
         };
-        TurboQuantizer::new(&metadata)
+        TurboQuantizer::new_from_metadata(&metadata)
     }
 
     /// Helper: unpack all centroid indices from a quantized byte vector.
@@ -131,7 +154,7 @@ mod tests {
                 let tq = make_tq(dim, bits);
                 let vec = vec![0.1; dim];
                 let result = tq.quantize(&vec);
-                let expected_bytes = tq.bytes_required(dim);
+                let expected_bytes = tq.quantized_size();
                 assert_eq!(
                     result.len(),
                     expected_bytes,
@@ -472,7 +495,7 @@ mod tests {
                 let result = tq.quantize(&vec);
 
                 // Correct length.
-                let expected_bytes = tq.bytes_required(dim);
+                let expected_bytes = tq.quantized_size();
                 assert_eq!(result.len(), expected_bytes, "dim={dim}, bits={bits:?}");
 
                 // All indices in range.

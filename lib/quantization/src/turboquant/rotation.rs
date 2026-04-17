@@ -85,6 +85,11 @@ impl HadamardRotation {
         }
         debug_assert_eq!(offset, buf.len());
     }
+
+    /// Input/output dimension this rotation operates on.
+    pub(super) fn dim(&self) -> usize {
+        self.dim
+    }
 }
 
 /// In-place unnormalized Walsh-Hadamard Transform in f64.

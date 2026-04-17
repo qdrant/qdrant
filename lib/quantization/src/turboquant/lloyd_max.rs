@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+/// 1-bit (2 centroids): Lloyd-Max for N(0,1)
 const CENTROIDS_1BIT: [f32; 2] = [-0.797_884_6, 0.797_884_6];
 const CENTROIDS_1BIT_BOUNDARIES: [f32; 1] = calculate_boundaries(CENTROIDS_1BIT);
 
@@ -41,6 +42,13 @@ pub fn get_centroids(bits: u8) -> &'static [f32] {
     }
 }
 
+/// Return the centroid decision boundaries for a given bit-width (1/2/4).
+///
+/// Boundaries are the midpoints between consecutive centroids; a value maps to
+/// centroid `i` if it falls between boundary `i-1` and boundary `i`.
+///
+/// # Panics
+/// Panics if `bits` is not in [1, 2, 4].
 #[inline]
 pub fn get_centroid_boundaries(bits: u8) -> &'static [f32] {
     match bits {

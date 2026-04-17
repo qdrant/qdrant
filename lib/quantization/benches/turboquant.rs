@@ -21,7 +21,7 @@ fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
         bits,
         mode: TQMode::Normal,
     };
-    TurboQuantizer::new(&metadata)
+    TurboQuantizer::new_from_metadata(&metadata)
 }
 
 fn random_vector(dim: usize, rng: &mut StdRng) -> Vec<f32> {

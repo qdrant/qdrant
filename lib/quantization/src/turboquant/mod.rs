@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::turboquant::quantization::TurboQuantizer;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -66,6 +67,7 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
+    quantizer: TurboQuantizer,
 }
 
 /// Encoded query type for Turbo Quant.
@@ -107,12 +109,23 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
+        let metadata = Metadata {
+            vector_parameters: vector_parameters.clone(),
+            bits,
+            mode,
+        };
+
+        let quantizer = TurboQuantizer::new_from_metadata(&metadata);
+
+        let mut buf = vec![0.0f64; vector_parameters.dim];
+
         for vector in data {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector: Vec<u8> = Self::encode_vector(vector.as_ref(), bits, mode);
+            let encoded_vector: Vec<u8> =
+                Self::encode_vector(vector.as_ref(), &quantizer, &mut buf);
 
             storage_builder
                 .push_vector_data(&encoded_vector)
@@ -124,12 +137,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let encoded_vectors = storage_builder
             .build()
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
-
-        let metadata = Metadata {
-            vector_parameters: vector_parameters.clone(),
-            bits,
-            mode,
-        };
 
         if let Some(meta_path) = meta_path {
             meta_path
@@ -155,31 +162,45 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             encoded_vectors,
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
+            quantizer,
         })
     }
 
     pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
         let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
+
+        let quantizer = TurboQuantizer::new_from_metadata(&metadata);
+
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
+            quantizer,
         };
+
         Ok(result)
     }
 
     // Get quantized vector size in bytes
     pub fn get_quantized_vector_size(
-        _vector_parameters: &VectorParameters,
-        _bits: TQBits,
+        vector_parameters: &VectorParameters,
+        bits: TQBits,
         _mode: TQMode,
     ) -> usize {
-        todo!()
+        TurboQuantizer::quantized_size_for(
+            vector_parameters.dim,
+            bits,
+            vector_parameters.distance_type,
+        )
     }
 
-    fn encode_vector(_vector_data: &[f32], _bits: TQBits, _mode: TQMode) -> Vec<u8> {
-        todo!()
+    fn encode_vector(
+        vector_data: &[f32],
+        turbo_quantizer: &TurboQuantizer,
+        buf: &mut [f64],
+    ) -> Vec<u8> {
+        turbo_quantizer.quantize(vector_data, buf)
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
@@ -253,7 +274,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        let encoded_vector = Self::encode_vector(vector, self.metadata.bits, self.metadata.mode);
+        let mut buf = vec![0.0f64; vector.len()];
+        let encoded_vector = Self::encode_vector(vector, &self.quantizer, &mut buf);
         self.encoded_vectors.upsert_vector(
             id,
             bytemuck::cast_slice(encoded_vector.as_slice()),
