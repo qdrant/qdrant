@@ -2,7 +2,7 @@ mod resharding;
 pub(crate) mod shard_mapping;
 pub mod shared_shard_holder;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -63,7 +63,9 @@ const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
 pub struct ShardHolder {
-    shards: AHashMap<ShardId, ShardReplicaSet>,
+    /// `BTreeMap` for deterministic iteration order by `ShardId` — iteration is externally
+    /// observable (fan-out, telemetry, consensus state apply).
+    shards: BTreeMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
@@ -113,7 +115,7 @@ impl ShardHolder {
         let (shard_transfer_changes, _) = broadcast::channel(64);
 
         Ok(Self {
-            shards: AHashMap::new(),
+            shards: BTreeMap::new(),
             shard_transfers,
             shard_transfer_changes,
             resharding_state,
@@ -126,10 +128,9 @@ impl ShardHolder {
     }
 
     pub async fn stop_gracefully(&mut self) {
-        let futures = self
-            .shards
-            .drain()
-            .map(|(_, shard)| shard.stop_gracefully());
+        let futures = std::mem::take(&mut self.shards)
+            .into_values()
+            .map(|shard| shard.stop_gracefully());
         futures::future::join_all(futures).await;
     }
 
@@ -343,8 +344,7 @@ impl ShardHolder {
             }
         }
 
-        let mut all_shard_ids: Vec<ShardId> = self.shards.keys().copied().collect();
-        all_shard_ids.sort_unstable();
+        let all_shard_ids: Vec<ShardId> = self.shards.keys().copied().collect();
 
         self.set_shard_key_mappings(shard_key_mapping)?;
 
