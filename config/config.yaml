@@ -42,6 +42,19 @@ storage:
   # Default: true
   on_disk_payload: true
 
+  # Load-time memory mode. Only affects how segments are loaded on startup;
+  # does not modify any persisted configuration. Intended as a recovery knob
+  # when a node crash-loops on out-of-memory.
+  #
+  # Options:
+  # - disabled (default): load segments as persisted.
+  # - no_resident: downgrade components to their on-disk variants where
+  #   possible — quantization loads as if always_ram=false, payload field
+  #   indexes as if on_disk=true, payload storage as mmap (not populated).
+  # - no_populate: same as no_resident, plus skip mmap prefault on load for
+  #   vectors, HNSW graph and payload storage.
+  #low_memory_mode: disabled
+
   # Maximum number of concurrent updates to shard replicas
   # If `null` - maximum concurrency is used.
   update_concurrency: null

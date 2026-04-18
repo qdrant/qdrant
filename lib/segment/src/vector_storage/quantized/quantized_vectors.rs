@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::{Random, Sequential};
+use common::low_memory::low_memory_mode;
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
@@ -1860,6 +1861,12 @@ impl QuantizedVectors {
     }
 
     fn is_ram(always_ram: Option<bool>, on_disk_vector_storage: bool) -> bool {
+        // Low-memory mode forces the mmap (on-disk) backend regardless of the
+        // persisted `always_ram` flag. The on-disk byte layout is identical,
+        // so flipping back later still works without rebuild.
+        if low_memory_mode().prefer_disk() {
+            return false;
+        }
         !on_disk_vector_storage || always_ram == Some(true)
     }
 

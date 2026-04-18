@@ -62,6 +62,7 @@ fn test_alias_operation() {
         hnsw_index: Default::default(),
         hnsw_global_config: Default::default(),
         mmap_advice: mmap::Advice::Random,
+        low_memory_mode: Default::default(),
         node_type: Default::default(),
         update_queue_size: Default::default(),
         handle_collection_load_errors: false,

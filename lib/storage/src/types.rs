@@ -15,6 +15,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
 use common::load_concurrency::LoadConcurrencyConfig;
+use common::low_memory::LowMemoryMode;
 use common::mmap;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
@@ -92,6 +93,8 @@ pub struct StorageConfig {
     pub hnsw_global_config: HnswGlobalConfig,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: mmap::Advice,
+    #[serde(default)]
+    pub low_memory_mode: LowMemoryMode,
     #[serde(default)]
     pub node_type: NodeType,
     #[serde(default)]

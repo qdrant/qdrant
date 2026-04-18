@@ -152,6 +152,10 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     }
 
     fn populate(&self) -> Result<()> {
+        if crate::low_memory::low_memory_mode().skip_populate() {
+            return Ok(());
+        }
+
         if self.direct_io {
             // O_DIRECT bypasses the page cache, so reading the file
             // would not warm it — skip.

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use chrono::{DateTime, SubsecRound, Utc};
 use common::flags::FeatureFlags;
+use common::low_memory::LowMemoryMode;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -76,6 +77,9 @@ pub struct AppBuildTelemetry {
     #[anonymize(value = None)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_features: Option<FeatureFlags>,
+    #[anonymize(value = None)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub low_memory_mode: Option<LowMemoryMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hnsw_global_config: Option<HnswGlobalConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -108,6 +112,8 @@ impl AppBuildTelemetry {
             }),
             runtime_features: (detail.level >= DetailsLevel::Level1)
                 .then(common::flags::feature_flags),
+            low_memory_mode: (detail.level >= DetailsLevel::Level1)
+                .then(common::low_memory::low_memory_mode),
             hnsw_global_config: (detail.level >= DetailsLevel::Level1)
                 .then(|| settings.storage.hnsw_global_config.clone()),
             system: (detail.level >= DetailsLevel::Level1).then(get_system_data),

@@ -19,6 +19,7 @@ use std::time::Duration;
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
+use ::common::low_memory::init_low_memory_mode;
 use ::common::fs::{FsCheckResult, check_fs_info, check_mmap_functionality};
 use ::common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use ::common::mmap::advice::set_global;
@@ -161,6 +162,9 @@ fn main() -> anyhow::Result<()> {
 
     // Set global feature flags, sourced from configuration
     init_feature_flags(settings.feature_flags);
+
+    // Set global low-memory mode, sourced from configuration
+    init_low_memory_mode(settings.storage.low_memory_mode);
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 

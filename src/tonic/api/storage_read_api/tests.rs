@@ -65,6 +65,7 @@ fn test_storage_config(storage_path: &Path) -> StorageConfig {
         hnsw_index: HnswConfig::default(),
         hnsw_global_config: HnswGlobalConfig::default(),
         mmap_advice: mmap::Advice::Random,
+        low_memory_mode: Default::default(),
         node_type: Default::default(),
         update_queue_size: Default::default(),
         handle_collection_load_errors: false,

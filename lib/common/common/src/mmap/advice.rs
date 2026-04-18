@@ -112,6 +112,12 @@ pub trait Madviseable {
     fn advise_impl(&self, advice: memmap2::Advice) -> io::Result<()>;
 
     fn populate(&self) {
+        // Low-memory mode `no_populate` suppresses mmap prefault globally.
+        // Pages will be faulted in on demand when queries touch them.
+        if crate::low_memory::low_memory_mode().skip_populate() {
+            return;
+        }
+
         #[cfg(target_os = "linux")]
         {
             use std::sync::LazyLock;
