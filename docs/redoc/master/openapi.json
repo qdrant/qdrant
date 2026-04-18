@@ -12501,6 +12501,16 @@
               }
             ]
           },
+          "low_memory_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LowMemoryMode"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "hnsw_global_config": {
             "anyOf": [
               {
@@ -12600,6 +12610,32 @@
             "type": "boolean"
           }
         }
+      },
+      "LowMemoryMode": {
+        "description": "Controls how segments are loaded on startup to reduce memory pressure.\n\nConfigured via `storage.low_memory_mode` in the configuration file.\n\nThis setting only affects *loading* — it never modifies the persisted configuration of any segment. The same data directory will behave differently depending on how this mode is set at startup, which makes it safe to toggle for recovery from out-of-memory crash loops.",
+        "oneOf": [
+          {
+            "description": "No special handling. Every component loads as persisted.",
+            "type": "string",
+            "enum": [
+              "disabled"
+            ]
+          },
+          {
+            "description": "Load RAM-friendly components as their on-disk variants where possible:\n\n* Quantization is loaded as if `always_ram = false`. * Payload field indexes are loaded as if `on_disk = true`. * Payload storage is loaded as the mmap variant (lazy populate).",
+            "type": "string",
+            "enum": [
+              "no_resident"
+            ]
+          },
+          {
+            "description": "Same as [`LowMemoryMode::NoResident`], plus mmap page population is skipped on load (for original vectors, HNSW graph and payload storage).",
+            "type": "string",
+            "enum": [
+              "no_populate"
+            ]
+          }
+        ]
       },
       "HnswGlobalConfig": {
         "type": "object",
