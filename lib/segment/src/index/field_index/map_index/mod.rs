@@ -126,7 +126,13 @@ where
             return Ok(None);
         };
 
-        let index = if is_on_disk {
+        // Low-memory mode downgrades the in-RAM `Immutable` wrapper to the
+        // pure-mmap variant at load time. The files are shared between both
+        // variants, and the persisted `is_on_disk` flag inside `mmap_index`
+        // is left untouched, so storage_type() still reports the original.
+        let use_mmap_variant =
+            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        let index = if use_mmap_variant {
             // Use on mmap directly
             MapIndex::Mmap(Box::new(mmap_index))
         } else {
