@@ -51,8 +51,7 @@ impl GeoMapIndex {
         // pure-mmap `Storage` variant at load time. Files are shared between
         // variants; the persisted `is_on_disk` flag in `mmap_index` is
         // untouched.
-        let use_mmap_variant =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        let use_mmap_variant = is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
         let index = if use_mmap_variant {
             GeoMapIndex::Storage(Box::new(mmap_index))
         } else {
