@@ -330,8 +330,25 @@ pub fn create_sparse_vector_index_test(
 pub(crate) fn create_sparse_vector_index(
     args: SparseVectorIndexOpenArgs<impl FnMut()>,
 ) -> OperationResult<VectorIndexEnum> {
+    let effective_index_type = match args.config.index_type {
+        SparseIndexType::ImmutableRam => {
+            // Low-memory mode downgrades `ImmutableRam` (which copies the inverted
+            // index from mmap files into heap RAM at load) to `Mmap` (which keeps
+            // it on disk). The two variants share the same on-disk file format, so
+            // flipping at load time is safe without rebuild. The persisted
+            // `SparseIndexConfig.index_type` is not modified — `try_load` re-reads
+            // it from disk and the loaded config is kept for future persistence.
+            if common::low_memory::low_memory_mode().prefer_disk() {
+                SparseIndexType::Mmap
+            } else {
+                SparseIndexType::ImmutableRam
+            }
+        }
+        SparseIndexType::MutableRam => SparseIndexType::MutableRam,
+        SparseIndexType::Mmap => SparseIndexType::Mmap,
+    };
     let vector_index = match (
-        args.config.index_type,
+        effective_index_type,
         args.config.datatype.unwrap_or_default(),
         sparse_vector_index::USE_COMPRESSED,
     ) {
