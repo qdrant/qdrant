@@ -10,6 +10,7 @@ use tonic::service::Interceptor;
 use tonic::transport::{Channel, ClientTlsConfig, Error as TonicError, Uri};
 use tonic::{Code, Request, Status};
 
+use crate::HTTP_HEADER_API_KEY;
 use crate::grpc::dynamic_channel_pool::DynamicChannelPool;
 use crate::grpc::dynamic_pool::CountedItem;
 use crate::grpc::qdrant::HealthCheckRequest;
@@ -97,7 +98,9 @@ impl Interceptor for PoolInterceptor {
             request.set_timeout(self.default_timeout);
         }
         if let Some(ref api_key) = self.api_key {
-            request.metadata_mut().insert("api-key", api_key.clone());
+            request
+                .metadata_mut()
+                .insert(HTTP_HEADER_API_KEY, api_key.clone());
         }
         Ok(request)
     }

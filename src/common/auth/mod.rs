@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
+pub use api::HTTP_HEADER_API_KEY;
 use chrono::Utc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -23,8 +24,6 @@ pub mod jwt_parser;
 // Re-export Auth and AuthType from storage crate.
 pub use storage::rbac::AuthType;
 pub use storage::rbac::auth::Auth;
-
-pub const HTTP_HEADER_API_KEY: &str = "api-key";
 
 /// The API keys used for auth
 #[derive(Clone)]

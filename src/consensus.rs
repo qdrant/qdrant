@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use std::{cmp, thread};
 
 use anyhow::{Context as _, anyhow};
+use api::HTTP_HEADER_API_KEY;
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
@@ -355,7 +356,7 @@ impl Consensus {
         if let Some(key) = api_key
             && let Ok(val) = key.parse()
         {
-            request.metadata_mut().insert("api-key", val);
+            request.metadata_mut().insert(HTTP_HEADER_API_KEY, val);
         }
         let all_peers = client
             .add_peer_to_known(request)
@@ -1441,7 +1442,7 @@ impl RaftMessageSender {
         if let Some(ref key) = self.api_key
             && let Ok(val) = key.parse()
         {
-            request.metadata_mut().insert("api-key", val);
+            request.metadata_mut().insert(HTTP_HEADER_API_KEY, val);
         }
 
         let uri = RaftClient::new(channel)
