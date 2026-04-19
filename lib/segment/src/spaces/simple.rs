@@ -172,7 +172,13 @@ impl Metric<VectorElementType> for CosineMetric {
     }
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        DotProductMetric::similarity(v1, v2)
+        let score = DotProductMetric::similarity(v1, v2);
+        // Clamp to valid cosine range. After normalization, the dot product of two
+        // unit vectors is mathematically in [-1, 1], but f32 precision can produce
+        // values slightly outside this range (e.g. 1.0000001 for identical vectors).
+        // Only clamped here for f32 vectors — quantized cosine (u8) uses a separate
+        // Metric<VectorElementTypeByte> impl and can legitimately exceed 1.0.
+        score.clamp(-1.0, 1.0)
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {
@@ -272,6 +278,38 @@ mod tests {
             assert_eq!(
                 preprocess1, preprocess2,
                 "renormalization is not stable (vector #{attempt})"
+            );
+        }
+    }
+
+    /// Cosine similarity of a normalized vector with itself must not exceed 1.0.
+    /// Regression test for floating-point precision causing scores > 1.0.
+    #[test]
+    fn test_cosine_self_similarity_bounded() {
+        const DIM: usize = 128;
+        const ATTEMPTS: usize = 1000;
+
+        let mut rng = rand::rng();
+
+        for _ in 0..ATTEMPTS {
+            let vector: Vec<f32> = (0..DIM)
+                .map(|_| rng.random_range(-2.5..2.5))
+                .collect();
+
+            let normalized =
+                <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
+
+            let score = <CosineMetric as Metric<VectorElementType>>::similarity(
+                &normalized, &normalized,
+            );
+
+            assert!(
+                score <= 1.0,
+                "cosine self-similarity must not exceed 1.0, got {score}"
+            );
+            assert!(
+                score >= -1.0,
+                "cosine self-similarity must not be below -1.0, got {score}"
             );
         }
     }
