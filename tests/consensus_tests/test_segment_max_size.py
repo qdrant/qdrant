@@ -26,7 +26,7 @@ def test_max_segment_size(tmp_path: pathlib.Path):
         "QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD_KB": "0",
     }
 
-    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 1, 20000, extra_env=env)
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 1, extra_env=env)
 
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=1)
     wait_collection_exists_and_active_on_all_peers(

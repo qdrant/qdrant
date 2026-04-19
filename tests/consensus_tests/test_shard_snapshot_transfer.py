@@ -43,7 +43,7 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(
@@ -99,7 +99,7 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
 # Test that transfer comment shows stage info via cluster API and distributed telemetry
 def test_shard_snapshot_transfer_shows_stage_in_comment(tmp_path: pathlib.Path):
     assert_project_root()
-    peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS, 20000)
+    peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(COLLECTION_NAME, peer_api_uris)
@@ -187,7 +187,7 @@ def shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path, env, headers):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000, extra_env=env, headers=headers)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env, headers=headers)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, headers=headers)
     wait_collection_exists_and_active_on_all_peers(
@@ -254,7 +254,7 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(
@@ -354,7 +354,7 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(

@@ -68,7 +68,7 @@ def test_snapshot_restore_kill_during_partial(tmp_path: Path, every_test):
         "QDRANT__STAGING__SNAPSHOT_RECOVERY_DELAY": "5.0",
     }
 
-    peer_urls, peer_dirs, bootstrap = start_cluster(tmp_path, 3, port_seed=23000, extra_env=env)
+    peer_urls, peer_dirs, bootstrap = start_cluster(tmp_path, 3, extra_env=env)
     create_collection(peer_urls[0], shard_number=3, replication_factor=2)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION, peer_api_uris=peer_urls)
     upsert_random_points(peer_urls[0], 10_000, batch_size=100)
