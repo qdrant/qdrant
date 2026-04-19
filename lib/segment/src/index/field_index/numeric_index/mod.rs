@@ -15,7 +15,6 @@ use std::str::FromStr;
 use chrono::DateTime;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use delegate::delegate;
 use gridstore::Blob;
 use mmap_numeric_index::MmapNumericIndex;
 use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
@@ -565,18 +564,45 @@ where
         }
     }
 
-    delegate! {
-        to self.inner {
-            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool, hw_counter: &HardwareCounterCell) -> bool;
-            pub fn wipe(self) -> OperationResult<()>;
-            pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry;
-            pub fn values_count(&self, idx: PointOffsetType) -> usize;
-            pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
-            pub fn values_is_empty(&self, idx: PointOffsetType) -> bool;
-            pub fn is_on_disk(&self) -> bool;
-            pub fn populate(&self) -> OperationResult<()>;
-            pub fn clear_cache(&self) -> OperationResult<()>;
-        }
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&T) -> bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        self.inner.check_values_any(idx, check_fn, hw_counter)
+    }
+
+    pub fn wipe(self) -> OperationResult<()> {
+        self.inner.wipe()
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        self.inner.get_telemetry_data()
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        self.inner.values_count(idx)
+    }
+
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+        self.inner.get_values(idx)
+    }
+
+    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
+        self.inner.values_is_empty(idx)
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.inner.is_on_disk()
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.inner.populate()
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.inner.clear_cache()
     }
 }
 

@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use delegate::delegate;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
 
@@ -264,18 +263,32 @@ impl MutableGeoMapIndex {
             .map(|v| v.iter())
     }
 
-    delegate! {
-        to self.in_memory_index {
-            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
-            pub fn values_count(&self, idx: PointOffsetType) -> usize;
-            pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)>;
-            pub fn points_of_hash(&self, hash: GeoHash) -> usize;
-            pub fn values_of_hash(&self, hash: GeoHash) -> usize;
-            pub fn stored_sub_regions(
-                &self,
-                geo: GeoHash,
-            ) -> impl Iterator<Item = PointOffsetType>;
-        }
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+    ) -> bool {
+        self.in_memory_index.check_values_any(idx, check_fn)
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        self.in_memory_index.values_count(idx)
+    }
+
+    pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
+        self.in_memory_index.points_per_hash()
+    }
+
+    pub fn points_of_hash(&self, hash: GeoHash) -> usize {
+        self.in_memory_index.points_of_hash(hash)
+    }
+
+    pub fn values_of_hash(&self, hash: GeoHash) -> usize {
+        self.in_memory_index.values_of_hash(hash)
+    }
+
+    pub fn stored_sub_regions(&self, geo: GeoHash) -> impl Iterator<Item = PointOffsetType> + '_ {
+        self.in_memory_index.stored_sub_regions(geo)
     }
 
     pub fn storage_type(&self) -> StorageType {

@@ -43,7 +43,6 @@ pprof = { workspace = true }
 [dependencies]
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
-delegate = { workspace = true }
 fs-err = { workspace = true }
 integer-encoding = { workspace = true }
 tempfile = { workspace = true }

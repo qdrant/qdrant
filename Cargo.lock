@@ -1428,7 +1428,6 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
- "delegate",
  "fs-err",
  "fs_extra",
  "io-uring",
@@ -1958,17 +1957,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef552e6f588e446098f6ba40d89ac146c8c7b64aade83c051ee00bb5d2bc18d"
 dependencies = [
  "uuid",
-]
-
-[[package]]
-name = "delegate"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "780eb241654bf097afb00fc5f054a09b687dad862e485fdcf8399bb056565370"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -6948,7 +6936,6 @@ dependencies = [
  "criterion",
  "data-encoding",
  "dataset",
- "delegate",
  "ecow",
  "env_logger",
  "fnv",
