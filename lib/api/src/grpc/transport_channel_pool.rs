@@ -97,7 +97,9 @@ impl Interceptor for PoolInterceptor {
         if request.metadata().get("grpc-timeout").is_none() {
             request.set_timeout(self.default_timeout);
         }
-        if let Some(ref api_key) = self.api_key {
+        if let Some(ref api_key) = self.api_key
+            && request.metadata().get(HTTP_HEADER_API_KEY).is_none()
+        {
             request
                 .metadata_mut()
                 .insert(HTTP_HEADER_API_KEY, api_key.clone());
