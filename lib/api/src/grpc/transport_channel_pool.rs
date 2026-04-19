@@ -85,8 +85,11 @@ impl PoolInterceptor {
         Self {
             default_timeout,
             api_key: api_key.map(|k| {
-                k.parse()
-                    .expect("API key contains invalid characters for gRPC metadata")
+                let mut value: tonic::metadata::MetadataValue<tonic::metadata::Ascii> = k
+                    .parse()
+                    .expect("API key contains invalid characters for gRPC metadata");
+                value.set_sensitive(true);
+                value
             }),
         }
     }
