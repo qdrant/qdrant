@@ -126,11 +126,14 @@ impl FromStr for DateTimePayloadType {
         // Attempt to parse the input string in the specified formats:
         // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
         // - YYYY-MM-DD HH:MM:SS (without timezone or Z)
-        // - YYYY-MM-DD HH:MM
+        // - YYYY-MM-DD'T'HH:MM (without timezone and seconds)
+        // - YYYY-MM-DD HH:MM (without timezone and seconds)
         // - YYYY-MM-DD
         // See: <https://github.com/qdrant/qdrant/issues/3529>
+        // See: <https://github.com/qdrant/qdrant/issues/8718>
         let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M"))
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
             .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
 
@@ -4173,6 +4176,9 @@ mod tests {
     #[case::without_z_and_decimals("2020-03-01T00:00:00.12")]
     #[case::space_sep_without_z("2020-03-01 00:00:00")]
     #[case::space_sep_without_z_and_decimals("2020-03-01 00:00:00.123456")]
+    #[case::t_sep_without_seconds("2020-03-01T00:00")]
+    #[case::space_sep_without_seconds("2020-03-01 00:00")]
+    #[case::date_only("2020-03-01")]
     fn test_datetime_deserialization(#[case] datetime: &str) {
         let datetime = DateTimePayloadType::from_str(datetime).unwrap();
         let serialized = serde_json::to_string(&datetime).unwrap();

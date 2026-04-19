@@ -171,6 +171,8 @@ def test_datetime_indexing(collection_name):
     # create payload
     set_payload(collection_name, {datetime_key: "2015-01-01T00:00:00Z"}, [1])
     set_payload(collection_name, {datetime_key: "2015-02-01T08:00:00+02:00"}, [2])
+    # Use YYYY-MM-DDTHH:MM format (T separator, without seconds) — https://github.com/qdrant/qdrant/issues/8718
+    set_payload(collection_name, {datetime_key: "2015-03-01T12:30"}, [3])
 
     # Create index
     response = request_with_validation(
@@ -185,6 +187,20 @@ def test_datetime_indexing(collection_name):
     )
     assert response.ok
 
+    # Verify point with YYYY-MM-DDTHH:MM format was indexed (issue #8718)
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "with_vector": False,
+            "filter": {"must": [{"key": datetime_key, "range": {"gte": "2015-03-01T12:30", "lte": "2015-03-01T12:30"}}]},
+        },
+    )
+    assert response.ok, response.json()
+    point_ids = [p["id"] for p in response.json()["result"]["points"]]
+    assert 3 in point_ids, f"Point 3 with YYYY-MM-DDTHH:MM format not found in index results: {point_ids}"
+
     # test with mixed datetime format
     data = [
         ({"gte": "2015-01-01", "lte": "2015-01-01 00:00"}, [1]),
@@ -192,6 +208,9 @@ def test_datetime_indexing(collection_name):
         ({"gte": "2015-02-01T06:00:00", "lte": "2015-02-01T06:00:00Z"}, [2]),
         # date_optional_time
         ({"gte": "2015-02-01T06:00:00.000000000", "lte": "2015-02-01T06:00:00.000000000"}, [2]),
+        # YYYY-MM-DDTHH:MM (T separator, without seconds) — https://github.com/qdrant/qdrant/issues/8718
+        ({"gte": "2015-01-01T00:00", "lte": "2015-01-01T00:00"}, [1]),
+        ({"gte": "2015-02-01T06:00", "lte": "2015-02-01T06:00"}, [2]),
     ]
     for range_, expected_ids in data:
         response = request_with_validation(
