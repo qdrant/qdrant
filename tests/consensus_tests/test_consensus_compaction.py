@@ -30,7 +30,7 @@ def test_consensus_compaction(tmp_path: pathlib.Path):
     }
 
     # Start cluster
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000, extra_env=env)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
@@ -55,7 +55,7 @@ def test_consensus_compaction(tmp_path: pathlib.Path):
     # Add extra node
     # Due to aggressive consensus WAL compaction, the peer has to join by consensus snapshot
     peer_dirs.append(make_peer_folder(tmp_path, N_PEERS))
-    new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, port=21000, extra_env=env)
+    new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, extra_env=env)
     peer_api_uris.append(new_url)
 
     # Wait for collection to be ready on the new peer
@@ -93,7 +93,7 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
     }
 
     # Start cluster
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000, extra_env=env)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, sharding_method="custom")
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
@@ -121,7 +121,7 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
     # Add extra node
     # Due to aggressive consensus WAL compaction, the peer has to join by consensus snapshot
     peer_dirs.append(make_peer_folder(tmp_path, N_PEERS))
-    new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, port=21000, extra_env=env)
+    new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, extra_env=env)
     peer_api_uris.append(new_url)
     wait_all_peers_up([new_url])
 

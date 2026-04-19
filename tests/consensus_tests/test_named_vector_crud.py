@@ -73,7 +73,7 @@ def test_create_vector_no_optimization(tmp_path: pathlib.Path):
     VECTOR_DIM2 = 99
     assert_project_root()
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     # Create collection with low indexing threshold to trigger indexing
     r = requests.put(
@@ -181,7 +181,7 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(
-        tmp_path, N_PEERS, port_seed=11000, extra_env=env
+        tmp_path, N_PEERS, extra_env=env
     )
 
     # Create collection with a named dense vector VECTOR_NAME
@@ -283,7 +283,7 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
 
     # Restart the killed peer — it should recover via consensus snapshot
     new_url = start_peer(
-        peer_dirs[-1], "peer_restarted.log", bootstrap_uri, port=21000, extra_env=env
+        peer_dirs[-1], "peer_restarted.log", bootstrap_uri, extra_env=env
     )
     peer_api_uris[-1] = new_url
 

@@ -70,7 +70,6 @@ def test_listener_node(tmp_path: pathlib.Path):
             peer_dirs[-1],
             f"peer_0_{N_PEERS}_restart.log",
             bootstrap_uri,
-            port=20000,
             extra_env={
                 "QDRANT__STORAGE__NODE_TYPE": "Listener",
             }
@@ -95,7 +94,6 @@ def test_listener_node(tmp_path: pathlib.Path):
             peer_dirs[-1],
             f"peer_0_{N_PEERS}_restart_again.log",
             bootstrap_uri,
-            port=20000,
             extra_env={
                 "QDRANT__STORAGE__NODE_TYPE": "Normal",
             }
