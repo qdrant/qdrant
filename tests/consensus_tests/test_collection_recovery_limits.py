@@ -30,13 +30,15 @@ def test_collection_recovery_below_limit(tmp_path: pathlib.Path):
         assert shard["points_count"] > 0
 
     # Kill last peer
-    processes.pop().kill()
+    p = processes.pop()
+    restart_port = p.p2p_port
+    p.kill()
 
     # Insert some more points
     upsert_random_points(peer_urls[0], N_POINTS)
 
     # Restart the peer, wait until it is up
-    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url)
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, port=restart_port)
     wait_for_peer_online(peer_url)
 
     # Wait until all shards are active, never allow more than 1 shard transfer
@@ -77,13 +79,15 @@ def test_collection_recovery_reach_limit(tmp_path: pathlib.Path):
         assert shard["points_count"] > 0
 
     # Kill last peer
-    processes.pop().kill()
+    p = processes.pop()
+    restart_port = p.p2p_port
+    p.kill()
 
     # Insert some more points
     upsert_random_points(peer_urls[0], N_POINTS)
 
     # Restart the peer, wait until it is up
-    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, extra_env=env)
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, port=restart_port, extra_env=env)
     wait_for_peer_online(peer_url)
 
     # We must see 3 transfers at one point with our customized limits
@@ -126,7 +130,9 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
         assert shard["points_count"] > 0
 
     # Kill last peer
-    processes.pop().kill()
+    p = processes.pop()
+    restart_port = p.p2p_port
+    p.kill()
     killed_peer_dir = peer_dirs[-1]
 
     # Insert some more points
@@ -152,7 +158,7 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
         assert_http_ok(r)
 
     # Restart the peer, wait unil it is up
-    peer_url = start_peer(killed_peer_dir, "peer_0_restarted.log", bootstrap_url)
+    peer_url = start_peer(killed_peer_dir, "peer_0_restarted.log", bootstrap_url, port=restart_port)
     wait_for_peer_online(peer_url)
     recovering_peer_id = get_cluster_info(peer_url)["peer_id"]
 

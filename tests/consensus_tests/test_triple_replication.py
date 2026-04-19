@@ -42,14 +42,11 @@ def test_triple_replication(tmp_path: pathlib.Path):
     # Kill leader peer
     killed_id = 0
     p = processes.pop(killed_id)
+    restart_port = p.p2p_port
     p.kill()
-    # Make sure it is completely gone to be able to reuse the data on disk
-    if p.proc.returncode is None:
-        print(f"Waiting for leader peer {p.pid} to go down")
-        p.proc.wait()
     peer_api_uris.pop(killed_id)
 
-    new_url = start_peer(peer_dirs[killed_id], f"peer_{killed_id}_restarted.log", bootstrap_uri)
+    new_url = start_peer(peer_dirs[killed_id], f"peer_{killed_id}_restarted.log", bootstrap_uri, port=restart_port)
     peer_api_uris.append(new_url)
 
     wait_for_peer_online(new_url)

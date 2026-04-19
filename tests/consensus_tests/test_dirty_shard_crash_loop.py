@@ -77,7 +77,9 @@ def test_dirty_shard_survives_update_collection(tmp_path: pathlib.Path):
     assert local_shard_ids, "Target node has no local shards"
 
     # Kill target and record its commit index before issuing UpdateCollection
-    processes.pop(target_idx).kill()
+    p = processes.pop(target_idx)
+    restart_port = p.p2p_port
+    p.kill()
 
     raft_state_path = peer_dirs[target_idx] / "storage" / "raft_state.json"
     raft_state = json.loads(raft_state_path.read_text())
@@ -95,11 +97,14 @@ def test_dirty_shard_survives_update_collection(tmp_path: pathlib.Path):
         peer_dirs[target_idx],
         f"peer_sync_{target_idx}.log",
         bootstrap_uri,
+        port=restart_port,
     )
     wait_for_peer_online(sync_uri)
 
     # Kill again — the UpdateCollection entry is now committed in its WAL
-    processes.pop().kill()
+    p = processes.pop()
+    restart_port = p.p2p_port
+    p.kill()
 
     # Create .initializing flags to simulate crash mid-transfer
     collection_path = peer_dirs[target_idx] / "storage" / "collections" / COLLECTION_NAME
@@ -119,6 +124,7 @@ def test_dirty_shard_survives_update_collection(tmp_path: pathlib.Path):
         peer_dirs[target_idx],
         restart_log,
         bootstrap_uri,
+        port=restart_port,
     )
 
     online, exit_code = wait_for_peer_online_or_crash(new_uri, processes[-1])

@@ -157,7 +157,9 @@ def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replicatio
     last_peer_id = get_cluster_info(peers[-1])['peer_id']
 
     # Kill last peer
-    processes.pop().kill()
+    p = processes.pop()
+    restart_port = p.p2p_port
+    p.kill()
 
     # Bootstrap collection
     create_collection(peers[0], shard_number=3, replication_factor=replication_factor)
@@ -166,7 +168,7 @@ def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replicatio
     upsert_random_points(peers[0], 1000, fail_on_error=False)
 
     # Restart last peer
-    peers[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri)
+    peers[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, port=restart_port)
     wait_for_peer_online(peers[-1])
 
     # Wait for last peer recovery
