@@ -231,16 +231,23 @@ pub fn check_search_batch_size(
 /// Reject a memory-consuming update if the process resident memory exceeds
 /// the configured percentage of total system memory.
 ///
-/// Returns `Ok(())` when no threshold is configured, when the platform does
-/// not expose resident memory stats, or when current usage is below the
-/// threshold. Total memory is cached once — cgroup limits are read at first
-/// call, so container memory limits are respected if present at startup.
-pub fn check_resident_memory(strict_mode_config: &StrictModeConfig) -> CollectionResult<()> {
+/// `resident_reader` returns the current process resident memory in bytes,
+/// or `None` when the platform does not expose the stat. In production this
+/// is [`::common::memory_usage::resident_bytes`]; tests pass a closure.
+///
+/// Returns `Ok(())` when no threshold is configured, when the reader returns
+/// `None`, or when current usage is below the threshold. Total memory is
+/// cached once — cgroup limits are read at first call, so container memory
+/// limits are respected if present at startup.
+pub fn check_resident_memory(
+    strict_mode_config: &StrictModeConfig,
+    resident_reader: impl FnOnce() -> Option<usize>,
+) -> CollectionResult<()> {
     let Some(percent) = strict_mode_config.max_resident_memory_percent else {
         return Ok(());
     };
 
-    let Some(resident) = ::common::memory_usage::resident_bytes() else {
+    let Some(resident) = resident_reader() else {
         return Ok(());
     };
 
@@ -533,24 +540,44 @@ mod test {
     #[test]
     fn test_resident_memory_check_disabled_passes() {
         let cfg = StrictModeConfig::default();
-        assert!(check_resident_memory(&cfg).is_ok());
+        // Reader should never be called when no threshold is configured.
+        assert!(check_resident_memory(&cfg, || unreachable!()).is_ok());
     }
 
     #[test]
-    fn test_resident_memory_check_impossible_threshold_rejects() {
-        // 1% of total RAM is trivially exceeded unless the platform lacks
-        // resident-memory stats (in which case we silently pass).
+    fn test_resident_memory_check_no_reader_passes() {
+        // Platforms that don't expose resident memory (reader returns None)
+        // must silently skip the check rather than reject updates.
         let cfg = StrictModeConfig {
-            max_resident_memory_percent: Some(1),
+            max_resident_memory_percent: Some(50),
             ..StrictModeConfig::default()
         };
-        let res = check_resident_memory(&cfg);
-        if ::common::memory_usage::resident_bytes().is_some() {
-            assert!(
-                matches!(res, Err(CollectionError::StrictMode { .. })),
-                "expected StrictMode error but got {res:?}",
-            );
-        }
+        assert!(check_resident_memory(&cfg, || None).is_ok());
+    }
+
+    #[test]
+    fn test_resident_memory_check_over_threshold_rejects() {
+        // Force resident usage to effectively all of RAM — any non-zero
+        // threshold must reject.
+        let cfg = StrictModeConfig {
+            max_resident_memory_percent: Some(50),
+            ..StrictModeConfig::default()
+        };
+        let res = check_resident_memory(&cfg, || Some(usize::MAX));
+        assert!(
+            matches!(res, Err(CollectionError::StrictMode { .. })),
+            "expected StrictMode error but got {res:?}",
+        );
+    }
+
+    #[test]
+    fn test_resident_memory_check_under_threshold_passes() {
+        // Zero resident bytes is always under any threshold.
+        let cfg = StrictModeConfig {
+            max_resident_memory_percent: Some(50),
+            ..StrictModeConfig::default()
+        };
+        assert!(check_resident_memory(&cfg, || Some(0)).is_ok());
     }
 
     #[test]

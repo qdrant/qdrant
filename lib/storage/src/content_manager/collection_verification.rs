@@ -58,7 +58,7 @@ where
         }
 
         if any_consumes_memory {
-            check_resident_memory(strict_mode_config)?;
+            check_resident_memory(strict_mode_config, ::common::memory_usage::resident_bytes)?;
         }
 
         if let Some(timeout) = timeout {
