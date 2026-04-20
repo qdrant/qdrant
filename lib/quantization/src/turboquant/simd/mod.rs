@@ -6,7 +6,18 @@ pub struct Query4bitSimd {
 }
 
 impl Query4bitSimd {
+    /// Query dim must be a multiple of 32.  The NEON SDOT and AVX-512 VNNI paths
+    /// both consume 2 query_data chunks (= 32 query elements) per iteration; with
+    /// `dim % 32 == 0` we get `query_data.len()` even and can drop all tail
+    /// handling.  Every PQ dimension we ship (128, 256, 384, 512, 768, 1024,
+    /// 1536, 2048, 4096) already satisfies this.
     pub fn new(data: &[f32], codebook: &[f32; 16]) -> Self {
+        assert!(
+            data.len() % 32 == 0,
+            "Query4bitSimd requires query dim to be a multiple of 32 (got {})",
+            data.len(),
+        );
+
         // Subtract the centroid mean before quantizing — the shift lives in the
         // codebook itself, so reconstructing a dot product needs only a per-query
         // constant (no per-vector side data).
@@ -34,18 +45,15 @@ impl Query4bitSimd {
             .max(f32::EPSILON);
         let q_scale = 8191.0 / q_abs_max;
 
-        let num_chunks = data.len().div_ceil(16);
+        let num_chunks = data.len() / 16;
         let mut query_data = Vec::with_capacity(num_chunks);
         for chunk_idx in 0..num_chunks {
             let mut low = [0u8; 16];
             let mut high = [0u8; 16];
             for i in 0..16 {
-                let j = chunk_idx * 16 + i;
-                let q_signed = if j < data.len() {
-                    (data[j] * q_scale).round().clamp(-8191.0, 8191.0) as i32
-                } else {
-                    0
-                };
+                let q_signed = (data[chunk_idx * 16 + i] * q_scale)
+                    .round()
+                    .clamp(-8191.0, 8191.0) as i32;
                 let q_biased = (q_signed + 8192) as u32;
                 low[i] = (q_biased & 0x7F) as u8;
                 high[i] = (q_biased >> 7) as u8;
@@ -82,12 +90,6 @@ impl Query4bitSimd {
     fn dotprod_raw_best(&self, vector: &[u8]) -> i64 {
         #[cfg(target_arch = "x86_64")]
         {
-            if std::is_x86_feature_detected!("avx512f")
-                && std::is_x86_feature_detected!("avx512bw")
-                && std::is_x86_feature_detected!("avx512vnni")
-            {
-                return unsafe { self.dotprod_raw_avx512_vnni(vector) };
-            }
             if std::is_x86_feature_detected!("avxvnni") && std::is_x86_feature_detected!("avx2") {
                 return unsafe { self.dotprod_raw_avx_vnni(vector) };
             }
@@ -101,7 +103,7 @@ impl Query4bitSimd {
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             if std::arch::is_aarch64_feature_detected!("dotprod") {
-                return unsafe { self.dotprod_raw_neon_sdot_x2(vector) };
+                return unsafe { self.dotprod_raw_neon_sdot(vector) };
             }
             return unsafe { self.dotprod_raw_neon(vector) };
         }
@@ -180,8 +182,15 @@ impl Query4bitSimd {
         }
     }
 
-    /// ARMv8.2-A Dot Product variant. Replaces the `vmull_s8` + `vpadalq_s16` chain
-    /// with a single `vdotq_s32` (i32 += sum of 4× i8×i8 per accumulator lane).
+    /// ARMv8.2-A Dot Product variant. Uses `SDOT` to sum four i8×i8 products per
+    /// i32 lane per instruction, emitted via inline asm because `vdotq_s32` is
+    /// still unstable (rust-lang/rust#117224).
+    ///
+    /// 2× unrolled: two chunks per iteration with four independent `i32x4`
+    /// accumulators (two for low, two for high) break the single dependency chain
+    /// of a naive implementation.  On Apple M-series SDOT has ~3-cycle latency at
+    /// 4/cycle throughput, and four parallel chains lift throughput ~7–20% over a
+    /// 1× version (larger dims benefit more — latency dominates there).
     ///
     /// # Safety
     /// CPU must support `neon` and `dotprod`.
@@ -192,71 +201,16 @@ impl Query4bitSimd {
 
         unsafe {
             let codebook = vld1q_s8(self.codebook.as_ptr());
-            let mut acc_low = vdupq_n_s32(0);
-            let mut acc_high = vdupq_n_s32(0);
-            let nibble_mask = vdup_n_u8(0x0F);
-
-            for (&[low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
-                let v_packed = vld1_u8(v_chunk.as_ptr());
-                let v_lo = vand_u8(v_packed, nibble_mask);
-                let v_hi = vshr_n_u8(v_packed, 4);
-                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
-                let c = vqtbl1q_s8(codebook, v);
-
-                // low/high are in [0, 127] → reinterpret to i8 preserves values.
-                let low_s = vreinterpretq_s8_u8(vld1q_u8(low.as_ptr()));
-                let high_s = vreinterpretq_s8_u8(vld1q_u8(high.as_ptr()));
-
-                // SDOT: acc[i] += sum_{k=0..3} low_s[4i+k] * c[4i+k] (signed i8 × i8).
-                // Emitted via inline asm because `vdotq_s32` is still unstable
-                // (rust-lang/rust#117224); target_feature on this fn ensures the
-                // CPU supports the instruction.
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low,
-                    a = in(vreg) low_s,
-                    b = in(vreg) c,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high,
-                    a = in(vreg) high_s,
-                    b = in(vreg) c,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-            }
-
-            let acc_low_sum = vaddvq_s32(acc_low) as i64;
-            let acc_high_sum = vaddvq_s32(acc_high) as i64;
-            acc_low_sum + acc_high_sum * 128
-        }
-    }
-
-    /// 2× unrolled SDOT path: processes two chunks per iteration with four
-    /// independent `i32x4` accumulators (two for low, two for high).  Breaks the
-    /// single accumulator dependency chain of `dotprod_raw_neon_sdot` — on
-    /// Apple M-series SDOT has ~3-cycle latency and 4/cycle throughput, so
-    /// widening the chain closer to the pipeline depth lifts throughput.
-    ///
-    /// # Safety
-    /// CPU must support `neon` and `dotprod`.
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    #[target_feature(enable = "neon,dotprod")]
-    pub unsafe fn dotprod_raw_neon_sdot_x2(&self, vector: &[u8]) -> i64 {
-        use core::arch::aarch64::*;
-
-        unsafe {
-            let codebook = vld1q_s8(self.codebook.as_ptr());
             let mut acc_low_0 = vdupq_n_s32(0);
             let mut acc_low_1 = vdupq_n_s32(0);
             let mut acc_high_0 = vdupq_n_s32(0);
             let mut acc_high_1 = vdupq_n_s32(0);
             let nibble_mask_q = vdupq_n_u8(0x0F);
 
+            // `query_data.len()` is guaranteed even by the dim-%32 precondition,
+            // so every pair is consumed and there is no tail to handle.
             let chunks = self.query_data.as_slice();
             let n_pairs = chunks.len() / 2;
-            let has_tail = chunks.len() % 2 == 1;
 
             for i in 0..n_pairs {
                 let [low_0, high_0] = chunks[2 * i];
@@ -309,200 +263,8 @@ impl Query4bitSimd {
                 );
             }
 
-            if has_tail {
-                let tail_idx = 2 * n_pairs;
-                let [low, high] = chunks[tail_idx];
-                let nibble_mask = vdup_n_u8(0x0F);
-                let v_packed = vld1_u8(vector.as_ptr().add(8 * tail_idx));
-                let v_lo = vand_u8(v_packed, nibble_mask);
-                let v_hi = vshr_n_u8(v_packed, 4);
-                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
-                let c = vqtbl1q_s8(codebook, v);
-                let low_s = vreinterpretq_s8_u8(vld1q_u8(low.as_ptr()));
-                let high_s = vreinterpretq_s8_u8(vld1q_u8(high.as_ptr()));
-
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_0,
-                    a = in(vreg) low_s,
-                    b = in(vreg) c,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_0,
-                    a = in(vreg) high_s,
-                    b = in(vreg) c,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-            }
-
             let acc_low = vaddq_s32(acc_low_0, acc_low_1);
             let acc_high = vaddq_s32(acc_high_0, acc_high_1);
-            let acc_low_sum = vaddvq_s32(acc_low) as i64;
-            let acc_high_sum = vaddvq_s32(acc_high) as i64;
-            acc_low_sum + acc_high_sum * 128
-        }
-    }
-
-    /// 4× unrolled SDOT path: eight independent `i32x4` accumulators consume four
-    /// chunks per iteration.  With SDOT's 3-cycle latency / 4-ops-per-cycle
-    /// throughput on Apple M-series, sixteen ops-in-flight would saturate the
-    /// pipeline; eight chains get us roughly there while staying within NEON's
-    /// 32-register budget.
-    ///
-    /// # Safety
-    /// CPU must support `neon` and `dotprod`.
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    #[target_feature(enable = "neon,dotprod")]
-    pub unsafe fn dotprod_raw_neon_sdot_x4(&self, vector: &[u8]) -> i64 {
-        use core::arch::aarch64::*;
-
-        unsafe {
-            let codebook = vld1q_s8(self.codebook.as_ptr());
-            let mut acc_low_0 = vdupq_n_s32(0);
-            let mut acc_low_1 = vdupq_n_s32(0);
-            let mut acc_low_2 = vdupq_n_s32(0);
-            let mut acc_low_3 = vdupq_n_s32(0);
-            let mut acc_high_0 = vdupq_n_s32(0);
-            let mut acc_high_1 = vdupq_n_s32(0);
-            let mut acc_high_2 = vdupq_n_s32(0);
-            let mut acc_high_3 = vdupq_n_s32(0);
-            let nibble_mask_q = vdupq_n_u8(0x0F);
-
-            let chunks = self.query_data.as_slice();
-            let n_groups = chunks.len() / 4;
-            let tail_start = n_groups * 4;
-
-            for i in 0..n_groups {
-                // Two 16-byte loads cover four chunks' 8 packed bytes each.
-                let v_packed_a = vld1q_u8(vector.as_ptr().add(32 * i));
-                let v_packed_b = vld1q_u8(vector.as_ptr().add(32 * i + 16));
-
-                let v_lo_a = vandq_u8(v_packed_a, nibble_mask_q);
-                let v_hi_a = vshrq_n_u8(v_packed_a, 4);
-                let v_0 = vzip1q_u8(v_lo_a, v_hi_a);
-                let v_1 = vzip2q_u8(v_lo_a, v_hi_a);
-
-                let v_lo_b = vandq_u8(v_packed_b, nibble_mask_q);
-                let v_hi_b = vshrq_n_u8(v_packed_b, 4);
-                let v_2 = vzip1q_u8(v_lo_b, v_hi_b);
-                let v_3 = vzip2q_u8(v_lo_b, v_hi_b);
-
-                let c_0 = vqtbl1q_s8(codebook, v_0);
-                let c_1 = vqtbl1q_s8(codebook, v_1);
-                let c_2 = vqtbl1q_s8(codebook, v_2);
-                let c_3 = vqtbl1q_s8(codebook, v_3);
-
-                let [low_0, high_0] = chunks[4 * i];
-                let [low_1, high_1] = chunks[4 * i + 1];
-                let [low_2, high_2] = chunks[4 * i + 2];
-                let [low_3, high_3] = chunks[4 * i + 3];
-
-                let low_s_0 = vreinterpretq_s8_u8(vld1q_u8(low_0.as_ptr()));
-                let low_s_1 = vreinterpretq_s8_u8(vld1q_u8(low_1.as_ptr()));
-                let low_s_2 = vreinterpretq_s8_u8(vld1q_u8(low_2.as_ptr()));
-                let low_s_3 = vreinterpretq_s8_u8(vld1q_u8(low_3.as_ptr()));
-                let high_s_0 = vreinterpretq_s8_u8(vld1q_u8(high_0.as_ptr()));
-                let high_s_1 = vreinterpretq_s8_u8(vld1q_u8(high_1.as_ptr()));
-                let high_s_2 = vreinterpretq_s8_u8(vld1q_u8(high_2.as_ptr()));
-                let high_s_3 = vreinterpretq_s8_u8(vld1q_u8(high_3.as_ptr()));
-
-                // Eight independent SDOT dependency chains.
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_0,
-                    a = in(vreg) low_s_0,
-                    b = in(vreg) c_0,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_1,
-                    a = in(vreg) low_s_1,
-                    b = in(vreg) c_1,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_2,
-                    a = in(vreg) low_s_2,
-                    b = in(vreg) c_2,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_3,
-                    a = in(vreg) low_s_3,
-                    b = in(vreg) c_3,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_0,
-                    a = in(vreg) high_s_0,
-                    b = in(vreg) c_0,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_1,
-                    a = in(vreg) high_s_1,
-                    b = in(vreg) c_1,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_2,
-                    a = in(vreg) high_s_2,
-                    b = in(vreg) c_2,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_3,
-                    a = in(vreg) high_s_3,
-                    b = in(vreg) c_3,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-            }
-
-            // Process 0–3 leftover chunks serially, accumulating into the first pair.
-            let nibble_mask = vdup_n_u8(0x0F);
-            for tail_i in tail_start..chunks.len() {
-                let [low, high] = chunks[tail_i];
-                let v_packed = vld1_u8(vector.as_ptr().add(8 * tail_i));
-                let v_lo = vand_u8(v_packed, nibble_mask);
-                let v_hi = vshr_n_u8(v_packed, 4);
-                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
-                let c = vqtbl1q_s8(codebook, v);
-                let low_s = vreinterpretq_s8_u8(vld1q_u8(low.as_ptr()));
-                let high_s = vreinterpretq_s8_u8(vld1q_u8(high.as_ptr()));
-
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_0,
-                    a = in(vreg) low_s,
-                    b = in(vreg) c,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_0,
-                    a = in(vreg) high_s,
-                    b = in(vreg) c,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-            }
-
-            let acc_low = vaddq_s32(
-                vaddq_s32(acc_low_0, acc_low_1),
-                vaddq_s32(acc_low_2, acc_low_3),
-            );
-            let acc_high = vaddq_s32(
-                vaddq_s32(acc_high_0, acc_high_1),
-                vaddq_s32(acc_high_2, acc_high_3),
-            );
             let acc_low_sum = vaddvq_s32(acc_low) as i64;
             let acc_high_sum = vaddvq_s32(acc_high) as i64;
             acc_low_sum + acc_high_sum * 128
@@ -595,6 +357,62 @@ impl Query4bitSimd {
         }
     }
 
+    /// 2× unrolled AVX2: two chunks per iteration with two independent YMM
+    /// accumulators, breaking the `maddubs + madd_epi16 → acc` dependency chain.
+    /// The chain on AVX2 is two stages deep (~10 cycles on Zen 4), so two parallel
+    /// chains can in principle double throughput of this path.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    pub unsafe fn dotprod_raw_avx2_x2(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
+            let codebook = _mm256_broadcastsi128_si256(codebook_128);
+            let ones = _mm256_set1_epi16(1);
+            let nibble_mask = _mm_set1_epi8(0x0F);
+            let mut acc0 = _mm256_setzero_si256();
+            let mut acc1 = _mm256_setzero_si256();
+
+            // `query_data.len()` is guaranteed even by the dim-%32 precondition,
+            // so every pair is consumed and there is no tail to handle.
+            let chunks = self.query_data.as_slice();
+            let n_pairs = chunks.len() / 2;
+
+            for i in 0..n_pairs {
+                // 2 × 32-byte query_data loads.
+                let lh0 = _mm256_loadu_si256(chunks.as_ptr().add(2 * i) as *const __m256i);
+                let lh1 = _mm256_loadu_si256(chunks.as_ptr().add(2 * i + 1) as *const __m256i);
+
+                // One 16-byte vector load covers both chunks' 8 packed bytes each.
+                let v_packed = _mm_loadu_si128(vector.as_ptr().add(16 * i) as *const __m128i);
+                let v_lo = _mm_and_si128(v_packed, nibble_mask);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
+                let v128_0 = _mm_unpacklo_epi8(v_lo, v_hi); // 16 indices for chunk 2i
+                let v128_1 = _mm_unpackhi_epi8(v_lo, v_hi); // 16 indices for chunk 2i+1
+                let v0 = _mm256_broadcastsi128_si256(v128_0);
+                let v1 = _mm256_broadcastsi128_si256(v128_1);
+                let c0 = _mm256_shuffle_epi8(codebook, v0);
+                let c1 = _mm256_shuffle_epi8(codebook, v1);
+
+                let prods0 = _mm256_maddubs_epi16(lh0, c0);
+                let prods1 = _mm256_maddubs_epi16(lh1, c1);
+                acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(prods0, ones));
+                acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(prods1, ones));
+            }
+
+            let acc = _mm256_add_epi32(acc0, acc1);
+            let acc_low = _mm256_castsi256_si128(acc);
+            let acc_high = _mm256_extracti128_si256(acc, 1);
+            let sum_low = hsum_i32_sse(acc_low) as i64;
+            let sum_high = hsum_i32_sse(acc_high) as i64;
+            sum_low + sum_high * 128
+        }
+    }
+
     /// AVX-VNNI (Alder Lake+, Zen 4+): a single `VPDPBUSD` replaces the
     /// `maddubs_epi16 + madd_epi16` pair used by the AVX2 path.
     ///
@@ -633,16 +451,17 @@ impl Query4bitSimd {
         }
     }
 
-    /// 4× unrolled AVX-VNNI: four YMM accumulators consume four chunks per iteration.
-    /// `VPDPBUSD` on Zen 4 has 4-cycle latency at 1/cycle throughput — four chains
-    /// just saturate the pipeline.  Golden Cove runs it at 2/cycle, so there's still
-    /// some headroom beyond x4 there.
+    /// 2× unrolled AVX-VNNI: two chunks per iteration with two independent YMM
+    /// accumulators, breaking the single `VPDPBUSD → acc` dependency chain.
+    /// On Zen 4 YMM `VPDPBUSD` has latency 4 and throughput 1/cycle — saturation
+    /// needs 4 ops in flight; two chains roughly double utilization versus the
+    /// 1× path which relies on OoO decoupling alone.
     ///
     /// # Safety
     /// CPU must support `avxvnni` (and therefore `avx2`).
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avxvnni,avx2")]
-    pub unsafe fn dotprod_raw_avx_vnni_x4(&self, vector: &[u8]) -> i64 {
+    pub unsafe fn dotprod_raw_avx_vnni_x2(&self, vector: &[u8]) -> i64 {
         use core::arch::x86_64::*;
 
         unsafe {
@@ -651,285 +470,33 @@ impl Query4bitSimd {
             let nibble_mask = _mm_set1_epi8(0x0F);
             let mut acc0 = _mm256_setzero_si256();
             let mut acc1 = _mm256_setzero_si256();
-            let mut acc2 = _mm256_setzero_si256();
-            let mut acc3 = _mm256_setzero_si256();
 
             let chunks = self.query_data.as_slice();
-            let n_groups = chunks.len() / 4;
-            let tail_start = n_groups * 4;
+            let n_pairs = chunks.len() / 2;
 
-            for i in 0..n_groups {
-                // 4 × 32-byte query_data loads.
-                let lh0 = _mm256_loadu_si256(chunks.as_ptr().add(4 * i) as *const __m256i);
-                let lh1 = _mm256_loadu_si256(chunks.as_ptr().add(4 * i + 1) as *const __m256i);
-                let lh2 = _mm256_loadu_si256(chunks.as_ptr().add(4 * i + 2) as *const __m256i);
-                let lh3 = _mm256_loadu_si256(chunks.as_ptr().add(4 * i + 3) as *const __m256i);
+            for i in 0..n_pairs {
+                let lh0 = _mm256_loadu_si256(chunks.as_ptr().add(2 * i) as *const __m256i);
+                let lh1 = _mm256_loadu_si256(chunks.as_ptr().add(2 * i + 1) as *const __m256i);
 
-                // Two 16-byte vector loads cover 4 chunks' 8 bytes each.
-                let vp_a = _mm_loadu_si128(vector.as_ptr().add(32 * i) as *const __m128i);
-                let vp_b = _mm_loadu_si128(vector.as_ptr().add(32 * i + 16) as *const __m128i);
-
-                let v_lo_a = _mm_and_si128(vp_a, nibble_mask);
-                let v_hi_a = _mm_and_si128(_mm_srli_epi16(vp_a, 4), nibble_mask);
-                let v128_0 = _mm_unpacklo_epi8(v_lo_a, v_hi_a);
-                let v128_1 = _mm_unpackhi_epi8(v_lo_a, v_hi_a);
-
-                let v_lo_b = _mm_and_si128(vp_b, nibble_mask);
-                let v_hi_b = _mm_and_si128(_mm_srli_epi16(vp_b, 4), nibble_mask);
-                let v128_2 = _mm_unpacklo_epi8(v_lo_b, v_hi_b);
-                let v128_3 = _mm_unpackhi_epi8(v_lo_b, v_hi_b);
-
-                let c0 = _mm256_shuffle_epi8(codebook, _mm256_broadcastsi128_si256(v128_0));
-                let c1 = _mm256_shuffle_epi8(codebook, _mm256_broadcastsi128_si256(v128_1));
-                let c2 = _mm256_shuffle_epi8(codebook, _mm256_broadcastsi128_si256(v128_2));
-                let c3 = _mm256_shuffle_epi8(codebook, _mm256_broadcastsi128_si256(v128_3));
-
-                // Four independent VPDPBUSD dependency chains.
-                acc0 = _mm256_dpbusd_avx_epi32(acc0, lh0, c0);
-                acc1 = _mm256_dpbusd_avx_epi32(acc1, lh1, c1);
-                acc2 = _mm256_dpbusd_avx_epi32(acc2, lh2, c2);
-                acc3 = _mm256_dpbusd_avx_epi32(acc3, lh3, c3);
-            }
-
-            // Tail: 0–3 leftover chunks, processed one at a time into acc0.
-            for tail_i in tail_start..chunks.len() {
-                let low_high = _mm256_loadu_si256(chunks.as_ptr().add(tail_i) as *const __m256i);
-                let v_packed = _mm_loadl_epi64(vector.as_ptr().add(8 * tail_i) as *const __m128i);
+                let v_packed = _mm_loadu_si128(vector.as_ptr().add(16 * i) as *const __m128i);
                 let v_lo = _mm_and_si128(v_packed, nibble_mask);
                 let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
-                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
-                let v = _mm256_broadcastsi128_si256(v128);
-                let c = _mm256_shuffle_epi8(codebook, v);
-                acc0 = _mm256_dpbusd_avx_epi32(acc0, low_high, c);
+                let v128_0 = _mm_unpacklo_epi8(v_lo, v_hi);
+                let v128_1 = _mm_unpackhi_epi8(v_lo, v_hi);
+                let v0 = _mm256_broadcastsi128_si256(v128_0);
+                let v1 = _mm256_broadcastsi128_si256(v128_1);
+                let c0 = _mm256_shuffle_epi8(codebook, v0);
+                let c1 = _mm256_shuffle_epi8(codebook, v1);
+
+                acc0 = _mm256_dpbusd_avx_epi32(acc0, lh0, c0);
+                acc1 = _mm256_dpbusd_avx_epi32(acc1, lh1, c1);
             }
 
-            let acc = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
+            let acc = _mm256_add_epi32(acc0, acc1);
             let acc_low = _mm256_castsi256_si128(acc);
             let acc_high = _mm256_extracti128_si256(acc, 1);
             let sum_low = hsum_i32_sse(acc_low) as i64;
             let sum_high = hsum_i32_sse(acc_high) as i64;
-            sum_low + sum_high * 128
-        }
-    }
-
-    /// AVX-512 VNNI (Ice Lake Xeon+). Processes 2 chunks per iteration in a 512-bit
-    /// accumulator using `VPDPBUSD` on ZMM: the `[low0, high0, low1, high1]` layout
-    /// already present in `query_data` fits a 64-byte load exactly.
-    ///
-    /// # Safety
-    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
-    #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
-    pub unsafe fn dotprod_raw_avx512_vnni(&self, vector: &[u8]) -> i64 {
-        use core::arch::x86_64::*;
-
-        unsafe {
-            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
-            let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
-            let nibble_mask_128 = _mm_set1_epi8(0x0F);
-            let mut acc = _mm512_setzero_si512();
-
-            let chunks = self.query_data.as_slice();
-            let n_pairs = chunks.len() / 2;
-            let has_tail = chunks.len() % 2 == 1;
-
-            for i in 0..n_pairs {
-                // Two consecutive [[u8;16];2] entries → 64 bytes: [low0, high0, low1, high1].
-                let pair_ptr = chunks.as_ptr().add(2 * i) as *const __m512i;
-                let low_high_pair = _mm512_loadu_si512(pair_ptr);
-
-                // 16 packed bytes → 32 nibbles (2 chunks × 16 indices each).
-                let v_packed_16 = _mm_loadu_si128(vector.as_ptr().add(16 * i) as *const __m128i);
-                let v_lo = _mm_and_si128(v_packed_16, nibble_mask_128);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed_16, 4), nibble_mask_128);
-                let v_chunk_a = _mm_unpacklo_epi8(v_lo, v_hi); // 16 indices for chunk 2i
-                let v_chunk_b = _mm_unpackhi_epi8(v_lo, v_hi); // 16 indices for chunk 2i+1
-
-                // Arrange into [v_a, v_a, v_b, v_b] so each 128-bit lane of codebook
-                // gets the right index set for its half of `low_high_pair`.
-                let v_dup_a = _mm256_broadcastsi128_si256(v_chunk_a);
-                let v_dup_b = _mm256_broadcastsi128_si256(v_chunk_b);
-                let v_512 = _mm512_inserti64x4(_mm512_castsi256_si512(v_dup_a), v_dup_b, 1);
-
-                let c_512 = _mm512_shuffle_epi8(codebook_512, v_512);
-                acc = _mm512_dpbusd_epi32(acc, low_high_pair, c_512);
-            }
-
-            // Reduce 16 i32 lanes: [0..3]=chunk-a low, [4..7]=chunk-a high,
-            //                      [8..11]=chunk-b low, [12..15]=chunk-b high.
-            let acc_256_lo = _mm512_castsi512_si256(acc);
-            let acc_256_hi = _mm512_extracti64x4_epi64(acc, 1);
-            let lane_a_low = _mm256_castsi256_si128(acc_256_lo);
-            let lane_a_high = _mm256_extracti128_si256(acc_256_lo, 1);
-            let lane_b_low = _mm256_castsi256_si128(acc_256_hi);
-            let lane_b_high = _mm256_extracti128_si256(acc_256_hi, 1);
-
-            let mut sum_low = hsum_i32_sse(_mm_add_epi32(lane_a_low, lane_b_low)) as i64;
-            let mut sum_high = hsum_i32_sse(_mm_add_epi32(lane_a_high, lane_b_high)) as i64;
-
-            if has_tail {
-                // Last remaining chunk: fall back to AVX-512-VL VNNI on 256-bit.
-                let tail_idx = 2 * n_pairs;
-                let chunk = &chunks[tail_idx];
-                let low_high = _mm256_loadu_si256(chunk.as_ptr() as *const __m256i);
-
-                let v_packed = _mm_loadl_epi64(vector.as_ptr().add(8 * tail_idx) as *const __m128i);
-                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
-                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
-                let codebook_256 = _mm256_broadcastsi128_si256(codebook_128);
-                let v256 = _mm256_broadcastsi128_si256(v128);
-                let c256 = _mm256_shuffle_epi8(codebook_256, v256);
-
-                let tail_acc = _mm256_dpbusd_epi32(_mm256_setzero_si256(), low_high, c256);
-                let t_low = _mm256_castsi256_si128(tail_acc);
-                let t_high = _mm256_extracti128_si256(tail_acc, 1);
-                sum_low += hsum_i32_sse(t_low) as i64;
-                sum_high += hsum_i32_sse(t_high) as i64;
-            }
-
-            sum_low + sum_high * 128
-        }
-    }
-
-    /// 4× unrolled AVX-512 VNNI: four ZMM accumulators consume eight chunks per
-    /// iteration.  With `VPDPBUSD` latency ~5 cycles and throughput 1/cycle on
-    /// Ice Lake/Sapphire Rapids, four chains are close to saturation.
-    ///
-    /// # Safety
-    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
-    #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
-    pub unsafe fn dotprod_raw_avx512_vnni_x4(&self, vector: &[u8]) -> i64 {
-        use core::arch::x86_64::*;
-
-        unsafe {
-            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
-            let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
-            let codebook_256 = _mm256_broadcastsi128_si256(codebook_128);
-            let nibble_mask_128 = _mm_set1_epi8(0x0F);
-
-            let mut acc0 = _mm512_setzero_si512();
-            let mut acc1 = _mm512_setzero_si512();
-            let mut acc2 = _mm512_setzero_si512();
-            let mut acc3 = _mm512_setzero_si512();
-
-            let chunks = self.query_data.as_slice();
-            let n_groups = chunks.len() / 8;
-
-            for i in 0..n_groups {
-                // 4 × 64-byte ZMM loads = 256 bytes of query_data (8 chunks).
-                let lh_p0 = _mm512_loadu_si512(chunks.as_ptr().add(8 * i) as *const __m512i);
-                let lh_p1 = _mm512_loadu_si512(chunks.as_ptr().add(8 * i + 2) as *const __m512i);
-                let lh_p2 = _mm512_loadu_si512(chunks.as_ptr().add(8 * i + 4) as *const __m512i);
-                let lh_p3 = _mm512_loadu_si512(chunks.as_ptr().add(8 * i + 6) as *const __m512i);
-
-                // 4 × 16-byte vector loads cover 8 chunks' 8 bytes each.
-                let vp0 = _mm_loadu_si128(vector.as_ptr().add(64 * i) as *const __m128i);
-                let vp1 = _mm_loadu_si128(vector.as_ptr().add(64 * i + 16) as *const __m128i);
-                let vp2 = _mm_loadu_si128(vector.as_ptr().add(64 * i + 32) as *const __m128i);
-                let vp3 = _mm_loadu_si128(vector.as_ptr().add(64 * i + 48) as *const __m128i);
-
-                // Expand each 16-byte vector input into a ZMM codebook-lookup result.
-                // Repeats the baseline's `[v_a, v_a, v_b, v_b]` arrangement per pair.
-                let v_lo_0 = _mm_and_si128(vp0, nibble_mask_128);
-                let v_hi_0 = _mm_and_si128(_mm_srli_epi16(vp0, 4), nibble_mask_128);
-                let v_a_0 = _mm_unpacklo_epi8(v_lo_0, v_hi_0);
-                let v_b_0 = _mm_unpackhi_epi8(v_lo_0, v_hi_0);
-                let v_512_0 = _mm512_inserti64x4(
-                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a_0)),
-                    _mm256_broadcastsi128_si256(v_b_0),
-                    1,
-                );
-                let c0 = _mm512_shuffle_epi8(codebook_512, v_512_0);
-
-                let v_lo_1 = _mm_and_si128(vp1, nibble_mask_128);
-                let v_hi_1 = _mm_and_si128(_mm_srli_epi16(vp1, 4), nibble_mask_128);
-                let v_a_1 = _mm_unpacklo_epi8(v_lo_1, v_hi_1);
-                let v_b_1 = _mm_unpackhi_epi8(v_lo_1, v_hi_1);
-                let v_512_1 = _mm512_inserti64x4(
-                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a_1)),
-                    _mm256_broadcastsi128_si256(v_b_1),
-                    1,
-                );
-                let c1 = _mm512_shuffle_epi8(codebook_512, v_512_1);
-
-                let v_lo_2 = _mm_and_si128(vp2, nibble_mask_128);
-                let v_hi_2 = _mm_and_si128(_mm_srli_epi16(vp2, 4), nibble_mask_128);
-                let v_a_2 = _mm_unpacklo_epi8(v_lo_2, v_hi_2);
-                let v_b_2 = _mm_unpackhi_epi8(v_lo_2, v_hi_2);
-                let v_512_2 = _mm512_inserti64x4(
-                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a_2)),
-                    _mm256_broadcastsi128_si256(v_b_2),
-                    1,
-                );
-                let c2 = _mm512_shuffle_epi8(codebook_512, v_512_2);
-
-                let v_lo_3 = _mm_and_si128(vp3, nibble_mask_128);
-                let v_hi_3 = _mm_and_si128(_mm_srli_epi16(vp3, 4), nibble_mask_128);
-                let v_a_3 = _mm_unpacklo_epi8(v_lo_3, v_hi_3);
-                let v_b_3 = _mm_unpackhi_epi8(v_lo_3, v_hi_3);
-                let v_512_3 = _mm512_inserti64x4(
-                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a_3)),
-                    _mm256_broadcastsi128_si256(v_b_3),
-                    1,
-                );
-                let c3 = _mm512_shuffle_epi8(codebook_512, v_512_3);
-
-                acc0 = _mm512_dpbusd_epi32(acc0, lh_p0, c0);
-                acc1 = _mm512_dpbusd_epi32(acc1, lh_p1, c1);
-                acc2 = _mm512_dpbusd_epi32(acc2, lh_p2, c2);
-                acc3 = _mm512_dpbusd_epi32(acc3, lh_p3, c3);
-            }
-
-            // Tail: 0–7 leftover chunks.  Drain ZMM pairs first, then one YMM chunk.
-            let mut pair_idx = 8 * n_groups;
-            while pair_idx + 2 <= chunks.len() {
-                let lh_pair = _mm512_loadu_si512(chunks.as_ptr().add(pair_idx) as *const __m512i);
-                let vp = _mm_loadu_si128(vector.as_ptr().add(8 * pair_idx) as *const __m128i);
-                let v_lo = _mm_and_si128(vp, nibble_mask_128);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(vp, 4), nibble_mask_128);
-                let v_a = _mm_unpacklo_epi8(v_lo, v_hi);
-                let v_b = _mm_unpackhi_epi8(v_lo, v_hi);
-                let v_512 = _mm512_inserti64x4(
-                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a)),
-                    _mm256_broadcastsi128_si256(v_b),
-                    1,
-                );
-                let c = _mm512_shuffle_epi8(codebook_512, v_512);
-                acc0 = _mm512_dpbusd_epi32(acc0, lh_pair, c);
-                pair_idx += 2;
-            }
-
-            let acc_512 =
-                _mm512_add_epi32(_mm512_add_epi32(acc0, acc1), _mm512_add_epi32(acc2, acc3));
-            let acc_256_lo = _mm512_castsi512_si256(acc_512);
-            let acc_256_hi = _mm512_extracti64x4_epi64(acc_512, 1);
-            let lane_a_low = _mm256_castsi256_si128(acc_256_lo);
-            let lane_a_high = _mm256_extracti128_si256(acc_256_lo, 1);
-            let lane_b_low = _mm256_castsi256_si128(acc_256_hi);
-            let lane_b_high = _mm256_extracti128_si256(acc_256_hi, 1);
-
-            let mut sum_low = hsum_i32_sse(_mm_add_epi32(lane_a_low, lane_b_low)) as i64;
-            let mut sum_high = hsum_i32_sse(_mm_add_epi32(lane_a_high, lane_b_high)) as i64;
-
-            // Final single-chunk tail on 256-bit VNNI.
-            if pair_idx < chunks.len() {
-                let low_high = _mm256_loadu_si256(chunks.as_ptr().add(pair_idx) as *const __m256i);
-                let v_packed = _mm_loadl_epi64(vector.as_ptr().add(8 * pair_idx) as *const __m128i);
-                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
-                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
-                let v256 = _mm256_broadcastsi128_si256(v128);
-                let c256 = _mm256_shuffle_epi8(codebook_256, v256);
-
-                let tail_acc = _mm256_dpbusd_epi32(_mm256_setzero_si256(), low_high, c256);
-                let t_low = _mm256_castsi256_si128(tail_acc);
-                let t_high = _mm256_extracti128_si256(tail_acc, 1);
-                sum_low += hsum_i32_sse(t_low) as i64;
-                sum_high += hsum_i32_sse(t_high) as i64;
-            }
-
             sum_low + sum_high * 128
         }
     }
@@ -1019,11 +586,14 @@ mod tests {
         }
     }
 
+    /// All test dims below are multiples of 32 — enforced by `Query4bitSimd::new`.
+    const PARITY_DIMS: &[usize] = &[32, 128, 256, 1024, 2048];
+
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     #[test]
     fn test_neon_matches_scalar() {
         let mut rng = StdRng::seed_from_u64(7);
-        for &dim in &[16_usize, 128, 256, 1024] {
+        for &dim in PARITY_DIMS {
             let (simd_query, vector) = random_inputs(&mut rng, dim);
             let scalar = simd_query.dotprod_raw(&vector);
             let neon = unsafe { simd_query.dotprod_raw_neon(&vector) };
@@ -1038,7 +608,7 @@ mod tests {
             return;
         }
         let mut rng = StdRng::seed_from_u64(7);
-        for &dim in &[16_usize, 128, 256, 1024] {
+        for &dim in PARITY_DIMS {
             let (simd_query, vector) = random_inputs(&mut rng, dim);
             let scalar = simd_query.dotprod_raw(&vector);
             let sse = unsafe { simd_query.dotprod_raw_sse(&vector) };
@@ -1053,11 +623,29 @@ mod tests {
             return;
         }
         let mut rng = StdRng::seed_from_u64(7);
-        for &dim in &[16_usize, 128, 256, 1024] {
+        for &dim in PARITY_DIMS {
             let (simd_query, vector) = random_inputs(&mut rng, dim);
             let scalar = simd_query.dotprod_raw(&vector);
             let avx2 = unsafe { simd_query.dotprod_raw_avx2(&vector) };
             assert_eq!(scalar, avx2, "scalar {scalar} != avx2 {avx2} at dim {dim}");
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_avx2_x2_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        for &dim in PARITY_DIMS {
+            let (simd_query, vector) = random_inputs(&mut rng, dim);
+            let scalar = simd_query.dotprod_raw(&vector);
+            let avx2_x2 = unsafe { simd_query.dotprod_raw_avx2_x2(&vector) };
+            assert_eq!(
+                scalar, avx2_x2,
+                "scalar {scalar} != avx2_x2 {avx2_x2} at dim {dim}"
+            );
         }
     }
 
@@ -1068,61 +656,11 @@ mod tests {
             return;
         }
         let mut rng = StdRng::seed_from_u64(7);
-        for &dim in &[16_usize, 128, 256, 1024] {
+        for &dim in PARITY_DIMS {
             let (simd_query, vector) = random_inputs(&mut rng, dim);
             let scalar = simd_query.dotprod_raw(&vector);
             let sdot = unsafe { simd_query.dotprod_raw_neon_sdot(&vector) };
             assert_eq!(scalar, sdot, "scalar {scalar} != sdot {sdot} at dim {dim}");
-        }
-    }
-
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    #[test]
-    fn test_neon_sdot_x2_matches_scalar() {
-        if !std::arch::is_aarch64_feature_detected!("dotprod") {
-            return;
-        }
-        let mut rng = StdRng::seed_from_u64(7);
-        // Mix even and odd chunk counts so the tail path is covered.
-        for &dim in &[16_usize, 32, 128, 256, 1024, 2048, 256 + 16] {
-            let (simd_query, vector) = random_inputs(&mut rng, dim);
-            let scalar = simd_query.dotprod_raw(&vector);
-            let sdot_x2 = unsafe { simd_query.dotprod_raw_neon_sdot_x2(&vector) };
-            assert_eq!(
-                scalar, sdot_x2,
-                "scalar {scalar} != sdot_x2 {sdot_x2} at dim {dim}"
-            );
-        }
-    }
-
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    #[test]
-    fn test_neon_sdot_x4_matches_scalar() {
-        if !std::arch::is_aarch64_feature_detected!("dotprod") {
-            return;
-        }
-        let mut rng = StdRng::seed_from_u64(7);
-        // Cover 0/1/2/3 leftover chunks (mod-4) so every tail branch runs.
-        for &dim in &[
-            16_usize,
-            32,
-            48,
-            64,
-            128,
-            256,
-            1024,
-            2048,
-            1024 + 16,
-            1024 + 32,
-            1024 + 48,
-        ] {
-            let (simd_query, vector) = random_inputs(&mut rng, dim);
-            let scalar = simd_query.dotprod_raw(&vector);
-            let sdot_x4 = unsafe { simd_query.dotprod_raw_neon_sdot_x4(&vector) };
-            assert_eq!(
-                scalar, sdot_x4,
-                "scalar {scalar} != sdot_x4 {sdot_x4} at dim {dim}"
-            );
         }
     }
 
@@ -1133,7 +671,7 @@ mod tests {
             return;
         }
         let mut rng = StdRng::seed_from_u64(7);
-        for &dim in &[16_usize, 128, 256, 1024] {
+        for &dim in PARITY_DIMS {
             let (simd_query, vector) = random_inputs(&mut rng, dim);
             let scalar = simd_query.dotprod_raw(&vector);
             let vnni = unsafe { simd_query.dotprod_raw_avx_vnni(&vector) };
@@ -1146,89 +684,18 @@ mod tests {
 
     #[cfg(target_arch = "x86_64")]
     #[test]
-    fn test_avx_vnni_x4_matches_scalar() {
+    fn test_avx_vnni_x2_matches_scalar() {
         if !std::is_x86_feature_detected!("avxvnni") || !std::is_x86_feature_detected!("avx2") {
             return;
         }
         let mut rng = StdRng::seed_from_u64(7);
-        // Cover 0/1/2/3 leftover chunks (mod-4) so every tail branch runs.
-        for &dim in &[
-            16_usize,
-            32,
-            48,
-            64,
-            128,
-            256,
-            1024,
-            2048,
-            1024 + 16,
-            1024 + 32,
-            1024 + 48,
-        ] {
+        for &dim in PARITY_DIMS {
             let (simd_query, vector) = random_inputs(&mut rng, dim);
             let scalar = simd_query.dotprod_raw(&vector);
-            let vnni_x4 = unsafe { simd_query.dotprod_raw_avx_vnni_x4(&vector) };
+            let vnni_x2 = unsafe { simd_query.dotprod_raw_avx_vnni_x2(&vector) };
             assert_eq!(
-                scalar, vnni_x4,
-                "scalar {scalar} != avx_vnni_x4 {vnni_x4} at dim {dim}"
-            );
-        }
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[test]
-    fn test_avx512_vnni_matches_scalar() {
-        if !(std::is_x86_feature_detected!("avx512f")
-            && std::is_x86_feature_detected!("avx512bw")
-            && std::is_x86_feature_detected!("avx512vnni"))
-        {
-            return;
-        }
-        let mut rng = StdRng::seed_from_u64(7);
-        // Mix even and odd chunk counts so the tail-handling path is exercised.
-        for &dim in &[16_usize, 32, 128, 256, 1024, 2048] {
-            let (simd_query, vector) = random_inputs(&mut rng, dim);
-            let scalar = simd_query.dotprod_raw(&vector);
-            let vnni512 = unsafe { simd_query.dotprod_raw_avx512_vnni(&vector) };
-            assert_eq!(
-                scalar, vnni512,
-                "scalar {scalar} != avx512_vnni {vnni512} at dim {dim}"
-            );
-        }
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[test]
-    fn test_avx512_vnni_x4_matches_scalar() {
-        if !(std::is_x86_feature_detected!("avx512f")
-            && std::is_x86_feature_detected!("avx512bw")
-            && std::is_x86_feature_detected!("avx512vnni"))
-        {
-            return;
-        }
-        let mut rng = StdRng::seed_from_u64(7);
-        // Cover every tail residue mod 8 so ZMM-pair and YMM-single paths both run.
-        for &dim in &[
-            16_usize,
-            32,
-            128,
-            256,
-            1024,
-            2048,
-            1024 + 16,
-            1024 + 32,
-            1024 + 48,
-            1024 + 64,
-            1024 + 80,
-            1024 + 96,
-            1024 + 112,
-        ] {
-            let (simd_query, vector) = random_inputs(&mut rng, dim);
-            let scalar = simd_query.dotprod_raw(&vector);
-            let vnni512_x4 = unsafe { simd_query.dotprod_raw_avx512_vnni_x4(&vector) };
-            assert_eq!(
-                scalar, vnni512_x4,
-                "scalar {scalar} != avx512_vnni_x4 {vnni512_x4} at dim {dim}"
+                scalar, vnni_x2,
+                "scalar {scalar} != avx_vnni_x2 {vnni_x2} at dim {dim}"
             );
         }
     }
@@ -1264,13 +731,6 @@ mod tests {
             if std::is_x86_feature_detected!("avxvnni") && std::is_x86_feature_detected!("avx2") {
                 let vnni = unsafe { query.dotprod_raw_avx_vnni(vector) };
                 assert_eq!(expected, vnni, "avx_vnni mismatch (expected {expected})");
-            }
-            if std::is_x86_feature_detected!("avx512f")
-                && std::is_x86_feature_detected!("avx512bw")
-                && std::is_x86_feature_detected!("avx512vnni")
-            {
-                let v512 = unsafe { query.dotprod_raw_avx512_vnni(vector) };
-                assert_eq!(expected, v512, "avx512_vnni mismatch (expected {expected})");
             }
         }
     }
@@ -1317,27 +777,23 @@ mod tests {
     #[test]
     fn test_overflow_maddubs_near_saturation() {
         // Positive: pair = +32 258 < +32 767 → no saturation.
-        let (q, v) = max_positive_inputs(16);
+        let (q, v) = max_positive_inputs(32);
         assert_all_simd_match_scalar(&q, &v);
 
         // Negative: pair = −32 258 > −32 768 → no saturation.
-        let (q, v) = max_negative_inputs(16);
+        let (q, v) = max_negative_inputs(32);
         assert_all_simd_match_scalar(&q, &v);
     }
 
     /// At dim = 4 096 each i32 accumulator lane carries
     /// 256 chunks × 4 products × 16 129 = 16 516 096 — far below i32 max (2.1 B).
     /// The horizontal sum across four lanes reaches 66 064 384, also i32-safe.
-    /// A second pass with dim = 4 096 + 16 (odd chunk count) exercises the
-    /// AVX-512 tail path under the same worst-case values.
     #[test]
     fn test_overflow_i32_accumulator_depth() {
-        for dim in [4096_usize, 4096 + 16] {
-            let (q, v) = max_positive_inputs(dim);
-            assert_all_simd_match_scalar(&q, &v);
+        let (q, v) = max_positive_inputs(4096);
+        assert_all_simd_match_scalar(&q, &v);
 
-            let (q, v) = max_negative_inputs(dim);
-            assert_all_simd_match_scalar(&q, &v);
-        }
+        let (q, v) = max_negative_inputs(4096);
+        assert_all_simd_match_scalar(&q, &v);
     }
 }

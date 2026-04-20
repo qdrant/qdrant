@@ -89,24 +89,6 @@ fn bench_dotprod_cold(c: &mut Criterion) {
                         unsafe { black_box(&query).dotprod_raw_neon_sdot(black_box(v)) }
                     });
                 });
-
-                group.bench_with_input(BenchmarkId::new("neon_sdot_x2", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_neon_sdot_x2(black_box(v)) }
-                    });
-                });
-
-                group.bench_with_input(BenchmarkId::new("neon_sdot_x4", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_neon_sdot_x4(black_box(v)) }
-                    });
-                });
             }
         }
 
@@ -132,6 +114,15 @@ fn bench_dotprod_cold(c: &mut Criterion) {
                         unsafe { black_box(&query).dotprod_raw_avx2(black_box(v)) }
                     });
                 });
+
+                group.bench_with_input(BenchmarkId::new("avx2_x2", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_avx2_x2(black_box(v)) }
+                    });
+                });
             }
 
             if std::is_x86_feature_detected!("avxvnni") && std::is_x86_feature_detected!("avx2") {
@@ -144,35 +135,12 @@ fn bench_dotprod_cold(c: &mut Criterion) {
                     });
                 });
 
-                group.bench_with_input(BenchmarkId::new("avx_vnni_x4", dim), &dim, |b, _| {
+                group.bench_with_input(BenchmarkId::new("avx_vnni_x2", dim), &dim, |b, _| {
                     let mut cursor = 0usize;
                     b.iter(|| {
                         let v = pool.vector(cursor);
                         cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_avx_vnni_x4(black_box(v)) }
-                    });
-                });
-            }
-
-            if std::is_x86_feature_detected!("avx512f")
-                && std::is_x86_feature_detected!("avx512bw")
-                && std::is_x86_feature_detected!("avx512vnni")
-            {
-                group.bench_with_input(BenchmarkId::new("avx512_vnni", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_avx512_vnni(black_box(v)) }
-                    });
-                });
-
-                group.bench_with_input(BenchmarkId::new("avx512_vnni_x4", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_avx512_vnni_x4(black_box(v)) }
+                        unsafe { black_box(&query).dotprod_raw_avx_vnni_x2(black_box(v)) }
                     });
                 });
             }
