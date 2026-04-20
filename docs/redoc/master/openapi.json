@@ -8056,14 +8056,14 @@
             "description": "Max allowed `limit` parameter for all APIs that don't have their own max limit.",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "max_timeout": {
             "description": "Max allowed `timeout` parameter.",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "unindexed_filtering_retrieve": {

@@ -156,7 +156,7 @@ pub fn get_checksum_path(snapshot_path: impl Into<PathBuf>) -> PathBuf {
     checksum_path.into()
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema, Validate)]
 pub struct ShardSnapshotRecover {
     pub location: ShardSnapshotLocation,
 

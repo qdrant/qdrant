@@ -444,7 +444,7 @@ async fn recover_shard_snapshot(
     http_client: web::Data<HttpClient>,
     path: valid::Path<CollectionShardPath>,
     query: web::Query<SnapshottingParam>,
-    web::Json(request): web::Json<ShardSnapshotRecover>,
+    valid::Json(request): valid::Json<ShardSnapshotRecover>,
     ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     // nothing to verify.
