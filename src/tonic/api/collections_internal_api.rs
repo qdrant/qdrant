@@ -20,7 +20,7 @@ use crate::tonic::auth::extract_auth;
 fn access_pass<'a>(auth: &'a Auth, collection_name: &'a str) -> Result<CollectionPass<'a>, Status> {
     auth.check_collection_access(
         collection_name,
-        AccessRequirements::new(),
+        AccessRequirements::new().write().manage().extras(),
         "internal_collection_access",
     )
     .map_err(Status::from)
