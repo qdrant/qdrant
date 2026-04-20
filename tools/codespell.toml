@@ -15,6 +15,7 @@ skip = [
 ignore-words-list = [
     "ABD",                 # Geohash example
     "INDX",                # bitvec crate const
+    "crasher",             # qdrant/crasher sibling repo
     "generall",            # The boss
     "hel",                 # Query token
     "mmapped",             # Memory mapped
