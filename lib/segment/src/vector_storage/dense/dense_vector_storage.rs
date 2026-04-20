@@ -59,6 +59,15 @@ where
         }
     }
 
+    /// Whether this storage was pre-populated into the OS page cache at load
+    /// time (via `populate=true`). Distinct from [`VectorStorage::is_on_disk`]:
+    /// both populated and non-populated mmaps live on disk, but a populated
+    /// one is expected to be resident in RAM. Memory reporting uses this to
+    /// pick `FileStorageIntent::Cached` vs. `FileStorageIntent::OnDisk`.
+    pub fn populated(&self) -> bool {
+        self.populated
+    }
+
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         let Self {
@@ -234,7 +243,13 @@ where
     }
 
     fn is_on_disk(&self) -> bool {
-        !self.populated
+        // The underlying storage is an mmap on disk. `populated` tracks whether
+        // we pre-faulted it into the OS page cache at load time; it does NOT
+        // change the fact that the storage *lives* on disk. This distinction
+        // matters for `quantized_vectors.rs::is_ram()` which uses this method
+        // to decide whether to materialize the quantized blob in RAM vs. mmap.
+        // Use `populated()` (below) when you want the populate-at-load signal.
+        true
     }
 
     fn total_vector_count(&self) -> usize {

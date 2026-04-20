@@ -34,13 +34,14 @@ impl MemoryReporter for VectorStorageEnum {
                 ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
             }
 
-            // Mmap dense variants: intent depends on populate config
-            VectorStorageEnum::DenseMemmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
+            // Mmap dense variants: intent depends on populate-at-load flag,
+            // not `is_on_disk()` (the underlying storage always lives on disk).
+            VectorStorageEnum::DenseMemmap(v) => from_files_with_on_disk(v.files(), !v.populated()),
             VectorStorageEnum::DenseMemmapByte(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), !v.populated())
             }
             VectorStorageEnum::DenseMemmapHalf(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), !v.populated())
             }
 
             // io_uring dense variants: always on-disk, no mmap caching
