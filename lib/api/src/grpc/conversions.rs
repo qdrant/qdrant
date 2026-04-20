@@ -568,16 +568,10 @@ impl TryFrom<StopwordsSet> for segment::data_types::index::StopwordsInterface {
             )
         };
 
-        let result_custom = if custom.is_empty() {
-            None
-        } else {
-            Some(custom.into_iter().map(|word| word.to_lowercase()).collect())
-        };
-
         Ok(segment::data_types::index::StopwordsInterface::Set(
             segment::data_types::index::StopwordsSet {
                 languages: result_languages,
-                custom: result_custom,
+                custom: (!custom.is_empty()).then_some(custom.into_iter().collect()),
             },
         ))
     }
