@@ -12,11 +12,11 @@ use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_in
 /// Raw byte representation of posting list, which can be converted into [`PostingListView`]
 pub struct RawPostingList<'a> {
     bytes: Cow<'a, [u8]>,
-    header: Cow<'a, PostingListHeader>,
+    header: PostingListHeader,
 }
 
 impl<'a> RawPostingList<'a> {
-    pub fn new(bytes: Cow<'a, [u8]>, header: Cow<'a, PostingListHeader>) -> RawPostingList<'a> {
+    pub fn new(bytes: Cow<'a, [u8]>, header: PostingListHeader) -> RawPostingList<'a> {
         RawPostingList { bytes, header }
     }
 }

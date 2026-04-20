@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::cell::Cell;
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -121,13 +120,13 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
         })
     }
 
-    fn get_header(&self, token_id: TokenId) -> OperationResult<Option<Cow<'_, PostingListHeader>>> {
+    fn get_header(&self, token_id: TokenId) -> OperationResult<Option<PostingListHeader>> {
         let HeadersBatch { mut iter, .. } = self.headers_iter(&[token_id])?;
         let Some(entry) = iter.next() else {
             return Ok(None);
         };
         let (_, header) = entry?;
-        Ok(Some(Cow::Owned(header)))
+        Ok(Some(header))
     }
 
     /// Create PostingListView<V> from the given header
@@ -145,7 +144,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
     #[cfg(test)]
     fn raw_posting<'a>(
         &'a self,
-        header: Cow<'a, PostingListHeader>,
+        header: PostingListHeader,
     ) -> Result<RawPostingList<'a>, UniversalIoError> {
         let read_range = ReadRange {
             byte_offset: header.offset,
@@ -203,7 +202,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
 
         for entry in self.storage.read_iter::<Sequential, _>(range_iter)? {
             let ((token_id, header), bytes) = entry?;
-            raw_postings.push((token_id, RawPostingList::new(bytes, Cow::Owned(header))));
+            raw_postings.push((token_id, RawPostingList::new(bytes, header)));
         }
 
         if let Some(err) = header_err.take() {
