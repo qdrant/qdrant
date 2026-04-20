@@ -101,6 +101,12 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
             return Ok(());
         }
 
+        // Low-memory mode `no_populate` suppresses mmap prefault globally.
+        // Pages will be faulted in on demand when queries touch them.
+        if crate::low_memory::low_memory_mode().skip_populate() {
+            return Ok(());
+        }
+
         let num_blocks = self.len_bytes.div_ceil(BLOCK_SIZE);
         for block_idx in 0..num_blocks {
             let req = BlockRequest {
