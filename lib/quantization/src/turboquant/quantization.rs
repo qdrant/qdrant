@@ -1,15 +1,13 @@
-use common::bitpacking::BitWriter;
-
 use crate::DistanceType;
 use crate::turboquant::rotation::HadamardRotation;
 use crate::turboquant::{Metadata, TQBits, TQMode};
 
 /// Quantize vectors using TurboQuant.
 pub struct TurboQuantizer {
-    rotation: HadamardRotation,
-    bits: TQBits,
-    _mode: TQMode,
-    distance: DistanceType,
+    pub(super) rotation: HadamardRotation,
+    pub(super) bits: TQBits,
+    pub(super) mode: TQMode,
+    pub(super) distance: DistanceType,
 }
 
 impl TurboQuantizer {
@@ -19,7 +17,7 @@ impl TurboQuantizer {
         TurboQuantizer {
             rotation,
             bits,
-            _mode: mode,
+            mode,
             distance,
         }
     }
@@ -49,6 +47,9 @@ impl TurboQuantizer {
         }
         self.rotation.apply(buf);
 
+        // Calculate data that needs to be stored additionally.
+        let extras = self.calculate_extras(buf);
+
         // Find rotated vectors centroids.
         let boundaries = self.bits.get_centroid_boundaries();
         let encoded = buf
@@ -56,38 +57,7 @@ impl TurboQuantizer {
             .map(|&val| boundaries.partition_point(|&b| val > f64::from(b)) as u8);
 
         // Encode centroid indices and return packed vector.
-        self.pack_vector(encoded)
-    }
-
-    /// Bit-pack an iterator of centroid indices into a compact byte vector.
-    fn pack_vector<I>(&self, centroids: I) -> Vec<u8>
-    where
-        I: Iterator<Item = u8>,
-    {
-        let mut out = Vec::with_capacity(self.quantized_size());
-        let mut bit_writer = BitWriter::new(&mut out);
-
-        let bits = self.bits.bit_size();
-        for item in centroids {
-            bit_writer.write(item, bits);
-        }
-        bit_writer.finish();
-        out
-    }
-
-    /// Size in bytes of a vector quantized by this quantizer.
-    pub(super) fn quantized_size(&self) -> usize {
-        Self::quantized_size_for(self.rotation.dim(), self.bits, self.distance)
-    }
-
-    /// Size in bytes a vector of `dim` dimensions would occupy when quantized
-    /// with the given `bits` and `distance`.
-    pub(super) fn quantized_size_for(dim: usize, bits: TQBits, distance: DistanceType) -> usize {
-        if !matches!(distance, DistanceType::Dot) {
-            // TODO(turbo): implement for other metrics too.
-            unimplemented!("Quantization currently only implemented for dot product");
-        }
-        (dim * bits.bit_size() as usize).div_ceil(8)
+        self.pack_vector(encoded, extras)
     }
 }
 
@@ -97,6 +67,7 @@ mod tests {
 
     use super::*;
     use crate::VectorParameters;
+    use crate::turboquant::encoding::TqVectorExtras;
     use crate::turboquant::rotation::HadamardRotation;
 
     fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
@@ -465,6 +436,67 @@ mod tests {
                         idx < n_centroids,
                         "dim={dim}, bits={bits:?}: index {idx} out of range"
                     );
+                }
+            }
+        }
+    }
+
+    /// `unpack_vector` must recover the exact centroid values for every index
+    /// written by `pack_vector`, across a variety of dims and bit widths.
+    #[test]
+    fn pack_unpack_vector_roundtrip() {
+        use rand::prelude::StdRng;
+        use rand::{RngExt, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(321);
+
+        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            let centroids = bits.get_centroids();
+            let n_centroids = 1u8 << bits.bit_size();
+
+            for &dim in &[1, 64, 127, 128, 300, 768, 1025] {
+                let tq = make_tq(dim, bits);
+                let indices: Vec<u8> = (0..dim).map(|_| rng.random_range(0..n_centroids)).collect();
+
+                let packed = tq.pack_vector(indices.iter().copied(), TqVectorExtras::default());
+
+                let mut out = vec![0.0f64; dim];
+                tq.unpack_vector(&packed, &mut out);
+
+                for (i, (&idx, &value)) in indices.iter().zip(out.iter()).enumerate() {
+                    let expected = f64::from(centroids[idx as usize]);
+                    assert_eq!(
+                        value, expected,
+                        "dim={dim}, bits={bits:?}, i={i}: index {idx} \
+                         decoded to {value}, expected {expected}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Edge cases for the pack/unpack roundtrip: uniform all-min and all-max
+    /// index patterns exercise the bit-packing boundaries.
+    #[test]
+    fn pack_unpack_vector_uniform_indices() {
+        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            let centroids = bits.get_centroids();
+            let max_idx = (1u8 << bits.bit_size()) - 1;
+
+            for &dim in &[1, 8, 128, 513] {
+                let tq = make_tq(dim, bits);
+
+                for &idx in &[0u8, max_idx] {
+                    let indices = vec![idx; dim];
+                    let packed = tq.pack_vector(indices.iter().copied(), TqVectorExtras::default());
+
+                    let mut out = vec![0.0f64; dim];
+                    tq.unpack_vector(&packed, &mut out);
+
+                    let expected = f64::from(centroids[idx as usize]);
+                    for (i, &v) in out.iter().enumerate() {
+                        assert_eq!(v, expected, "dim={dim}, bits={bits:?}, idx={idx}, i={i}");
+                    }
                 }
             }
         }

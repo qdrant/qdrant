@@ -1,3 +1,4 @@
+pub(crate) mod encoding;
 pub mod lloyd_max;
 mod permutation;
 pub mod quantization;
@@ -187,12 +188,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn get_quantized_vector_size(
         vector_parameters: &VectorParameters,
         bits: TQBits,
-        _mode: TQMode,
+        mode: TQMode,
     ) -> usize {
         TurboQuantizer::quantized_size_for(
             vector_parameters.dim,
             bits,
             vector_parameters.distance_type,
+            mode,
         )
     }
 
