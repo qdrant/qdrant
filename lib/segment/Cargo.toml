@@ -97,6 +97,8 @@ charabia = { version = "0.9.9", default-features = false, features = [
     "chinese-segmentation",
     "chinese-normalization",
 ] }
+strsim = "0.11.1"
+fst = { version = "0.4.7", features = ["levenshtein"]}
 
 gridstore = { path = "../gridstore" }
 
