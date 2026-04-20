@@ -79,20 +79,11 @@ impl MutableNullIndex {
         })?;
 
         let has_values_path = path.join(HAS_VALUES_DIRNAME);
-        let mut has_values_mmap = DynamicMmapFlags::open(&has_values_path, false)?;
-        // Expand flags so `iter_falses()` covers every point in the segment, including
-        // those without a payload storage entry (e.g. after `clear_payload`).
-        // Bug: <https://github.com/qdrant/qdrant/issues/8723>
-        if has_values_mmap.len() < total_point_count {
-            has_values_mmap.set_len(total_point_count)?;
-        }
+        let has_values_mmap = DynamicMmapFlags::open(&has_values_path, false)?;
         let has_values_flags = RoaringFlags::new(has_values_mmap);
 
         let is_null_path = path.join(IS_NULL_DIRNAME);
-        let mut is_null_mmap = DynamicMmapFlags::open(&is_null_path, false)?;
-        if is_null_mmap.len() < total_point_count {
-            is_null_mmap.set_len(total_point_count)?;
-        }
+        let is_null_mmap = DynamicMmapFlags::open(&is_null_path, false)?;
         let is_null_flags = RoaringFlags::new(is_null_mmap);
 
         let storage = Storage {
