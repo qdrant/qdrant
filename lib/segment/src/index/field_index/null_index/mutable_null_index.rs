@@ -193,6 +193,7 @@ impl MutableNullIndex {
     pub fn populate(&self) -> OperationResult<()> {
         Ok(())
     }
+
     /// Approximate RAM usage in bytes.
     pub fn ram_usage_bytes(&self) -> usize {
         let Self {
