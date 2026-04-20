@@ -25,7 +25,6 @@ impl VectorPool {
         let packed_bytes = dim / 2;
         let count = (POOL_BYTES / packed_bytes).max(1024);
         let mut rng = StdRng::seed_from_u64(seed);
-        // Any random u8 is a valid pair of 4-bit nibbles.
         let buf: Vec<u8> = (0..count * packed_bytes)
             .map(|_| rng.random_range(0..=u8::MAX))
             .collect();
@@ -71,37 +70,76 @@ fn bench_dotprod_cold(c: &mut Criterion) {
         });
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        group.bench_with_input(BenchmarkId::new("neon", dim), &dim, |b, _| {
-            let mut cursor = 0usize;
-            b.iter(|| {
-                let v = pool.vector(cursor);
-                cursor = cursor.wrapping_add(1);
-                unsafe { black_box(&query).dotprod_raw_neon(black_box(v)) }
-            });
-        });
-
-        #[cfg(target_arch = "x86_64")]
-        if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
-            group.bench_with_input(BenchmarkId::new("sse", dim), &dim, |b, _| {
+        {
+            group.bench_with_input(BenchmarkId::new("neon", dim), &dim, |b, _| {
                 let mut cursor = 0usize;
                 b.iter(|| {
                     let v = pool.vector(cursor);
                     cursor = cursor.wrapping_add(1);
-                    unsafe { black_box(&query).dotprod_raw_sse(black_box(v)) }
+                    unsafe { black_box(&query).dotprod_raw_neon(black_box(v)) }
                 });
             });
+
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                group.bench_with_input(BenchmarkId::new("neon_sdot", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_neon_sdot(black_box(v)) }
+                    });
+                });
+            }
         }
 
         #[cfg(target_arch = "x86_64")]
-        if std::is_x86_feature_detected!("avx2") {
-            group.bench_with_input(BenchmarkId::new("avx2", dim), &dim, |b, _| {
-                let mut cursor = 0usize;
-                b.iter(|| {
-                    let v = pool.vector(cursor);
-                    cursor = cursor.wrapping_add(1);
-                    unsafe { black_box(&query).dotprod_raw_avx2(black_box(v)) }
+        {
+            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+                group.bench_with_input(BenchmarkId::new("sse", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_sse(black_box(v)) }
+                    });
                 });
-            });
+            }
+
+            if std::is_x86_feature_detected!("avx2") {
+                group.bench_with_input(BenchmarkId::new("avx2", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_avx2(black_box(v)) }
+                    });
+                });
+            }
+
+            if std::is_x86_feature_detected!("avxvnni") && std::is_x86_feature_detected!("avx2") {
+                group.bench_with_input(BenchmarkId::new("avx_vnni", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_avx_vnni(black_box(v)) }
+                    });
+                });
+            }
+
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                group.bench_with_input(BenchmarkId::new("avx512_vnni", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_avx512_vnni(black_box(v)) }
+                    });
+                });
+            }
         }
     }
     group.finish();

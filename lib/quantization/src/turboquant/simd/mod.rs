@@ -1,4 +1,3 @@
-
 pub struct Query4bitSimd {
     query_data: Vec<[[u8; 16]; 2]>,
     codebook: [i8; 16],
@@ -21,9 +20,8 @@ impl Query4bitSimd {
             .fold(0.0_f32, f32::max)
             .max(f32::EPSILON);
         let c_scale = 127.0 / c_abs_max;
-        let codebook_int: [i8; 16] = std::array::from_fn(|k| {
-            (c_centered[k] * c_scale).round().clamp(-127.0, 127.0) as i8
-        });
+        let codebook_int: [i8; 16] =
+            std::array::from_fn(|k| (c_centered[k] * c_scale).round().clamp(-127.0, 127.0) as i8);
 
         // Scale query to a signed 14-bit integer `q_signed ∈ [-8191, 8191]`; store it
         // biased by 8192 so each 7-bit half (low/high) fits into a u8 and keeps
@@ -75,10 +73,7 @@ impl Query4bitSimd {
         }
     }
 
-    pub fn dotprod(
-        &self,
-        vector: &[u8],
-    ) -> f32 {
+    pub fn dotprod(&self, vector: &[u8]) -> f32 {
         let raw = self.dotprod_raw_best(vector);
         self.postprocess_scale * raw as f32 + self.postprocess_shift
     }
@@ -87,6 +82,15 @@ impl Query4bitSimd {
     fn dotprod_raw_best(&self, vector: &[u8]) -> i64 {
         #[cfg(target_arch = "x86_64")]
         {
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                return unsafe { self.dotprod_raw_avx512_vnni(vector) };
+            }
+            if std::is_x86_feature_detected!("avxvnni") && std::is_x86_feature_detected!("avx2") {
+                return unsafe { self.dotprod_raw_avx_vnni(vector) };
+            }
             if std::is_x86_feature_detected!("avx2") {
                 return unsafe { self.dotprod_raw_avx2(vector) };
             }
@@ -96,6 +100,9 @@ impl Query4bitSimd {
         }
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                return unsafe { self.dotprod_raw_neon_sdot(vector) };
+            }
             return unsafe { self.dotprod_raw_neon(vector) };
         }
         #[allow(unreachable_code)]
@@ -107,20 +114,13 @@ impl Query4bitSimd {
     /// `vector` is PQ-encoded with two 4-bit codebook indices packed per byte:
     /// the low nibble is the index for the even lane (j = 2k), the high nibble
     /// for the odd lane (j = 2k + 1).
-    pub fn dotprod_raw(
-        &self,
-        vector: &[u8],
-    ) -> i64 {
+    pub fn dotprod_raw(&self, vector: &[u8]) -> i64 {
         let mut acc_low: i64 = 0;
         let mut acc_high: i64 = 0;
         for (&[low, high], v) in self.query_data.iter().zip(vector.chunks(8)) {
             for i in 0..16 {
                 let byte = v[i / 2];
-                let idx = if i & 1 == 0 {
-                    byte & 0x0F
-                } else {
-                    byte >> 4
-                };
+                let idx = if i & 1 == 0 { byte & 0x0F } else { byte >> 4 };
                 let codebook_value = self.codebook[idx as usize] as i64;
                 acc_low += low[i] as i64 * codebook_value;
                 acc_high += high[i] as i64 * codebook_value;
@@ -172,6 +172,59 @@ impl Query4bitSimd {
                 acc_low = vpadalq_s16(acc_low, prod_low_hi);
                 acc_high = vpadalq_s16(acc_high, prod_high_lo);
                 acc_high = vpadalq_s16(acc_high, prod_high_hi);
+            }
+
+            let acc_low_sum = vaddvq_s32(acc_low) as i64;
+            let acc_high_sum = vaddvq_s32(acc_high) as i64;
+            acc_low_sum + acc_high_sum * 128
+        }
+    }
+
+    /// ARMv8.2-A Dot Product variant. Replaces the `vmull_s8` + `vpadalq_s16` chain
+    /// with a single `vdotq_s32` (i32 += sum of 4× i8×i8 per accumulator lane).
+    ///
+    /// # Safety
+    /// CPU must support `neon` and `dotprod`.
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[target_feature(enable = "neon,dotprod")]
+    pub unsafe fn dotprod_raw_neon_sdot(&self, vector: &[u8]) -> i64 {
+        use core::arch::aarch64::*;
+
+        unsafe {
+            let codebook = vld1q_s8(self.codebook.as_ptr());
+            let mut acc_low = vdupq_n_s32(0);
+            let mut acc_high = vdupq_n_s32(0);
+            let nibble_mask = vdup_n_u8(0x0F);
+
+            for (&[low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
+                let v_packed = vld1_u8(v_chunk.as_ptr());
+                let v_lo = vand_u8(v_packed, nibble_mask);
+                let v_hi = vshr_n_u8(v_packed, 4);
+                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
+                let c = vqtbl1q_s8(codebook, v);
+
+                // low/high are in [0, 127] → reinterpret to i8 preserves values.
+                let low_s = vreinterpretq_s8_u8(vld1q_u8(low.as_ptr()));
+                let high_s = vreinterpretq_s8_u8(vld1q_u8(high.as_ptr()));
+
+                // SDOT: acc[i] += sum_{k=0..3} low_s[4i+k] * c[4i+k] (signed i8 × i8).
+                // Emitted via inline asm because `vdotq_s32` is still unstable
+                // (rust-lang/rust#117224); target_feature on this fn ensures the
+                // CPU supports the instruction.
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low,
+                    a = in(vreg) low_s,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high,
+                    a = in(vreg) high_s,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
             }
 
             let acc_low_sum = vaddvq_s32(acc_low) as i64;
@@ -265,6 +318,124 @@ impl Query4bitSimd {
             sum_low + sum_high * 128
         }
     }
+
+    /// AVX-VNNI (Alder Lake+, Zen 4+): a single `VPDPBUSD` replaces the
+    /// `maddubs_epi16 + madd_epi16` pair used by the AVX2 path.
+    ///
+    /// # Safety
+    /// CPU must support `avxvnni` (and therefore `avx2`).
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avxvnni,avx2")]
+    pub unsafe fn dotprod_raw_avx_vnni(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
+            let codebook = _mm256_broadcastsi128_si256(codebook_128);
+            let nibble_mask = _mm_set1_epi8(0x0F);
+            let mut acc = _mm256_setzero_si256();
+
+            for (chunk, v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
+                let low_high = _mm256_loadu_si256(chunk.as_ptr() as *const __m256i);
+
+                let v_packed = _mm_loadl_epi64(v_chunk.as_ptr() as *const __m128i);
+                let v_lo = _mm_and_si128(v_packed, nibble_mask);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
+                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
+                let v = _mm256_broadcastsi128_si256(v128);
+                let c = _mm256_shuffle_epi8(codebook, v);
+
+                // VPDPBUSD: acc[i] += sum_{k=0..3} (low_high[4i+k] as u8) * (c[4i+k] as i8).
+                acc = _mm256_dpbusd_avx_epi32(acc, low_high, c);
+            }
+
+            let acc_low = _mm256_castsi256_si128(acc);
+            let acc_high = _mm256_extracti128_si256(acc, 1);
+            let sum_low = hsum_i32_sse(acc_low) as i64;
+            let sum_high = hsum_i32_sse(acc_high) as i64;
+            sum_low + sum_high * 128
+        }
+    }
+
+    /// AVX-512 VNNI (Ice Lake Xeon+). Processes 2 chunks per iteration in a 512-bit
+    /// accumulator using `VPDPBUSD` on ZMM: the `[low0, high0, low1, high1]` layout
+    /// already present in `query_data` fits a 64-byte load exactly.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    pub unsafe fn dotprod_raw_avx512_vnni(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
+            let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
+            let nibble_mask_128 = _mm_set1_epi8(0x0F);
+            let mut acc = _mm512_setzero_si512();
+
+            let chunks = self.query_data.as_slice();
+            let n_pairs = chunks.len() / 2;
+            let has_tail = chunks.len() % 2 == 1;
+
+            for i in 0..n_pairs {
+                // Two consecutive [[u8;16];2] entries → 64 bytes: [low0, high0, low1, high1].
+                let pair_ptr = chunks.as_ptr().add(2 * i) as *const __m512i;
+                let low_high_pair = _mm512_loadu_si512(pair_ptr);
+
+                // 16 packed bytes → 32 nibbles (2 chunks × 16 indices each).
+                let v_packed_16 = _mm_loadu_si128(vector.as_ptr().add(16 * i) as *const __m128i);
+                let v_lo = _mm_and_si128(v_packed_16, nibble_mask_128);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed_16, 4), nibble_mask_128);
+                let v_chunk_a = _mm_unpacklo_epi8(v_lo, v_hi); // 16 indices for chunk 2i
+                let v_chunk_b = _mm_unpackhi_epi8(v_lo, v_hi); // 16 indices for chunk 2i+1
+
+                // Arrange into [v_a, v_a, v_b, v_b] so each 128-bit lane of codebook
+                // gets the right index set for its half of `low_high_pair`.
+                let v_dup_a = _mm256_broadcastsi128_si256(v_chunk_a);
+                let v_dup_b = _mm256_broadcastsi128_si256(v_chunk_b);
+                let v_512 = _mm512_inserti64x4(_mm512_castsi256_si512(v_dup_a), v_dup_b, 1);
+
+                let c_512 = _mm512_shuffle_epi8(codebook_512, v_512);
+                acc = _mm512_dpbusd_epi32(acc, low_high_pair, c_512);
+            }
+
+            // Reduce 16 i32 lanes: [0..3]=chunk-a low, [4..7]=chunk-a high,
+            //                      [8..11]=chunk-b low, [12..15]=chunk-b high.
+            let acc_256_lo = _mm512_castsi512_si256(acc);
+            let acc_256_hi = _mm512_extracti64x4_epi64(acc, 1);
+            let lane_a_low = _mm256_castsi256_si128(acc_256_lo);
+            let lane_a_high = _mm256_extracti128_si256(acc_256_lo, 1);
+            let lane_b_low = _mm256_castsi256_si128(acc_256_hi);
+            let lane_b_high = _mm256_extracti128_si256(acc_256_hi, 1);
+
+            let mut sum_low = hsum_i32_sse(_mm_add_epi32(lane_a_low, lane_b_low)) as i64;
+            let mut sum_high = hsum_i32_sse(_mm_add_epi32(lane_a_high, lane_b_high)) as i64;
+
+            if has_tail {
+                // Last remaining chunk: fall back to AVX-512-VL VNNI on 256-bit.
+                let tail_idx = 2 * n_pairs;
+                let chunk = &chunks[tail_idx];
+                let low_high = _mm256_loadu_si256(chunk.as_ptr() as *const __m256i);
+
+                let v_packed = _mm_loadl_epi64(vector.as_ptr().add(8 * tail_idx) as *const __m128i);
+                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
+                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
+                let codebook_256 = _mm256_broadcastsi128_si256(codebook_128);
+                let v256 = _mm256_broadcastsi128_si256(v128);
+                let c256 = _mm256_shuffle_epi8(codebook_256, v256);
+
+                let tail_acc = _mm256_dpbusd_epi32(_mm256_setzero_si256(), low_high, c256);
+                let t_low = _mm256_castsi256_si128(tail_acc);
+                let t_high = _mm256_extracti128_si256(tail_acc, 1);
+                sum_low += hsum_i32_sse(t_low) as i64;
+                sum_high += hsum_i32_sse(t_high) as i64;
+            }
+
+            sum_low + sum_high * 128
+        }
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -299,7 +470,10 @@ mod tests {
         let query: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0_f32..1.0)).collect();
         let mut indices: Vec<u8> = (0..dim).map(|i| (i % 16) as u8).collect();
         indices.shuffle(rng);
-        (Query4bitSimd::new(&query, &codebook), pack_nibbles(&indices))
+        (
+            Query4bitSimd::new(&query, &codebook),
+            pack_nibbles(&indices),
+        )
     }
 
     #[test]
@@ -387,6 +561,169 @@ mod tests {
             let scalar = simd_query.dotprod_raw(&vector);
             let avx2 = unsafe { simd_query.dotprod_raw_avx2(&vector) };
             assert_eq!(scalar, avx2, "scalar {scalar} != avx2 {avx2} at dim {dim}");
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[test]
+    fn test_neon_sdot_matches_scalar() {
+        if !std::arch::is_aarch64_feature_detected!("dotprod") {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        for &dim in &[16_usize, 128, 256, 1024] {
+            let (simd_query, vector) = random_inputs(&mut rng, dim);
+            let scalar = simd_query.dotprod_raw(&vector);
+            let sdot = unsafe { simd_query.dotprod_raw_neon_sdot(&vector) };
+            assert_eq!(scalar, sdot, "scalar {scalar} != sdot {sdot} at dim {dim}");
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_avx_vnni_matches_scalar() {
+        if !std::is_x86_feature_detected!("avxvnni") || !std::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        for &dim in &[16_usize, 128, 256, 1024] {
+            let (simd_query, vector) = random_inputs(&mut rng, dim);
+            let scalar = simd_query.dotprod_raw(&vector);
+            let vnni = unsafe { simd_query.dotprod_raw_avx_vnni(&vector) };
+            assert_eq!(
+                scalar, vnni,
+                "scalar {scalar} != avx_vnni {vnni} at dim {dim}"
+            );
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_avx512_vnni_matches_scalar() {
+        if !(std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512bw")
+            && std::is_x86_feature_detected!("avx512vnni"))
+        {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        // Mix even and odd chunk counts so the tail-handling path is exercised.
+        for &dim in &[16_usize, 32, 128, 256, 1024, 2048] {
+            let (simd_query, vector) = random_inputs(&mut rng, dim);
+            let scalar = simd_query.dotprod_raw(&vector);
+            let vnni512 = unsafe { simd_query.dotprod_raw_avx512_vnni(&vector) };
+            assert_eq!(
+                scalar, vnni512,
+                "scalar {scalar} != avx512_vnni {vnni512} at dim {dim}"
+            );
+        }
+    }
+
+    /// Run `dotprod_raw` on every SIMD backend available at runtime and assert that
+    /// each result equals the scalar baseline (which uses i64 throughout and cannot
+    /// overflow at any practical PQ dimension).  A mismatch implies saturation or
+    /// integer overflow in one of the SIMD paths.
+    fn assert_all_simd_match_scalar(query: &Query4bitSimd, vector: &[u8]) {
+        let expected = query.dotprod_raw(vector);
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            let neon = unsafe { query.dotprod_raw_neon(vector) };
+            assert_eq!(expected, neon, "neon mismatch (expected {expected})");
+
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                let sdot = unsafe { query.dotprod_raw_neon_sdot(vector) };
+                assert_eq!(expected, sdot, "sdot mismatch (expected {expected})");
+            }
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1") {
+                let sse = unsafe { query.dotprod_raw_sse(vector) };
+                assert_eq!(expected, sse, "sse mismatch (expected {expected})");
+            }
+            if std::is_x86_feature_detected!("avx2") {
+                let avx2 = unsafe { query.dotprod_raw_avx2(vector) };
+                assert_eq!(expected, avx2, "avx2 mismatch (expected {expected})");
+            }
+            if std::is_x86_feature_detected!("avxvnni") && std::is_x86_feature_detected!("avx2") {
+                let vnni = unsafe { query.dotprod_raw_avx_vnni(vector) };
+                assert_eq!(expected, vnni, "avx_vnni mismatch (expected {expected})");
+            }
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                let v512 = unsafe { query.dotprod_raw_avx512_vnni(vector) };
+                assert_eq!(expected, v512, "avx512_vnni mismatch (expected {expected})");
+            }
+        }
+    }
+
+    /// Build the worst-case positive-accumulation inputs.
+    ///
+    /// - Query: all 1.0 → `q_signed = 8191`, `q_biased = 16383`, low = high = 127 (7-bit max).
+    /// - Codebook: entries 0 and 1 both land at `codebook_int = +127`; the remaining 14
+    ///   entries are small negatives that balance the centroid mean to zero.
+    /// - Vector: alternating indices 0 and 1 → every `_mm_maddubs_epi16` pair sees
+    ///   (127 u8) × (127 i8) + (127 u8) × (127 i8) = 32 258 — 509 below i16 saturation.
+    fn max_positive_inputs(dim: usize) -> (Query4bitSimd, Vec<u8>) {
+        // Fourteen entries at −1/7 cancel the two entries at +1.0 → c_shift = 0,
+        // c_abs_max = 1.0, c_scale = 127 → codebook_int[0] = codebook_int[1] = 127.
+        let mut codebook = [-1.0_f32 / 7.0; 16];
+        codebook[0] = 1.0;
+        codebook[1] = 1.0;
+        let query = vec![1.0_f32; dim];
+        let indices: Vec<u8> = (0..dim).map(|i| (i % 2) as u8).collect();
+        (
+            Query4bitSimd::new(&query, &codebook),
+            pack_nibbles(&indices),
+        )
+    }
+
+    /// Mirror of `max_positive_inputs` with codebook_int[0] = codebook_int[1] = −127.
+    /// Every maddubs pair = −32 258, one above the i16 minimum of −32 768.
+    fn max_negative_inputs(dim: usize) -> (Query4bitSimd, Vec<u8>) {
+        let mut codebook = [1.0_f32 / 7.0; 16];
+        codebook[0] = -1.0;
+        codebook[1] = -1.0;
+        let query = vec![1.0_f32; dim];
+        let indices: Vec<u8> = (0..dim).map(|i| (i % 2) as u8).collect();
+        (
+            Query4bitSimd::new(&query, &codebook),
+            pack_nibbles(&indices),
+        )
+    }
+
+    /// `_mm_maddubs_epi16` saturates to i16 (±32 767).  The design guarantees
+    /// low/high ∈ [0, 127] and codebook_int ∈ [−127, 127], so the worst-case pair
+    /// sum is 127×127 + 127×127 = 32 258.  A SIMD/scalar mismatch here would mean
+    /// saturation corrupted the result.
+    #[test]
+    fn test_overflow_maddubs_near_saturation() {
+        // Positive: pair = +32 258 < +32 767 → no saturation.
+        let (q, v) = max_positive_inputs(16);
+        assert_all_simd_match_scalar(&q, &v);
+
+        // Negative: pair = −32 258 > −32 768 → no saturation.
+        let (q, v) = max_negative_inputs(16);
+        assert_all_simd_match_scalar(&q, &v);
+    }
+
+    /// At dim = 4 096 each i32 accumulator lane carries
+    /// 256 chunks × 4 products × 16 129 = 16 516 096 — far below i32 max (2.1 B).
+    /// The horizontal sum across four lanes reaches 66 064 384, also i32-safe.
+    /// A second pass with dim = 4 096 + 16 (odd chunk count) exercises the
+    /// AVX-512 tail path under the same worst-case values.
+    #[test]
+    fn test_overflow_i32_accumulator_depth() {
+        for dim in [4096_usize, 4096 + 16] {
+            let (q, v) = max_positive_inputs(dim);
+            assert_all_simd_match_scalar(&q, &v);
+
+            let (q, v) = max_negative_inputs(dim);
+            assert_all_simd_match_scalar(&q, &v);
         }
     }
 }
