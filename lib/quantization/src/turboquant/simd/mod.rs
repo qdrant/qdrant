@@ -101,7 +101,7 @@ impl Query4bitSimd {
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             if std::arch::is_aarch64_feature_detected!("dotprod") {
-                return unsafe { self.dotprod_raw_neon_sdot(vector) };
+                return unsafe { self.dotprod_raw_neon_sdot_x2(vector) };
             }
             return unsafe { self.dotprod_raw_neon(vector) };
         }
@@ -233,6 +233,282 @@ impl Query4bitSimd {
         }
     }
 
+    /// 2× unrolled SDOT path: processes two chunks per iteration with four
+    /// independent `i32x4` accumulators (two for low, two for high).  Breaks the
+    /// single accumulator dependency chain of `dotprod_raw_neon_sdot` — on
+    /// Apple M-series SDOT has ~3-cycle latency and 4/cycle throughput, so
+    /// widening the chain closer to the pipeline depth lifts throughput.
+    ///
+    /// # Safety
+    /// CPU must support `neon` and `dotprod`.
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[target_feature(enable = "neon,dotprod")]
+    pub unsafe fn dotprod_raw_neon_sdot_x2(&self, vector: &[u8]) -> i64 {
+        use core::arch::aarch64::*;
+
+        unsafe {
+            let codebook = vld1q_s8(self.codebook.as_ptr());
+            let mut acc_low_0 = vdupq_n_s32(0);
+            let mut acc_low_1 = vdupq_n_s32(0);
+            let mut acc_high_0 = vdupq_n_s32(0);
+            let mut acc_high_1 = vdupq_n_s32(0);
+            let nibble_mask_q = vdupq_n_u8(0x0F);
+
+            let chunks = self.query_data.as_slice();
+            let n_pairs = chunks.len() / 2;
+            let has_tail = chunks.len() % 2 == 1;
+
+            for i in 0..n_pairs {
+                let [low_0, high_0] = chunks[2 * i];
+                let [low_1, high_1] = chunks[2 * i + 1];
+
+                // One 16-byte load covers both chunks' 8 packed bytes each.
+                let v_packed = vld1q_u8(vector.as_ptr().add(16 * i));
+                let v_lo = vandq_u8(v_packed, nibble_mask_q);
+                let v_hi = vshrq_n_u8(v_packed, 4);
+                // vzip1q_u8 interleaves the low 8 bytes of each input → 16 indices
+                // for chunk 2i; vzip2q_u8 does the same for bytes 8..15 → chunk 2i+1.
+                let v_0 = vzip1q_u8(v_lo, v_hi);
+                let v_1 = vzip2q_u8(v_lo, v_hi);
+                let c_0 = vqtbl1q_s8(codebook, v_0);
+                let c_1 = vqtbl1q_s8(codebook, v_1);
+
+                let low_s_0 = vreinterpretq_s8_u8(vld1q_u8(low_0.as_ptr()));
+                let high_s_0 = vreinterpretq_s8_u8(vld1q_u8(high_0.as_ptr()));
+                let low_s_1 = vreinterpretq_s8_u8(vld1q_u8(low_1.as_ptr()));
+                let high_s_1 = vreinterpretq_s8_u8(vld1q_u8(high_1.as_ptr()));
+
+                // Four independent SDOT dependency chains.
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_0,
+                    a = in(vreg) low_s_0,
+                    b = in(vreg) c_0,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_1,
+                    a = in(vreg) low_s_1,
+                    b = in(vreg) c_1,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_0,
+                    a = in(vreg) high_s_0,
+                    b = in(vreg) c_0,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_1,
+                    a = in(vreg) high_s_1,
+                    b = in(vreg) c_1,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+            }
+
+            if has_tail {
+                let tail_idx = 2 * n_pairs;
+                let [low, high] = chunks[tail_idx];
+                let nibble_mask = vdup_n_u8(0x0F);
+                let v_packed = vld1_u8(vector.as_ptr().add(8 * tail_idx));
+                let v_lo = vand_u8(v_packed, nibble_mask);
+                let v_hi = vshr_n_u8(v_packed, 4);
+                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
+                let c = vqtbl1q_s8(codebook, v);
+                let low_s = vreinterpretq_s8_u8(vld1q_u8(low.as_ptr()));
+                let high_s = vreinterpretq_s8_u8(vld1q_u8(high.as_ptr()));
+
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_0,
+                    a = in(vreg) low_s,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_0,
+                    a = in(vreg) high_s,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+            }
+
+            let acc_low = vaddq_s32(acc_low_0, acc_low_1);
+            let acc_high = vaddq_s32(acc_high_0, acc_high_1);
+            let acc_low_sum = vaddvq_s32(acc_low) as i64;
+            let acc_high_sum = vaddvq_s32(acc_high) as i64;
+            acc_low_sum + acc_high_sum * 128
+        }
+    }
+
+    /// 4× unrolled SDOT path: eight independent `i32x4` accumulators consume four
+    /// chunks per iteration.  With SDOT's 3-cycle latency / 4-ops-per-cycle
+    /// throughput on Apple M-series, sixteen ops-in-flight would saturate the
+    /// pipeline; eight chains get us roughly there while staying within NEON's
+    /// 32-register budget.
+    ///
+    /// # Safety
+    /// CPU must support `neon` and `dotprod`.
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[target_feature(enable = "neon,dotprod")]
+    pub unsafe fn dotprod_raw_neon_sdot_x4(&self, vector: &[u8]) -> i64 {
+        use core::arch::aarch64::*;
+
+        unsafe {
+            let codebook = vld1q_s8(self.codebook.as_ptr());
+            let mut acc_low_0 = vdupq_n_s32(0);
+            let mut acc_low_1 = vdupq_n_s32(0);
+            let mut acc_low_2 = vdupq_n_s32(0);
+            let mut acc_low_3 = vdupq_n_s32(0);
+            let mut acc_high_0 = vdupq_n_s32(0);
+            let mut acc_high_1 = vdupq_n_s32(0);
+            let mut acc_high_2 = vdupq_n_s32(0);
+            let mut acc_high_3 = vdupq_n_s32(0);
+            let nibble_mask_q = vdupq_n_u8(0x0F);
+
+            let chunks = self.query_data.as_slice();
+            let n_groups = chunks.len() / 4;
+            let tail_start = n_groups * 4;
+
+            for i in 0..n_groups {
+                // Two 16-byte loads cover four chunks' 8 packed bytes each.
+                let v_packed_a = vld1q_u8(vector.as_ptr().add(32 * i));
+                let v_packed_b = vld1q_u8(vector.as_ptr().add(32 * i + 16));
+
+                let v_lo_a = vandq_u8(v_packed_a, nibble_mask_q);
+                let v_hi_a = vshrq_n_u8(v_packed_a, 4);
+                let v_0 = vzip1q_u8(v_lo_a, v_hi_a);
+                let v_1 = vzip2q_u8(v_lo_a, v_hi_a);
+
+                let v_lo_b = vandq_u8(v_packed_b, nibble_mask_q);
+                let v_hi_b = vshrq_n_u8(v_packed_b, 4);
+                let v_2 = vzip1q_u8(v_lo_b, v_hi_b);
+                let v_3 = vzip2q_u8(v_lo_b, v_hi_b);
+
+                let c_0 = vqtbl1q_s8(codebook, v_0);
+                let c_1 = vqtbl1q_s8(codebook, v_1);
+                let c_2 = vqtbl1q_s8(codebook, v_2);
+                let c_3 = vqtbl1q_s8(codebook, v_3);
+
+                let [low_0, high_0] = chunks[4 * i];
+                let [low_1, high_1] = chunks[4 * i + 1];
+                let [low_2, high_2] = chunks[4 * i + 2];
+                let [low_3, high_3] = chunks[4 * i + 3];
+
+                let low_s_0 = vreinterpretq_s8_u8(vld1q_u8(low_0.as_ptr()));
+                let low_s_1 = vreinterpretq_s8_u8(vld1q_u8(low_1.as_ptr()));
+                let low_s_2 = vreinterpretq_s8_u8(vld1q_u8(low_2.as_ptr()));
+                let low_s_3 = vreinterpretq_s8_u8(vld1q_u8(low_3.as_ptr()));
+                let high_s_0 = vreinterpretq_s8_u8(vld1q_u8(high_0.as_ptr()));
+                let high_s_1 = vreinterpretq_s8_u8(vld1q_u8(high_1.as_ptr()));
+                let high_s_2 = vreinterpretq_s8_u8(vld1q_u8(high_2.as_ptr()));
+                let high_s_3 = vreinterpretq_s8_u8(vld1q_u8(high_3.as_ptr()));
+
+                // Eight independent SDOT dependency chains.
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_0,
+                    a = in(vreg) low_s_0,
+                    b = in(vreg) c_0,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_1,
+                    a = in(vreg) low_s_1,
+                    b = in(vreg) c_1,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_2,
+                    a = in(vreg) low_s_2,
+                    b = in(vreg) c_2,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_3,
+                    a = in(vreg) low_s_3,
+                    b = in(vreg) c_3,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_0,
+                    a = in(vreg) high_s_0,
+                    b = in(vreg) c_0,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_1,
+                    a = in(vreg) high_s_1,
+                    b = in(vreg) c_1,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_2,
+                    a = in(vreg) high_s_2,
+                    b = in(vreg) c_2,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_3,
+                    a = in(vreg) high_s_3,
+                    b = in(vreg) c_3,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+            }
+
+            // Process 0–3 leftover chunks serially, accumulating into the first pair.
+            let nibble_mask = vdup_n_u8(0x0F);
+            for tail_i in tail_start..chunks.len() {
+                let [low, high] = chunks[tail_i];
+                let v_packed = vld1_u8(vector.as_ptr().add(8 * tail_i));
+                let v_lo = vand_u8(v_packed, nibble_mask);
+                let v_hi = vshr_n_u8(v_packed, 4);
+                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
+                let c = vqtbl1q_s8(codebook, v);
+                let low_s = vreinterpretq_s8_u8(vld1q_u8(low.as_ptr()));
+                let high_s = vreinterpretq_s8_u8(vld1q_u8(high.as_ptr()));
+
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_0,
+                    a = in(vreg) low_s,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_0,
+                    a = in(vreg) high_s,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+            }
+
+            let acc_low = vaddq_s32(
+                vaddq_s32(acc_low_0, acc_low_1),
+                vaddq_s32(acc_low_2, acc_low_3),
+            );
+            let acc_high = vaddq_s32(
+                vaddq_s32(acc_high_0, acc_high_1),
+                vaddq_s32(acc_high_2, acc_high_3),
+            );
+            let acc_low_sum = vaddvq_s32(acc_low) as i64;
+            let acc_high_sum = vaddvq_s32(acc_high) as i64;
+            acc_low_sum + acc_high_sum * 128
+        }
+    }
+
     /// x86_64 SSE4.1 + SSSE3 implementation of [`Query4bitSimd::dotprod_raw`].
     ///
     /// # Safety
@@ -357,6 +633,85 @@ impl Query4bitSimd {
         }
     }
 
+    /// 4× unrolled AVX-VNNI: four YMM accumulators consume four chunks per iteration.
+    /// `VPDPBUSD` on Zen 4 has 4-cycle latency at 1/cycle throughput — four chains
+    /// just saturate the pipeline.  Golden Cove runs it at 2/cycle, so there's still
+    /// some headroom beyond x4 there.
+    ///
+    /// # Safety
+    /// CPU must support `avxvnni` (and therefore `avx2`).
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avxvnni,avx2")]
+    pub unsafe fn dotprod_raw_avx_vnni_x4(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
+            let codebook = _mm256_broadcastsi128_si256(codebook_128);
+            let nibble_mask = _mm_set1_epi8(0x0F);
+            let mut acc0 = _mm256_setzero_si256();
+            let mut acc1 = _mm256_setzero_si256();
+            let mut acc2 = _mm256_setzero_si256();
+            let mut acc3 = _mm256_setzero_si256();
+
+            let chunks = self.query_data.as_slice();
+            let n_groups = chunks.len() / 4;
+            let tail_start = n_groups * 4;
+
+            for i in 0..n_groups {
+                // 4 × 32-byte query_data loads.
+                let lh0 = _mm256_loadu_si256(chunks.as_ptr().add(4 * i) as *const __m256i);
+                let lh1 = _mm256_loadu_si256(chunks.as_ptr().add(4 * i + 1) as *const __m256i);
+                let lh2 = _mm256_loadu_si256(chunks.as_ptr().add(4 * i + 2) as *const __m256i);
+                let lh3 = _mm256_loadu_si256(chunks.as_ptr().add(4 * i + 3) as *const __m256i);
+
+                // Two 16-byte vector loads cover 4 chunks' 8 bytes each.
+                let vp_a = _mm_loadu_si128(vector.as_ptr().add(32 * i) as *const __m128i);
+                let vp_b = _mm_loadu_si128(vector.as_ptr().add(32 * i + 16) as *const __m128i);
+
+                let v_lo_a = _mm_and_si128(vp_a, nibble_mask);
+                let v_hi_a = _mm_and_si128(_mm_srli_epi16(vp_a, 4), nibble_mask);
+                let v128_0 = _mm_unpacklo_epi8(v_lo_a, v_hi_a);
+                let v128_1 = _mm_unpackhi_epi8(v_lo_a, v_hi_a);
+
+                let v_lo_b = _mm_and_si128(vp_b, nibble_mask);
+                let v_hi_b = _mm_and_si128(_mm_srli_epi16(vp_b, 4), nibble_mask);
+                let v128_2 = _mm_unpacklo_epi8(v_lo_b, v_hi_b);
+                let v128_3 = _mm_unpackhi_epi8(v_lo_b, v_hi_b);
+
+                let c0 = _mm256_shuffle_epi8(codebook, _mm256_broadcastsi128_si256(v128_0));
+                let c1 = _mm256_shuffle_epi8(codebook, _mm256_broadcastsi128_si256(v128_1));
+                let c2 = _mm256_shuffle_epi8(codebook, _mm256_broadcastsi128_si256(v128_2));
+                let c3 = _mm256_shuffle_epi8(codebook, _mm256_broadcastsi128_si256(v128_3));
+
+                // Four independent VPDPBUSD dependency chains.
+                acc0 = _mm256_dpbusd_avx_epi32(acc0, lh0, c0);
+                acc1 = _mm256_dpbusd_avx_epi32(acc1, lh1, c1);
+                acc2 = _mm256_dpbusd_avx_epi32(acc2, lh2, c2);
+                acc3 = _mm256_dpbusd_avx_epi32(acc3, lh3, c3);
+            }
+
+            // Tail: 0–3 leftover chunks, processed one at a time into acc0.
+            for tail_i in tail_start..chunks.len() {
+                let low_high = _mm256_loadu_si256(chunks.as_ptr().add(tail_i) as *const __m256i);
+                let v_packed = _mm_loadl_epi64(vector.as_ptr().add(8 * tail_i) as *const __m128i);
+                let v_lo = _mm_and_si128(v_packed, nibble_mask);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
+                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
+                let v = _mm256_broadcastsi128_si256(v128);
+                let c = _mm256_shuffle_epi8(codebook, v);
+                acc0 = _mm256_dpbusd_avx_epi32(acc0, low_high, c);
+            }
+
+            let acc = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
+            let acc_low = _mm256_castsi256_si128(acc);
+            let acc_high = _mm256_extracti128_si256(acc, 1);
+            let sum_low = hsum_i32_sse(acc_low) as i64;
+            let sum_high = hsum_i32_sse(acc_high) as i64;
+            sum_low + sum_high * 128
+        }
+    }
+
     /// AVX-512 VNNI (Ice Lake Xeon+). Processes 2 chunks per iteration in a 512-bit
     /// accumulator using `VPDPBUSD` on ZMM: the `[low0, high0, low1, high1]` layout
     /// already present in `query_data` fits a 64-byte load exactly.
@@ -423,6 +778,148 @@ impl Query4bitSimd {
                 let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
                 let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
                 let codebook_256 = _mm256_broadcastsi128_si256(codebook_128);
+                let v256 = _mm256_broadcastsi128_si256(v128);
+                let c256 = _mm256_shuffle_epi8(codebook_256, v256);
+
+                let tail_acc = _mm256_dpbusd_epi32(_mm256_setzero_si256(), low_high, c256);
+                let t_low = _mm256_castsi256_si128(tail_acc);
+                let t_high = _mm256_extracti128_si256(tail_acc, 1);
+                sum_low += hsum_i32_sse(t_low) as i64;
+                sum_high += hsum_i32_sse(t_high) as i64;
+            }
+
+            sum_low + sum_high * 128
+        }
+    }
+
+    /// 4× unrolled AVX-512 VNNI: four ZMM accumulators consume eight chunks per
+    /// iteration.  With `VPDPBUSD` latency ~5 cycles and throughput 1/cycle on
+    /// Ice Lake/Sapphire Rapids, four chains are close to saturation.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    pub unsafe fn dotprod_raw_avx512_vnni_x4(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
+            let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
+            let codebook_256 = _mm256_broadcastsi128_si256(codebook_128);
+            let nibble_mask_128 = _mm_set1_epi8(0x0F);
+
+            let mut acc0 = _mm512_setzero_si512();
+            let mut acc1 = _mm512_setzero_si512();
+            let mut acc2 = _mm512_setzero_si512();
+            let mut acc3 = _mm512_setzero_si512();
+
+            let chunks = self.query_data.as_slice();
+            let n_groups = chunks.len() / 8;
+
+            for i in 0..n_groups {
+                // 4 × 64-byte ZMM loads = 256 bytes of query_data (8 chunks).
+                let lh_p0 = _mm512_loadu_si512(chunks.as_ptr().add(8 * i) as *const __m512i);
+                let lh_p1 = _mm512_loadu_si512(chunks.as_ptr().add(8 * i + 2) as *const __m512i);
+                let lh_p2 = _mm512_loadu_si512(chunks.as_ptr().add(8 * i + 4) as *const __m512i);
+                let lh_p3 = _mm512_loadu_si512(chunks.as_ptr().add(8 * i + 6) as *const __m512i);
+
+                // 4 × 16-byte vector loads cover 8 chunks' 8 bytes each.
+                let vp0 = _mm_loadu_si128(vector.as_ptr().add(64 * i) as *const __m128i);
+                let vp1 = _mm_loadu_si128(vector.as_ptr().add(64 * i + 16) as *const __m128i);
+                let vp2 = _mm_loadu_si128(vector.as_ptr().add(64 * i + 32) as *const __m128i);
+                let vp3 = _mm_loadu_si128(vector.as_ptr().add(64 * i + 48) as *const __m128i);
+
+                // Expand each 16-byte vector input into a ZMM codebook-lookup result.
+                // Repeats the baseline's `[v_a, v_a, v_b, v_b]` arrangement per pair.
+                let v_lo_0 = _mm_and_si128(vp0, nibble_mask_128);
+                let v_hi_0 = _mm_and_si128(_mm_srli_epi16(vp0, 4), nibble_mask_128);
+                let v_a_0 = _mm_unpacklo_epi8(v_lo_0, v_hi_0);
+                let v_b_0 = _mm_unpackhi_epi8(v_lo_0, v_hi_0);
+                let v_512_0 = _mm512_inserti64x4(
+                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a_0)),
+                    _mm256_broadcastsi128_si256(v_b_0),
+                    1,
+                );
+                let c0 = _mm512_shuffle_epi8(codebook_512, v_512_0);
+
+                let v_lo_1 = _mm_and_si128(vp1, nibble_mask_128);
+                let v_hi_1 = _mm_and_si128(_mm_srli_epi16(vp1, 4), nibble_mask_128);
+                let v_a_1 = _mm_unpacklo_epi8(v_lo_1, v_hi_1);
+                let v_b_1 = _mm_unpackhi_epi8(v_lo_1, v_hi_1);
+                let v_512_1 = _mm512_inserti64x4(
+                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a_1)),
+                    _mm256_broadcastsi128_si256(v_b_1),
+                    1,
+                );
+                let c1 = _mm512_shuffle_epi8(codebook_512, v_512_1);
+
+                let v_lo_2 = _mm_and_si128(vp2, nibble_mask_128);
+                let v_hi_2 = _mm_and_si128(_mm_srli_epi16(vp2, 4), nibble_mask_128);
+                let v_a_2 = _mm_unpacklo_epi8(v_lo_2, v_hi_2);
+                let v_b_2 = _mm_unpackhi_epi8(v_lo_2, v_hi_2);
+                let v_512_2 = _mm512_inserti64x4(
+                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a_2)),
+                    _mm256_broadcastsi128_si256(v_b_2),
+                    1,
+                );
+                let c2 = _mm512_shuffle_epi8(codebook_512, v_512_2);
+
+                let v_lo_3 = _mm_and_si128(vp3, nibble_mask_128);
+                let v_hi_3 = _mm_and_si128(_mm_srli_epi16(vp3, 4), nibble_mask_128);
+                let v_a_3 = _mm_unpacklo_epi8(v_lo_3, v_hi_3);
+                let v_b_3 = _mm_unpackhi_epi8(v_lo_3, v_hi_3);
+                let v_512_3 = _mm512_inserti64x4(
+                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a_3)),
+                    _mm256_broadcastsi128_si256(v_b_3),
+                    1,
+                );
+                let c3 = _mm512_shuffle_epi8(codebook_512, v_512_3);
+
+                acc0 = _mm512_dpbusd_epi32(acc0, lh_p0, c0);
+                acc1 = _mm512_dpbusd_epi32(acc1, lh_p1, c1);
+                acc2 = _mm512_dpbusd_epi32(acc2, lh_p2, c2);
+                acc3 = _mm512_dpbusd_epi32(acc3, lh_p3, c3);
+            }
+
+            // Tail: 0–7 leftover chunks.  Drain ZMM pairs first, then one YMM chunk.
+            let mut pair_idx = 8 * n_groups;
+            while pair_idx + 2 <= chunks.len() {
+                let lh_pair = _mm512_loadu_si512(chunks.as_ptr().add(pair_idx) as *const __m512i);
+                let vp = _mm_loadu_si128(vector.as_ptr().add(8 * pair_idx) as *const __m128i);
+                let v_lo = _mm_and_si128(vp, nibble_mask_128);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(vp, 4), nibble_mask_128);
+                let v_a = _mm_unpacklo_epi8(v_lo, v_hi);
+                let v_b = _mm_unpackhi_epi8(v_lo, v_hi);
+                let v_512 = _mm512_inserti64x4(
+                    _mm512_castsi256_si512(_mm256_broadcastsi128_si256(v_a)),
+                    _mm256_broadcastsi128_si256(v_b),
+                    1,
+                );
+                let c = _mm512_shuffle_epi8(codebook_512, v_512);
+                acc0 = _mm512_dpbusd_epi32(acc0, lh_pair, c);
+                pair_idx += 2;
+            }
+
+            let acc_512 =
+                _mm512_add_epi32(_mm512_add_epi32(acc0, acc1), _mm512_add_epi32(acc2, acc3));
+            let acc_256_lo = _mm512_castsi512_si256(acc_512);
+            let acc_256_hi = _mm512_extracti64x4_epi64(acc_512, 1);
+            let lane_a_low = _mm256_castsi256_si128(acc_256_lo);
+            let lane_a_high = _mm256_extracti128_si256(acc_256_lo, 1);
+            let lane_b_low = _mm256_castsi256_si128(acc_256_hi);
+            let lane_b_high = _mm256_extracti128_si256(acc_256_hi, 1);
+
+            let mut sum_low = hsum_i32_sse(_mm_add_epi32(lane_a_low, lane_b_low)) as i64;
+            let mut sum_high = hsum_i32_sse(_mm_add_epi32(lane_a_high, lane_b_high)) as i64;
+
+            // Final single-chunk tail on 256-bit VNNI.
+            if pair_idx < chunks.len() {
+                let low_high = _mm256_loadu_si256(chunks.as_ptr().add(pair_idx) as *const __m256i);
+                let v_packed = _mm_loadl_epi64(vector.as_ptr().add(8 * pair_idx) as *const __m128i);
+                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
+                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
                 let v256 = _mm256_broadcastsi128_si256(v128);
                 let c256 = _mm256_shuffle_epi8(codebook_256, v256);
 
@@ -579,6 +1076,56 @@ mod tests {
         }
     }
 
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[test]
+    fn test_neon_sdot_x2_matches_scalar() {
+        if !std::arch::is_aarch64_feature_detected!("dotprod") {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        // Mix even and odd chunk counts so the tail path is covered.
+        for &dim in &[16_usize, 32, 128, 256, 1024, 2048, 256 + 16] {
+            let (simd_query, vector) = random_inputs(&mut rng, dim);
+            let scalar = simd_query.dotprod_raw(&vector);
+            let sdot_x2 = unsafe { simd_query.dotprod_raw_neon_sdot_x2(&vector) };
+            assert_eq!(
+                scalar, sdot_x2,
+                "scalar {scalar} != sdot_x2 {sdot_x2} at dim {dim}"
+            );
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[test]
+    fn test_neon_sdot_x4_matches_scalar() {
+        if !std::arch::is_aarch64_feature_detected!("dotprod") {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        // Cover 0/1/2/3 leftover chunks (mod-4) so every tail branch runs.
+        for &dim in &[
+            16_usize,
+            32,
+            48,
+            64,
+            128,
+            256,
+            1024,
+            2048,
+            1024 + 16,
+            1024 + 32,
+            1024 + 48,
+        ] {
+            let (simd_query, vector) = random_inputs(&mut rng, dim);
+            let scalar = simd_query.dotprod_raw(&vector);
+            let sdot_x4 = unsafe { simd_query.dotprod_raw_neon_sdot_x4(&vector) };
+            assert_eq!(
+                scalar, sdot_x4,
+                "scalar {scalar} != sdot_x4 {sdot_x4} at dim {dim}"
+            );
+        }
+    }
+
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn test_avx_vnni_matches_scalar() {
@@ -593,6 +1140,37 @@ mod tests {
             assert_eq!(
                 scalar, vnni,
                 "scalar {scalar} != avx_vnni {vnni} at dim {dim}"
+            );
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_avx_vnni_x4_matches_scalar() {
+        if !std::is_x86_feature_detected!("avxvnni") || !std::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        // Cover 0/1/2/3 leftover chunks (mod-4) so every tail branch runs.
+        for &dim in &[
+            16_usize,
+            32,
+            48,
+            64,
+            128,
+            256,
+            1024,
+            2048,
+            1024 + 16,
+            1024 + 32,
+            1024 + 48,
+        ] {
+            let (simd_query, vector) = random_inputs(&mut rng, dim);
+            let scalar = simd_query.dotprod_raw(&vector);
+            let vnni_x4 = unsafe { simd_query.dotprod_raw_avx_vnni_x4(&vector) };
+            assert_eq!(
+                scalar, vnni_x4,
+                "scalar {scalar} != avx_vnni_x4 {vnni_x4} at dim {dim}"
             );
         }
     }
@@ -615,6 +1193,42 @@ mod tests {
             assert_eq!(
                 scalar, vnni512,
                 "scalar {scalar} != avx512_vnni {vnni512} at dim {dim}"
+            );
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_avx512_vnni_x4_matches_scalar() {
+        if !(std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512bw")
+            && std::is_x86_feature_detected!("avx512vnni"))
+        {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        // Cover every tail residue mod 8 so ZMM-pair and YMM-single paths both run.
+        for &dim in &[
+            16_usize,
+            32,
+            128,
+            256,
+            1024,
+            2048,
+            1024 + 16,
+            1024 + 32,
+            1024 + 48,
+            1024 + 64,
+            1024 + 80,
+            1024 + 96,
+            1024 + 112,
+        ] {
+            let (simd_query, vector) = random_inputs(&mut rng, dim);
+            let scalar = simd_query.dotprod_raw(&vector);
+            let vnni512_x4 = unsafe { simd_query.dotprod_raw_avx512_vnni_x4(&vector) };
+            assert_eq!(
+                scalar, vnni512_x4,
+                "scalar {scalar} != avx512_vnni_x4 {vnni512_x4} at dim {dim}"
             );
         }
     }
