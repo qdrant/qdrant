@@ -86,7 +86,7 @@ def test_triple_replication(tmp_path: pathlib.Path):
                     print(count)
 
                 # Make sure there are no stale updates
-                upsert_random_points(peer_api_uris[0], 1, COLLECTION_NAME, offset=100_000, wait=True)
+                upsert_random_points(peer_api_uris[0], 1, COLLECTION_NAME, offset=100_000, wait="true")
 
                 for peer_api_uri in peer_api_uris:
                     count = get_collection_point_count(peer_api_uri, COLLECTION_NAME, exact=True)
