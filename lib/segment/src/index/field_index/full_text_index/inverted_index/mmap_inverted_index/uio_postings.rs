@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use common::generic_consts::{Random, Sequential};
 use common::universal_io::{OpenOptions, ReadRange, UniversalIoError, UniversalRead};
-use posting_list::{PostingList, PostingListView};
+use posting_list::PostingList;
 use zerocopy::FromBytes;
 
 use crate::common::operation_error::OperationResult;
@@ -172,15 +172,14 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
     }
 
     /// Read the posting lists for every header yielded by `header_iter` and
-    /// hand the resulting views to `callback`. Header iteration is pipelined
-    /// into the posting reads - submissions are scheduled lazily as headers
-    /// arrive.
-    fn with_posting_views<T>(
-        &self,
-        header_iter: Box<dyn Iterator<Item = HeaderResult> + '_>,
+    /// return them as `Vec<(TokenId, RawPostingList)>`. Header iteration is
+    /// pipelined into the posting reads — submissions are scheduled lazily as
+    /// headers arrive.
+    fn fetch_raw_postings<'a>(
+        &'a self,
+        header_iter: Box<dyn Iterator<Item = HeaderResult> + 'a>,
         expected_capacity: usize,
-        callback: impl FnOnce(Vec<(TokenId, PostingListView<'_, V>)>) -> OperationResult<T>,
-    ) -> OperationResult<T> {
+    ) -> OperationResult<Vec<(TokenId, RawPostingList<'a>)>> {
         let header_err: Cell<Option<UniversalIoError>> = Cell::new(None);
 
         let range_iter = header_iter.filter_map(|header_res| match header_res {
@@ -197,7 +196,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
             }
         });
 
-        let mut raw_postings: Vec<(TokenId, RawPostingList<'_>)> =
+        let mut raw_postings: Vec<(TokenId, RawPostingList<'a>)> =
             Vec::with_capacity(expected_capacity);
 
         for entry in self.storage.read_iter::<Sequential, _>(range_iter)? {
@@ -209,21 +208,16 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
             return Err(err.into());
         }
 
-        let views = raw_postings
-            .iter()
-            .map(|(token_id, raw)| raw.as_view::<V>().map(|view| (*token_id, view)))
-            .collect::<OperationResult<Vec<_>>>()?;
-
-        callback(views)
+        Ok(raw_postings)
     }
 
-    /// Fetch posting lists for the given token ids and hand them to `callback`.
-    /// If any of posting lists is not found - return `None`.
-    pub fn with_all_or_none_postings<T>(
-        &self,
+    /// Fetch the raw bytes of posting lists for the given token ids.
+    /// Returns `None` if any posting list is missing; otherwise returns
+    /// the full set in the order they were read from storage.
+    pub fn fetch_all_or_none<'a>(
+        &'a self,
         token_ids: &[TokenId],
-        callback: impl FnOnce(Vec<(TokenId, PostingListView<'_, V>)>) -> OperationResult<T>,
-    ) -> OperationResult<Option<T>> {
+    ) -> OperationResult<Option<Vec<(TokenId, RawPostingList<'a>)>>> {
         let HeadersBatch {
             iter: header_iter,
             missing,
@@ -233,36 +227,30 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
             return Ok(None);
         }
 
-        self.with_posting_views(header_iter, token_ids.len(), callback)
+        self.fetch_raw_postings(header_iter, token_ids.len())
             .map(Some)
     }
 
-    /// Fetch all existing posting lists for the given token ids and hand them
-    /// to `callback`. Token ids without a posting list are silently ignored.
-    pub fn with_existing_postings<T>(
-        &self,
+    /// Fetch the raw bytes of every existing posting list among `token_ids`.
+    /// Token ids without a posting list are silently ignored.
+    pub fn fetch_existing<'a>(
+        &'a self,
         token_ids: &[TokenId],
-        callback: impl FnOnce(Vec<(TokenId, PostingListView<'_, V>)>) -> OperationResult<T>,
-    ) -> OperationResult<T> {
+    ) -> OperationResult<Vec<(TokenId, RawPostingList<'a>)>> {
         let HeadersBatch {
             iter: header_iter, ..
         } = self.headers_iter(token_ids)?;
 
-        self.with_posting_views(header_iter, token_ids.len(), callback)
+        self.fetch_raw_postings(header_iter, token_ids.len())
     }
 
     pub fn all_postings(&self) -> OperationResult<Vec<PostingList<V>>> {
-        let mut result = Vec::new();
         let all_tokens = (0..self.header.posting_count as TokenId).collect::<Vec<_>>();
+        let raw_postings = self.fetch_existing(&all_tokens)?;
 
-        self.with_existing_postings(&all_tokens, |views| {
-            for (_, view) in views {
-                let posting_list = view.to_owned();
-                result.push(posting_list);
-            }
-            Ok(())
-        })?;
-
-        Ok(result)
+        raw_postings
+            .iter()
+            .map(|(_token_id, raw)| raw.as_view::<V>().map(|view| view.to_owned()))
+            .collect()
     }
 }
