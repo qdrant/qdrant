@@ -310,6 +310,14 @@ service:
   #
   # jwt_rbac: true
 
+  # Enforce API key / JWT authentication on the internal (p2p) gRPC API.
+  # The regular api_key is always forwarded on internal requests, but the
+  # receiving side only verifies it when this flag is enabled. Keep disabled
+  # during a rolling upgrade so older peers (that do not attach a key yet)
+  # can still reach newer peers, then turn it on once every node is upgraded.
+  #
+  # enforce_internal_auth: true
+
   # Hardware reporting adds information to the API responses with a
   # hint on how many resources were used to execute the request.
   #

@@ -63,6 +63,16 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub jwt_rbac: Option<bool>,
 
+    /// Enforce API key / JWT authentication on the internal (p2p) gRPC API.
+    ///
+    /// The regular API key is always forwarded on internal gRPC requests, but
+    /// the receiving side only verifies it when this flag is enabled. This is
+    /// opt-in to keep rolling upgrades safe: during an upgrade some nodes may
+    /// run a version that does not attach the key yet, so enabling enforcement
+    /// before every peer is upgraded would break intra-cluster communication.
+    #[serde(default)]
+    pub enforce_internal_auth: Option<bool>,
+
     #[serde(default)]
     pub hide_jwt_dashboard: Option<bool>,
 
