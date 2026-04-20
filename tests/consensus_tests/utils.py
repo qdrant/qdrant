@@ -34,20 +34,16 @@ class PeerProcess:
     def kill(self):
         self.proc.kill()
         self.proc.wait()
-
-        # remove allocated ports from the dictionary
-        # so they can be used afterwards
-        del busy_ports[self.http_port]
-        del busy_ports[self.grpc_port]
-        del busy_ports[self.p2p_port]
+        busy_ports.pop(self.http_port, None)
+        busy_ports.pop(self.grpc_port, None)
+        busy_ports.pop(self.p2p_port, None)
 
     def interrupt(self):
         self.proc.send_signal(signal.SIGINT)
         self.proc.wait()
-
-        del busy_ports[self.http_port]
-        del busy_ports[self.grpc_port]
-        del busy_ports[self.p2p_port]
+        busy_ports.pop(self.http_port, None)
+        busy_ports.pop(self.grpc_port, None)
+        busy_ports.pop(self.p2p_port, None)
 
 
 def _occupy_port(port):
@@ -61,12 +57,15 @@ def kill_all_processes():
     print()
     while len(processes) > 0:
         p = processes.pop(0)
-        if is_coverage_mode():
-            print(f"Interrupting {p.pid}")
-            p.interrupt()
-        else:
-            print(f"Killing {p.pid}")
-            p.kill()
+        try:
+            if is_coverage_mode():
+                print(f"Interrupting {p.pid}")
+                p.interrupt()
+            else:
+                print(f"Killing {p.pid}")
+                p.kill()
+        except Exception as e:
+            print(f"Cleanup error for {p.pid}: {e}")
 
 
 @pytest.fixture(autouse=True)
