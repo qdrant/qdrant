@@ -59,7 +59,7 @@ self_cell = { workspace = true }
 tango-bench = "0.7.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-io-uring = "0.7.11"
+io-uring = "0.7.12"
 thread-priority = "3.0.0"
 
 [[bench]]

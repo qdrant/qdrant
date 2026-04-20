@@ -117,7 +117,7 @@ roaring = { version = "0.11.3" }
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.5"
 procfs = { version = "0.18", default-features = false }
-io-uring = "0.7.11"
+io-uring = "0.7.12"
 
 [[bench]]
 name = "vector_search"
