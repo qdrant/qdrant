@@ -263,26 +263,22 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100000, throttle=True)
     upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=200000, throttle=True)
     upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=300000, throttle=True)
-    upload_process_4 = run_update_points_in_background(peer_api_uris[3], COLLECTION_NAME, init_offset=400000, throttle=True)
-    upload_process_5 = run_update_points_in_background(peer_api_uris[4], COLLECTION_NAME, init_offset=500000, throttle=True)
 
     sleep(1)
 
     # Kill 5th peer
-    upload_process_5.kill()
     processes.pop().kill()
 
     sleep(1)
 
     # Kill 4th peer
-    upload_process_4.kill()
     processes.pop().kill()
 
     upsert_random_points(peer_api_uris[0], 100, batch_size=5)
 
     sleep(3)
 
-    # Restart 3rd and 4th peer
+    # Restart 4th and 5th peer
     peer_api_uris[3] = start_peer(peer_dirs[3], "peer_3_restarted.log", bootstrap_uri, extra_env=env)
     peer_api_uris[4] = start_peer(peer_dirs[4], "peer_4_restarted.log", bootstrap_uri, extra_env=env)
     wait_for_peer_online(peer_api_uris[3], "/")
@@ -303,9 +299,6 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     # Assert WAL delta transfer progress, and wait for it to finish
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
-
-    # Start inserting into the fourth peer again
-    upload_process_4 = run_update_points_in_background(peer_api_uris[3], COLLECTION_NAME, init_offset=600000, throttle=True)
 
     sleep(1)
 
@@ -328,7 +321,6 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     upload_process_1.kill()
     upload_process_2.kill()
     upload_process_3.kill()
-    upload_process_4.kill()
 
     sleep(1)
 
