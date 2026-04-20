@@ -290,7 +290,12 @@ impl PayloadFieldIndex for MutableNullIndex {
             if let Some(is_empty) = is_empty {
                 if *is_empty {
                     // Return points that don't have values
-                    Some(Box::new(self.storage.has_values_flags.iter_falses()))
+                    Some(Box::new(self.storage.has_values_flags.iter_falses().chain(
+                        {
+                            let end = self.storage.has_values_flags.len() as PointOffsetType;
+                            end..self.total_point_count as u32
+                        },
+                    )))
                 } else {
                     // Return points that have values
                     Some(Box::new(self.storage.has_values_flags.iter_trues()))
@@ -301,7 +306,10 @@ impl PayloadFieldIndex for MutableNullIndex {
                     Some(Box::new(self.storage.is_null_flags.iter_trues()))
                 } else {
                     // Return points that don't have null values
-                    Some(Box::new(self.storage.is_null_flags.iter_falses()))
+                    Some(Box::new(self.storage.is_null_flags.iter_falses().chain({
+                        let end = self.storage.has_values_flags.len() as PointOffsetType;
+                        end..self.total_point_count as u32
+                    })))
                 }
             } else {
                 None
