@@ -90,11 +90,14 @@ impl Query4bitSimd {
     fn dotprod_raw_best(&self, vector: &[u8]) -> i64 {
         #[cfg(target_arch = "x86_64")]
         {
-            if std::is_x86_feature_detected!("avxvnni") && std::is_x86_feature_detected!("avx2") {
-                return unsafe { self.dotprod_raw_avx_vnni(vector) };
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                return unsafe { self.dotprod_raw_avx512_vnni(vector) };
             }
             if std::is_x86_feature_detected!("avx2") {
-                return unsafe { self.dotprod_raw_avx2(vector) };
+                return unsafe { self.dotprod_raw_avx2_x2(vector) };
             }
             if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
                 return unsafe { self.dotprod_raw_sse(vector) };
@@ -413,90 +416,65 @@ impl Query4bitSimd {
         }
     }
 
-    /// AVX-VNNI (Alder Lake+, Zen 4+): a single `VPDPBUSD` replaces the
-    /// `maddubs_epi16 + madd_epi16` pair used by the AVX2 path.
+    /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+).  Processes 2 chunks per iteration
+    /// in a 512-bit accumulator using `VPDPBUSD` on ZMM: the
+    /// `[low0, high0, low1, high1]` layout of two consecutive query_data entries
+    /// fits a 64-byte load exactly.  On Zen 4 ZMM `VPDPBUSD` is throughput
+    /// 0.5/cycle (double-pumped on a 256-bit FPU), so even a single acc chain
+    /// saturates the pipeline — explicit unroll gave no speedup when measured.
     ///
     /// # Safety
-    /// CPU must support `avxvnni` (and therefore `avx2`).
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
     #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avxvnni,avx2")]
-    pub unsafe fn dotprod_raw_avx_vnni(&self, vector: &[u8]) -> i64 {
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    pub unsafe fn dotprod_raw_avx512_vnni(&self, vector: &[u8]) -> i64 {
         use core::arch::x86_64::*;
 
         unsafe {
             let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
-            let codebook = _mm256_broadcastsi128_si256(codebook_128);
-            let nibble_mask = _mm_set1_epi8(0x0F);
-            let mut acc = _mm256_setzero_si256();
+            let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
+            let nibble_mask_128 = _mm_set1_epi8(0x0F);
+            let mut acc = _mm512_setzero_si512();
 
-            for (chunk, v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
-                let low_high = _mm256_loadu_si256(chunk.as_ptr() as *const __m256i);
-
-                let v_packed = _mm_loadl_epi64(v_chunk.as_ptr() as *const __m128i);
-                let v_lo = _mm_and_si128(v_packed, nibble_mask);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
-                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
-                let v = _mm256_broadcastsi128_si256(v128);
-                let c = _mm256_shuffle_epi8(codebook, v);
-
-                // VPDPBUSD: acc[i] += sum_{k=0..3} (low_high[4i+k] as u8) * (c[4i+k] as i8).
-                acc = _mm256_dpbusd_avx_epi32(acc, low_high, c);
-            }
-
-            let acc_low = _mm256_castsi256_si128(acc);
-            let acc_high = _mm256_extracti128_si256(acc, 1);
-            let sum_low = hsum_i32_sse(acc_low) as i64;
-            let sum_high = hsum_i32_sse(acc_high) as i64;
-            sum_low + sum_high * 128
-        }
-    }
-
-    /// 2× unrolled AVX-VNNI: two chunks per iteration with two independent YMM
-    /// accumulators, breaking the single `VPDPBUSD → acc` dependency chain.
-    /// On Zen 4 YMM `VPDPBUSD` has latency 4 and throughput 1/cycle — saturation
-    /// needs 4 ops in flight; two chains roughly double utilization versus the
-    /// 1× path which relies on OoO decoupling alone.
-    ///
-    /// # Safety
-    /// CPU must support `avxvnni` (and therefore `avx2`).
-    #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avxvnni,avx2")]
-    pub unsafe fn dotprod_raw_avx_vnni_x2(&self, vector: &[u8]) -> i64 {
-        use core::arch::x86_64::*;
-
-        unsafe {
-            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr() as *const __m128i);
-            let codebook = _mm256_broadcastsi128_si256(codebook_128);
-            let nibble_mask = _mm_set1_epi8(0x0F);
-            let mut acc0 = _mm256_setzero_si256();
-            let mut acc1 = _mm256_setzero_si256();
-
+            // `query_data.len()` is guaranteed even by the dim-%32 precondition,
+            // so every pair is consumed and there is no tail to handle.
             let chunks = self.query_data.as_slice();
             let n_pairs = chunks.len() / 2;
 
             for i in 0..n_pairs {
-                let lh0 = _mm256_loadu_si256(chunks.as_ptr().add(2 * i) as *const __m256i);
-                let lh1 = _mm256_loadu_si256(chunks.as_ptr().add(2 * i + 1) as *const __m256i);
+                // Two consecutive [[u8;16];2] entries → 64 bytes: [low0, high0, low1, high1].
+                let pair_ptr = chunks.as_ptr().add(2 * i) as *const __m512i;
+                let low_high_pair = _mm512_loadu_si512(pair_ptr);
 
-                let v_packed = _mm_loadu_si128(vector.as_ptr().add(16 * i) as *const __m128i);
-                let v_lo = _mm_and_si128(v_packed, nibble_mask);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
-                let v128_0 = _mm_unpacklo_epi8(v_lo, v_hi);
-                let v128_1 = _mm_unpackhi_epi8(v_lo, v_hi);
-                let v0 = _mm256_broadcastsi128_si256(v128_0);
-                let v1 = _mm256_broadcastsi128_si256(v128_1);
-                let c0 = _mm256_shuffle_epi8(codebook, v0);
-                let c1 = _mm256_shuffle_epi8(codebook, v1);
+                // 16 packed bytes → 32 nibbles (2 chunks × 16 indices each).
+                let v_packed_16 = _mm_loadu_si128(vector.as_ptr().add(16 * i) as *const __m128i);
+                let v_lo = _mm_and_si128(v_packed_16, nibble_mask_128);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed_16, 4), nibble_mask_128);
+                let v_chunk_a = _mm_unpacklo_epi8(v_lo, v_hi); // 16 indices for chunk 2i
+                let v_chunk_b = _mm_unpackhi_epi8(v_lo, v_hi); // 16 indices for chunk 2i+1
 
-                acc0 = _mm256_dpbusd_avx_epi32(acc0, lh0, c0);
-                acc1 = _mm256_dpbusd_avx_epi32(acc1, lh1, c1);
+                // Arrange into [v_a, v_a, v_b, v_b] so each 128-bit lane of codebook
+                // gets the right index set for its half of `low_high_pair`.
+                let v_dup_a = _mm256_broadcastsi128_si256(v_chunk_a);
+                let v_dup_b = _mm256_broadcastsi128_si256(v_chunk_b);
+                let v_512 = _mm512_inserti64x4(_mm512_castsi256_si512(v_dup_a), v_dup_b, 1);
+
+                let c_512 = _mm512_shuffle_epi8(codebook_512, v_512);
+                acc = _mm512_dpbusd_epi32(acc, low_high_pair, c_512);
             }
 
-            let acc = _mm256_add_epi32(acc0, acc1);
-            let acc_low = _mm256_castsi256_si128(acc);
-            let acc_high = _mm256_extracti128_si256(acc, 1);
-            let sum_low = hsum_i32_sse(acc_low) as i64;
-            let sum_high = hsum_i32_sse(acc_high) as i64;
+            // Reduce 16 i32 lanes: [0..3]=chunk-a low, [4..7]=chunk-a high,
+            //                      [8..11]=chunk-b low, [12..15]=chunk-b high.
+            let acc_256_lo = _mm512_castsi512_si256(acc);
+            let acc_256_hi = _mm512_extracti64x4_epi64(acc, 1);
+            let lane_a_low = _mm256_castsi256_si128(acc_256_lo);
+            let lane_a_high = _mm256_extracti128_si256(acc_256_lo, 1);
+            let lane_b_low = _mm256_castsi256_si128(acc_256_hi);
+            let lane_b_high = _mm256_extracti128_si256(acc_256_hi, 1);
+
+            let sum_low = hsum_i32_sse(_mm_add_epi32(lane_a_low, lane_b_low)) as i64;
+            let sum_high = hsum_i32_sse(_mm_add_epi32(lane_a_high, lane_b_high)) as i64;
+
             sum_low + sum_high * 128
         }
     }
@@ -666,36 +644,21 @@ mod tests {
 
     #[cfg(target_arch = "x86_64")]
     #[test]
-    fn test_avx_vnni_matches_scalar() {
-        if !std::is_x86_feature_detected!("avxvnni") || !std::is_x86_feature_detected!("avx2") {
+    fn test_avx512_vnni_matches_scalar() {
+        if !(std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512bw")
+            && std::is_x86_feature_detected!("avx512vnni"))
+        {
             return;
         }
         let mut rng = StdRng::seed_from_u64(7);
         for &dim in PARITY_DIMS {
             let (simd_query, vector) = random_inputs(&mut rng, dim);
             let scalar = simd_query.dotprod_raw(&vector);
-            let vnni = unsafe { simd_query.dotprod_raw_avx_vnni(&vector) };
+            let vnni512 = unsafe { simd_query.dotprod_raw_avx512_vnni(&vector) };
             assert_eq!(
-                scalar, vnni,
-                "scalar {scalar} != avx_vnni {vnni} at dim {dim}"
-            );
-        }
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[test]
-    fn test_avx_vnni_x2_matches_scalar() {
-        if !std::is_x86_feature_detected!("avxvnni") || !std::is_x86_feature_detected!("avx2") {
-            return;
-        }
-        let mut rng = StdRng::seed_from_u64(7);
-        for &dim in PARITY_DIMS {
-            let (simd_query, vector) = random_inputs(&mut rng, dim);
-            let scalar = simd_query.dotprod_raw(&vector);
-            let vnni_x2 = unsafe { simd_query.dotprod_raw_avx_vnni_x2(&vector) };
-            assert_eq!(
-                scalar, vnni_x2,
-                "scalar {scalar} != avx_vnni_x2 {vnni_x2} at dim {dim}"
+                scalar, vnni512,
+                "scalar {scalar} != avx512_vnni {vnni512} at dim {dim}"
             );
         }
     }
@@ -728,9 +691,12 @@ mod tests {
                 let avx2 = unsafe { query.dotprod_raw_avx2(vector) };
                 assert_eq!(expected, avx2, "avx2 mismatch (expected {expected})");
             }
-            if std::is_x86_feature_detected!("avxvnni") && std::is_x86_feature_detected!("avx2") {
-                let vnni = unsafe { query.dotprod_raw_avx_vnni(vector) };
-                assert_eq!(expected, vnni, "avx_vnni mismatch (expected {expected})");
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                let v512 = unsafe { query.dotprod_raw_avx512_vnni(vector) };
+                assert_eq!(expected, v512, "avx512_vnni mismatch (expected {expected})");
             }
         }
     }
