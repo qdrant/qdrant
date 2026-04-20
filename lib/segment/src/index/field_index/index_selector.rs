@@ -375,10 +375,15 @@ impl IndexSelector<'_> {
         }
     }
 
-    pub fn null_builder(dir: &Path, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
+    pub fn null_builder(
+        dir: &Path,
+        field: &JsonPath,
+        total_point_count: usize,
+    ) -> OperationResult<FieldIndexBuilder> {
         // null index is always on disk and appendable
         Ok(FieldIndexBuilder::NullIndex(MutableNullIndex::builder(
             &null_dir(dir, field),
+            total_point_count,
         )?))
     }
 
