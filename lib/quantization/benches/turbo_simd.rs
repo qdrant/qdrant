@@ -21,7 +21,7 @@ struct VectorPool {
 
 impl VectorPool {
     fn new(dim: usize, seed: u64) -> Self {
-        assert!(dim % 2 == 0);
+        assert!(dim.is_multiple_of(2));
         let packed_bytes = dim / 2;
         let count = (POOL_BYTES / packed_bytes).max(1024);
         let mut rng = StdRng::seed_from_u64(seed);
@@ -112,15 +112,6 @@ fn bench_dotprod_cold(c: &mut Criterion) {
                         let v = pool.vector(cursor);
                         cursor = cursor.wrapping_add(1);
                         unsafe { black_box(&query).dotprod_raw_avx2(black_box(v)) }
-                    });
-                });
-
-                group.bench_with_input(BenchmarkId::new("avx2_x2", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_avx2_x2(black_box(v)) }
                     });
                 });
             }
