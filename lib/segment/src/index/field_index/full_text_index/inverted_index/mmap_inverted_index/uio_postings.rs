@@ -24,7 +24,6 @@ use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_in
 /// `size_of::<PostingsHeader>() + token_id * size_of::<PostingListHeader>()`.
 /// Each [`PostingListHeader`] then points (via absolute `offset`) into the
 /// posting-data region.
-#[allow(dead_code)]
 pub struct UniversalPostings<V: ZerocopyPostingValue, S: UniversalRead<u8>> {
     _path: PathBuf,
     storage: S,
@@ -42,7 +41,6 @@ struct HeadersBatch<'a> {
     missing: Vec<TokenId>,
 }
 
-#[allow(dead_code)]
 impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
     /// Open the postings file at `path` via the `S` storage backend.
     pub fn open(path: impl Into<PathBuf>, options: OpenOptions) -> OperationResult<Self> {
@@ -144,6 +142,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
     /// _alignment: &'a [u8], // 0-3 extra bytes to align the data
     /// remainder_postings: &'a [PointOffsetType],
     /// ```
+    #[cfg(test)]
     fn raw_posting<'a>(
         &'a self,
         header: Cow<'a, PostingListHeader>,
@@ -157,6 +156,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead<u8>> UniversalPostings<V, S> {
         Ok(result)
     }
 
+    #[cfg(test)]
     pub fn get(&self, token_id: TokenId) -> OperationResult<Option<RawPostingList<'_>>> {
         let header = self.get_header(token_id)?;
         if let Some(header) = header {
