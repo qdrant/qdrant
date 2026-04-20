@@ -1,8 +1,19 @@
+/// 4-bit codebook (Lloyd-Max optimal for N(0, 1), see `turboquant::lloyd_max`)
+/// pre-quantized to i8 at compile time with scale `127 / max|c|`.  The
+/// distribution is symmetric around zero so the per-query shift term vanishes
+/// (no `postprocess_shift` is needed on reconstruction).  Consistency with
+/// `CENTROIDS_4BIT` is guarded by `test_codebook_matches_lloyd_max`.
+const CODEBOOK_INT: [i8; 16] = [
+    -127, -96, -75, -58, -44, -31, -18, -6, 6, 18, 31, 44, 58, 75, 96, 127,
+];
+
+/// `max|c|` over `CENTROIDS_4BIT` — the extreme centroid.  Together with the
+/// per-query `q_scale` it fixes the float→integer reconstruction factor.
+const CODEBOOK_ABS_MAX: f32 = 2.733;
+
 pub struct Query4bitSimd {
     query_data: Vec<[[u8; 16]; 2]>,
-    codebook: [i8; 16],
     postprocess_scale: f32,
-    postprocess_shift: f32,
 }
 
 impl Query4bitSimd {
@@ -11,28 +22,12 @@ impl Query4bitSimd {
     /// `dim % 32 == 0` we get `query_data.len()` even and can drop all tail
     /// handling.  Every PQ dimension we ship (128, 256, 384, 512, 768, 1024,
     /// 1536, 2048, 4096) already satisfies this.
-    pub fn new(data: &[f32], codebook: &[f32; 16]) -> Self {
+    pub fn new(data: &[f32]) -> Self {
         assert!(
             data.len().is_multiple_of(32),
             "Query4bitSimd requires query dim to be a multiple of 32 (got {})",
             data.len(),
         );
-
-        // Subtract the centroid mean before quantizing — the shift lives in the
-        // codebook itself, so reconstructing a dot product needs only a per-query
-        // constant (no per-vector side data).
-        let c_shift: f32 = codebook.iter().sum::<f32>() / codebook.len() as f32;
-        let c_centered: [f32; 16] = std::array::from_fn(|k| codebook[k] - c_shift);
-
-        let c_abs_max = c_centered
-            .iter()
-            .copied()
-            .map(f32::abs)
-            .fold(0.0_f32, f32::max)
-            .max(f32::EPSILON);
-        let c_scale = 127.0 / c_abs_max;
-        let codebook_int: [i8; 16] =
-            std::array::from_fn(|k| (c_centered[k] * c_scale).round().clamp(-127.0, 127.0) as i8);
 
         // Scale query to a signed 14-bit integer `q_signed ∈ [-8191, 8191]`; store it
         // biased by 8192 so each 7-bit half (low/high) fits into a u8 and keeps
@@ -61,29 +56,30 @@ impl Query4bitSimd {
             query_data.push([low, high]);
         }
 
-        // dotprod_raw computes `sum_j q_biased[j] * c_int[v[j]]`. Unpacking the bias:
+        // dotprod_raw computes `sum_j q_biased[j] * c_int[v[j]]`.  Unpacking the bias:
         //   dot_raw = sum_j q_signed * c_int[v[j]] + 8192 * sum_j c_int[v[j]]
-        // Float dot reconstruction:
-        //   true = sum_j q[j] * c[v[j]]
-        //        = sum_j q[j] * c_centered[v[j]] + c_shift * sum_j q[j]
-        //        ≈ (1 / (q_scale * c_scale)) * sum_j q_signed * c_int[v[j]] + c_shift * sum_q
-        // The residual `(8192 / (q_scale*c_scale)) * sum_j c_int[v[j]]` has expectation
-        // zero by construction of the centered codebook (and is exactly zero when the
-        // vector uses each centroid equally).
-        let postprocess_scale = 1.0 / (q_scale * c_scale);
-        let postprocess_shift = c_shift * data.iter().sum::<f32>();
+        // Reconstruction to float: `true ≈ 1/(q_scale * c_scale) * dot_raw`.
+        // For the symmetric CODEBOOK_INT, `sum_j c_int[v[j]]` has expectation
+        // zero for any PQ-like vector, so the bias term washes out.  With
+        // `c_scale = 127/CODEBOOK_ABS_MAX`, the prefactor is
+        //   postprocess_scale = CODEBOOK_ABS_MAX / (127 * q_scale).
+        let postprocess_scale = CODEBOOK_ABS_MAX / (127.0 * q_scale);
 
         Self {
             query_data,
-            codebook: codebook_int,
             postprocess_scale,
-            postprocess_shift,
         }
     }
 
     pub fn dotprod(&self, vector: &[u8]) -> f32 {
-        let raw = self.dotprod_raw_best(vector);
-        self.postprocess_scale * raw as f32 + self.postprocess_shift
+        // `dot_raw` = Σ q_biased[j] · c_int[v[j]]
+        //           = Σ q_signed · c_int + 8192 · Σ c_int[v[j]]
+        // The second term is the bias introduced by storing `q_biased = q_signed + 8192`.
+        // Its expectation is zero for balanced PQ, but the variance over a finite-length
+        // vector is non-negligible (RMS ~ √d × σ_c_int), so we subtract it explicitly.
+        let dot_raw = self.dotprod_raw_best(vector);
+        let sum_c_v = sum_codebook_over_vector(vector);
+        self.postprocess_scale * (dot_raw - 8192 * sum_c_v) as f32
     }
 
     #[inline]
@@ -126,7 +122,7 @@ impl Query4bitSimd {
             for i in 0..16 {
                 let byte = v[i / 2];
                 let idx = if i & 1 == 0 { byte & 0x0F } else { byte >> 4 };
-                let codebook_value = i64::from(self.codebook[idx as usize]);
+                let codebook_value = i64::from(CODEBOOK_INT[idx as usize]);
                 acc_low += i64::from(low[i]) * codebook_value;
                 acc_high += i64::from(high[i]) * codebook_value;
             }
@@ -146,7 +142,7 @@ impl Query4bitSimd {
         unsafe {
             // 16-entry i8 codebook fits exactly into a single NEON register, used as a
             // lookup table by `vqtbl1q_s8`.
-            let codebook = vld1q_s8(self.codebook.as_ptr());
+            let codebook = vld1q_s8(CODEBOOK_INT.as_ptr());
             let mut acc_low = vdupq_n_s32(0);
             let mut acc_high = vdupq_n_s32(0);
 
@@ -203,7 +199,7 @@ impl Query4bitSimd {
         use core::arch::aarch64::*;
 
         unsafe {
-            let codebook = vld1q_s8(self.codebook.as_ptr());
+            let codebook = vld1q_s8(CODEBOOK_INT.as_ptr());
             let mut acc_low_0 = vdupq_n_s32(0);
             let mut acc_low_1 = vdupq_n_s32(0);
             let mut acc_high_0 = vdupq_n_s32(0);
@@ -285,7 +281,7 @@ impl Query4bitSimd {
 
         unsafe {
             // 16 i8 codebook entries live in one xmm register, gathered by PSHUFB.
-            let codebook = _mm_loadu_si128(self.codebook.as_ptr().cast::<__m128i>());
+            let codebook = _mm_loadu_si128(CODEBOOK_INT.as_ptr().cast::<__m128i>());
             let ones = _mm_set1_epi16(1);
             let nibble_mask = _mm_set1_epi8(0x0F);
             let mut acc_low = _mm_setzero_si128();
@@ -333,7 +329,7 @@ impl Query4bitSimd {
         use core::arch::x86_64::*;
 
         unsafe {
-            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr().cast::<__m128i>());
+            let codebook_128 = _mm_loadu_si128(CODEBOOK_INT.as_ptr().cast::<__m128i>());
             let codebook = _mm256_broadcastsi128_si256(codebook_128);
             let ones = _mm256_set1_epi16(1);
             let nibble_mask = _mm_set1_epi8(0x0F);
@@ -391,7 +387,7 @@ impl Query4bitSimd {
         use core::arch::x86_64::*;
 
         unsafe {
-            let codebook_128 = _mm_loadu_si128(self.codebook.as_ptr().cast::<__m128i>());
+            let codebook_128 = _mm_loadu_si128(CODEBOOK_INT.as_ptr().cast::<__m128i>());
             let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
             let nibble_mask_128 = _mm_set1_epi8(0x0F);
             let mut acc = _mm512_setzero_si512();
@@ -440,6 +436,20 @@ impl Query4bitSimd {
     }
 }
 
+/// Σ c_int[v[j]] over a packed PQ vector.  Each byte holds two 4-bit centroid
+/// indices — low nibble for the even lane, high nibble for the odd lane.  This
+/// sum is needed to cancel the `8192 × Σ c_int` bias that the `q_biased`
+/// encoding bakes into `dot_raw`.
+#[inline]
+fn sum_codebook_over_vector(vector: &[u8]) -> i64 {
+    let mut sum: i64 = 0;
+    for &byte in vector {
+        sum += i64::from(CODEBOOK_INT[(byte & 0x0F) as usize]);
+        sum += i64::from(CODEBOOK_INT[(byte >> 4) as usize]);
+    }
+    sum
+}
+
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 unsafe fn hsum_i32_sse(v: core::arch::x86_64::__m128i) -> i32 {
@@ -451,11 +461,13 @@ unsafe fn hsum_i32_sse(v: core::arch::x86_64::__m128i) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use rand::SeedableRng;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
-    use rand::{RngExt, SeedableRng};
+    use rand_distr::{Distribution, StandardNormal};
 
     use super::*;
+    use crate::turboquant::lloyd_max;
 
     /// Packs a sequence of 4-bit indices (each in [0, 15]) two per byte:
     /// low nibble → even lane, high nibble → odd lane.
@@ -467,58 +479,142 @@ mod tests {
             .collect()
     }
 
-    fn random_inputs(rng: &mut StdRng, dim: usize) -> (Query4bitSimd, Vec<u8>) {
-        let codebook: [f32; 16] = std::array::from_fn(|_| rng.random_range(-1.0_f32..1.0));
-        let query: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0_f32..1.0)).collect();
-        let mut indices: Vec<u8> = (0..dim).map(|i| (i % 16) as u8).collect();
-        indices.shuffle(rng);
-        (
-            Query4bitSimd::new(&query, &codebook),
-            pack_nibbles(&indices),
-        )
+    fn sample_normal_vec(rng: &mut StdRng, len: usize) -> Vec<f32> {
+        (0..len).map(|_| StandardNormal.sample(rng)).collect()
     }
 
+    /// Map each raw float to the index of its nearest centroid in `CENTROIDS_4BIT`.
+    fn encode_to_nearest_centroid(centroids: &[f32], raw: &[f32]) -> Vec<u8> {
+        raw.iter()
+            .map(|&v| {
+                centroids
+                    .iter()
+                    .enumerate()
+                    .min_by(|a, b| (a.1 - v).abs().partial_cmp(&(b.1 - v).abs()).unwrap())
+                    .map(|(k, _)| k as u8)
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    /// Parity-test helper: query ~ N(0,1), balanced index distribution (each centroid
+    /// appears dim/16 times, shuffled).  Distribution of indices doesn't affect
+    /// scalar-vs-SIMD parity; we just need non-trivial data.
+    fn random_inputs(rng: &mut StdRng, dim: usize) -> (Query4bitSimd, Vec<u8>) {
+        let query = sample_normal_vec(rng, dim);
+        let mut indices: Vec<u8> = (0..dim).map(|i| (i % 16) as u8).collect();
+        indices.shuffle(rng);
+        (Query4bitSimd::new(&query), pack_nibbles(&indices))
+    }
+
+    /// The compile-time `CODEBOOK_INT` must reproduce what `new` used to build at
+    /// runtime from `CENTROIDS_4BIT`.  Runs the same quantization recipe and
+    /// compares element-wise.
     #[test]
-    fn test_dotprod_matches_float() {
-        let mut rng = StdRng::seed_from_u64(42);
-        let dim = 256;
-        let n_vectors = 32;
+    fn test_codebook_matches_lloyd_max() {
+        let centroids = lloyd_max::get_centroids(4);
+        assert_eq!(centroids.len(), 16);
 
-        let codebook: [f32; 16] = std::array::from_fn(|_| rng.random_range(-1.0_f32..1.0));
-        let query: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0_f32..1.0)).collect();
-
-        let simd_query = Query4bitSimd::new(&query, &codebook);
-
-        let codebook_abs_max = codebook
+        let c_abs_max = centroids
             .iter()
             .copied()
             .map(f32::abs)
             .fold(0.0_f32, f32::max);
-        let query_abs_sum: f32 = query.iter().map(|q: &f32| q.abs()).sum();
-        let tolerance = 0.02 * query_abs_sum * codebook_abs_max + 1e-3;
+        assert!(
+            (CODEBOOK_ABS_MAX - c_abs_max).abs() < 1e-6,
+            "CODEBOOK_ABS_MAX ({CODEBOOK_ABS_MAX}) != max|CENTROIDS_4BIT| ({c_abs_max})"
+        );
 
-        // Balanced PQ vector: each centroid appears `dim/16` times, shuffled. This is
-        // what well-trained PQ codebooks approximate and makes the residual bias term
-        // vanish structurally.
-        let base: Vec<u8> = (0..dim).map(|i| (i % 16) as u8).collect();
+        let c_scale = 127.0 / c_abs_max;
+        let quantized: [i8; 16] =
+            std::array::from_fn(|k| (centroids[k] * c_scale).round().clamp(-127.0, 127.0) as i8);
+        assert_eq!(
+            quantized, CODEBOOK_INT,
+            "const CODEBOOK_INT drifted from CENTROIDS_4BIT Lloyd-Max quantization",
+        );
+    }
 
-        for _ in 0..n_vectors {
-            let mut indices = base.clone();
-            indices.shuffle(&mut rng);
+    /// Reconstruction accuracy on realistic PQ inputs:
+    /// query ∼ N(0,1), vector drawn from N(0,1) then mapped to nearest centroid.
+    /// We compare `simd.dotprod()` against the "ideal" PQ dot (sum of `q[j] * c[v[j]]`
+    /// with float-precision centroid lookup) — the error our SIMD path adds over a
+    /// hypothetical perfect-precision PQ should be tiny.
+    #[test]
+    fn test_dotprod_matches_float() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let dim = 256;
+        let n_trials = 64;
 
-            let true_dot: f32 = query
-                .iter()
-                .zip(indices.iter())
-                .map(|(&q, &v)| q * codebook[v as usize])
-                .sum();
-            let packed = pack_nibbles(&indices);
-            let quant_dot = simd_query.dotprod(&packed);
+        let centroids = lloyd_max::get_centroids(4);
 
+        for _ in 0..n_trials {
+            let query = sample_normal_vec(&mut rng, dim);
+            let v_raw = sample_normal_vec(&mut rng, dim);
+            let indices = encode_to_nearest_centroid(centroids, &v_raw);
+            let v_pq: Vec<f32> = indices.iter().map(|&k| centroids[k as usize]).collect();
+
+            let pq_dot: f32 = query.iter().zip(v_pq.iter()).map(|(a, b)| a * b).sum();
+            let simd_dot = Query4bitSimd::new(&query).dotprod(&pack_nibbles(&indices));
+
+            // SIMD quantization error scales like √d × σ_q × ε_c.  For d=256,
+            // unit-variance query and i8 codebook precision, typical error is
+            // ≲0.1 and 3σ tail excursions stay under 0.5.
             assert!(
-                (true_dot - quant_dot).abs() < tolerance,
-                "quant dot {quant_dot} too far from true dot {true_dot} (tol {tolerance})",
+                (pq_dot - simd_dot).abs() < 0.5,
+                "simd_dot {simd_dot} too far from ideal PQ dot {pq_dot}",
             );
         }
+    }
+
+    /// Quantitative proof that i8 codebook + 14-bit query precision are plenty:
+    /// the RMS error our SIMD path adds is an order of magnitude below the error
+    /// PQ centroid snapping itself introduces.  If this invariant ever flips,
+    /// something in the quantization pipeline lost precision.
+    #[test]
+    fn test_simd_noise_below_pq_noise() {
+        let mut rng = StdRng::seed_from_u64(123);
+        let dim = 256;
+        let n_trials = 256;
+
+        let centroids = lloyd_max::get_centroids(4);
+
+        let mut sq_pq_noise = 0.0_f64;
+        let mut sq_simd_noise = 0.0_f64;
+
+        for _ in 0..n_trials {
+            let query = sample_normal_vec(&mut rng, dim);
+            let v_raw = sample_normal_vec(&mut rng, dim);
+            let indices = encode_to_nearest_centroid(centroids, &v_raw);
+            let v_pq: Vec<f32> = indices.iter().map(|&k| centroids[k as usize]).collect();
+
+            let true_dot: f64 = query
+                .iter()
+                .zip(v_raw.iter())
+                .map(|(a, b)| f64::from(*a) * f64::from(*b))
+                .sum();
+            let pq_dot: f64 = query
+                .iter()
+                .zip(v_pq.iter())
+                .map(|(a, b)| f64::from(*a) * f64::from(*b))
+                .sum();
+            let simd_dot = f64::from(Query4bitSimd::new(&query).dotprod(&pack_nibbles(&indices)));
+
+            sq_pq_noise += (pq_dot - true_dot).powi(2);
+            sq_simd_noise += (simd_dot - pq_dot).powi(2);
+        }
+
+        let rms_pq_noise = (sq_pq_noise / f64::from(n_trials)).sqrt();
+        let rms_simd_noise = (sq_simd_noise / f64::from(n_trials)).sqrt();
+
+        // Expect RMS(pq_noise) ≈ √(d · D_4) ≈ √(256 · 0.0115) ≈ 1.7
+        //        RMS(simd_noise) ≈ √(d) · σ_q · σ_codebook_quant ≈ 0.04
+        // Factor ≥ 10× guarantees i8 precision is not the bottleneck.
+        assert!(
+            rms_simd_noise * 10.0 < rms_pq_noise,
+            "SIMD noise RMS {rms_simd_noise:.4} should be << PQ noise RMS \
+             {rms_pq_noise:.4} (ratio {:.2}×)",
+            rms_pq_noise / rms_simd_noise,
+        );
     }
 
     /// All test dims below are multiples of 32 — enforced by `Query4bitSimd::new`.
@@ -643,36 +739,21 @@ mod tests {
     /// Build the worst-case positive-accumulation inputs.
     ///
     /// - Query: all 1.0 → `q_signed = 8191`, `q_biased = 16383`, low = high = 127 (7-bit max).
-    /// - Codebook: entries 0 and 1 both land at `codebook_int = +127`; the remaining 14
-    ///   entries are small negatives that balance the centroid mean to zero.
-    /// - Vector: alternating indices 0 and 1 → every `_mm_maddubs_epi16` pair sees
-    ///   (127 u8) × (127 i8) + (127 u8) × (127 i8) = 32 258 — 509 below i16 saturation.
+    /// - Vector: every index 15 → codebook lookup always yields `CODEBOOK_INT[15] = 127`.
+    /// - Every `_mm_maddubs_epi16` pair sees (127 u8) × (127 i8) + (127 u8) × (127 i8)
+    ///   = 32 258 — 509 below i16 saturation.
     fn max_positive_inputs(dim: usize) -> (Query4bitSimd, Vec<u8>) {
-        // Fourteen entries at −1/7 cancel the two entries at +1.0 → c_shift = 0,
-        // c_abs_max = 1.0, c_scale = 127 → codebook_int[0] = codebook_int[1] = 127.
-        let mut codebook = [-1.0_f32 / 7.0; 16];
-        codebook[0] = 1.0;
-        codebook[1] = 1.0;
         let query = vec![1.0_f32; dim];
-        let indices: Vec<u8> = (0..dim).map(|i| (i % 2) as u8).collect();
-        (
-            Query4bitSimd::new(&query, &codebook),
-            pack_nibbles(&indices),
-        )
+        let indices: Vec<u8> = vec![15; dim];
+        (Query4bitSimd::new(&query), pack_nibbles(&indices))
     }
 
-    /// Mirror of `max_positive_inputs` with codebook_int[0] = codebook_int[1] = −127.
+    /// Mirror of `max_positive_inputs` with every index 0 → `CODEBOOK_INT[0] = −127`.
     /// Every maddubs pair = −32 258, one above the i16 minimum of −32 768.
     fn max_negative_inputs(dim: usize) -> (Query4bitSimd, Vec<u8>) {
-        let mut codebook = [1.0_f32 / 7.0; 16];
-        codebook[0] = -1.0;
-        codebook[1] = -1.0;
         let query = vec![1.0_f32; dim];
-        let indices: Vec<u8> = (0..dim).map(|i| (i % 2) as u8).collect();
-        (
-            Query4bitSimd::new(&query, &codebook),
-            pack_nibbles(&indices),
-        )
+        let indices: Vec<u8> = vec![0; dim];
+        (Query4bitSimd::new(&query), pack_nibbles(&indices))
     }
 
     /// `_mm_maddubs_epi16` saturates to i16 (±32 767).  The design guarantees

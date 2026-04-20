@@ -44,18 +44,16 @@ impl VectorPool {
     }
 }
 
-fn make_query(dim: usize) -> ([f32; 16], Vec<f32>) {
+fn make_query(dim: usize) -> Vec<f32> {
     let mut rng = StdRng::seed_from_u64(42);
-    let codebook: [f32; 16] = std::array::from_fn(|_| rng.random_range(-1.0_f32..1.0));
-    let query: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0_f32..1.0)).collect();
-    (codebook, query)
+    (0..dim).map(|_| rng.random_range(-1.0_f32..1.0)).collect()
 }
 
 fn bench_dotprod_cold(c: &mut Criterion) {
     let mut group = c.benchmark_group("query4bit_dotprod_cold");
     for &dim in DIMS {
-        let (cb, q) = make_query(dim);
-        let query = Query4bitSimd::new(&q, &cb);
+        let q = make_query(dim);
+        let query = Query4bitSimd::new(&q);
         let pool = VectorPool::new(dim, 7);
 
         group.throughput(Throughput::Elements(dim as u64));
