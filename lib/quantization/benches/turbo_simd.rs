@@ -67,6 +67,19 @@ fn bench_dotprod_cold(c: &mut Criterion) {
             });
         });
 
+        // Full public path: `dotprod_raw_best` (best SIMD backend) + the
+        // `sum_codebook_over_vector` bias correction + `as f32` reconstruction.
+        // This is what a real caller pays.  Comparing against the best raw
+        // backend for the current CPU shows the bias-correction overhead.
+        group.bench_with_input(BenchmarkId::new("dotprod", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let v = pool.vector(cursor);
+                cursor = cursor.wrapping_add(1);
+                black_box(&query).dotprod(black_box(v))
+            });
+        });
+
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             group.bench_with_input(BenchmarkId::new("neon", dim), &dim, |b, _| {

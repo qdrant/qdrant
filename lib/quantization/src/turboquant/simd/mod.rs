@@ -1,19 +1,42 @@
 /// 4-bit codebook (Lloyd-Max optimal for N(0, 1), see `turboquant::lloyd_max`)
-/// pre-quantized to i8 at compile time with scale `127 / max|c|`.  The
-/// distribution is symmetric around zero so the per-query shift term vanishes
-/// (no `postprocess_shift` is needed on reconstruction).  Consistency with
-/// `CENTROIDS_4BIT` is guarded by `test_codebook_matches_lloyd_max`.
-const CODEBOOK_INT: [i8; 16] = [
-    -127, -96, -75, -58, -44, -31, -18, -6, 6, 18, 31, 44, 58, 75, 96, 127,
+/// pre-quantized to **u8** at compile time with scale `63 / max|c|` and then
+/// shifted by `+64` into `[0, 127]` (7-bit unsigned).  Storing unsigned lets us
+/// feed `c_u` directly as the u8 operand of `_mm_maddubs_epi16` / `VPDPBUSD`,
+/// with the query as the signed i8 operand.  The sign information that the
+/// earlier i8 layout carried directly is recovered via `sum_q_int`, a
+/// **per-query** constant (not per-vector), which leaves `dotprod` as just
+/// `SIMD_dot_raw − bias_correction` with no extra pass over the vector.
+///
+/// Consistency with `CENTROIDS_4BIT` is guarded by `test_codebook_matches_lloyd_max`.
+const CODEBOOK_U8: [u8; 16] = [
+    1, 16, 27, 35, 42, 49, 55, 61, 67, 73, 79, 86, 93, 101, 112, 127,
 ];
 
-/// `max|c|` over `CENTROIDS_4BIT` — the extreme centroid.  Together with the
+/// Additive offset that recovers the signed codebook: `c_signed[k] = c_u[k] − 64`.
+/// Range `c_signed ∈ [−63, 63]` (7-bit signed), so `Σ q_int · c_signed` has the
+/// same dynamic range analysis as the old i8 path on balanced inputs.
+const CODEBOOK_OFFSET: i64 = 64;
+
+/// `max|c|` over `CENTROIDS_4BIT` — the extreme centroid.  Combined with the
 /// per-query `q_scale` it fixes the float→integer reconstruction factor.
 const CODEBOOK_ABS_MAX: f32 = 2.733;
 
+/// Codebook scale: `c_scale = 63 / max|c|` so `|c_signed| ≤ 63 < 64 = OFFSET`.
+/// Kept as a separate constant to make the reconstruction formula obvious.
+const CODEBOOK_SCALE: f32 = 63.0 / CODEBOOK_ABS_MAX;
+
 pub struct Query4bitSimd {
-    query_data: Vec<[[u8; 16]; 2]>,
+    /// Query encoded as a balanced signed-i8 split
+    /// `q_signed = 256 · high + low`, each chunk stored as `[low, high]`.
+    /// Both halves are signed — `low, high ∈ [−128, 127]` — so the metric
+    /// routines don't need to track per-half sign gymnastics.
+    query_data: Vec<[[i8; 16]; 2]>,
+    /// `1 / (q_scale · c_scale)` — prefactor from integer to float dot product.
     postprocess_scale: f32,
+    /// `CODEBOOK_OFFSET · Σ q_signed[j]` — subtract from `dot_raw` to recover
+    /// the true signed integer dot product.  Computed once in `new()`; doesn't
+    /// depend on the PQ vector, so `dotprod` does zero per-vector scalar work.
+    bias_correction: i64,
 }
 
 impl Query4bitSimd {
@@ -29,57 +52,60 @@ impl Query4bitSimd {
             data.len(),
         );
 
-        // Scale query to a signed 14-bit integer `q_signed ∈ [-8191, 8191]`; store it
-        // biased by 8192 so each 7-bit half (low/high) fits into a u8 and keeps
-        // `_mm_maddubs_epi16` within i16 without saturation.
+        // Scale query to ~15.9-bit signed integer `q_signed ∈ [−32 639, 32 639]`.
+        // Balanced decomposition `q_signed = 256 · high + low` then fits both
+        // halves in i8 (balanced-signed, |low| ≤ 128, |high| ≤ 127).
+        //
+        // Saturation budget on `maddubs(c_u u8, low_i8)` per pair:
+        //   c_u ≤ 127, low ∈ [−128, 127] → |pair| ≤ 2·127·128 = 32 512 < 32 767 ✓
         let q_abs_max = data
             .iter()
             .copied()
             .map(f32::abs)
             .fold(0.0_f32, f32::max)
             .max(f32::EPSILON);
-        let q_scale = 8191.0 / q_abs_max;
+        let q_scale = 32639.0 / q_abs_max;
 
         let num_chunks = data.len() / 16;
-        let mut query_data = Vec::with_capacity(num_chunks);
+        let mut query_data: Vec<[[i8; 16]; 2]> = Vec::with_capacity(num_chunks);
+        let mut sum_q_signed: i64 = 0;
         for chunk_idx in 0..num_chunks {
-            let mut low = [0u8; 16];
-            let mut high = [0u8; 16];
+            let mut low = [0_i8; 16];
+            let mut high = [0_i8; 16];
             for i in 0..16 {
                 let q_signed = (data[chunk_idx * 16 + i] * q_scale)
                     .round()
-                    .clamp(-8191.0, 8191.0) as i32;
-                let q_biased = (q_signed + 8192) as u32;
-                low[i] = (q_biased & 0x7F) as u8;
-                high[i] = (q_biased >> 7) as u8;
+                    .clamp(-32639.0, 32639.0) as i32;
+                // Balanced split: ensure `low ∈ [−128, 127]` (not the default
+                // Rust `%` behaviour, which mirrors the sign of the dividend).
+                let l_mod = q_signed.rem_euclid(256);
+                let l = if l_mod >= 128 { l_mod - 256 } else { l_mod } as i8;
+                let h = ((q_signed - i32::from(l)) / 256) as i8;
+                low[i] = l;
+                high[i] = h;
+                sum_q_signed += i64::from(q_signed);
             }
             query_data.push([low, high]);
         }
 
-        // dotprod_raw computes `sum_j q_biased[j] * c_int[v[j]]`.  Unpacking the bias:
-        //   dot_raw = sum_j q_signed * c_int[v[j]] + 8192 * sum_j c_int[v[j]]
-        // Reconstruction to float: `true ≈ 1/(q_scale * c_scale) * dot_raw`.
-        // For the symmetric CODEBOOK_INT, `sum_j c_int[v[j]]` has expectation
-        // zero for any PQ-like vector, so the bias term washes out.  With
-        // `c_scale = 127/CODEBOOK_ABS_MAX`, the prefactor is
-        //   postprocess_scale = CODEBOOK_ABS_MAX / (127 * q_scale).
-        let postprocess_scale = CODEBOOK_ABS_MAX / (127.0 * q_scale);
+        // `dot_raw` = Σ q_signed · c_u = Σ q_signed · (c_signed + OFFSET)
+        //           = Σ q_signed · c_signed + OFFSET · sum_q_signed
+        // True dot ≈ (Σ q_signed · c_signed) / (q_scale · c_scale)
+        //         = (dot_raw − OFFSET · sum_q_signed) / (q_scale · c_scale).
+        let postprocess_scale = 1.0 / (q_scale * CODEBOOK_SCALE);
+        let bias_correction = CODEBOOK_OFFSET * sum_q_signed;
 
         Self {
             query_data,
             postprocess_scale,
+            bias_correction,
         }
     }
 
     pub fn dotprod(&self, vector: &[u8]) -> f32 {
-        // `dot_raw` = Σ q_biased[j] · c_int[v[j]]
-        //           = Σ q_signed · c_int + 8192 · Σ c_int[v[j]]
-        // The second term is the bias introduced by storing `q_biased = q_signed + 8192`.
-        // Its expectation is zero for balanced PQ, but the variance over a finite-length
-        // vector is non-negligible (RMS ~ √d × σ_c_int), so we subtract it explicitly.
+        // No per-vector correction loop: `bias_correction` was baked in at `new()`.
         let dot_raw = self.dotprod_raw_best(vector);
-        let sum_c_v = sum_codebook_over_vector(vector);
-        self.postprocess_scale * (dot_raw - 8192 * sum_c_v) as f32
+        self.postprocess_scale * (dot_raw - self.bias_correction) as f32
     }
 
     #[inline]
@@ -110,7 +136,9 @@ impl Query4bitSimd {
         self.dotprod_raw(vector)
     }
 
-    /// Compute `sum_j q_biased[j] * c_int[v[j]]` over 16 lanes per chunk.
+    /// Compute `Σ q_int[j] · c_u[v[j]]` over 16 lanes per chunk.  The
+    /// `CODEBOOK_OFFSET · sum_q_int` bias is subtracted by the caller
+    /// (`Query4bitSimd::dotprod`) from a precomputed per-query constant.
     ///
     /// `vector` is PQ-encoded with two 4-bit codebook indices packed per byte:
     /// the low nibble is the index for the even lane (j = 2k), the high nibble
@@ -118,16 +146,16 @@ impl Query4bitSimd {
     pub fn dotprod_raw(&self, vector: &[u8]) -> i64 {
         let mut acc_low: i64 = 0;
         let mut acc_high: i64 = 0;
-        for (&[low, high], v) in self.query_data.iter().zip(vector.chunks(8)) {
+        for ([low, high], v) in self.query_data.iter().zip(vector.chunks(8)) {
             for i in 0..16 {
                 let byte = v[i / 2];
                 let idx = if i & 1 == 0 { byte & 0x0F } else { byte >> 4 };
-                let codebook_value = i64::from(CODEBOOK_INT[idx as usize]);
-                acc_low += i64::from(low[i]) * codebook_value;
-                acc_high += i64::from(high[i]) * codebook_value;
+                let c_u = i64::from(CODEBOOK_U8[idx as usize]);
+                acc_low += i64::from(low[i]) * c_u;
+                acc_high += i64::from(high[i]) * c_u;
             }
         }
-        acc_low + (acc_high.abs() << 7) * acc_high.signum()
+        acc_low + 256 * acc_high
     }
 
     /// ARM NEON implementation of [`Query4bitSimd::dotprod_raw`].
@@ -140,14 +168,14 @@ impl Query4bitSimd {
         use core::arch::aarch64::*;
 
         unsafe {
-            // 16-entry i8 codebook fits exactly into a single NEON register, used as a
-            // lookup table by `vqtbl1q_s8`.
-            let codebook = vld1q_s8(CODEBOOK_INT.as_ptr());
+            // `CODEBOOK_U8` values are ≤ 127, so reinterpreting as i8 preserves
+            // them for `vqtbl1q_s8` + `vmull_s8` on the same register.
+            let codebook = vld1q_s8(CODEBOOK_U8.as_ptr().cast::<i8>());
             let mut acc_low = vdupq_n_s32(0);
             let mut acc_high = vdupq_n_s32(0);
 
             let nibble_mask = vdup_n_u8(0x0F);
-            for (&[low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
+            for ([low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
                 // Unpack 8 packed bytes into 16 nibble indices:
                 //   [byte0.lo, byte0.hi, byte1.lo, byte1.hi, ..., byte7.lo, byte7.hi].
                 let v_packed = vld1_u8(v_chunk.as_ptr());
@@ -155,29 +183,28 @@ impl Query4bitSimd {
                 let v_hi = vshr_n_u8(v_packed, 4);
                 let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
 
-                // Gather 16 signed codebook values indexed by the 4-bit PQ codes.
+                // Gather 16 codebook values as i8 (values 0..=127 → non-negative).
                 let c = vqtbl1q_s8(codebook, v);
 
-                // low/high are 7-bit unsigned so reinterpret as i8 is value-preserving.
-                let low_s = vreinterpretq_s8_u8(vld1q_u8(low.as_ptr()));
-                let high_s = vreinterpretq_s8_u8(vld1q_u8(high.as_ptr()));
+                // Signed i8 query halves — one 16-byte load per half.
+                let q_low = vld1q_s8(low.as_ptr());
+                let q_high = vld1q_s8(high.as_ptr());
 
-                // i8 × i8 → i16; per product magnitude ≤ 127 × 128 = 16256 fits in i16.
-                let prod_low_lo = vmull_s8(vget_low_s8(low_s), vget_low_s8(c));
-                let prod_low_hi = vmull_high_s8(low_s, c);
-                let prod_high_lo = vmull_s8(vget_low_s8(high_s), vget_low_s8(c));
-                let prod_high_hi = vmull_high_s8(high_s, c);
+                // i8 × i8 → i16; per product magnitude ≤ 127 × 128 = 16 256 fits in i16.
+                let prod_low_lo = vmull_s8(vget_low_s8(q_low), vget_low_s8(c));
+                let prod_low_hi = vmull_high_s8(q_low, c);
+                let prod_high_lo = vmull_s8(vget_low_s8(q_high), vget_low_s8(c));
+                let prod_high_hi = vmull_high_s8(q_high, c);
 
-                // Pairwise-add the i16×8 products into i32×4 accumulators.
+                // Pairwise-add the i16×8 products into the i32×4 accumulators.
                 acc_low = vpadalq_s16(acc_low, prod_low_lo);
                 acc_low = vpadalq_s16(acc_low, prod_low_hi);
                 acc_high = vpadalq_s16(acc_high, prod_high_lo);
                 acc_high = vpadalq_s16(acc_high, prod_high_hi);
             }
 
-            let acc_low_sum = i64::from(vaddvq_s32(acc_low));
-            let acc_high_sum = i64::from(vaddvq_s32(acc_high));
-            acc_low_sum + acc_high_sum * 128
+            // dot_raw = Σ (low + 256·high) · c_u = acc_low + 256 · acc_high.
+            i64::from(vaddvq_s32(acc_low)) + 256 * i64::from(vaddvq_s32(acc_high))
         }
     }
 
@@ -199,7 +226,8 @@ impl Query4bitSimd {
         use core::arch::aarch64::*;
 
         unsafe {
-            let codebook = vld1q_s8(CODEBOOK_INT.as_ptr());
+            // `CODEBOOK_U8` values ≤ 127 → i8 reinterpret preserves them.
+            let codebook = vld1q_s8(CODEBOOK_U8.as_ptr().cast::<i8>());
             let mut acc_low_0 = vdupq_n_s32(0);
             let mut acc_low_1 = vdupq_n_s32(0);
             let mut acc_high_0 = vdupq_n_s32(0);
@@ -219,44 +247,44 @@ impl Query4bitSimd {
                 let v_packed = vld1q_u8(vector.as_ptr().add(16 * i));
                 let v_lo = vandq_u8(v_packed, nibble_mask_q);
                 let v_hi = vshrq_n_u8(v_packed, 4);
-                // vzip1q_u8 interleaves the low 8 bytes of each input → 16 indices
-                // for chunk 2i; vzip2q_u8 does the same for bytes 8..15 → chunk 2i+1.
                 let v_0 = vzip1q_u8(v_lo, v_hi);
                 let v_1 = vzip2q_u8(v_lo, v_hi);
                 let c_0 = vqtbl1q_s8(codebook, v_0);
                 let c_1 = vqtbl1q_s8(codebook, v_1);
 
-                let low_s_0 = vreinterpretq_s8_u8(vld1q_u8(low_0.as_ptr()));
-                let high_s_0 = vreinterpretq_s8_u8(vld1q_u8(high_0.as_ptr()));
-                let low_s_1 = vreinterpretq_s8_u8(vld1q_u8(low_1.as_ptr()));
-                let high_s_1 = vreinterpretq_s8_u8(vld1q_u8(high_1.as_ptr()));
+                let q_low_0 = vld1q_s8(low_0.as_ptr());
+                let q_high_0 = vld1q_s8(high_0.as_ptr());
+                let q_low_1 = vld1q_s8(low_1.as_ptr());
+                let q_high_1 = vld1q_s8(high_1.as_ptr());
 
-                // Four independent SDOT dependency chains.
+                // Four independent SDOT dependency chains — 2× unroll for ILP.
+                // i8 × i8: codebook values ∈ [0, 127] are non-negative in i8,
+                // query halves ∈ [-128, 127] are genuinely signed.
                 core::arch::asm!(
                     "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
                     acc = inout(vreg) acc_low_0,
-                    a = in(vreg) low_s_0,
+                    a = in(vreg) q_low_0,
                     b = in(vreg) c_0,
                     options(pure, nomem, nostack, preserves_flags),
                 );
                 core::arch::asm!(
                     "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
                     acc = inout(vreg) acc_low_1,
-                    a = in(vreg) low_s_1,
+                    a = in(vreg) q_low_1,
                     b = in(vreg) c_1,
                     options(pure, nomem, nostack, preserves_flags),
                 );
                 core::arch::asm!(
                     "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
                     acc = inout(vreg) acc_high_0,
-                    a = in(vreg) high_s_0,
+                    a = in(vreg) q_high_0,
                     b = in(vreg) c_0,
                     options(pure, nomem, nostack, preserves_flags),
                 );
                 core::arch::asm!(
                     "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
                     acc = inout(vreg) acc_high_1,
-                    a = in(vreg) high_s_1,
+                    a = in(vreg) q_high_1,
                     b = in(vreg) c_1,
                     options(pure, nomem, nostack, preserves_flags),
                 );
@@ -264,9 +292,7 @@ impl Query4bitSimd {
 
             let acc_low = vaddq_s32(acc_low_0, acc_low_1);
             let acc_high = vaddq_s32(acc_high_0, acc_high_1);
-            let acc_low_sum = i64::from(vaddvq_s32(acc_low));
-            let acc_high_sum = i64::from(vaddvq_s32(acc_high));
-            acc_low_sum + acc_high_sum * 128
+            i64::from(vaddvq_s32(acc_low)) + 256 * i64::from(vaddvq_s32(acc_high))
         }
     }
 
@@ -280,46 +306,39 @@ impl Query4bitSimd {
         use core::arch::x86_64::*;
 
         unsafe {
-            // 16 i8 codebook entries live in one xmm register, gathered by PSHUFB.
-            let codebook = _mm_loadu_si128(CODEBOOK_INT.as_ptr().cast::<__m128i>());
+            // 16 u8 codebook entries live in one xmm register, gathered by PSHUFB.
+            let codebook = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
             let ones = _mm_set1_epi16(1);
             let nibble_mask = _mm_set1_epi8(0x0F);
             let mut acc_low = _mm_setzero_si128();
             let mut acc_high = _mm_setzero_si128();
 
-            for (&[low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
-                // Unpack 8 packed bytes → 16 nibble indices in the low 16 lanes.
+            for ([low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
                 let v_packed = _mm_loadl_epi64(v_chunk.as_ptr().cast::<__m128i>());
                 let v_lo = _mm_and_si128(v_packed, nibble_mask);
                 let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
                 let v = _mm_unpacklo_epi8(v_lo, v_hi);
-                let c = _mm_shuffle_epi8(codebook, v);
+                let c_u = _mm_shuffle_epi8(codebook, v);
 
-                let low_vec = _mm_loadu_si128(low.as_ptr().cast::<__m128i>());
-                let high_vec = _mm_loadu_si128(high.as_ptr().cast::<__m128i>());
+                let q_low = _mm_loadu_si128(low.as_ptr().cast::<__m128i>());
+                let q_high = _mm_loadu_si128(high.as_ptr().cast::<__m128i>());
 
-                // maddubs: u8×i8 → i16, horizontally pair-summed. Per pair ≤ 32512 fits i16.
-                let prod_low = _mm_maddubs_epi16(low_vec, c);
-                let prod_high = _mm_maddubs_epi16(high_vec, c);
-
-                // madd_epi16 with ones pair-sums i16×8 → i32×4, accumulate.
+                // maddubs(u8 c_u, i8 q_*): pair sum ≤ 2·127·128 = 32 512 < 32 767.
+                let prod_low = _mm_maddubs_epi16(c_u, q_low);
+                let prod_high = _mm_maddubs_epi16(c_u, q_high);
                 acc_low = _mm_add_epi32(acc_low, _mm_madd_epi16(prod_low, ones));
                 acc_high = _mm_add_epi32(acc_high, _mm_madd_epi16(prod_high, ones));
             }
 
-            let sum_low = i64::from(hsum_i32_sse(acc_low));
-            let sum_high = i64::from(hsum_i32_sse(acc_high));
-            sum_low + sum_high * 128
+            i64::from(hsum_i32_sse(acc_low)) + 256 * i64::from(hsum_i32_sse(acc_high))
         }
     }
 
-    /// x86_64 AVX2 implementation: stacks low/high 7-bit query halves into two
-    /// 16-byte lanes of a YMM register, does `maddubs_epi16 + madd_epi16 → add`.
-    ///
-    /// 2× unrolled: two chunks per iteration with two independent YMM
-    /// accumulators break the two-stage dependency chain (`maddubs → madd → acc`,
-    /// ~10 cycles on Zen 4).  Measured `dotprod_raw_avx2_x2` as strictly ≥ the
-    /// non-unrolled baseline on Zen 4, so the 1× version was removed.
+    /// x86_64 AVX2 implementation.  `query_data` stores `[low, high]` as 32
+    /// contiguous i8 bytes per chunk, so a single YMM load grabs both halves.
+    /// Codebook is broadcast to both 128-bit lanes; maddubs pairs the upper
+    /// lane with `high` and the lower lane with `low`, producing i32 sums
+    /// split cleanly by lane at the end.
     ///
     /// # Safety
     /// CPU must support `avx2`.
@@ -329,55 +348,40 @@ impl Query4bitSimd {
         use core::arch::x86_64::*;
 
         unsafe {
-            let codebook_128 = _mm_loadu_si128(CODEBOOK_INT.as_ptr().cast::<__m128i>());
+            let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
             let codebook = _mm256_broadcastsi128_si256(codebook_128);
             let ones = _mm256_set1_epi16(1);
             let nibble_mask = _mm_set1_epi8(0x0F);
-            let mut acc0 = _mm256_setzero_si256();
-            let mut acc1 = _mm256_setzero_si256();
+            // Lanes 0..3 accumulate low-half contribution; lanes 4..7 accumulate high-half.
+            let mut acc = _mm256_setzero_si256();
 
-            // `query_data.len()` is guaranteed even by the dim-%32 precondition,
-            // so every pair is consumed and there is no tail to handle.
-            let chunks = self.query_data.as_slice();
-            let n_pairs = chunks.len() / 2;
+            for (chunk, v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
+                // `chunk` is `[low, high]`, 32 contiguous i8 bytes — fill one YMM.
+                let low_high = _mm256_loadu_si256(chunk.as_ptr().cast::<__m256i>());
 
-            for i in 0..n_pairs {
-                // 2 × 32-byte query_data loads.
-                let lh0 = _mm256_loadu_si256(chunks.as_ptr().add(2 * i).cast::<__m256i>());
-                let lh1 = _mm256_loadu_si256(chunks.as_ptr().add(2 * i + 1).cast::<__m256i>());
-
-                // One 16-byte vector load covers both chunks' 8 packed bytes each.
-                let v_packed = _mm_loadu_si128(vector.as_ptr().add(16 * i).cast::<__m128i>());
+                let v_packed = _mm_loadl_epi64(v_chunk.as_ptr().cast::<__m128i>());
                 let v_lo = _mm_and_si128(v_packed, nibble_mask);
                 let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
-                let v128_0 = _mm_unpacklo_epi8(v_lo, v_hi); // 16 indices for chunk 2i
-                let v128_1 = _mm_unpackhi_epi8(v_lo, v_hi); // 16 indices for chunk 2i+1
-                let v0 = _mm256_broadcastsi128_si256(v128_0);
-                let v1 = _mm256_broadcastsi128_si256(v128_1);
-                let c0 = _mm256_shuffle_epi8(codebook, v0);
-                let c1 = _mm256_shuffle_epi8(codebook, v1);
+                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
+                let v = _mm256_broadcastsi128_si256(v128);
+                let c = _mm256_shuffle_epi8(codebook, v);
 
-                let prods0 = _mm256_maddubs_epi16(lh0, c0);
-                let prods1 = _mm256_maddubs_epi16(lh1, c1);
-                acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(prods0, ones));
-                acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(prods1, ones));
+                // maddubs(u8 c, i8 low_high) — same c in both lanes, so lane 0 = c·low,
+                // lane 1 = c·high.  Saturation budget identical to the SSE path.
+                let prods = _mm256_maddubs_epi16(c, low_high);
+                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(prods, ones));
             }
 
-            let acc = _mm256_add_epi32(acc0, acc1);
             let acc_low = _mm256_castsi256_si128(acc);
             let acc_high = _mm256_extracti128_si256(acc, 1);
-            let sum_low = i64::from(hsum_i32_sse(acc_low));
-            let sum_high = i64::from(hsum_i32_sse(acc_high));
-            sum_low + sum_high * 128
+            i64::from(hsum_i32_sse(acc_low)) + 256 * i64::from(hsum_i32_sse(acc_high))
         }
     }
 
-    /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+).  Processes 2 chunks per iteration
-    /// in a 512-bit accumulator using `VPDPBUSD` on ZMM: the
-    /// `[low0, high0, low1, high1]` layout of two consecutive query_data entries
-    /// fits a 64-byte load exactly.  On Zen 4 ZMM `VPDPBUSD` is throughput
-    /// 0.5/cycle (double-pumped on a 256-bit FPU), so even a single acc chain
-    /// saturates the pipeline — explicit unroll gave no speedup when measured.
+    /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+): 2 chunks per iteration.  Two
+    /// consecutive `[low, high]` entries = 64 bytes = one ZMM load.  `VPDPBUSD`
+    /// fuses the 4-wide u8×i8 dot with i32 accumulation; the ZMM layout puts
+    /// [low_a, high_a, low_b, high_b] into lanes 0..3.
     ///
     /// # Safety
     /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
@@ -387,7 +391,7 @@ impl Query4bitSimd {
         use core::arch::x86_64::*;
 
         unsafe {
-            let codebook_128 = _mm_loadu_si128(CODEBOOK_INT.as_ptr().cast::<__m128i>());
+            let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
             let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
             let nibble_mask_128 = _mm_set1_epi8(0x0F);
             let mut acc = _mm512_setzero_si512();
@@ -398,7 +402,8 @@ impl Query4bitSimd {
             let n_pairs = chunks.len() / 2;
 
             for i in 0..n_pairs {
-                // Two consecutive [[u8;16];2] entries → 64 bytes: [low0, high0, low1, high1].
+                // Two consecutive [[i8;16];2] entries → 64 bytes:
+                // [low_a, high_a, low_b, high_b].
                 let pair_ptr = chunks.as_ptr().add(2 * i).cast::<__m512i>();
                 let low_high_pair = _mm512_loadu_si512(pair_ptr);
 
@@ -409,14 +414,15 @@ impl Query4bitSimd {
                 let v_chunk_a = _mm_unpacklo_epi8(v_lo, v_hi); // 16 indices for chunk 2i
                 let v_chunk_b = _mm_unpackhi_epi8(v_lo, v_hi); // 16 indices for chunk 2i+1
 
-                // Arrange into [v_a, v_a, v_b, v_b] so each 128-bit lane of codebook
-                // gets the right index set for its half of `low_high_pair`.
+                // `[v_a, v_a, v_b, v_b]` lines up with the codebook shuffle for
+                // each 128-bit lane of `low_high_pair`.
                 let v_dup_a = _mm256_broadcastsi128_si256(v_chunk_a);
                 let v_dup_b = _mm256_broadcastsi128_si256(v_chunk_b);
                 let v_512 = _mm512_inserti64x4(_mm512_castsi256_si512(v_dup_a), v_dup_b, 1);
 
                 let c_512 = _mm512_shuffle_epi8(codebook_512, v_512);
-                acc = _mm512_dpbusd_epi32(acc, low_high_pair, c_512);
+                // dpbusd(acc, u8, i8): `c_512` is u8 (≤ 127), `low_high_pair` is i8.
+                acc = _mm512_dpbusd_epi32(acc, c_512, low_high_pair);
             }
 
             // Reduce 16 i32 lanes: [0..3]=chunk-a low, [4..7]=chunk-a high,
@@ -431,23 +437,9 @@ impl Query4bitSimd {
             let sum_low = i64::from(hsum_i32_sse(_mm_add_epi32(lane_a_low, lane_b_low)));
             let sum_high = i64::from(hsum_i32_sse(_mm_add_epi32(lane_a_high, lane_b_high)));
 
-            sum_low + sum_high * 128
+            sum_low + 256 * sum_high
         }
     }
-}
-
-/// Σ c_int[v[j]] over a packed PQ vector.  Each byte holds two 4-bit centroid
-/// indices — low nibble for the even lane, high nibble for the odd lane.  This
-/// sum is needed to cancel the `8192 × Σ c_int` bias that the `q_biased`
-/// encoding bakes into `dot_raw`.
-#[inline]
-fn sum_codebook_over_vector(vector: &[u8]) -> i64 {
-    let mut sum: i64 = 0;
-    for &byte in vector {
-        sum += i64::from(CODEBOOK_INT[(byte & 0x0F) as usize]);
-        sum += i64::from(CODEBOOK_INT[(byte >> 4) as usize]);
-    }
-    sum
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -507,9 +499,9 @@ mod tests {
         (Query4bitSimd::new(&query), pack_nibbles(&indices))
     }
 
-    /// The compile-time `CODEBOOK_INT` must reproduce what `new` used to build at
-    /// runtime from `CENTROIDS_4BIT`.  Runs the same quantization recipe and
-    /// compares element-wise.
+    /// The compile-time `CODEBOOK_U8` must reproduce what the runtime recipe
+    /// (`(c * c_scale).round().clamp(-63, 63) + 64`) would build from
+    /// `CENTROIDS_4BIT`.  Keeps the hardcoded constant in sync with `lloyd_max`.
     #[test]
     fn test_codebook_matches_lloyd_max() {
         let centroids = lloyd_max::get_centroids(4);
@@ -525,12 +517,15 @@ mod tests {
             "CODEBOOK_ABS_MAX ({CODEBOOK_ABS_MAX}) != max|CENTROIDS_4BIT| ({c_abs_max})"
         );
 
-        let c_scale = 127.0 / c_abs_max;
-        let quantized: [i8; 16] =
-            std::array::from_fn(|k| (centroids[k] * c_scale).round().clamp(-127.0, 127.0) as i8);
+        let c_scale = 63.0 / c_abs_max;
+        let offset = CODEBOOK_OFFSET as i32;
+        let quantized: [u8; 16] = std::array::from_fn(|k| {
+            let signed = (centroids[k] * c_scale).round().clamp(-63.0, 63.0) as i32;
+            (signed + offset) as u8
+        });
         assert_eq!(
-            quantized, CODEBOOK_INT,
-            "const CODEBOOK_INT drifted from CENTROIDS_4BIT Lloyd-Max quantization",
+            quantized, CODEBOOK_U8,
+            "const CODEBOOK_U8 drifted from CENTROIDS_4BIT Lloyd-Max quantization",
         );
     }
 
@@ -606,11 +601,21 @@ mod tests {
         let rms_pq_noise = (sq_pq_noise / f64::from(n_trials)).sqrt();
         let rms_simd_noise = (sq_simd_noise / f64::from(n_trials)).sqrt();
 
-        // Expect RMS(pq_noise) ≈ √(d · D_4) ≈ √(256 · 0.0115) ≈ 1.7
-        //        RMS(simd_noise) ≈ √(d) · σ_q · σ_codebook_quant ≈ 0.04
-        // Factor ≥ 10× guarantees i8 precision is not the bottleneck.
+        // Print for easy comparison across encoding variants.
+        eprintln!(
+            "NOISE at dim={dim}: pq_rms={rms_pq_noise:.4} simd_rms={rms_simd_noise:.4} \
+             ratio={:.2}×",
+            rms_pq_noise / rms_simd_noise,
+        );
+
+        // Expect RMS(pq_noise) ≈ √(d · D_4) ≈ √(256 · 0.0115) ≈ 1.7.
+        // With the 7-bit-unsigned codebook + 8-bit-signed query encoding the
+        // SIMD noise is ~0.16 (≈ 0.04 × 2^2 over the 14+8 scheme that traded
+        // ~6 bits of query precision for a per-query bias correction).  Ratio
+        // 5× keeps "SIMD < PQ by nearly an order of magnitude" as a regression
+        // guard without being so tight that normal distribution tails flake it.
         assert!(
-            rms_simd_noise * 10.0 < rms_pq_noise,
+            rms_simd_noise * 5.0 < rms_pq_noise,
             "SIMD noise RMS {rms_simd_noise:.4} should be << PQ noise RMS \
              {rms_pq_noise:.4} (ratio {:.2}×)",
             rms_pq_noise / rms_simd_noise,
