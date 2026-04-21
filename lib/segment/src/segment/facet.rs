@@ -4,11 +4,11 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 
 use super::Segment;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::facets::{FacetHit, FacetParams, FacetValue};
+use crate::data_types::facets::{FacetHit, FacetParams, FacetValue, FacetValueRef};
 use crate::entry::ReadSegmentEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::PayloadIndex;
@@ -34,7 +34,16 @@ impl Segment {
         let facet_index = payload_index.get_facet_index(&request.key)?;
         let context;
 
-        let hits_iter = if let Some(filter) = &request.filter {
+        // We can't just select top values, because we need to aggregate across segments,
+        // which we can't assume to select the same best top.
+        //
+        // We need all values to be able to aggregate correctly across segments
+        let mut hits = HashMap::new();
+        let add_hit = |hit: FacetHit<FacetValueRef<'_>>| {
+            hits.insert(hit.value.to_owned(), hit.count);
+        };
+
+        if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
 
@@ -48,11 +57,11 @@ impl Segment {
             // - a collection with almost a unique key per point
             let use_iterative_approach = percentage_filtered < 0.3;
 
-            let iter = if use_iterative_approach {
+            if use_iterative_approach {
                 // go over the filtered points and aggregate the values
                 // aka. read from other indexes
                 let point_mappings = id_tracker.point_mappings();
-                let iter = payload_index
+                payload_index
                     .iter_filtered_points(
                         filter,
                         &id_tracker,
@@ -73,9 +82,8 @@ impl Segment {
                         map
                     })
                     .into_iter()
-                    .map(|(value, count)| FacetHit { value, count });
-
-                Either::Left(iter)
+                    .map(|(value, count)| FacetHit { value, count })
+                    .for_each(add_hit);
             } else {
                 // go over the values and filter the points
                 // aka. read from facet index
@@ -83,7 +91,7 @@ impl Segment {
                 // This is more similar to a full-scan, but we won't be hashing so many times.
                 context = payload_index.struct_filtered_context(filter, hw_counter)?;
 
-                let iter = facet_index
+                facet_index
                     .iter_values_map(hw_counter)
                     .stop_if(is_stopped)
                     .filter_map(|(value, iter)| {
@@ -107,28 +115,17 @@ impl Segment {
                             .count();
 
                         (count > 0).then_some(FacetHit { value, count })
-                    });
-
-                Either::Right(iter)
+                    })
+                    .for_each(add_hit);
             };
-            Either::Left(iter)
         } else {
             // just count how many points each value has
-            let iter = facet_index
+            facet_index
                 .iter_counts_per_value(self.deferred_internal_id())
                 .stop_if(is_stopped)
-                .filter(|hit| hit.count > 0);
-
-            Either::Right(iter)
-        };
-
-        // We can't just select top values, because we need to aggregate across segments,
-        // which we can't assume to select the same best top.
-        //
-        // We need all values to be able to aggregate correctly across segments
-        let hits: HashMap<_, _> = hits_iter
-            .map(|hit| (hit.value.to_owned(), hit.count))
-            .collect();
+                .filter(|hit| hit.count > 0)
+                .for_each(add_hit);
+        }
 
         Ok(hits)
     }
