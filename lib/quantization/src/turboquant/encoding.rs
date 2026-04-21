@@ -37,32 +37,36 @@ impl TurboQuantizer {
         out
     }
 
-    /// Unpacks `vec` into `out` and returns `Extras`.
+    /// Unpacks `vec` into an iterator of `dim` centroid values and returns any
+    /// `Extras` stored alongside.
     ///
-    /// `out` must have length equal to the quantizer's `dim`; one centroid
-    /// value is written per slot.
+    /// The iterator lazily decodes one centroid per step, so callers scoring a
+    /// vector can `zip` it with a query and compute the dot in a single pass
+    /// without materializing an intermediate buffer.
     ///
-    /// Does not apply the inverse rotation — `out` holds values in the
+    /// Does not apply the inverse rotation — the iterator yields values in the
     /// rotated space.
-    pub fn unpack_vector(&self, vec: &[u8], out: &mut [f64]) -> Option<TqVectorExtras> {
+    pub fn unpack_vector<'a>(
+        &'a self,
+        vec: &'a [u8],
+    ) -> (Option<TqVectorExtras>, impl Iterator<Item = f64> + 'a) {
         let extra_len = TqVectorExtras::size_for(self.bits, self.distance, self.mode);
 
         let dim_part = &vec[..vec.len() - extra_len];
         let extra_part = &vec[vec.len() - extra_len..];
 
-        debug_assert_eq!(out.len(), self.rotation.dim());
+        let extras = (!extra_part.is_empty()).then(|| self.unpack_extras_from(extra_part));
 
-        // Unpack dimensions.
         let centroids = self.bits.get_centroids();
         let mut reader = BitReader::new(dim_part);
         reader.set_bits(self.bits.bit_size());
-        for slot in out.iter_mut() {
-            let idx: u8 = reader.read();
-            *slot = f64::from(centroids[idx as usize]);
-        }
 
-        // Unpack and return extras if available.
-        (!extra_part.is_empty()).then(|| self.unpack_extras_from(extra_part))
+        let iter = (0..self.rotation.dim()).map(move |_| {
+            let idx: u8 = reader.read();
+            f64::from(centroids[idx as usize])
+        });
+
+        (extras, iter)
     }
 
     /// Size in bytes of a vector quantized by this quantizer.

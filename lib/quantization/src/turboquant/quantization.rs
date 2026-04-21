@@ -10,6 +10,20 @@ pub struct TurboQuantizer {
     pub(super) distance: DistanceType,
 }
 
+/// A query with the Hadamard rotation already applied. Built via
+/// [`TurboQuantizer::precompute_query`] and consumed by
+/// [`TurboQuantizer::dot_precomputed`] to amortize the rotation cost across
+/// many scoring calls.
+pub struct Precomputed(Vec<f64>);
+
+impl Precomputed {
+    /// Borrow the rotated query components.
+    #[inline]
+    pub fn as_slice(&self) -> &[f64] {
+        &self.0
+    }
+}
+
 impl TurboQuantizer {
     /// Initialize a new TurboQuantizer.
     pub fn new(dim: usize, bits: TQBits, mode: TQMode, distance: DistanceType) -> Self {
@@ -59,6 +73,57 @@ impl TurboQuantizer {
         // Encode centroid indices and return packed vector.
         self.pack_vector(encoded, extras)
     }
+
+    /// Dot product between two vectors that were both encoded with this
+    /// quantizer.
+    ///
+    /// Unpacks each vector into rotated space and dots the results. The
+    /// Hadamard rotation is orthogonal, so `<Rv1, Rv2> = <v1, v2>` — no
+    /// inverse rotation is needed, and neither side plays the query role.
+    pub fn dot_symmetric(&self, v1: &[u8], v2: &[u8]) -> f32 {
+        // TODO(turbo): apply metadata from extra values.
+        let (_extra_v1, iter1) = self.unpack_vector(v1);
+        let (_extra_v2, iter2) = self.unpack_vector(v2);
+        iter1.zip(iter2).map(|(a, b)| a * b).sum::<f64>() as f32
+    }
+
+    /// Dot product between a raw `query` and a quantizer-encoded `vec`.
+    ///
+    /// The query is rotated into the same Hadamard-rotated space as the stored
+    /// vector before the dot is computed. Prefer [`Self::dot_precomputed`]
+    /// when scoring many vectors against the same query.
+    pub fn dot_asymmetric(&self, query: &[f32], vec: &[u8]) -> f32 {
+        let mut rotated_query: Vec<_> = query.iter().map(|&i| f64::from(i)).collect();
+        self.rotation.apply(&mut rotated_query);
+
+        // TODO(turbo): apply metadata from extra value.
+        let (_extra_vec, unpacked) = self.unpack_vector(vec);
+        rotated_query
+            .iter()
+            .zip(unpacked)
+            .map(|(&q, u)| q * u)
+            .sum::<f64>() as f32
+    }
+
+    /// Precompute the Hadamard rotation of `query` so subsequent
+    /// [`Self::dot_precomputed`] calls skip the per-call rotation.
+    pub fn precompute_query(&self, query: &[f32]) -> Precomputed {
+        let mut rotated: Vec<f64> = query.iter().map(|&x| f64::from(x)).collect();
+        self.rotation.apply(&mut rotated);
+        Precomputed(rotated)
+    }
+
+    /// Dot product with a query that has already been rotated via
+    /// [`Self::precompute_query`].
+    pub fn dot_precomputed(&self, query: &Precomputed, vec: &[u8]) -> f32 {
+        let (_, unpacked) = self.unpack_vector(vec);
+        query
+            .as_slice()
+            .iter()
+            .zip(unpacked)
+            .map(|(&q, u)| q * u)
+            .sum::<f64>() as f32
+    }
 }
 
 #[cfg(test)]
@@ -82,6 +147,38 @@ mod tests {
             mode: TQMode::Normal,
         };
         TurboQuantizer::new_from_metadata(&metadata)
+    }
+
+    /// Build a pair `(a, b)` where `b = t * a + (1 - t) * noise`, so `t = 1`
+    /// means identical and `t = 0` means independent random.
+    fn generate_mixed_pair(
+        dim: usize,
+        t: f32,
+        rng: &mut rand::prelude::StdRng,
+    ) -> (Vec<f32>, Vec<f32>) {
+        use rand::RngExt;
+        let a: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+        let noise: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+        let b: Vec<f32> = a
+            .iter()
+            .zip(noise.iter())
+            .map(|(&x, &n)| t * x + (1.0 - t) * n)
+            .collect();
+        (a, b)
+    }
+
+    fn true_dot(a: &[f32], b: &[f32]) -> f64 {
+        a.iter()
+            .zip(b)
+            .map(|(&x, &y)| f64::from(x) * f64::from(y))
+            .sum()
+    }
+
+    fn l2_norm(v: &[f32]) -> f64 {
+        v.iter()
+            .map(|&x| f64::from(x) * f64::from(x))
+            .sum::<f64>()
+            .sqrt()
     }
 
     /// Helper: unpack all centroid indices from a quantized byte vector.
@@ -460,8 +557,7 @@ mod tests {
 
                 let packed = tq.pack_vector(indices.iter().copied(), TqVectorExtras::default());
 
-                let mut out = vec![0.0f64; dim];
-                tq.unpack_vector(&packed, &mut out);
+                let out: Vec<f64> = tq.unpack_vector(&packed).1.collect();
 
                 for (i, (&idx, &value)) in indices.iter().zip(out.iter()).enumerate() {
                     let expected = f64::from(centroids[idx as usize]);
@@ -490,8 +586,7 @@ mod tests {
                     let indices = vec![idx; dim];
                     let packed = tq.pack_vector(indices.iter().copied(), TqVectorExtras::default());
 
-                    let mut out = vec![0.0f64; dim];
-                    tq.unpack_vector(&packed, &mut out);
+                    let out: Vec<f64> = tq.unpack_vector(&packed).1.collect();
 
                     let expected = f64::from(centroids[idx as usize]);
                     for (i, &v) in out.iter().enumerate() {
@@ -500,5 +595,353 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// `dot(0, vec) = 0` for any quantized vector — a rotated zero query is
+    /// still zero, so every component of the sum is zero.
+    #[test]
+    fn dot_zero_query_returns_zero() {
+        let dim = 128;
+        let mut buf = vec![0.0f64; dim];
+        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            let tq = make_tq(dim, bits);
+            let v: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).sin()).collect();
+            let packed = tq.quantize(&v, &mut buf);
+            let zero = vec![0.0f32; dim];
+            let result = tq.dot_asymmetric(&zero, &packed);
+            assert_eq!(result, 0.0, "bits={bits:?}: dot(0, v) = {result}");
+        }
+    }
+
+    /// `dot` is linear in the query:
+    /// `dot(k*q1 + c*q2, v) = k*dot(q1, v) + c*dot(q2, v)`.
+    /// Rotation and per-component summation are both linear, so this holds
+    /// up to floating-point precision.
+    #[test]
+    fn dot_linear_in_query() {
+        use rand::prelude::StdRng;
+        use rand::{RngExt, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(11);
+        let dim = 256;
+        let mut buf = vec![0.0f64; dim];
+
+        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            let tq = make_tq(dim, bits);
+            let q1: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let q2: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let packed = tq.quantize(&v, &mut buf);
+
+            let (k, c) = (0.7f32, -1.3f32);
+            let q_combo: Vec<f32> = q1.iter().zip(&q2).map(|(a, b)| k * a + c * b).collect();
+
+            let d_combo = tq.dot_asymmetric(&q_combo, &packed);
+            let d_linear =
+                k * tq.dot_asymmetric(&q1, &packed) + c * tq.dot_asymmetric(&q2, &packed);
+
+            let tol = 1e-5 * d_combo.abs().max(d_linear.abs()).max(1.0);
+            assert!(
+                (d_combo - d_linear).abs() <= tol,
+                "bits={bits:?}: dot(k*q1+c*q2, v)={d_combo} vs \
+                 k*dot(q1,v)+c*dot(q2,v)={d_linear}"
+            );
+        }
+    }
+
+    /// `dot` must agree with the equivalent manual reconstruction: unpack the
+    /// vector into centroids in rotated space, apply the inverse rotation to
+    /// recover original-space values, then dot with the original query.
+    ///
+    /// The Hadamard rotation is orthogonal, so `<Rq, u> = <q, R⁻¹u>` — both
+    /// paths should agree up to floating-point precision regardless of bits/dim.
+    #[test]
+    fn dot_matches_inverse_rotation_reconstruction() {
+        use rand::prelude::StdRng;
+        use rand::{RngExt, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(33);
+
+        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            for &dim in &[128, 300, 512] {
+                let tq = make_tq(dim, bits);
+                let rot = HadamardRotation::new(dim);
+
+                let q: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                let mut buf = vec![0.0f64; dim];
+                let packed = tq.quantize(&v, &mut buf);
+
+                // Manual path: unpack -> inverse rotate -> dot in original space.
+                let mut unpacked: Vec<f64> = tq.unpack_vector(&packed).1.collect();
+                rot.apply_inverse(&mut unpacked);
+                let manual: f32 = q
+                    .iter()
+                    .zip(unpacked.iter())
+                    .map(|(&qi, &ui)| f64::from(qi) * ui)
+                    .sum::<f64>() as f32;
+
+                let fn_result = tq.dot_asymmetric(&q, &packed);
+
+                let tol = 1e-5 * manual.abs().max(fn_result.abs()).max(1.0);
+                assert!(
+                    (manual - fn_result).abs() <= tol,
+                    "dim={dim}, bits={bits:?}: dot={fn_result}, manual={manual}"
+                );
+            }
+        }
+    }
+
+    /// For 4-bit quantization on reasonably large dimensions, the quantized
+    /// dot product must closely approximate the true (pre-quantization) dot
+    /// product. A badly-approximating `dot` (e.g. missing the query rotation)
+    /// yields values uncorrelated with the truth and blows this bound out.
+    #[test]
+    fn dot_approximates_true_dot_product() {
+        use rand::prelude::StdRng;
+        use rand::{RngExt, SeedableRng};
+
+        let dim = 512;
+        let n_trials = 100;
+        let mut rng = StdRng::seed_from_u64(44);
+        let tq = make_tq(dim, TQBits::Bits4);
+        let mut buf = vec![0.0f64; dim];
+
+        let mut total_abs_err = 0.0f64;
+        let mut total_abs_true = 0.0f64;
+
+        for _ in 0..n_trials {
+            let q: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+
+            let true_dot: f64 = q
+                .iter()
+                .zip(&v)
+                .map(|(&a, &b)| f64::from(a) * f64::from(b))
+                .sum();
+
+            let packed = tq.quantize(&v, &mut buf);
+            let approx = f64::from(tq.dot_asymmetric(&q, &packed));
+
+            total_abs_err += (true_dot - approx).abs();
+            total_abs_true += true_dot.abs();
+        }
+
+        let rel_mae = total_abs_err / total_abs_true;
+        assert!(
+            rel_mae < 0.15,
+            "Relative MAE {rel_mae} exceeds tolerance for Bits4, dim={dim}"
+        );
+    }
+
+    /// `dot_symmetric` must (a) be commutative and (b) approximate the true
+    /// dot product — even with quantization noise on *both* sides, the
+    /// orthogonality of the Hadamard rotation keeps the result close to
+    /// `<v1, v2>`.
+    #[test]
+    fn dot_symmetric_approximates_true_dot() {
+        use rand::prelude::StdRng;
+        use rand::{RngExt, SeedableRng};
+
+        let dim = 512;
+        let n_trials = 100;
+        let mut rng = StdRng::seed_from_u64(66);
+        let tq = make_tq(dim, TQBits::Bits4);
+        let mut buf = vec![0.0f64; dim];
+
+        let mut total_abs_err = 0.0f64;
+        let mut total_abs_true = 0.0f64;
+
+        for _ in 0..n_trials {
+            let a: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let b: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+
+            let true_dot: f64 = a
+                .iter()
+                .zip(&b)
+                .map(|(&x, &y)| f64::from(x) * f64::from(y))
+                .sum();
+
+            let packed_a = tq.quantize(&a, &mut buf);
+            let packed_b = tq.quantize(&b, &mut buf);
+
+            let ab = tq.dot_symmetric(&packed_a, &packed_b);
+            let ba = tq.dot_symmetric(&packed_b, &packed_a);
+            assert_eq!(ab, ba, "dot_symmetric is not commutative: {ab} vs {ba}");
+
+            total_abs_err += (f64::from(ab) - true_dot).abs();
+            total_abs_true += true_dot.abs();
+        }
+
+        let rel_mae = total_abs_err / total_abs_true;
+        // Both sides quantized → roughly double the error vs the asymmetric case,
+        // but still well below 40% relative MAE for Bits4 at dim=512.
+        assert!(
+            rel_mae < 0.4,
+            "Relative MAE {rel_mae} exceeds tolerance for Bits4, dim={dim}"
+        );
+    }
+
+    /// `dot_symmetric(packed, packed)` approximates `||v||²` — a sharper
+    /// check than the random-pair test, since self-dot is always positive
+    /// and sensitive to sign errors in the unpack path.
+    #[test]
+    fn dot_symmetric_self_dot_approximates_norm_squared() {
+        use rand::prelude::StdRng;
+        use rand::{RngExt, SeedableRng};
+
+        let dim = 512;
+        let mut rng = StdRng::seed_from_u64(77);
+        let tq = make_tq(dim, TQBits::Bits4);
+        let mut buf = vec![0.0f64; dim];
+
+        for _ in 0..20 {
+            let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let norm_sq: f64 = v.iter().map(|&x| f64::from(x) * f64::from(x)).sum();
+
+            let packed = tq.quantize(&v, &mut buf);
+            let approx = f64::from(tq.dot_symmetric(&packed, &packed));
+
+            let rel_err = (norm_sq - approx).abs() / norm_sq;
+            assert!(
+                rel_err < 0.15,
+                "||v||²={norm_sq}, approx={approx}, rel_err={rel_err}"
+            );
+        }
+    }
+
+    // --- End-to-end tests for dot_symmetric -------------------------------
+    //
+    // Each test: build a TurboQuantizer, generate random pairs at various
+    // similarity levels, compute both the original dot and the quantized
+    // dot_symmetric, compare.
+    // ---------------------------------------------------------------------
+
+    /// Run pairs at 5 mixing levels from fully independent (`t = 0.0`) to
+    /// identical (`t = 1.0`). Per-trial absolute error must be small relative
+    /// to `||a|| * ||b||` — that scale-invariant bound holds uniformly even
+    /// when the raw dot product itself is near zero.
+    #[test]
+    fn end_to_end_dot_symmetric_varied_similarity() {
+        use rand::SeedableRng;
+        use rand::prelude::StdRng;
+
+        let dim = 512;
+        let n_trials = 30;
+        let mut rng = StdRng::seed_from_u64(2024);
+        let tq = make_tq(dim, TQBits::Bits4);
+        let mut buf = vec![0.0f64; dim];
+
+        for &t in &[0.0f32, 0.25, 0.5, 0.75, 1.0] {
+            let mut max_norm_err = 0.0f64;
+
+            for _ in 0..n_trials {
+                let (a, b) = generate_mixed_pair(dim, t, &mut rng);
+                let true_d = true_dot(&a, &b);
+                let scale = l2_norm(&a) * l2_norm(&b);
+
+                let packed_a = tq.quantize(&a, &mut buf);
+                let packed_b = tq.quantize(&b, &mut buf);
+                let approx = f64::from(tq.dot_symmetric(&packed_a, &packed_b));
+
+                max_norm_err = max_norm_err.max((true_d - approx).abs() / scale);
+            }
+
+            assert!(
+                max_norm_err < 0.1,
+                "t={t}: max |true-approx|/(||a||*||b||) = {max_norm_err}"
+            );
+        }
+    }
+
+    /// Over a shared set of varied-similarity pairs, accuracy must improve
+    /// monotonically with bit width: MAE(4b) < MAE(2b) < MAE(1b).
+    #[test]
+    fn end_to_end_dot_symmetric_more_bits_is_better() {
+        use rand::SeedableRng;
+        use rand::prelude::StdRng;
+
+        let dim = 512;
+        let n_pairs = 80;
+        let mut rng = StdRng::seed_from_u64(2025);
+        let mut buf = vec![0.0f64; dim];
+
+        // Fixed pair set (varying similarity) shared across all bit widths.
+        let pairs: Vec<(Vec<f32>, Vec<f32>)> = (0..n_pairs)
+            .map(|i| {
+                let t = i as f32 / (n_pairs as f32 - 1.0);
+                generate_mixed_pair(dim, t, &mut rng)
+            })
+            .collect();
+
+        let mut mae_by_bits = Vec::new();
+        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            let tq = make_tq(dim, bits);
+            let mut total_abs_err = 0.0f64;
+            for (a, b) in &pairs {
+                let packed_a = tq.quantize(a, &mut buf);
+                let packed_b = tq.quantize(b, &mut buf);
+                let approx = f64::from(tq.dot_symmetric(&packed_a, &packed_b));
+                total_abs_err += (true_dot(a, b) - approx).abs();
+            }
+            mae_by_bits.push((bits, total_abs_err / f64::from(n_pairs)));
+        }
+
+        assert!(
+            mae_by_bits[1].1 < mae_by_bits[0].1,
+            "2-bit MAE {} not better than 1-bit MAE {}",
+            mae_by_bits[1].1,
+            mae_by_bits[0].1
+        );
+        assert!(
+            mae_by_bits[2].1 < mae_by_bits[1].1,
+            "4-bit MAE {} not better than 2-bit MAE {}",
+            mae_by_bits[2].1,
+            mae_by_bits[1].1
+        );
+    }
+
+    /// Rank ordering of dot products over a diverse set of pairs must be
+    /// almost fully preserved after symmetric quantization — concordance
+    /// over all pairwise comparisons should exceed 95% at 4 bits.
+    #[test]
+    fn end_to_end_dot_symmetric_preserves_ordering() {
+        use rand::SeedableRng;
+        use rand::prelude::StdRng;
+
+        let dim = 512;
+        let n_pairs = 60;
+        let mut rng = StdRng::seed_from_u64(2026);
+        let tq = make_tq(dim, TQBits::Bits4);
+        let mut buf = vec![0.0f64; dim];
+
+        let mut pairs_scored: Vec<(f64, f64)> = Vec::with_capacity(n_pairs);
+        for i in 0..n_pairs {
+            let t = i as f32 / (n_pairs as f32 - 1.0);
+            let (a, b) = generate_mixed_pair(dim, t, &mut rng);
+            let packed_a = tq.quantize(&a, &mut buf);
+            let packed_b = tq.quantize(&b, &mut buf);
+            let approx = f64::from(tq.dot_symmetric(&packed_a, &packed_b));
+            pairs_scored.push((true_dot(&a, &b), approx));
+        }
+
+        let mut concordant = 0usize;
+        let mut total = 0usize;
+        for i in 0..n_pairs {
+            for j in (i + 1)..n_pairs {
+                let true_cmp = pairs_scored[i].0 - pairs_scored[j].0;
+                let approx_cmp = pairs_scored[i].1 - pairs_scored[j].1;
+                if true_cmp.signum() == approx_cmp.signum() {
+                    concordant += 1;
+                }
+                total += 1;
+            }
+        }
+
+        let concordance = concordant as f64 / total as f64;
+        assert!(
+            concordance > 0.95,
+            "ordering concordance {concordance} below 0.95 ({concordant}/{total})"
+        );
     }
 }

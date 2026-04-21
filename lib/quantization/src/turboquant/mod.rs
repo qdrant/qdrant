@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
-use crate::turboquant::quantization::TurboQuantizer;
+use crate::turboquant::quantization::{Precomputed, TurboQuantizer};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -58,10 +58,15 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
     quantizer: TurboQuantizer,
+
+    // Buffer used when encoding vectors.
+    encoding_buffer: Vec<f64>,
 }
 
 /// Encoded query type for Turbo Quant.
-pub struct EncodedQueryTQ {}
+pub struct EncodedQueryTQ {
+    rotated_query: Precomputed,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Metadata {
@@ -97,6 +102,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
+        let dim = vector_parameters.dim;
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
         let metadata = Metadata {
@@ -107,7 +113,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
 
         let quantizer = TurboQuantizer::new_from_metadata(&metadata);
 
-        let mut buf = vec![0.0f64; vector_parameters.dim];
+        let mut buf = vec![0.0f64; dim];
 
         for vector in data {
             if stopped.load(Ordering::Relaxed) {
@@ -153,6 +159,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
             quantizer,
+            encoding_buffer: vec![0.0f64; dim],
         })
     }
 
@@ -162,11 +169,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
 
         let quantizer = TurboQuantizer::new_from_metadata(&metadata);
 
+        let dim = metadata.vector_parameters.dim;
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
             quantizer,
+            encoding_buffer: vec![0.0f64; dim],
         };
 
         Ok(result)
@@ -214,8 +223,10 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         self.encoded_vectors.is_on_disk()
     }
 
-    fn encode_query(&self, _query: &[f32]) -> EncodedQueryTQ {
-        EncodedQueryTQ {}
+    fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
+        EncodedQueryTQ {
+            rotated_query: self.quantizer.precompute_query(query),
+        }
     }
 
     fn score_point(
@@ -240,7 +251,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
         hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
 
-        todo!()
+        self.quantizer.dot_symmetric(&v1, &v2)
     }
 
     fn quantized_vector_size(&self) -> usize {
@@ -265,8 +276,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        let mut buf = vec![0.0f64; vector.len()];
-        let encoded_vector = Self::encode_vector(vector, &self.quantizer, &mut buf);
+        let encoded_vector =
+            Self::encode_vector(vector, &self.quantizer, &mut self.encoding_buffer);
         self.encoded_vectors.upsert_vector(
             id,
             bytemuck::cast_slice(encoded_vector.as_slice()),
@@ -302,12 +313,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     fn score_bytes(
         &self,
         _: Self::SupportsBytes,
-        _query: &Self::EncodedQuery,
+        query: &Self::EncodedQuery,
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
         hw_counter.cpu_counter().incr_delta(bytes.len());
-
-        todo!()
+        self.quantizer.dot_precomputed(&query.rotated_query, bytes)
     }
 }
