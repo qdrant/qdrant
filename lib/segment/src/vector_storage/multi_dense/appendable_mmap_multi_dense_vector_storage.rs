@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::fmt;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -41,12 +40,6 @@ pub struct MultivectorMmapOffset {
     offset: u32,
     count: u32,
     capacity: u32,
-}
-
-impl fmt::Display for MultivectorMmapOffset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}x{}", self.offset, self.count)
-    }
 }
 
 impl VectorOffset for MultivectorMmapOffset {

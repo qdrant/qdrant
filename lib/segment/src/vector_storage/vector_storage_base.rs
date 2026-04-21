@@ -37,7 +37,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMma
 pub type VectorOffsetType = usize;
 
 /// Generalized vector offset.
-pub trait VectorOffset: Copy + fmt::Display + fmt::Debug {
+pub trait VectorOffset: Copy + fmt::Debug {
     fn offset(self) -> VectorOffsetType;
 
     fn multi_vector_count(self) -> usize {
