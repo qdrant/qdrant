@@ -70,7 +70,9 @@ impl FuzzyIndex for MutableFuzzyIndex {
 
         let query_prefix = prefix_chars(query, params.prefix_length as usize);
 
-        buckets[0].push(FuzzyCandidate::new(query.to_string(), query.len(), 0));
+        if self.terms.contains(query) {
+            buckets[0].push(FuzzyCandidate::new(query.to_string(), query_char_len, 0));
+        }
 
         // Use BTreeSet's sorted order to seek directly to the prefix boundary (O(log N))
         // instead of scanning every term and filtering (O(N)).
