@@ -89,8 +89,8 @@ impl Query2bitSimd {
             let mut acc_low = vdupq_n_s32(0);
             let mut acc_high = vdupq_n_s32(0);
 
-            for ([low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(4)) {
-                let c = unpack_16_codes(v_chunk.as_ptr());
+            for (chunk_idx, [low, high]) in self.query_data.iter().enumerate() {
+                let c = unpack_16_codes(vector.as_ptr().add(chunk_idx * 4));
 
                 let q_low = vld1q_s8(low.as_ptr());
                 let q_high = vld1q_s8(high.as_ptr());
@@ -106,12 +106,16 @@ impl Query2bitSimd {
                 acc_high = vpadalq_s16(acc_high, prod_high_hi);
             }
 
-            i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high))
+            let full =
+                i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high));
+            full + self.dotprod_raw_tail(vector)
         }
     }
 
     /// ARMv8.2-A Dot Product variant.  Uses SDOT to sum 4 × i8 × i8 products
-    /// per i32 lane per instruction, with a 2× unroll (2 chunks per iter).
+    /// per i32 lane per instruction, with a 2× unroll (2 chunks per iter) +
+    /// a 1-chunk tail for odd chunk counts (allows `dim % 16 == 0`, matching
+    /// the scalar / plain-NEON contract).
     ///
     /// # Safety
     /// CPU must support `neon` and `dotprod`.
@@ -169,9 +173,35 @@ impl Query2bitSimd {
                 );
             }
 
+            // Tail: odd chunk count → one extra chunk via single SDOT per half.
+            if self.query_data.len() % 2 == 1 {
+                let tail = 2 * n_pairs;
+                let [low_t, high_t] = &self.query_data[tail];
+                let c_t = unpack_16_codes(data_ptr.add(4 * tail));
+                let q_low_t = vld1q_s8(low_t.as_ptr());
+                let q_high_t = vld1q_s8(high_t.as_ptr());
+
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_0,
+                    a = in(vreg) q_low_t,
+                    b = in(vreg) c_t,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_0,
+                    a = in(vreg) q_high_t,
+                    b = in(vreg) c_t,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+            }
+
             let acc_low = vaddq_s32(acc_low_0, acc_low_1);
             let acc_high = vaddq_s32(acc_high_0, acc_high_1);
-            i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high))
+            let full =
+                i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high));
+            full + self.dotprod_raw_tail(vector)
         }
     }
 }
@@ -192,18 +222,14 @@ pub unsafe fn score_2bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
         a.len(),
         b.len(),
     );
-    assert!(
-        a.len().is_multiple_of(4),
-        "score_2bit_internal_neon requires vector length to be a multiple of 4 bytes, got {}",
-        a.len(),
-    );
 
     unsafe {
         let mut acc = vdupq_n_s32(0);
 
-        for (a_chunk, b_chunk) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
-            let c_a = unpack_16_codes(a_chunk.as_ptr());
-            let c_b = unpack_16_codes(b_chunk.as_ptr());
+        let n_full = a.len() / 4;
+        for i in 0..n_full {
+            let c_a = unpack_16_codes(a.as_ptr().add(i * 4));
+            let c_b = unpack_16_codes(b.as_ptr().add(i * 4));
 
             let prod_lo = vmull_s8(vget_low_s8(c_a), vget_low_s8(c_b));
             let prod_hi = vmull_high_s8(c_a, c_b);
@@ -211,7 +237,9 @@ pub unsafe fn score_2bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
             acc = vpadalq_s16(acc, prod_hi);
         }
 
-        let acc_i64 = i64::from(vaddvq_s32(acc));
+        let simd_bytes = n_full * 4;
+        let acc_i64 = i64::from(vaddvq_s32(acc))
+            + super::score_2bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
         acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
     }
 }
@@ -232,12 +260,6 @@ pub unsafe fn score_2bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
         a.len(),
         b.len(),
     );
-    assert!(
-        a.len().is_multiple_of(4),
-        "score_2bit_internal_neon_sdot requires vector length to be a multiple of 4 bytes, got {}",
-        a.len(),
-    );
-
     unsafe {
         let mut acc_0 = vdupq_n_s32(0);
         let mut acc_1 = vdupq_n_s32(0);
@@ -265,20 +287,22 @@ pub unsafe fn score_2bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
             );
         }
 
-        // Tail: handle remaining chunks (at most one 4-byte chunk).
+        // Odd 4-byte chunk leftover (a.len() % 8 ∈ {4..7}): run via vmull.
         let mut acc_tail = vdupq_n_s32(0);
-        let tail_start = n_pairs * 8;
-        if tail_start < a.len() {
-            let c_a = unpack_16_codes(a.as_ptr().add(tail_start));
-            let c_b = unpack_16_codes(b.as_ptr().add(tail_start));
+        let mut offset = n_pairs * 8;
+        if a.len() - offset >= 4 {
+            let c_a = unpack_16_codes(a.as_ptr().add(offset));
+            let c_b = unpack_16_codes(b.as_ptr().add(offset));
             let prod_lo = vmull_s8(vget_low_s8(c_a), vget_low_s8(c_b));
             let prod_hi = vmull_high_s8(c_a, c_b);
             acc_tail = vpadalq_s16(acc_tail, prod_lo);
             acc_tail = vpadalq_s16(acc_tail, prod_hi);
+            offset += 4;
         }
 
         let acc = vaddq_s32(vaddq_s32(acc_0, acc_1), acc_tail);
-        let acc_i64 = i64::from(vaddvq_s32(acc));
+        let acc_i64 = i64::from(vaddvq_s32(acc))
+            + super::score_2bit_internal_integer(&a[offset..], &b[offset..]);
         acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
     }
 }
@@ -309,9 +333,7 @@ mod tests {
             return;
         }
         let mut rng = StdRng::seed_from_u64(7);
-        // SDOT variant processes 2 chunks per iter → require an even number
-        // of chunks (dim % 32 == 0).
-        for &dim in PARITY_DIMS.iter().filter(|&&d| d.is_multiple_of(32)) {
+        for &dim in PARITY_DIMS {
             let (simd_query, vector) = random_inputs(&mut rng, dim);
             let scalar = simd_query.dotprod_raw(&vector);
             let sdot = unsafe { simd_query.dotprod_raw_neon_sdot(&vector) };

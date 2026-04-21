@@ -135,38 +135,38 @@ fn codebook_signed_i64(idx: u8) -> i64 {
 }
 
 pub struct Query4bitSimd {
-    /// Query encoded as a balanced signed-i8 split
-    /// `q_signed = QUERY_HIGH_COEF · high + low`, each chunk stored as
-    /// `[low, high]`.  Both halves are signed — `low, high ∈ [−128, 127]` on
-    /// aarch64 (K=256) or `[−64, 63]` on x86_64 (K=128).
+    /// Full 16-dim chunks of the query, each stored as `[low, high]` i8 halves
+    /// (see the struct-level docs for the encoding scheme).
     query_data: Vec<[[i8; 16]; 2]>,
+    /// Trailing dims that don't fill a 16-dim chunk — up to 14 (since
+    /// `dim % 2 == 0`).  Unused slots are zero so SIMD-adjacent code treating
+    /// them as a partial chunk would see neutral contributions; in practice
+    /// the tail is always walked by the scalar helper [`Self::dotprod_raw_tail`].
+    tail_low: [i8; 14],
+    tail_high: [i8; 14],
+    /// Number of meaningful entries in the tail arrays (`0..=14`, always even).
+    tail_dims: u8,
     /// `1 / (q_scale · c_scale)` — prefactor from integer to float dot product.
     postprocess_scale: f32,
-    /// `CODEBOOK_OFFSET · Σ q_signed[j]` — subtract from `dot_raw` to recover
-    /// the true signed integer dot product.  Computed once in `new()`; doesn't
-    /// depend on the PQ vector, so `dotprod` does zero per-vector scalar work.
-    /// `0` on aarch64, where the codebook is already stored signed.
+    /// `CODEBOOK_OFFSET · Σ q_signed[j]` — sums over **all** dims (full
+    /// chunks + tail).  Subtracted from `dot_raw` to recover the true signed
+    /// dot product.  `0` on aarch64, where the codebook is already signed.
     bias_correction: i64,
 }
 
 impl Query4bitSimd {
-    /// Query dim must be a multiple of 32.  The NEON SDOT and AVX-512 VNNI paths
-    /// both consume 2 query_data chunks (= 32 query elements) per iteration;
-    /// with `dim % 32 == 0` we get `query_data.len()` even and can drop all tail
-    /// handling.  Every PQ dimension we ship (128, 256, 384, 512, 768, 1024,
-    /// 1536, 2048, 4096) already satisfies this.
+    /// Query dim must be a multiple of 2 (the 4-bit packing width: two codes
+    /// per byte).  Any such dim is accepted — dims that don't fill a full
+    /// 16-dim chunk produce up to a 14-dim tail handled scalar-wise in every
+    /// SIMD path.  This makes `Query4bitSimd` Matryoshka-friendly: a model
+    /// trimmed to 640 / 768 / 896 / 1024 dims all work with the same storage.
     pub fn new(data: &[f32]) -> Self {
         assert!(
-            data.len().is_multiple_of(32),
-            "Query4bitSimd requires query dim to be a multiple of 32 (got {})",
+            data.len().is_multiple_of(2),
+            "Query4bitSimd requires query dim to be a multiple of 2 (got {})",
             data.len(),
         );
 
-        // Scale query to signed integer `q_signed ∈ [−QUERY_ABS_MAX, +QUERY_ABS_MAX]`.
-        // Balanced split `q_signed = QUERY_HIGH_COEF · high + low` keeps both
-        // halves inside i8.  QUERY_HIGH_COEF is 256 on aarch64 (full-range i8
-        // halves → 16-bit query) or 128 on x86_64 (7-bit halves → 14-bit
-        // query, keeps maddubs within i16 given full-range u8 codebook).
         let q_abs_max = data
             .iter()
             .copied()
@@ -180,41 +180,50 @@ impl Query4bitSimd {
         let clamp_hi = QUERY_ABS_MAX;
         let clamp_lo = -QUERY_ABS_MAX;
 
+        // Balanced signed split, same math for full chunks and tail.
+        let encode = |value: f32| -> (i8, i8, i64) {
+            let q_signed = (value * q_scale).round().clamp(clamp_lo, clamp_hi) as i32;
+            let l_mod = q_signed.rem_euclid(k);
+            let l = if l_mod >= half_k { l_mod - k } else { l_mod } as i8;
+            let h = ((q_signed - i32::from(l)) / k) as i8;
+            (l, h, i64::from(q_signed))
+        };
+
         let num_chunks = data.len() / 16;
+        let full_dims = num_chunks * 16;
+        let tail_dims = data.len() - full_dims;
+        debug_assert!(tail_dims < 16 && tail_dims.is_multiple_of(2));
+
         let mut query_data: Vec<[[i8; 16]; 2]> = Vec::with_capacity(num_chunks);
         let mut sum_q_signed: i64 = 0;
         for chunk_idx in 0..num_chunks {
             let mut low = [0_i8; 16];
             let mut high = [0_i8; 16];
             for i in 0..16 {
-                let q_signed = (data[chunk_idx * 16 + i] * q_scale)
-                    .round()
-                    .clamp(clamp_lo, clamp_hi) as i32;
-                // Balanced split: force low into `[−k/2, k/2 − 1]` so both
-                // halves land inside i8 (not the default Rust `%` behaviour,
-                // which mirrors the sign of the dividend).
-                let l_mod = q_signed.rem_euclid(k);
-                let l = if l_mod >= half_k { l_mod - k } else { l_mod } as i8;
-                let h = ((q_signed - i32::from(l)) / k) as i8;
+                let (l, h, q) = encode(data[chunk_idx * 16 + i]);
                 low[i] = l;
                 high[i] = h;
-                sum_q_signed += i64::from(q_signed);
+                sum_q_signed += q;
             }
             query_data.push([low, high]);
         }
 
-        // dot_raw = Σ q_signed · c_raw, where `c_raw` is whatever the SIMD
-        // path loads: signed `i8` on aarch64 (already = c_signed, OFFSET = 0)
-        // or unsigned `u8` on x86_64 (= c_signed + 128).  Either way,
-        //   Σ q_signed · c_signed = dot_raw − OFFSET · sum_q_signed,
-        // and the float reconstruction divides by `q_scale · c_scale`.
-        let postprocess_scale = 1.0 / (q_scale * CODEBOOK_SCALE);
-        let bias_correction = CODEBOOK_OFFSET * sum_q_signed;
+        let mut tail_low = [0_i8; 14];
+        let mut tail_high = [0_i8; 14];
+        for i in 0..tail_dims {
+            let (l, h, q) = encode(data[full_dims + i]);
+            tail_low[i] = l;
+            tail_high[i] = h;
+            sum_q_signed += q;
+        }
 
         Self {
             query_data,
-            postprocess_scale,
-            bias_correction,
+            tail_low,
+            tail_high,
+            tail_dims: tail_dims as u8,
+            postprocess_scale: 1.0 / (q_scale * CODEBOOK_SCALE),
+            bias_correction: CODEBOOK_OFFSET * sum_q_signed,
         }
     }
 
@@ -252,12 +261,9 @@ impl Query4bitSimd {
         self.dotprod_raw(vector)
     }
 
-    /// Compute `Σ q_signed[j] · c_raw[v[j]]` over 16 lanes per chunk, returned
-    /// as `acc_low + QUERY_HIGH_COEF · acc_high`.  Whatever integer codebook
-    /// the current arch stores (`CODEBOOK_I8` on aarch64, `CODEBOOK_U8` on
-    /// x86_64), the reconstruction in `Query4bitSimd::dotprod` subtracts
-    /// `CODEBOOK_OFFSET · sum_q_signed` (0 on aarch64, `128·sum_q_signed` on
-    /// x86_64) to recover `Σ q · c_signed`.
+    /// Compute `Σ q_signed[j] · c_raw[v[j]]` over all dims — both the
+    /// full-chunk section (SIMD-friendly 16 lanes per chunk) and the tail.
+    /// Returns `acc_low + QUERY_HIGH_COEF · acc_high`.
     ///
     /// `vector` is PQ-encoded with two 4-bit codebook indices packed per byte:
     /// the low nibble is the index for the even lane (j = 2k), the high nibble
@@ -265,7 +271,8 @@ impl Query4bitSimd {
     pub fn dotprod_raw(&self, vector: &[u8]) -> i64 {
         let mut acc_low: i64 = 0;
         let mut acc_high: i64 = 0;
-        for ([low, high], v) in self.query_data.iter().zip(vector.chunks(8)) {
+        for (chunk_idx, [low, high]) in self.query_data.iter().enumerate() {
+            let v = &vector[chunk_idx * 8..(chunk_idx + 1) * 8];
             for i in 0..16 {
                 let byte = v[i / 2];
                 let idx = if i & 1 == 0 { byte & 0x0F } else { byte >> 4 };
@@ -273,6 +280,28 @@ impl Query4bitSimd {
                 acc_low += i64::from(low[i]) * c;
                 acc_high += i64::from(high[i]) * c;
             }
+        }
+        acc_low + QUERY_HIGH_COEF * acc_high + self.dotprod_raw_tail(vector)
+    }
+
+    /// Scalar contribution from the `tail_dims` trailing query entries.
+    /// Shared across every SIMD backend so arch-specific paths only need to
+    /// implement the full-chunk loop.  Bounds-checked slice indexing validates
+    /// that `vector.len() ≥ query_data.len() * 8 + tail_dims.div_ceil(2)`.
+    #[inline]
+    pub(super) fn dotprod_raw_tail(&self, vector: &[u8]) -> i64 {
+        if self.tail_dims == 0 {
+            return 0;
+        }
+        let tail_byte_start = self.query_data.len() * 8;
+        let mut acc_low: i64 = 0;
+        let mut acc_high: i64 = 0;
+        for i in 0..self.tail_dims as usize {
+            let byte = vector[tail_byte_start + i / 2];
+            let idx = if i & 1 == 0 { byte & 0x0F } else { byte >> 4 };
+            let c = codebook_value_i64(idx);
+            acc_low += i64::from(self.tail_low[i]) * c;
+            acc_high += i64::from(self.tail_high[i]) * c;
         }
         acc_low + QUERY_HIGH_COEF * acc_high
     }
@@ -285,12 +314,12 @@ impl Query4bitSimd {
 ///
 /// Computes `Σ c[a[j]] · c[b[j]]` in centroid-float space.  Dispatches to the
 /// fastest available SIMD implementation at runtime and falls back to
-/// [`score_4bit_internal_scalar`] otherwise.
+/// [`score_4bit_internal_scalar`] otherwise.  Any byte length is accepted —
+/// bytes that don't fill a full SIMD chunk are folded in scalar-wise so that
+/// Matryoshka-style dim ∈ {2k: k ∈ ℕ} all work.
 ///
 /// # Panics
-/// Panics if the two vectors have different lengths, or if the shared length
-/// is not a multiple of 16 bytes (which corresponds to the `dim % 32 == 0`
-/// precondition that the rest of the module is built around).
+/// Panics if the two vectors have different lengths.
 pub fn score_4bit_internal(a: &[u8], b: &[u8]) -> f32 {
     assert_eq!(
         a.len(),
@@ -298,12 +327,6 @@ pub fn score_4bit_internal(a: &[u8], b: &[u8]) -> f32 {
         "score_4bit_internal: vector length mismatch ({} vs {})",
         a.len(),
         b.len(),
-    );
-    assert!(
-        a.len().is_multiple_of(16),
-        "score_4bit_internal requires vector length to be a multiple of 16 \
-         bytes (dim % 32 == 0), got {}",
-        a.len(),
     );
 
     #[cfg(target_arch = "x86_64")]
@@ -339,6 +362,15 @@ pub fn score_4bit_internal(a: &[u8], b: &[u8]) -> f32 {
 /// Caller is responsible for checking the length preconditions — the public
 /// [`score_4bit_internal`] enforces them before dispatching.
 pub fn score_4bit_internal_scalar(a: &[u8], b: &[u8]) -> f32 {
+    // c_signed ≈ c_float · c_scale → c_signed_a · c_signed_b ≈ c_float_a · c_float_b · c_scale².
+    score_4bit_internal_integer(a, b) as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+}
+
+/// Integer-only scalar kernel shared by all backends — used by SIMD paths to
+/// fold in any bytes that didn't fit a full SIMD chunk (and by
+/// [`score_4bit_internal_scalar`] as its inner loop).
+#[inline]
+pub(super) fn score_4bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
     let mut acc: i64 = 0;
     for (&byte_a, &byte_b) in a.iter().zip(b.iter()) {
         let a_lo = byte_a & 0x0F;
@@ -348,8 +380,7 @@ pub fn score_4bit_internal_scalar(a: &[u8], b: &[u8]) -> f32 {
         acc += codebook_signed_i64(a_lo) * codebook_signed_i64(b_lo);
         acc += codebook_signed_i64(a_hi) * codebook_signed_i64(b_hi);
     }
-    // c_signed ≈ c_float · c_scale → c_signed_a · c_signed_b ≈ c_float_a · c_float_b · c_scale².
-    acc as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+    acc
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -373,8 +404,17 @@ mod shared {
 
     use super::Query4bitSimd;
 
-    /// All parity/overflow tests use dims from this list (all multiples of 32).
-    pub const PARITY_DIMS: &[usize] = &[32, 128, 256, 1024, 2048];
+    /// Corner-case dims covering every tail size the 4-bit pipeline can
+    /// produce, for each SIMD backend:
+    ///   • `16, 32, 128, 256, 1024, 2048` — full chunks, no tail (baseline).
+    ///   • `48` — 3 chunks (odd SDOT/VNNI leftover), no tail.
+    ///   • `18, 30, 46, 62, 1026, 2046` — full chunks + non-zero tail
+    ///     (tail sizes 2, 14, 14, 14, 2, 14 dims respectively).
+    ///   • `270` — 16 chunks + 14-dim tail (exercises largest tail at a
+    ///     realistic matryoshka dim).
+    pub const PARITY_DIMS: &[usize] = &[
+        16, 18, 30, 32, 46, 48, 62, 128, 256, 270, 1024, 1026, 2046, 2048,
+    ];
 
     /// Packs a sequence of 4-bit indices (each in [0, 15]) two per byte:
     /// low nibble → even lane, high nibble → odd lane.
@@ -482,10 +522,19 @@ mod tests {
     /// `simd.dotprod()` against the "ideal" PQ dot (sum of `q[j] · c[v[j]]`
     /// with float-precision centroid lookup) — the error our SIMD path adds
     /// over a hypothetical perfect-precision PQ should be tiny.
-    #[test]
-    fn test_dotprod_matches_float() {
+    ///
+    /// Parameterized over matryoshka-style corner-case dims to exercise the
+    /// tail-handling logic end-to-end (not just bit-exact parity).
+    #[rstest::rstest]
+    #[case::full_chunks(256)]
+    #[case::small_tail(18)]
+    #[case::max_tail(30)]
+    #[case::odd_chunks_only(48)]
+    #[case::odd_chunks_plus_tail(62)]
+    #[case::matryoshka(270)]
+    #[case::large_with_tail(2046)]
+    fn test_dotprod_matches_float(#[case] dim: usize) {
         let mut rng = StdRng::seed_from_u64(42);
-        let dim = 256;
         let n_trials = 64;
 
         let centroids = lloyd_max::get_centroids(4);
@@ -499,12 +548,12 @@ mod tests {
             let pq_dot: f32 = query.iter().zip(v_pq.iter()).map(|(a, b)| a * b).sum();
             let simd_dot = Query4bitSimd::new(&query).dotprod(&pack_nibbles(&indices));
 
-            // SIMD quantization error scales like √d × σ_q × ε_c.  For d=256,
-            // unit-variance query and i8 codebook precision, typical error is
-            // ≲0.1 and 3σ tail excursions stay under 0.5.
+            // Error scales roughly like √dim · σ_q · ε_c.  Allow a tolerance
+            // that is comfortably above the 3σ tail for dim up to ~2K.
+            let tol = (0.5_f32).max(0.03 * (dim as f32).sqrt());
             assert!(
-                (pq_dot - simd_dot).abs() < 0.5,
-                "simd_dot {simd_dot} too far from ideal PQ dot {pq_dot}",
+                (pq_dot - simd_dot).abs() < tol,
+                "dim={dim}: simd_dot {simd_dot} too far from ideal PQ dot {pq_dot} (tol={tol})",
             );
         }
     }

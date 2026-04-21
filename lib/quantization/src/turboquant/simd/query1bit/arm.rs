@@ -61,7 +61,10 @@ impl<const BITS: usize> super::Query1bitSimd<BITS> {
         use core::arch::aarch64::*;
 
         unsafe {
-            let num_blocks = vector.len() / super::BLOCK_BYTES;
+            // Number of full blocks is driven by the query (planes storage),
+            // so a vector with a tail beyond `num_blocks * BLOCK_BYTES` is
+            // handled by the scalar tail helper.
+            let num_blocks = self.planes.len() / (BITS * super::BLOCK_BYTES);
             let mut acc: [uint32x4_t; BITS] = core::array::from_fn(|_| vdupq_n_u32(0));
 
             for block_idx in 0..num_blocks {
@@ -89,7 +92,7 @@ impl<const BITS: usize> super::Query1bitSimd<BITS> {
                 };
                 v_dot_q += w_b * popcnt as i64;
             }
-            v_dot_q
+            v_dot_q + self.dotprod_raw_tail(vector)
         }
     }
 }
@@ -164,7 +167,15 @@ mod tests {
             );
         }
 
-        for &dim in &[128usize, 256, 384, 512, 1024, 2048] {
+        // Corner-case dims exercising every tail size the 1-bit pipeline
+        // can produce (tail ∈ {0, 8, 16, …, 120}, always a multiple of 8):
+        //   • 128, 256, 512, 1024, 2048 — full blocks, no tail.
+        //   • 8, 64, 120 — zero blocks + tail-only scoring paths.
+        //   • 136, 1032, 2040 — realistic matryoshka slices with tails.
+        //   • 640, 768, 896 — Gemma/BGE-style matryoshka dims.
+        for &dim in &[
+            8usize, 64, 120, 128, 136, 256, 512, 640, 768, 896, 1024, 1032, 2040, 2048,
+        ] {
             check::<8>(dim, 0xCAFE);
             check::<10>(dim, 0xBEEF);
             check::<12>(dim, 0xDEAD);

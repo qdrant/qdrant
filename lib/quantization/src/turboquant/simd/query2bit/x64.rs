@@ -85,27 +85,24 @@ impl Query2bitSimd {
         unsafe {
             let mut acc_low = _mm_setzero_si128();
             let mut acc_high = _mm_setzero_si128();
+            let ones = _mm_set1_epi16(1);
 
-            for ([low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(4)) {
-                let c = unpack_16_codes_sse(v_chunk.as_ptr());
+            for (chunk_idx, [low, high]) in self.query_data.iter().enumerate() {
+                let c = unpack_16_codes_sse(vector.as_ptr().add(chunk_idx * 4));
 
                 let q_low = _mm_loadu_si128(low.as_ptr().cast::<__m128i>());
                 let q_high = _mm_loadu_si128(high.as_ptr().cast::<__m128i>());
 
-                // `maddubs`: c (u8) × q (i8) → i16 pair-sum.  With c_u ∈ [0, 255]
-                // and q ∈ [−64, 63], |pair| ≤ 2·255·64 = 32 640 < i16::MAX.
                 let prod_low = _mm_maddubs_epi16(c, q_low);
                 let prod_high = _mm_maddubs_epi16(c, q_high);
 
-                // Widen i16 → i32 pair-sum.
-                let ones = _mm_set1_epi16(1);
                 acc_low = _mm_add_epi32(acc_low, _mm_madd_epi16(prod_low, ones));
                 acc_high = _mm_add_epi32(acc_high, _mm_madd_epi16(prod_high, ones));
             }
 
             let sum_low = i64::from(hsum_i32_sse(acc_low));
             let sum_high = i64::from(hsum_i32_sse(acc_high));
-            sum_low + QUERY_HIGH_COEF * sum_high
+            sum_low + QUERY_HIGH_COEF * sum_high + self.dotprod_raw_tail(vector)
         }
     }
 
@@ -176,7 +173,7 @@ impl Query2bitSimd {
 
             let sum_low = i64::from(hsum_i32_sse(sum_low_sse));
             let sum_high = i64::from(hsum_i32_sse(sum_high_sse));
-            sum_low + QUERY_HIGH_COEF * sum_high
+            sum_low + QUERY_HIGH_COEF * sum_high + self.dotprod_raw_tail(vector)
         }
     }
 
@@ -256,7 +253,7 @@ impl Query2bitSimd {
                 total_high += i64::from(hsum_i32_sse(_mm_madd_epi16(prod_high, ones)));
             }
 
-            total_low + QUERY_HIGH_COEF * total_high
+            total_low + QUERY_HIGH_COEF * total_high + self.dotprod_raw_tail(vector)
         }
     }
 }
@@ -282,18 +279,14 @@ pub unsafe fn score_2bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
         a.len(),
         b.len(),
     );
-    assert!(
-        a.len().is_multiple_of(4),
-        "score_2bit_internal_sse requires vector length to be a multiple of 4 bytes, got {}",
-        a.len(),
-    );
 
     unsafe {
         let shift = _mm_set1_epi8(-128_i8);
         let mut acc = _mm_setzero_si128();
-        for (a_chunk, b_chunk) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
-            let c_a_u8 = unpack_16_codes_sse(a_chunk.as_ptr());
-            let c_b_u8 = unpack_16_codes_sse(b_chunk.as_ptr());
+        let n_full = a.len() / 4;
+        for i in 0..n_full {
+            let c_a_u8 = unpack_16_codes_sse(a.as_ptr().add(i * 4));
+            let c_b_u8 = unpack_16_codes_sse(b.as_ptr().add(i * 4));
             let c_a = _mm_xor_si128(c_a_u8, shift);
             let c_b = _mm_xor_si128(c_b_u8, shift);
 
@@ -306,7 +299,9 @@ pub unsafe fn score_2bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
             let prod_hi = _mm_madd_epi16(c_a_hi, c_b_hi);
             acc = _mm_add_epi32(acc, _mm_add_epi32(prod_lo, prod_hi));
         }
-        let acc_i64 = i64::from(hsum_i32_sse(acc));
+        let simd_bytes = n_full * 4;
+        let acc_i64 = i64::from(hsum_i32_sse(acc))
+            + super::score_2bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
         acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
     }
 }
@@ -320,7 +315,6 @@ pub unsafe fn score_2bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
     use core::arch::x86_64::*;
 
     assert_eq!(a.len(), b.len());
-    assert!(a.len().is_multiple_of(4));
 
     unsafe {
         let shift256 = _mm256_set1_epi8(-128_i8);
@@ -369,7 +363,9 @@ pub unsafe fn score_2bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
             acc_sse = _mm_add_epi32(acc_sse, _mm_madd_epi16(c_a_lo, c_b_lo));
             acc_sse = _mm_add_epi32(acc_sse, _mm_madd_epi16(c_a_hi, c_b_hi));
         }
-        let acc_i64 = i64::from(hsum_i32_sse(acc_sse));
+        let simd_bytes = n_chunks * 4;
+        let acc_i64 = i64::from(hsum_i32_sse(acc_sse))
+            + super::score_2bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
         acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
     }
 }
@@ -383,7 +379,6 @@ pub unsafe fn score_2bit_internal_avx512_vnni(a: &[u8], b: &[u8]) -> f32 {
     use core::arch::x86_64::*;
 
     assert_eq!(a.len(), b.len());
-    assert!(a.len().is_multiple_of(4));
 
     unsafe {
         // Full-width 512-bit VNNI.  Process 4 chunks (64 codes) per iter.
@@ -444,6 +439,9 @@ pub unsafe fn score_2bit_internal_avx512_vnni(a: &[u8], b: &[u8]) -> f32 {
             acc_total += i64::from(hsum_i32_sse(prod));
         }
 
+        // Scalar tail for any bytes past the last SIMD chunk (a.len() % 4).
+        let simd_bytes = n_chunks * 4;
+        acc_total += super::score_2bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
         acc_total as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
     }
 }

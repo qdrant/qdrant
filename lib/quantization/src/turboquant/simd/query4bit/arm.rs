@@ -22,35 +22,31 @@ impl Query4bitSimd {
             let mut acc_high = vdupq_n_s32(0);
 
             let nibble_mask = vdup_n_u8(0x0F);
-            for ([low, high], v_chunk) in self.query_data.iter().zip(vector.chunks_exact(8)) {
-                // Unpack 8 packed bytes into 16 nibble indices:
-                //   [byte0.lo, byte0.hi, byte1.lo, byte1.hi, ..., byte7.lo, byte7.hi].
-                let v_packed = vld1_u8(v_chunk.as_ptr());
+            for (chunk_idx, [low, high]) in self.query_data.iter().enumerate() {
+                let v_packed = vld1_u8(vector.as_ptr().add(chunk_idx * 8));
                 let v_lo = vand_u8(v_packed, nibble_mask);
                 let v_hi = vshr_n_u8(v_packed, 4);
                 let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
 
                 let c = vqtbl1q_s8(codebook, v);
 
-                // Signed i8 query halves — one 16-byte load per half.
                 let q_low = vld1q_s8(low.as_ptr());
                 let q_high = vld1q_s8(high.as_ptr());
 
-                // i8 × i8 → i16; per product magnitude ≤ 127 × 128 = 16 256 fits in i16.
                 let prod_low_lo = vmull_s8(vget_low_s8(q_low), vget_low_s8(c));
                 let prod_low_hi = vmull_high_s8(q_low, c);
                 let prod_high_lo = vmull_s8(vget_low_s8(q_high), vget_low_s8(c));
                 let prod_high_hi = vmull_high_s8(q_high, c);
 
-                // Pairwise-add the i16×8 products into the i32×4 accumulators.
                 acc_low = vpadalq_s16(acc_low, prod_low_lo);
                 acc_low = vpadalq_s16(acc_low, prod_low_hi);
                 acc_high = vpadalq_s16(acc_high, prod_high_lo);
                 acc_high = vpadalq_s16(acc_high, prod_high_hi);
             }
 
-            // dot_raw = Σ (low + 256·high) · c_signed = acc_low + 256 · acc_high.
-            i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high))
+            let full =
+                i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high));
+            full + self.dotprod_raw_tail(vector)
         }
     }
 
@@ -79,8 +75,6 @@ impl Query4bitSimd {
             let mut acc_high_1 = vdupq_n_s32(0);
             let nibble_mask_q = vdupq_n_u8(0x0F);
 
-            // `query_data.len()` is guaranteed even by the dim-%32 precondition,
-            // so every pair is consumed and there is no tail to handle.
             let chunks = self.query_data.as_slice();
             let n_pairs = chunks.len() / 2;
 
@@ -133,9 +127,41 @@ impl Query4bitSimd {
                 );
             }
 
+            // Odd leftover chunk (after the paired loop) — single-chunk SDOT
+            // reusing acc_*_0 accumulators.  Needed when `query_data.len()` is
+            // odd, i.e. `dim ∈ (16·n, 16·n + 14]` rather than a multiple of 32.
+            if chunks.len() % 2 == 1 {
+                let tail_chunk = n_pairs * 2;
+                let [low_t, high_t] = chunks[tail_chunk];
+                let v_packed = vld1_u8(vector.as_ptr().add(8 * tail_chunk));
+                let v_lo = vand_u8(v_packed, vdup_n_u8(0x0F));
+                let v_hi = vshr_n_u8(v_packed, 4);
+                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
+                let c = vqtbl1q_s8(codebook, v);
+                let q_low_t = vld1q_s8(low_t.as_ptr());
+                let q_high_t = vld1q_s8(high_t.as_ptr());
+
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_0,
+                    a = in(vreg) q_low_t,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_0,
+                    a = in(vreg) q_high_t,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+            }
+
             let acc_low = vaddq_s32(acc_low_0, acc_low_1);
             let acc_high = vaddq_s32(acc_high_0, acc_high_1);
-            i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high))
+            let full =
+                i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high));
+            full + self.dotprod_raw_tail(vector)
         }
     }
 }
@@ -158,24 +184,20 @@ pub unsafe fn score_4bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
         a.len(),
         b.len(),
     );
-    assert!(
-        a.len().is_multiple_of(16),
-        "score_4bit_internal_neon requires vector length to be a multiple of 16 bytes, got {}",
-        a.len(),
-    );
 
     unsafe {
         let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());
         let mut acc = vdupq_n_s32(0);
         let nibble_mask = vdup_n_u8(0x0F);
 
-        for (a_chunk, b_chunk) in a.chunks_exact(8).zip(b.chunks_exact(8)) {
-            let va = vld1_u8(a_chunk.as_ptr());
+        let n_full = a.len() / 8;
+        for i in 0..n_full {
+            let va = vld1_u8(a.as_ptr().add(i * 8));
             let va_lo = vand_u8(va, nibble_mask);
             let va_hi = vshr_n_u8(va, 4);
             let a_idx = vcombine_u8(vzip1_u8(va_lo, va_hi), vzip2_u8(va_lo, va_hi));
 
-            let vb = vld1_u8(b_chunk.as_ptr());
+            let vb = vld1_u8(b.as_ptr().add(i * 8));
             let vb_lo = vand_u8(vb, nibble_mask);
             let vb_hi = vshr_n_u8(vb, 4);
             let b_idx = vcombine_u8(vzip1_u8(vb_lo, vb_hi), vzip2_u8(vb_lo, vb_hi));
@@ -183,7 +205,6 @@ pub unsafe fn score_4bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
             let c_a = vqtbl1q_s8(codebook, a_idx);
             let c_b = vqtbl1q_s8(codebook, b_idx);
 
-            // i8 × i8 → i16; per product magnitude ≤ 127 × 127 = 16 129 fits in i16.
             let prod_lo = vmull_s8(vget_low_s8(c_a), vget_low_s8(c_b));
             let prod_hi = vmull_high_s8(c_a, c_b);
 
@@ -191,7 +212,9 @@ pub unsafe fn score_4bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
             acc = vpadalq_s16(acc, prod_hi);
         }
 
-        let acc_i64 = i64::from(vaddvq_s32(acc));
+        let simd_bytes = n_full * 8;
+        let acc_i64 = i64::from(vaddvq_s32(acc))
+            + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
         acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
     }
 }
@@ -213,11 +236,6 @@ pub unsafe fn score_4bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
         a.len(),
         b.len(),
     );
-    assert!(
-        a.len().is_multiple_of(16),
-        "score_4bit_internal_neon_sdot requires vector length to be a multiple of 16 bytes, got {}",
-        a.len(),
-    );
 
     unsafe {
         let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());
@@ -225,11 +243,9 @@ pub unsafe fn score_4bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
         let mut acc_1 = vdupq_n_s32(0);
         let nibble_mask_q = vdupq_n_u8(0x0F);
 
-        // `a.len() / 16` == number of chunk-pairs (2 chunks = 32 elements each).
         let n_pairs = a.len() / 16;
 
         for i in 0..n_pairs {
-            // One 16-byte load covers both chunks' 8 packed bytes each.
             let va = vld1q_u8(a.as_ptr().add(16 * i));
             let va_lo = vandq_u8(va, nibble_mask_q);
             let va_hi = vshrq_n_u8(va, 4);
@@ -247,8 +263,6 @@ pub unsafe fn score_4bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
             let c_b_0 = vqtbl1q_s8(codebook, b_idx_0);
             let c_b_1 = vqtbl1q_s8(codebook, b_idx_1);
 
-            // SDOT: acc[lane] += sum_{k=0..3} c_a[4·lane+k] · c_b[4·lane+k].
-            // i8 × i8 is what we want; per lane per iter ≤ 4 · 127² = 64 516 in i32.
             core::arch::asm!(
                 "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
                 acc = inout(vreg) acc_0,
@@ -266,7 +280,9 @@ pub unsafe fn score_4bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
         }
 
         let acc = vaddq_s32(acc_0, acc_1);
-        let acc_i64 = i64::from(vaddvq_s32(acc));
+        let simd_bytes = n_pairs * 16;
+        let acc_i64 = i64::from(vaddvq_s32(acc))
+            + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
         acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
     }
 }

@@ -200,7 +200,7 @@ impl<const BITS: usize> super::Query1bitSimd<BITS> {
             let lookup = _mm_loadu_si128(NIBBLE_POPCNT.as_ptr().cast::<__m128i>());
             let low_mask = _mm_set1_epi8(0x0F);
             let zero = _mm_setzero_si128();
-            let num_blocks = vector.len() / super::BLOCK_BYTES;
+            let num_blocks = self.planes.len() / (BITS * super::BLOCK_BYTES);
             let mut acc: [__m128i; BITS] = core::array::from_fn(|_| _mm_setzero_si128());
 
             for block_idx in 0..num_blocks {
@@ -228,7 +228,7 @@ impl<const BITS: usize> super::Query1bitSimd<BITS> {
                 }
             }
 
-            reduce_planes::<BITS>(&acc)
+            reduce_planes::<BITS>(&acc) + self.dotprod_raw_tail(vector)
         }
     }
 
@@ -247,7 +247,7 @@ impl<const BITS: usize> super::Query1bitSimd<BITS> {
         use core::arch::x86_64::*;
 
         unsafe {
-            let num_blocks = vector.len() / super::BLOCK_BYTES;
+            let num_blocks = self.planes.len() / (BITS * super::BLOCK_BYTES);
             let mut acc: [__m128i; BITS] = core::array::from_fn(|_| _mm_setzero_si128());
 
             for block_idx in 0..num_blocks {
@@ -270,7 +270,7 @@ impl<const BITS: usize> super::Query1bitSimd<BITS> {
                 }
             }
 
-            reduce_planes::<BITS>(&acc)
+            reduce_planes::<BITS>(&acc) + self.dotprod_raw_tail(vector)
         }
     }
 }

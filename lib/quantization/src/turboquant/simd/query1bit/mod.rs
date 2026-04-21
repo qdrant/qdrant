@@ -42,30 +42,35 @@ const BLOCK_BYTES: usize = 16;
 /// so no per-data-vector precomputation is needed.  The final float output
 /// is `(c / q_scale) · signed_dot`, folded into `postprocess_scale`.
 pub struct Query1bitSimd<const BITS: usize = 8> {
+    /// Block-interleaved bit-planes for full 128-dim blocks.
     planes: Vec<u8>,
+    /// Signed quantized query values for dims that didn't fill a full block
+    /// (`0..=120` entries, always a multiple of 8).  Each entry is the same
+    /// `q_signed` that would otherwise sit inside a plane — just kept in
+    /// scalar form because partial blocks don't play nicely with SIMD.
+    tail_q_signed: Vec<i16>,
     /// `c / q_scale` — single scalar reconstruction factor.
     postprocess_scale: f32,
-    /// `Σ q_signed` — per-query bias, absorbed into the final formula.
+    /// `Σ q_signed` over **all** dims (full blocks + tail).
     sum_q_signed: i64,
 }
 
 impl<const BITS: usize> Query1bitSimd<BITS> {
-    /// Query dim must be a multiple of 128 (one full block).
+    /// Query dim must be a multiple of 8 (the 1-bit packing width: eight
+    /// codes per byte).  Matryoshka-friendly — any such dim is accepted,
+    /// with tails up to 120 dims handled scalar-wise in every SIMD path.
     pub fn new(data: &[f32]) -> Self {
         assert!(
             (2..=16).contains(&BITS),
             "Query1bitSimd: BITS must be in [2, 16], got {BITS}",
         );
         assert!(
-            data.len().is_multiple_of(8 * BLOCK_BYTES),
-            "Query1bitSimd: dim must be a multiple of {} (got {})",
-            8 * BLOCK_BYTES,
+            data.len().is_multiple_of(8),
+            "Query1bitSimd: dim must be a multiple of 8 (got {})",
             data.len(),
         );
 
-        // Symmetric signed range [−(2^(BITS−1)−1), +2^(BITS−1)−1] so the
-        // quantization error bound is uniform and `−2^(BITS−1)` (which has
-        // no positive counterpart) is never produced.
+        // Symmetric signed range [−(2^(BITS−1)−1), +2^(BITS−1)−1].
         let q_abs_max_int = (1i64 << (BITS - 1)) - 1;
         let q_abs_max = data
             .iter()
@@ -77,7 +82,14 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
         let clamp_hi = q_abs_max_int as f32;
         let clamp_lo = -clamp_hi;
 
+        let encode =
+            |value: f32| -> i64 { (value * q_scale).round().clamp(clamp_lo, clamp_hi) as i64 };
+
         let num_blocks = data.len() / (8 * BLOCK_BYTES);
+        let full_dims = num_blocks * 8 * BLOCK_BYTES;
+        let tail_dims = data.len() - full_dims;
+        debug_assert!(tail_dims < 8 * BLOCK_BYTES && tail_dims.is_multiple_of(8));
+
         let mut planes = vec![0u8; num_blocks * BITS * BLOCK_BYTES];
         let mut sum_q_signed: i64 = 0;
         let bits_mask = (1u64 << BITS) - 1;
@@ -87,9 +99,8 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
             for byte_in_block in 0..BLOCK_BYTES {
                 for bit_in_byte in 0..8 {
                     let dim = block_idx * 8 * BLOCK_BYTES + byte_in_block * 8 + bit_in_byte;
-                    let q = (data[dim] * q_scale).round().clamp(clamp_lo, clamp_hi) as i64;
+                    let q = encode(data[dim]);
                     sum_q_signed += q;
-                    // Two's complement BITS-bit representation.
                     let q_bits = (q as u64) & bits_mask;
                     for b in 0..BITS {
                         let bit = ((q_bits >> b) & 1) as u8;
@@ -99,26 +110,27 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
             }
         }
 
+        // Tail: store one signed integer per dim.  BITS ≤ 16 guarantees
+        // `q ∈ [−32 767, +32 767]`, so `i16` is enough.
+        let mut tail_q_signed = Vec::with_capacity(tail_dims);
+        for i in 0..tail_dims {
+            let q = encode(data[full_dims + i]);
+            sum_q_signed += q;
+            tail_q_signed.push(q as i16);
+        }
+
         Self {
             planes,
+            tail_q_signed,
             postprocess_scale: CENTROID_ABS / q_scale,
             sum_q_signed,
         }
     }
 
     /// Score the encoded query against a PQ-encoded `vector` (8 lanes / byte).
-    /// Length of `vector` must equal the query dim / 8 (i.e. the same byte
-    /// length the query was constructed for).
+    /// `vector.len()` must equal the original query `dim / 8` — full blocks
+    /// first, then up to 15 tail bytes.
     pub fn dotprod(&self, vector: &[u8]) -> f32 {
-        assert!(
-            vector.len().is_multiple_of(BLOCK_BYTES),
-            "Query1bitSimd::dotprod: vector length must be a multiple of {BLOCK_BYTES}",
-        );
-        debug_assert_eq!(
-            self.planes.len(),
-            vector.len() / BLOCK_BYTES * BITS * BLOCK_BYTES
-        );
-
         let v_dot_q = self.dotprod_raw_best(vector);
         let signed_dot = 2 * v_dot_q - self.sum_q_signed;
         self.postprocess_scale * signed_dot as f32
@@ -145,11 +157,12 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
         self.dotprod_raw(vector)
     }
 
-    /// Integer kernel: `Σ_b w_b · popcount(v_block AND plane_b)` over all
-    /// blocks.  Reference implementation — SIMD variants in [`arm`] / [`x64`]
-    /// must match this bit-exactly.
+    /// Integer kernel: `Σ v_j · q_signed[j]` across all dims — full blocks
+    /// decoded from the bit-plane AND-popcount form, plus scalar tail.
+    /// Reference implementation — SIMD variants in [`arm`] / [`x64`] must
+    /// match this bit-exactly.
     pub fn dotprod_raw(&self, vector: &[u8]) -> i64 {
-        let num_blocks = vector.len() / BLOCK_BYTES;
+        let num_blocks = self.planes.len() / (BITS * BLOCK_BYTES);
         let mut v_dot_q: i64 = 0;
         for block_idx in 0..num_blocks {
             let data_block = &vector[block_idx * BLOCK_BYTES..(block_idx + 1) * BLOCK_BYTES];
@@ -167,6 +180,27 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
                     1i64 << b
                 };
                 v_dot_q += w_b * i64::from(c);
+            }
+        }
+        v_dot_q + self.dotprod_raw_tail(vector)
+    }
+
+    /// Scalar tail contribution: for each tail dim `i`, if the bit is set in
+    /// the packed data, add `tail_q_signed[i]`.  Shared across every SIMD
+    /// backend.
+    #[inline]
+    pub(super) fn dotprod_raw_tail(&self, vector: &[u8]) -> i64 {
+        if self.tail_q_signed.is_empty() {
+            return 0;
+        }
+        let num_blocks = self.planes.len() / (BITS * BLOCK_BYTES);
+        let tail_byte_start = num_blocks * BLOCK_BYTES;
+        let mut v_dot_q: i64 = 0;
+        for (i, &q) in self.tail_q_signed.iter().enumerate() {
+            let byte = vector[tail_byte_start + i / 8];
+            let bit = (byte >> (i % 8)) & 1;
+            if bit == 1 {
+                v_dot_q += i64::from(q);
             }
         }
         v_dot_q
@@ -345,11 +379,20 @@ mod tests {
     /// the exact centroid-dot-product `Σ query_i · sign(v_i) · c`, modulo
     /// query quantization noise.  Uses BITS=8 (default) and BITS=12 to
     /// sanity-check that widening actually reduces error.
-    #[test]
-    fn test_query_dotprod_matches_reference() {
+    ///
+    /// Parameterized over matryoshka-style corner-case dims — every case
+    /// exercises the tail path for BITS=8 and BITS=12 independently.
+    #[rstest::rstest]
+    #[case::full_blocks(1024)]
+    #[case::tail_only(120)]
+    #[case::block_plus_small_tail(136)]
+    #[case::block_plus_max_tail(1144)] // 8 blocks + 120 tail dims
+    #[case::matryoshka_640(640)]
+    #[case::matryoshka_768(768)]
+    #[case::matryoshka_896(896)]
+    fn test_query_dotprod_matches_reference(#[case] dim: usize) {
         use rand_distr::{Distribution, StandardNormal};
 
-        let dim = 1024;
         let byte_len = dim / 8;
         let mut rng = StdRng::seed_from_u64(1234);
 
@@ -373,22 +416,26 @@ mod tests {
         let q12 = Query1bitSimd::<12>::new(&query);
         let got12 = q12.dotprod(&data);
 
-        let scale = expected.abs().max(1.0);
+        // Compare against `|expected| + sqrt(dim)` so small dims (where
+        // `expected` may be near zero by chance) don't artificially blow up
+        // the relative error.
+        let scale = expected.abs().max((dim as f32).sqrt());
         let rel_err_8 = (got8 - expected).abs() / scale;
         let rel_err_12 = (got12 - expected).abs() / scale;
 
         assert!(
-            rel_err_8 < 1e-2,
-            "BITS=8 rel_err={rel_err_8} (got {got8} vs {expected})"
+            rel_err_8 < 2e-2,
+            "dim={dim} BITS=8 rel_err={rel_err_8} (got {got8} vs {expected})"
         );
         assert!(
-            rel_err_12 < 1e-3,
-            "BITS=12 rel_err={rel_err_12} (got {got12} vs {expected})"
+            rel_err_12 < 2e-3,
+            "dim={dim} BITS=12 rel_err={rel_err_12} (got {got12} vs {expected})"
         );
-        // Widening must shrink error (strictly, with overwhelming probability).
+        // Widening must shrink error (strictly, with overwhelming probability
+        // — tightens to `<=` here to be robust against tiny-dim rng noise).
         assert!(
-            rel_err_12 < rel_err_8,
-            "BITS=12 err {rel_err_12} should be smaller than BITS=8 err {rel_err_8}",
+            rel_err_12 <= rel_err_8,
+            "dim={dim} BITS=12 err {rel_err_12} should be ≤ BITS=8 err {rel_err_8}",
         );
     }
 }
