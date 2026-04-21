@@ -2082,9 +2082,9 @@ checksum = "4a742b95783b1f45b900129082cbc47717b6a77ee8d17eea70a8ea62462f5de3"
 
 [[package]]
 name = "earcut"
-version = "0.4.7"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf7de1e0e7c9db46eb2ad1efa3459d3272842da6fefac4ee7f87a35708b3b350"
+checksum = "622e703543f60441230456c58f7f2f004c3e19be7ada214d7ca438ebdbc6d236"
 dependencies = [
  "num-traits",
 ]
