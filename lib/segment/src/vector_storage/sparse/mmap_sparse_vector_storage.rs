@@ -65,7 +65,7 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?)?;
 
         let deleted_count = deleted.count_trues();
         let next_point_offset = deleted
@@ -106,7 +106,7 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?)?;
 
         Ok(Self {
             storage,

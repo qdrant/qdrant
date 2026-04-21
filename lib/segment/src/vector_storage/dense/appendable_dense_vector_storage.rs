@@ -252,7 +252,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
 
-    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?)?;
     let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapDenseVectorStorage {

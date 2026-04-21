@@ -28,19 +28,19 @@ pub struct BitvecFlags {
 }
 
 impl BitvecFlags {
-    pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
+    pub fn new(mmap_flags: DynamicMmapFlags) -> OperationResult<Self> {
         // load flags into memory
-        let bitvec = BitVec::from_bitslice(mmap_flags.get_bitslice());
+        let bitvec = BitVec::from_bitslice(&*mmap_flags.get_bitslice()?);
 
         if let Err(err) = mmap_flags.clear_cache() {
             log::warn!("Failed to clear bitslice cache: {err}");
         }
 
-        Self {
+        Ok(Self {
             len: mmap_flags.len(),
             storage: BufferedDynamicFlags::new(mmap_flags),
             bitvec,
-        }
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -134,7 +134,7 @@ mod tests {
         // Create and update flags
         {
             let mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            let mut bitvec_flags = BitvecFlags::new(mmap_flags);
+            let mut bitvec_flags = BitvecFlags::new(mmap_flags).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
             for i in 16..20 {
@@ -163,7 +163,7 @@ mod tests {
         // Verify bitmap consistency after reload
         {
             let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let bitvec_flags = BitvecFlags::new(mmap_flags);
+            let bitvec_flags = BitvecFlags::new(mmap_flags).unwrap();
 
             // Verify iteration consistency after reload
             let iter_trues: Vec<_> = bitvec_flags.iter_trues().collect();

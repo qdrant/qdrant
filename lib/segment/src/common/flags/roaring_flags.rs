@@ -28,20 +28,20 @@ pub struct RoaringFlags {
 }
 
 impl RoaringFlags {
-    pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
+    pub fn new(mmap_flags: DynamicMmapFlags) -> OperationResult<Self> {
         // load flags into memory
-        let bitmap = RoaringBitmap::from_sorted_iter(mmap_flags.iter_trues())
+        let bitmap = RoaringBitmap::from_sorted_iter(mmap_flags.iter_trues()?)
             .expect("iter_trues iterates in sorted order");
 
         if let Err(err) = mmap_flags.clear_cache() {
             log::warn!("Failed to clear bitslice cache: {err}");
         }
 
-        Self {
+        Ok(Self {
             len: mmap_flags.len(),
             storage: BufferedDynamicFlags::new(mmap_flags),
             bitmap,
-        }
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -135,7 +135,7 @@ mod tests {
         // Create and update flags
         {
             let mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
-            let mut roaring_flags = RoaringFlags::new(mmap_flags);
+            let mut roaring_flags = RoaringFlags::new(mmap_flags).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
             for i in 16..20 {
@@ -155,7 +155,7 @@ mod tests {
         // Verify bitmap consistency after reload
         {
             let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            let roaring_flags = RoaringFlags::new(mmap_flags);
+            let roaring_flags = RoaringFlags::new(mmap_flags).unwrap();
 
             // Verify iteration consistency after reload
             let iter_trues: Vec<_> = roaring_flags.iter_trues().collect();

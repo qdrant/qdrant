@@ -284,6 +284,39 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         self.storage.write(0, &buf)
     }
 
+    /// Read-modify-write a single bit. Returns the previous value.
+    ///
+    /// Only writes to the backend if the element actually changed.
+    pub fn replace_bit(&mut self, bit_index: u64, value: bool) -> Result<bool> {
+        let element_index = Self::element_idx(bit_index);
+        let bit_within_element = Self::bit_within_element(bit_index);
+
+        if element_index >= self.element_len {
+            return Err(UniversalIoError::OutOfBounds {
+                start: bit_index,
+                end: bit_index + 1,
+                elements: self.bit_len() as usize,
+            });
+        }
+
+        let mut element = self
+            .storage
+            .read::<Random>(ReadRange::one(element_index * size_of::<BitStore>() as u64))?[0];
+
+        let element = &mut element;
+
+        let bitslice = BitSlice::from_element_mut(element);
+
+        let old_bit = bitslice.replace(bit_within_element as usize, value);
+
+        if old_bit != value {
+            self.storage
+                .write(element_index * size_of::<BitStore>() as u64, &[*element])?;
+        }
+
+        Ok(old_bit)
+    }
+
     /// Get a flusher for the underlying storage.
     pub fn flusher(&self) -> Flusher {
         self.storage.flusher()
@@ -297,41 +330,6 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::*;
-
-    impl<S: UniversalWrite<BitStore>> StoredBitSlice<S> {
-        /// Read-modify-write a single bit. Returns the previous value.
-        ///
-        /// Only writes to the backend if the element actually changed.
-        pub fn replace_bit(&mut self, bit_index: u64, value: bool) -> Result<bool> {
-            let element_index = Self::element_idx(bit_index);
-            let bit_within_element = Self::bit_within_element(bit_index);
-
-            if element_index >= self.element_len {
-                return Err(UniversalIoError::OutOfBounds {
-                    start: bit_index,
-                    end: bit_index + 1,
-                    elements: self.bit_len() as usize,
-                });
-            }
-
-            let mut element = self
-                .storage
-                .read::<Random>(ReadRange::one(element_index * size_of::<BitStore>() as u64))?[0];
-
-            let element = &mut element;
-
-            let bitslice = BitSlice::from_element_mut(element);
-
-            let old_bit = bitslice.replace(bit_within_element as usize, value);
-
-            if old_bit != value {
-                self.storage
-                    .write(element_index * size_of::<BitStore>() as u64, &[*element])?;
-            }
-
-            Ok(old_bit)
-        }
-    }
 
     fn create_temp_file(data: &[u8]) -> NamedTempFile {
         let mut f = NamedTempFile::new().unwrap();
