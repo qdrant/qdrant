@@ -8,7 +8,7 @@ from docker.errors import NotFound
 
 from e2e_tests.conftest import QdrantContainerConfig
 from e2e_tests.client_utils import ClientUtils
-from e2e_tests.utils import extract_archive, remove_dir
+from e2e_tests.utils import extract_archive, remove_dir, scan_container_logs_for_errors
 
 
 class TestStorageCompatibility:
@@ -307,6 +307,14 @@ class TestStorageCompatibility:
             success, error_msg = self._query_collections(container_info.host, container_info.http_port)
             if not success:
                 return False, f"{test_name.capitalize()} query verification failed for {version}: {error_msg}"
+
+            log_errors = scan_container_logs_for_errors(container_info.container)
+            if log_errors:
+                preview = "\n".join(log_errors[:20])
+                return False, (
+                    f"{test_name.capitalize()} compatibility for {version}: "
+                    f"found {len(log_errors)} error/panic line(s) in container logs:\n{preview}"
+                )
 
             return True, ""
         finally:

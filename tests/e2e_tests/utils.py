@@ -1,6 +1,7 @@
 """Helper functions for pytest fixtures and container management."""
 import gzip
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -143,6 +144,38 @@ def create_container_info(container: docker.models.containers.Container, http_po
         http_port=http_port,
         grpc_port=grpc_port
     )
+
+
+_LOG_ERROR_PATTERNS = [
+    re.compile(r"\bERROR\b"),
+    re.compile(r"\bFATAL\b"),
+    re.compile(r"thread '[^']*' panicked"),
+    re.compile(r"panicked at "),
+]
+
+
+def scan_container_logs_for_errors(
+    container: docker.models.containers.Container,
+    ignore_patterns: Optional[List[re.Pattern]] = None,
+) -> List[str]:
+    """Return log lines from the container that look like errors or panics.
+
+    Fetches the full log (not tail-limited) so early-startup panics aren't lost.
+    WARN is intentionally excluded to avoid false positives from deprecation
+    warnings emitted when a newer binary loads older on-disk data.
+    """
+    try:
+        raw = container.logs().decode("utf-8", errors="ignore")
+    except Exception as e:
+        return [f"<failed to fetch logs: {e}>"]
+
+    findings = []
+    for line in raw.splitlines():
+        if any(p.search(line) for p in _LOG_ERROR_PATTERNS):
+            if ignore_patterns and any(p.search(line) for p in ignore_patterns):
+                continue
+            findings.append(line)
+    return findings
 
 
 def cleanup_container(container: docker.models.containers.Container) -> None:
