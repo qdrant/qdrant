@@ -74,19 +74,23 @@ impl Collection {
             if resharding_key.direction == ReshardingDirection::Up {
                 let mut config = self.collection_config.write().await;
                 match config.params.sharding_method.unwrap_or_default() {
-                    // If adding a shard, increase persisted count so we load it on restart
+                    // Idempotent: set the shard count to the new shard's id
+                    // plus one (shard ids are contiguous from zero, so this is
+                    // the count after adding the shard). A replay converges to
+                    // the same value instead of incrementing again.
                     ShardingMethod::Auto => {
-                        debug_assert_eq!(config.params.shard_number.get(), resharding_key.shard_id);
-
-                        config.params.shard_number = config
-                            .params
-                            .shard_number
+                        let new_shard_number = resharding_key
+                            .shard_id
                             .checked_add(1)
+                            .and_then(NonZeroU32::new)
                             .expect("cannot have more than u32::MAX shards after resharding");
-                        if let Err(err) = config.save(&self.path) {
-                            log::error!(
-                                "Failed to update and save collection config during resharding: {err}",
-                            );
+                        if config.params.shard_number != new_shard_number {
+                            config.params.shard_number = new_shard_number;
+                            if let Err(err) = config.save(&self.path) {
+                                log::error!(
+                                    "Failed to update and save collection config during resharding: {err}",
+                                );
+                            }
                         }
                     }
                     // Custom shards don't use the persisted count, we don't change it
@@ -205,21 +209,21 @@ impl Collection {
             {
                 let mut config = self.collection_config.write().await;
                 match config.params.sharding_method.unwrap_or_default() {
-                    // If removing a shard, decrease persisted count so we don't load it on restart
+                    // Idempotent: set the shard count to the id of the just
+                    // removed shard (which equals the new count, since shard
+                    // ids are contiguous and this was the highest one). A
+                    // replay converges to the same value instead of
+                    // decrementing again.
                     ShardingMethod::Auto => {
-                        debug_assert_eq!(
-                            config.params.shard_number.get() - 1,
-                            resharding_key.shard_id,
-                        );
-
-                        config.params.shard_number =
-                            NonZeroU32::new(config.params.shard_number.get() - 1)
-                                .expect("cannot have zero shards after finishing resharding");
-
-                        if let Err(err) = config.save(&self.path) {
-                            log::error!(
-                                "Failed to update and save collection config during resharding: {err}"
-                            );
+                        let new_shard_number = NonZeroU32::new(resharding_key.shard_id)
+                            .expect("cannot have zero shards after finishing resharding down");
+                        if config.params.shard_number != new_shard_number {
+                            config.params.shard_number = new_shard_number;
+                            if let Err(err) = config.save(&self.path) {
+                                log::error!(
+                                    "Failed to update and save collection config during resharding: {err}"
+                                );
+                            }
                         }
                     }
                     // Custom shards don't use the persisted count, we don't change it
@@ -297,21 +301,20 @@ impl Collection {
         if resharding_key.direction == ReshardingDirection::Up {
             let mut config = self.collection_config.write().await;
             match config.params.sharding_method.unwrap_or_default() {
-                // If removing a shard, decrease persisted count so we don't load it on restart
+                // Idempotent: set the shard count to the aborted shard's id
+                // (shard ids are contiguous from zero, so this is the count
+                // after removing the shard). A replay converges to the same
+                // value instead of decrementing again.
                 ShardingMethod::Auto => {
-                    debug_assert_eq!(
-                        config.params.shard_number.get() - 1,
-                        resharding_key.shard_id,
-                    );
-
-                    config.params.shard_number =
-                        NonZeroU32::new(config.params.shard_number.get() - 1)
-                            .expect("cannot have zero shards after aborting resharding");
-
-                    if let Err(err) = config.save(&self.path) {
-                        log::error!(
-                            "Failed to update and save collection config during resharding: {err}"
-                        );
+                    let new_shard_number = NonZeroU32::new(resharding_key.shard_id)
+                        .expect("cannot have zero shards after aborting resharding up");
+                    if config.params.shard_number != new_shard_number {
+                        config.params.shard_number = new_shard_number;
+                        if let Err(err) = config.save(&self.path) {
+                            log::error!(
+                                "Failed to update and save collection config during resharding: {err}"
+                            );
+                        }
                     }
                 }
                 // Custom shards don't use the persisted count, we don't change it
