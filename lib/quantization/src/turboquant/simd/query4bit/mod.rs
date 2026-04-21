@@ -108,9 +108,11 @@ const QUERY_ABS_MAX: f32 = 8127.0;
 )))]
 const QUERY_HIGH_COEF: i64 = 128;
 
-/// Read the signed codebook value at `idx` as an `i64`.  On aarch64 the
-/// constant is already i8 signed; on x86_64 (and fallback) it's stored
-/// unsigned (+OFFSET) and the caller's `bias_correction` later undoes the shift.
+/// Read the codebook value at `idx` in its arch-native storage form as `i64`.
+/// On aarch64 that's the signed `CODEBOOK_I8`; on x86_64 (and fallback) it's
+/// the unsigned `CODEBOOK_U8` — the `+OFFSET` shift is unwound later by the
+/// query-side `bias_correction`.  Use this inside SIMD-adjacent code that
+/// mirrors what the intrinsics actually see.
 #[inline]
 fn codebook_value_i64(idx: u8) -> i64 {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -121,6 +123,15 @@ fn codebook_value_i64(idx: u8) -> i64 {
     {
         i64::from(CODEBOOK_U8[idx as usize])
     }
+}
+
+/// Read the codebook value at `idx` as a **true signed** integer, regardless
+/// of which storage the current arch uses.  Used by vector-vs-vector scoring
+/// where both operands come from the codebook and there's no query-side
+/// `bias_correction` to absorb the `+OFFSET` shift.
+#[inline]
+fn codebook_signed_i64(idx: u8) -> i64 {
+    codebook_value_i64(idx) - CODEBOOK_OFFSET
 }
 
 pub struct Query4bitSimd {
@@ -267,11 +278,90 @@ impl Query4bitSimd {
     }
 }
 
+/// Dot product between two already-encoded 4-bit PQ vectors.  Both `a` and
+/// `b` are the packed-nibble format that [`Query4bitSimd::dotprod`] takes as
+/// its `vector` argument — every byte holds two codebook indices (low nibble
+/// = even lane, high nibble = odd lane).
+///
+/// Computes `Σ c[a[j]] · c[b[j]]` in centroid-float space.  Dispatches to the
+/// fastest available SIMD implementation at runtime and falls back to
+/// [`score_4bit_internal_scalar`] otherwise.
+///
+/// # Panics
+/// Panics if the two vectors have different lengths, or if the shared length
+/// is not a multiple of 16 bytes (which corresponds to the `dim % 32 == 0`
+/// precondition that the rest of the module is built around).
+pub fn score_4bit_internal(a: &[u8], b: &[u8]) -> f32 {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "score_4bit_internal: vector length mismatch ({} vs {})",
+        a.len(),
+        b.len(),
+    );
+    assert!(
+        a.len().is_multiple_of(16),
+        "score_4bit_internal requires vector length to be a multiple of 16 \
+         bytes (dim % 32 == 0), got {}",
+        a.len(),
+    );
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512bw")
+            && std::is_x86_feature_detected!("avx512vnni")
+        {
+            return unsafe { x64::score_4bit_internal_avx512_vnni(a, b) };
+        }
+        if std::is_x86_feature_detected!("avx2") {
+            return unsafe { x64::score_4bit_internal_avx2(a, b) };
+        }
+        if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+            return unsafe { x64::score_4bit_internal_sse(a, b) };
+        }
+    }
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        if std::arch::is_aarch64_feature_detected!("dotprod") {
+            return unsafe { arm::score_4bit_internal_neon_sdot(a, b) };
+        }
+        return unsafe { arm::score_4bit_internal_neon(a, b) };
+    }
+    #[allow(unreachable_code)]
+    score_4bit_internal_scalar(a, b)
+}
+
+/// Scalar reference implementation of [`score_4bit_internal`].  Exposed as
+/// the fallback on architectures without a SIMD variant, the `assert_eq!`
+/// baseline for per-arch parity tests, and as a standalone bench target.
+///
+/// Caller is responsible for checking the length preconditions — the public
+/// [`score_4bit_internal`] enforces them before dispatching.
+pub fn score_4bit_internal_scalar(a: &[u8], b: &[u8]) -> f32 {
+    let mut acc: i64 = 0;
+    for (&byte_a, &byte_b) in a.iter().zip(b.iter()) {
+        let a_lo = byte_a & 0x0F;
+        let a_hi = byte_a >> 4;
+        let b_lo = byte_b & 0x0F;
+        let b_hi = byte_b >> 4;
+        acc += codebook_signed_i64(a_lo) * codebook_signed_i64(b_lo);
+        acc += codebook_signed_i64(a_hi) * codebook_signed_i64(b_hi);
+    }
+    // c_signed ≈ c_float · c_scale → c_signed_a · c_signed_b ≈ c_float_a · c_float_b · c_scale².
+    acc as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+}
+
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 mod arm;
 
 #[cfg(target_arch = "x86_64")]
 mod x64;
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub use arm::{score_4bit_internal_neon, score_4bit_internal_neon_sdot};
+#[cfg(target_arch = "x86_64")]
+pub use x64::{score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse};
 
 /// Shared test helpers used by the accuracy tests below and by the per-arch
 /// SIMD parity / saturation tests in [`arm`] and [`x64`].
@@ -472,5 +562,41 @@ mod tests {
              {rms_pq_noise:.4} (ratio {:.2}×)",
             rms_pq_noise / rms_simd_noise,
         );
+    }
+
+    /// `score_4bit_internal` should recover the pure centroid-space dot
+    /// product `Σ c[a[j]] · c[b[j]]` up to the i8 quantization step of the
+    /// codebook (≤ 1/c_scale ≈ 0.022 per centroid).  For dim=256 the
+    /// cumulative RMS error stays well under 1.0.
+    #[test]
+    fn test_score_4bit_internal_matches_centroid_product() {
+        let mut rng = StdRng::seed_from_u64(7);
+        let centroids = lloyd_max::get_centroids(4);
+        let dim = 256;
+        let n_trials = 32;
+
+        for _ in 0..n_trials {
+            let raw_a = sample_normal_vec(&mut rng, dim);
+            let raw_b = sample_normal_vec(&mut rng, dim);
+            let idx_a = encode_to_nearest_centroid(centroids, &raw_a);
+            let idx_b = encode_to_nearest_centroid(centroids, &raw_b);
+
+            let truth: f64 = idx_a
+                .iter()
+                .zip(idx_b.iter())
+                .map(|(&ia, &ib)| {
+                    f64::from(centroids[ia as usize]) * f64::from(centroids[ib as usize])
+                })
+                .sum();
+            let score = super::score_4bit_internal(&pack_nibbles(&idx_a), &pack_nibbles(&idx_b));
+
+            // Codebook quantization budget: Δc ≈ max|c|/127 ≈ 0.022, so each
+            // term has error ≲ 2·c·Δc ≲ 0.12; over d=256 independent terms
+            // the RMS error is ≲ √d · 0.12 ≈ 1.9.  2.0 is a loose 1σ-ish bound.
+            assert!(
+                (truth as f32 - score).abs() < 2.0,
+                "score {score} too far from centroid-product truth {truth}",
+            );
+        }
     }
 }
