@@ -29,6 +29,7 @@ const MAGIC_BYTES_POSITION: usize = MAGIC_FILE_SIZE / 2; // write in the middle
 
 const MAGIC_FILE_NAME: &str = ".qdrant_fs_check";
 
+#[cfg(fs_type_check_supported)]
 #[derive(Debug, PartialEq)]
 enum FsType {
     Ext234,
@@ -50,6 +51,7 @@ enum FsType {
     Other,
 }
 
+#[cfg(fs_type_check_supported)]
 impl FsType {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     fn from_magic(magic: i64) -> Self {

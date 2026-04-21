@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 
 /// Memory usage stats for a single component, after mincore measurement.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -157,6 +157,8 @@ pub fn measure_component(
     use segment::common::memory_usage::{
         ComponentFileEntry, ComponentMemoryUsage, FileStorageIntent,
     };
+
+    use crate::operations::types::CollectionError;
 
     let ComponentMemoryUsage {
         files,

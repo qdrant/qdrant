@@ -26,6 +26,7 @@ use crate::common::helpers::{
     create_general_purpose_runtime, create_search_runtime, create_update_runtime,
 };
 
+#[cfg(unix)]
 const OTHER_COLLECTION_NAME: &str = "other-collection";
 const TEST_COLLECTION_NAME: &str = "test-collection";
 
