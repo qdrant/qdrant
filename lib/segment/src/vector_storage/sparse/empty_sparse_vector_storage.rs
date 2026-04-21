@@ -59,6 +59,17 @@ impl SparseVectorStorage for EmptySparseVectorStorage {
     ) -> OperationResult<Option<SparseVector>> {
         Ok(None)
     }
+
+    fn for_each_in_sparse_batch<F>(
+        &self,
+        _keys: &[PointOffsetType],
+        _callback: F,
+    ) -> OperationResult<()>
+    where
+        F: FnMut(usize, SparseVector),
+    {
+        Ok(())
+    }
 }
 
 impl VectorStorage for EmptySparseVectorStorage {

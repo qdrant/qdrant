@@ -104,6 +104,27 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         Ok(Some(value))
     }
 
+    pub fn for_each_in_batch<P, F>(
+        &self,
+        offsets: &[PointOffset],
+        mut callback: F,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()>
+    where
+        P: AccessPattern,
+        F: FnMut(usize, V),
+    {
+        for (idx, &offset) in offsets.iter().enumerate() {
+            let value = self
+                .get_value::<P>(offset, hw_counter)?
+                .expect("value exists");
+
+            callback(idx, value);
+        }
+
+        Ok(())
+    }
+
     /// Iterate over all the values in the storage.
     ///
     /// Stops when any of these conditions is true:

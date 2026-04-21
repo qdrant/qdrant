@@ -113,6 +113,22 @@ impl SparseVectorStorage for VolatileSparseVectorStorage {
         let opt_vector = self.vectors.get(key as usize).cloned().flatten();
         Ok(opt_vector)
     }
+
+    fn for_each_in_sparse_batch<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
+    where
+        F: FnMut(usize, SparseVector),
+    {
+        for (idx, &key) in keys.iter().enumerate() {
+            let vector = self.get_sparse::<Random>(key)?;
+            callback(idx, vector);
+        }
+
+        Ok(())
+    }
 }
 
 impl VectorStorage for VolatileSparseVectorStorage {

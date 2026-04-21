@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::AccessPattern;
+use common::generic_consts::{AccessPattern, Random};
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -193,6 +193,26 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
             .get_value::<P>(key, &HardwareCounterCell::disposable())? // Vector storage read IO not measured
             .map(SparseVector::try_from)
             .transpose()
+    }
+
+    fn for_each_in_sparse_batch<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
+    where
+        F: FnMut(usize, SparseVector),
+    {
+        self.storage.for_each_in_batch::<Random, _>(
+            keys,
+            |idx, vector| {
+                let vector = SparseVector::try_from(vector).expect("valid sparse vector");
+                callback(idx, vector);
+            },
+            &HardwareCounterCell::disposable(),
+        )?;
+
+        Ok(())
     }
 }
 

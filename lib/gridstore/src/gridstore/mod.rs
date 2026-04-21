@@ -374,6 +374,19 @@ impl<V: Blob> Gridstore<V> {
         self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
     }
 
+    pub fn for_each_in_batch<P, F>(
+        &self,
+        offsets: &[PointOffset],
+        callback: F,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()>
+    where
+        P: AccessPattern,
+        F: FnMut(usize, V),
+    {
+        self.with_view(|view| view.for_each_in_batch::<P, F>(offsets, callback, hw_counter))
+    }
+
     #[cfg(test)]
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         self.tracker.read().get(point_offset).ok().flatten()
