@@ -185,19 +185,31 @@ impl<S: UniversalRead<u8>> Pages<S> {
         &self,
         pointer: ValuePointer,
         config: &StorageConfig,
-    ) -> Result<Vec<u8>> {
-        // Avoid initializing buffer with zeros, as it will be overwritten by file access;
-        let mut raw_value = vec![MaybeUninit::<u8>::uninit(); pointer.length as usize];
-
+    ) -> Result<Cow<'_, [u8]>> {
         let reads = Self::get_page_value_ranges(pointer, config)
             .map(|(buf_offset, page, range)| (buf_offset, &self.pages[page as usize], range));
 
-        S::read_multi::<P, _>(reads, |offset, slice| {
-            raw_value[offset..offset + slice.len()].write_copy_of_slice(slice);
-            Ok(())
-        })?;
+        let pages = Self::value_len_pages(pointer, config);
 
-        Ok(unsafe { assume_init_vec(raw_value) })
+        let mut buffer = if pages == 1 {
+            // Avoid allocating buffer, if value fits within single page
+            Vec::new()
+        } else {
+            // Avoid initializing buffer with zeros, as it will be overwritten by file read
+            vec![MaybeUninit::uninit(); pointer.length as _]
+        };
+
+        for result in S::read_multi_iter::<P, _>(reads)? {
+            let (offset, bytes) = result?;
+
+            if pages == 1 {
+                return Ok(bytes);
+            }
+
+            buffer[offset..offset + bytes.len()].write_copy_of_slice(&bytes);
+        }
+
+        Ok(Cow::Owned(unsafe { assume_init_vec(buffer) }))
     }
 
     pub fn read_batch_from_pages<P, I>(

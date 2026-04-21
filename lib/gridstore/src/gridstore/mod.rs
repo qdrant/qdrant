@@ -310,11 +310,12 @@ impl<V: Blob> Gridstore<V> {
             return Ok(None);
         };
 
-        let raw = self.with_view(|view| view.read_from_pages::<Random>(pointer))?;
-        let decompressed = self.with_view(|view| view.decompress(raw));
-        let value = V::from_bytes(&decompressed);
-
-        Ok(Some(value))
+        self.with_view(|view| {
+            let raw = view.read_from_pages::<Random>(pointer)?;
+            let decompressed = view.decompress(raw);
+            let value = V::from_bytes(&decompressed);
+            Ok(Some(value))
+        })
     }
 
     /// Clear the storage, going back to the initial state.
