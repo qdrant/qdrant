@@ -263,8 +263,12 @@ fn test_write_across_pages() {
         .unwrap();
 
     let read_value = storage
-        .with_view(|view| view.read_from_pages::<Random>(pointer))
+        .with_view(|view| {
+            view.read_from_pages::<Random>(pointer)
+                .map(|val| val.into_owned())
+        })
         .unwrap();
+
     assert_eq!(value, read_value);
 }
 
