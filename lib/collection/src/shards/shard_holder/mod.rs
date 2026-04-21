@@ -203,8 +203,12 @@ impl ShardHolder {
         shard_id: ShardId,
         shard_key: &ShardKey,
     ) -> CollectionResult<()> {
+        // Idempotent: only rewrite the mapping if the shard id is actually
+        // present under this key. A replay after a successful removal finds
+        // nothing to remove and skips the unnecessary disk write.
         self.key_mapping.write_optional(|key_mapping| {
-            if !key_mapping.contains_key(shard_key) {
+            let shard_ids = key_mapping.get(shard_key)?;
+            if !shard_ids.contains(&shard_id) {
                 return None;
             }
 
