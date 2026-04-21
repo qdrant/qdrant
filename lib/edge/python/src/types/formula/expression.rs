@@ -82,6 +82,11 @@ impl FromPyObject<'_, '_> for PyExpression {
                 midpoint,
                 scale,
             },
+            PyExpressionInterface::StrDist { field, query, func } => ExpressionInternal::StrDist {
+                field: field.into(),
+                query,
+                func: func.into(),
+            },
         };
 
         Ok(Self(expr))
@@ -175,6 +180,11 @@ impl<'py> IntoPyObject<'py> for PyExpression {
                 midpoint,
                 scale,
             },
+            ExpressionInternal::StrDist { field, query, func } => PyExpressionInterface::StrDist {
+                field: PyJsonPath(field),
+                query,
+                func: func.into(),
+            },
         };
 
         Bound::new(py, helper)
@@ -260,6 +270,14 @@ impl Repr for PyExpression {
                     ),
                     ("midpoint", midpoint),
                     ("scale", scale),
+                ],
+            ),
+            ExpressionInternal::StrDist { field, query, func } => (
+                "StrDist",
+                &[
+                    ("field", PyJsonPath::wrap_ref(field)),
+                    ("query", query),
+                    ("func", &PyStrDistKind::from(*func)),
                 ],
             ),
         };

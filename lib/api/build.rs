@@ -321,6 +321,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("PowExpression.exponent", ""),
             ("DecayParamsExpression.x", ""),
             ("DecayParamsExpression.target", ""),
+            ("StrDistParamsExpression.query", "length(min = 1)"),
             ("NearestInputWithMmr.nearest", ""),
             ("NearestInputWithMmr.mmr", ""),
             ("Mmr.diversity", "range(min = 0.0, max = 1.0)"),

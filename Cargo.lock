@@ -6990,6 +6990,7 @@ dependencies = [
  "sha2 0.11.0",
  "smallvec",
  "sparse",
+ "strsim 0.11.1",
  "strum",
  "sysinfo",
  "tap",

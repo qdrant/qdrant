@@ -271,6 +271,7 @@ impl Validate for Expression {
             Expression::LinDecay(lin_decay_expression) => lin_decay_expression.validate(),
             Expression::ExpDecay(exp_decay_expression) => exp_decay_expression.validate(),
             Expression::GaussDecay(gauss_decay_expression) => gauss_decay_expression.validate(),
+            Expression::StrDist(str_dist_expression) => str_dist_expression.validate(),
         }
     }
 }
