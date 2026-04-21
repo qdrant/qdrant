@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::iter;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
@@ -158,6 +161,26 @@ impl<S: UniversalRead<u8>> Pages<S> {
         })
     }
 
+    pub fn value_len_pages(pointer: ValuePointer, config: &StorageConfig) -> usize {
+        let ValuePointer {
+            page_id: _,
+            block_offset,
+            length: value_length,
+        } = pointer;
+
+        let page_size_bytes = config.page_size_bytes as u64;
+        let block_size_bytes = config.block_size_bytes as u64;
+
+        let block_offset = u64::from(block_offset);
+        let value_length = u64::from(value_length);
+
+        let byte_offset = block_offset * block_size_bytes;
+        assert!(byte_offset < page_size_bytes);
+
+        let pages = (byte_offset + value_length).div_ceil(page_size_bytes);
+        pages as usize
+    }
+
     pub fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
@@ -175,6 +198,68 @@ impl<S: UniversalRead<u8>> Pages<S> {
         })?;
 
         Ok(unsafe { assume_init_vec(raw_value) })
+    }
+
+    pub fn read_batch_from_pages<P, I>(
+        &self,
+        pointers: I,
+        config: &StorageConfig,
+    ) -> Result<impl Iterator<Item = Result<(usize, Cow<'_, [u8]>)>>>
+    where
+        P: AccessPattern,
+        I: IntoIterator<Item = ValuePointer>,
+    {
+        let reads = pointers
+            .into_iter()
+            .enumerate()
+            .flat_map(move |(value_idx, pointer)| {
+                let len_bytes = pointer.length as usize;
+                let len_pages = Self::value_len_pages(pointer, config);
+
+                Self::get_page_value_ranges(pointer, config).map(
+                    move |(buffer_offset, page_idx, range)| {
+                        let meta = (value_idx, buffer_offset, len_bytes, len_pages);
+                        let page = &self.pages[page_idx as usize];
+                        (meta, page, range)
+                    },
+                )
+            });
+
+        let mut chunks = S::read_multi_iter::<P, _>(reads)?;
+        let mut values = HashMap::new();
+
+        let iter = iter::from_fn(move || {
+            for result in chunks.by_ref() {
+                let ((value_idx, buffer_offset, len_bytes, len_pages), bytes) = match result {
+                    Ok(chunk) => chunk,
+                    Err(err) => return Some(Err(err.into())),
+                };
+
+                if len_pages == 1 {
+                    return Some(Ok((value_idx, bytes)));
+                }
+
+                let (value_buffer, pages_read) = values
+                    .entry(value_idx)
+                    .or_insert_with(|| (vec![MaybeUninit::uninit(); len_bytes], 0));
+
+                value_buffer[buffer_offset..buffer_offset + bytes.len()]
+                    .write_copy_of_slice(&bytes);
+
+                *pages_read += 1;
+
+                if *pages_read >= len_pages {
+                    let (value_buffer, _) = values.remove(&value_idx).expect("value exists");
+                    let value_buffer = unsafe { assume_init_vec(value_buffer) };
+
+                    return Some(Ok((value_idx, Cow::Owned(value_buffer))));
+                }
+            }
+
+            None
+        });
+
+        Ok(iter)
     }
 
     /// Populate all pages in the mmap.

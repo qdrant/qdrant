@@ -114,10 +114,23 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         P: AccessPattern,
         F: FnMut(usize, V),
     {
-        for (idx, &offset) in offsets.iter().enumerate() {
-            let value = self
-                .get_value::<P>(offset, hw_counter)?
-                .expect("value exists");
+        let pointers = offsets.iter().map(|&offset| {
+            self.get_pointer(offset)
+                .expect("value pointer read")
+                .expect("value exists")
+        });
+
+        let values = self
+            .pages
+            .read_batch_from_pages::<P, _>(pointers, self.config)?;
+
+        for result in values {
+            let (idx, raw) = result?;
+
+            hw_counter.payload_io_read_counter().incr_delta(raw.len());
+
+            let decompressed = self.decompress(raw.into_owned());
+            let value = V::from_bytes(&decompressed);
 
             callback(idx, value);
         }
