@@ -1106,7 +1106,7 @@ pub enum StrDistFunc {
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct StrDistParamsExpression {
     pub field: JsonPath,
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 1024))]
     pub query: String,
     pub func: StrDistFunc,
 }

@@ -745,8 +745,8 @@ mod tests {
     #[test]
     fn test_str_dist_query_validation() {
         let bad_request = StrDistParamsExpression {
-            field: "title".into(),
-            query: String::new(),
+            field: String::from("title"),
+            query: String::from(""),
             func: StrDistFunc::Levenshtein as i32,
         };
         assert!(
@@ -755,8 +755,8 @@ mod tests {
         );
 
         let good_request = StrDistParamsExpression {
-            field: "title".into(),
-            query: "hello".into(),
+            field: String::from("title"),
+            query: String::from("hello"),
             func: StrDistFunc::JaroWinkler as i32,
         };
         assert!(

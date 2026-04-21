@@ -6651,7 +6651,7 @@ pub struct StrDistParamsExpression {
     #[prost(string, tag = "1")]
     pub field: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 1024))]
     pub query: ::prost::alloc::string::String,
     #[prost(enumeration = "StrDistFunc", tag = "3")]
     pub func: i32,
