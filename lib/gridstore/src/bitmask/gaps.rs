@@ -179,7 +179,7 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
     }
 
     pub fn trailing_free_blocks(&self) -> Result<u32> {
-        let slice = self.as_slice()?;
+        let slice = self.read_all()?;
         Ok(slice
             .iter()
             .rev()
@@ -194,7 +194,7 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
 
     #[cfg(test)]
     pub fn get(&self, idx: usize) -> Result<Option<RegionGaps>> {
-        let slice = self.as_slice()?;
+        let slice = self.read_all()?;
         Ok(slice.get(idx).copied())
     }
 
@@ -204,14 +204,14 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
         Ok(())
     }
 
-    pub fn as_slice(&self) -> Result<Cow<'_, [RegionGaps]>> {
+    pub fn read_all(&self) -> Result<Cow<'_, [RegionGaps]>> {
         Ok(self.slice_store.read_whole()?)
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
     /// Returns the range of regions where the gap is.
     pub fn find_fitting_gap(&self, num_blocks: u32) -> Result<Option<Range<RegionId>>> {
-        let slice = self.as_slice()?;
+        let slice = self.read_all()?;
 
         if slice.len() == 1 {
             return Ok(if slice[0].max as usize >= num_blocks as usize {

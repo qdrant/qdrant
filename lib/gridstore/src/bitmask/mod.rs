@@ -162,7 +162,7 @@ impl<S: BitmaskStorage> Bitmask<S> {
         let region_size_blocks = self.config.region_size_blocks;
         let block_size_bytes = self.config.block_size_bytes;
         let region_size_bytes = region_size_blocks * block_size_bytes;
-        let gaps = self.regions_gaps.as_slice()?;
+        let gaps = self.regions_gaps.read_all()?;
         let all_bits = self.bitslice.read_all()?;
         for (gap_id, gap) in gaps.iter().enumerate() {
             // skip empty regions
