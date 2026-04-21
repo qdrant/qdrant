@@ -12,7 +12,7 @@ use crate::settings::{Settings, TlsConfig};
 pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
     let num_threads = common::defaults::search_thread_count(max_search_threads);
     runtime::Builder::new_multi_thread()
-        .worker_threads(num_threads)
+        .worker_threads(2.min(num_threads)) // 2 because of paranoia margin
         .max_blocking_threads(num_threads)
         .enable_all()
         .thread_name_fn(|| {
