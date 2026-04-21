@@ -84,6 +84,12 @@ pub enum PyExpressionInterface {
         midpoint: Option<f32>,
         scale: Option<f32>,
     },
+
+    StrDist {
+        field: PyJsonPath,
+        query: String,
+        func: PyStrDistKind,
+    },
 }
 
 impl Repr for PyExpressionInterface {
@@ -145,6 +151,10 @@ impl Repr for PyExpressionInterface {
                     ("midpoint", midpoint),
                     ("scale", scale),
                 ],
+            ),
+            PyExpressionInterface::StrDist { field, query, func } => (
+                "StrDist",
+                &[("field", field), ("query", query), ("func", func)],
             ),
         };
 

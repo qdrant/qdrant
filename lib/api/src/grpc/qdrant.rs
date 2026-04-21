@@ -6571,7 +6571,7 @@ pub struct Formula {
 pub struct Expression {
     #[prost(
         oneof = "expression::Variant",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20"
     )]
     #[validate(nested)]
     pub variant: ::core::option::Option<expression::Variant>,
@@ -6638,7 +6638,23 @@ pub mod expression {
         /// Linear decay
         #[prost(message, tag = "19")]
         LinDecay(::prost::alloc::boxed::Box<super::DecayParamsExpression>),
+        /// String distance function
+        #[prost(message, tag = "20")]
+        StrDist(super::StrDistParamsExpression),
     }
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StrDistParamsExpression {
+    #[prost(string, tag = "1")]
+    pub field: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    #[validate(length(min = 1))]
+    pub query: ::prost::alloc::string::String,
+    #[prost(enumeration = "StrDistFunc", tag = "3")]
+    pub func: i32,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -8071,6 +8087,33 @@ impl Sample {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "Random" => Some(Self::Random),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum StrDistFunc {
+    Levenshtein = 0,
+    JaroWinkler = 1,
+}
+impl StrDistFunc {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            StrDistFunc::Levenshtein => "Levenshtein",
+            StrDistFunc::JaroWinkler => "JaroWinkler",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Levenshtein" => Some(Self::Levenshtein),
+            "JaroWinkler" => Some(Self::JaroWinkler),
             _ => None,
         }
     }

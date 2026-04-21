@@ -6,6 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
+use strsim::{jaro_winkler, normalized_levenshtein};
 
 use super::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
@@ -54,6 +55,12 @@ impl FriendlyName for GeoPoint {
 impl FriendlyName for DateTimePayloadType {
     fn friendly_name() -> &'static str {
         "datetime"
+    }
+}
+
+impl FriendlyName for std::string::String {
+    fn friendly_name() -> &'static str {
+        "string"
     }
 }
 
@@ -299,6 +306,22 @@ impl FormulaScorer<'_> {
 
                 Ok(decay)
             }
+            ParsedExpression::StrDist { field, query, func } => {
+                let value = self.get_parsed_payload_value(
+                    field,
+                    point_id,
+                    serde_json::from_value::<String>,
+                )?;
+
+                match func {
+                    super::parsed_formula::StrDistKind::Levenshtein => {
+                        Ok(normalized_levenshtein(&value, query))
+                    }
+                    super::parsed_formula::StrDistKind::JaroWinkler => {
+                        Ok(jaro_winkler(&value, query))
+                    }
+                }
+            }
         }
     }
 
@@ -373,7 +396,9 @@ mod tests {
     use smallvec::smallvec;
 
     use super::*;
-    use crate::index::query_optimization::rescore_formula::parsed_formula::PreciseScoreOrdered;
+    use crate::index::query_optimization::rescore_formula::parsed_formula::{
+        PreciseScoreOrdered, StrDistKind,
+    };
     use crate::json_path::JsonPath;
 
     const FIELD_NAME: &str = "number";
@@ -381,6 +406,7 @@ mod tests {
     const ARRAY_OF_ONE_FIELD_NAME: &str = "array_of_one";
     const ARRAY_FIELD_NAME: &str = "array";
     const GEO_FIELD_NAME: &str = "geo_point";
+    const TEXT_FIELD_NAME: &str = "text";
     const NO_VALUE_GEO_POINT: &str = "no_value_geo_point";
     const NO_VALUE_DATETIME: &str = "no_value_datetime";
 
@@ -419,6 +445,10 @@ mod tests {
                     smallvec![json!({"lat": 25.628482424190565, "lon": -100.23881855976})]
                 }),
             );
+            payload_retrievers.insert(
+                JsonPath::new(TEXT_FIELD_NAME),
+                Box::new(|_| smallvec![json!("hello world")]),
+            );
 
             let condition_checkers = vec![
                 OptimizedCondition::Checker(Box::new(|_| true)),
@@ -443,6 +473,16 @@ mod tests {
     #[case(ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)), 85.0)]
     #[case(ParsedExpression::new_condition_id(0), 1.0)]
     #[case(ParsedExpression::new_condition_id(1), 0.0)]
+    #[case(ParsedExpression::StrDist {
+        field: JsonPath::new(TEXT_FIELD_NAME),
+        query: "hello world".to_string(),
+        func: StrDistKind::Levenshtein,
+    }, 1.0)]
+    #[case(ParsedExpression::StrDist {
+        field: JsonPath::new(TEXT_FIELD_NAME),
+        query: "hello world".to_string(),
+        func: StrDistKind::JaroWinkler,
+    }, 1.0)]
     // Operations
     #[case(ParsedExpression::Sum(vec![
         ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
@@ -549,6 +589,18 @@ mod tests {
     #[case(
         ParsedExpression::Datetime(DatetimeExpression::PayloadVariable(JsonPath::new(NO_VALUE_DATETIME))),
         Ok("2025-03-19T12:00:00".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)
+    )]
+    #[case(
+        ParsedExpression::StrDist {
+            field: JsonPath::new("missing_text"),
+            query: "hello".to_string(),
+            func: StrDistKind::Levenshtein,
+        },
+        Err(OperationError::VariableTypeError {
+            field_name: JsonPath::new("missing_text"),
+            expected_type: String::friendly_name().to_string(),
+            description: "No value found in a payload nor defaults".to_string(),
+        })
     )]
     #[test]
     fn test_default_values(
