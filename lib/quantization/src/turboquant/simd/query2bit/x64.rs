@@ -125,14 +125,15 @@ impl Query2bitSimd {
             let mut acc_low = _mm256_setzero_si256();
             let mut acc_high = _mm256_setzero_si256();
 
-            let mut chunks = vector.chunks_exact(4).zip(self.query_data.iter());
+            let n_chunks = self.query_data.len();
+            let n_pairs = n_chunks / 2;
 
             // 2× unroll: fold two SSE chunks into one YMM accumulation per iter.
-            while let (Some((a, [qa_lo, qa_hi])), Some((b, [qb_lo, qb_hi]))) =
-                (chunks.next(), chunks.next())
-            {
-                let c_a = unpack_16_codes_sse(a.as_ptr());
-                let c_b = unpack_16_codes_sse(b.as_ptr());
+            for p in 0..n_pairs {
+                let [qa_lo, qa_hi] = &self.query_data[2 * p];
+                let [qb_lo, qb_hi] = &self.query_data[2 * p + 1];
+                let c_a = unpack_16_codes_sse(vector.as_ptr().add(4 * (2 * p)));
+                let c_b = unpack_16_codes_sse(vector.as_ptr().add(4 * (2 * p + 1)));
                 let c = _mm256_set_m128i(c_b, c_a);
 
                 let q_lo_a = _mm_loadu_si128(qa_lo.as_ptr().cast::<__m128i>());
@@ -149,20 +150,21 @@ impl Query2bitSimd {
                 acc_high = _mm256_add_epi32(acc_high, _mm256_madd_epi16(prod_high, ones));
             }
 
-            // Tail: if there was an odd number of chunks, process the last one
-            // with the plain SSE path.
-            let tail_low = _mm_add_epi32(
+            // Fold YMM accumulators into XMM.
+            let mut sum_low_sse = _mm_add_epi32(
                 _mm256_castsi256_si128(acc_low),
                 _mm256_extracti128_si256(acc_low, 1),
             );
-            let tail_high = _mm_add_epi32(
+            let mut sum_high_sse = _mm_add_epi32(
                 _mm256_castsi256_si128(acc_high),
                 _mm256_extracti128_si256(acc_high, 1),
             );
-            let mut sum_low_sse = tail_low;
-            let mut sum_high_sse = tail_high;
-            if let Some((last, [q_lo_t, q_hi_t])) = chunks.next() {
-                let c = unpack_16_codes_sse(last.as_ptr());
+
+            // Tail: odd chunk count → one extra chunk via SSE.
+            if n_chunks % 2 == 1 {
+                let idx = 2 * n_pairs;
+                let [q_lo_t, q_hi_t] = &self.query_data[idx];
+                let c = unpack_16_codes_sse(vector.as_ptr().add(4 * idx));
                 let q_low = _mm_loadu_si128(q_lo_t.as_ptr().cast::<__m128i>());
                 let q_high = _mm_loadu_si128(q_hi_t.as_ptr().cast::<__m128i>());
                 let prod_low = _mm_maddubs_epi16(c, q_low);
@@ -193,12 +195,14 @@ impl Query2bitSimd {
             let mut acc_low = _mm256_setzero_si256();
             let mut acc_high = _mm256_setzero_si256();
 
-            let mut chunks = vector.chunks_exact(4).zip(self.query_data.iter());
-            while let (Some((a, [qa_lo, qa_hi])), Some((b, [qb_lo, qb_hi]))) =
-                (chunks.next(), chunks.next())
-            {
-                let c_a = unpack_16_codes_sse(a.as_ptr());
-                let c_b = unpack_16_codes_sse(b.as_ptr());
+            let n_chunks = self.query_data.len();
+            let n_pairs = n_chunks / 2;
+
+            for p in 0..n_pairs {
+                let [qa_lo, qa_hi] = &self.query_data[2 * p];
+                let [qb_lo, qb_hi] = &self.query_data[2 * p + 1];
+                let c_a = unpack_16_codes_sse(vector.as_ptr().add(4 * (2 * p)));
+                let c_b = unpack_16_codes_sse(vector.as_ptr().add(4 * (2 * p + 1)));
                 let c = _mm256_set_m128i(c_b, c_a);
 
                 let q_lo_a = _mm_loadu_si128(qa_lo.as_ptr().cast::<__m128i>());
@@ -220,8 +224,10 @@ impl Query2bitSimd {
                 _mm256_castsi256_si128(acc_high),
                 _mm256_extracti128_si256(acc_high, 1),
             );
-            if let Some((last, [q_lo_t, q_hi_t])) = chunks.next() {
-                let c = unpack_16_codes_sse(last.as_ptr());
+            if n_chunks % 2 == 1 {
+                let idx = 2 * n_pairs;
+                let [q_lo_t, q_hi_t] = &self.query_data[idx];
+                let c = unpack_16_codes_sse(vector.as_ptr().add(4 * idx));
                 let q_low = _mm_loadu_si128(q_lo_t.as_ptr().cast::<__m128i>());
                 let q_high = _mm_loadu_si128(q_hi_t.as_ptr().cast::<__m128i>());
                 sum_low_sse = _mm_dpbusd_epi32(sum_low_sse, c, q_low);
@@ -300,15 +306,19 @@ pub unsafe fn score_2bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
         let shift256 = _mm256_set1_epi8(-128_i8);
         let mut acc = _mm256_setzero_si256();
 
-        let mut chunks = a.chunks_exact(4).zip(b.chunks_exact(4));
-        while let (Some((a0, b0)), Some((a1, b1))) = (chunks.next(), chunks.next()) {
+        let n_chunks = a.len() / 4;
+        let n_pairs = n_chunks / 2;
+
+        for p in 0..n_pairs {
+            let off_a0 = 4 * (2 * p);
+            let off_a1 = 4 * (2 * p + 1);
             let c_a = _mm256_set_m128i(
-                unpack_16_codes_sse(a1.as_ptr()),
-                unpack_16_codes_sse(a0.as_ptr()),
+                unpack_16_codes_sse(a.as_ptr().add(off_a1)),
+                unpack_16_codes_sse(a.as_ptr().add(off_a0)),
             );
             let c_b = _mm256_set_m128i(
-                unpack_16_codes_sse(b1.as_ptr()),
-                unpack_16_codes_sse(b0.as_ptr()),
+                unpack_16_codes_sse(b.as_ptr().add(off_a1)),
+                unpack_16_codes_sse(b.as_ptr().add(off_a0)),
             );
             let c_a = _mm256_xor_si256(c_a, shift256);
             let c_b = _mm256_xor_si256(c_b, shift256);
@@ -327,10 +337,11 @@ pub unsafe fn score_2bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
             _mm256_castsi256_si128(acc),
             _mm256_extracti128_si256(acc, 1),
         );
-        if let Some((a_last, b_last)) = chunks.next() {
+        if n_chunks % 2 == 1 {
+            let off = 4 * (2 * n_pairs);
             let shift = _mm_set1_epi8(-128_i8);
-            let c_a = _mm_xor_si128(unpack_16_codes_sse(a_last.as_ptr()), shift);
-            let c_b = _mm_xor_si128(unpack_16_codes_sse(b_last.as_ptr()), shift);
+            let c_a = _mm_xor_si128(unpack_16_codes_sse(a.as_ptr().add(off)), shift);
+            let c_b = _mm_xor_si128(unpack_16_codes_sse(b.as_ptr().add(off)), shift);
             let c_a_lo = _mm_cvtepi8_epi16(c_a);
             let c_a_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_a, 8));
             let c_b_lo = _mm_cvtepi8_epi16(c_b);
@@ -358,15 +369,19 @@ pub unsafe fn score_2bit_internal_avx512_vnni(a: &[u8], b: &[u8]) -> f32 {
         let shift256 = _mm256_set1_epi8(-128_i8);
         let mut acc = _mm256_setzero_si256();
 
-        let mut chunks = a.chunks_exact(4).zip(b.chunks_exact(4));
-        while let (Some((a0, b0)), Some((a1, b1))) = (chunks.next(), chunks.next()) {
+        let n_chunks = a.len() / 4;
+        let n_pairs = n_chunks / 2;
+
+        for p in 0..n_pairs {
+            let off_a0 = 4 * (2 * p);
+            let off_a1 = 4 * (2 * p + 1);
             let c_a = _mm256_set_m128i(
-                unpack_16_codes_sse(a1.as_ptr()),
-                unpack_16_codes_sse(a0.as_ptr()),
+                unpack_16_codes_sse(a.as_ptr().add(off_a1)),
+                unpack_16_codes_sse(a.as_ptr().add(off_a0)),
             );
             let c_b = _mm256_set_m128i(
-                unpack_16_codes_sse(b1.as_ptr()),
-                unpack_16_codes_sse(b0.as_ptr()),
+                unpack_16_codes_sse(b.as_ptr().add(off_a1)),
+                unpack_16_codes_sse(b.as_ptr().add(off_a0)),
             );
             let c_a = _mm256_xor_si256(c_a, shift256);
             let c_b = _mm256_xor_si256(c_b, shift256);
@@ -384,10 +399,11 @@ pub unsafe fn score_2bit_internal_avx512_vnni(a: &[u8], b: &[u8]) -> f32 {
             _mm256_castsi256_si128(acc),
             _mm256_extracti128_si256(acc, 1),
         );
-        if let Some((a_last, b_last)) = chunks.next() {
+        if n_chunks % 2 == 1 {
+            let off = 4 * (2 * n_pairs);
             let shift = _mm_set1_epi8(-128_i8);
-            let c_a = _mm_xor_si128(unpack_16_codes_sse(a_last.as_ptr()), shift);
-            let c_b = _mm_xor_si128(unpack_16_codes_sse(b_last.as_ptr()), shift);
+            let c_a = _mm_xor_si128(unpack_16_codes_sse(a.as_ptr().add(off)), shift);
+            let c_b = _mm_xor_si128(unpack_16_codes_sse(b.as_ptr().add(off)), shift);
             let c_a_lo = _mm_cvtepi8_epi16(c_a);
             let c_a_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_a, 8));
             let c_b_lo = _mm_cvtepi8_epi16(c_b);
