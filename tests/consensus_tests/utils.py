@@ -70,6 +70,9 @@ def kill_all_processes():
 
 @pytest.fixture(autouse=True)
 def every_test():
+    if processes:
+        print(f"WARN: {len(processes)} leaked peer processes from previous test, cleaning")
+        kill_all_processes()
     yield
     kill_all_processes()
 
