@@ -11,6 +11,7 @@ mod tonic;
 mod tracing;
 
 use std::io::Error;
+use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -29,6 +30,7 @@ use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::profiling::interface::init_requests_profile_collector;
 use collection::shards::channel_service::ChannelService;
+use collection::shards::shard::PeerId;
 use consensus::Consensus;
 use fs_err as fs;
 use slog::Drain;
@@ -140,24 +142,236 @@ struct Args {
     reinit: bool,
 }
 
-fn main() -> anyhow::Result<()> {
-    // Install ring as the default rustls CryptoProvider.
-    // reqwest 0.13 "rustls" feature pulls in aws-lc-rs; we install ring
-    // explicitly to use the same provider as before.
+//
+// Helpers
+//
+
+/// Install `ring` as the default rustls CryptoProvider.
+///
+/// reqwest 0.13 "rustls" feature pulls in aws-lc-rs; we install ring
+/// explicitly to use the same provider as before.
+fn install_default_crypto_provider() {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install default CryptoProvider");
+}
+
+/// Run backtrace collector, expected to be used by the `rstack` crate.
+fn run_stacktrace_collector() {
+    #[cfg(all(target_os = "linux", feature = "stacktrace"))]
+    {
+        let _ = rstack_self::child();
+    }
+}
+
+/// Check that the storage filesystem is compatible with Qdrant.
+///
+/// Returns `true` when memory-mapped I/O is known to work.
+fn check_filesystem_compatibility(storage_path: &Path) -> bool {
+    match check_fs_info(storage_path) {
+        FsCheckResult::Good => true,
+        FsCheckResult::Unknown(details) => match check_mmap_functionality(storage_path) {
+            Ok(true) => {
+                log::warn!(
+                    "There is a potential issue with the filesystem for storage path {}. Details: {details}",
+                    storage_path.display(),
+                );
+                true
+            }
+            Ok(false) => {
+                log::error!(
+                    "Filesystem check failed for storage path {}. Details: {details}",
+                    storage_path.display(),
+                );
+                false
+            }
+            Err(e) => {
+                log::error!(
+                    "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
+                    storage_path.display(),
+                );
+                false
+            }
+        },
+        FsCheckResult::Bad(details) => {
+            log::error!(
+                "Filesystem check failed for storage path {}. Details: {details}",
+                storage_path.display(),
+            );
+            false
+        }
+    }
+}
+
+/// Initialize the global GPU devices manager from configuration.
+#[cfg(feature = "gpu")]
+fn init_gpu_devices(settings_gpu: &crate::settings::GpuConfig) {
+    use segment::index::hnsw_index::gpu::*;
+
+    if !settings_gpu.indexing {
+        return;
+    }
+
+    set_gpu_force_half_precision(settings_gpu.force_half_precision);
+    set_gpu_groups_count(settings_gpu.groups_count);
+
+    let mut gpu_device_manager = GPU_DEVICES_MANAGER.write();
+    *gpu_device_manager = match gpu_devices_manager::GpuDevicesMaganer::new(
+        &settings_gpu.device_filter,
+        settings_gpu.devices.as_deref(),
+        settings_gpu.allow_integrated,
+        settings_gpu.allow_emulated,
+        true, // Currently we always wait for the free gpu device.
+        settings_gpu.parallel_indexes.unwrap_or(1),
+    ) {
+        Ok(gpu_device_manager) => Some(gpu_device_manager),
+        Err(err) => {
+            log::error!("Can't initialize GPU devices manager: {err}");
+            None
+        }
+    }
+}
+
+/// Resolve the effective bootstrap URI for this peer.
+///
+/// If the configured bootstrap URI matches this peer's own URI, treat this peer
+/// as the first in a new deployment and return `None`.
+fn resolve_bootstrap_uri(bootstrap: Option<Uri>, this_peer_uri: Option<&Uri>) -> Option<Uri> {
+    if bootstrap.as_ref() == this_peer_uri {
+        if bootstrap.is_some() {
+            log::warn!(
+                "Bootstrap URI is the same as this peer URI. Consider this peer as a first in a new deployment.",
+            );
+        }
+        None
+    } else {
+        bootstrap
+    }
+}
+
+/// Recover collections from snapshot-related command line arguments, if any.
+fn recover_collections_from_snapshot_args(
+    storage_snapshot: Option<String>,
+    snapshots: Option<Vec<String>>,
+    force_snapshot: bool,
+    temp_path: Option<&Path>,
+    storage_path: &Path,
+    this_peer_id: PeerId,
+    is_distributed_deployment: bool,
+) -> Vec<String> {
+    if let Some(full_snapshot) = storage_snapshot {
+        recover_full_snapshot(
+            temp_path,
+            &full_snapshot,
+            storage_path,
+            force_snapshot,
+            this_peer_id,
+            is_distributed_deployment,
+        )
+    } else if let Some(snapshots) = snapshots {
+        recover_snapshots(
+            &snapshots,
+            force_snapshot,
+            temp_path,
+            storage_path,
+            this_peer_id,
+            is_distributed_deployment,
+        )
+    } else {
+        vec![]
+    }
+}
+
+/// Create and configure the channel service used to manage connections between peers.
+///
+/// In single-node mode a default-configured service is returned. In distributed mode
+/// the service is populated with a TLS-aware channel pool and peer metadata loaded
+/// from the persisted consensus state.
+fn init_channel_service(
+    settings: &Settings,
+    persistent_consensus_state: &Persistent,
+    is_distributed_deployment: bool,
+) -> anyhow::Result<ChannelService> {
+    let mut channel_service = ChannelService::new(
+        settings.service.http_port,
+        settings.service.enable_tls,
+        settings.service.api_key.clone(),
+        settings.service.alt_api_key.clone(),
+    );
+
+    if is_distributed_deployment {
+        // We only need channel_service in case if cluster is enabled.
+        // So we initialize it with real values here
+        let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
+        let connection_timeout = Duration::from_millis(settings.cluster.connection_timeout_ms);
+
+        let tls_config = load_tls_client_config(settings)?;
+
+        channel_service.channel_pool = Arc::new(TransportChannelPool::new(
+            p2p_grpc_timeout,
+            connection_timeout,
+            settings.cluster.p2p.connection_pool_size,
+            tls_config,
+            settings.service.api_key.clone(),
+        ));
+        channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
+        channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();
+    }
+
+    Ok(channel_service)
+}
+
+/// Spawn a background thread that periodically checks for deadlocks.
+#[cfg(feature = "service_debug")]
+fn spawn_deadlock_checker() {
+    use std::fmt::Write;
+
+    use parking_lot::deadlock;
+
+    const DEADLOCK_CHECK_PERIOD: Duration = Duration::from_secs(10);
+
+    thread::Builder::new()
+        .name("deadlock_checker".to_string())
+        .spawn(move || {
+            loop {
+                thread::sleep(DEADLOCK_CHECK_PERIOD);
+                let deadlocks = deadlock::check_deadlock();
+                if deadlocks.is_empty() {
+                    continue;
+                }
+
+                let mut error = format!("{} deadlocks detected\n", deadlocks.len());
+                for (i, threads) in deadlocks.iter().enumerate() {
+                    writeln!(error, "Deadlock #{i}").expect("fail to writeln!");
+                    for t in threads {
+                        writeln!(
+                            error,
+                            "Thread Id {:#?}\n{:#?}",
+                            t.thread_id(),
+                            t.backtrace(),
+                        )
+                        .expect("fail to writeln!");
+                    }
+                }
+                log::error!("{error}");
+            }
+        })
+        .unwrap();
+}
+
+fn main() -> anyhow::Result<()> {
+    install_default_crypto_provider();
 
     let args = Args::parse();
 
-    // Run backtrace collector, expected to used by `rstack` crate
     if args.stacktrace {
-        #[cfg(all(target_os = "linux", feature = "stacktrace"))]
-        {
-            let _ = rstack_self::child();
-        }
+        run_stacktrace_collector();
         return Ok(());
     }
+
+    //
+    // Settings & global state
+    //
 
     let settings = Settings::new(args.config_path)?;
 
@@ -168,10 +382,12 @@ fn main() -> anyhow::Result<()> {
     init_low_memory_mode(settings.storage.low_memory_mode);
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
-
     let reporting_id = TelemetryCollector::generate_id();
 
-    // Setup logging (no logging before this point)
+    //
+    // Logging & panic hook (no logging before this point)
+    //
+
     let logger_handle = tracing::setup(
         settings
             .logger
@@ -181,6 +397,10 @@ fn main() -> anyhow::Result<()> {
     remove_started_file_indicator();
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
+
+    //
+    // Runtime tuning knobs
+    //
 
     set_global(settings.storage.mmap_advice);
 
@@ -194,7 +414,12 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
+
     welcome(&settings);
+
+    //
+    // Audit logging
+    //
 
     // If audit logging is enabled, but failed to initialize,
     // we should stop the service, as it may cause unlogged access to the data.
@@ -202,32 +427,18 @@ fn main() -> anyhow::Result<()> {
     let _audit_guard = common::audit::init_audit_logger(settings.audit.as_ref())
         .expect("Audit logger must be initialized if audit logging is enabled");
 
+    //
+    // GPU devices manager
+    //
+
     #[cfg(feature = "gpu")]
     if let Some(settings_gpu) = &settings.gpu {
-        use segment::index::hnsw_index::gpu::*;
-
-        // initialize GPU devices manager.
-        if settings_gpu.indexing {
-            set_gpu_force_half_precision(settings_gpu.force_half_precision);
-            set_gpu_groups_count(settings_gpu.groups_count);
-
-            let mut gpu_device_manager = GPU_DEVICES_MANAGER.write();
-            *gpu_device_manager = match gpu_devices_manager::GpuDevicesMaganer::new(
-                &settings_gpu.device_filter,
-                settings_gpu.devices.as_deref(),
-                settings_gpu.allow_integrated,
-                settings_gpu.allow_emulated,
-                true, // Currently we always wait for the free gpu device.
-                settings_gpu.parallel_indexes.unwrap_or(1),
-            ) {
-                Ok(gpu_device_manager) => Some(gpu_device_manager),
-                Err(err) => {
-                    log::error!("Can't initialize GPU devices manager: {err}");
-                    None
-                }
-            }
-        }
+        init_gpu_devices(settings_gpu);
     }
+
+    //
+    // Settings validation & recovery-mode notice
+    //
 
     if let Some(recovery_warning) = &settings.storage.recovery_mode {
         log::warn!("Qdrant is loaded in recovery mode: {recovery_warning}");
@@ -239,47 +450,13 @@ fn main() -> anyhow::Result<()> {
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
 
+    //
+    // Storage directory & filesystem compatibility
+    //
+
     fs::create_dir_all(&settings.storage.storage_path)?;
 
-    // Check if the filesystem is compatible with Qdrant
-    let mmaps_working;
-    match check_fs_info(&settings.storage.storage_path) {
-        FsCheckResult::Good => {
-            mmaps_working = true;
-        }
-        FsCheckResult::Unknown(details) => {
-            match check_mmap_functionality(&settings.storage.storage_path) {
-                Ok(true) => {
-                    log::warn!(
-                        "There is a potential issue with the filesystem for storage path {}. Details: {details}",
-                        settings.storage.storage_path.display(),
-                    );
-                    mmaps_working = true;
-                }
-                Ok(false) => {
-                    log::error!(
-                        "Filesystem check failed for storage path {}. Details: {details}",
-                        settings.storage.storage_path.display(),
-                    );
-                    mmaps_working = false;
-                }
-                Err(e) => {
-                    log::error!(
-                        "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
-                        settings.storage.storage_path.display(),
-                    );
-                    mmaps_working = false;
-                }
-            }
-        }
-        FsCheckResult::Bad(details) => {
-            log::error!(
-                "Filesystem check failed for storage path {}. Details: {details}",
-                settings.storage.storage_path.display(),
-            );
-            mmaps_working = false;
-        }
-    }
+    let mmaps_working = check_filesystem_compatibility(&settings.storage.storage_path);
     let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(mmaps_working);
 
     // Report feature flags that are enabled for easier debugging
@@ -288,16 +465,11 @@ fn main() -> anyhow::Result<()> {
         log::debug!("Feature flags: {flags:?}");
     }
 
-    let bootstrap = if args.bootstrap == args.uri {
-        if args.bootstrap.is_some() {
-            log::warn!(
-                "Bootstrap URI is the same as this peer URI. Consider this peer as a first in a new deployment.",
-            );
-        }
-        None
-    } else {
-        args.bootstrap
-    };
+    //
+    // Consensus state & snapshot recovery
+    //
+
+    let bootstrap = resolve_bootstrap_uri(args.bootstrap, args.uri.as_ref());
 
     // Saved state of the consensus.
     let persistent_consensus_state = Persistent::load_or_init(
@@ -309,30 +481,19 @@ fn main() -> anyhow::Result<()> {
 
     let is_distributed_deployment = settings.cluster.enabled;
 
-    let temp_path = settings.storage.temp_path.as_deref();
+    let restored_collections = recover_collections_from_snapshot_args(
+        args.storage_snapshot,
+        args.snapshot,
+        args.force_snapshot,
+        settings.storage.temp_path.as_deref(),
+        &settings.storage.storage_path,
+        persistent_consensus_state.this_peer_id(),
+        is_distributed_deployment,
+    );
 
-    let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
-        recover_full_snapshot(
-            temp_path,
-            &full_snapshot,
-            &settings.storage.storage_path,
-            args.force_snapshot,
-            persistent_consensus_state.this_peer_id(),
-            is_distributed_deployment,
-        )
-    } else if let Some(snapshots) = args.snapshot {
-        // recover from snapshots
-        recover_snapshots(
-            &snapshots,
-            args.force_snapshot,
-            temp_path,
-            &settings.storage.storage_path,
-            persistent_consensus_state.this_peer_id(),
-            is_distributed_deployment,
-        )
-    } else {
-        vec![]
-    };
+    //
+    // Async runtimes & resource budgets
+    //
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
@@ -356,6 +517,10 @@ fn main() -> anyhow::Result<()> {
     let io_budget = get_io_budget(settings.storage.performance.optimizer_io_budget, cpu_budget);
     let optimizer_resource_budget = ResourceBudget::new(cpu_budget, io_budget);
 
+    //
+    // Consensus channel & inter-peer channel service
+    //
+
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
 
@@ -368,35 +533,17 @@ fn main() -> anyhow::Result<()> {
     };
 
     // Channel service is used to manage connections between peers.
-    // It allocates required number of channels and manages proper reconnection handling
-    let mut channel_service = ChannelService::new(
-        settings.service.http_port,
-        settings.service.enable_tls,
-        settings.service.api_key.clone(),
-        settings.service.alt_api_key.clone(),
-    );
+    // It allocates required number of channels and manages proper reconnection handling.
+    let channel_service = init_channel_service(
+        &settings,
+        &persistent_consensus_state,
+        is_distributed_deployment,
+    )?;
 
-    if is_distributed_deployment {
-        // We only need channel_service in case if cluster is enabled.
-        // So we initialize it with real values here
-        let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
-        let connection_timeout = Duration::from_millis(settings.cluster.connection_timeout_ms);
+    //
+    // Table of content (main entry point for storage)
+    //
 
-        let tls_config = load_tls_client_config(&settings)?;
-
-        channel_service.channel_pool = Arc::new(TransportChannelPool::new(
-            p2p_grpc_timeout,
-            connection_timeout,
-            settings.cluster.p2p.connection_pool_size,
-            tls_config,
-            settings.service.api_key.clone(),
-        ));
-        channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
-        channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();
-    }
-
-    // Table of content manages the list of collections.
-    // It is a main entry point for the storage.
     let toc = TableOfContent::new(
         &settings.storage,
         search_runtime,
@@ -424,6 +571,10 @@ fn main() -> anyhow::Result<()> {
     // Router for external queries.
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
+
+    //
+    // Consensus (distributed) or single-node setup
+    //
 
     let (telemetry_collector, tonic_telemetry_collector, dispatcher_arc, health_checker);
     if is_distributed_deployment {
@@ -572,6 +723,7 @@ fn main() -> anyhow::Result<()> {
     //
     // Inference Service
     //
+
     if let Err(err) = InferenceService::init_global(settings.inference.clone()) {
         log::error!("Inference service init failed: {err}");
     }
@@ -651,42 +803,12 @@ fn main() -> anyhow::Result<()> {
         log::info!("gRPC endpoint disabled");
     }
 
+    //
+    // Deadlock checker (debug builds)
+    //
+
     #[cfg(feature = "service_debug")]
-    {
-        use std::fmt::Write;
-
-        use parking_lot::deadlock;
-
-        const DEADLOCK_CHECK_PERIOD: Duration = Duration::from_secs(10);
-
-        thread::Builder::new()
-            .name("deadlock_checker".to_string())
-            .spawn(move || {
-                loop {
-                    thread::sleep(DEADLOCK_CHECK_PERIOD);
-                    let deadlocks = deadlock::check_deadlock();
-                    if deadlocks.is_empty() {
-                        continue;
-                    }
-
-                    let mut error = format!("{} deadlocks detected\n", deadlocks.len());
-                    for (i, threads) in deadlocks.iter().enumerate() {
-                        writeln!(error, "Deadlock #{i}").expect("fail to writeln!");
-                        for t in threads {
-                            writeln!(
-                                error,
-                                "Thread Id {:#?}\n{:#?}",
-                                t.thread_id(),
-                                t.backtrace(),
-                            )
-                            .expect("fail to writeln!");
-                        }
-                    }
-                    log::error!("{error}");
-                }
-            })
-            .unwrap();
-    }
+    spawn_deadlock_checker();
 
     touch_started_file_indicator();
 
@@ -697,6 +819,10 @@ fn main() -> anyhow::Result<()> {
         let _guard = runtime_handle.enter();
         let _ = signal(SignalKind::user_defined1()).expect("installed SIGUSR1 handler");
     }
+
+    //
+    // Wait for all service threads to finish
+    //
 
     for handle in handles {
         log::debug!(
