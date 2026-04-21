@@ -2,32 +2,42 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::bool_index::BoolIndex;
-use super::map_index::{IdIter, MapIndex};
+use super::map_index::MapIndex;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::types::{IntPayloadType, UuidIntType};
 
 pub trait FacetIndex {
-    /// Get all values for a point
-    fn get_point_values(
+    /// Call a closure on value->point_ids mapping for specified `points`.
+    fn for_points_values(
         &self,
-        point_id: PointOffsetType,
+        points: impl Iterator<Item = PointOffsetType>,
         hw_counter: &HardwareCounterCell,
-    ) -> impl Iterator<Item = FacetValueRef<'_>> + '_;
+        f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
+    ) -> OperationResult<()>;
 
-    /// Get all values in the index
-    fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_;
+    /// Call a closure on each value in the index.
+    fn for_each_value(
+        &self,
+        f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+    ) -> OperationResult<()>;
 
-    /// Get all value->point_ids mappings
-    fn iter_values_map<'a>(
-        &'a self,
-        hw_acc: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (FacetValueRef<'a>, IdIter<'a>)> + 'a;
+    /// Call a closure on each value->point_ids mapping.
+    fn for_each_value_map(
+        &self,
+        hw_acc: &HardwareCounterCell,
+        f: impl FnMut(
+            FacetValueRef<'_>,
+            &mut dyn Iterator<Item = PointOffsetType>,
+        ) -> OperationResult<()>,
+    ) -> OperationResult<()>;
 
-    /// Get all value->count mappings
-    fn iter_counts_per_value(
+    /// Call a closure on each value->count mapping.
+    fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_;
+        f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+    ) -> OperationResult<()>;
 }
 
 pub enum FacetIndexEnum<'a> {
@@ -38,91 +48,91 @@ pub enum FacetIndexEnum<'a> {
 }
 
 impl<'a> FacetIndexEnum<'a> {
-    pub fn get_point_values(
+    pub fn for_points_values(
         &self,
-        point_id: PointOffsetType,
+        points: impl Iterator<Item = PointOffsetType>,
         hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = FacetValueRef<'a>> + 'a> {
+        f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
+    ) -> OperationResult<()> {
         match self {
             FacetIndexEnum::Keyword(index) => {
-                Box::new(FacetIndex::get_point_values(*index, point_id, hw_counter))
+                FacetIndex::for_points_values(*index, points, hw_counter, f)
             }
             FacetIndexEnum::Int(index) => {
-                Box::new(FacetIndex::get_point_values(*index, point_id, hw_counter))
+                FacetIndex::for_points_values(*index, points, hw_counter, f)
             }
             FacetIndexEnum::Uuid(index) => {
-                Box::new(FacetIndex::get_point_values(*index, point_id, hw_counter))
+                FacetIndex::for_points_values(*index, points, hw_counter, f)
             }
             FacetIndexEnum::Bool(index) => {
-                Box::new(FacetIndex::get_point_values(*index, point_id, hw_counter))
+                FacetIndex::for_points_values(*index, points, hw_counter, f)
             }
         }
     }
 
-    pub fn iter_values(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
+    pub fn for_each_value(
+        &self,
+        hw_counter: &HardwareCounterCell,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = FacetValueRef<'a>> + 'a> {
+        mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match deferred_internal_id {
-            Some(deferred_internal_id) => Box::new(self.iter_values_map(hw_counter).filter_map(
-                move |(facet_value, id_iter)| {
+            Some(deferred_internal_id) => {
+                self.for_each_value_map(hw_counter, |facet_value, id_iter| {
                     let has_visible_point = id_iter
                         .take_while(|&id| id < deferred_internal_id)
                         .next()
                         .is_some();
 
-                    has_visible_point.then_some(facet_value)
-                },
-            )),
+                    if has_visible_point {
+                        f(facet_value)?;
+                    }
+                    Ok(())
+                })
+            }
             None => match self {
-                FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_values(*index)),
-                FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values(*index)),
-                FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_values(*index)),
-                FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_values(*index)),
+                FacetIndexEnum::Keyword(index) => FacetIndex::for_each_value(*index, f),
+                FacetIndexEnum::Int(index) => FacetIndex::for_each_value(*index, f),
+                FacetIndexEnum::Uuid(index) => FacetIndex::for_each_value(*index, f),
+                FacetIndexEnum::Bool(index) => FacetIndex::for_each_value(*index, f),
             },
         }
     }
 
-    pub fn iter_values_map<'b>(
-        &'b self,
-        hw_counter: &'b HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = (FacetValueRef<'b>, IdIter<'b>)> + 'b> {
+    pub fn for_each_value_map(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(
+            FacetValueRef<'_>,
+            &mut dyn Iterator<Item = PointOffsetType>,
+        ) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            FacetIndexEnum::Keyword(index) => {
-                Box::new(FacetIndex::iter_values_map(*index, hw_counter))
-            }
-            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values_map(*index, hw_counter)),
-            FacetIndexEnum::Uuid(index) => {
-                Box::new(FacetIndex::iter_values_map(*index, hw_counter))
-            }
-            FacetIndexEnum::Bool(index) => {
-                Box::new(FacetIndex::iter_values_map(*index, hw_counter))
-            }
+            FacetIndexEnum::Keyword(index) => FacetIndex::for_each_value_map(*index, hw_counter, f),
+            FacetIndexEnum::Int(index) => FacetIndex::for_each_value_map(*index, hw_counter, f),
+            FacetIndexEnum::Uuid(index) => FacetIndex::for_each_value_map(*index, hw_counter, f),
+            FacetIndexEnum::Bool(index) => FacetIndex::for_each_value_map(*index, hw_counter, f),
         }
     }
 
-    pub fn iter_counts_per_value(
-        &'a self,
+    pub fn for_each_count_per_value(
+        &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = FacetHit<FacetValueRef<'a>>> + 'a> {
+        f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_counts_per_value(
-                *index,
-                deferred_internal_id,
-            )),
-            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_counts_per_value(
-                *index,
-                deferred_internal_id,
-            )),
-            FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_counts_per_value(
-                *index,
-                deferred_internal_id,
-            )),
-            FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_counts_per_value(
-                *index,
-                deferred_internal_id,
-            )),
+            FacetIndexEnum::Keyword(index) => {
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+            }
+            FacetIndexEnum::Int(index) => {
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+            }
+            FacetIndexEnum::Uuid(index) => {
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+            }
+            FacetIndexEnum::Bool(index) => {
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+            }
         }
     }
 }

@@ -336,46 +336,73 @@ where
             .map(|entry| entry.count as usize)
     }
 
-    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
-        self.value_to_points
-            .iter()
-            .map(|(k, entry)| (k.borrow(), entry.count as usize))
+    pub fn for_points_values(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        mut f: impl FnMut(PointOffsetType, &[<N as MapIndexKey>::Owned]),
+    ) {
+        points.for_each(|idx| {
+            if let Some(values) = self.point_to_values.get_values_slice(idx) {
+                f(idx, values);
+            }
+        });
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> {
-        self.value_to_points.keys().map(move |k| {
-            (
-                k.borrow(),
-                Box::new(self.get_iterator(k.borrow())) as IdIter,
-            )
-        })
+    pub fn for_each_count_per_value(
+        &self,
+        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.value_to_points
+            .iter()
+            .try_for_each(|(k, entry)| f(k.borrow(), entry.count as usize))
+    }
+
+    pub fn for_each_value_map(
+        &self,
+        mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.value_to_points
+            .iter()
+            .try_for_each(|(k, entry)| f(k.borrow(), &mut self.get_entry_iterator(entry)))
     }
 
     pub fn get_iterator(&self, value: &N) -> IdIter<'_> {
         if let Some(entry) = self.value_to_points.get(value) {
-            let range = entry.range.start as usize..entry.range.end as usize;
-
-            let deleted_flags = self
-                .deleted_value_to_points_container
-                .iter()
-                .by_vals()
-                .skip(range.start)
-                .chain(std::iter::repeat(false));
-
-            let values = self.value_to_points_container[range]
-                .iter()
-                .zip(deleted_flags)
-                .filter(|(_, is_deleted)| !is_deleted)
-                .map(|(idx, _)| *idx);
-
-            Box::new(values)
+            Box::new(self.get_entry_iterator(entry))
         } else {
             Box::new(iter::empty::<PointOffsetType>())
         }
     }
 
+    fn get_entry_iterator(
+        &self,
+        entry: &ContainerSegment,
+    ) -> impl Iterator<Item = PointOffsetType> {
+        let range = entry.range.start as usize..entry.range.end as usize;
+
+        let deleted_flags = self
+            .deleted_value_to_points_container
+            .iter()
+            .by_vals()
+            .skip(range.start)
+            .chain(std::iter::repeat(false));
+
+        self.value_to_points_container[range]
+            .iter()
+            .zip(deleted_flags)
+            .filter(|(_, is_deleted)| !is_deleted)
+            .map(|(idx, _)| *idx)
+    }
+
     pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         Box::new(self.value_to_points.keys().map(|v| v.borrow()))
+    }
+
+    pub fn for_each_value(
+        &self,
+        mut f: impl FnMut(&N) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.value_to_points.keys().try_for_each(|v| f(v.borrow()))
     }
 
     pub fn storage_type(&self) -> StorageType {

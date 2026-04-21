@@ -21,7 +21,7 @@ use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::stored_point_to_values::StoredPointToValues;
+use crate::index::field_index::stored_point_to_values::{StoredPointToValues, ValuesIter};
 
 const DELETED_PATH: &str = "deleted.bin";
 const HASHMAP_PATH: &str = "values_to_points.bin";
@@ -235,6 +235,25 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             })
     }
 
+    pub fn for_points_values(
+        &self,
+        mut points: impl Iterator<Item = PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(PointOffsetType, ValuesIter<'_, N>),
+    ) -> OperationResult<()> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
+        points.try_for_each(|idx| {
+            if self.storage.deleted.get(idx as usize) != Some(false) {
+                return Ok(());
+            }
+            if let Some(iter) = self.storage.point_to_values.values_iter(idx, hw_counter)? {
+                f(idx, iter);
+            }
+            Ok(())
+        })
+    }
+
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         self.storage
             .deleted
@@ -326,11 +345,19 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         self.storage.value_to_points.keys()
     }
 
-    pub fn iter_counts_per_value(
+    pub fn for_each_value(
+        &self,
+        mut f: impl FnMut(&N) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.storage.value_to_points.keys().try_for_each(&mut f)
+    }
+
+    pub fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = (&N, usize)> + '_ {
-        self.storage.value_to_points.iter().map(move |(k, v)| {
+        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.storage.value_to_points.iter().try_for_each(|(k, v)| {
             let count = v
                 .iter()
                 .filter(|&&idx| {
@@ -342,35 +369,37 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 })
                 .unique()
                 .count();
-            (k, count)
+            f(k, count)
         })
     }
 
-    pub fn iter_values_map<'a>(
+    pub fn for_each_value_map<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (&'a N, IdIter<'a>)> + 'a {
+        mut f: impl FnMut(&'a N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()> + 'a,
+    ) -> OperationResult<()> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
-        self.storage.value_to_points.iter().map(move |(k, v)| {
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(k.write_bytes());
+        self.storage
+            .value_to_points
+            .iter()
+            .try_for_each(move |(k, v)| {
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(k.write_bytes());
 
-            (
-                k,
-                Box::new(
-                    v.iter()
-                        .copied()
-                        .filter(|idx| !self.storage.deleted.get(*idx as usize).unwrap_or(true))
-                        .measure_hw_with_acc(
-                            hw_counter.new_accumulator(),
-                            size_of::<PointOffsetType>(),
-                            |i| i.payload_index_io_read_counter(),
-                        ),
-                ) as IdIter,
-            )
-        })
+                let mut iter = v
+                    .iter()
+                    .copied()
+                    .filter(|idx| !self.storage.deleted.get(*idx as usize).unwrap_or(true))
+                    .measure_hw_with_acc(
+                        hw_counter.new_accumulator(),
+                        size_of::<PointOffsetType>(),
+                        |i| i.payload_index_io_read_counter(),
+                    );
+
+                f(k, &mut iter)
+            })
     }
 
     fn make_conditioned_counter<'a>(

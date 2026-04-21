@@ -275,25 +275,39 @@ where
         self.map.get(value).map(|p| p.len() as usize)
     }
 
-    pub fn iter_counts_per_value(
+    pub fn for_points_values(
         &self,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = (&N, usize)> + '_ {
-        self.map
-            .iter()
-            .map(move |(k, v)| match deferred_internal_id {
-                Some(deferred_internal_id) => {
-                    let count = v.range_cardinality(..deferred_internal_id) as usize;
-                    (k.borrow(), count)
-                }
-                None => (k.borrow(), v.len() as usize),
-            })
+        points: impl Iterator<Item = PointOffsetType>,
+        mut f: impl FnMut(PointOffsetType, &[<N as MapIndexKey>::Owned]),
+    ) {
+        points.for_each(|idx| {
+            if let Some(values) = self.point_to_values.get(idx as usize) {
+                f(idx, values);
+            }
+        });
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> {
+    pub fn for_each_count_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.map.iter().try_for_each(|(k, v)| {
+            let count = match deferred_internal_id {
+                Some(deferred_internal_id) => v.range_cardinality(..deferred_internal_id) as usize,
+                None => v.len() as usize,
+            };
+            f(k.borrow(), count)
+        })
+    }
+
+    pub fn for_each_value_map(
+        &self,
+        mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         self.map
             .iter()
-            .map(move |(k, v)| (k.borrow(), Box::new(v.iter()) as IdIter))
+            .try_for_each(|(k, v)| f(k.borrow(), &mut v.iter()))
     }
 
     pub fn get_iterator(&self, value: &N) -> IdIter<'_> {
@@ -305,6 +319,13 @@ where
 
     pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         Box::new(self.map.keys().map(|v| v.borrow()))
+    }
+
+    pub fn for_each_value(
+        &self,
+        mut f: impl FnMut(&N) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.map.keys().try_for_each(|v| f(v.borrow()))
     }
 
     pub fn storage_type(&self) -> StorageType {

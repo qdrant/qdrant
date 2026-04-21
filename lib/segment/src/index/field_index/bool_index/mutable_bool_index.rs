@@ -10,7 +10,6 @@ use roaring::RoaringBitmap;
 use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::map_index::IdIter;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     PrimaryCondition, ValueIndexer,
@@ -240,24 +239,20 @@ impl MutableBoolIndex {
         !self.storage.trues_flags.get(point_id) && !self.storage.falses_flags.get(point_id)
     }
 
-    pub fn iter_values_map<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (bool, IdIter<'a>)> + 'a {
-        [
-            (
-                false,
-                Box::new(self.storage.falses_flags.iter_trues()) as IdIter,
-            ),
-            (
-                true,
-                Box::new(self.storage.trues_flags.iter_trues()) as IdIter,
-            ),
-        ]
-        .into_iter()
-        .measure_hw_with_acc(hw_counter.new_accumulator(), u8::BITS as usize, |i| {
-            i.payload_index_io_read_counter()
-        })
+    pub fn for_each_value_map(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        f(false, &mut self.storage.falses_flags.iter_trues())?;
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(u8::BITS as usize);
+        f(true, &mut self.storage.trues_flags.iter_trues())?;
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(u8::BITS as usize);
+        Ok(())
     }
 
     pub fn iter_values(&self) -> impl Iterator<Item = bool> + '_ {
@@ -269,10 +264,11 @@ impl MutableBoolIndex {
         .flatten()
     }
 
-    pub fn iter_counts_per_value(
+    pub fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = (bool, usize)> + '_ {
+        mut f: impl FnMut(bool, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         let (false_count, true_count) = match deferred_internal_id {
             Some(deferred_internal_id) => {
                 let false_count =
@@ -295,7 +291,8 @@ impl MutableBoolIndex {
             ),
         };
 
-        [(false, false_count), (true, true_count)].into_iter()
+        f(false, false_count)?;
+        f(true, true_count)
     }
 
     pub(crate) fn get_point_values(&self, point_id: u32) -> Vec<bool> {

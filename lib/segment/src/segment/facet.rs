@@ -2,13 +2,12 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
 use super::Segment;
-use crate::common::operation_error::OperationResult;
-use crate::data_types::facets::{FacetHit, FacetParams, FacetValue, FacetValueRef};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::entry::ReadSegmentEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::PayloadIndex;
@@ -39,9 +38,6 @@ impl Segment {
         //
         // We need all values to be able to aggregate correctly across segments
         let mut hits = HashMap::new();
-        let add_hit = |hit: FacetHit<FacetValueRef<'_>>| {
-            hits.insert(hit.value.to_owned(), hit.count);
-        };
 
         if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();
@@ -61,7 +57,7 @@ impl Segment {
                 // go over the filtered points and aggregate the values
                 // aka. read from other indexes
                 let point_mappings = id_tracker.point_mappings();
-                payload_index
+                let points = payload_index
                     .iter_filtered_points(
                         filter,
                         &id_tracker,
@@ -71,19 +67,12 @@ impl Segment {
                         is_stopped,
                         self.deferred_internal_id(),
                     )?
-                    .filter(|&point_id| !id_tracker.is_deleted_point(point_id))
-                    .fold(HashMap::new(), |mut map, point_id| {
-                        facet_index
-                            .get_point_values(point_id, hw_counter)
-                            .unique()
-                            .for_each(|value| {
-                                *map.entry(value).or_insert(0) += 1;
-                            });
-                        map
-                    })
-                    .into_iter()
-                    .map(|(value, count)| FacetHit { value, count })
-                    .for_each(add_hit);
+                    .filter(|&point_id| !id_tracker.is_deleted_point(point_id));
+                facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
+                    iter.unique().for_each(|value| {
+                        *hits.entry(value.to_owned()).or_insert(0) += 1;
+                    });
+                })?;
             } else {
                 // go over the values and filter the points
                 // aka. read from facet index
@@ -91,40 +80,42 @@ impl Segment {
                 // This is more similar to a full-scan, but we won't be hashing so many times.
                 context = payload_index.struct_filtered_context(filter, hw_counter)?;
 
-                facet_index
-                    .iter_values_map(hw_counter)
-                    .stop_if(is_stopped)
-                    .filter_map(|(value, iter)| {
-                        #[cfg(debug_assertions)]
-                        let iter = {
-                            let mut prev_id = None;
-                            iter.inspect(move |&id| {
-                                let previous = prev_id.get_or_insert(id);
-                                debug_assert!(*previous <= id, "Sorted iter assertion broken");
-                                *previous = id;
-                            })
-                        };
+                facet_index.for_each_value_map(hw_counter, |value, iter| {
+                    check_process_stopped(is_stopped)?;
 
-                        let count = iter
-                            .dedup()
-                            .take_while(|&point_id| {
-                                point_id
-                                    < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
-                            })
-                            .filter(|&point_id| context.check(point_id))
-                            .count();
+                    #[cfg(debug_assertions)]
+                    let iter = {
+                        let mut prev_id = None;
+                        iter.inspect(move |&id| {
+                            let previous = prev_id.get_or_insert(id);
+                            debug_assert!(*previous <= id, "Sorted iter assertion broken");
+                            *previous = id;
+                        })
+                    };
 
-                        (count > 0).then_some(FacetHit { value, count })
-                    })
-                    .for_each(add_hit);
-            };
+                    let count = iter
+                        .dedup()
+                        .take_while(|&point_id| {
+                            point_id < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
+                        })
+                        .filter(|&point_id| context.check(point_id))
+                        .count();
+
+                    if count > 0 {
+                        hits.insert(value.to_owned(), count);
+                    }
+                    Ok(())
+                })?;
+            }
         } else {
             // just count how many points each value has
-            facet_index
-                .iter_counts_per_value(self.deferred_internal_id())
-                .stop_if(is_stopped)
-                .filter(|hit| hit.count > 0)
-                .for_each(add_hit);
+            facet_index.for_each_count_per_value(self.deferred_internal_id(), |hit| {
+                check_process_stopped(is_stopped)?;
+                if hit.count > 0 {
+                    hits.insert(hit.value.to_owned(), hit.count);
+                }
+                Ok(())
+            })?;
         }
 
         Ok(hits)
@@ -140,13 +131,14 @@ impl Segment {
         let payload_index = self.payload_index.borrow();
 
         let facet_index = payload_index.get_facet_index(key)?;
+        let mut values = BTreeSet::new();
 
-        let values = if let Some(filter) = filter {
+        if let Some(filter) = filter {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
             let point_mappings = id_tracker.point_mappings();
 
-            payload_index
+            let points = payload_index
                 .iter_filtered_points(
                     filter,
                     &id_tracker,
@@ -156,20 +148,16 @@ impl Segment {
                     is_stopped,
                     self.deferred_internal_id(),
                 )?
-                .filter(|&point_id| !id_tracker.is_deleted_point(point_id))
-                .fold(BTreeSet::new(), |mut set, point_id| {
-                    set.extend(facet_index.get_point_values(point_id, hw_counter));
-                    set
-                })
-                .into_iter()
-                .map(|value| value.to_owned())
-                .collect()
+                .filter(|&point_id| !id_tracker.is_deleted_point(point_id));
+            facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
+                values.extend(iter.map(|v| v.to_owned()));
+            })?;
         } else {
-            facet_index
-                .iter_values(hw_counter, self.deferred_internal_id())
-                .stop_if(is_stopped)
-                .map(|value_ref| value_ref.to_owned())
-                .collect()
+            facet_index.for_each_value(hw_counter, self.deferred_internal_id(), |value_ref| {
+                check_process_stopped(is_stopped)?;
+                values.insert(value_ref.to_owned());
+                Ok(())
+            })?;
         };
 
         Ok(values)

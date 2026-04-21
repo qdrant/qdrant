@@ -4,7 +4,6 @@ use immutable_bool_index::ImmutableBoolIndex;
 use mutable_bool_index::MutableBoolIndex;
 
 use super::facet_index::FacetIndex;
-use super::map_index::IdIter;
 use super::{PayloadFieldIndex, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
@@ -27,13 +26,14 @@ impl BoolIndex {
         }
     }
 
-    pub fn iter_values_map<'a>(
-        &'a self,
-        hw_acc: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = (bool, IdIter<'a>)> + 'a> {
+    pub fn for_each_value_map(
+        &self,
+        hw_acc: &HardwareCounterCell,
+        f: impl FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => Box::new(index.iter_values_map(hw_acc)),
-            BoolIndex::Immutable(index) => Box::new(index.iter_values_map(hw_acc)),
+            BoolIndex::Mmap(index) => index.for_each_value_map(hw_acc, f),
+            BoolIndex::Immutable(index) => index.for_each_value_map(hw_acc, f),
         }
     }
 
@@ -44,15 +44,14 @@ impl BoolIndex {
         }
     }
 
-    pub fn iter_counts_per_value(
+    pub fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = (bool, usize)> + '_> {
+        f: impl FnMut(bool, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => Box::new(index.iter_counts_per_value(deferred_internal_id)),
-            BoolIndex::Immutable(index) => {
-                Box::new(index.iter_counts_per_value(deferred_internal_id))
-            }
+            BoolIndex::Mmap(index) => index.for_each_count_per_value(deferred_internal_id, f),
+            BoolIndex::Immutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
         }
     }
 
@@ -227,37 +226,51 @@ impl PayloadFieldIndex for BoolIndex {
 }
 
 impl FacetIndex for BoolIndex {
-    fn get_point_values(
+    fn for_points_values(
         &self,
-        point_id: PointOffsetType,
+        points: impl Iterator<Item = PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
-    ) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        self.get_point_values(point_id)
-            .into_iter()
-            .map(FacetValueRef::Bool)
+        mut f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
+    ) -> OperationResult<()> {
+        points.for_each(|point_id| {
+            let values = self.get_point_values(point_id);
+            f(point_id, &mut values.into_iter().map(FacetValueRef::Bool));
+        });
+        Ok(())
     }
 
-    fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        self.iter_values().map(FacetValueRef::Bool)
+    fn for_each_value(
+        &self,
+        mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.iter_values()
+            .try_for_each(|v| f(FacetValueRef::Bool(v)))
     }
 
-    fn iter_values_map<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (FacetValueRef<'a>, IdIter<'a>)> + 'a {
-        self.iter_values_map(hw_counter)
-            .map(|(value, iter)| (FacetValueRef::Bool(value), iter))
+    fn for_each_value_map(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(
+            FacetValueRef<'_>,
+            &mut dyn Iterator<Item = PointOffsetType>,
+        ) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_value_map(hw_counter, |value, iter| {
+            f(FacetValueRef::Bool(value), iter)
+        })
     }
 
-    fn iter_counts_per_value(
+    fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_ {
-        self.iter_counts_per_value(deferred_internal_id)
-            .map(|(value, count)| FacetHit {
+        mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_count_per_value(deferred_internal_id, |value, count| {
+            f(FacetHit {
                 value: FacetValueRef::Bool(value),
                 count,
             })
+        })
     }
 }
 

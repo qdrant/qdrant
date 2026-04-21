@@ -245,12 +245,21 @@ where
         }
     }
 
-    pub fn iter_counts_per_value(
+    pub fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.for_each_value(f),
+            MapIndex::Immutable(index) => index.for_each_value(f),
+            MapIndex::Mmap(index) => index.for_each_value(f),
+        }
+    }
+
+    pub fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = (&N, usize)> + '_> {
+        f: impl FnMut(&N, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => Box::new(index.iter_counts_per_value(deferred_internal_id)),
+            MapIndex::Mutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
 
             // Two reasons we don't implement deferred filtering here:
             //  - We don't have both deferred points and an immutable index.
@@ -258,21 +267,22 @@ where
             //    it doesn't work well in combination with the way it handles deletions.
             MapIndex::Immutable(index) => {
                 debug_assert!(deferred_internal_id.is_none());
-                Box::new(index.iter_counts_per_value())
+                index.for_each_count_per_value(f)
             }
 
-            MapIndex::Mmap(index) => Box::new(index.iter_counts_per_value(deferred_internal_id)),
+            MapIndex::Mmap(index) => index.for_each_count_per_value(deferred_internal_id, f),
         }
     }
 
-    pub fn iter_values_map<'a>(
-        &'a self,
-        hw_cell: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = (&'a N, IdIter<'a>)> + 'a> {
+    pub fn for_each_value_map(
+        &self,
+        hw_cell: &HardwareCounterCell,
+        f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => Box::new(index.iter_values_map()),
-            MapIndex::Immutable(index) => Box::new(index.iter_values_map()),
-            MapIndex::Mmap(index) => Box::new(index.iter_values_map(hw_cell)),
+            MapIndex::Mutable(index) => index.for_each_value_map(f),
+            MapIndex::Immutable(index) => index.for_each_value_map(f),
+            MapIndex::Mmap(index) => index.for_each_value_map(hw_cell, f),
         }
     }
 
@@ -1214,38 +1224,55 @@ where
     for<'a> Cow<'a, N>: Into<FacetValueRef<'a>>,
     for<'a> &'a N: Into<FacetValueRef<'a>>,
 {
-    fn get_point_values(
+    fn for_points_values(
         &self,
-        point_id: PointOffsetType,
+        points: impl Iterator<Item = PointOffsetType>,
         hw_counter: &HardwareCounterCell,
-    ) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        MapIndex::get_values(self, point_id, hw_counter)
-            .into_iter()
-            .flatten()
-            .map(Into::into)
+        mut f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
+    ) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.for_points_values(points, |idx, slice| {
+                f(idx, &mut slice.iter().map(|v| v.borrow().into()));
+            }),
+            MapIndex::Immutable(index) => index.for_points_values(points, |idx, slice| {
+                f(idx, &mut slice.iter().map(|v| v.borrow().into()));
+            }),
+            MapIndex::Mmap(index) => index.for_points_values(points, hw_counter, |idx, vals| {
+                f(idx, &mut vals.map(|v| v.into()));
+            })?,
+        }
+        Ok(())
     }
 
-    fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
-        self.iter_values().map(Into::into)
+    fn for_each_value(
+        &self,
+        mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_value(|v| f(v.into()))
     }
 
-    fn iter_values_map<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (FacetValueRef<'a>, IdIter<'a>)> + 'a {
-        self.iter_values_map(hw_counter)
-            .map(|(k, iter)| (k.into(), iter))
+    fn for_each_value_map(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(
+            FacetValueRef<'_>,
+            &mut dyn Iterator<Item = PointOffsetType>,
+        ) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_value_map(hw_counter, |value, iter| f(value.into(), iter))
     }
 
-    fn iter_counts_per_value(
+    fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_ {
-        self.iter_counts_per_value(deferred_internal_id)
-            .map(|(value, count)| FacetHit {
+        mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_count_per_value(deferred_internal_id, |value, count| {
+            f(FacetHit {
                 value: value.into(),
                 count,
             })
+        })
     }
 }
 

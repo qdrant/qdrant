@@ -4,7 +4,6 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use super::IdIter;
 use super::mutable_bool_index::MutableBoolIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
@@ -50,11 +49,12 @@ impl ImmutableBoolIndex {
     }
 
     #[inline]
-    pub fn iter_values_map<'a>(
-        &'a self,
-        hw_acc: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (bool, IdIter<'a>)> + 'a {
-        self.0.iter_values_map(hw_acc)
+    pub fn for_each_value_map(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.0.for_each_value_map(hw_counter, f)
     }
 
     #[inline]
@@ -63,11 +63,12 @@ impl ImmutableBoolIndex {
     }
 
     #[inline]
-    pub fn iter_counts_per_value(
+    pub fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> impl Iterator<Item = (bool, usize)> + '_ {
-        self.0.iter_counts_per_value(deferred_internal_id)
+        f: impl FnMut(bool, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.0.for_each_count_per_value(deferred_internal_id, f)
     }
 
     #[inline]
