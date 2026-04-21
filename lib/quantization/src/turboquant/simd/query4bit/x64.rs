@@ -167,8 +167,8 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::super::shared::{PARITY_DIMS, pack_nibbles, random_inputs};
     use super::super::Query4bitSimd;
+    use super::super::shared::{PARITY_DIMS, pack_nibbles, random_inputs};
 
     #[test]
     fn test_sse_matches_scalar() {
