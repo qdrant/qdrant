@@ -2618,18 +2618,21 @@ pub struct MatchExcept {
     pub except: AnyVariants,
 }
 /// Parameters for fuzzy (approximate) full-text matching.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct FuzzyParams {
     /// Max Levenshtein edit distance (0..=2).
     #[serde(default = "FuzzyParams::default_max_edits_distance")]
     #[schemars(range(min = 0, max = 2))]
+    #[validate(range(max = 2))]
     pub max_edits: u8,
     /// Number of initial characters that must match exactly. Default: 0.
     #[serde(default = "FuzzyParams::default_prefix_length")]
     pub prefix_length: u8,
     /// Max number of similar terms to collect per query token. Default: 30.
     #[serde(default = "FuzzyParams::default_max_expansions")]
+    #[schemars(range(min = 1, max = 30))]
+    #[validate(range(min = 1, max = 30))]
     pub max_expansions: u8,
 }
 

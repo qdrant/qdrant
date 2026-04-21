@@ -42,21 +42,35 @@ impl FuzzyIndex for ImmutableFuzzyIndex {
             self.index.search(&automaton).ge(prefix_bytes).into_stream()
         };
 
-        let mut results: Vec<FuzzyCandidate> = Vec::with_capacity(max + 1);
-        results.push(FuzzyCandidate::new(query.to_string(), query.len(), 0));
+        let mut buckets: Vec<Vec<FuzzyCandidate>> = vec![Vec::new(); max_edits as usize + 1];
+        buckets[0].push(FuzzyCandidate::new(
+            query.to_string(),
+            query.chars().count(),
+            0,
+        ));
+        let mut total = 0usize;
         while let Some(term_bytes) = stream.next() {
             let Ok(term) = std::str::from_utf8(term_bytes) else {
                 continue;
             };
             let dist = levenshtein(query, term) as u32;
             if dist != 0 {
-                results.push(FuzzyCandidate::new(term.to_string(), query.len(), dist));
-            }
-            if results.len() >= max {
-                break;
+                buckets[dist as usize].push(FuzzyCandidate::new(
+                    term.to_string(),
+                    query.chars().count(),
+                    dist,
+                ));
+                total += 1;
+                if total >= max {
+                    break;
+                }
             }
         }
 
+        let mut results: Vec<FuzzyCandidate> = Vec::with_capacity(total + 1);
+        for bucket in buckets {
+            results.extend(bucket);
+        }
         results
     }
 }
