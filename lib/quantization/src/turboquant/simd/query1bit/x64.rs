@@ -20,21 +20,16 @@
 /// value = number of 1-bits.  Broadcast to YMM/ZMM as needed.
 const NIBBLE_POPCNT: [i8; 16] = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
 
-/// SSE4.1 + SSSE3 implementation of [`super::score_1bit_internal`].
+/// Raw popcount of `a ⊕ b` using 16-byte SSE pshufb-nibble-lookup chunks
+/// plus a scalar byte tail.  Shared between [`score_1bit_internal_sse`] and
+/// the tail path of [`score_1bit_internal_avx512_vpopcntdq`].
 ///
 /// # Safety
-/// CPU must support `ssse3` and `sse4.1`.
+/// `a.len() == b.len()`.  CPU must support `ssse3` and `sse4.1`.
+#[inline]
 #[target_feature(enable = "sse4.1,ssse3")]
-pub unsafe fn score_1bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
+unsafe fn popcount_sse(a: &[u8], b: &[u8]) -> u64 {
     use core::arch::x86_64::*;
-
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "score_1bit_internal_sse: vector length mismatch ({} vs {})",
-        a.len(),
-        b.len(),
-    );
 
     unsafe {
         let lookup = _mm_loadu_si128(NIBBLE_POPCNT.as_ptr().cast::<__m128i>());
@@ -52,14 +47,12 @@ pub unsafe fn score_1bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
             let hi = _mm_and_si128(_mm_srli_epi16(x, 4), low_mask);
             let cnt_lo = _mm_shuffle_epi8(lookup, lo);
             let cnt_hi = _mm_shuffle_epi8(lookup, hi);
-            // Per-byte popcount ≤ 8; two halves summed ≤ 16 per u8 — still
-            // fits u8 so `_mm_add_epi8` is safe.
+            // Per-byte popcount ≤ 8; two halves summed ≤ 16 per u8 — fits u8.
             let cnt = _mm_add_epi8(cnt_lo, cnt_hi);
 
             // `psadbw(cnt, 0)` horizontally sums 8 bytes into each u64 lane
             // (max 8 · 16 = 128 per lane per chunk — zero overflow risk).
-            let sum64 = _mm_sad_epu8(cnt, zero);
-            acc = _mm_add_epi64(acc, sum64);
+            acc = _mm_add_epi64(acc, _mm_sad_epu8(cnt, zero));
         }
 
         let lo = _mm_cvtsi128_si64(acc) as u64;
@@ -70,9 +63,24 @@ pub unsafe fn score_1bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
         for i in tail_start..a.len() {
             popcnt += u64::from((a[i] ^ b[i]).count_ones());
         }
-
-        super::popcount_to_score(a.len(), popcnt)
+        popcnt
     }
+}
+
+/// SSE4.1 + SSSE3 implementation of [`super::score_1bit_internal`].
+///
+/// # Safety
+/// CPU must support `ssse3` and `sse4.1`.
+#[target_feature(enable = "sse4.1,ssse3")]
+pub unsafe fn score_1bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "score_1bit_internal_sse: vector length mismatch ({} vs {})",
+        a.len(),
+        b.len(),
+    );
+    super::popcount_to_score(a.len(), unsafe { popcount_sse(a, b) })
 }
 
 /// AVX2 implementation of [`super::score_1bit_internal`].
@@ -135,9 +143,13 @@ pub unsafe fn score_1bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
 
 /// AVX-512 VPOPCNTDQ implementation of [`super::score_1bit_internal`].
 ///
+/// Tail after the 64-byte bulk loop (up to 63 bytes) is handled via the
+/// [`popcount_sse`] helper — 3 SSE chunks + scalar bytes is ~10× cheaper
+/// than a 63-iteration scalar loop when the tail is non-trivial.
+///
 /// # Safety
-/// CPU must support `avx512f` and `avx512vpopcntdq`.
-#[target_feature(enable = "avx512f,avx512vpopcntdq")]
+/// CPU must support `avx512f`, `avx512vpopcntdq`, `ssse3`, and `sse4.1`.
+#[target_feature(enable = "avx512f,avx512vpopcntdq,sse4.1,ssse3")]
 pub unsafe fn score_1bit_internal_avx512_vpopcntdq(a: &[u8], b: &[u8]) -> f32 {
     use core::arch::x86_64::*;
 
@@ -162,9 +174,7 @@ pub unsafe fn score_1bit_internal_avx512_vpopcntdq(a: &[u8], b: &[u8]) -> f32 {
         let mut popcnt = _mm512_reduce_add_epi64(acc) as u64;
 
         let tail_start = chunks * 64;
-        for i in tail_start..a.len() {
-            popcnt += u64::from((a[i] ^ b[i]).count_ones());
-        }
+        popcnt += popcount_sse(&a[tail_start..], &b[tail_start..]);
 
         super::popcount_to_score(a.len(), popcnt)
     }
