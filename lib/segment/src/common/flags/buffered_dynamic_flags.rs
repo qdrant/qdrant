@@ -97,7 +97,7 @@ impl BufferedDynamicFlags {
             flags_guard.set_ascending_bits(
                 updates
                     .iter()
-                    .map(|(index, value)| (*index, *value))
+                    .map(|(index, value)| (u64::from(*index), *value))
                     .sorted_by_key(|(index, _value)| *index),
             )?;
 

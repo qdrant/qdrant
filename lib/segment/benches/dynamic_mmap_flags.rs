@@ -28,7 +28,7 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
                 .iter()
                 .enumerate()
                 .filter(|(_, flag)| **flag)
-                .map(|(i, _)| (i, true)),
+                .map(|(i, _)| (i as u64, true)),
         )
         .unwrap();
 

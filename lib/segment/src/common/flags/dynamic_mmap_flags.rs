@@ -176,15 +176,11 @@ impl DynamicMmapFlags {
         Ok(())
     }
 
-    pub fn get<TKey>(&self, key: TKey) -> OperationResult<bool>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
-        let key: usize = key.as_();
-        if key >= self.status.len {
+    pub fn get(&self, index: usize) -> OperationResult<bool> {
+        if index >= self.status.len {
             return Ok(false);
         }
-        Ok(self.flags.get_bit(key as u64)?.unwrap_or(false))
+        Ok(self.flags.get_bit(index as u64)?.unwrap_or(false))
     }
 
     /// Count number of set flags
@@ -202,29 +198,19 @@ impl DynamicMmapFlags {
     /// Ignore the call if the index is out of bounds.
     ///
     /// Returns previous value of the flag.
-    #[cfg_attr(
-        not(test),
-        deprecated = "use `set_ascending_bits` for persisting in batch"
-    )]
-    pub fn set<TKey>(&mut self, key: TKey, value: bool) -> OperationResult<bool>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
-        let key: usize = key.as_();
-        debug_assert!(key < self.status.len);
-        if key >= self.status.len {
+    #[cfg(any(test, feature = "testing"))]
+    pub fn set(&mut self, index: usize, value: bool) -> OperationResult<bool> {
+        debug_assert!(index < self.status.len);
+        if index >= self.status.len {
             return Ok(false);
         }
-        Ok(self.flags.replace_bit(key as u64, value)?)
+        Ok(self.flags.replace_bit(index as u64, value)?)
     }
 
-    pub fn set_ascending_bits<TKey>(
+    pub fn set_ascending_bits(
         &mut self,
-        updates: impl IntoIterator<Item = (TKey, bool)>,
-    ) -> OperationResult<()>
-    where
-        TKey: num_traits::cast::AsPrimitive<u64>,
-    {
+        updates: impl IntoIterator<Item = (u64, bool)>,
+    ) -> OperationResult<()> {
         Ok(self.flags.set_ascending_bits_batch(updates)?)
     }
 
