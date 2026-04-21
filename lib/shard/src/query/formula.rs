@@ -195,6 +195,15 @@ impl ExpressionInternal {
                 }
             }
             ExpressionInternal::StrDist { field, query, func } => {
+                // Reject empty or whitespace-only queries here so all construction
+                // paths, not only API-layer validation, enforce the same minimum
+                // validity requirement before the expression is parsed.
+                if query.trim().is_empty() {
+                    return Err(OperationError::validation_error(
+                        "str_dist query must not be empty or whitespace-only",
+                    ));
+                }
+
                 payload_vars.insert(field.clone());
                 ParsedExpression::StrDist { field, query, func }
             }

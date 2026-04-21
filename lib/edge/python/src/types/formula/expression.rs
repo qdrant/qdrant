@@ -2,6 +2,7 @@ use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use shard::query::formula::ExpressionInternal;
 
@@ -82,11 +83,22 @@ impl FromPyObject<'_, '_> for PyExpression {
                 midpoint,
                 scale,
             },
-            PyExpressionInterface::StrDist { field, query, func } => ExpressionInternal::StrDist {
-                field: field.into(),
-                query,
-                func: func.into(),
-            },
+            PyExpressionInterface::StrDist { field, query, func } => {
+                // Reject empty or whitespace-only queries here so Python callers
+                // get a direct construction-time error before the expression
+                // reaches shared parsing and scoring layers.
+                if query.trim().is_empty() {
+                    return Err(PyValueError::new_err(
+                        "str_dist query must not be empty or whitespace-only",
+                    ));
+                }
+
+                ExpressionInternal::StrDist {
+                    field: segment::json_path::JsonPath::from(field),
+                    query,
+                    func: segment::index::query_optimization::rescore_formula::parsed_formula::StrDistKind::from(func),
+                }
+            }
         };
 
         Ok(Self(expr))
@@ -181,9 +193,9 @@ impl<'py> IntoPyObject<'py> for PyExpression {
                 scale,
             },
             ExpressionInternal::StrDist { field, query, func } => PyExpressionInterface::StrDist {
-                field: PyJsonPath(field),
+                field: crate::types::json_path::PyJsonPath(field),
                 query,
-                func: func.into(),
+                func: PyStrDistKind::from(func),
             },
         };
 

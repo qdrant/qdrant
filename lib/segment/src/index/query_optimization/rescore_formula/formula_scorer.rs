@@ -21,6 +21,11 @@ use crate::types::{DateTimePayloadType, GeoPoint};
 
 const DEFAULT_SCORE: PreciseScore = 0.0;
 const DEFAULT_DECAY_TARGET: PreciseScore = 0.0;
+/// Maximum supported string length for `str_dist` scoring inputs.
+///
+/// String similarity algorithms can become expensive on very long inputs, so
+/// runtime scoring rejects payload values longer than this bound.
+const MAX_STRDIST_LEN: usize = 1024;
 
 /// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
@@ -307,11 +312,19 @@ impl FormulaScorer<'_> {
                 Ok(decay)
             }
             ParsedExpression::StrDist { field, query, func } => {
+                // String distance expressions compare a payload string field against the
+                // provided query string and return a normalized similarity score.
                 let value = self.get_parsed_payload_value(
                     field,
                     point_id,
                     serde_json::from_value::<String>,
                 )?;
+
+                if value.len() > MAX_STRDIST_LEN {
+                    return Err(OperationError::validation_error(format!(
+                        "str_dist payload value exceeds maximum supported length of {MAX_STRDIST_LEN} characters"
+                    )));
+                }
 
                 match func {
                     super::parsed_formula::StrDistKind::Levenshtein => {
@@ -449,6 +462,10 @@ mod tests {
                 JsonPath::new(TEXT_FIELD_NAME),
                 Box::new(|_| smallvec![json!("hello world")]),
             );
+            payload_retrievers.insert(
+                JsonPath::new("too_long_text"),
+                Box::new(|_| smallvec![json!("x".repeat(MAX_STRDIST_LEN + 1))]),
+            );
 
             let condition_checkers = vec![
                 OptimizedCondition::Checker(Box::new(|_| true)),
@@ -480,9 +497,9 @@ mod tests {
     }, 1.0)]
     #[case(ParsedExpression::StrDist {
         field: JsonPath::new(TEXT_FIELD_NAME),
-        query: "hello world".to_string(),
+        query: "hello world!".to_string(),
         func: StrDistKind::JaroWinkler,
-    }, 1.0)]
+    }, 0.9833333333333333)]
     // Operations
     #[case(ParsedExpression::Sum(vec![
         ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
@@ -600,6 +617,18 @@ mod tests {
             field_name: JsonPath::new("missing_text"),
             expected_type: String::friendly_name().to_string(),
             description: "No value found in a payload nor defaults".to_string(),
+        })
+    )]
+    #[case(
+        ParsedExpression::StrDist {
+            field: JsonPath::new("too_long_text"),
+            query: "hello".to_string(),
+            func: StrDistKind::JaroWinkler,
+        },
+        Err(OperationError::ValidationError {
+            description: format!(
+                "str_dist payload value exceeds maximum supported length of {MAX_STRDIST_LEN} characters"
+            ),
         })
     )]
     #[test]
