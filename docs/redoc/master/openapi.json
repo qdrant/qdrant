@@ -16646,6 +16646,7 @@
           },
           "query": {
             "type": "string",
+            "maxLength": 1024,
             "minLength": 1
           },
           "func": {

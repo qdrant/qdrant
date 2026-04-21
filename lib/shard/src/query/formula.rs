@@ -203,7 +203,11 @@ impl ExpressionInternal {
                         "str_dist query must not be empty or whitespace-only",
                     ));
                 }
-
+                if query.chars().count() > 1024 {
+                    return Err(OperationError::validation_error(
+                        "str_dist query exceeds maximum supported length of 1024 characters",
+                    ));
+                }
                 payload_vars.insert(field.clone());
                 ParsedExpression::StrDist { field, query, func }
             }
