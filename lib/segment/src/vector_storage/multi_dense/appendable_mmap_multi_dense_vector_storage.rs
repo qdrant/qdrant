@@ -161,6 +161,8 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         let mut offsets = Vec::with_capacity(keys.len());
 
         for (point_index, offset) in self.offsets.iter(keys) {
+            // `PointOffsetType::multi_vector_count` is always 1, and `self.offsets` is `ChunkedVectors`
+            // with vector dimension set to 1, so we expect to get an `offset` "vector" of exactly 1 value
             let &[offset] = offset.as_ref() else {
                 unreachable!();
             };
