@@ -69,11 +69,7 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
             .vector_io_read()
             .incr_delta(stored.indices.len() + stored.values.len());
 
-        self.query.score_by(|example| {
-            let cpu_units = example.indices.len() + stored.indices.len();
-            self.hardware_counter.cpu_counter().incr_delta(cpu_units);
-            stored.score(example).unwrap_or(0.0)
-        })
+        self.score(&stored)
     }
 
     fn score(&self, v: &SparseVector) -> ScoreType {
@@ -82,6 +78,30 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
             self.hardware_counter.cpu_counter().incr_delta(cpu_units);
             example.score(v).unwrap_or(0.0)
         })
+    }
+
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert_eq!(ids.len(), scores.len());
+
+        self.vector_storage
+            .for_each_in_sparse_batch(ids, |idx, vector| {
+                // not exactly correct for Gridstore where the indices are compressed into u8
+                self.hardware_counter
+                    .vector_io_read()
+                    .incr_delta(vector.indices.len() + vector.values.len());
+
+                scores[idx] = self.score(&vector);
+            })
+            .expect("sparse vectors read");
+    }
+
+    fn score_stored_batch_impl(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert!(
+            false,
+            "score_stored_batch_impl should not be used, use score_stored_batch instead"
+        );
+
+        self.score_stored_batch(ids, scores); // fallback
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
