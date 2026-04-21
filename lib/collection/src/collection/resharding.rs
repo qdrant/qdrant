@@ -187,12 +187,10 @@ impl Collection {
     pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
         let mut shard_holder = self.shards_holder.write().await;
 
-        // Idempotent: if no resharding is in progress, finish was already applied
-        if shard_holder.resharding_state().is_none() {
-            log::warn!("finish_resharding: no resharding in progress, skipping");
-            return Ok(());
-        }
-
+        // Each step below is individually idempotent, so on replay (e.g. after
+        // a crash that applied only part of the operation) we fall through
+        // every step to reconcile any partially-applied state instead of
+        // short-circuiting on the first condition that already holds.
         shard_holder.check_finish_resharding(&resharding_key)?;
         shard_holder.finish_resharding_unchecked(&resharding_key)?;
 
@@ -246,12 +244,10 @@ impl Collection {
 
         let shard_holder = self.shards_holder.read().await;
 
-        // Idempotent: if no resharding is in progress, abort was already applied
-        if shard_holder.resharding_state().is_none() {
-            log::warn!("abort_resharding: no resharding in progress, skipping");
-            return Ok(());
-        }
-
+        // Each step below is individually idempotent, so on replay (e.g. after
+        // a crash that applied only part of the abort) we fall through every
+        // step to reconcile any partially-applied state instead of
+        // short-circuiting on the first condition that already holds.
         if !force {
             shard_holder.check_abort_resharding(&resharding_key)?;
         } else {
@@ -266,21 +262,16 @@ impl Collection {
                 self.invalidate_clean_local_shards([resharding_key.shard_id])
                     .await;
             }
-            // On resharding down: existing shards may have new points moved into them
-            ReshardingDirection::Down => match shard_holder.rings.get(&resharding_key.shard_key) {
-                Some(HashRingRouter::Resharding { old: _, new }) => {
-                    self.invalidate_clean_local_shards(new.nodes().clone())
-                        .await;
-                }
-                Some(HashRingRouter::Single(ring)) => {
-                    debug_assert!(false, "must have resharding hash ring during resharding");
+            // On resharding down: existing shards may have new points moved
+            // into them. Use the router's node set, which works regardless of
+            // whether the ring has already been rolled back to `Single` on a
+            // replay.
+            ReshardingDirection::Down => {
+                if let Some(ring) = shard_holder.rings.get(&resharding_key.shard_key) {
                     self.invalidate_clean_local_shards(ring.nodes().clone())
                         .await;
                 }
-                None => {
-                    debug_assert!(false, "must have hash ring for resharding key");
-                }
-            },
+            }
         }
 
         // Abort all resharding transfer related to this specific resharding operation
