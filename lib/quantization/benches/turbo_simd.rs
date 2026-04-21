@@ -3,17 +3,20 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use quantization::encoded_vectors_binary::BitsStoreType;
 use quantization::turboquant::simd::{
-    Query1bitSimd, Query4bitSimd, score_1bit_internal, score_1bit_internal_scalar,
-    score_4bit_internal, score_4bit_internal_scalar,
+    Query1bitSimd, Query2bitSimd, Query4bitSimd, score_1bit_internal, score_1bit_internal_scalar,
+    score_2bit_internal, score_2bit_internal_scalar, score_4bit_internal,
+    score_4bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::{
     score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,
+    score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse,
     score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use quantization::turboquant::simd::{
-    score_1bit_internal_neon, score_4bit_internal_neon, score_4bit_internal_neon_sdot,
+    score_1bit_internal_neon, score_2bit_internal_neon, score_2bit_internal_neon_sdot,
+    score_4bit_internal_neon, score_4bit_internal_neon_sdot,
 };
 use rand::prelude::StdRng;
 use rand::seq::SliceRandom;
@@ -52,6 +55,12 @@ impl VectorPool {
     fn new_4bit(dim: usize, seed: u64) -> Self {
         assert!(dim.is_multiple_of(2));
         Self::with_packed_bytes(dim / 2, seed)
+    }
+
+    /// 2-bit PQ pool: four codes per byte → `dim / 4` packed bytes per vector.
+    fn new_2bit(dim: usize, seed: u64) -> Self {
+        assert!(dim.is_multiple_of(4));
+        Self::with_packed_bytes(dim / 4, seed)
     }
 
     /// 1-bit PQ pool: 8 codes per byte → `dim / 8` packed bytes per vector.
@@ -451,10 +460,202 @@ fn encode_bq_scalar8bits(query: &[f32]) -> Vec<u8> {
     encoded
 }
 
+/// Cold-cache query-vs-vector dotprod for 2-bit PQ.  Mirrors
+/// [`bench_dotprod_cold`] for 4-bit — a hot `Query2bitSimd` against cold
+/// data vectors drawn from a shuffled 64 MB pool.
+fn bench_dotprod_2bit_cold(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query2bit_dotprod_cold");
+    for &dim in DIMS {
+        let q = make_query(dim);
+        let query = Query2bitSimd::new(&q);
+        let pool = VectorPool::new_2bit(dim, 7);
+
+        group.throughput(Throughput::Elements(dim as u64));
+
+        group.bench_with_input(BenchmarkId::new("scalar", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let v = pool.vector(cursor);
+                cursor = cursor.wrapping_add(1);
+                black_box(&query).dotprod_raw(black_box(v))
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("dotprod", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let v = pool.vector(cursor);
+                cursor = cursor.wrapping_add(1);
+                black_box(&query).dotprod(black_box(v))
+            });
+        });
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            group.bench_with_input(BenchmarkId::new("neon", dim), &dim, |b, _| {
+                let mut cursor = 0usize;
+                b.iter(|| {
+                    let v = pool.vector(cursor);
+                    cursor = cursor.wrapping_add(1);
+                    unsafe { black_box(&query).dotprod_raw_neon(black_box(v)) }
+                });
+            });
+
+            if std::arch::is_aarch64_feature_detected!("dotprod") && dim.is_multiple_of(32) {
+                group.bench_with_input(BenchmarkId::new("neon_sdot", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_neon_sdot(black_box(v)) }
+                    });
+                });
+            }
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+                group.bench_with_input(BenchmarkId::new("sse", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_sse(black_box(v)) }
+                    });
+                });
+            }
+            if std::is_x86_feature_detected!("avx2") {
+                group.bench_with_input(BenchmarkId::new("avx2", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_avx2(black_box(v)) }
+                    });
+                });
+            }
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                group.bench_with_input(BenchmarkId::new("avx512_vnni", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_avx512_vnni(black_box(v)) }
+                    });
+                });
+            }
+        }
+    }
+    group.finish();
+}
+
+/// Cold-cache vector-vs-vector score for 2-bit PQ.  Mirrors
+/// [`bench_score_cold`] for 4-bit.
+fn bench_score_2bit_cold(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query2bit_score_cold");
+    for &dim in DIMS {
+        let pool = VectorPool::new_2bit(dim, 7);
+
+        group.throughput(Throughput::Elements(dim as u64));
+
+        group.bench_with_input(BenchmarkId::new("scalar", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let va = pool.vector(cursor);
+                let vb = pool.vector(cursor + 1);
+                cursor = cursor.wrapping_add(2);
+                score_2bit_internal_scalar(black_box(va), black_box(vb))
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("dispatch", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let va = pool.vector(cursor);
+                let vb = pool.vector(cursor + 1);
+                cursor = cursor.wrapping_add(2);
+                score_2bit_internal(black_box(va), black_box(vb))
+            });
+        });
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            group.bench_with_input(BenchmarkId::new("neon", dim), &dim, |b, _| {
+                let mut cursor = 0usize;
+                b.iter(|| {
+                    let va = pool.vector(cursor);
+                    let vb = pool.vector(cursor + 1);
+                    cursor = cursor.wrapping_add(2);
+                    unsafe { score_2bit_internal_neon(black_box(va), black_box(vb)) }
+                });
+            });
+
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                group.bench_with_input(BenchmarkId::new("neon_sdot", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let va = pool.vector(cursor);
+                        let vb = pool.vector(cursor + 1);
+                        cursor = cursor.wrapping_add(2);
+                        unsafe { score_2bit_internal_neon_sdot(black_box(va), black_box(vb)) }
+                    });
+                });
+            }
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+                group.bench_with_input(BenchmarkId::new("sse", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let va = pool.vector(cursor);
+                        let vb = pool.vector(cursor + 1);
+                        cursor = cursor.wrapping_add(2);
+                        unsafe { score_2bit_internal_sse(black_box(va), black_box(vb)) }
+                    });
+                });
+            }
+            if std::is_x86_feature_detected!("avx2") {
+                group.bench_with_input(BenchmarkId::new("avx2", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let va = pool.vector(cursor);
+                        let vb = pool.vector(cursor + 1);
+                        cursor = cursor.wrapping_add(2);
+                        unsafe { score_2bit_internal_avx2(black_box(va), black_box(vb)) }
+                    });
+                });
+            }
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                group.bench_with_input(BenchmarkId::new("avx512_vnni", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let va = pool.vector(cursor);
+                        let vb = pool.vector(cursor + 1);
+                        cursor = cursor.wrapping_add(2);
+                        unsafe { score_2bit_internal_avx512_vnni(black_box(va), black_box(vb)) }
+                    });
+                });
+            }
+        }
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_dotprod_cold,
     bench_score_cold,
+    bench_dotprod_2bit_cold,
+    bench_score_2bit_cold,
     bench_score_1bit_cold,
     bench_query1bit_vs_bq_hot,
 );

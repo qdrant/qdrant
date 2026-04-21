@@ -5,6 +5,7 @@
 //! the corresponding codebooks.
 
 pub mod query1bit;
+pub mod query2bit;
 pub mod query4bit;
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -14,6 +15,13 @@ pub use query1bit::{Query1bitSimd, score_1bit_internal, score_1bit_internal_scal
 pub use query1bit::{
     score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,
 };
+pub use query2bit::{Query2bitSimd, score_2bit_internal, score_2bit_internal_scalar};
+#[cfg(target_arch = "x86_64")]
+pub use query2bit::{
+    score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse,
+};
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub use query2bit::{score_2bit_internal_neon, score_2bit_internal_neon_sdot};
 pub use query4bit::{Query4bitSimd, score_4bit_internal, score_4bit_internal_scalar};
 #[cfg(target_arch = "x86_64")]
 pub use query4bit::{
