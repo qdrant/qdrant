@@ -462,11 +462,12 @@ mod tests {
             let pq_dot: f32 = query.iter().zip(v_pq.iter()).map(|(a, b)| a * b).sum();
             let simd_dot = Query2bitSimd::new(&query).dotprod(&pack_codes_2bit(&indices));
 
-            // i8-codebook precision is the same as 4-bit; PQ noise for 2 bits
-            // is larger, but our SIMD-induced noise should still be ≲0.5.
+            // SIMD-added error scales like √dim · σ_q · ε_c.  Scale tolerance
+            // with √dim so large-dim trials don't falsely fail on 3σ tails.
+            let tol = (0.5_f32).max(0.03 * (dim as f32).sqrt());
             assert!(
-                (pq_dot - simd_dot).abs() < 0.5,
-                "simd_dot {simd_dot} too far from ideal PQ dot {pq_dot}",
+                (pq_dot - simd_dot).abs() < tol,
+                "dim={dim}: simd_dot {simd_dot} too far from ideal PQ dot {pq_dot} (tol={tol})",
             );
         }
     }
