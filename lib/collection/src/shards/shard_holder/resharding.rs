@@ -61,10 +61,13 @@ impl ShardHolder {
             assert_resharding_state_consistency(&state, ring, shard_key);
 
             if let Some(state) = state.deref() {
+                // Idempotent: a matching state means start_resharding was
+                // already applied on this peer. Caller falls through each
+                // step to reconcile any partially-applied state, so we must
+                // not short-circuit with an error that would be silently
+                // swallowed by apply_entries and cause divergence.
                 return if state.matches(resharding_key) {
-                    Err(CollectionError::bad_request(format!(
-                        "resharding {resharding_key} is already in progress:\n{state:#?}"
-                    )))
+                    Ok(())
                 } else {
                     Err(CollectionError::bad_request(format!(
                         "another resharding is in progress:\n{state:#?}"
@@ -93,15 +96,14 @@ impl ShardHolder {
         match resharding_key.direction {
             ReshardingDirection::Up => {
                 if has_shard {
-                    // Allow re-application: the shard may exist as a leftover from a
-                    // previous incomplete start attempt (e.g. crash after key_mapping
-                    // was persisted but before resharding_state was written).
-                    // create_shard_dir will clean up the stale directory and add_shard
-                    // will evict the old entry.
+                    // Idempotent: the replica set may already exist as a
+                    // leftover from a previous partial apply or as the result
+                    // of an earlier successful apply we are replaying. The
+                    // caller skips create_replica_set in that case and falls
+                    // through; we must not block on this condition.
                     log::warn!(
                         "Shard {shard_id} already exists during resharding start, \
-                         likely a leftover from a previous incomplete attempt, \
-                         it will be recreated"
+                         treating as idempotent re-apply and reusing existing replica set",
                     );
                 }
             }

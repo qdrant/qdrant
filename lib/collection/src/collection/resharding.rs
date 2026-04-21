@@ -40,23 +40,19 @@ impl Collection {
         {
             let mut shard_holder = self.shards_holder.write().await;
 
-            // Idempotent: if the same resharding is already in progress, this is a
-            // re-application of an already-applied consensus entry (e.g. after crash
-            // recovery). Skip without error so we don't silently diverge from peers
-            // that applied it successfully on the first attempt.
-            if let Some(state) = shard_holder.resharding_state()
-                && state.matches(&resharding_key)
-            {
-                log::warn!(
-                    "Resharding {resharding_key} is already in progress, skipping start (idempotent re-apply)",
-                );
-                return Ok(());
-            }
-
             shard_holder.check_start_resharding(&resharding_key)?;
 
-            // If scaling up, create a new replica set
-            let replica_set = if resharding_key.direction == ReshardingDirection::Up {
+            // If scaling up, create a new replica set.
+            //
+            // Idempotent: only create the replica set if one for this shard id
+            // does not exist yet. A replica set may already be present as a
+            // leftover from a previous partial apply (e.g. crash between shard
+            // directory creation and persisting resharding state) or from an
+            // earlier successful apply we are now replaying. Recreating it
+            // would wipe the existing shard contents.
+            let replica_set = if resharding_key.direction == ReshardingDirection::Up
+                && !shard_holder.contains_shard(resharding_key.shard_id)
+            {
                 let replica_set = self
                     .create_replica_set(
                         resharding_key.shard_id,
