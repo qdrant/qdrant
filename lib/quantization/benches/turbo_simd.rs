@@ -2,14 +2,18 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use quantization::turboquant::simd::{
-    Query4bitSimd, score_4bit_internal, score_4bit_internal_scalar,
+    Query4bitSimd, score_1bit_internal, score_1bit_internal_scalar, score_4bit_internal,
+    score_4bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::{
+    score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,
     score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use quantization::turboquant::simd::{score_4bit_internal_neon, score_4bit_internal_neon_sdot};
+use quantization::turboquant::simd::{
+    score_1bit_internal_neon, score_4bit_internal_neon, score_4bit_internal_neon_sdot,
+};
 use rand::prelude::StdRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
@@ -28,9 +32,7 @@ struct VectorPool {
 }
 
 impl VectorPool {
-    fn new(dim: usize, seed: u64) -> Self {
-        assert!(dim.is_multiple_of(2));
-        let packed_bytes = dim / 2;
+    fn with_packed_bytes(packed_bytes: usize, seed: u64) -> Self {
         let count = (POOL_BYTES / packed_bytes).max(1024);
         let mut rng = StdRng::seed_from_u64(seed);
         let buf: Vec<u8> = (0..count * packed_bytes)
@@ -43,6 +45,18 @@ impl VectorPool {
             indices,
             packed_bytes,
         }
+    }
+
+    /// 4-bit PQ pool: two codes per byte → `dim / 2` packed bytes per vector.
+    fn new_4bit(dim: usize, seed: u64) -> Self {
+        assert!(dim.is_multiple_of(2));
+        Self::with_packed_bytes(dim / 2, seed)
+    }
+
+    /// 1-bit PQ pool: 8 codes per byte → `dim / 8` packed bytes per vector.
+    fn new_1bit(dim: usize, seed: u64) -> Self {
+        assert!(dim.is_multiple_of(8));
+        Self::with_packed_bytes(dim / 8, seed)
     }
 
     #[inline]
@@ -62,7 +76,7 @@ fn bench_dotprod_cold(c: &mut Criterion) {
     for &dim in DIMS {
         let q = make_query(dim);
         let query = Query4bitSimd::new(&q);
-        let pool = VectorPool::new(dim, 7);
+        let pool = VectorPool::new_4bit(dim, 7);
 
         group.throughput(Throughput::Elements(dim as u64));
 
@@ -161,7 +175,7 @@ fn bench_dotprod_cold(c: &mut Criterion) {
 fn bench_score_cold(c: &mut Criterion) {
     let mut group = c.benchmark_group("query4bit_score_cold");
     for &dim in DIMS {
-        let pool = VectorPool::new(dim, 7);
+        let pool = VectorPool::new_4bit(dim, 7);
 
         group.throughput(Throughput::Elements(dim as u64));
 
@@ -256,5 +270,99 @@ fn bench_score_cold(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_dotprod_cold, bench_score_cold);
+/// Cold-cache benchmarks for [`score_1bit_internal`] — vector-vs-vector
+/// XOR+popcount scoring.  Both operands are drawn from different shuffled
+/// pool indices so each call pays two independent DRAM fetches.
+fn bench_score_1bit_cold(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query1bit_score_cold");
+    for &dim in DIMS {
+        let pool = VectorPool::new_1bit(dim, 7);
+
+        group.throughput(Throughput::Elements(dim as u64));
+
+        group.bench_with_input(BenchmarkId::new("scalar", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let va = pool.vector(cursor);
+                let vb = pool.vector(cursor + 1);
+                cursor = cursor.wrapping_add(2);
+                score_1bit_internal_scalar(black_box(va), black_box(vb))
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("dispatch", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let va = pool.vector(cursor);
+                let vb = pool.vector(cursor + 1);
+                cursor = cursor.wrapping_add(2);
+                score_1bit_internal(black_box(va), black_box(vb))
+            });
+        });
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            group.bench_with_input(BenchmarkId::new("neon", dim), &dim, |b, _| {
+                let mut cursor = 0usize;
+                b.iter(|| {
+                    let va = pool.vector(cursor);
+                    let vb = pool.vector(cursor + 1);
+                    cursor = cursor.wrapping_add(2);
+                    unsafe { score_1bit_internal_neon(black_box(va), black_box(vb)) }
+                });
+            });
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+                group.bench_with_input(BenchmarkId::new("sse", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let va = pool.vector(cursor);
+                        let vb = pool.vector(cursor + 1);
+                        cursor = cursor.wrapping_add(2);
+                        unsafe { score_1bit_internal_sse(black_box(va), black_box(vb)) }
+                    });
+                });
+            }
+
+            if std::is_x86_feature_detected!("avx2") {
+                group.bench_with_input(BenchmarkId::new("avx2", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let va = pool.vector(cursor);
+                        let vb = pool.vector(cursor + 1);
+                        cursor = cursor.wrapping_add(2);
+                        unsafe { score_1bit_internal_avx2(black_box(va), black_box(vb)) }
+                    });
+                });
+            }
+
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512vpopcntdq")
+            {
+                group.bench_with_input(BenchmarkId::new("avx512_vpopcntdq", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let va = pool.vector(cursor);
+                        let vb = pool.vector(cursor + 1);
+                        cursor = cursor.wrapping_add(2);
+                        unsafe {
+                            score_1bit_internal_avx512_vpopcntdq(black_box(va), black_box(vb))
+                        }
+                    });
+                });
+            }
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_dotprod_cold,
+    bench_score_cold,
+    bench_score_1bit_cold,
+);
 criterion_main!(benches);
