@@ -157,15 +157,15 @@ impl ShardHolder {
                 .await?;
         }
 
-        self.resharding_state.write(|state| {
-            debug_assert!(
-                state.is_none(),
-                "resharding is already in progress:\n{state:#?}",
-            );
-
-            *state = Some(ReshardState::new(
-                uuid, direction, peer_id, shard_id, shard_key,
-            ));
+        // Idempotent: if matching state is already persisted (replay after a
+        // successful apply), leave it alone. Only write if missing or stale.
+        self.resharding_state.write_optional(|state| {
+            let new_state =
+                ReshardState::new(uuid, direction, peer_id, shard_id, shard_key.clone());
+            match state {
+                Some(existing) if *existing == new_state => None,
+                _ => Some(Some(new_state)),
+            }
         })?;
 
         Ok(())
@@ -269,9 +269,11 @@ impl ShardHolder {
     }
 
     pub fn finish_resharding_unchecked(&mut self, _: &ReshardKey) -> CollectionResult<()> {
-        self.resharding_state.write(|state| {
-            debug_assert!(state.is_some(), "resharding is not in progress");
-            *state = None;
+        // Idempotent: if state is already cleared (replay after a successful
+        // finish/abort), leave it alone so we don't spuriously touch the file.
+        self.resharding_state.write_optional(|state| match state {
+            Some(_) => Some(None),
+            None => None,
         })?;
 
         Ok(())
@@ -464,15 +466,12 @@ impl ShardHolder {
             }
         }
 
-        self.resharding_state.write(|state| {
-            debug_assert!(
-                state
-                    .as_ref()
-                    .is_some_and(|state| state.matches(&resharding_key)),
-                "resharding {resharding_key} is not in progress:\n{state:#?}"
-            );
-
-            state.take();
+        // Idempotent: if state is already cleared, or holds a different
+        // resharding (already superseded), leave it alone. Only clear a state
+        // that matches the resharding_key we are aborting.
+        self.resharding_state.write_optional(|state| match state {
+            Some(state) if state.matches(&resharding_key) => Some(None),
+            _ => None,
         })?;
 
         Ok(())
