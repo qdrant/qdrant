@@ -97,6 +97,9 @@ class TestStorageCompatibility:
 
         return None
 
+    DENSE_DIM = 256
+    MULTI_DENSE_DIM = 128
+
     def _check_collections(self, host: str, port: int) -> tuple[bool, str]:
         """Check that all collections are loaded properly.
 
@@ -123,6 +126,147 @@ class TestStorageCompatibility:
                     return False, f"Collection {collection} returned status {collection_info['status']}"
             except Exception as error:
                 return False, f"Failed to get collection info for {collection}: {error}"
+
+        return True, ""
+
+    def _query_collections(self, host: str, port: int) -> tuple[bool, str]:
+        """Run queries against all collections to verify data is actually accessible.
+
+        Sends one query of each kind per collection: dense, sparse, and multivector
+        search, plus scroll with filters covering every payload index type.
+        """
+        base_url = f"http://{host}:{port}"
+
+        for collection in self.EXPECTED_COLLECTIONS:
+            try:
+                # Dense vector search
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/query",
+                    json={"query": [0.1] * self.DENSE_DIM, "using": "image", "limit": 3},
+                )
+                if not resp.ok:
+                    return False, f"Dense search failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Sparse vector search
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/query",
+                    json={
+                        "query": {"indices": [0, 10, 50], "values": [0.5, 0.3, 0.1]},
+                        "using": "text",
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Sparse search failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Multivector search
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/query",
+                    json={
+                        "query": [[0.1] * self.MULTI_DENSE_DIM, [0.2] * self.MULTI_DENSE_DIM],
+                        "using": "multi-image",
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Multivector search failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with keyword filter
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{"key": "keyword_field", "match": {"value": "hello"}}]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Keyword filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with float range filter
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{"key": "float_field", "range": {"gte": 0.0, "lte": 1.0}}]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Float filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with integer range filter
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{"key": "integer_field", "range": {"gte": 0, "lte": 50}}]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Integer filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with boolean filter
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{"key": "boolean_field", "match": {"value": True}}]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Boolean filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with geo bounding box filter
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{
+                            "key": "geo_field",
+                            "geo_bounding_box": {
+                                "top_left": {"lat": 1.0, "lon": 0.0},
+                                "bottom_right": {"lat": 0.0, "lon": 1.0},
+                            },
+                        }]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Geo filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with full-text match filter
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{"key": "text_field", "match": {"text": "hello"}}]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Text filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with uuid filter
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{"key": "uuid_field", "match": {"value": "00000000-0000-0000-0000-000000000000"}}]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"UUID filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with datetime range filter
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{"key": "datetime_field", "range": {"gte": "2020-01-01T00:00:00Z", "lte": "2030-01-01T00:00:00Z"}}]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Datetime filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+            except Exception as e:
+                return False, f"Query failed on {collection}: {e}"
 
         return True, ""
 
@@ -159,6 +303,10 @@ class TestStorageCompatibility:
             success, error_msg = self._check_collections(container_info.host, container_info.http_port)
             if not success:
                 return False, f"{test_name.capitalize()} compatibility failed for {version}: {error_msg}"
+
+            success, error_msg = self._query_collections(container_info.host, container_info.http_port)
+            if not success:
+                return False, f"{test_name.capitalize()} query verification failed for {version}: {error_msg}"
 
             return True, ""
         finally:
