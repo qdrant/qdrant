@@ -911,6 +911,109 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // check_start_resharding idempotency
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_start_check_idempotent_when_matching_resharding_active() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        // Set up ring and resharding state as they would look after a
+        // successful `start_resharding` had been applied on this peer.
+        holder
+            .rings
+            .get_mut(&None)
+            .unwrap()
+            .start_resharding(key.shard_id, key.direction);
+        holder
+            .resharding_state
+            .write(|state| {
+                *state = Some(ReshardState::new(
+                    key.uuid,
+                    key.direction,
+                    key.peer_id,
+                    key.shard_id,
+                    key.shard_key.clone(),
+                ));
+            })
+            .unwrap();
+
+        // Re-applying start for the same key must not fail. Otherwise the
+        // replay would be silently swallowed and the subsequent idempotent
+        // steps in `Collection::start_resharding` would be skipped — leaving
+        // half-applied state unreconciled on this peer.
+        let result = holder.check_start_resharding(&key);
+        assert!(
+            result.is_ok(),
+            "check_start_resharding must return Ok when the same resharding is already active (idempotent re-apply), got error: {result:?}",
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // finish_resharding_unchecked idempotency
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_finish_unchecked_idempotent_when_no_resharding_active() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        // Replay `finish` after the resharding state has already been cleared
+        // (partial apply between the state write and a subsequent step).
+        // The unchecked helper must not panic or error in this case.
+        let result = holder.finish_resharding_unchecked(&key);
+        assert!(
+            result.is_ok(),
+            "finish_resharding_unchecked must return Ok when no resharding state is present, got error: {result:?}",
+        );
+        assert!(
+            holder.resharding_state.read().is_none(),
+            "state must remain cleared after idempotent finish",
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // start_resharding_unchecked idempotency
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_start_unchecked_idempotent_when_matching_state_present() {
+        let (_dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+
+        let expected_state = ReshardState::new(
+            key.uuid,
+            key.direction,
+            key.peer_id,
+            key.shard_id,
+            key.shard_key.clone(),
+        );
+
+        // Pre-seed matching state to simulate a replay after a successful
+        // start had already persisted the resharding state.
+        holder
+            .resharding_state
+            .write(|state| {
+                *state = Some(expected_state.clone());
+            })
+            .unwrap();
+
+        // Re-apply. `new_shard = None` matches the caller's behavior when it
+        // has detected that the replica set already exists.
+        holder
+            .start_resharding_unchecked(key.clone(), None)
+            .await
+            .expect("start_resharding_unchecked must be idempotent on replay");
+
+        assert_eq!(
+            holder.resharding_state.read().clone(),
+            Some(expected_state),
+            "matching state must be preserved verbatim across a replay",
+        );
+    }
+
+    // ------------------------------------------------------------------
     // Divergence scenario: proves the bug end-to-end
     // ------------------------------------------------------------------
 
