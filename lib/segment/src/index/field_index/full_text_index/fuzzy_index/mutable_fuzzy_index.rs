@@ -96,7 +96,11 @@ impl FuzzyIndex for MutableFuzzyIndex {
 
             let dist = levenshtein(query, term) as u32;
             if dist <= max_edits && dist > 0 {
-                buckets[dist as usize].push(FuzzyCandidate::new(term.clone(), query.len(), dist));
+                buckets[dist as usize].push(FuzzyCandidate::new(
+                    term.clone(),
+                    query_char_len,
+                    dist,
+                ));
                 total += 1;
                 if total >= max {
                     break 'outer;
@@ -104,8 +108,10 @@ impl FuzzyIndex for MutableFuzzyIndex {
             }
         }
 
-        let mut results: Vec<FuzzyCandidate> = buckets.into_iter().flatten().collect();
-        results.truncate(max);
+        let mut results: Vec<FuzzyCandidate> = Vec::with_capacity(total + 1);
+        for bucket in buckets {
+            results.extend(bucket);
+        }
         results
     }
 }
