@@ -182,6 +182,124 @@ pub unsafe fn score_1bit_internal_avx512_vpopcntdq(a: &[u8], b: &[u8]) -> f32 {
     }
 }
 
+impl<const BITS: usize> super::Query1bitSimd<BITS> {
+    /// SSE4.1 + SSSE3 implementation of
+    /// [`super::Query1bitSimd::dotprod_raw`].
+    ///
+    /// Per block: load 16-byte data chunk, then for each of `BITS` planes
+    /// `pshufb`-nibble-lookup popcount of `AND` reduced via `psadbw` into
+    /// u64 pair; accumulate in `[__m128i; BITS]` regs (one per plane).
+    ///
+    /// # Safety
+    /// CPU must support `ssse3` and `sse4.1`.
+    #[target_feature(enable = "sse4.1,ssse3")]
+    pub unsafe fn dotprod_raw_sse(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let lookup = _mm_loadu_si128(NIBBLE_POPCNT.as_ptr().cast::<__m128i>());
+            let low_mask = _mm_set1_epi8(0x0F);
+            let zero = _mm_setzero_si128();
+            let num_blocks = vector.len() / super::BLOCK_BYTES;
+            let mut acc: [__m128i; BITS] = core::array::from_fn(|_| _mm_setzero_si128());
+
+            for block_idx in 0..num_blocks {
+                let data = _mm_loadu_si128(
+                    vector
+                        .as_ptr()
+                        .add(block_idx * super::BLOCK_BYTES)
+                        .cast::<__m128i>(),
+                );
+                let block_base = block_idx * BITS * super::BLOCK_BYTES;
+                for (b, acc_b) in acc.iter_mut().enumerate() {
+                    let plane = _mm_loadu_si128(
+                        self.planes
+                            .as_ptr()
+                            .add(block_base + b * super::BLOCK_BYTES)
+                            .cast::<__m128i>(),
+                    );
+                    let x = _mm_and_si128(data, plane);
+                    let lo = _mm_and_si128(x, low_mask);
+                    let hi = _mm_and_si128(_mm_srli_epi16(x, 4), low_mask);
+                    let cnt_lo = _mm_shuffle_epi8(lookup, lo);
+                    let cnt_hi = _mm_shuffle_epi8(lookup, hi);
+                    let cnt = _mm_add_epi8(cnt_lo, cnt_hi);
+                    *acc_b = _mm_add_epi64(*acc_b, _mm_sad_epu8(cnt, zero));
+                }
+            }
+
+            reduce_planes::<BITS>(&acc)
+        }
+    }
+
+    /// AVX-512 VPOPCNTDQ (on XMM via AVX-512VL) implementation of
+    /// [`super::Query1bitSimd::dotprod_raw`].
+    ///
+    /// Replaces the Muła nibble-lookup with hardware `_mm_popcnt_epi64`
+    /// (one instruction per block per plane).  Block stays at 16 bytes
+    /// since the interleave layout keeps plane chunks at 16-byte granularity.
+    ///
+    /// # Safety
+    /// CPU must support `avx512vl` and `avx512vpopcntdq` (and thus SSE2 for
+    /// the XMM load/store pairs).
+    #[target_feature(enable = "avx512vl,avx512vpopcntdq")]
+    pub unsafe fn dotprod_raw_avx512_vpopcntdq(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let num_blocks = vector.len() / super::BLOCK_BYTES;
+            let mut acc: [__m128i; BITS] = core::array::from_fn(|_| _mm_setzero_si128());
+
+            for block_idx in 0..num_blocks {
+                let data = _mm_loadu_si128(
+                    vector
+                        .as_ptr()
+                        .add(block_idx * super::BLOCK_BYTES)
+                        .cast::<__m128i>(),
+                );
+                let block_base = block_idx * BITS * super::BLOCK_BYTES;
+                for (b, acc_b) in acc.iter_mut().enumerate() {
+                    let plane = _mm_loadu_si128(
+                        self.planes
+                            .as_ptr()
+                            .add(block_base + b * super::BLOCK_BYTES)
+                            .cast::<__m128i>(),
+                    );
+                    let cnt = _mm_popcnt_epi64(_mm_and_si128(data, plane));
+                    *acc_b = _mm_add_epi64(*acc_b, cnt);
+                }
+            }
+
+            reduce_planes::<BITS>(&acc)
+        }
+    }
+}
+
+/// Reduce `[__m128i; BITS]` plane accumulators (each holding 2 × u64
+/// popcount lanes) into the weighted `v_dot_q` integer sum.
+///
+/// # Safety
+/// Caller must have enabled at least SSE2 (true of every caller here).
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn reduce_planes<const BITS: usize>(acc: &[core::arch::x86_64::__m128i; BITS]) -> i64 {
+    use core::arch::x86_64::*;
+
+    let mut v_dot_q: i64 = 0;
+    for (b, acc_b) in acc.iter().enumerate() {
+        let lo = _mm_cvtsi128_si64(*acc_b) as u64;
+        let hi = _mm_cvtsi128_si64(_mm_unpackhi_epi64(*acc_b, *acc_b)) as u64;
+        let popcnt = lo + hi;
+        let w_b: i64 = if b == BITS - 1 {
+            -(1i64 << (BITS - 1))
+        } else {
+            1i64 << b
+        };
+        v_dot_q += w_b * popcnt as i64;
+    }
+    v_dot_q
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng as _;
@@ -277,5 +395,71 @@ mod tests {
                 assert_eq!(scalar.to_bits(), avx512.to_bits(), "avx512 overflow at 16k");
             }
         }
+    }
+
+    /// Parity of `Query1bitSimd::dotprod_raw_{sse, avx512_vpopcntdq}` vs
+    /// the scalar kernel across several BITS values and dims.
+    #[test]
+    fn test_query_dotprod_x86_matches_scalar() {
+        use rand_distr::{Distribution, StandardNormal};
+
+        use super::super::Query1bitSimd;
+
+        fn check<const BITS: usize>(dim: usize, seed: u64) {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let query: Vec<f32> = (0..dim).map(|_| StandardNormal.sample(&mut rng)).collect();
+            let data = random_bytes(&mut rng, dim / 8);
+            let q = Query1bitSimd::<BITS>::new(&query);
+            let scalar = q.dotprod_raw(&data);
+
+            if std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1") {
+                let sse = unsafe { q.dotprod_raw_sse(&data) };
+                assert_eq!(scalar, sse, "BITS={BITS} dim={dim}: sse mismatch");
+            }
+            if std::is_x86_feature_detected!("avx512vl")
+                && std::is_x86_feature_detected!("avx512vpopcntdq")
+            {
+                let avx512 = unsafe { q.dotprod_raw_avx512_vpopcntdq(&data) };
+                assert_eq!(scalar, avx512, "BITS={BITS} dim={dim}: avx512 mismatch");
+            }
+        }
+
+        for &dim in &[128usize, 256, 384, 512, 1024, 2048] {
+            check::<8>(dim, 0xCAFE);
+            check::<10>(dim, 0xBEEF);
+            check::<12>(dim, 0xDEAD);
+        }
+    }
+
+    /// Overflow safety at dim=16K with max-magnitude query against all-1
+    /// data.  Each SIMD path (when available on the CPU) must match scalar
+    /// exactly; a mismatch would mean an intermediate `u32` per-plane
+    /// accumulator (or the u64 lane in the VPOPCNTDQ variant) saturated.
+    #[test]
+    fn test_query_dotprod_x86_overflow_safety_16k() {
+        use super::super::Query1bitSimd;
+
+        let dim = 16 * 1024;
+        let query = vec![1.0_f32; dim];
+        let data = vec![0xFFu8; dim / 8];
+
+        fn check<const BITS: usize>(query: &[f32], data: &[u8]) {
+            let q = Query1bitSimd::<BITS>::new(query);
+            let scalar = q.dotprod_raw(data);
+
+            if std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1") {
+                let sse = unsafe { q.dotprod_raw_sse(data) };
+                assert_eq!(scalar, sse, "BITS={BITS} sse overflow at 16k");
+            }
+            if std::is_x86_feature_detected!("avx512vl")
+                && std::is_x86_feature_detected!("avx512vpopcntdq")
+            {
+                let avx512 = unsafe { q.dotprod_raw_avx512_vpopcntdq(data) };
+                assert_eq!(scalar, avx512, "BITS={BITS} avx512 overflow at 16k");
+            }
+        }
+
+        check::<8>(&query, &data);
+        check::<16>(&query, &data);
     }
 }

@@ -1,9 +1,10 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use quantization::encoded_vectors_binary::BitsStoreType;
 use quantization::turboquant::simd::{
-    Query4bitSimd, score_1bit_internal, score_1bit_internal_scalar, score_4bit_internal,
-    score_4bit_internal_scalar,
+    Query1bitSimd, Query4bitSimd, score_1bit_internal, score_1bit_internal_scalar,
+    score_4bit_internal, score_4bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::{
@@ -359,10 +360,102 @@ fn bench_score_1bit_cold(c: &mut Criterion) {
     group.finish();
 }
 
+/// Query-against-data benchmarks: a single hot query is scored against cold
+/// 1-bit PQ data vectors.  Mirrors the HNSW scoring pattern.
+///
+/// Compares our `Query1bitSimd<{8,12,16}>` (signed bit-plane transpose +
+/// AND-popcount) against the existing BQ `Scalar8bits` path
+/// (`BitsStoreType::xor_popcnt_scalar` with `bits_count=8`) — BQ stays at
+/// 8 bits (its only supported scalar width) and serves as the baseline.
+/// 12/16 rows show the linear cost of widening the query.
+fn bench_query1bit_vs_bq_hot(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query1bit_vs_bq_scalar8bits");
+    let mut rng_seed = StdRng::seed_from_u64(42);
+    for &dim in DIMS {
+        let pool = VectorPool::new_1bit(dim, 7);
+        let query_floats: Vec<f32> = (0..dim)
+            .map(|_| rng_seed.random_range(-1.0_f32..1.0))
+            .collect();
+
+        let q_our_8 = Query1bitSimd::<8>::new(&query_floats);
+        let q_our_12 = Query1bitSimd::<12>::new(&query_floats);
+        let q_our_16 = Query1bitSimd::<16>::new(&query_floats);
+        let q_bq = encode_bq_scalar8bits(&query_floats);
+
+        group.throughput(Throughput::Elements(dim as u64));
+
+        group.bench_with_input(BenchmarkId::new("query1bit_8bit", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let v = pool.vector(cursor);
+                cursor = cursor.wrapping_add(1);
+                q_our_8.dotprod(black_box(v))
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("query1bit_12bit", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let v = pool.vector(cursor);
+                cursor = cursor.wrapping_add(1);
+                q_our_12.dotprod(black_box(v))
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("query1bit_16bit", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let v = pool.vector(cursor);
+                cursor = cursor.wrapping_add(1);
+                q_our_16.dotprod(black_box(v))
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("bq_scalar8bits", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let v = pool.vector(cursor);
+                cursor = cursor.wrapping_add(1);
+                <u8 as BitsStoreType>::xor_popcnt_scalar(black_box(v), black_box(&q_bq), 8)
+            });
+        });
+    }
+    group.finish();
+}
+
+/// Minimal reproduction of the BQ `Scalar8bits` encoding (u8 store,
+/// `bits_count = 8`): per group of 8 consecutive query dims, emit 8
+/// consecutive bytes — one per bit-plane — containing those 8 dims' bits.
+/// See `_encode_scalar_query_vector` in `encoded_vectors_binary.rs` for the
+/// canonical version.
+fn encode_bq_scalar8bits(query: &[f32]) -> Vec<u8> {
+    assert!(query.len().is_multiple_of(8));
+    let max_abs = query
+        .iter()
+        .map(|x| x.abs())
+        .fold(0.0_f32, f32::max)
+        .max(f32::EPSILON);
+    let min = -max_abs;
+    let delta = 2.0 * max_abs / 255.0;
+
+    let mut encoded = vec![0_u8; query.len()];
+    for (chunk_idx, chunk) in query.chunks(8).enumerate() {
+        for (shift, &value) in chunk.iter().enumerate() {
+            let q = ((value - min) / delta).round().clamp(0.0, 255.0) as usize;
+            for b in 0..8 {
+                let bit = ((q >> b) & 1) as u8;
+                encoded[8 * chunk_idx + b] |= bit << shift;
+            }
+        }
+    }
+    encoded
+}
+
 criterion_group!(
     benches,
     bench_dotprod_cold,
     bench_score_cold,
     bench_score_1bit_cold,
+    bench_query1bit_vs_bq_hot,
 );
 criterion_main!(benches);

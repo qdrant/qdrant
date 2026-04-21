@@ -45,6 +45,55 @@ pub unsafe fn score_1bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
     }
 }
 
+impl<const BITS: usize> super::Query1bitSimd<BITS> {
+    /// NEON implementation of [`super::Query1bitSimd::dotprod_raw`].
+    ///
+    /// Per block: one 16-byte data load + `BITS` plane loads; each plane's
+    /// `vandq_u8 · vcntq_u8` pair is pair-added through `vpaddlq_u8` /
+    /// `vpadalq_u16` into a dedicated `uint32x4_t` accumulator.  `BITS`
+    /// accumulators live in registers (≤ 16 of 32 vregs available), so the
+    /// inner loop is purely ALU.
+    ///
+    /// # Safety
+    /// CPU must support the `neon` feature (always true on aarch64).
+    #[target_feature(enable = "neon")]
+    pub unsafe fn dotprod_raw_neon(&self, vector: &[u8]) -> i64 {
+        use core::arch::aarch64::*;
+
+        unsafe {
+            let num_blocks = vector.len() / super::BLOCK_BYTES;
+            let mut acc: [uint32x4_t; BITS] = core::array::from_fn(|_| vdupq_n_u32(0));
+
+            for block_idx in 0..num_blocks {
+                let data = vld1q_u8(vector.as_ptr().add(block_idx * super::BLOCK_BYTES));
+                let block_base = block_idx * BITS * super::BLOCK_BYTES;
+                for (b, acc_b) in acc.iter_mut().enumerate() {
+                    let plane = vld1q_u8(
+                        self.planes
+                            .as_ptr()
+                            .add(block_base + b * super::BLOCK_BYTES),
+                    );
+                    let cnt = vcntq_u8(vandq_u8(data, plane));
+                    let cnt16 = vpaddlq_u8(cnt);
+                    *acc_b = vpadalq_u16(*acc_b, cnt16);
+                }
+            }
+
+            let mut v_dot_q: i64 = 0;
+            for (b, acc_b) in acc.iter().enumerate() {
+                let popcnt = u64::from(vaddvq_u32(*acc_b));
+                let w_b: i64 = if b == BITS - 1 {
+                    -(1i64 << (BITS - 1))
+                } else {
+                    1i64 << b
+                };
+                v_dot_q += w_b * popcnt as i64;
+            }
+            v_dot_q
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng as _;
@@ -92,5 +141,61 @@ mod tests {
         // sign_sum = −n_bits → score = −c² · n_bits.
         let expected = -super::super::CENTROID_SQ * (byte_len * 8) as f32;
         assert!((scalar - expected).abs() / expected.abs() < 1e-6);
+    }
+
+    /// Parity for `Query1bitSimd::dotprod_raw_neon` vs the scalar kernel,
+    /// at a few `BITS` values and dims.  Integer result must match bit-exactly.
+    #[test]
+    fn test_query_dotprod_neon_matches_scalar() {
+        use rand_distr::{Distribution, StandardNormal};
+
+        use super::super::Query1bitSimd;
+
+        fn check<const BITS: usize>(dim: usize, seed: u64) {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let query: Vec<f32> = (0..dim).map(|_| StandardNormal.sample(&mut rng)).collect();
+            let data = random_bytes(&mut rng, dim / 8);
+            let q = Query1bitSimd::<BITS>::new(&query);
+            let scalar = q.dotprod_raw(&data);
+            let neon = unsafe { q.dotprod_raw_neon(&data) };
+            assert_eq!(
+                scalar, neon,
+                "BITS={BITS} dim={dim}: scalar={scalar} neon={neon}"
+            );
+        }
+
+        for &dim in &[128usize, 256, 384, 512, 1024, 2048] {
+            check::<8>(dim, 0xCAFE);
+            check::<10>(dim, 0xBEEF);
+            check::<12>(dim, 0xDEAD);
+        }
+    }
+
+    /// Overflow safety for `dotprod_raw_neon` at dim=16K and max BITS
+    /// (quantization constants stressed to the extreme): all-1 data vs a
+    /// query scaled to saturate the signed range.  Scalar is u64-accumulator
+    /// reference; NEON u32 per-plane accumulators must match exactly.
+    #[test]
+    fn test_query_dotprod_neon_overflow_safety_16k() {
+        use super::super::Query1bitSimd;
+
+        let dim = 16 * 1024;
+        // Query = all +1.0 float → maps to +max signed int in every lane.
+        let query = vec![1.0_f32; dim];
+        let data = vec![0xFFu8; dim / 8];
+
+        let q8 = Query1bitSimd::<8>::new(&query);
+        assert_eq!(
+            q8.dotprod_raw(&data),
+            unsafe { q8.dotprod_raw_neon(&data) },
+            "BITS=8 dim={dim}",
+        );
+
+        let q16 = Query1bitSimd::<16>::new(&query);
+        assert_eq!(
+            q16.dotprod_raw(&data),
+            unsafe { q16.dotprod_raw_neon(&data) },
+            "BITS=16 dim={dim}",
+        );
     }
 }
