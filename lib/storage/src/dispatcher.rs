@@ -155,9 +155,14 @@ impl Dispatcher {
                 };
 
             let do_sync_nodes = match &op {
-                // Sync nodes after collection or shard key creation
+                // Sync nodes after collection or shard key creation, or after
+                // adding/removing a named vector — in all of these cases callers
+                // expect the updated collection config to be visible on every
+                // peer on return.
                 CollectionMetaOperations::CreateCollection(_)
-                | CollectionMetaOperations::CreateShardKey(_) => true,
+                | CollectionMetaOperations::CreateShardKey(_)
+                | CollectionMetaOperations::CreateNamedVector(_)
+                | CollectionMetaOperations::DeleteNamedVector(_) => true,
 
                 // Sync nodes when creating or renaming collection aliases
                 CollectionMetaOperations::ChangeAliases(changes) => {
@@ -178,8 +183,6 @@ impl Dispatcher {
                 | CollectionMetaOperations::DropShardKey(_)
                 | CollectionMetaOperations::CreatePayloadIndex(_)
                 | CollectionMetaOperations::DropPayloadIndex(_)
-                | CollectionMetaOperations::CreateNamedVector(_)
-                | CollectionMetaOperations::DeleteNamedVector(_)
                 | CollectionMetaOperations::Nop { .. } => false,
 
                 #[cfg(feature = "staging")]
