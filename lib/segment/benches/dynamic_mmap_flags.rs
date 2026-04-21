@@ -22,11 +22,16 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
     // Build dynamic mmap flags with random deletions
     let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
     dynamic_flags.set_len(FLAG_COUNT).unwrap();
-    random_flags
-        .iter()
-        .enumerate()
-        .filter(|(_, flag)| **flag)
-        .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true).unwrap()));
+    dynamic_flags
+        .set_ascending_bits(
+            random_flags
+                .iter()
+                .enumerate()
+                .filter(|(_, flag)| **flag)
+                .map(|(i, _)| (i, true)),
+        )
+        .unwrap();
+
     dynamic_flags.flusher()().unwrap();
     let real_count = random_flags.iter().filter(|&&flag| flag).count();
 

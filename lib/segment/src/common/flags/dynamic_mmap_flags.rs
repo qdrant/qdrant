@@ -48,8 +48,14 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
     Ok(open_write_mmap(&status_file, AdviceSetting::Global, false)?)
 }
 
+/// Mutable persisted bitslice. This uses no buffering for updates.
+///
+/// For buffered variants, check [`RoaringFlags`][1] or [`BitvecFlags`][2]
+///
+/// [1]: super::roaring_flags::RoaringFlags
+/// [2]: super::bitvec_flags::BitvecFlags
 pub struct DynamicMmapFlags {
-    /// Current mmap'ed BitSlice for flags
+    /// On-disk BitSlice for flags
     flags: StoredBitSlice<MmapFile>,
     status: MmapType<DynamicMmapStatus>,
     directory: PathBuf,
@@ -96,7 +102,7 @@ impl DynamicMmapFlags {
             status.flusher()()?;
         }
 
-        // Open first mmap
+        // Open storage
         let flags = Self::open_storage(status.len, directory, populate)?;
         Ok(Self {
             flags,
@@ -196,6 +202,10 @@ impl DynamicMmapFlags {
     /// Ignore the call if the index is out of bounds.
     ///
     /// Returns previous value of the flag.
+    #[cfg_attr(
+        not(test),
+        deprecated = "use `set_ascending_bits` for persisting in batch"
+    )]
     pub fn set<TKey>(&mut self, key: TKey, value: bool) -> OperationResult<bool>
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
@@ -206,6 +216,16 @@ impl DynamicMmapFlags {
             return Ok(false);
         }
         Ok(self.flags.replace_bit(key as u64, value)?)
+    }
+
+    pub fn set_ascending_bits<TKey>(
+        &mut self,
+        updates: impl IntoIterator<Item = (TKey, bool)>,
+    ) -> OperationResult<()>
+    where
+        TKey: num_traits::cast::AsPrimitive<u64>,
+    {
+        Ok(self.flags.set_ascending_bits_batch(updates)?)
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -222,7 +242,7 @@ impl DynamicMmapFlags {
 
     pub fn get_bitslice(&self) -> OperationResult<Cow<'_, BitSlice>> {
         // Take subslice with actual length, bitslice may be larger due to extra allocated capacity
-        // See `mmap_capacity_bytes`
+        // See `file_size_for`
         let len = self.len();
         Ok(match self.flags.read_all()? {
             Cow::Borrowed(bitslice) => Cow::Borrowed(&bitslice[..len]),
@@ -250,10 +270,8 @@ impl DynamicMmapFlags {
             Cow::Owned(bitvec) => {
                 // Owned path: backend doesn't support zero-copy; materialize into Vec
                 // so we don't return a reference to a local
-                let indices: Vec<PointOffsetType> = bitvec
-                    .iter_ones()
-                    .map(|x| x as PointOffsetType)
-                    .collect();
+                let indices: Vec<PointOffsetType> =
+                    bitvec.iter_ones().map(|x| x as PointOffsetType).collect();
                 Either::Right(indices.into_iter())
             }
         })

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 
 use super::dynamic_mmap_flags::DynamicMmapFlags;
@@ -93,9 +94,12 @@ impl BufferedDynamicFlags {
                 flags_guard.set_len(required_len)?;
             }
 
-            for (&index, &value) in &updates {
-                flags_guard.set(index as usize, value)?;
-            }
+            flags_guard.set_ascending_bits(
+                updates
+                    .iter()
+                    .map(|(index, value)| (*index, *value))
+                    .sorted_by_key(|(index, _value)| *index),
+            )?;
 
             flags_guard.flusher()()?;
 

@@ -189,17 +189,20 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
     /// written via a single `write_batch` call.
     ///
     /// Assumes the indices for the `updates` iterator increase monotonically
-    pub fn set_ascending_bits_batch(
+    pub fn set_ascending_bits_batch<TKey>(
         &mut self,
-        updates: impl IntoIterator<Item = (u64, bool)>,
-    ) -> Result<()> {
+        updates: impl IntoIterator<Item = (TKey, bool)>,
+    ) -> Result<()>
+    where
+        TKey: num_traits::cast::AsPrimitive<u64>,
+    {
         // Group updates into runs of consecutive elements. A new run starts
         // whenever the element index jumps by more than 1.
         let mut prev_element: Option<u64> = None;
         let mut run_start = 0u64;
 
         let runs = updates.into_iter().chunk_by(move |(bit_idx, _)| {
-            let element_idx = Self::element_idx(*bit_idx);
+            let element_idx = Self::element_idx(bit_idx.as_());
             if prev_element.is_none_or(|prev| element_idx > prev + 1) {
                 run_start = element_idx;
             }
@@ -212,7 +215,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         for (element_start, run_updates) in &runs {
             let run_updates: Vec<_> = run_updates.collect();
 
-            let last_element = Self::element_idx(run_updates.last().unwrap().0);
+            let last_element = Self::element_idx(run_updates.last().unwrap().0.as_());
             let num_elements = last_element - element_start + 1;
             if element_start + num_elements > self.element_len {
                 return Err(UniversalIoError::OutOfBounds {
@@ -233,7 +236,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
 
             for (bit_idx, value) in run_updates {
                 let bit_offset =
-                    bit_idx as usize - (element_start as usize * BITS_PER_ELEMENT as usize);
+                    bit_idx.as_() as usize - (element_start as usize * BITS_PER_ELEMENT as usize);
                 bitslice.set(bit_offset, value);
             }
 
@@ -545,7 +548,7 @@ mod tests {
 
         // Empty batch is a no-op
         storage
-            .set_ascending_bits_batch(std::iter::empty())
+            .set_ascending_bits_batch(std::iter::empty::<(usize, bool)>())
             .unwrap();
         assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 111));
     }
