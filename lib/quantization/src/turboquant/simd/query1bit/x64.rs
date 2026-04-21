@@ -85,9 +85,13 @@ pub unsafe fn score_1bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
 
 /// AVX2 implementation of [`super::score_1bit_internal`].
 ///
+/// Tail after the 32-byte bulk loop (up to 31 bytes) is routed through
+/// [`popcount_sse`] — at most 1 SSE chunk + scalar bytes, still cheaper
+/// than a 31-iteration scalar loop on short vectors.
+///
 /// # Safety
-/// CPU must support `avx2`.
-#[target_feature(enable = "avx2")]
+/// CPU must support `avx2`, `ssse3`, and `sse4.1`.
+#[target_feature(enable = "avx2,sse4.1,ssse3")]
 pub unsafe fn score_1bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
     use core::arch::x86_64::*;
 
@@ -133,9 +137,7 @@ pub unsafe fn score_1bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
         let mut popcnt = lo + hi;
 
         let tail_start = chunks * 32;
-        for i in tail_start..a.len() {
-            popcnt += u64::from((a[i] ^ b[i]).count_ones());
-        }
+        popcnt += popcount_sse(&a[tail_start..], &b[tail_start..]);
 
         super::popcount_to_score(a.len(), popcnt)
     }
