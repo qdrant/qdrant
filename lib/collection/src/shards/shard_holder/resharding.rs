@@ -273,10 +273,8 @@ impl ShardHolder {
     pub fn finish_resharding_unchecked(&mut self, _: &ReshardKey) -> CollectionResult<()> {
         // Idempotent: if state is already cleared (replay after a successful
         // finish/abort), leave it alone so we don't spuriously touch the file.
-        self.resharding_state.write_optional(|state| match state {
-            Some(_) => Some(None),
-            None => None,
-        })?;
+        self.resharding_state
+            .write_optional(|state| state.as_ref().map(|_| None))?;
 
         Ok(())
     }
