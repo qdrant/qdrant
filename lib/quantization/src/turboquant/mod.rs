@@ -33,19 +33,7 @@ pub enum TQBits {
 
 impl TQBits {
     #[inline]
-    pub fn get_centroids(&self) -> &'static [f32] {
-        let bit_size = self.bit_size();
-        lloyd_max::get_centroids(bit_size)
-    }
-
-    #[inline]
-    pub fn get_centroid_boundaries(&self) -> &'static [f32] {
-        let bit_size = self.bit_size();
-        lloyd_max::get_centroid_boundaries(bit_size)
-    }
-
-    #[inline]
-    pub fn bit_size(&self) -> u8 {
+    fn bit_size(&self) -> u8 {
         match self {
             TQBits::Bits4 => 4,
             TQBits::Bits2 => 2,

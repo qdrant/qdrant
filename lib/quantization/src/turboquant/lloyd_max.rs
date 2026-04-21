@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use crate::turboquant::TQBits;
+
 /// 1-bit (2 centroids): Lloyd-Max for N(0,1)
 const CENTROIDS_1BIT: [f32; 2] = [-0.797_884_6, 0.797_884_6];
 const CENTROIDS_1BIT_BOUNDARIES: [f32; 1] = calculate_boundaries(CENTROIDS_1BIT);
@@ -28,34 +30,30 @@ const fn calculate_boundaries<const N: usize, const B: usize>(centroids: [f32; N
     out
 }
 
-/// Return the centroid slice for a given bit-width (1–4).
-///
-/// # Panics
-/// Panics if `bits` is not in [1, 2, 4]
-#[inline]
-pub fn get_centroids(bits: u8) -> &'static [f32] {
-    match bits {
-        1 => &CENTROIDS_1BIT,
-        2 => &CENTROIDS_2BIT,
-        4 => &CENTROIDS_4BIT,
-        _ => unreachable!("unsupported bit-width: {bits}"),
+impl TQBits {
+    /// Return the centroid slice for a given bit-width.
+    #[inline]
+    pub fn get_centroids(&self) -> &'static [f32] {
+        match self {
+            TQBits::Bits1 => &CENTROIDS_1BIT,
+            TQBits::Bits1_5 => unimplemented!("1.5Bit not yet implemented"),
+            TQBits::Bits2 => &CENTROIDS_2BIT,
+            TQBits::Bits4 => &CENTROIDS_4BIT,
+        }
     }
-}
 
-/// Return the centroid decision boundaries for a given bit-width (1/2/4).
-///
-/// Boundaries are the midpoints between consecutive centroids; a value maps to
-/// centroid `i` if it falls between boundary `i-1` and boundary `i`.
-///
-/// # Panics
-/// Panics if `bits` is not in [1, 2, 4].
-#[inline]
-pub fn get_centroid_boundaries(bits: u8) -> &'static [f32] {
-    match bits {
-        1 => &CENTROIDS_1BIT_BOUNDARIES,
-        2 => &CENTROIDS_2BIT_BOUNDARIES,
-        4 => &CENTROIDS_4BIT_BOUNDARIES,
-        _ => unreachable!("unsupported bit-width: {bits}"),
+    /// Return the centroid decision boundaries for a given bit-width.
+    ///
+    /// Boundaries are the midpoints between consecutive centroids; a value maps to
+    /// centroid `i` if it falls between boundary `i-1` and boundary `i`.
+    #[inline]
+    pub fn get_centroid_boundaries(&self) -> &'static [f32] {
+        match self {
+            TQBits::Bits1 => &CENTROIDS_1BIT_BOUNDARIES,
+            TQBits::Bits1_5 => unimplemented!("1.5Bit not yet implemented"),
+            TQBits::Bits2 => &CENTROIDS_2BIT_BOUNDARIES,
+            TQBits::Bits4 => &CENTROIDS_4BIT_BOUNDARIES,
+        }
     }
 }
 
