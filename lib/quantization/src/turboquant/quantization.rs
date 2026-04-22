@@ -73,15 +73,8 @@ impl TurboQuantizer {
         let length = f64::from(extras.l2_length.unwrap_or(1.0));
         let scale = (self.rotation.dim() as f64).sqrt() / length;
 
-        // Picking the corresponding centroid indices.
-        let boundaries = self.bits.get_centroid_boundaries();
-        let encoded = buf.iter().map(|&val| {
-            let scaled = (val * scale) as f32;
-            boundaries.partition_point(|&b| scaled > b) as u8
-        });
-
         // Encode and return packed vector.
-        self.pack_vector(encoded, extras)
+        self.pack_vector(buf.iter().map(|&val| val * scale), extras)
     }
 
     /// Similarity score between two vectors that were both encoded with this
@@ -95,8 +88,8 @@ impl TurboQuantizer {
         let (extra_v2, iter2) = self.unpack_vector(v2);
         let raw_dot = dot_impl(iter1, iter2);
 
-        let v1_l2 = extra_v1.and_then(|extras| extras.l2_length).unwrap_or(1.0);
-        let v2_l2 = extra_v2.and_then(|extras| extras.l2_length).unwrap_or(1.0);
+        let v1_l2 = extra_v1.l2_length.unwrap_or(1.0);
+        let v2_l2 = extra_v2.l2_length.unwrap_or(1.0);
 
         // Both sides were scaled by sqrt(dim)/||v|| during quantize; restore
         // magnitudes with l2, undo the sqrt(dim)² = dim inflation.
@@ -118,9 +111,7 @@ impl TurboQuantizer {
         let (vector_extras, unpacked) = self.unpack_vector(vec);
         let dot = dot_impl(query.as_slice().iter().copied(), unpacked);
 
-        let l2 = vector_extras
-            .and_then(|extras| extras.l2_length)
-            .unwrap_or(1.0);
+        let l2 = vector_extras.l2_length.unwrap_or(1.0);
 
         // Only the stored vector carries the sqrt(dim)/||v|| scaling, so we
         // compensate by multiplying by ||v|| and dividing by sqrt(dim).
@@ -356,8 +347,9 @@ mod tests {
         }
     }
 
-    /// `unpack_vector` must recover the exact centroid values for every index
-    /// written by `pack_vector`, across a variety of dims and bit widths.
+    /// Feeding the centroid values yielded by `unpack_vector` back into
+    /// `pack_vector` must reproduce the same bytes — and decode to the same
+    /// values — across a variety of dims and bit widths.
     #[test]
     fn pack_unpack_vector_roundtrip() {
         use rand::prelude::StdRng;
@@ -372,16 +364,19 @@ mod tests {
             for &dim in &[1, 64, 127, 128, 300, 768, 1025] {
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let indices: Vec<u8> = (0..dim).map(|_| rng.random_range(0..n_centroids)).collect();
+                let values: Vec<f64> = indices
+                    .iter()
+                    .map(|&idx| f64::from(centroids[idx as usize]))
+                    .collect();
 
-                let packed = tq.pack_vector(indices.iter().copied(), TqVectorExtras::default());
+                let packed = tq.pack_vector(values.iter().copied(), TqVectorExtras::default());
 
                 let out: Vec<f64> = tq.unpack_vector(&packed).1.collect();
 
-                for (i, (&idx, &value)) in indices.iter().zip(out.iter()).enumerate() {
-                    let expected = f64::from(centroids[idx as usize]);
+                for (i, (&expected, &value)) in values.iter().zip(out.iter()).enumerate() {
                     assert_eq!(
                         value, expected,
-                        "dim={dim}, bits={bits:?}, i={i}: index {idx} \
+                        "dim={dim}, bits={bits:?}, i={i}: \
                          decoded to {value}, expected {expected}"
                     );
                 }
@@ -725,7 +720,7 @@ mod tests {
     }
 
     /// Edge cases for the pack/unpack roundtrip: uniform all-min and all-max
-    /// index patterns exercise the bit-packing boundaries.
+    /// centroid values exercise the bit-packing boundaries.
     #[test]
     fn pack_unpack_vector_uniform_indices() {
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
@@ -736,12 +731,12 @@ mod tests {
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
 
                 for &idx in &[0u8, max_idx] {
-                    let indices = vec![idx; dim];
-                    let packed = tq.pack_vector(indices.iter().copied(), TqVectorExtras::default());
+                    let expected = f64::from(centroids[idx as usize]);
+                    let values = vec![expected; dim];
+                    let packed = tq.pack_vector(values.iter().copied(), TqVectorExtras::default());
 
                     let out: Vec<f64> = tq.unpack_vector(&packed).1.collect();
 
-                    let expected = f64::from(centroids[idx as usize]);
                     for (i, &v) in out.iter().enumerate() {
                         assert_eq!(v, expected, "dim={dim}, bits={bits:?}, idx={idx}, i={i}");
                     }

@@ -770,8 +770,13 @@ impl QuantizedVectors {
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
-        let vector_parameters =
-            Self::construct_vector_parameters(distance, dim, count, storage_type);
+        let vector_parameters = Self::construct_vector_parameters(
+            quantization_config,
+            distance,
+            dim,
+            count,
+            storage_type,
+        );
 
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
@@ -813,24 +818,16 @@ impl QuantizedVectors {
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
                 turbo: turbo_config,
-            }) => {
-                let mut vector_parameters = vector_parameters;
-                // TODO(turbo): Remove this manual hack after releasing TQ. For more details see the TODO inside [`Self::construct_vector_parameters`]
-                if distance == Distance::Cosine {
-                    vector_parameters.distance_type = quantization::DistanceType::Cosine;
-                }
-
-                Self::create_turbo(
-                    vectors,
-                    &vector_parameters,
-                    count,
-                    turbo_config,
-                    storage_type,
-                    path,
-                    on_disk_vector_storage,
-                    stopped,
-                )?
-            }
+            }) => Self::create_turbo(
+                vectors,
+                &vector_parameters,
+                count,
+                turbo_config,
+                storage_type,
+                path,
+                on_disk_vector_storage,
+                stopped,
+            )?,
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -886,8 +883,13 @@ impl QuantizedVectors {
         let vectors_count = vector_storage.total_vector_count();
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
-        let vector_parameters =
-            Self::construct_vector_parameters(distance, dim, inner_vectors_count, storage_type);
+        let vector_parameters = Self::construct_vector_parameters(
+            quantization_config,
+            distance,
+            dim,
+            inner_vectors_count,
+            storage_type,
+        );
 
         let offsets = (0..vectors_count as PointOffsetType)
             .map(|idx| {
@@ -954,27 +956,19 @@ impl QuantizedVectors {
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
                 turbo: turbo_config,
-            }) => {
-                let mut vector_parameters = vector_parameters;
-                // TODO(turbo): Remove this manual hack after releasing TQ. For more details see the TODO inside [`Self::construct_vector_parameters`]
-                if distance == Distance::Cosine {
-                    vector_parameters.distance_type = quantization::DistanceType::Cosine;
-                }
-
-                Self::create_turbo_multi(
-                    vectors,
-                    offsets,
-                    &vector_parameters,
-                    vectors_count,
-                    inner_vectors_count,
-                    turbo_config,
-                    storage_type,
-                    multi_vector_config,
-                    path,
-                    on_disk_vector_storage,
-                    stopped,
-                )?
-            }
+            }) => Self::create_turbo_multi(
+                vectors,
+                offsets,
+                &vector_parameters,
+                vectors_count,
+                inner_vectors_count,
+                turbo_config,
+                storage_type,
+                multi_vector_config,
+                path,
+                on_disk_vector_storage,
+                stopped,
+            )?,
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -2317,6 +2311,7 @@ impl QuantizedVectors {
     }
 
     fn construct_vector_parameters(
+        quantization_config: &QuantizationConfig,
         distance: Distance,
         dim: usize,
         deprecated_count: usize,
@@ -2329,9 +2324,15 @@ impl QuantizedVectors {
                 QuantizedVectorsStorageType::Immutable => Some(deprecated_count),
             },
             distance_type: match distance {
-                // TODO(turbo): change this to 'cosine' after releasing TQ. We can't do that earlier because only TQ is allowed to use Cosine due to storage compatibility across versions.
-                Distance::Cosine => quantization::DistanceType::Dot,
-
+                Distance::Cosine => match quantization_config {
+                    // Because of backwards compatibility,
+                    // we have to use Dot product for scalar, pq and binary quantization when distance is Cosine.
+                    // Only TurboQuant has a difference between Cosine and Dot product.
+                    QuantizationConfig::Scalar(_) => quantization::DistanceType::Dot,
+                    QuantizationConfig::Product(_) => quantization::DistanceType::Dot,
+                    QuantizationConfig::Binary(_) => quantization::DistanceType::Dot,
+                    QuantizationConfig::Turbo(_) => quantization::DistanceType::Cosine,
+                },
                 Distance::Euclid => quantization::DistanceType::L2,
                 Distance::Dot => quantization::DistanceType::Dot,
                 Distance::Manhattan => quantization::DistanceType::L1,

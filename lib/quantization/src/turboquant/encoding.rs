@@ -31,17 +31,24 @@ impl TqVectorExtras {
 }
 
 impl TurboQuantizer {
-    /// Bit-pack an iterator of centroid indices into a compact byte vector.
-    pub(super) fn pack_vector<I>(&self, centroids: I, extras: TqVectorExtras) -> Vec<u8>
+    /// Bit-pack a sequence of rotated, Lloyd-Max-scaled values into a compact
+    /// byte vector. Each value is mapped to its nearest centroid index via the
+    /// bit-width's decision boundaries before packing.
+    ///
+    /// Symmetric inverse of [`Self::unpack_vector`]: feeding its yielded f64s
+    /// back through `pack_vector` reproduces the same byte layout.
+    pub(super) fn pack_vector<I>(&self, scaled: I, extras: TqVectorExtras) -> Vec<u8>
     where
-        I: Iterator<Item = u8>,
+        I: IntoIterator<Item = f64>,
     {
         let mut out = Vec::with_capacity(self.quantized_size());
         let mut bit_writer = BitWriter::new(&mut out);
 
+        let boundaries = self.bits.get_centroid_boundaries();
         let bits = self.bits.bit_size();
-        for item in centroids {
-            bit_writer.write(item, bits);
+        for val in scaled {
+            let idx = boundaries.partition_point(|&b| (val as f32) > b) as u8;
+            bit_writer.write(idx, bits);
         }
         bit_writer.finish();
         self.pack_extras_into(&extras, &mut out);
@@ -57,16 +64,12 @@ impl TurboQuantizer {
     ///
     /// Does not apply the inverse rotation — the iterator yields values in the
     /// rotated space.
-    pub fn unpack_vector<'a>(
-        &'a self,
-        vec: &'a [u8],
-    ) -> (Option<TqVectorExtras>, impl Iterator<Item = f64> + 'a) {
+    pub fn unpack_vector(&self, vec: &[u8]) -> (TqVectorExtras, impl Iterator<Item = f64>) {
         let extra_len = TqVectorExtras::size_for(self.bits, self.distance, self.mode);
 
-        let dim_part = &vec[..vec.len() - extra_len];
-        let extra_part = &vec[vec.len() - extra_len..];
+        let (dim_part, extra_part) = vec.split_at(vec.len() - extra_len);
 
-        let extras = (!extra_part.is_empty()).then(|| self.unpack_extras_from(extra_part));
+        let extras = self.unpack_extras_from(extra_part);
 
         let centroids = self.bits.get_centroids();
         let mut reader = BitReader::new(dim_part);
@@ -144,15 +147,22 @@ impl TurboQuantizer {
     ///
     /// This function requires `src` to have extra data encoded.
     fn unpack_extras_from(&self, src: &[u8]) -> TqVectorExtras {
-        debug_assert!(!src.is_empty());
+        debug_assert_eq!(
+            src.len(),
+            TqVectorExtras::size_for(self.bits, self.distance, self.mode),
+            "src must contain encoded extras data of the expected size"
+        );
 
         let mut extras = TqVectorExtras::default();
 
         // Additional l2 for dot vectors.
-        if matches!(self.distance, DistanceType::Dot) {
-            debug_assert_eq!(src.len(), size_of::<f32>());
-            let l2_bytes: [u8; 4] = src[..4].try_into().unwrap(); // TODO(turbo): maybe add error handling.
-            extras.l2_length = Some(f32::from_le_bytes(l2_bytes));
+        match self.distance {
+            DistanceType::Dot => {
+                let l2_bytes: [u8; 4] = src[..4].try_into().unwrap(); // TODO(turbo): maybe add error handling.
+                extras.l2_length = Some(f32::from_le_bytes(l2_bytes));
+            }
+            DistanceType::Cosine => {}
+            DistanceType::L1 | DistanceType::L2 => unreachable!(),
         }
 
         extras
