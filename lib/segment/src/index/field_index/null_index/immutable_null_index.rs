@@ -3,13 +3,15 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use delegate::delegate;
 
 use super::mutable_null_index::MutableNullIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex};
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+};
 use crate::index::payload_config::StorageType;
 use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::{FieldCondition, PayloadKeyType};
 
 pub struct ImmutableNullIndex(MutableNullIndex);
 
@@ -47,17 +49,45 @@ impl ImmutableNullIndex {
 
 impl ImmutableNullIndex {
     // N.B.: these operations are immutable.
-    delegate! {
-        to self.0 {
-            pub fn values_count(&self, point_id: PointOffsetType) -> usize;
-            pub fn values_is_empty(&self, id: PointOffsetType) -> bool;
-            pub fn values_is_null(&self, id: PointOffsetType) -> bool;
-            pub fn is_on_disk(&self) -> bool;
-            pub fn populate(&self) -> OperationResult<()>;
-            pub fn ram_usage_bytes(&self) -> usize;
-            pub fn clear_cache(&self) -> OperationResult<()>;
-            pub fn get_storage_type(&self) -> StorageType;
-        }
+
+    #[inline]
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        self.0.values_count(point_id)
+    }
+
+    #[inline]
+    pub fn values_is_empty(&self, id: PointOffsetType) -> bool {
+        self.0.values_is_empty(id)
+    }
+
+    #[inline]
+    pub fn values_is_null(&self, id: PointOffsetType) -> bool {
+        self.0.values_is_null(id)
+    }
+
+    #[inline]
+    pub fn is_on_disk(&self) -> bool {
+        self.0.is_on_disk()
+    }
+
+    #[inline]
+    pub fn populate(&self) -> OperationResult<()> {
+        self.0.populate()
+    }
+
+    #[inline]
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.0.ram_usage_bytes()
+    }
+
+    #[inline]
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.0.clear_cache()
+    }
+
+    #[inline]
+    pub fn get_storage_type(&self) -> StorageType {
+        self.0.get_storage_type()
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
@@ -74,27 +104,46 @@ impl ImmutableNullIndex {
 }
 
 impl PayloadFieldIndex for ImmutableNullIndex {
-    delegate! {
-        to self.0 {
-            fn count_indexed_points(&self) -> usize;
-            fn wipe(self) -> OperationResult<()>;
-            fn files(&self) -> Vec<PathBuf>;
-            fn filter<'a>(
-                    &'a self,
-                    condition: &'a crate::types::FieldCondition,
-                    hw_counter: &'a HardwareCounterCell,
-            ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
-            fn estimate_cardinality(
-                    &self,
-                    condition: &crate::types::FieldCondition,
-                    hw_counter: &HardwareCounterCell,
-            ) -> OperationResult<Option<crate::index::field_index::CardinalityEstimation>>;
-            fn payload_blocks(
-                    &self,
-                    threshold: usize,
-                    key: crate::types::PayloadKeyType,
-            ) -> Box<dyn Iterator<Item = OperationResult<crate::index::field_index::PayloadBlockCondition>> + '_>;
-        }
+    #[inline]
+    fn count_indexed_points(&self) -> usize {
+        self.0.count_indexed_points()
+    }
+
+    #[inline]
+    fn wipe(self) -> OperationResult<()> {
+        self.0.wipe()
+    }
+
+    #[inline]
+    fn files(&self) -> Vec<PathBuf> {
+        self.0.files()
+    }
+
+    #[inline]
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        self.0.filter(condition, hw_counter)
+    }
+
+    #[inline]
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        self.0.estimate_cardinality(condition, hw_counter)
+    }
+
+    #[inline]
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+        self.0.payload_blocks(threshold, key)
     }
 
     #[inline]
