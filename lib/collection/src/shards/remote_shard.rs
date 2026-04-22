@@ -923,6 +923,7 @@ impl RemoteShard {
         shard_id: ShardId,
         url: &Url,
         snapshot_priority: SnapshotPriority,
+        checksum: Option<String>,
         api_key: Option<&str>,
     ) -> CollectionResult<RecoverSnapshotResponse> {
         let res = self
@@ -938,7 +939,7 @@ impl RemoteShard {
                             snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
                                 snapshot_priority,
                             ) as i32,
-                            checksum: None,
+                            checksum,
                             api_key: api_key.map(Into::into),
                         })
                         .await
