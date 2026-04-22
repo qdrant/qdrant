@@ -85,6 +85,8 @@ impl LocalShard {
 
         self.optimizers.store(new_optimizers);
 
+        self.segments.write().optimizer_errors = None;
+
         self.update_sender.load().send(UpdateSignal::Nop).await?;
 
         Ok(())
@@ -151,6 +153,50 @@ mod tests {
         shard.on_optimizer_config_update().await.unwrap();
 
         assert!(!shard.update_handler.lock().await.prevent_unoptimized);
+
+        shard.stop_gracefully().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn optimizer_config_update_clears_optimizer_errors() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+        let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+        let config = create_collection_config();
+
+        let current_runtime: Handle = Handle::current();
+        let shard = LocalShard::build(
+            0,
+            "test".to_string(),
+            collection_dir.path(),
+            Arc::new(RwLock::new(config.clone())),
+            Arc::new(Default::default()),
+            payload_index_schema,
+            current_runtime.clone(),
+            current_runtime.clone(),
+            ResourceBudget::default(),
+            config.optimizer_config.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert!(shard.segments.read().optimizer_errors.is_none());
+
+        shard
+            .segments
+            .write()
+            .report_optimizer_error("test optimizer error");
+        assert!(shard.segments.read().optimizer_errors.is_some());
+
+        shard.on_optimizer_config_update().await.unwrap();
+
+        assert!(
+            shard.segments.read().optimizer_errors.is_none(),
+            "optimizer errors should be cleared after config update"
+        );
 
         shard.stop_gracefully().await;
     }
