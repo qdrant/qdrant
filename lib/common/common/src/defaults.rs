@@ -99,5 +99,5 @@ pub fn search_thread_count(max_search_threads: usize) -> usize {
     // so it should be safe to spawn more workers than CPUs.
     const CPU_OVERCOMMIT_FACTOR: usize = 4;
 
-    cpu::get_num_cpus() * CPU_OVERCOMMIT_FACTOR
+    cpu::get_num_cpus().max(1) * CPU_OVERCOMMIT_FACTOR
 }
