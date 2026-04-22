@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn test_remove_idempotent() {
         let dir = TempDir::with_prefix("test_immutable_null_index").unwrap();
-        let mut builder = ImmutableNullIndex::builder(dir.path()).unwrap();
+        let mut builder = ImmutableNullIndex::builder(dir.path(), 0).unwrap();
         let hw_counter = HardwareCounterCell::new();
 
         let null_value = Value::Null;
@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn test_remove_reopen() {
         let dir = TempDir::with_prefix("test_immutable_null_index").unwrap();
-        let mut builder = ImmutableNullIndex::builder(dir.path()).unwrap();
+        let mut builder = ImmutableNullIndex::builder(dir.path(), 0).unwrap();
         let hw_counter = HardwareCounterCell::new();
         builder.add_point(0, &[&json!(true)], &hw_counter).unwrap();
         builder.add_point(1, &[&json!(true)], &hw_counter).unwrap();
