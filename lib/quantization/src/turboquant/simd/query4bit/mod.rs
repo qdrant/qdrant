@@ -139,11 +139,12 @@ pub struct Query4bitSimd {
     /// (see the struct-level docs for the encoding scheme).
     query_data: Vec<[[i8; 16]; 2]>,
     /// Trailing dims that don't fill a 16-dim chunk — up to 14 (since
-    /// `dim % 2 == 0`).  Unused slots are zero so SIMD-adjacent code treating
-    /// them as a partial chunk would see neutral contributions; in practice
-    /// the tail is always walked by the scalar helper [`Self::dotprod_raw_tail`].
-    tail_low: [i8; 14],
-    tail_high: [i8; 14],
+    /// `dim % 2 == 0`).  Arrays are sized to a full 16-lane SIMD register
+    /// (zero-padded beyond `tail_dims`) so arch backends can feed them
+    /// straight into one extra `maddubs` / `vmull_s8` iteration on top of a
+    /// zero-padded data chunk, replacing the scalar 14-iteration loop.
+    tail_low: [i8; 16],
+    tail_high: [i8; 16],
     /// Number of meaningful entries in the tail arrays (`0..=14`, always even).
     tail_dims: u8,
     /// `1 / (q_scale · c_scale)` — prefactor from integer to float dot product.
@@ -208,8 +209,8 @@ impl Query4bitSimd {
             query_data.push([low, high]);
         }
 
-        let mut tail_low = [0_i8; 14];
-        let mut tail_high = [0_i8; 14];
+        let mut tail_low = [0_i8; 16];
+        let mut tail_high = [0_i8; 16];
         for i in 0..tail_dims {
             let (l, h, q) = encode(data[full_dims + i]);
             tail_low[i] = l;
@@ -285,9 +286,9 @@ impl Query4bitSimd {
     }
 
     /// Scalar contribution from the `tail_dims` trailing query entries.
-    /// Shared across every SIMD backend so arch-specific paths only need to
-    /// implement the full-chunk loop.  Bounds-checked slice indexing validates
-    /// that `vector.len() ≥ query_data.len() * 8 + tail_dims.div_ceil(2)`.
+    /// Used by the scalar [`Self::dotprod_raw`] reference.  SIMD backends
+    /// have their own tail helpers that feed one zero-padded chunk into the
+    /// same kernel used for full chunks.
     #[inline]
     pub(super) fn dotprod_raw_tail(&self, vector: &[u8]) -> i64 {
         if self.tail_dims == 0 {
@@ -304,6 +305,25 @@ impl Query4bitSimd {
             acc_high += i64::from(self.tail_high[i]) * c;
         }
         acc_low + QUERY_HIGH_COEF * acc_high
+    }
+
+    /// Prepare an 8-byte zero-padded scratch buffer with the packed tail data,
+    /// suitable for feeding into a single SSE / NEON chunk kernel.
+    /// Returns `None` when there is no tail.  The returned buffer has the
+    /// same nibble layout as any full chunk in `vector` — low nibble = even
+    /// lane, high nibble = odd lane.  Unused lanes are zero: with
+    /// `tail_low[tail_dims..] = tail_high[tail_dims..] = 0` they contribute
+    /// nothing to `maddubs` / `vmull` products.
+    #[inline]
+    pub(super) fn tail_chunk_scratch(&self, vector: &[u8]) -> Option<[u8; 8]> {
+        if self.tail_dims == 0 {
+            return None;
+        }
+        let tail_byte_start = self.query_data.len() * 8;
+        let tail_bytes = (self.tail_dims as usize).div_ceil(2);
+        let mut buf = [0u8; 8];
+        buf[..tail_bytes].copy_from_slice(&vector[tail_byte_start..tail_byte_start + tail_bytes]);
+        Some(buf)
     }
 }
 

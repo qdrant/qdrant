@@ -44,9 +44,32 @@ impl Query4bitSimd {
                 acc_high = vpadalq_s16(acc_high, prod_high_hi);
             }
 
-            let full =
-                i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high));
-            full + self.dotprod_raw_tail(vector)
+            // Tail: one extra chunk via NEON on a zero-padded 8-byte scratch.
+            // Data bytes beyond `tail_dims / 2` are zero, and `tail_low /
+            // tail_high` slots beyond `tail_dims` are zero — their products
+            // contribute `0` to the final sum.
+            if let Some(buf) = self.tail_chunk_scratch(vector) {
+                let v_packed = vld1_u8(buf.as_ptr());
+                let v_lo = vand_u8(v_packed, nibble_mask);
+                let v_hi = vshr_n_u8(v_packed, 4);
+                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
+                let c = vqtbl1q_s8(codebook, v);
+
+                let q_low = vld1q_s8(self.tail_low.as_ptr());
+                let q_high = vld1q_s8(self.tail_high.as_ptr());
+
+                let prod_low_lo = vmull_s8(vget_low_s8(q_low), vget_low_s8(c));
+                let prod_low_hi = vmull_high_s8(q_low, c);
+                let prod_high_lo = vmull_s8(vget_low_s8(q_high), vget_low_s8(c));
+                let prod_high_hi = vmull_high_s8(q_high, c);
+
+                acc_low = vpadalq_s16(acc_low, prod_low_lo);
+                acc_low = vpadalq_s16(acc_low, prod_low_hi);
+                acc_high = vpadalq_s16(acc_high, prod_high_lo);
+                acc_high = vpadalq_s16(acc_high, prod_high_hi);
+            }
+
+            i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high))
         }
     }
 
@@ -157,11 +180,35 @@ impl Query4bitSimd {
                 );
             }
 
+            // Tail: one extra chunk via single-SDOT on a zero-padded scratch.
+            if let Some(buf) = self.tail_chunk_scratch(vector) {
+                let v_packed = vld1_u8(buf.as_ptr());
+                let v_lo = vand_u8(v_packed, vdup_n_u8(0x0F));
+                let v_hi = vshr_n_u8(v_packed, 4);
+                let v = vcombine_u8(vzip1_u8(v_lo, v_hi), vzip2_u8(v_lo, v_hi));
+                let c = vqtbl1q_s8(codebook, v);
+                let q_low_t = vld1q_s8(self.tail_low.as_ptr());
+                let q_high_t = vld1q_s8(self.tail_high.as_ptr());
+
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_low_0,
+                    a = in(vreg) q_low_t,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+                core::arch::asm!(
+                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
+                    acc = inout(vreg) acc_high_0,
+                    a = in(vreg) q_high_t,
+                    b = in(vreg) c,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+            }
+
             let acc_low = vaddq_s32(acc_low_0, acc_low_1);
             let acc_high = vaddq_s32(acc_high_0, acc_high_1);
-            let full =
-                i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high));
-            full + self.dotprod_raw_tail(vector)
+            i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high))
         }
     }
 }
