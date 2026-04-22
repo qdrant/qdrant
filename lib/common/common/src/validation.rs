@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use serde::Serialize;
-use validator::{Validate, ValidationError, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 // Multivector should be small enough to fit the chunk of vector storage
 
@@ -11,15 +11,32 @@ pub const MAX_MULTIVECTOR_FLATTENED_LEN: usize = 32 * 1024;
 #[cfg(not(debug_assertions))]
 pub const MAX_MULTIVECTOR_FLATTENED_LEN: usize = 1024 * 1024;
 
-#[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
+/// Validate every item in an iterator and collect per-item errors under a
+/// placeholder `?` key. We can't use `ValidationErrors::merge` repeatedly with
+/// the same key — its internal `add_nested` panics on the second insert
+/// ("Attempt to replace non-empty ValidationErrors entry"). For N≥2 we use a
+/// `List` indexed by position; for N=1 we keep the historical `Struct` shape so
+/// existing renderings (`?.<field>`) are preserved.
 pub fn validate_iter<T: Validate>(iter: impl Iterator<Item = T>) -> Result<(), ValidationErrors> {
-    let errors = iter
-        .filter_map(|v| v.validate().err())
-        .fold(Err(ValidationErrors::new()), |bag, err| {
-            ValidationErrors::merge(bag, "?", Err(err))
-        })
-        .unwrap_err();
-    errors.errors().is_empty().then_some(()).ok_or(errors)
+    let mut child_errors: Vec<ValidationErrors> = iter.filter_map(|v| v.validate().err()).collect();
+    if child_errors.is_empty() {
+        return Ok(());
+    }
+
+    let kind = if child_errors.len() == 1 {
+        ValidationErrorsKind::Struct(Box::new(child_errors.pop().unwrap()))
+    } else {
+        ValidationErrorsKind::List(
+            child_errors
+                .into_iter()
+                .enumerate()
+                .map(|(i, e)| (i, Box::new(e)))
+                .collect(),
+        )
+    };
+    let mut bag = ValidationErrors::new();
+    bag.errors_mut().insert(Cow::Borrowed("?"), kind);
+    Err(bag)
 }
 
 /// Validate the value is in `[min, max]`
@@ -392,6 +409,41 @@ mod tests {
             validate_geo_polygon(&good_polygon).is_ok(),
             "good polygon should not error on validation",
         );
+    }
+
+    #[test]
+    fn test_validate_iter() {
+        #[derive(validator::Validate)]
+        struct Item {
+            #[validate(range(min = 1))]
+            idx: u32,
+        }
+
+        // Empty iter — Ok
+        assert!(validate_iter(std::iter::empty::<&Item>()).is_ok());
+
+        // All valid — Ok
+        let valid = [Item { idx: 1 }, Item { idx: 2 }];
+        assert!(validate_iter(valid.iter()).is_ok());
+
+        // Single failure — Struct under `?` (preserves historical `?.<field>`
+        // rendering for existing call sites).
+        let one_bad = [Item { idx: 0 }];
+        let err = validate_iter(one_bad.iter()).expect_err("should fail");
+        match err.errors().get("?") {
+            Some(ValidationErrorsKind::Struct(_)) => {}
+            other => panic!("expected Struct under `?`, got {other:?}"),
+        }
+
+        // Two+ failures — must NOT panic (regression: prior impl called
+        // `ValidationErrors::merge(_, "?", _)` repeatedly, and validator's
+        // internal `add_nested` panics on the second insert).
+        let many_bad = [Item { idx: 0 }, Item { idx: 0 }, Item { idx: 0 }];
+        let err = validate_iter(many_bad.iter()).expect_err("should fail");
+        match err.errors().get("?") {
+            Some(ValidationErrorsKind::List(list)) => assert_eq!(list.len(), 3),
+            other => panic!("expected List under `?`, got {other:?}"),
+        }
     }
 
     #[test]

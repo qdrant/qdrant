@@ -70,3 +70,56 @@ def test_validation_query_param(collection_name):
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]
     assert 'timeout: value 0 invalid' in response.json()["status"]["error"]
+
+
+# Regression: two sibling validation errors used to panic
+# `common::validation::validate_iter` (validator's internal `add_nested` panics
+# on a second insert under the same key), surfacing as a dropped connection
+# instead of a 4xx. Length-mismatched sparse vectors with non-empty indices
+# fail validation without short-circuiting `VectorStruct::is_empty`.
+
+_INVALID_SPARSE = {"indices": [0, 1], "values": [0.0]}
+
+
+def test_validation_iter_named_vectors(collection_name):
+    # Hits VectorStruct::Named -> validate_iter (lib/api/src/rest/schema.rs).
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {"a": _INVALID_SPARSE, "b": _INVALID_SPARSE},
+                }
+            ],
+        },
+    )
+    assert not response.ok
+    assert 'Validation error' in response.json()["status"]["error"]
+
+
+def test_validation_iter_batch_named_vectors(collection_name):
+    # Hits BatchVectorStruct::Named -> validate_iter (lib/api/src/rest/validate.rs).
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/batch',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "operations": [
+                {
+                    "upsert": {
+                        "batch": {
+                            "ids": [1, 2],
+                            "vectors": {"a": [_INVALID_SPARSE, _INVALID_SPARSE]},
+                        }
+                    }
+                }
+            ]
+        },
+    )
+    assert not response.ok
+    assert 'Validation error' in response.json()["status"]["error"]
