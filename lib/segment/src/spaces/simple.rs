@@ -275,4 +275,37 @@ mod tests {
             );
         }
     }
+
+    /// Cosine similarity of a vector with itself must be exactly 1.0 after postprocessing.
+    ///
+    /// Floating-point rounding during f32 normalization followed by a dot product can produce
+    /// values slightly above 1.0 (e.g. 1.0000001). `CosineMetric::postprocess` must clamp the
+    /// raw score to [-1.0, 1.0] so that callers always receive a valid cosine value.
+    #[test]
+    fn test_cosine_self_similarity_bounded() {
+        const DIM: usize = 128;
+        const ATTEMPTS: usize = 10_000;
+
+        let mut rng = rand::rng();
+
+        for attempt in 0..ATTEMPTS {
+            let vector: Vec<f32> = (0..DIM).map(|_| rng.random_range(0.0f32..1.0f32)).collect();
+
+            let preprocessed =
+                <CosineMetric as Metric<VectorElementType>>::preprocess(vector.clone());
+
+            let raw_score =
+                <CosineMetric as Metric<VectorElementType>>::similarity(&preprocessed, &preprocessed);
+            let score = CosineMetric::postprocess(raw_score);
+
+            assert!(
+                score <= 1.0,
+                "cosine score exceeds 1.0 on attempt {attempt}: raw={raw_score}, postprocessed={score}"
+            );
+            assert!(
+                score >= -1.0,
+                "cosine score is below -1.0 on attempt {attempt}: raw={raw_score}, postprocessed={score}"
+            );
+        }
+    }
 }
