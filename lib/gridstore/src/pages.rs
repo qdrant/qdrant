@@ -221,6 +221,13 @@ impl<S: UniversalRead<u8>> Pages<S> {
         P: AccessPattern,
         I: IntoIterator<Item = ValuePointer>,
     {
+        struct ReadMeta {
+            value_idx: usize,
+            buffer_offset: usize,
+            len_bytes: usize,
+            len_pages: usize,
+        }
+
         let reads = pointers
             .into_iter()
             .enumerate()
@@ -230,7 +237,12 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
                 Self::get_page_value_ranges(pointer, config).map(
                     move |(buffer_offset, page_idx, range)| {
-                        let meta = (value_idx, buffer_offset, len_bytes, len_pages);
+                        let meta = ReadMeta {
+                            value_idx,
+                            buffer_offset,
+                            len_bytes,
+                            len_pages,
+                        };
                         let page = &self.pages[page_idx as usize];
                         (meta, page, range)
                     },
@@ -242,7 +254,15 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
         let iter = iter::from_fn(move || {
             for result in chunks.by_ref() {
-                let ((value_idx, buffer_offset, len_bytes, len_pages), bytes) = match result {
+                let (
+                    ReadMeta {
+                        value_idx,
+                        buffer_offset,
+                        len_bytes,
+                        len_pages,
+                    },
+                    bytes,
+                ) = match result {
                     Ok(chunk) => chunk,
                     Err(err) => return Some(Err(err.into())),
                 };
