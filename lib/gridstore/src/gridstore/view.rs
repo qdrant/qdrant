@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::iter;
 use std::ops::ControlFlow;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -110,7 +111,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
 
     pub fn for_each_in_batch<P, F>(
         &self,
-        offsets: &[PointOffset],
+        point_offsets: &[PointOffset],
         mut callback: F,
         hw_counter: &HardwareCounterCell,
     ) -> Result<()>
@@ -118,12 +119,29 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         P: AccessPattern,
         F: FnMut(usize, V),
     {
-        let pointers = offsets.iter().map(|&offset| {
-            self.get_pointer(offset)
-                .expect("value pointer read")
-                .expect("value exists")
+        // Read value pointers for given point offsets, until there's read error or value pointer
+        // does not exist, extract any error from the iterator into `result` variable
+        let mut result = Ok(());
+        let mut point_offsets = point_offsets.iter();
+        let pointers = iter::from_fn(|| {
+            let Some(&point_offset) = point_offsets.next() else {
+                return None;
+            };
+
+            match self.get_pointer(point_offset) {
+                Ok(Some(ptr)) => Some(ptr),
+                Ok(None) => {
+                    result = Err(GridstoreError::ValueNotFound { point_offset });
+                    None
+                }
+                Err(err) => {
+                    result = Err(err);
+                    None
+                }
+            }
         });
 
+        // `read_batch_from_pages` iterator would stop, as soon as there's a value pointer error
         let values = self
             .pages
             .read_batch_from_pages::<P, _>(pointers, self.config)?;
@@ -139,7 +157,8 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
             callback(idx, value);
         }
 
-        Ok(())
+        // And we can propagate value pointer error to the caller
+        result
     }
 
     /// Iterate over all the values in the storage.

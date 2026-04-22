@@ -1,7 +1,7 @@
 use common::mmap;
 use common::universal_io::UniversalIoError;
 
-use crate::tracker::PageId;
+use crate::tracker::{PageId, PointOffset};
 
 #[derive(thiserror::Error, Debug)]
 pub enum GridstoreError {
@@ -21,6 +21,8 @@ pub enum GridstoreError {
     ValidationError { message: String },
     #[error("Page {page_id} not found")]
     PageNotFound { page_id: PageId },
+    #[error("value {point_offset} not found")]
+    ValueNotFound { point_offset: PointOffset },
 }
 
 impl GridstoreError {

@@ -273,6 +273,7 @@ impl From<GridstoreError> for OperationError {
                 Self::service_error(format!("Gridstore IO error: {err}"))
             }
             GridstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
+            GridstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
         }
     }
 }
