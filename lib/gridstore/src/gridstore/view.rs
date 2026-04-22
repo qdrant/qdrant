@@ -124,10 +124,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         let mut result = Ok(());
         let mut point_offsets = point_offsets.iter();
         let pointers = iter::from_fn(|| {
-            let Some(&point_offset) = point_offsets.next() else {
-                return None;
-            };
-
+            let &point_offset = point_offsets.next()?;
             match self.get_pointer(point_offset) {
                 Ok(Some(ptr)) => Some(ptr),
                 Ok(None) => {
