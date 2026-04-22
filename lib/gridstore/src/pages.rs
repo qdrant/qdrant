@@ -1,10 +1,9 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::iter;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
-use ahash::HashSet;
+use ahash::{AHashMap, HashSet};
 use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::universal_io::{
@@ -250,7 +249,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
             });
 
         let mut chunks = S::read_multi_iter::<P, _>(reads)?;
-        let mut values = HashMap::new();
+        let mut values = AHashMap::new();
 
         let iter = iter::from_fn(move || {
             for result in chunks.by_ref() {
