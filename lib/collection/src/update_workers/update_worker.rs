@@ -7,7 +7,7 @@ use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{oneshot, watch};
+use tokio::sync::{Mutex, oneshot, watch};
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
@@ -54,6 +54,8 @@ impl UpdateWorkers {
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
     ) -> Receiver<UpdateSignal> {
+        let pending_waits = Arc::new(Mutex::new(Vec::new()));
+
         let receiver = loop {
             let signal = tokio::select! {
                 biased; // biased to check cancellation first
@@ -167,28 +169,47 @@ impl UpdateWorkers {
                             let mut optimization_finished_receiver =
                                 optimization_finished_receiver.clone();
                             let cancel = cancel.clone();
-                            tokio::spawn(async move {
-                                let status = match Self::wait_for_deferred_points_ready(
-                                    &segments,
-                                    &optimize_sender,
-                                    &mut optimization_finished_receiver,
-                                    &cancel,
-                                    Some(&feedback),
-                                )
-                                .await
-                                {
-                                    Ok(()) => UpdateStatus::Completed,
-                                    Err(err) => {
-                                        log::warn!("Failed to await for deferred points: {err}");
-                                        UpdateStatus::WaitTimeout
+
+                            // Add feedback channel to list of waiters
+                            let wait_count = {
+                                let mut pending_waits = pending_waits.lock().await;
+                                pending_waits.push(feedback);
+                                pending_waits.len()
+                            };
+
+                            // If we added the first waiter, spawn the waiting task
+                            if wait_count == 1 {
+                                let pending_waits = pending_waits.clone();
+                                tokio::spawn(async move {
+                                    let status = match Self::wait_for_deferred_points_ready(
+                                        &segments,
+                                        &optimize_sender,
+                                        &mut optimization_finished_receiver,
+                                        &cancel,
+                                        pending_waits.clone(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(()) => UpdateStatus::Completed,
+                                        Err(err) => {
+                                            log::warn!(
+                                                "Failed to await for deferred points: {err}"
+                                            );
+                                            UpdateStatus::WaitTimeout
+                                        }
+                                    };
+
+                                    let finished_waits =
+                                        std::mem::take(&mut *pending_waits.lock().await);
+                                    for sender in finished_waits {
+                                        send_feedback(
+                                            Some(sender),
+                                            Ok(InternalUpdateResult { op_num, status }),
+                                            op_num,
+                                        );
                                     }
-                                };
-                                send_feedback(
-                                    Some(feedback),
-                                    Ok(InternalUpdateResult { op_num, status }),
-                                    op_num,
-                                );
-                            });
+                                });
+                            }
                         }
                         // No sender: nobody is waiting, skip the deferred wait entirely.
                     } else {
@@ -243,16 +264,22 @@ impl UpdateWorkers {
         optimize_sender: &Sender<OptimizerSignal>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
         cancel: &CancellationToken,
-        feedback_sender: Option<&oneshot::Sender<CollectionResult<InternalUpdateResult>>>,
+        pending_waiters: Arc<Mutex<Vec<oneshot::Sender<CollectionResult<InternalUpdateResult>>>>>,
     ) -> CollectionResult<()> {
         loop {
-            // If the caller dropped their receiver (e.g. client timeout),
+            // If all callers dropped their receivers (e.g. client timeout),
             // stop waiting since there is no one left to report to.
-            if feedback_sender.is_some_and(|s| s.is_closed()) {
-                log::debug!("wait_for_deferred_points_ready: caller no longer waiting");
-                return Err(CollectionError::cancelled(
-                    "Deferred points wait interrupted: caller timed out",
-                ));
+            // Only retain waiters now that still have an active connection
+            {
+                let mut pending_waiters = pending_waiters.lock().await;
+                pending_waiters.retain(|sender| !sender.is_closed());
+
+                if pending_waiters.is_empty() {
+                    log::debug!("wait_for_deferred_points_ready: caller no longer waiting");
+                    return Err(CollectionError::cancelled(
+                        "Deferred points wait interrupted: caller timed out",
+                    ));
+                }
             }
 
             let locked_segments = segments.clone();
