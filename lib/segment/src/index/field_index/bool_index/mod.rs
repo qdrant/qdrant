@@ -92,6 +92,7 @@ impl BoolIndex {
     pub fn ram_usage_bytes(&self) -> usize {
         match self {
             BoolIndex::Mmap(index) => index.ram_usage_bytes(),
+            BoolIndex::Immutable(index) => index.ram_usage_bytes(),
         }
     }
 
