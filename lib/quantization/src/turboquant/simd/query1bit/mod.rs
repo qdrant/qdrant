@@ -42,13 +42,18 @@ const BLOCK_BYTES: usize = 16;
 /// so no per-data-vector precomputation is needed.  The final float output
 /// is `(c / q_scale) · signed_dot`, folded into `postprocess_scale`.
 pub struct Query1bitSimd<const BITS: usize = 8> {
-    /// Block-interleaved bit-planes for full 128-dim blocks.
+    /// Block-interleaved bit-planes.  Length is `total_blocks · BITS · 16`
+    /// bytes, where `total_blocks = num_full_blocks + (tail_bytes > 0)`.
+    /// When a partial tail block is present it sits at the end, with bit-plane
+    /// bytes beyond `tail_bytes` zero-padded so `data AND plane = 0` for the
+    /// padding lanes.  Same SIMD kernel handles full and partial blocks once
+    /// the data side is zero-padded into a 16-byte stack buffer.
     planes: Vec<u8>,
-    /// Signed quantized query values for dims that didn't fill a full block
-    /// (`0..=120` entries, always a multiple of 8).  Each entry is the same
-    /// `q_signed` that would otherwise sit inside a plane — just kept in
-    /// scalar form because partial blocks don't play nicely with SIMD.
-    tail_q_signed: Vec<i16>,
+    /// Number of **full** 128-dim blocks (excludes the partial tail).
+    num_full_blocks: usize,
+    /// Bytes in the trailing partial block — `0` if dim is block-aligned,
+    /// `1..=15` otherwise (`tail_bytes · 8 = tail_dims`).
+    tail_bytes: u8,
     /// `c / q_scale` — single scalar reconstruction factor.
     postprocess_scale: f32,
     /// `Σ q_signed` over **all** dims (full blocks + tail).
@@ -56,9 +61,10 @@ pub struct Query1bitSimd<const BITS: usize = 8> {
 }
 
 impl<const BITS: usize> Query1bitSimd<BITS> {
-    /// Query dim must be a multiple of 8 (the 1-bit packing width: eight
-    /// codes per byte).  Matryoshka-friendly — any such dim is accepted,
-    /// with tails up to 120 dims handled scalar-wise in every SIMD path.
+    /// Query dim must be a multiple of 8 (the 1-bit packing width).
+    /// Matryoshka-friendly — any such dim is accepted, with a tail of up to
+    /// 15 packed bytes (120 dims) handled by the same SIMD kernel as full
+    /// blocks via a zero-padded 16-byte scratch buffer.
     pub fn new(data: &[f32]) -> Self {
         assert!(
             (2..=16).contains(&BITS),
@@ -70,7 +76,6 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
             data.len(),
         );
 
-        // Symmetric signed range [−(2^(BITS−1)−1), +2^(BITS−1)−1].
         let q_abs_max_int = (1i64 << (BITS - 1)) - 1;
         let q_abs_max = data
             .iter()
@@ -85,43 +90,52 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
         let encode =
             |value: f32| -> i64 { (value * q_scale).round().clamp(clamp_lo, clamp_hi) as i64 };
 
-        let num_blocks = data.len() / (8 * BLOCK_BYTES);
-        let full_dims = num_blocks * 8 * BLOCK_BYTES;
+        let num_full_blocks = data.len() / (8 * BLOCK_BYTES);
+        let full_dims = num_full_blocks * 8 * BLOCK_BYTES;
         let tail_dims = data.len() - full_dims;
         debug_assert!(tail_dims < 8 * BLOCK_BYTES && tail_dims.is_multiple_of(8));
+        let tail_bytes = tail_dims / 8;
+        let has_tail = tail_bytes > 0;
+        let total_blocks = num_full_blocks + usize::from(has_tail);
 
-        let mut planes = vec![0u8; num_blocks * BITS * BLOCK_BYTES];
+        let mut planes = vec![0u8; total_blocks * BITS * BLOCK_BYTES];
         let mut sum_q_signed: i64 = 0;
         let bits_mask = (1u64 << BITS) - 1;
 
-        for block_idx in 0..num_blocks {
+        // Helper to deposit a single dim's bits into the bit-plane layout.
+        let mut deposit = |q: i64, block_idx: usize, byte_in_block: usize, bit_in_byte: usize| {
+            let q_bits = (q as u64) & bits_mask;
             let block_base = block_idx * BITS * BLOCK_BYTES;
+            for b in 0..BITS {
+                let bit = ((q_bits >> b) & 1) as u8;
+                planes[block_base + b * BLOCK_BYTES + byte_in_block] |= bit << bit_in_byte;
+            }
+        };
+
+        for block_idx in 0..num_full_blocks {
             for byte_in_block in 0..BLOCK_BYTES {
                 for bit_in_byte in 0..8 {
                     let dim = block_idx * 8 * BLOCK_BYTES + byte_in_block * 8 + bit_in_byte;
                     let q = encode(data[dim]);
                     sum_q_signed += q;
-                    let q_bits = (q as u64) & bits_mask;
-                    for b in 0..BITS {
-                        let bit = ((q_bits >> b) & 1) as u8;
-                        planes[block_base + b * BLOCK_BYTES + byte_in_block] |= bit << bit_in_byte;
-                    }
+                    deposit(q, block_idx, byte_in_block, bit_in_byte);
                 }
             }
         }
 
-        // Tail: store one signed integer per dim.  BITS ≤ 16 guarantees
-        // `q ∈ [−32 767, +32 767]`, so `i16` is enough.
-        let mut tail_q_signed = Vec::with_capacity(tail_dims);
-        for i in 0..tail_dims {
-            let q = encode(data[full_dims + i]);
-            sum_q_signed += q;
-            tail_q_signed.push(q as i16);
+        // Partial tail block: same bit-plane encoding, padding bytes stay zero.
+        if has_tail {
+            for i in 0..tail_dims {
+                let q = encode(data[full_dims + i]);
+                sum_q_signed += q;
+                deposit(q, num_full_blocks, i / 8, i % 8);
+            }
         }
 
         Self {
             planes,
-            tail_q_signed,
+            num_full_blocks,
+            tail_bytes: tail_bytes as u8,
             postprocess_scale: CENTROID_ABS / q_scale,
             sum_q_signed,
         }
@@ -162,48 +176,65 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
     /// Reference implementation — SIMD variants in [`arm`] / [`x64`] must
     /// match this bit-exactly.
     pub fn dotprod_raw(&self, vector: &[u8]) -> i64 {
-        let num_blocks = self.planes.len() / (BITS * BLOCK_BYTES);
         let mut v_dot_q: i64 = 0;
-        for block_idx in 0..num_blocks {
+        for block_idx in 0..self.num_full_blocks {
             let data_block = &vector[block_idx * BLOCK_BYTES..(block_idx + 1) * BLOCK_BYTES];
-            let planes_block =
-                &self.planes[block_idx * BITS * BLOCK_BYTES..(block_idx + 1) * BITS * BLOCK_BYTES];
-            for b in 0..BITS {
-                let plane = &planes_block[b * BLOCK_BYTES..(b + 1) * BLOCK_BYTES];
-                let mut c: u32 = 0;
-                for i in 0..BLOCK_BYTES {
-                    c += (data_block[i] & plane[i]).count_ones();
-                }
-                let w_b: i64 = if b == BITS - 1 {
-                    -(1i64 << (BITS - 1))
-                } else {
-                    1i64 << b
-                };
-                v_dot_q += w_b * i64::from(c);
-            }
+            v_dot_q += self.score_block_scalar(data_block, block_idx);
         }
-        v_dot_q + self.dotprod_raw_tail(vector)
-    }
-
-    /// Scalar tail contribution: for each tail dim `i`, if the bit is set in
-    /// the packed data, add `tail_q_signed[i]`.  Shared across every SIMD
-    /// backend.
-    #[inline]
-    pub(super) fn dotprod_raw_tail(&self, vector: &[u8]) -> i64 {
-        if self.tail_q_signed.is_empty() {
-            return 0;
-        }
-        let num_blocks = self.planes.len() / (BITS * BLOCK_BYTES);
-        let tail_byte_start = num_blocks * BLOCK_BYTES;
-        let mut v_dot_q: i64 = 0;
-        for (i, &q) in self.tail_q_signed.iter().enumerate() {
-            let byte = vector[tail_byte_start + i / 8];
-            let bit = (byte >> (i % 8)) & 1;
-            if bit == 1 {
-                v_dot_q += i64::from(q);
-            }
+        if self.tail_bytes > 0 {
+            let mut buf = [0u8; BLOCK_BYTES];
+            let tail_start = self.num_full_blocks * BLOCK_BYTES;
+            let tail_len = self.tail_bytes as usize;
+            buf[..tail_len].copy_from_slice(&vector[tail_start..tail_start + tail_len]);
+            v_dot_q += self.score_block_scalar(&buf, self.num_full_blocks);
         }
         v_dot_q
+    }
+
+    /// Score a single 16-byte data block against the plane entries for
+    /// `block_idx`.  Scalar reference used by [`Self::dotprod_raw`] and by
+    /// the shared tail-copy helpers in arch modules.
+    #[inline]
+    fn score_block_scalar(&self, data_block: &[u8], block_idx: usize) -> i64 {
+        let plane_base = block_idx * BITS * BLOCK_BYTES;
+        let mut v_dot_q: i64 = 0;
+        for b in 0..BITS {
+            let plane = &self.planes[plane_base + b * BLOCK_BYTES..][..BLOCK_BYTES];
+            let mut c: u32 = 0;
+            for i in 0..BLOCK_BYTES {
+                c += (data_block[i] & plane[i]).count_ones();
+            }
+            let w_b: i64 = if b == BITS - 1 {
+                -(1i64 << (BITS - 1))
+            } else {
+                1i64 << b
+            };
+            v_dot_q += w_b * i64::from(c);
+        }
+        v_dot_q
+    }
+
+    /// Copy `tail_bytes` bytes from `vector`'s trailing partial block into a
+    /// zero-padded 16-byte scratch buffer.  Returns `None` if the query has
+    /// no tail; otherwise returns `Some((buf, block_idx))` — the block index
+    /// is where the SIMD backend should read plane bytes from.
+    #[inline]
+    pub(super) fn tail_block_scratch(&self, vector: &[u8]) -> Option<([u8; BLOCK_BYTES], usize)> {
+        if self.tail_bytes == 0 {
+            return None;
+        }
+        let mut buf = [0u8; BLOCK_BYTES];
+        let tail_start = self.num_full_blocks * BLOCK_BYTES;
+        let tail_len = self.tail_bytes as usize;
+        buf[..tail_len].copy_from_slice(&vector[tail_start..tail_start + tail_len]);
+        Some((buf, self.num_full_blocks))
+    }
+
+    /// Number of full 128-dim blocks the SIMD main-loop should iterate over.
+    /// Exposed to arch backends so they don't depend on the internal field name.
+    #[inline]
+    pub(super) fn num_full_blocks(&self) -> usize {
+        self.num_full_blocks
     }
 }
 

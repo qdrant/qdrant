@@ -61,14 +61,29 @@ impl<const BITS: usize> super::Query1bitSimd<BITS> {
         use core::arch::aarch64::*;
 
         unsafe {
-            // Number of full blocks is driven by the query (planes storage),
-            // so a vector with a tail beyond `num_blocks * BLOCK_BYTES` is
-            // handled by the scalar tail helper.
-            let num_blocks = self.planes.len() / (BITS * super::BLOCK_BYTES);
             let mut acc: [uint32x4_t; BITS] = core::array::from_fn(|_| vdupq_n_u32(0));
 
-            for block_idx in 0..num_blocks {
+            // Main loop: full 128-dim blocks read directly from `vector`.
+            for block_idx in 0..self.num_full_blocks() {
                 let data = vld1q_u8(vector.as_ptr().add(block_idx * super::BLOCK_BYTES));
+                let block_base = block_idx * BITS * super::BLOCK_BYTES;
+                for (b, acc_b) in acc.iter_mut().enumerate() {
+                    let plane = vld1q_u8(
+                        self.planes
+                            .as_ptr()
+                            .add(block_base + b * super::BLOCK_BYTES),
+                    );
+                    let cnt = vcntq_u8(vandq_u8(data, plane));
+                    let cnt16 = vpaddlq_u8(cnt);
+                    *acc_b = vpadalq_u16(*acc_b, cnt16);
+                }
+            }
+
+            // Partial tail block via zero-padded stack buffer — same SIMD
+            // kernel, data bytes beyond `tail_bytes` are zero so they can't
+            // contribute to any plane's AND-popcount.
+            if let Some((buf, block_idx)) = self.tail_block_scratch(vector) {
+                let data = vld1q_u8(buf.as_ptr());
                 let block_base = block_idx * BITS * super::BLOCK_BYTES;
                 for (b, acc_b) in acc.iter_mut().enumerate() {
                     let plane = vld1q_u8(
@@ -92,7 +107,7 @@ impl<const BITS: usize> super::Query1bitSimd<BITS> {
                 };
                 v_dot_q += w_b * popcnt as i64;
             }
-            v_dot_q + self.dotprod_raw_tail(vector)
+            v_dot_q
         }
     }
 }
