@@ -1,10 +1,15 @@
+import os
 import random
 import string
 
 import jwt
 from consensus_tests.utils import start_cluster
 
-PORT_SEED = 10000
+# Each pytest-xdist worker gets its own 100-port window so auth test files can
+# run in parallel on different workers without binding the same port.
+_worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+_worker_num = int(_worker_id[2:]) if _worker_id.startswith("gw") and _worker_id[2:].isdigit() else 0
+PORT_SEED = 10000 + _worker_num * 100
 REST_URI = f"http://127.0.0.1:{PORT_SEED + 2}"
 GRPC_URI = f"127.0.0.1:{PORT_SEED + 1}"
 

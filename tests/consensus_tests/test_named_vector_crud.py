@@ -223,6 +223,7 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
 
     # Kill the last peer
     killed_peer = processes.pop()
+    restart_port = killed_peer.p2p_port
     killed_peer.kill()
     print(f"Killed peer at port {killed_peer.http_port}")
 
@@ -283,7 +284,7 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
 
     # Restart the killed peer — it should recover via consensus snapshot
     new_url = start_peer(
-        peer_dirs[-1], "peer_restarted.log", bootstrap_uri, extra_env=env
+        peer_dirs[-1], "peer_restarted.log", bootstrap_uri, port=restart_port, extra_env=env
     )
     peer_api_uris[-1] = new_url
 

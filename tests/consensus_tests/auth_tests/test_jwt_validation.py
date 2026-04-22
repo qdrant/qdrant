@@ -2,8 +2,6 @@ import pytest
 import requests
 from consensus_tests import fixtures
 
-pytestmark = pytest.mark.xdist_group("auth")
-
 from .utils import API_KEY_HEADERS, READ_ONLY_API_KEY, REST_URI, SECRET, encode_jwt, ALT_SECRET
 
 COLL_NAME = "jwt_test_collection"

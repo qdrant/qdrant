@@ -8,8 +8,6 @@ import requests
 from consensus_tests import fixtures
 from consensus_tests.utils import kill_all_processes, wait_for
 
-pytestmark = pytest.mark.xdist_group("auth")
-
 from .utils import (
     API_KEY_HEADERS,
     READ_ONLY_API_KEY,

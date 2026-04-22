@@ -80,7 +80,6 @@ def test_snapshot_restore_kill_during_partial(tmp_path: Path, every_test):
     # Kill target peer
     recovery_url = peer_urls[2]
     recovery_dir = Path(peer_dirs[2])
-    recovery_port = processes[2].http_port
 
     monitor = PartialMonitor(recovery_url)
     monitor.start()
@@ -96,7 +95,7 @@ def test_snapshot_restore_kill_during_partial(tmp_path: Path, every_test):
         pytest.fail("Partial state not detected")
 
     # Restart again
-    restarted = start_peer(recovery_dir, "peer_restarted.log", bootstrap, port=recovery_port, extra_env=env)
+    restarted = start_peer(recovery_dir, "peer_restarted.log", bootstrap, extra_env=env)
 
     # This checks `/readyz` which is supposed to return 200, as there will be no automatic recovery
     wait_for_peer_online(restarted)

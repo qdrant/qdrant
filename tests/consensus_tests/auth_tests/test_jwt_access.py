@@ -11,8 +11,6 @@ from consensus_tests import fixtures
 from consensus_tests.utils import PROJECT_ROOT
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
-pytestmark = pytest.mark.xdist_group("auth")
-
 from .utils import (
     API_KEY_HEADERS,
     API_KEY_METADATA,

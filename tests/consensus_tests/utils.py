@@ -34,20 +34,16 @@ class PeerProcess:
     def kill(self):
         self.proc.kill()
         self.proc.wait()
-
-        # remove allocated ports from the dictionary
-        # so they can be used afterwards
-        del busy_ports[self.http_port]
-        del busy_ports[self.grpc_port]
-        del busy_ports[self.p2p_port]
+        busy_ports.pop(self.http_port, None)
+        busy_ports.pop(self.grpc_port, None)
+        busy_ports.pop(self.p2p_port, None)
 
     def interrupt(self):
         self.proc.send_signal(signal.SIGINT)
         self.proc.wait()
-
-        del busy_ports[self.http_port]
-        del busy_ports[self.grpc_port]
-        del busy_ports[self.p2p_port]
+        busy_ports.pop(self.http_port, None)
+        busy_ports.pop(self.grpc_port, None)
+        busy_ports.pop(self.p2p_port, None)
 
 
 def _occupy_port(port):
@@ -61,16 +57,22 @@ def kill_all_processes():
     print()
     while len(processes) > 0:
         p = processes.pop(0)
-        if is_coverage_mode():
-            print(f"Interrupting {p.pid}")
-            p.interrupt()
-        else:
-            print(f"Killing {p.pid}")
-            p.kill()
+        try:
+            if is_coverage_mode():
+                print(f"Interrupting {p.pid}")
+                p.interrupt()
+            else:
+                print(f"Killing {p.pid}")
+                p.kill()
+        except Exception as e:
+            print(f"Cleanup error for {p.pid}: {e}")
 
 
 @pytest.fixture(autouse=True)
 def every_test():
+    if processes:
+        print(f"WARN: {len(processes)} leaked peer processes from previous test, cleaning")
+        kill_all_processes()
     yield
     kill_all_processes()
 
@@ -122,10 +124,8 @@ def get_qdrant_exec() -> str:
     return str(qdrant_exec)
 
 def get_llvm_profile_file() -> str:
-    # %m: keep merging results from each test into the same file
-    # If you have multiple tests running in parallel, you can use -%p OR -%{thread_count}m to have different files
-    # Not using -%p since each test will generate a new file
-    llvm_profile_file = PROJECT_ROOT / "target" / "llvm-cov-target" / "qdrant-consensus-tests-%m.profraw"
+    # %p (per-PID) avoids %m's partial-merge corruption when peers are SIGKILLed under -n auto.
+    llvm_profile_file = PROJECT_ROOT / "target" / "llvm-cov-target" / "qdrant-consensus-tests-%p.profraw"
     return str(llvm_profile_file)
 
 

@@ -29,6 +29,8 @@ markers = [
     "longrunning: marks tests as long-running (deselect with '-m \"not longrunning\"')",
     "xdist_group: group tests to run on the same worker (for pytest-xdist)",
 ]
+# Surface hangs at 30 min with a traceback instead of the 60 min job kill.
+timeout = 1800
 addopts = """
     --dist=loadgroup
 """
