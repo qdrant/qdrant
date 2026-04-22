@@ -22,7 +22,14 @@ use rand::prelude::StdRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
 
-const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
+/// Two "nicely aligned" dims — `128` (single SIMD block) and `1536` (large,
+/// divisible by every chunk size we ship) — plus a per-bit-width "ugly" dim
+/// that hits the worst-case tail for that pipeline:
+///   • odd chunk count → SDOT / AVX2 / AVX-512 leftover branch fires.
+///   • `dim % chunk_dim` at its maximum → scalar tail helper does the most work.
+const DIMS_4BIT: &[usize] = &[128, 1534, 1536]; // 1534 = 95 chunks (odd) + 14-dim tail
+const DIMS_2BIT: &[usize] = &[128, 1532, 1536]; // 1532 = 95 chunks (odd) + 12-dim tail
+const DIMS_1BIT: &[usize] = &[128, 1528, 1536]; // 1528 = 11 blocks (odd) + 120-dim tail
 
 /// Pool size ≫ L2. Indices are shuffled so the hardware prefetcher can't stream
 /// vectors into cache — each iteration pays a real DRAM fetch.
@@ -83,7 +90,7 @@ fn make_query(dim: usize) -> Vec<f32> {
 
 fn bench_dotprod_cold(c: &mut Criterion) {
     let mut group = c.benchmark_group("query4bit_dotprod_cold");
-    for &dim in DIMS {
+    for &dim in DIMS_4BIT {
         let q = make_query(dim);
         let query = Query4bitSimd::new(&q);
         let pool = VectorPool::new_4bit(dim, 7);
@@ -184,7 +191,7 @@ fn bench_dotprod_cold(c: &mut Criterion) {
 /// PQ vector, not against a hot query.
 fn bench_score_cold(c: &mut Criterion) {
     let mut group = c.benchmark_group("query4bit_score_cold");
-    for &dim in DIMS {
+    for &dim in DIMS_4BIT {
         let pool = VectorPool::new_4bit(dim, 7);
 
         group.throughput(Throughput::Elements(dim as u64));
@@ -285,7 +292,7 @@ fn bench_score_cold(c: &mut Criterion) {
 /// pool indices so each call pays two independent DRAM fetches.
 fn bench_score_1bit_cold(c: &mut Criterion) {
     let mut group = c.benchmark_group("query1bit_score_cold");
-    for &dim in DIMS {
+    for &dim in DIMS_1BIT {
         let pool = VectorPool::new_1bit(dim, 7);
 
         group.throughput(Throughput::Elements(dim as u64));
@@ -380,7 +387,7 @@ fn bench_score_1bit_cold(c: &mut Criterion) {
 fn bench_query1bit_vs_bq_hot(c: &mut Criterion) {
     let mut group = c.benchmark_group("query1bit_vs_bq_scalar8bits");
     let mut rng_seed = StdRng::seed_from_u64(42);
-    for &dim in DIMS {
+    for &dim in DIMS_1BIT {
         let pool = VectorPool::new_1bit(dim, 7);
         let query_floats: Vec<f32> = (0..dim)
             .map(|_| rng_seed.random_range(-1.0_f32..1.0))
@@ -465,7 +472,7 @@ fn encode_bq_scalar8bits(query: &[f32]) -> Vec<u8> {
 /// data vectors drawn from a shuffled 64 MB pool.
 fn bench_dotprod_2bit_cold(c: &mut Criterion) {
     let mut group = c.benchmark_group("query2bit_dotprod_cold");
-    for &dim in DIMS {
+    for &dim in DIMS_2BIT {
         let q = make_query(dim);
         let query = Query2bitSimd::new(&q);
         let pool = VectorPool::new_2bit(dim, 7);
@@ -557,7 +564,7 @@ fn bench_dotprod_2bit_cold(c: &mut Criterion) {
 /// [`bench_score_cold`] for 4-bit.
 fn bench_score_2bit_cold(c: &mut Criterion) {
     let mut group = c.benchmark_group("query2bit_score_cold");
-    for &dim in DIMS {
+    for &dim in DIMS_2BIT {
         let pool = VectorPool::new_2bit(dim, 7);
 
         group.throughput(Throughput::Elements(dim as u64));
