@@ -118,7 +118,7 @@ impl MetadataInt8 {
         // this a^2 is returned here
         // L2 is handled the same way as Dot here
         let shift = match self.vector_parameters.distance_type {
-            DistanceType::Dot | DistanceType::L2 => {
+            DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => {
                 self.actual_dim as f32 * self.offset * self.offset
             }
             DistanceType::L1 => 0.0,
@@ -156,7 +156,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 alpha: 0.0,
                 offset: 0.0,
                 multiplier: 0.0,
-                vector_parameters: vector_parameters.clone(),
+                vector_parameters: *vector_parameters,
             });
             if let Some(meta_path) = meta_path {
                 meta_path
@@ -207,7 +207,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         let multiplier = match vector_parameters.distance_type {
             // (alpha*x - offset) * (alpha*y - offset) = alpha^2*x*y - alpha*offset*x - alpha*offset*y + offset^2
             // multiplier is applied to xy term only, so we need to multiply score by alpha^2
-            DistanceType::Dot => alpha * alpha,
+            DistanceType::Dot | DistanceType::Cosine => alpha * alpha,
             // |(alpha*x - offset) - (alpha*y - offset)| = alpha*|x - y|
             // multiplier is applied to |x - y| term only, so we need to multiply score by alpha
             DistanceType::L1 => alpha,
@@ -243,7 +243,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             if !vector_parameters.dim.is_multiple_of(ALIGNMENT) {
                 for _ in 0..(ALIGNMENT - vector_parameters.dim % ALIGNMENT) {
                     let placeholder = match vector_parameters.distance_type {
-                        DistanceType::Dot => 0.0,
+                        DistanceType::Dot | DistanceType::Cosine => 0.0,
                         DistanceType::L1 | DistanceType::L2 => offset,
                     };
                     let encoded = metadata.encode_value(placeholder);
@@ -251,7 +251,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 }
             }
             let vector_offset = match vector_parameters.distance_type {
-                DistanceType::Dot => {
+                DistanceType::Dot | DistanceType::Cosine => {
                     let elements_sum = encoded_vector.iter().map(|&x| f32::from(x)).sum::<f32>();
                     elements_sum * alpha * offset
                 }
@@ -330,7 +330,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let q_ptr = query.encoded_query.as_ptr();
 
                 let score = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => {
                         impl_score_dot(q_ptr, v_ptr, metadata.actual_dim)
                     }
                     DistanceType::L1 => impl_score_l1(q_ptr, v_ptr, metadata.actual_dim),
@@ -348,7 +348,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let (query_offset, q_ptr) = self.get_vec_ptr(i);
                 let (vector_offset, v_ptr) = self.get_vec_ptr(j);
                 let score = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => {
                         impl_score_dot(q_ptr, v_ptr, metadata.actual_dim)
                     }
                     DistanceType::L1 => impl_score_l1(q_ptr, v_ptr, metadata.actual_dim),
@@ -367,7 +367,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let q_ptr = query.encoded_query.as_ptr();
 
                 let score = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => unsafe {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
                         impl_score_dot_neon(q_ptr, v_ptr, metadata.actual_dim as u32)
                     },
                     DistanceType::L1 => unsafe {
@@ -388,7 +388,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let (vector_offset, v_ptr) = self.get_vec_ptr(j);
 
                 let score = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => unsafe {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
                         impl_score_dot_neon(q_ptr, v_ptr, metadata.actual_dim as u32)
                     },
                     DistanceType::L1 => unsafe {
@@ -409,7 +409,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let q_ptr = query.encoded_query.as_ptr();
 
                 let score = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => unsafe {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
                         impl_score_dot_sse(q_ptr, v_ptr, metadata.actual_dim as u32)
                     },
                     DistanceType::L1 => unsafe {
@@ -430,7 +430,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let (vector_offset, v_ptr) = self.get_vec_ptr(j);
 
                 let score = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => unsafe {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
                         impl_score_dot_sse(q_ptr, v_ptr, metadata.actual_dim as u32)
                     },
                     DistanceType::L1 => unsafe {
@@ -451,7 +451,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let q_ptr = query.encoded_query.as_ptr();
 
                 let score = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => unsafe {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
                         impl_score_dot_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
                     },
                     DistanceType::L1 => unsafe {
@@ -472,7 +472,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let (vector_offset, v_ptr) = self.get_vec_ptr(j);
 
                 let score = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => unsafe {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
                         impl_score_dot_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
                     },
                     DistanceType::L1 => unsafe {
@@ -556,7 +556,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         if !dim.is_multiple_of(ALIGNMENT) {
             for _ in 0..(ALIGNMENT - dim % ALIGNMENT) {
                 let placeholder = match metadata.vector_parameters.distance_type {
-                    DistanceType::Dot => 0.0,
+                    DistanceType::Dot | DistanceType::Cosine => 0.0,
                     DistanceType::L1 | DistanceType::L2 => metadata.offset,
                 };
                 let encoded = metadata.encode_value(placeholder);
@@ -564,7 +564,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             }
         }
         let offset = match metadata.vector_parameters.distance_type {
-            DistanceType::Dot => {
+            DistanceType::Dot | DistanceType::Cosine => {
                 let query_elements_sum = query.iter().map(|&x| f32::from(x)).sum::<f32>();
                 query_elements_sum * metadata.alpha * metadata.offset
             }

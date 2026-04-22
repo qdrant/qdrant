@@ -10,12 +10,13 @@ use crate::EncodingError;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DistanceType {
+    Cosine,
     Dot,
     L1,
     L2,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct VectorParameters {
     pub dim: usize,
     pub distance_type: DistanceType,
@@ -90,7 +91,7 @@ pub trait EncodedVectors: Sized {
 impl DistanceType {
     pub fn distance(&self, a: &[f32], b: &[f32]) -> f32 {
         match self {
-            DistanceType::Dot => a.iter().zip(b).map(|(a, b)| a * b).sum(),
+            DistanceType::Dot | DistanceType::Cosine => a.iter().zip(b).map(|(a, b)| a * b).sum(),
             DistanceType::L1 => a.iter().zip(b).map(|(a, b)| (a - b).abs()).sum(),
             DistanceType::L2 => a.iter().zip(b).map(|(a, b)| (a - b) * (a - b)).sum(),
         }

@@ -107,7 +107,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         let metadata = Metadata {
             centroids,
             vector_division,
-            vector_parameters: vector_parameters.clone(),
+            vector_parameters: *vector_parameters,
         };
         if let Some(meta_path) = meta_path {
             meta_path

@@ -8,11 +8,14 @@ pub struct TurboQuantizer {
     pub(super) bits: TQBits,
     pub(super) mode: TQMode,
     pub(super) distance: DistanceType,
+
+    // Pre-calculated `sqrt(dim)` used in scoring.
+    dim_sqrt: f32,
 }
 
 /// A query with the Hadamard rotation already applied. Built via
 /// [`TurboQuantizer::precompute_query`] and consumed by
-/// [`TurboQuantizer::dot_precomputed`] to amortize the rotation cost across
+/// [`TurboQuantizer::score_precomputed`] to amortize the rotation cost across
 /// many scoring calls.
 pub struct Precomputed(Vec<f64>);
 
@@ -28,11 +31,13 @@ impl TurboQuantizer {
     /// Initialize a new TurboQuantizer.
     pub fn new(dim: usize, bits: TQBits, mode: TQMode, distance: DistanceType) -> Self {
         let rotation = HadamardRotation::new(dim);
+        let dim_sqrt = (dim as f32).sqrt();
         TurboQuantizer {
             rotation,
             bits,
             mode,
             distance,
+            dim_sqrt,
         }
     }
 
@@ -48,82 +53,89 @@ impl TurboQuantizer {
 
     /// Quantize a given vector with TurboQuant.
     pub fn quantize(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
-        if !matches!(self.distance, DistanceType::Dot) {
-            // TODO(turbo): implement for other metrics too.
-            unimplemented!("Quantization currently only implemented for dot product");
-        }
+        Self::assert_supported_distance(self.distance);
 
         debug_assert_eq!(vec.len(), buf.len());
 
-        // Rotate the vector
+        // Convert to f64
         for (i, &component) in vec.iter().enumerate() {
             buf[i] = f64::from(component);
         }
+
+        // Rotate the vector.
         self.rotation.apply(buf);
 
         // Calculate data that needs to be stored additionally.
         let extras = self.calculate_extras(buf);
 
-        // Find rotated vectors centroids.
-        let boundaries = self.bits.get_centroid_boundaries();
-        let encoded = buf
-            .iter()
-            .map(|&val| boundaries.partition_point(|&b| val > f64::from(b)) as u8);
+        // Rescale so per-coordinate variance is ~1 — matching the Lloyd-Max
+        // N(0, 1) centroid grid.
+        let length = f64::from(extras.l2_length.unwrap_or(1.0));
+        let scale = (self.rotation.dim() as f64).sqrt() / length;
 
-        // Encode centroid indices and return packed vector.
+        // Picking the corresponding centroid indices.
+        let boundaries = self.bits.get_centroid_boundaries();
+        let encoded = buf.iter().map(|&val| {
+            let scaled = (val * scale) as f32;
+            boundaries.partition_point(|&b| scaled > b) as u8
+        });
+
+        // Encode and return packed vector.
         self.pack_vector(encoded, extras)
     }
 
-    /// Dot product between two vectors that were both encoded with this
-    /// quantizer.
+    /// Similarity score between two vectors that were both encoded with this
+    /// quantizer. Returns an approximate `<v1, v2>` for Dot and `cos(θ)` for
+    /// Cosine.
     ///
-    /// Unpacks each vector into rotated space and dots the results. The
-    /// Hadamard rotation is orthogonal, so `<Rv1, Rv2> = <v1, v2>` — no
-    /// inverse rotation is needed, and neither side plays the query role.
-    pub fn dot_symmetric(&self, v1: &[u8], v2: &[u8]) -> f32 {
-        // TODO(turbo): apply metadata from extra values.
-        let (_extra_v1, iter1) = self.unpack_vector(v1);
-        let (_extra_v2, iter2) = self.unpack_vector(v2);
-        iter1.zip(iter2).map(|(a, b)| a * b).sum::<f64>() as f32
-    }
+    /// For asymmetric scoring (original vector against quantized vector), refer to [`Self::score_precomputed`]
+    /// and precompute the query first.
+    pub fn score_symmetric(&self, v1: &[u8], v2: &[u8]) -> f32 {
+        let (extra_v1, iter1) = self.unpack_vector(v1);
+        let (extra_v2, iter2) = self.unpack_vector(v2);
+        let raw_dot = dot_impl(iter1, iter2);
 
-    /// Dot product between a raw `query` and a quantizer-encoded `vec`.
-    ///
-    /// The query is rotated into the same Hadamard-rotated space as the stored
-    /// vector before the dot is computed. Prefer [`Self::dot_precomputed`]
-    /// when scoring many vectors against the same query.
-    pub fn dot_asymmetric(&self, query: &[f32], vec: &[u8]) -> f32 {
-        let mut rotated_query: Vec<_> = query.iter().map(|&i| f64::from(i)).collect();
-        self.rotation.apply(&mut rotated_query);
+        let v1_l2 = extra_v1.and_then(|extras| extras.l2_length).unwrap_or(1.0);
+        let v2_l2 = extra_v2.and_then(|extras| extras.l2_length).unwrap_or(1.0);
 
-        // TODO(turbo): apply metadata from extra value.
-        let (_extra_vec, unpacked) = self.unpack_vector(vec);
-        rotated_query
-            .iter()
-            .zip(unpacked)
-            .map(|(&q, u)| q * u)
-            .sum::<f64>() as f32
+        // Both sides were scaled by sqrt(dim)/||v|| during quantize; restore
+        // magnitudes with l2, undo the sqrt(dim)² = dim inflation.
+        raw_dot * v1_l2 * v2_l2 / self.rotation.dim() as f32
     }
 
     /// Precompute the Hadamard rotation of `query` so subsequent
-    /// [`Self::dot_precomputed`] calls skip the per-call rotation.
+    /// [`Self::score_precomputed`] calls skip the per-call rotation.
     pub fn precompute_query(&self, query: &[f32]) -> Precomputed {
         let mut rotated: Vec<f64> = query.iter().map(|&x| f64::from(x)).collect();
         self.rotation.apply(&mut rotated);
         Precomputed(rotated)
     }
 
-    /// Dot product with a query that has already been rotated via
-    /// [`Self::precompute_query`].
-    pub fn dot_precomputed(&self, query: &Precomputed, vec: &[u8]) -> f32 {
-        let (_, unpacked) = self.unpack_vector(vec);
-        query
-            .as_slice()
-            .iter()
-            .zip(unpacked)
-            .map(|(&q, u)| q * u)
-            .sum::<f64>() as f32
+    /// Similarity score with a query that has already been rotated via
+    /// [`Self::precompute_query`]. Returns an approximate `<query, v>` for Dot
+    /// and `cos(θ)` for Cosine.
+    pub fn score_precomputed(&self, query: &Precomputed, vec: &[u8]) -> f32 {
+        let (vector_extras, unpacked) = self.unpack_vector(vec);
+        let dot = dot_impl(query.as_slice().iter().copied(), unpacked);
+
+        let l2 = vector_extras
+            .and_then(|extras| extras.l2_length)
+            .unwrap_or(1.0);
+
+        // Only the stored vector carries the sqrt(dim)/||v|| scaling, so we
+        // compensate by multiplying by ||v|| and dividing by sqrt(dim).
+        dot * l2 / self.dim_sqrt
     }
+}
+
+/// Raw dot implementation between two vectors, `left` and `right`.
+#[inline]
+fn dot_impl<I, J>(left: I, right: J) -> f32
+where
+    I: Iterator<Item = f64>,
+    J: Iterator<Item = f64>,
+{
+    left.zip(right).map(|(q, u)| q * u).sum::<f64>() as f32
 }
 
 #[cfg(test)]
@@ -133,13 +145,12 @@ mod tests {
     use super::*;
     use crate::VectorParameters;
     use crate::turboquant::encoding::TqVectorExtras;
-    use crate::turboquant::rotation::HadamardRotation;
 
-    fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
+    fn make_tq(dim: usize, bits: TQBits, distance: DistanceType) -> TurboQuantizer {
         let metadata = Metadata {
             vector_parameters: VectorParameters {
                 dim,
-                distance_type: DistanceType::Dot,
+                distance_type: distance,
                 invert: false,
                 deprecated_count: None,
             },
@@ -181,6 +192,18 @@ mod tests {
             .sqrt()
     }
 
+    fn asymmetric_score_helper(tq: &TurboQuantizer, query: &[f32], vec: &[u8]) -> f32 {
+        let precomputed = tq.precompute_query(query);
+        tq.score_precomputed(&precomputed, vec)
+    }
+
+    /// Normalize `v` onto the unit sphere — required input for the Cosine
+    /// quantizer path.
+    fn unit_norm(v: &[f32]) -> Vec<f32> {
+        let len = l2_norm(v) as f32;
+        v.iter().map(|&x| x / len).collect()
+    }
+
     /// Helper: unpack all centroid indices from a quantized byte vector.
     fn unpack_indices(packed: &[u8], dim: usize, bits: TQBits) -> Vec<u8> {
         let mut reader = BitReader::new(packed);
@@ -196,7 +219,7 @@ mod tests {
         let mut buf = vec![0.0f64; dim];
 
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-            let tq = make_tq(dim, bits);
+            let tq = make_tq(dim, bits, DistanceType::Cosine);
             let n_centroids = 1u8 << bits.bit_size();
 
             for &val in &[1000.0f32, -1000.0, f32::MAX / 2.0, f32::MIN / 2.0] {
@@ -220,7 +243,7 @@ mod tests {
         for &bits in &bit_widths {
             for &dim in &dims {
                 let mut buf = vec![0.0f64; dim];
-                let tq = make_tq(dim, bits);
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let vec = vec![0.1; dim];
                 let result = tq.quantize(&vec, &mut buf);
                 let expected_bytes = tq.quantized_size();
@@ -245,7 +268,7 @@ mod tests {
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
             for &dim in &[128, 300, 768] {
                 let mut buf = vec![0.0f64; dim];
-                let tq = make_tq(dim, bits);
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let vec: Vec<f32> = (0..dim).map(|_| rng.random_range(-2.0..2.0)).collect();
 
                 let r1 = tq.quantize(&vec, &mut buf);
@@ -269,7 +292,7 @@ mod tests {
 
             for &dim in &[128, 256, 512] {
                 let mut buf = vec![0.0f64; dim];
-                let tq = make_tq(dim, bits);
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let vec = vec![0.0; dim];
                 let result = tq.quantize(&vec, &mut buf);
                 let indices = unpack_indices(&result, dim, bits);
@@ -299,16 +322,22 @@ mod tests {
 
             for &dim in &[128, 300, 512] {
                 let mut buf = vec![0.0f64; dim];
-                let tq = make_tq(dim, bits);
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let rot = HadamardRotation::new(dim);
-                let vec: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                let vec_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                let vec = unit_norm(&vec_raw);
 
                 let result = tq.quantize(&vec, &mut buf);
                 let indices = unpack_indices(&result, dim, bits);
 
-                // Reproduce the rotation to get the values that were quantized.
+                // Reproduce rotation AND the √dim / ||v|| rescaling that
+                // `quantize` performs before partitioning against centroids.
                 let mut rotated: Vec<f64> = vec.iter().map(|&v| f64::from(v)).collect();
                 rot.apply(&mut rotated);
+                let scale = (dim as f64).sqrt();
+                for v in rotated.iter_mut() {
+                    *v *= scale;
+                }
 
                 for (d, (&idx, &val)) in indices.iter().zip(rotated.iter()).enumerate() {
                     let assigned_centroid = f64::from(centroids[idx as usize]);
@@ -344,13 +373,16 @@ mod tests {
         let rot = HadamardRotation::new(dim);
 
         let vectors: Vec<Vec<f32>> = (0..n_vectors)
-            .map(|_| (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect())
+            .map(|_| {
+                let raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                unit_norm(&raw)
+            })
             .collect();
 
         let mut mse_per_bits = Vec::new();
 
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-            let tq = make_tq(dim, bits);
+            let tq = make_tq(dim, bits, DistanceType::Cosine);
             let centroids = bits.get_centroids();
             let mut total_mse = 0.0f64;
 
@@ -358,14 +390,17 @@ mod tests {
                 let packed = tq.quantize(vec, &mut buf);
                 let indices = unpack_indices(&packed, dim, bits);
 
-                // Reconstruct: map indices -> centroids, then inverse rotate.
+                // Reconstruct: map indices → centroids, inverse rotate, then
+                // undo the √dim rescaling that `quantize` applied before
+                // partitioning (unpacked values live on the √dim × scale).
+                let inv_scale = 1.0 / (dim as f64).sqrt();
                 let mut reconstructed: Vec<f64> = indices
                     .iter()
-                    .map(|&i| f64::from(centroids[i as usize]))
+                    .map(|&i| f64::from(centroids[i as usize]) * inv_scale)
                     .collect();
                 rot.apply_inverse(&mut reconstructed);
 
-                // MSE between original and reconstructed.
+                // MSE between unit-norm original and reconstructed.
                 let mse: f64 = vec
                     .iter()
                     .zip(reconstructed.iter())
@@ -402,7 +437,7 @@ mod tests {
     /// quantization: if dot(q, a) > dot(q, b), the quantized approximation
     /// should agree in the majority of cases.
     #[test]
-    fn quantize_preserves_dot_product_ordering() {
+    fn quantize_preserves_cosine_product_ordering() {
         use rand::prelude::StdRng;
         use rand::{RngExt, SeedableRng};
 
@@ -411,29 +446,26 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(55);
         let rot = HadamardRotation::new(dim);
 
-        let tq = make_tq(dim, TQBits::Bits4);
+        let tq = make_tq(dim, TQBits::Bits4, DistanceType::Cosine);
         let centroids = TQBits::Bits4.get_centroids();
 
         let mut concordant = 0usize;
 
         for _ in 0..n_comparisons {
             let query: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-            let vec_a: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-            let vec_b: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let vec_a_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let vec_b_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let vec_a = unit_norm(&vec_a_raw);
+            let vec_b = unit_norm(&vec_b_raw);
 
-            // True dot products.
-            let dot_a: f64 = query
-                .iter()
-                .zip(vec_a.iter())
-                .map(|(&q, &a)| f64::from(q) * f64::from(a))
-                .sum();
-            let dot_b: f64 = query
-                .iter()
-                .zip(vec_b.iter())
-                .map(|(&q, &b)| f64::from(q) * f64::from(b))
-                .sum();
+            // True dot products (against unit-norm vectors).
+            let dot_a = true_dot(&query, &vec_a);
+            let dot_b = true_dot(&query, &vec_b);
 
-            // Approximate dot products using quantized vectors.
+            // Approximate dot products using quantized vectors. The unpacked
+            // centroids live on the √dim × rotated(v̂) scale, so dividing
+            // the reconstructed dot by √dim recovers the original-space dot.
+            let inv_scale = 1.0 / (dim as f64).sqrt();
             let approx_dot = |vec: &[f32]| -> f64 {
                 let mut buf = vec![0.0f64; vec.len()];
                 let packed = tq.quantize(vec, &mut buf);
@@ -447,7 +479,8 @@ mod tests {
                     .iter()
                     .zip(recon.iter())
                     .map(|(&q, &r)| f64::from(q) * r)
-                    .sum()
+                    .sum::<f64>()
+                    * inv_scale
             };
 
             let approx_a = approx_dot(&vec_a);
@@ -478,7 +511,7 @@ mod tests {
 
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
             let max_index = (1u8 << bits.bit_size()) - 1;
-            let tq = make_tq(dim, bits);
+            let tq = make_tq(dim, bits, DistanceType::Cosine);
 
             // Use a uniform vector so rotation doesn't scramble things.
             let val = 0.5f32;
@@ -515,7 +548,7 @@ mod tests {
 
         for &dim in &odd_dims {
             for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-                let tq = make_tq(dim, bits);
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let n_centroids = 1u8 << bits.bit_size();
                 let vec: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
 
@@ -552,7 +585,7 @@ mod tests {
             let n_centroids = 1u8 << bits.bit_size();
 
             for &dim in &[1, 64, 127, 128, 300, 768, 1025] {
-                let tq = make_tq(dim, bits);
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let indices: Vec<u8> = (0..dim).map(|_| rng.random_range(0..n_centroids)).collect();
 
                 let packed = tq.pack_vector(indices.iter().copied(), TqVectorExtras::default());
@@ -580,7 +613,7 @@ mod tests {
             let max_idx = (1u8 << bits.bit_size()) - 1;
 
             for &dim in &[1, 8, 128, 513] {
-                let tq = make_tq(dim, bits);
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
 
                 for &idx in &[0u8, max_idx] {
                     let indices = vec![idx; dim];
@@ -600,15 +633,15 @@ mod tests {
     /// `dot(0, vec) = 0` for any quantized vector — a rotated zero query is
     /// still zero, so every component of the sum is zero.
     #[test]
-    fn dot_zero_query_returns_zero() {
+    fn cosine_zero_query_returns_zero() {
         let dim = 128;
         let mut buf = vec![0.0f64; dim];
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-            let tq = make_tq(dim, bits);
+            let tq = make_tq(dim, bits, DistanceType::Cosine);
             let v: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).sin()).collect();
             let packed = tq.quantize(&v, &mut buf);
             let zero = vec![0.0f32; dim];
-            let result = tq.dot_asymmetric(&zero, &packed);
+            let result = asymmetric_score_helper(&tq, &zero, &packed);
             assert_eq!(result, 0.0, "bits={bits:?}: dot(0, v) = {result}");
         }
     }
@@ -618,7 +651,7 @@ mod tests {
     /// Rotation and per-component summation are both linear, so this holds
     /// up to floating-point precision.
     #[test]
-    fn dot_linear_in_query() {
+    fn cosine_linear_in_query() {
         use rand::prelude::StdRng;
         use rand::{RngExt, SeedableRng};
 
@@ -627,18 +660,19 @@ mod tests {
         let mut buf = vec![0.0f64; dim];
 
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-            let tq = make_tq(dim, bits);
+            let tq = make_tq(dim, bits, DistanceType::Cosine);
             let q1: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
             let q2: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-            let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let v_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let v = unit_norm(&v_raw);
             let packed = tq.quantize(&v, &mut buf);
 
             let (k, c) = (0.7f32, -1.3f32);
             let q_combo: Vec<f32> = q1.iter().zip(&q2).map(|(a, b)| k * a + c * b).collect();
 
-            let d_combo = tq.dot_asymmetric(&q_combo, &packed);
-            let d_linear =
-                k * tq.dot_asymmetric(&q1, &packed) + c * tq.dot_asymmetric(&q2, &packed);
+            let d_combo = asymmetric_score_helper(&tq, &q_combo, &packed);
+            let d_linear = k * asymmetric_score_helper(&tq, &q1, &packed)
+                + c * asymmetric_score_helper(&tq, &q2, &packed);
 
             let tol = 1e-5 * d_combo.abs().max(d_linear.abs()).max(1.0);
             assert!(
@@ -656,7 +690,7 @@ mod tests {
     /// The Hadamard rotation is orthogonal, so `<Rq, u> = <q, R⁻¹u>` — both
     /// paths should agree up to floating-point precision regardless of bits/dim.
     #[test]
-    fn dot_matches_inverse_rotation_reconstruction() {
+    fn cosine_matches_inverse_rotation_reconstruction() {
         use rand::prelude::StdRng;
         use rand::{RngExt, SeedableRng};
 
@@ -664,24 +698,29 @@ mod tests {
 
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
             for &dim in &[128, 300, 512] {
-                let tq = make_tq(dim, bits);
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let rot = HadamardRotation::new(dim);
 
                 let q: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-                let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                let v_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                let v = unit_norm(&v_raw);
                 let mut buf = vec![0.0f64; dim];
                 let packed = tq.quantize(&v, &mut buf);
 
-                // Manual path: unpack -> inverse rotate -> dot in original space.
+                // Manual path: unpack -> inverse rotate -> dot in original
+                // space. The unpacked centroids live on the scaled grid
+                // (√dim × rotated(v̂)), so we divide by √dim to match what
+                // `score_precomputed` compensates for internally.
                 let mut unpacked: Vec<f64> = tq.unpack_vector(&packed).1.collect();
                 rot.apply_inverse(&mut unpacked);
-                let manual: f32 = q
+                let manual: f32 = (q
                     .iter()
                     .zip(unpacked.iter())
                     .map(|(&qi, &ui)| f64::from(qi) * ui)
-                    .sum::<f64>() as f32;
+                    .sum::<f64>()
+                    / (dim as f64).sqrt()) as f32;
 
-                let fn_result = tq.dot_asymmetric(&q, &packed);
+                let fn_result = asymmetric_score_helper(&tq, &q, &packed);
 
                 let tol = 1e-5 * manual.abs().max(fn_result.abs()).max(1.0);
                 assert!(
@@ -693,18 +732,18 @@ mod tests {
     }
 
     /// For 4-bit quantization on reasonably large dimensions, the quantized
-    /// dot product must closely approximate the true (pre-quantization) dot
-    /// product. A badly-approximating `dot` (e.g. missing the query rotation)
-    /// yields values uncorrelated with the truth and blows this bound out.
+    /// cosine score must closely approximate the true `<q, v̂>` — matching
+    /// the inner product with the unit-norm stored vector. A broken
+    /// quantizer/scoring path yields values uncorrelated with truth.
     #[test]
-    fn dot_approximates_true_dot_product() {
+    fn cosine_approximates_true_cosine_product() {
         use rand::prelude::StdRng;
         use rand::{RngExt, SeedableRng};
 
         let dim = 512;
         let n_trials = 100;
         let mut rng = StdRng::seed_from_u64(44);
-        let tq = make_tq(dim, TQBits::Bits4);
+        let tq = make_tq(dim, TQBits::Bits4, DistanceType::Cosine);
         let mut buf = vec![0.0f64; dim];
 
         let mut total_abs_err = 0.0f64;
@@ -712,19 +751,16 @@ mod tests {
 
         for _ in 0..n_trials {
             let q: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-            let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let v_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let v = unit_norm(&v_raw);
 
-            let true_dot: f64 = q
-                .iter()
-                .zip(&v)
-                .map(|(&a, &b)| f64::from(a) * f64::from(b))
-                .sum();
+            let truth = true_dot(&q, &v);
 
             let packed = tq.quantize(&v, &mut buf);
-            let approx = f64::from(tq.dot_asymmetric(&q, &packed));
+            let approx = f64::from(asymmetric_score_helper(&tq, &q, &packed));
 
-            total_abs_err += (true_dot - approx).abs();
-            total_abs_true += true_dot.abs();
+            total_abs_err += (truth - approx).abs();
+            total_abs_true += truth.abs();
         }
 
         let rel_mae = total_abs_err / total_abs_true;
@@ -734,43 +770,39 @@ mod tests {
         );
     }
 
-    /// `dot_symmetric` must (a) be commutative and (b) approximate the true
-    /// dot product — even with quantization noise on *both* sides, the
-    /// orthogonality of the Hadamard rotation keeps the result close to
-    /// `<v1, v2>`.
+    /// `score_symmetric` must (a) be commutative and (b) approximate
+    /// `<â, b̂> = cos(θ)` for unit-norm inputs.
     #[test]
-    fn dot_symmetric_approximates_true_dot() {
+    fn cosine_symmetric_approximates_true_cosine() {
         use rand::prelude::StdRng;
         use rand::{RngExt, SeedableRng};
 
         let dim = 512;
         let n_trials = 100;
         let mut rng = StdRng::seed_from_u64(66);
-        let tq = make_tq(dim, TQBits::Bits4);
+        let tq = make_tq(dim, TQBits::Bits4, DistanceType::Cosine);
         let mut buf = vec![0.0f64; dim];
 
         let mut total_abs_err = 0.0f64;
         let mut total_abs_true = 0.0f64;
 
         for _ in 0..n_trials {
-            let a: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-            let b: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let a_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let b_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let a = unit_norm(&a_raw);
+            let b = unit_norm(&b_raw);
 
-            let true_dot: f64 = a
-                .iter()
-                .zip(&b)
-                .map(|(&x, &y)| f64::from(x) * f64::from(y))
-                .sum();
+            let truth = true_dot(&a, &b);
 
             let packed_a = tq.quantize(&a, &mut buf);
             let packed_b = tq.quantize(&b, &mut buf);
 
-            let ab = tq.dot_symmetric(&packed_a, &packed_b);
-            let ba = tq.dot_symmetric(&packed_b, &packed_a);
+            let ab = tq.score_symmetric(&packed_a, &packed_b);
+            let ba = tq.score_symmetric(&packed_b, &packed_a);
             assert_eq!(ab, ba, "dot_symmetric is not commutative: {ab} vs {ba}");
 
-            total_abs_err += (f64::from(ab) - true_dot).abs();
-            total_abs_true += true_dot.abs();
+            total_abs_err += (f64::from(ab) - truth).abs();
+            total_abs_true += truth.abs();
         }
 
         let rel_mae = total_abs_err / total_abs_true;
@@ -782,39 +814,39 @@ mod tests {
         );
     }
 
-    /// `dot_symmetric(packed, packed)` approximates `||v||²` — a sharper
-    /// check than the random-pair test, since self-dot is always positive
-    /// and sensitive to sign errors in the unpack path.
+    /// `score_symmetric(Q(v̂), Q(v̂)) ≈ 1` for unit-norm `v̂` — a sharper
+    /// check than the random-pair test, since self-cosine is always 1 and
+    /// sensitive to sign errors in the unpack path.
     #[test]
-    fn dot_symmetric_self_dot_approximates_norm_squared() {
+    fn cosine_symmetric_self_cosine_approximates_one() {
         use rand::prelude::StdRng;
         use rand::{RngExt, SeedableRng};
 
         let dim = 512;
         let mut rng = StdRng::seed_from_u64(77);
-        let tq = make_tq(dim, TQBits::Bits4);
+        let tq = make_tq(dim, TQBits::Bits4, DistanceType::Cosine);
         let mut buf = vec![0.0f64; dim];
 
         for _ in 0..20 {
-            let v: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-            let norm_sq: f64 = v.iter().map(|&x| f64::from(x) * f64::from(x)).sum();
+            let v_raw: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let v = unit_norm(&v_raw);
 
             let packed = tq.quantize(&v, &mut buf);
-            let approx = f64::from(tq.dot_symmetric(&packed, &packed));
+            let approx = f64::from(tq.score_symmetric(&packed, &packed));
 
-            let rel_err = (norm_sq - approx).abs() / norm_sq;
+            let rel_err = (1.0 - approx).abs();
             assert!(
                 rel_err < 0.15,
-                "||v||²={norm_sq}, approx={approx}, rel_err={rel_err}"
+                "expected ≈1 for unit self-dot, got {approx} (err {rel_err})"
             );
         }
     }
 
-    // --- End-to-end tests for dot_symmetric -------------------------------
+    // --- End-to-end tests for score_symmetric -----------------------------
     //
     // Each test: build a TurboQuantizer, generate random pairs at various
     // similarity levels, compute both the original dot and the quantized
-    // dot_symmetric, compare.
+    // score_symmetric, compare.
     // ---------------------------------------------------------------------
 
     /// Run pairs at 5 mixing levels from fully independent (`t = 0.0`) to
@@ -822,42 +854,40 @@ mod tests {
     /// to `||a|| * ||b||` — that scale-invariant bound holds uniformly even
     /// when the raw dot product itself is near zero.
     #[test]
-    fn end_to_end_dot_symmetric_varied_similarity() {
+    fn end_to_end_cosine_symmetric_varied_similarity() {
         use rand::SeedableRng;
         use rand::prelude::StdRng;
 
         let dim = 512;
         let n_trials = 30;
         let mut rng = StdRng::seed_from_u64(2024);
-        let tq = make_tq(dim, TQBits::Bits4);
+        let tq = make_tq(dim, TQBits::Bits4, DistanceType::Cosine);
         let mut buf = vec![0.0f64; dim];
 
         for &t in &[0.0f32, 0.25, 0.5, 0.75, 1.0] {
-            let mut max_norm_err = 0.0f64;
+            let mut max_err = 0.0f64;
 
             for _ in 0..n_trials {
-                let (a, b) = generate_mixed_pair(dim, t, &mut rng);
-                let true_d = true_dot(&a, &b);
-                let scale = l2_norm(&a) * l2_norm(&b);
+                let (a_raw, b_raw) = generate_mixed_pair(dim, t, &mut rng);
+                let a = unit_norm(&a_raw);
+                let b = unit_norm(&b_raw);
+                let truth = true_dot(&a, &b); // unit × unit → cos(θ), in [-1, 1]
 
                 let packed_a = tq.quantize(&a, &mut buf);
                 let packed_b = tq.quantize(&b, &mut buf);
-                let approx = f64::from(tq.dot_symmetric(&packed_a, &packed_b));
+                let approx = f64::from(tq.score_symmetric(&packed_a, &packed_b));
 
-                max_norm_err = max_norm_err.max((true_d - approx).abs() / scale);
+                max_err = max_err.max((truth - approx).abs());
             }
 
-            assert!(
-                max_norm_err < 0.1,
-                "t={t}: max |true-approx|/(||a||*||b||) = {max_norm_err}"
-            );
+            assert!(max_err < 0.1, "t={t}: max |cos(θ) - approx| = {max_err}");
         }
     }
 
     /// Over a shared set of varied-similarity pairs, accuracy must improve
     /// monotonically with bit width: MAE(4b) < MAE(2b) < MAE(1b).
     #[test]
-    fn end_to_end_dot_symmetric_more_bits_is_better() {
+    fn end_to_end_cosine_symmetric_more_bits_is_better() {
         use rand::SeedableRng;
         use rand::prelude::StdRng;
 
@@ -866,22 +896,24 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(2025);
         let mut buf = vec![0.0f64; dim];
 
-        // Fixed pair set (varying similarity) shared across all bit widths.
+        // Fixed unit-sphere pair set (varying similarity) shared across all
+        // bit widths.
         let pairs: Vec<(Vec<f32>, Vec<f32>)> = (0..n_pairs)
             .map(|i| {
                 let t = i as f32 / (n_pairs as f32 - 1.0);
-                generate_mixed_pair(dim, t, &mut rng)
+                let (a, b) = generate_mixed_pair(dim, t, &mut rng);
+                (unit_norm(&a), unit_norm(&b))
             })
             .collect();
 
         let mut mae_by_bits = Vec::new();
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-            let tq = make_tq(dim, bits);
+            let tq = make_tq(dim, bits, DistanceType::Cosine);
             let mut total_abs_err = 0.0f64;
             for (a, b) in &pairs {
                 let packed_a = tq.quantize(a, &mut buf);
                 let packed_b = tq.quantize(b, &mut buf);
-                let approx = f64::from(tq.dot_symmetric(&packed_a, &packed_b));
+                let approx = f64::from(tq.score_symmetric(&packed_a, &packed_b));
                 total_abs_err += (true_dot(a, b) - approx).abs();
             }
             mae_by_bits.push((bits, total_abs_err / f64::from(n_pairs)));
@@ -905,23 +937,25 @@ mod tests {
     /// almost fully preserved after symmetric quantization — concordance
     /// over all pairwise comparisons should exceed 95% at 4 bits.
     #[test]
-    fn end_to_end_dot_symmetric_preserves_ordering() {
+    fn end_to_end_cosine_symmetric_preserves_ordering() {
         use rand::SeedableRng;
         use rand::prelude::StdRng;
 
         let dim = 512;
         let n_pairs = 60;
         let mut rng = StdRng::seed_from_u64(2026);
-        let tq = make_tq(dim, TQBits::Bits4);
+        let tq = make_tq(dim, TQBits::Bits4, DistanceType::Cosine);
         let mut buf = vec![0.0f64; dim];
 
         let mut pairs_scored: Vec<(f64, f64)> = Vec::with_capacity(n_pairs);
         for i in 0..n_pairs {
             let t = i as f32 / (n_pairs as f32 - 1.0);
-            let (a, b) = generate_mixed_pair(dim, t, &mut rng);
+            let (a_raw, b_raw) = generate_mixed_pair(dim, t, &mut rng);
+            let a = unit_norm(&a_raw);
+            let b = unit_norm(&b_raw);
             let packed_a = tq.quantize(&a, &mut buf);
             let packed_b = tq.quantize(&b, &mut buf);
-            let approx = f64::from(tq.dot_symmetric(&packed_a, &packed_b));
+            let approx = f64::from(tq.score_symmetric(&packed_a, &packed_b));
             pairs_scored.push((true_dot(&a, &b), approx));
         }
 

@@ -106,7 +106,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
         let metadata = Metadata {
-            vector_parameters: vector_parameters.clone(),
+            vector_parameters: *vector_parameters,
             bits,
             mode,
         };
@@ -251,7 +251,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
         hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
 
-        self.quantizer.dot_symmetric(&v1, &v2)
+        self.quantizer.score_symmetric(&v1, &v2)
     }
 
     fn quantized_vector_size(&self) -> usize {
@@ -318,6 +318,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
         hw_counter.cpu_counter().incr_delta(bytes.len());
-        self.quantizer.dot_precomputed(&query.rotated_query, bytes)
+        self.quantizer
+            .score_precomputed(&query.rotated_query, bytes)
     }
 }

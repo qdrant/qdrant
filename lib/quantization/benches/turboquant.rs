@@ -77,7 +77,12 @@ fn bench_dot(c: &mut Criterion) {
             group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
                 b.iter_batched(
                     || random_vector(dim, &mut rng),
-                    |query| tq.dot_asymmetric(black_box(&query), black_box(&packed)),
+                    |query| {
+                        tq.score_precomputed(
+                            black_box(&tq.precompute_query(&query)),
+                            black_box(&packed),
+                        )
+                    },
                     criterion::BatchSize::SmallInput,
                 );
             });
@@ -109,7 +114,7 @@ fn bench_dot_precomputed(c: &mut Criterion) {
             group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
                 b.iter_batched(
                     || tq.precompute_query(&random_vector(dim, &mut rng)),
-                    |query| tq.dot_precomputed(black_box(&query), black_box(&packed)),
+                    |query| tq.score_precomputed(black_box(&query), black_box(&packed)),
                     criterion::BatchSize::SmallInput,
                 );
             });

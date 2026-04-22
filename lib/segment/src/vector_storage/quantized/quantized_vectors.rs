@@ -813,16 +813,24 @@ impl QuantizedVectors {
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
                 turbo: turbo_config,
-            }) => Self::create_turbo(
-                vectors,
-                &vector_parameters,
-                count,
-                turbo_config,
-                storage_type,
-                path,
-                on_disk_vector_storage,
-                stopped,
-            )?,
+            }) => {
+                let mut vector_parameters = vector_parameters;
+                // TODO(turbo): Remove this manual hack after releasing TQ. For more details see the TODO inside [`Self::construct_vector_parameters`]
+                if distance == Distance::Cosine {
+                    vector_parameters.distance_type = quantization::DistanceType::Cosine;
+                }
+
+                Self::create_turbo(
+                    vectors,
+                    &vector_parameters,
+                    count,
+                    turbo_config,
+                    storage_type,
+                    path,
+                    on_disk_vector_storage,
+                    stopped,
+                )?
+            }
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -946,19 +954,27 @@ impl QuantizedVectors {
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
                 turbo: turbo_config,
-            }) => Self::create_turbo_multi(
-                vectors,
-                offsets,
-                &vector_parameters,
-                vectors_count,
-                inner_vectors_count,
-                turbo_config,
-                storage_type,
-                multi_vector_config,
-                path,
-                on_disk_vector_storage,
-                stopped,
-            )?,
+            }) => {
+                let mut vector_parameters = vector_parameters;
+                // TODO(turbo): Remove this manual hack after releasing TQ. For more details see the TODO inside [`Self::construct_vector_parameters`]
+                if distance == Distance::Cosine {
+                    vector_parameters.distance_type = quantization::DistanceType::Cosine;
+                }
+
+                Self::create_turbo_multi(
+                    vectors,
+                    offsets,
+                    &vector_parameters,
+                    vectors_count,
+                    inner_vectors_count,
+                    turbo_config,
+                    storage_type,
+                    multi_vector_config,
+                    path,
+                    on_disk_vector_storage,
+                    stopped,
+                )?
+            }
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -2313,7 +2329,9 @@ impl QuantizedVectors {
                 QuantizedVectorsStorageType::Immutable => Some(deprecated_count),
             },
             distance_type: match distance {
+                // TODO(turbo): change this to 'cosine' after releasing TQ. We can't do that earlier because only TQ is allowed to use Cosine due to storage compatibility across versions.
                 Distance::Cosine => quantization::DistanceType::Dot,
+
                 Distance::Euclid => quantization::DistanceType::L2,
                 Distance::Dot => quantization::DistanceType::Dot,
                 Distance::Manhattan => quantization::DistanceType::L1,
