@@ -154,19 +154,14 @@ mod tests {
         let null_value_in_array =
             Value::Array(vec![Value::String("test".to_string()), Value::Null]);
 
-        for i in 0..4 {
-            match i % 4 {
-                0 => builder.add_point(i, &[&null_value], &hw_counter).unwrap(),
-                1 => builder
-                    .add_point(i, &[&null_value_in_array], &hw_counter)
-                    .unwrap(),
-                2 => builder.add_point(i, &[], &hw_counter).unwrap(),
-                3 => builder
-                    .add_point(i, &[&Value::Bool(true)], &hw_counter)
-                    .unwrap(),
-                _ => unreachable!(),
-            }
-        }
+        builder.add_point(0, &[&null_value], &hw_counter).unwrap();
+        builder
+            .add_point(1, &[&null_value_in_array], &hw_counter)
+            .unwrap();
+        builder.add_point(2, &[], &hw_counter).unwrap();
+        builder
+            .add_point(3, &[&Value::Bool(true)], &hw_counter)
+            .unwrap();
 
         let mut index = builder.finalize().unwrap();
 
