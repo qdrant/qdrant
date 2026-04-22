@@ -10,7 +10,15 @@ use crate::EncodingError;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DistanceType {
+    // Warning!
+    // Old Qdrant versions used `Dot` for both Cosine and Dot (since their implementations were equal).
+    // However, TurboQuant needs to know the exact distance type and can't treat Cosine and Dot equally.
+    // Because this distinction was introduced together with TQ, quantization storages created prior to
+    // TQ might still store `Dot` even though the original vectors use `Cosine`.
+    // Therefore, we can't rely on the exact type for any quantization storage other than TQ, and must *always* treat
+    // Cosine and Dot the same for quantization types that were implemented prior to TQ.
     Cosine,
+
     Dot,
     L1,
     L2,
