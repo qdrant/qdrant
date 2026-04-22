@@ -79,6 +79,14 @@ impl NullIndex {
         }
     }
 
+    /// Approximate RAM usage in bytes.
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            NullIndex::Mutable(mutable) => mutable.ram_usage_bytes(),
+            NullIndex::Immutable(immutable) => immutable.ram_usage_bytes(),
+        }
+    }
+
     pub fn is_on_disk(&self) -> bool {
         match self {
             NullIndex::Mutable(mutable) => mutable.is_on_disk(),

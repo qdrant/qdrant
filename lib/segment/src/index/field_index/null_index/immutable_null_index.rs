@@ -54,6 +54,7 @@ impl ImmutableNullIndex {
             pub fn values_is_null(&self, id: PointOffsetType) -> bool;
             pub fn is_on_disk(&self) -> bool;
             pub fn populate(&self) -> OperationResult<()>;
+            pub fn ram_usage_bytes(&self) -> usize;
             pub fn clear_cache(&self) -> OperationResult<()>;
             pub fn get_storage_type(&self) -> StorageType;
         }
