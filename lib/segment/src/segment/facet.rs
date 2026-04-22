@@ -80,6 +80,8 @@ impl Segment {
                 // This is more similar to a full-scan, but we won't be hashing so many times.
                 context = payload_index.struct_filtered_context(filter, hw_counter)?;
 
+                let max_id = self.deferred_internal_id().unwrap_or(PointOffsetType::MAX);
+
                 facet_index.for_each_value_map(hw_counter, |value, iter| {
                     check_process_stopped(is_stopped)?;
 
@@ -95,9 +97,7 @@ impl Segment {
 
                     let count = iter
                         .dedup()
-                        .take_while(|&point_id| {
-                            point_id < self.deferred_internal_id().unwrap_or(PointOffsetType::MAX)
-                        })
+                        .take_while(|&point_id| point_id < max_id)
                         .filter(|&point_id| context.check(point_id))
                         .count();
 
