@@ -341,11 +341,11 @@ mod tests {
         }
     }
 
-    /// Saturation safety for query-vs-vector at dim=16K: query maxed out,
+    /// Saturation safety for query-vs-vector at dim=64K: query maxed out,
     /// every lane pointing at CODEBOOK_I8[3] = +127.
     #[test]
-    fn test_saturation_safety_16k() {
-        let dim = 16_384;
+    fn test_saturation_safety_64k() {
+        let dim = 65_536;
         let query = vec![1.0_f32; dim];
         let indices: Vec<u8> = vec![3; dim]; // +127 centroid
         let vector = pack_codes_2bit(&indices);
@@ -383,8 +383,8 @@ mod tests {
     }
 
     #[test]
-    fn test_score_saturation_safety_16k() {
-        let dim = 16_384;
+    fn test_score_saturation_safety_64k() {
+        let dim = 65_536;
         let indices: Vec<u8> = vec![3; dim];
         let vec_a = pack_codes_2bit(&indices);
         let vec_b = pack_codes_2bit(&indices);
@@ -392,11 +392,11 @@ mod tests {
         let scalar = score_2bit_internal_scalar(&vec_a, &vec_b);
         unsafe {
             let neon = score_2bit_internal_neon(&vec_a, &vec_b);
-            assert_eq!(scalar, neon, "score neon overflow at 16k");
+            assert_eq!(scalar, neon, "score neon overflow at 64k");
 
             if std::arch::is_aarch64_feature_detected!("dotprod") {
                 let sdot = score_2bit_internal_neon_sdot(&vec_a, &vec_b);
-                assert_eq!(scalar, sdot, "score sdot overflow at 16k");
+                assert_eq!(scalar, sdot, "score sdot overflow at 64k");
             }
         }
     }

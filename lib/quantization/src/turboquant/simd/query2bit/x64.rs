@@ -501,8 +501,8 @@ mod tests {
     }
 
     #[test]
-    fn test_saturation_safety_16k() {
-        let dim = 16_384;
+    fn test_saturation_safety_64k() {
+        let dim = 65_536;
         let query = vec![1.0_f32; dim];
         let indices: Vec<u8> = vec![3; dim]; // max-magnitude centroid
         let vector = pack_codes_2bit(&indices);
@@ -587,8 +587,8 @@ mod tests {
     }
 
     #[test]
-    fn test_score_saturation_safety_16k() {
-        let dim = 16_384;
+    fn test_score_saturation_safety_64k() {
+        let dim = 65_536;
         let indices: Vec<u8> = vec![3; dim];
         let vec_a = pack_codes_2bit(&indices);
         let vec_b = pack_codes_2bit(&indices);

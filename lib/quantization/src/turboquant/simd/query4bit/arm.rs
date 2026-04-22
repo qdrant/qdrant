@@ -368,15 +368,15 @@ mod tests {
         }
     }
 
-    /// Single saturation-safety check at an extreme dim (16K) with the
+    /// Single saturation-safety check at an extreme dim (64K) with the
     /// worst-case combination: query maxed out and every lane of the vector
     /// pointing at the extreme-magnitude codebook slot.  Scalar is the
     /// reference (i64 throughout, saturation-free by construction); each
     /// SIMD path must match it exactly.  A mismatch proves that some
     /// intermediate integer saturated or overflowed.
     #[test]
-    fn test_saturation_safety_16k() {
-        let dim = 16_384;
+    fn test_saturation_safety_64k() {
+        let dim = 65_536;
         let query = vec![1.0_f32; dim];
         let indices: Vec<u8> = vec![15; dim]; // CODEBOOK_I8[15] = +127
         let vector = pack_nibbles(&indices);
@@ -423,14 +423,14 @@ mod tests {
         }
     }
 
-    /// Saturation-safety at 16K: both vectors every index 15 → every product
+    /// Saturation-safety at 64K: both vectors every index 15 → every product
     /// hits `CODEBOOK_I8[15]² = 127² = 16 129`.  Total = 16 384 × 16 129 ≈
     /// 264 M which comfortably fits i32 (~8× headroom), but any intermediate
     /// i16 accumulator (pre-vpadalq) maxes out at 16 129 < 32 767 so no
     /// saturation.  SDOT accumulates into i32 directly.
     #[test]
-    fn test_score_saturation_safety_16k() {
-        let dim = 16_384;
+    fn test_score_saturation_safety_64k() {
+        let dim = 65_536;
         let indices: Vec<u8> = vec![15; dim]; // CODEBOOK_I8[15] = +127
         let vec_a = pack_nibbles(&indices);
         let vec_b = pack_nibbles(&indices);

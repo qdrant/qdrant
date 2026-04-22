@@ -136,14 +136,14 @@ mod tests {
         }
     }
 
-    /// Overflow safety: at 16 KiB (= 131 072 bits) with `a = all 0xFF`,
+    /// Overflow safety: at 64 KiB (= 524 288 bits) with `a = all 0xFF`,
     /// `b = all 0x00`, every bit disagrees → `popcnt = n_bits`.  Scalar is
     /// the reference (u64 accumulator throughout, can't overflow).  NEON
     /// must match exactly — a mismatch would indicate an intermediate
     /// `u32`/`u16` lane saturated.
     #[test]
-    fn test_score_neon_overflow_safety_16k() {
-        let byte_len = 16 * 1024;
+    fn test_score_neon_overflow_safety_64k() {
+        let byte_len = 65_536 / 8;
         let a = vec![0xFF_u8; byte_len];
         let b = vec![0x00_u8; byte_len];
 
@@ -197,15 +197,15 @@ mod tests {
         }
     }
 
-    /// Overflow safety for `dotprod_raw_neon` at dim=16K and max BITS
+    /// Overflow safety for `dotprod_raw_neon` at dim=64K and max BITS
     /// (quantization constants stressed to the extreme): all-1 data vs a
     /// query scaled to saturate the signed range.  Scalar is u64-accumulator
     /// reference; NEON u32 per-plane accumulators must match exactly.
     #[test]
-    fn test_query_dotprod_neon_overflow_safety_16k() {
+    fn test_query_dotprod_neon_overflow_safety_64k() {
         use super::super::Query1bitSimd;
 
-        let dim = 16 * 1024;
+        let dim = 65_536;
         // Query = all +1.0 float → maps to +max signed int in every lane.
         let query = vec![1.0_f32; dim];
         let data = vec![0xFFu8; dim / 8];

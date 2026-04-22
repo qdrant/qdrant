@@ -14,7 +14,7 @@
 //!   `_mm512_reduce_add_epi64`.
 //!
 //! All three use a u64 accumulator so no intermediate can saturate at any
-//! reasonable vector size (see `test_score_*_overflow_safety_16k`).
+//! reasonable vector size (see `test_score_*_overflow_safety_64k`).
 
 /// 16-byte popcount-of-nibble lookup table.  Index = nibble value,
 /// value = number of 1-bits.  Broadcast to YMM/ZMM as needed.
@@ -404,13 +404,13 @@ mod tests {
         }
     }
 
-    /// Overflow safety at 16 KiB (131 072 bits) with `a = all 0xFF`,
+    /// Overflow safety at 64 KiB (524 288 bits) with `a = all 0xFF`,
     /// `b = all 0x00` — every bit disagrees, so `popcnt = n_bits`.  Each
     /// SIMD path must match scalar (u64 throughout) exactly; a mismatch
     /// would mean an intermediate `u16`/`u32`/u64 lane overflowed.
     #[test]
-    fn test_score_overflow_safety_16k() {
-        let byte_len = 16 * 1024;
+    fn test_score_overflow_safety_64k() {
+        let byte_len = 65_536 / 8;
         let a = vec![0xFF_u8; byte_len];
         let b = vec![0x00_u8; byte_len];
         let scalar = score_1bit_internal_scalar(&a, &b);
@@ -418,17 +418,17 @@ mod tests {
         unsafe {
             if std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1") {
                 let sse = score_1bit_internal_sse(&a, &b);
-                assert_eq!(scalar.to_bits(), sse.to_bits(), "sse overflow at 16k");
+                assert_eq!(scalar.to_bits(), sse.to_bits(), "sse overflow at 64k");
             }
             if std::is_x86_feature_detected!("avx2") {
                 let avx2 = score_1bit_internal_avx2(&a, &b);
-                assert_eq!(scalar.to_bits(), avx2.to_bits(), "avx2 overflow at 16k");
+                assert_eq!(scalar.to_bits(), avx2.to_bits(), "avx2 overflow at 64k");
             }
             if std::is_x86_feature_detected!("avx512f")
                 && std::is_x86_feature_detected!("avx512vpopcntdq")
             {
                 let avx512 = score_1bit_internal_avx512_vpopcntdq(&a, &b);
-                assert_eq!(scalar.to_bits(), avx512.to_bits(), "avx512 overflow at 16k");
+                assert_eq!(scalar.to_bits(), avx512.to_bits(), "avx512 overflow at 64k");
             }
         }
     }
@@ -467,15 +467,15 @@ mod tests {
         }
     }
 
-    /// Overflow safety at dim=16K with max-magnitude query against all-1
+    /// Overflow safety at dim=64K with max-magnitude query against all-1
     /// data.  Each SIMD path (when available on the CPU) must match scalar
     /// exactly; a mismatch would mean an intermediate `u32` per-plane
     /// accumulator (or the u64 lane in the VPOPCNTDQ variant) saturated.
     #[test]
-    fn test_query_dotprod_x86_overflow_safety_16k() {
+    fn test_query_dotprod_x86_overflow_safety_64k() {
         use super::super::Query1bitSimd;
 
-        let dim = 16 * 1024;
+        let dim = 65_536;
         let query = vec![1.0_f32; dim];
         let data = vec![0xFFu8; dim / 8];
 
@@ -485,13 +485,13 @@ mod tests {
 
             if std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1") {
                 let sse = unsafe { q.dotprod_raw_sse(data) };
-                assert_eq!(scalar, sse, "BITS={BITS} sse overflow at 16k");
+                assert_eq!(scalar, sse, "BITS={BITS} sse overflow at 64k");
             }
             if std::is_x86_feature_detected!("avx512vl")
                 && std::is_x86_feature_detected!("avx512vpopcntdq")
             {
                 let avx512 = unsafe { q.dotprod_raw_avx512_vpopcntdq(data) };
-                assert_eq!(scalar, avx512, "BITS={BITS} avx512 overflow at 16k");
+                assert_eq!(scalar, avx512, "BITS={BITS} avx512 overflow at 64k");
             }
         }
 
