@@ -77,7 +77,6 @@ fs_extra = { workspace = true }
 tinyvec = { workspace = true }
 validator = { workspace = true }
 chrono = { workspace = true }
-delegate = { workspace = true }
 ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
