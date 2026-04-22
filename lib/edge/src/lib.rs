@@ -167,16 +167,6 @@ impl EdgeShard {
             .flush_all(true, true)
             .expect("segments flushed");
     }
-
-    /// This function removes edge-specific config and closes the shard.
-    /// Removing config might be necessary to avoid incompatibilities on snapshot recovery.
-    pub fn drop_and_clean_config(self) -> OperationResult<()> {
-        let config_path = self.path.join(EDGE_CONFIG_FILE);
-        if config_path.exists() {
-            fs_err::remove_file(self.path.join(EDGE_CONFIG_FILE))?;
-        }
-        Ok(())
-    }
 }
 
 impl Drop for EdgeShard {

@@ -199,10 +199,6 @@ impl ExtendedPointId {
         }
     }
 
-    pub fn is_num_id(&self) -> bool {
-        matches!(self, ExtendedPointId::NumId(..))
-    }
-
     pub fn is_uuid(&self) -> bool {
         matches!(self, ExtendedPointId::Uuid(..))
     }
@@ -841,12 +837,6 @@ pub enum BinaryQuantizationEncoding {
     OneBit,
     TwoBits,
     OneAndHalfBits,
-}
-
-impl BinaryQuantizationEncoding {
-    pub fn is_one_bit(&self) -> bool {
-        matches!(self, BinaryQuantizationEncoding::OneBit)
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -1488,17 +1478,6 @@ impl SegmentConfig {
                 .sparse_vector_data
                 .values()
                 .any(|config| config.is_indexed())
-    }
-
-    /// Check if all vector storages are indexed
-    pub fn are_all_vectors_indexed(&self) -> bool {
-        self.vector_data
-            .values()
-            .all(|config| config.index.is_indexed())
-            && self
-                .sparse_vector_data
-                .values()
-                .all(|config| config.is_indexed())
     }
 
     /// Check if any vector storage is on-disk
@@ -2471,33 +2450,6 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     }
 }
 
-pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
-    match value {
-        Value::Null => None,
-        Value::Bool(_) => None,
-        Value::Number(num) => {
-            if num.is_i64() {
-                Some(PayloadSchemaType::Integer)
-            } else if num.is_f64() {
-                Some(PayloadSchemaType::Float)
-            } else {
-                None
-            }
-        }
-        Value::String(_) => Some(PayloadSchemaType::Keyword),
-        Value::Array(_) => None,
-        Value::Object(obj) => {
-            let lon_op = obj.get("lon").and_then(|x| x.as_f64());
-            let lat_op = obj.get("lat").and_then(|x| x.as_f64());
-
-            if let (Some(_), Some(_)) = (lon_op, lat_op) {
-                return Some(PayloadSchemaType::Geo);
-            }
-            None
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ValueVariants {
@@ -2644,12 +2596,6 @@ impl Match {
 
     pub fn new_text(text: &str) -> Self {
         Self::Text(MatchText { text: text.into() })
-    }
-
-    pub fn new_phrase(phrase: &str) -> Self {
-        Self::Phrase(MatchPhrase {
-            phrase: phrase.into(),
-        })
     }
 
     pub fn new_any(any: AnyVariants) -> Self {

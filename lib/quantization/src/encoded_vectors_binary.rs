@@ -819,16 +819,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     pub fn get_vector_parameters(&self) -> &VectorParameters {
         &self.metadata.vector_parameters
     }
-
-    pub fn encode_internal_query(&self, point_id: u32) -> EncodedQueryBQ<TBitsStoreType> {
-        // For internal queries we use the same encoding as for storage
-        EncodedQueryBQ::Binary(EncodedBinVector {
-            encoded_vector: bytemuck::cast_slice::<u8, TBitsStoreType>(
-                &self.get_quantized_vector(point_id),
-            )
-            .to_vec(),
-        })
-    }
 }
 
 impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors

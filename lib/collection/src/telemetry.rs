@@ -65,15 +65,6 @@ pub struct CollectionsAggregatedTelemetry {
 }
 
 impl CollectionTelemetry {
-    pub fn count_vectors(&self) -> usize {
-        self.shards
-            .iter()
-            .flatten()
-            .filter_map(|shard| shard.local.as_ref())
-            .map(|x| x.num_vectors.unwrap_or(0))
-            .sum()
-    }
-
     /// Amount of optimizers currently running.
     ///
     /// Note: A `DetailsLevel` of 4 or setting `telemetry_detail.optimizer_logs` to true is required.

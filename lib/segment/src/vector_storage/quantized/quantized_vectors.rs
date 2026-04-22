@@ -282,35 +282,6 @@ impl QuantizedVectors {
         }
     }
 
-    pub fn is_multivector(&self) -> bool {
-        match self.storage_impl {
-            QuantizedVectorStorage::ScalarRam(_) => false,
-            QuantizedVectorStorage::ScalarMmap(_) => false,
-            QuantizedVectorStorage::ScalarChunkedMmap(_) => false,
-            QuantizedVectorStorage::PQRam(_) => false,
-            QuantizedVectorStorage::PQMmap(_) => false,
-            QuantizedVectorStorage::PQChunkedMmap(_) => false,
-            QuantizedVectorStorage::BinaryRam(_) => false,
-            QuantizedVectorStorage::BinaryMmap(_) => false,
-            QuantizedVectorStorage::BinaryChunkedMmap(_) => false,
-            QuantizedVectorStorage::TQRam(_) => false,
-            QuantizedVectorStorage::TQMmap(_) => false,
-            QuantizedVectorStorage::TQChunkedMmap(_) => false,
-            QuantizedVectorStorage::ScalarRamMulti(_) => true,
-            QuantizedVectorStorage::ScalarMmapMulti(_) => true,
-            QuantizedVectorStorage::ScalarChunkedMmapMulti(_) => true,
-            QuantizedVectorStorage::PQRamMulti(_) => true,
-            QuantizedVectorStorage::PQMmapMulti(_) => true,
-            QuantizedVectorStorage::PQChunkedMmapMulti(_) => true,
-            QuantizedVectorStorage::BinaryRamMulti(_) => true,
-            QuantizedVectorStorage::BinaryMmapMulti(_) => true,
-            QuantizedVectorStorage::BinaryChunkedMmapMulti(_) => true,
-            QuantizedVectorStorage::TQRamMulti(_) => true,
-            QuantizedVectorStorage::TQMmapMulti(_) => true,
-            QuantizedVectorStorage::TQChunkedMmapMulti(_) => true,
-        }
-    }
-
     /// Get layout for a single quantized vector.
     ///
     /// I.e. the size of a single vector in bytes, and the required alignment.

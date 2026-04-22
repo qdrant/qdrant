@@ -247,24 +247,6 @@ impl<'a> NamedVectors<'a> {
         }
     }
 
-    pub fn from_map(map: HashMap<VectorNameBuf, VectorInternal>) -> Self {
-        Self {
-            map: map
-                .into_iter()
-                .map(|(k, v)| (CowKey::from(k), v.into()))
-                .collect(),
-        }
-    }
-
-    pub fn from_map_ref(map: &'a HashMap<VectorNameBuf, DenseVector>) -> Self {
-        Self {
-            map: map
-                .iter()
-                .map(|(k, v)| (CowKey::from(k), CowVector::Dense(Cow::Borrowed(v))))
-                .collect(),
-        }
-    }
-
     pub fn merge(&mut self, other: NamedVectors<'a>) {
         for (key, value) in other {
             self.map.insert(key, value);
@@ -278,11 +260,6 @@ impl<'a> NamedVectors<'a> {
 
     pub fn remove_ref(&mut self, key: &VectorName) {
         self.map.remove(key);
-    }
-
-    pub fn insert_ref(&mut self, name: &'a VectorName, vector: VectorRef<'a>) {
-        self.map
-            .insert(CowKey::Borrowed(name), CowVector::from(vector));
     }
 
     pub fn contains_key(&self, key: &VectorName) -> bool {

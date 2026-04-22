@@ -13,7 +13,6 @@ use super::Collection;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
-use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::Change;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
@@ -110,22 +109,6 @@ impl Collection {
         {
             let mut config = self.collection_config.write().await;
             config.optimizer_config = config.optimizer_config.update(&optimizer_config_diff);
-        }
-        self.collection_config.read().await.save(&self.path)?;
-        Ok(())
-    }
-
-    /// Updates shard optimization params: Saves new params on disk
-    ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
-    pub async fn update_optimizer_params(
-        &self,
-        optimizer_config: OptimizersConfig,
-    ) -> CollectionResult<()> {
-        {
-            let mut config = self.collection_config.write().await;
-            config.optimizer_config = optimizer_config;
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())

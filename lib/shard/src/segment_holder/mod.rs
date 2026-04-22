@@ -257,11 +257,6 @@ impl SegmentHolder {
             .cloned()
     }
 
-    /// Iterates appendable segments only.
-    pub fn iter_appendable(&self) -> impl Iterator<Item = LockedSegment> {
-        self.appendable_segments.values().cloned()
-    }
-
     /// Get two separate lists for non-appendable and appendable locked segments
     pub fn split_segments(&self) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
         (
@@ -455,18 +450,6 @@ impl SegmentHolder {
         );
 
         (to_update, to_delete)
-    }
-
-    pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
-    where
-        F: FnMut(&RwLockReadGuard<dyn ReadSegmentEntry + 'static>) -> OperationResult<bool>,
-    {
-        let mut processed_segments = 0;
-        for (_id, segment) in self.iter() {
-            let is_applied = f(&segment.get_read().read())?;
-            processed_segments += usize::from(is_applied);
-        }
-        Ok(processed_segments)
     }
 
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>

@@ -276,10 +276,6 @@ where
         }
     }
 
-    pub fn storage_cf_name(field: &str) -> String {
-        format!("{field}_map")
-    }
-
     fn flusher(&self) -> Flusher {
         match self {
             MapIndex::Mutable(index) => index.flusher(),
@@ -310,29 +306,6 @@ where
                 MapIndex::Mmap(_) => "mmap_map",
             },
         }
-    }
-
-    pub fn encode_db_record(value: &N, idx: PointOffsetType) -> String {
-        format!("{value}/{idx}")
-    }
-
-    pub fn decode_db_record(
-        s: &str,
-    ) -> OperationResult<(<N as MapIndexKey>::Owned, PointOffsetType)> {
-        const DECODE_ERR: &str = "Index db parsing error: wrong data format";
-        let separator_pos = s
-            .rfind('/')
-            .ok_or_else(|| OperationError::service_error(DECODE_ERR))?;
-        if separator_pos == s.len() - 1 {
-            return Err(OperationError::service_error(DECODE_ERR));
-        }
-        let value_str = &s[..separator_pos];
-        let value = <N as MapIndexKey>::Owned::from_str(value_str)
-            .map_err(|_| OperationError::service_error(DECODE_ERR))?;
-        let idx_str = &s[separator_pos + 1..];
-        let idx = PointOffsetType::from_str(idx_str)
-            .map_err(|_| OperationError::service_error(DECODE_ERR))?;
-        Ok((value, idx))
     }
 
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {

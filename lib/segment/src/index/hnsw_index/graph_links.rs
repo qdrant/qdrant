@@ -169,24 +169,6 @@ impl GraphLinksFormat {
         }
     }
 
-    /// Create the corresponding [`GraphLinksFormatParam`].
-    ///
-    /// When vectors are not available, `CompressedWithVectors` is downgraded to
-    /// `Compressed`.
-    pub fn with_param<'a, V: GraphLinksVectors>(
-        &self,
-        vectors: Option<&'a V>,
-    ) -> GraphLinksFormatParam<'a> {
-        match self {
-            GraphLinksFormat::Plain => GraphLinksFormatParam::Plain,
-            GraphLinksFormat::Compressed => GraphLinksFormatParam::Compressed,
-            GraphLinksFormat::CompressedWithVectors => match vectors {
-                Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
-                None => GraphLinksFormatParam::Compressed,
-            },
-        }
-    }
-
     pub fn is_with_vectors(&self) -> bool {
         match self {
             GraphLinksFormat::Plain | GraphLinksFormat::Compressed => false,

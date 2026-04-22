@@ -44,10 +44,6 @@ pub enum FileVersion {
 }
 
 impl FileVersion {
-    pub fn is_unversioned(self) -> bool {
-        self == Self::Unversioned
-    }
-
     pub fn or_segment_version(self, segment_version: SeqNumberType) -> SeqNumberType {
         match self {
             FileVersion::Version(version) => version,

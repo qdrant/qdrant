@@ -137,23 +137,6 @@ pub enum ScoringQuery {
 }
 
 impl ScoringQuery {
-    /// Whether the query needs the prefetches results from all shards to compute the final score
-    ///
-    /// If false, there is a single list of scored points which contain the final score.
-    pub fn needs_intermediate_results(&self) -> bool {
-        match self {
-            Self::Fusion(fusion) => match fusion {
-                // We need the ranking information of each prefetch
-                FusionInternal::Rrf { k: _, weights: _ } => true,
-                // We need the score distribution information of each prefetch
-                FusionInternal::Dbsf => true,
-            },
-            // MMR is a nearest neighbors search before computing diversity at collection level
-            Self::Mmr(_) => false,
-            Self::Vector(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => false,
-        }
-    }
-
     /// Get the vector name if it is scored against a vector
     pub fn get_vector_name(&self) -> Option<&VectorName> {
         match self {

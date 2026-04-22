@@ -254,8 +254,4 @@ impl EdgeConfig {
     pub fn set_optimizers_config(&mut self, optimizers: EdgeOptimizersConfig) {
         self.optimizers = optimizers;
     }
-
-    pub fn optimizers_mut(&mut self) -> &mut EdgeOptimizersConfig {
-        &mut self.optimizers
-    }
 }

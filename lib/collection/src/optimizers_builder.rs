@@ -157,10 +157,6 @@ impl OptimizersConfig {
         }
     }
 
-    pub fn get_max_segment_size_in_kilobytes(&self, num_indexing_threads: usize) -> usize {
-        get_max_segment_size_kb(self.max_segment_size, num_indexing_threads)
-    }
-
     pub fn get_deferred_points_threshold_bytes(&self) -> Option<NonZeroUsize> {
         get_deferred_points_threshold_bytes(
             self.prevent_unoptimized,

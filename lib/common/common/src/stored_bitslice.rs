@@ -51,15 +51,6 @@ impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
         })
     }
 
-    /// Create a bitslice storage from an already-opened storage backend.
-    pub fn from_storage(storage: S) -> Result<Self> {
-        let element_len = storage.len()?;
-        Ok(Self {
-            storage,
-            element_len,
-        })
-    }
-
     /// Total number of bits available.
     pub fn bit_len(&self) -> u64 {
         self.element_len * u64::from(BITS_PER_ELEMENT)

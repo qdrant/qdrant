@@ -379,11 +379,6 @@ impl StopwordsInterface {
     }
 
     #[cfg(feature = "testing")]
-    pub fn new_language(language: Language) -> Self {
-        StopwordsInterface::Language(language)
-    }
-
-    #[cfg(feature = "testing")]
     pub fn new_set(languages: &[Language], custom: &[&str]) -> Self {
         StopwordsInterface::Set(StopwordsSet {
             languages: Some(languages.iter().cloned().collect()),

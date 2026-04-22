@@ -293,12 +293,6 @@ impl TableOfContent {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    fn remove_shards_at_peer_sync(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.general_runtime
-            .block_on(self.remove_shards_at_peer(peer_id))
-    }
-
     fn on_transfer_failure_callback(
         proposal_sender: Option<OperationSender>,
     ) -> collection::collection::OnTransferFailure {

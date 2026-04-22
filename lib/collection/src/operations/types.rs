@@ -988,10 +988,6 @@ impl CollectionError {
         }
     }
 
-    pub fn bad_shard_selection(description: String) -> Self {
-        Self::BadShardSelection { description }
-    }
-
     pub fn object_storage_error(what: impl Into<String>) -> Self {
         Self::ObjectStoreError { what: what.into() }
     }
@@ -1007,17 +1003,6 @@ impl CollectionError {
         match self {
             Self::ForwardProxyError { peer_id, .. } => Some(*peer_id),
             _ => None,
-        }
-    }
-
-    pub fn shard_key_not_found(shard_key: &Option<ShardKey>) -> Self {
-        match shard_key {
-            Some(shard_key) => Self::NotFound {
-                what: format!("Shard key {shard_key} not found"),
-            },
-            None => Self::NotFound {
-                what: "Shard expected, but not provided".to_string(),
-            },
         }
     }
 
@@ -1588,27 +1573,6 @@ impl VectorsConfig {
 
         Ok(())
     }
-}
-
-pub fn check_sparse_compatible_with_segment_config(
-    self_config: &BTreeMap<VectorNameBuf, SparseVectorParams>,
-    other: &HashMap<VectorNameBuf, segment::types::SparseVectorDataConfig>,
-    exact: bool,
-) -> CollectionResult<()> {
-    if exact && self_config.len() != other.len() {
-        return Err(incompatible_vectors_error(
-            self_config.keys().map(AsRef::as_ref),
-            other.keys().map(AsRef::as_ref),
-        ));
-    }
-
-    for (vector_name, _) in self_config.iter() {
-        if other.get(vector_name).is_none() {
-            return Err(missing_vector_error(vector_name));
-        };
-    }
-
-    Ok(())
 }
 
 fn incompatible_vectors_error<'a, 'b>(

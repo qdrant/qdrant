@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
@@ -132,11 +131,6 @@ impl ShardHolder {
             .into_values()
             .map(|shard| shard.stop_gracefully());
         futures::future::join_all(futures).await;
-    }
-
-    #[cfg(feature = "testing")]
-    pub async fn stop_gracefully_owned(mut self) {
-        self.stop_gracefully().await;
     }
 
     pub async fn save_key_mapping_to_tar(
@@ -462,47 +456,6 @@ impl ShardHolder {
             .shard_transfer_changes
             .send(ShardTransferChange::Abort(*key));
         Ok(any_removed)
-    }
-
-    /// Await for a given shard transfer to complete.
-    ///
-    /// The returned inner result defines whether it successfully finished or whether it was
-    /// aborted/cancelled.
-    pub fn await_shard_transfer_end(
-        &self,
-        transfer: ShardTransferKey,
-        timeout: Duration,
-    ) -> impl Future<Output = CollectionResult<Result<(), ()>>> {
-        let mut subscriber = self.shard_transfer_changes.subscribe();
-        let receiver = async move {
-            loop {
-                match subscriber.recv().await {
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        return Err(CollectionError::service_error(
-                            "Failed to await shard transfer end: failed to listen for shard transfer changes, channel closed",
-                        ));
-                    }
-                    Err(err @ tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        return Err(CollectionError::service_error(format!(
-                            "Failed to await shard transfer end: failed to listen for shard transfer changes, channel lagged behind: {err}",
-                        )));
-                    }
-                    Ok(ShardTransferChange::Finish(key)) if key == transfer => return Ok(Ok(())),
-                    Ok(ShardTransferChange::Abort(key)) if key == transfer => return Ok(Err(())),
-                    Ok(_) => {}
-                }
-            }
-        };
-
-        async move {
-            match tokio::time::timeout(timeout, receiver).await {
-                Ok(operation) => Ok(operation?),
-                // Timeout
-                Err(err) => Err(CollectionError::service_error(format!(
-                    "Awaiting for shard transfer end timed out: {err}"
-                ))),
-            }
-        }
     }
 
     /// The count of incoming and outgoing shard transfers on the given peer
@@ -1072,13 +1025,6 @@ impl ShardHolder {
             }
         }
         res
-    }
-
-    /// Count how many shard replicas are on the given peer.
-    pub fn count_peer_shards(&self, peer_id: PeerId) -> usize {
-        self.get_shards()
-            .filter(|(_, replica_set)| replica_set.peer_state(peer_id).is_some())
-            .count()
     }
 
     pub fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {

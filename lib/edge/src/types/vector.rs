@@ -219,13 +219,6 @@ impl From<Vectors> for VectorStructInternal {
     }
 }
 
-impl NamedVectors {
-    pub fn add_vector(mut self, name: impl Into<String>, vector: impl Into<Vector>) -> Self {
-        self.0.insert(name.into(), vector.into());
-        self
-    }
-}
-
 impl From<NamedVectors> for Vectors {
     fn from(named: NamedVectors) -> Self {
         Self(VectorStructInternal::Named(

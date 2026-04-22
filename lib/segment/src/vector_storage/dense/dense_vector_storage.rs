@@ -187,16 +187,6 @@ where
     Ok(storage)
 }
 
-impl<T, S> DenseVectorStorageImpl<T, S>
-where
-    T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
-{
-    pub fn get_mmap_vectors(&self) -> &ImmutableDenseVectors<T, S> {
-        self.vectors.as_ref().unwrap()
-    }
-}
-
 impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,

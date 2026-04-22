@@ -33,11 +33,6 @@ impl TokensProcessor {
         }
     }
 
-    #[cfg(test)]
-    pub fn set_stopwords(&mut self, stopwords_filter: Arc<StopwordsFilter>) {
-        self.stopwords_filter = stopwords_filter;
-    }
-
     /// Applies stemming if enabled and applies the configured stemming algorithm. Does nothing if
     /// stemming is disabled.
     pub fn stem_if_enabled<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {

@@ -242,15 +242,6 @@ impl<S: BitmaskStorage> Bitmask<S> {
         Ok(all_bits[range_of_page].trailing_zeros())
     }
 
-    /// The amount of blocks that are available for reuse in the page.
-    #[allow(dead_code)]
-    pub(crate) fn fragmented_blocks_for_page(&self, page_id: PageId) -> Result<usize> {
-        let range_of_page = self.range_of_page(page_id);
-        let all_bits = self.bitslice.read_all()?;
-        let bitslice = &all_bits[range_of_page];
-        Ok(bitslice.count_zeros() - bitslice.trailing_zeros())
-    }
-
     pub(crate) fn find_available_blocks(
         &self,
         num_blocks: u32,
