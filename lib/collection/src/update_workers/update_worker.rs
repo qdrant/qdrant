@@ -171,14 +171,14 @@ impl UpdateWorkers {
                             let cancel = cancel.clone();
 
                             // Add feedback channel to list of waiters
-                            let wait_count = {
+                            let is_first_waiter = {
                                 let mut pending_waits = pending_waits.lock().await;
                                 pending_waits.push(feedback);
-                                pending_waits.len()
+                                pending_waits.len() == 1
                             };
 
                             // If we added the first waiter, spawn the waiting task
-                            if wait_count == 1 {
+                            if is_first_waiter {
                                 let pending_waits = pending_waits.clone();
                                 tokio::spawn(async move {
                                     let status = match Self::wait_for_deferred_points_ready(
