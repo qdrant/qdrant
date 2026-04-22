@@ -193,13 +193,14 @@ impl PayloadIndex for PlainPayloadIndex {
         }))
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         _field: PayloadKeyTypeRef,
         _threshold: usize,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+        _f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         // No blocks for un-indexed payload
-        Box::new(std::iter::empty())
+        Ok(())
     }
 
     fn overwrite_payload(

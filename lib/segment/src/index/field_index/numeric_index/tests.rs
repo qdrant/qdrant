@@ -238,39 +238,34 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
 #[case(IndexType::RamMmap)]
 fn test_payload_blocks(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(1000, 2, index_type);
+    let collect_blocks = |index: &NumericIndexInner<_>, threshold| {
+        let mut blocks = Vec::new();
+        index
+            .for_each_payload_block(threshold, JsonPath::new("test"), &mut |block| {
+                blocks.push(block);
+                Ok(())
+            })
+            .unwrap();
+        blocks
+    };
+
     let threshold = 100;
-    let blocks = index
-        .inner()
-        .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+    let blocks = collect_blocks(index.inner(), threshold);
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
     let threshold = 500;
-    let blocks = index
-        .inner()
-        .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+    let blocks = collect_blocks(index.inner(), threshold);
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
     let threshold = 1000;
-    let blocks = index
-        .inner()
-        .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+    let blocks = collect_blocks(index.inner(), threshold);
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 
     let threshold = 10000;
-    let blocks = index
-        .inner()
-        .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+    let blocks = collect_blocks(index.inner(), threshold);
     assert!(!blocks.is_empty());
     eprintln!("threshold {threshold}, blocks.len() = {:#?}", blocks.len());
 }
@@ -305,11 +300,14 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
     });
     let index = index_builder.finalize().unwrap();
 
-    let blocks = index
+    let mut blocks = Vec::new();
+    index
         .inner()
-        .payload_blocks(threshold, JsonPath::new("test"))
-        .map(Result::unwrap)
-        .collect_vec();
+        .for_each_payload_block(threshold, JsonPath::new("test"), &mut |block| {
+            blocks.push(block);
+            Ok(())
+        })
+        .unwrap();
     assert!(!blocks.is_empty());
 }
 

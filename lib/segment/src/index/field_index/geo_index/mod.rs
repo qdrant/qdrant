@@ -629,24 +629,22 @@ impl PayloadFieldIndex for GeoMapIndex {
         Ok(None)
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        let large_hashes = match self.large_hashes(threshold) {
-            Ok(large_hashes) => large_hashes,
-            Err(e) => return Box::new(std::iter::once(Err(e))),
-        };
-        Box::new(large_hashes.map(move |(geo_hash, size)| {
-            Ok(PayloadBlockCondition {
-                condition: FieldCondition::new_geo_bounding_box(
-                    key.clone(),
-                    geo_hash_to_box(geo_hash),
-                ),
-                cardinality: size,
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.large_hashes(threshold)?
+            .try_for_each(|(geo_hash, size)| {
+                f(PayloadBlockCondition {
+                    condition: FieldCondition::new_geo_bounding_box(
+                        key.clone(),
+                        geo_hash_to_box(geo_hash),
+                    ),
+                    cardinality: size,
+                })
             })
-        }))
     }
 }
 
@@ -1045,10 +1043,13 @@ mod tests {
             assert!(size < 1000);
         }
 
-        let blocks = field_index
-            .payload_blocks(100, JsonPath::new("test"))
-            .map(Result::unwrap)
-            .collect_vec();
+        let mut blocks = Vec::new();
+        field_index
+            .for_each_payload_block(100, JsonPath::new("test"), &mut |block| {
+                blocks.push(block);
+                Ok(())
+            })
+            .unwrap();
         blocks.iter().for_each(|block| {
             let hw_acc = HwMeasurementAcc::new();
             let hw_counter = hw_acc.get_counter_cell();

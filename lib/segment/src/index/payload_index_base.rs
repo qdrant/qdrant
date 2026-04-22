@@ -103,11 +103,12 @@ pub trait PayloadIndex {
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         field: PayloadKeyTypeRef,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_>;
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()>;
 
     /// Overwrite payload for point_id. If payload already exists, replace it.
     fn overwrite_payload(

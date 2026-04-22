@@ -822,20 +822,19 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(Box::new(self.struct_filtered_context(filter, hw_counter)?))
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         field: PayloadKeyTypeRef,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        match self.field_indexes.get(field) {
-            None => Box::new(std::iter::empty()),
-            Some(indexes) => {
-                let field_clone = field.to_owned();
-                Box::new(indexes.iter().flat_map(move |field_index| {
-                    field_index.payload_blocks(threshold, field_clone.clone())
-                }))
-            }
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        if let Some(indexes) = self.field_indexes.get(field) {
+            let field_clone = field.to_owned();
+            indexes.iter().try_for_each(|field_index| {
+                field_index.for_each_payload_block(threshold, field_clone.clone(), f)
+            })?;
         }
+        Ok(())
     }
 
     fn overwrite_payload(

@@ -35,6 +35,7 @@ use crate::common::operation_time_statistics::{
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
+use crate::index::field_index::PayloadBlockCondition;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -592,12 +593,11 @@ impl HNSWIndex {
 
                 let counter = field_progress.track_progress(None);
 
-                for payload_block in payload_index_ref.payload_blocks(&field, full_scan_threshold) {
-                    let payload_block = payload_block?;
+                let mut process_block = |payload_block: PayloadBlockCondition| {
                     check_process_stopped(stopped)?;
 
                     if payload_block.cardinality > max_block_size {
-                        continue;
+                        return Ok(());
                     }
 
                     let points_to_index = Self::condition_points(
@@ -617,7 +617,7 @@ impl HNSWIndex {
                     const DELETED_POINTS_FACTOR: usize = 4; // allow block to have up to 75% of deleted points and still be indexed
 
                     if points_to_index.len() <= full_scan_threshold / DELETED_POINTS_FACTOR {
-                        continue;
+                        return Ok(());
                     }
 
                     if !is_tenant
@@ -635,7 +635,7 @@ impl HNSWIndex {
                             trace!(
                                 "skip building additional HNSW links for {field}, connectivity {graph_connectivity:.4} >= {required_connectivity:.4}"
                             );
-                            continue;
+                            return Ok(());
                         }
                         trace!("graph connectivity: {graph_connectivity} for {field}");
                     }
@@ -665,7 +665,14 @@ impl HNSWIndex {
                         &counter,
                     )?;
                     graph_layers_builder.merge_from_other(additional_graph);
-                }
+                    Ok(())
+                };
+
+                payload_index_ref.for_each_payload_block(
+                    &field,
+                    full_scan_threshold,
+                    &mut process_block,
+                )?;
             }
 
             let indexed_payload_vectors = indexed_vectors_set.count_ones();

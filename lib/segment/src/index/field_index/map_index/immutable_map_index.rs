@@ -394,10 +394,6 @@ where
             .map(|(idx, _)| *idx)
     }
 
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
-        Box::new(self.value_to_points.keys().map(|v| v.borrow()))
-    }
-
     pub fn for_each_value(
         &self,
         mut f: impl FnMut(&N) -> OperationResult<()>,

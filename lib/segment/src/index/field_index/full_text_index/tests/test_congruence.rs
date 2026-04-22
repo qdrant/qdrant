@@ -408,16 +408,21 @@ fn test_congruence(
 
         if !deleted {
             for threshold in 1..=10 {
-                assert_eq!(
-                    index_a
-                        .payload_blocks(threshold, JsonPath::new(FIELD_NAME))
-                        .map(Result::unwrap)
-                        .count(),
-                    index_b
-                        .payload_blocks(threshold, JsonPath::new(FIELD_NAME))
-                        .map(Result::unwrap)
-                        .count(),
-                );
+                let mut count_a = 0;
+                index_a
+                    .for_each_payload_block(threshold, JsonPath::new(FIELD_NAME), &mut |_| {
+                        count_a += 1;
+                        Ok(())
+                    })
+                    .unwrap();
+                let mut count_b = 0;
+                index_b
+                    .for_each_payload_block(threshold, JsonPath::new(FIELD_NAME), &mut |_| {
+                        count_b += 1;
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(count_a, count_b);
             }
         }
     }

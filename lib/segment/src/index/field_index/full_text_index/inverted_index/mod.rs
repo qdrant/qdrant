@@ -367,26 +367,24 @@ pub trait InvertedIndex {
         &self,
     ) -> impl Iterator<Item = OperationResult<(&str, usize)>> + '_;
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> impl Iterator<Item = OperationResult<PayloadBlockCondition>> + '_ {
-        let map_filter_condition = move |item: OperationResult<(&str, usize)>| match item {
-            Ok((token, postings_len)) if postings_len >= threshold => {
-                Some(Ok(PayloadBlockCondition {
-                    condition: FieldCondition::new_match(key.clone(), Match::new_text(token)),
-                    cardinality: postings_len,
-                }))
-            }
-            Ok(_) => None,
-            Err(err) => Some(Err(err)),
-        };
-
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
-        self.vocab_with_postings_len_iter()
-            .filter_map(map_filter_condition)
+        self.vocab_with_postings_len_iter().try_for_each(|item| {
+            let (token, postings_len) = item?;
+            if postings_len >= threshold {
+                f(PayloadBlockCondition {
+                    condition: FieldCondition::new_match(key.clone(), Match::new_text(token)),
+                    cardinality: postings_len,
+                })?;
+            }
+            Ok(())
+        })
     }
 
     fn check_match(

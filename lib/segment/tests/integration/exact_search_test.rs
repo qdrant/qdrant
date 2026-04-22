@@ -7,7 +7,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
-use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
@@ -93,10 +92,13 @@ fn exact_search_test() {
         )
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
-    let blocks = borrowed_payload_index
-        .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
-        .map(Result::unwrap)
-        .collect_vec();
+    let mut blocks = Vec::new();
+    borrowed_payload_index
+        .for_each_payload_block(&JsonPath::new(int_key), indexing_threshold, &mut |block| {
+            blocks.push(block);
+            Ok(())
+        })
+        .unwrap();
     for block in &blocks {
         assert!(
             block.condition.range.is_some(),

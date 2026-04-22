@@ -139,15 +139,22 @@ impl FullTextIndex {
         }
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
-            Self::Immutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
-            Self::Mmap(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+            Self::Mutable(index) => index
+                .inverted_index
+                .for_each_payload_block(threshold, key, f),
+            Self::Immutable(index) => index
+                .inverted_index
+                .for_each_payload_block(threshold, key, f),
+            Self::Mmap(index) => index
+                .inverted_index
+                .for_each_payload_block(threshold, key, f),
         }
     }
 
@@ -529,12 +536,13 @@ impl PayloadFieldIndex for FullTextIndex {
         )?))
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        self.payload_blocks(threshold, key)
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_payload_block(threshold, key, f)
     }
 }
 

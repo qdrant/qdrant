@@ -489,36 +489,25 @@ impl PayloadFieldIndex for MutableBoolIndex {
         })
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        let make_block = |count, value, key: PayloadKeyType| {
-            if count > threshold {
-                Some(Ok(PayloadBlockCondition {
-                    condition: FieldCondition::new_match(
-                        key,
-                        Match::Value(MatchValue {
-                            value: ValueVariants::Bool(value),
-                        }),
-                    ),
-                    cardinality: count,
-                }))
-            } else {
-                None
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        let mut handle_block = |cardinality, value: bool, key: PayloadKeyType| {
+            if cardinality > threshold {
+                f(PayloadBlockCondition {
+                    condition: FieldCondition::new_match(key.clone(), Match::from(value)),
+                    cardinality,
+                })?;
             }
+            Ok(())
         };
 
         // just two possible blocks: true and false
-        let iter = [
-            make_block(self.trues_count, true, key.clone()),
-            make_block(self.falses_count, false, key),
-        ]
-        .into_iter()
-        .flatten();
-
-        Box::new(iter)
+        handle_block(self.trues_count, true, key.clone())?;
+        handle_block(self.falses_count, false, key)
     }
 }
 

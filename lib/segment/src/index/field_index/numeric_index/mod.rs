@@ -892,11 +892,12 @@ where
             .transpose()
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         let inner = || -> OperationResult<Vec<PayloadBlockCondition>> {
             let mut lower_bound = Unbounded;
             let mut pre_lower_bound: Option<Bound<T>> = None;
@@ -964,10 +965,7 @@ where
             Ok(payload_conditions)
         };
 
-        match inner() {
-            Ok(conditions) => Box::new(conditions.into_iter().map(Ok)),
-            Err(err) => Box::new(std::iter::once(Err(err))),
-        }
+        inner()?.into_iter().try_for_each(f)
     }
 }
 

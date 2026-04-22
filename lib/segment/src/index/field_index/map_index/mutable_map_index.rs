@@ -317,10 +317,6 @@ where
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
-        Box::new(self.map.keys().map(|v| v.borrow()))
-    }
-
     pub fn for_each_value(
         &self,
         mut f: impl FnMut(&N) -> OperationResult<()>,

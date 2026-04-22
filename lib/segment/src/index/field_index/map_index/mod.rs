@@ -237,14 +237,6 @@ where
         }
     }
 
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
-        match self {
-            MapIndex::Mutable(index) => index.iter_values(),
-            MapIndex::Immutable(index) => index.iter_values(),
-            MapIndex::Mmap(index) => Box::new(index.iter_values()),
-        }
-    }
-
     pub fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.for_each_value(f),
@@ -474,17 +466,21 @@ where
         &'a self,
         excluded: &'a IndexSet<K, A>,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>>
     where
         A: BuildHasher,
         K: Borrow<N> + Hash + Eq,
     {
-        Box::new(
-            self.iter_values()
-                .filter(|key| !excluded.contains((*key).borrow()))
-                .flat_map(move |key| self.get_iterator(key.borrow(), hw_counter))
-                .unique(),
-        )
+        let mut points = IndexSet::new();
+        self.for_each_value(|key| {
+            if !excluded.contains(key.borrow()) {
+                self.get_iterator(key.borrow(), hw_counter).for_each(|p| {
+                    points.insert(p);
+                });
+            }
+            Ok(())
+        })?;
+        Ok(Box::new(points.into_iter()))
     }
 
     /// Approximate RAM usage in bytes for in-memory structures.
@@ -762,7 +758,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 }
             },
             Some(Match::Except(MatchExcept { except })) => match except {
-                AnyVariants::Strings(keywords) => Some(self.except_set(keywords, hw_counter)),
+                AnyVariants::Strings(keywords) => Some(self.except_set(keywords, hw_counter)?),
                 AnyVariants::Integers(other) => {
                     if other.is_empty() {
                         Some(Box::new(iter::empty()))
@@ -839,27 +835,24 @@ impl PayloadFieldIndex for MapIndex<str> {
         })
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        Box::new(
-            self.iter_values()
-                .map(|value| {
-                    (
-                        value,
-                        self.get_count_for_value(value, &HardwareCounterCell::disposable()) // Payload_blocks only used in HNSW building, which is unmeasured.
-                            .unwrap_or(0),
-                    )
-                })
-                .filter(move |(_value, count)| *count > threshold)
-                .map(move |(value, count)| PayloadBlockCondition {
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_value(|value| {
+            let count = self
+                .get_count_for_value(value, &HardwareCounterCell::disposable()) // Payload_blocks only used in HNSW building, which is unmeasured.
+                .unwrap_or(0);
+            if count > threshold {
+                f(PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
                     cardinality: count,
-                })
-                .map(Ok),
-        )
+                })?;
+            }
+            Ok(())
+        })
     }
 }
 
@@ -935,12 +928,16 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         else {
                             return Ok(None);
                         };
-                        Some(Box::new(
-                            self.iter_values()
-                                .filter(move |key| !excluded_uuids.contains(*key))
-                                .flat_map(move |key| self.get_iterator(key, hw_counter))
-                                .unique(),
-                        ))
+                        let mut points = IndexSet::new();
+                        self.for_each_value(|key| {
+                            if !excluded_uuids.contains(key) {
+                                self.get_iterator(key, hw_counter).for_each(|p| {
+                                    points.insert(p);
+                                });
+                            }
+                            Ok(())
+                        })?;
+                        Some(Box::new(points.into_iter()))
                     }
                     AnyVariants::Integers(other) => {
                         if other.is_empty() {
@@ -1039,30 +1036,27 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         })
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        Box::new(
-            self.iter_values()
-                .map(move |value| {
-                    (
-                        value,
-                        self.get_count_for_value(value, &HardwareCounterCell::disposable()) // payload_blocks only used in HNSW building, which is unmeasured.
-                            .unwrap_or(0),
-                    )
-                })
-                .filter(move |(_value, count)| *count >= threshold)
-                .map(move |(value, count)| PayloadBlockCondition {
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_value(|value| {
+            let count = self
+                .get_count_for_value(value, &HardwareCounterCell::disposable()) // payload_blocks only used in HNSW building, which is unmeasured.
+                .unwrap_or(0);
+            if count >= threshold {
+                f(PayloadBlockCondition {
                     condition: FieldCondition::new_match(
                         key.clone(),
                         Uuid::from_u128(*value).to_string().into(),
                     ),
                     cardinality: count,
-                })
-                .map(Ok),
-        )
+                })?;
+            }
+            Ok(())
+        })
     }
 }
 
@@ -1124,7 +1118,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                             None
                         }
                     }
-                    AnyVariants::Integers(integers) => Some(self.except_set(integers, hw_counter)),
+                    AnyVariants::Integers(integers) => Some(self.except_set(integers, hw_counter)?),
                 },
                 _ => None,
             };
@@ -1194,27 +1188,24 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         })
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        Box::new(
-            self.iter_values()
-                .map(move |value| {
-                    (
-                        value,
-                        self.get_count_for_value(value, &HardwareCounterCell::disposable()) // Only used in HNSW building so no measurement needed here.
-                            .unwrap_or(0),
-                    )
-                })
-                .filter(move |(_value, count)| *count >= threshold)
-                .map(move |(value, count)| PayloadBlockCondition {
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_value(|value| {
+            let count = self
+                .get_count_for_value(value, &HardwareCounterCell::disposable()) // Only used in HNSW building so no measurement needed here.
+                .unwrap_or(0);
+            if count >= threshold {
+                f(PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), (*value).into()),
                     cardinality: count,
-                })
-                .map(Ok),
-        )
+                })?;
+            }
+            Ok(())
+        })
     }
 }
 
@@ -1475,9 +1466,12 @@ mod tests {
 
         let index = builder.finalize().unwrap();
 
-        for block in index.payload_blocks(50, PayloadKeyType::new("test_uuid")) {
-            black_box(block.unwrap());
-        }
+        index
+            .for_each_payload_block(50, PayloadKeyType::new("test_uuid"), &mut |block| {
+                black_box(block);
+                Ok(())
+            })
+            .unwrap();
     }
 
     #[test]

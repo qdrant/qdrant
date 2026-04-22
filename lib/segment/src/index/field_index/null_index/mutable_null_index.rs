@@ -380,13 +380,14 @@ impl PayloadFieldIndex for MutableNullIndex {
         })
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         _threshold: usize,
         _key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
+        _f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         // No payload blocks
-        Box::new(std::iter::empty())
+        Ok(())
     }
 }
 

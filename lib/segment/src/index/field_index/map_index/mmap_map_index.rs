@@ -341,10 +341,6 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn iter_values(&self) -> impl Iterator<Item = &N> + '_ {
-        self.storage.value_to_points.keys()
-    }
-
     pub fn for_each_value(
         &self,
         mut f: impl FnMut(&N) -> OperationResult<()>,

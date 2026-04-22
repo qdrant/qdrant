@@ -213,14 +213,15 @@ impl PayloadFieldIndex for BoolIndex {
         }
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: crate::types::PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<super::PayloadBlockCondition>> + '_> {
+        f: &mut dyn FnMut(super::PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            BoolIndex::Mmap(index) => index.payload_blocks(threshold, key),
-            BoolIndex::Immutable(index) => index.payload_blocks(threshold, key),
+            BoolIndex::Mmap(index) => index.for_each_payload_block(threshold, key, f),
+            BoolIndex::Immutable(index) => index.for_each_payload_block(threshold, key, f),
         }
     }
 }
@@ -597,10 +598,13 @@ mod tests {
                 index.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
-        let blocks = index
-            .payload_blocks(0, JsonPath::new(FIELD_NAME))
-            .map(Result::unwrap)
-            .collect_vec();
+        let mut blocks = Vec::new();
+        index
+            .for_each_payload_block(0, JsonPath::new(FIELD_NAME), &mut |block| {
+                blocks.push(block);
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].cardinality, 6);
         assert_eq!(blocks[1].cardinality, 6);

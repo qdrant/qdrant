@@ -7,7 +7,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::{PointOffsetType, TelemetryDetail};
-use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
@@ -116,10 +115,13 @@ fn _test_filterable_hnsw(
         )
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
-    let blocks = borrowed_payload_index
-        .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
-        .map(Result::unwrap)
-        .collect_vec();
+    let mut blocks = Vec::new();
+    borrowed_payload_index
+        .for_each_payload_block(&JsonPath::new(int_key), indexing_threshold, &mut |block| {
+            blocks.push(block);
+            Ok(())
+        })
+        .unwrap();
     for block in &blocks {
         assert!(
             block.condition.range.is_some(),
@@ -303,10 +305,13 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
         )
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
-    let blocks = borrowed_payload_index
-        .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
-        .map(Result::unwrap)
-        .collect_vec();
+    let mut blocks = Vec::new();
+    borrowed_payload_index
+        .for_each_payload_block(&JsonPath::new(int_key), indexing_threshold, &mut |block| {
+            blocks.push(block);
+            Ok(())
+        })
+        .unwrap();
     for block in &blocks {
         assert!(
             block.condition.range.is_some(),
