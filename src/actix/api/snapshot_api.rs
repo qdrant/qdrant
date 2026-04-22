@@ -774,8 +774,7 @@ async fn recover_partial_snapshot_from(
     let PartialSnapshotRecoverFrom { peer_url, api_key } = request;
     let SnapshottingParam { wait } = query.into_inner();
 
-    if !service_config.enable_snapshot_url_recovery
-        && matches!(peer_url.scheme(), "http" | "https")
+    if !service_config.enable_snapshot_url_recovery && matches!(peer_url.scheme(), "http" | "https")
     {
         return helpers::process_response_error(
             StorageError::forbidden(
