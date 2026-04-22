@@ -226,7 +226,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             alpha,
             offset,
             multiplier,
-            vector_parameters: vector_parameters.clone(),
+            vector_parameters: *vector_parameters,
         };
 
         for vector in orig_data {
