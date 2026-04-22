@@ -8,7 +8,6 @@ use std::{fmt, mem, ops, result, thread};
 
 use fs_err as fs;
 use fs_err::File;
-use fs4::fs_std::FileExt;
 use log::{debug, info, trace};
 pub use segment::{Entry, Segment};
 
@@ -136,7 +135,7 @@ impl Wal {
         // Windows workaround. Directories cannot be exclusively held so we create a proxy file
         // inside the tmp directory which is used for locking. This is done because:
         // - A Windows directory is not a file unlike in Linux, so we cannot open it with
-        //   `File::open` nor lock it with `try_lock_exclusive`
+        //   `File::open` nor lock it with `try_lock`
         // - We want this to be auto-deleted together with the `TempDir`
         #[cfg(target_os = "windows")]
         let mut path = path.as_ref().to_path_buf();
@@ -153,9 +152,7 @@ impl Wal {
             dir
         };
 
-        if !dir.file().try_lock_exclusive()? {
-            return Err(fs4::lock_contended_error());
-        }
+        dir.try_lock()?;
 
         // Holds open segments in the directory.
         let mut open_segments: Vec<OpenSegment> = Vec::new();
@@ -617,7 +614,7 @@ fn open_dir_entry(entry: fs::DirEntry) -> Result<Option<WalSegment>> {
 
 #[cfg(test)]
 mod test {
-    use std::io::Write;
+    use std::io::{ErrorKind, Write};
     use std::num::{NonZeroU8, NonZeroUsize};
 
     use fs_err as fs;
@@ -1256,7 +1253,7 @@ mod test {
         let dir = Builder::new().prefix("wal").tempdir().unwrap();
         let wal = Wal::open(dir.path()).unwrap();
         assert_eq!(
-            fs4::lock_contended_error().kind(),
+            ErrorKind::WouldBlock,
             Wal::open(dir.path()).unwrap_err().kind()
         );
         drop(wal);

@@ -221,7 +221,7 @@ data-encoding = "2.10.0"
 ecow = { version = "0.2.6", features = ["serde"] }
 env_logger = "0.11"
 fnv = "1.0"
-fs4 = "0.13.1"
+fs4 = "1.0.0"
 fs-err = { version = "3.3.0", features = ["tokio"] }
 fs_extra = "1.3.0"
 futures = "0.3.32"

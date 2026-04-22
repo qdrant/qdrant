@@ -1337,7 +1337,7 @@ dependencies = [
  "env_logger",
  "fnv",
  "fs-err",
- "fs4",
+ "fs4 1.0.0",
  "fs_extra",
  "futures",
  "hashring",
@@ -2585,7 +2585,7 @@ dependencies = [
  "foyer-common",
  "foyer-memory",
  "foyer-tokio",
- "fs4",
+ "fs4 0.13.1",
  "futures-core",
  "futures-util",
  "hashbrown 0.16.1",
@@ -2644,6 +2644,16 @@ checksum = "8640e34b88f7652208ce9e88b1a37a2ae95227d84abec377ccd3c5cfeb141ed4"
 dependencies = [
  "rustix 1.1.4",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "fs4"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d30c8899ca6ce4566c407ee75aa6331c666bddaca6ed846e7712d2db0ecdcd46"
+dependencies = [
+ "rustix 1.1.4",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7286,7 +7296,7 @@ dependencies = [
  "common",
  "criterion",
  "fs-err",
- "fs4",
+ "fs4 1.0.0",
  "indexmap 2.14.0",
  "itertools 0.14.0",
  "log",
@@ -7817,7 +7827,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -8683,7 +8693,7 @@ dependencies = [
  "docopt",
  "env_logger",
  "fs-err",
- "fs4",
+ "fs4 1.0.0",
  "hdrhistogram",
  "log",
  "memmap2 0.9.10",

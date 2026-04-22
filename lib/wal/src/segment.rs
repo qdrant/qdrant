@@ -10,7 +10,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use fs_err as fs;
 use fs_err::OpenOptions;
 #[cfg(not(unix))]
-use fs4::fs_std::FileExt;
+use fs4::FileExt;
 use log::{debug, error, log_enabled, trace};
 
 use crate::mmap_view_sync::MmapViewSync;
@@ -161,7 +161,12 @@ impl Segment {
 
             // fs4 provides some cross-platform bindings which help for Windows.
             #[cfg(not(unix))]
-            file.file().allocate(capacity as u64)?;
+            {
+                file.file().allocate(capacity as u64)?;
+                // fs4 1.0 skips set_len when cluster allocation covers the size;
+                // explicitly set the logical size so the mmap has the right extent.
+                file.set_len(capacity as u64)?;
+            }
             // For all unix systems WAL can just use ftruncate directly
             #[cfg(unix)]
             {
@@ -504,7 +509,12 @@ impl Segment {
                 .open(&self.path)?;
             // fs4 provides some cross-platform bindings which help for Windows.
             #[cfg(not(unix))]
-            file.file().allocate(required_capacity as u64)?;
+            {
+                file.file().allocate(required_capacity as u64)?;
+                // fs4 1.0 skips set_len when cluster allocation covers the size;
+                // explicitly set the logical size so the mmap has the right extent.
+                file.set_len(required_capacity as u64)?;
+            }
             // For all unix systems WAL can just use ftruncate directly
             #[cfg(unix)]
             {
