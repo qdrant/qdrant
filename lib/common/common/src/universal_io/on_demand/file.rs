@@ -76,36 +76,22 @@ where
     }
 
     fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let ReadRange {
-            byte_offset,
-            length,
-        } = range;
-        if length == 0 {
+        let byte_range = self.compute_byte_range::<T>(range)?;
+        if byte_range.is_empty() {
             return Ok(Cow::Borrowed(&[]));
         }
 
-        let t_size = size_of::<T>() as u64;
-        let byte_len = length
-            .checked_mul(t_size)
-            .ok_or_else(|| out_of_bounds::<T>(byte_offset, u64::MAX, self.len_bytes))?;
-        let byte_end = byte_offset
-            .checked_add(byte_len)
-            .ok_or_else(|| out_of_bounds::<T>(byte_offset, u64::MAX, self.len_bytes))?;
-        if byte_end > self.len_bytes {
-            return Err(out_of_bounds::<T>(byte_offset, byte_end, self.len_bytes));
-        }
-
         let state = self.local_state()?;
-        self.ensure_range(state, byte_offset..byte_end)?;
+        self.ensure_byte_ranges(state, std::iter::once(byte_range.clone()))?;
 
         // SAFETY: `state.mmap` is `self.len_bytes` bytes long, and every
-        // byte in `byte_offset..byte_end` was populated by `ensure_range`
+        // byte in `byte_range` was populated by `ensure_byte_ranges`
         // while holding `state.fetched`. The release of that mutex
         // synchronizes with this thread's subsequent read. Because the
         // remote is immutable, no block is ever written twice.
         let mmap_bytes =
             unsafe { std::slice::from_raw_parts(state.mmap.as_ptr(), state.mmap.len()) };
-        let slice = &mmap_bytes[byte_offset as usize..byte_end as usize];
+        let slice = &mmap_bytes[byte_range.start as usize..byte_range.end as usize];
         Ok(Cow::Borrowed(bytemuck::cast_slice(slice)))
     }
 
@@ -114,10 +100,46 @@ where
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()> {
+        // Validate every range up-front and collect the byte bounds of
+        // each, so we can issue one single batched remote fetch for
+        // every missing block across the whole batch.
+        let mut entries: Vec<(Meta, Range<u64>)> = Vec::new();
         for (meta, range) in ranges {
-            let data = self.read::<P>(range)?;
-            callback(meta, &data)?;
+            let byte_range = self.compute_byte_range::<T>(range)?;
+            entries.push((meta, byte_range));
         }
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        // If every request is zero-length, skip local-state init and
+        // just fan out empty slices to the callbacks.
+        if entries.iter().all(|(_, br)| br.is_empty()) {
+            for (meta, _) in entries {
+                callback(meta, &[])?;
+            }
+            return Ok(());
+        }
+
+        let state = self.local_state()?;
+        self.ensure_byte_ranges(
+            state,
+            entries
+                .iter()
+                .filter(|(_, br)| !br.is_empty())
+                .map(|(_, br)| br.clone()),
+        )?;
+
+        // SAFETY: same invariants as `read`: every byte in every
+        // `byte_range` was populated by `ensure_byte_ranges` while
+        // holding `state.fetched`, and the remote is immutable.
+        let mmap_bytes =
+            unsafe { std::slice::from_raw_parts(state.mmap.as_ptr(), state.mmap.len()) };
+        for (meta, byte_range) in entries {
+            let slice = &mmap_bytes[byte_range.start as usize..byte_range.end as usize];
+            callback(meta, bytemuck::cast_slice(slice))?;
+        }
+
         Ok(())
     }
 
@@ -135,7 +157,7 @@ where
             return Ok(());
         }
         let state = self.local_state()?;
-        self.ensure_range(state, 0..self.len_bytes)?;
+        self.ensure_byte_ranges(state, std::iter::once(0..self.len_bytes))?;
         Ok(())
     }
 
@@ -225,38 +247,72 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
         })
     }
 
-    // TODO: Fine-grain locking. `state.fetched` is currently held across
-    // the entire remote batch, so concurrent misses serialise through
-    // this one mutex. A per-block lock (or RwLock + per-block OnceLock)
-    // would let independent misses run in parallel.
-    fn ensure_range(&self, state: &LocalState, byte_range: Range<u64>) -> Result<()> {
-        if byte_range.is_empty() {
-            return Ok(());
+    /// Validate a typed [`ReadRange`] and return its byte bounds
+    /// `[start, end)`. Zero-length ranges produce `[offset, offset)`.
+    fn compute_byte_range<T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Range<u64>> {
+        let ReadRange {
+            byte_offset,
+            length,
+        } = range;
+        if length == 0 {
+            return Ok(byte_offset..byte_offset);
         }
+        let t_size = size_of::<T>() as u64;
+        let byte_len = length
+            .checked_mul(t_size)
+            .ok_or_else(|| out_of_bounds::<T>(byte_offset, u64::MAX, self.len_bytes))?;
+        let byte_end = byte_offset
+            .checked_add(byte_len)
+            .ok_or_else(|| out_of_bounds::<T>(byte_offset, u64::MAX, self.len_bytes))?;
+        if byte_end > self.len_bytes {
+            return Err(out_of_bounds::<T>(byte_offset, byte_end, self.len_bytes));
+        }
+        Ok(byte_offset..byte_end)
+    }
 
-        let first_block = byte_range.start / BLOCK_SIZE as u64;
-        let last_block = (byte_range.end - 1) / BLOCK_SIZE as u64;
-        let first_block =
-            u32::try_from(first_block).expect("file larger than 70 TiB is not supported");
-        let last_block =
-            u32::try_from(last_block).expect("file larger than 70 TiB is not supported");
-
+    // TODO: Fine-grain locking. `state.fetched` is currently held
+    // across the whole remote batch, so concurrent misses serialise
+    // through this one mutex. An atomic bitvec should allow misses to not
+    // block reads.
+    //
+    /// Ensure every byte in the union of `byte_ranges` is present in
+    /// the local mmap. All blocks missing across the input set are
+    /// fetched in a single `R::read_batch` call so the backend sees
+    /// the full batch and can reorder / pipeline / coalesce it however
+    /// it prefers.
+    fn ensure_byte_ranges(
+        &self,
+        state: &LocalState,
+        byte_ranges: impl IntoIterator<Item = Range<u64>>,
+    ) -> Result<()> {
         let mut fetched = state.fetched.lock();
 
-        let missing: Vec<u32> = (first_block..=last_block)
-            .filter(|b| !fetched.contains(*b))
-            .collect();
-        if missing.is_empty() {
+        // Union of all block indices touched by the input.
+        let mut wanted = RoaringBitmap::new();
+        for br in byte_ranges {
+            if br.is_empty() {
+                continue;
+            }
+            let first = br.start / BLOCK_SIZE as u64;
+            let last = (br.end - 1) / BLOCK_SIZE as u64;
+            let first = u32::try_from(first).expect("file larger than 70 TiB is not supported");
+            let last = u32::try_from(last).expect("file larger than 70 TiB is not supported");
+            wanted.insert_range(first..=last);
+        }
+
+        let to_fetch = wanted - &*fetched;
+        if to_fetch.is_empty() {
             return Ok(());
         }
 
-        let len_bytes = self.len_bytes;
         // Emit one BLOCK_SIZE-capped range per missing block. Backends
-        // that benefit from coalescing (e.g. S3) can merge contiguous ranges inside their own
-        // `read_batch` implementation; backends that benefit from keeping them
+        // that benefit from coalescing (e.g. high-latency object
+        // stores) can merge contiguous ranges inside their own
+        // `read_batch`; backends that benefit from keeping them
         // separate (e.g. io_uring, where queue depth is the source of
         // parallelism) can submit them individually.
-        let ranges = missing.iter().map(|&block| {
+        let len_bytes = self.len_bytes;
+        let ranges = to_fetch.iter().map(|block| {
             let byte_offset = u64::from(block) * BLOCK_SIZE as u64;
             let length = (BLOCK_SIZE as u64).min(len_bytes - byte_offset);
             (
@@ -268,33 +324,33 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
             )
         });
 
-        UniversalRead::<u8>::read_batch::<Sequential, _>(&self.remote, ranges, |block, bytes| {
-            let byte_offset = u64::from(block) * BLOCK_SIZE as u64;
-            debug_assert_eq!(
-                bytes.len() as u64,
-                (BLOCK_SIZE as u64).min(len_bytes - byte_offset),
-            );
-
-            // SAFETY: `[byte_offset, byte_offset + bytes.len())` lies
-            // within the mmap. This block was not in `fetched`, so
-            // no prior writer touched it; `state.fetched` is held
-            // for the whole batch, excluding concurrent writers.
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    bytes.as_ptr(),
-                    state.mmap.as_mut_ptr().add(byte_offset as usize),
-                    bytes.len(),
+        self.remote
+            .read_batch::<Sequential, _>(ranges, |block, bytes| {
+                let byte_offset = u64::from(block) * BLOCK_SIZE as u64;
+                debug_assert_eq!(
+                    bytes.len() as u64,
+                    (BLOCK_SIZE as u64).min(len_bytes - byte_offset),
                 );
-            }
-            fetched.insert(block);
-            Ok(())
-        })?;
+
+                // SAFETY: `[byte_offset, byte_offset + bytes.len())` lies
+                // within the mmap. This block was not in `fetched`, so
+                // no prior writer touched it; `state.fetched` is held
+                // for the whole batch, excluding concurrent writers.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        bytes.as_ptr(),
+                        state.mmap.as_mut_ptr().add(byte_offset as usize),
+                        bytes.len(),
+                    );
+                }
+                fetched.insert(block);
+                Ok(())
+            })?;
 
         Ok(())
     }
 }
 
-// For now, let's remove the files on drop
 impl<R> Drop for OnDemandFile<R> {
     fn drop(&mut self) {
         let Some(state) = self.local.take() else {
