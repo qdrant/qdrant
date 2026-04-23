@@ -461,7 +461,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.ram_usage_bytes(),
             NumericIndexInner::Immutable(index) => index.ram_usage_bytes(),
-            NumericIndexInner::Mmap(_) => 0, // mmap-backed, accounted via files
+            NumericIndexInner::Mmap(index) => index.ram_usage_bytes(),
         }
     }
 

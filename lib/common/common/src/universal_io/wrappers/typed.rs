@@ -25,6 +25,14 @@ pub struct TypedStorage<S, T> {
     _phantom: PhantomData<T>,
 }
 
+impl<S, T> TypedStorage<S, T> {
+    /// Approximate RAM usage in bytes. IO-backed storage has no significant
+    /// heap allocations; on-disk data is accounted via `files()`.
+    pub fn ram_usage_bytes(&self) -> usize {
+        0
+    }
+}
+
 impl<S: UniversalRead<T>, T: Copy + 'static> UniversalReadFileOps for TypedStorage<S, T> {
     #[inline]
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {

@@ -48,6 +48,24 @@ pub(super) struct Storage<
     pub(super) point_to_values: StoredPointToValues<T, S>,
 }
 
+impl<
+    T: Encodable + Numericable + Default + StoredValue + 'static,
+    S: UniversalRead<Point<T>> + UniversalRead<u8>,
+> Storage<T, S>
+{
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            deleted,
+            pairs,
+            point_to_values,
+        } = self;
+
+        deleted.capacity().div_ceil(u8::BITS as usize)
+            + pairs.ram_usage_bytes()
+            + point_to_values.ram_usage_bytes()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MmapNumericIndexConfig {
     max_values_per_point: usize,
@@ -448,5 +466,18 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         clear_disk_cache(&path.join(DELETED_PATH))?;
         point_to_values.clear_cache()?;
         Ok(())
+    }
+
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            path: _,
+            storage,
+            histogram,
+            deleted_count: _,
+            max_values_per_point: _,
+            is_on_disk: _,
+        } = self;
+
+        histogram.ram_usage_bytes() + storage.ram_usage_bytes()
     }
 }

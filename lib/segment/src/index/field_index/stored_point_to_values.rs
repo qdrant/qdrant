@@ -258,6 +258,19 @@ where
         self.header.points_count as usize
     }
 
+    /// Approximate RAM usage in bytes. Data is mmap-backed, so no significant
+    /// heap allocations; on-disk data is accounted via `files()`.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            file_name: _,
+            store: _,
+            header: _,
+            phantom: _,
+        } = self;
+        0
+    }
+
+
     fn get_range(&self, point_id: PointOffsetType) -> OperationResult<Option<MmapRange>> {
         if point_id < self.header.points_count as PointOffsetType {
             let range_offset = (self.header.ranges_start as usize)
