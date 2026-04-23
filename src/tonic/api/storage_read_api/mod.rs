@@ -159,10 +159,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             let cow = storage
-                .read::<Random>(ReadRange {
-                    byte_offset,
-                    length,
-                })
+                .read::<Random>(ReadRange::new(byte_offset, length))
                 .map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
@@ -196,10 +193,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
         let open_options = OpenOptions::default();
-        let range = ReadRange {
-            byte_offset,
-            length,
-        };
+        let range = ReadRange::new(byte_offset, length);
         let (storage, range) = tokio::task::spawn_blocking(move || {
             let s = S::open(&path, open_options).map_err(io_error_to_status)?;
             let file_len = s.len().map_err(io_error_to_status)?;
@@ -223,10 +217,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
                 let data = tokio::task::spawn_blocking(move || {
                     storage_for_read
-                        .read::<Random>(ReadRange {
-                            byte_offset: current_offset,
-                            length: chunk_size,
-                        })
+                        .read::<Random>(ReadRange::new(current_offset, chunk_size))
                         .map(|cow| cow.into_owned())
                         .map_err(io_error_to_status)
                 })
@@ -293,10 +284,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let open_options = OpenOptions::default();
         let ranges = ranges
             .iter()
-            .map(|r| ReadRange {
-                byte_offset: r.byte_offset,
-                length: r.length,
-            })
+            .map(|r| ReadRange::new(r.byte_offset, r.length))
             .collect::<Vec<_>>();
 
         let data = tokio::task::spawn_blocking(move || {
@@ -347,13 +335,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 unique_paths.push(resolved);
                 idx
             });
-            reads_.push((
-                file_index,
-                ReadRange {
-                    byte_offset: entry.byte_offset,
-                    length: entry.length,
-                },
-            ));
+            reads_.push((file_index, ReadRange::new(entry.byte_offset, entry.length)));
         }
 
         let data = tokio::task::spawn_blocking(move || {
