@@ -6,6 +6,7 @@ pub mod file_ops;
 pub mod io_uring;
 pub mod local_file_ops;
 pub mod mmap;
+pub mod on_demand;
 pub mod read;
 mod wrappers;
 pub mod write;
@@ -19,6 +20,7 @@ pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::*;
 pub use self::mmap::*;
+pub use self::on_demand::*;
 pub use self::read::UniversalRead;
 pub use self::wrappers::*;
 pub use self::write::UniversalWrite;
@@ -29,6 +31,7 @@ pub enum UniversalKind {
     Mmap,
     IoUring,
     DiskCache,
+    OnDemand,
 }
 
 #[derive(Copy, Clone, Debug)]
