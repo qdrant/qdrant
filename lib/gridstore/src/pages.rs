@@ -3,7 +3,7 @@ use std::iter;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
-use ahash::{AHashMap, HashSet};
+use ahash::{HashMapExt as _, HashSet};
 use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::universal_io::{
@@ -242,6 +242,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
                             len_bytes,
                             len_pages,
                         };
+
                         let page = &self.pages[page_idx as usize];
                         (meta, page, range)
                     },
@@ -249,22 +250,21 @@ impl<S: UniversalRead<u8>> Pages<S> {
             });
 
         let mut chunks = S::read_multi_iter::<P, _>(reads)?;
-        let mut values = AHashMap::new();
+        let mut values = ahash::HashMap::new();
 
         let iter = iter::from_fn(move || {
             for result in chunks.by_ref() {
-                let (
-                    ReadMeta {
-                        value_idx,
-                        buffer_offset,
-                        len_bytes,
-                        len_pages,
-                    },
-                    bytes,
-                ) = match result {
+                let (meta, bytes) = match result {
                     Ok(chunk) => chunk,
                     Err(err) => return Some(Err(err.into())),
                 };
+
+                let ReadMeta {
+                    value_idx,
+                    buffer_offset,
+                    len_bytes,
+                    len_pages,
+                } = meta;
 
                 if len_pages == 1 {
                     return Some(Ok((value_idx, bytes)));
