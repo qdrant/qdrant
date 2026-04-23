@@ -330,6 +330,43 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Drop the in-memory local shard (if any) and remove its on-disk data files.
+    ///
+    /// Used by shard snapshot transfers to free disk space before the receiving node
+    /// downloads the new snapshot, avoiding having both the old data and the incoming
+    /// snapshot on disk at the same time. The configuration files and replica state
+    /// are preserved, so the shard directory remains a valid (empty) shard.
+    ///
+    /// Only safe to call while the shard is in a state that prevents user requests
+    /// (`PartialSnapshot` during a shard transfer). Do NOT call this from a
+    /// user-triggered URL recovery path, where the shard may still be serving queries.
+    ///
+    /// Writes the shard initializing flag before clearing, so that a crash between
+    /// here and the end of the subsequent `restore_local_replica_from` call causes
+    /// the shard to be loaded as a dummy on startup and re-recovered.
+    pub async fn clear_local_for_snapshot_recovery(
+        &self,
+        collection_path: &Path,
+    ) -> CollectionResult<()> {
+        let mut local = self.local.write().await;
+
+        // Mark the shard as initializing before touching disk, so a crash during or
+        // after clearing is detected on next startup and the shard is reloaded as a
+        // dummy that triggers recovery.
+        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
+        let flag_file = tokio_fs::File::create(&shard_flag).await?;
+        flag_file.sync_all().await?;
+        sync_parent_dir_async(&shard_flag).await?;
+
+        if let Some(shard) = local.take() {
+            shard.stop_gracefully().await;
+        }
+
+        LocalShard::clear(&self.shard_path).await?;
+
+        Ok(())
+    }
+
     pub async fn get_partial_snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         self.local
             .read()

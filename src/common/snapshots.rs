@@ -194,6 +194,17 @@ pub async fn recover_shard_snapshot(
             .await
             .start_shard_recovery(shard_id);
 
+        // For shard transfers, drop the existing shard and clear its on-disk data
+        // before downloading the new snapshot so we don't need space for both copies.
+        // Safe because the shard is in `PartialSnapshot` state for the duration of
+        // the transfer and will not serve user requests. Not done for user-triggered
+        // URL recovery, where the shard may still be active.
+        if matches!(snapshot_priority, SnapshotPriority::ShardTransfer) {
+            collection
+                .clear_local_shard_for_snapshot_recovery(shard_id)
+                .await?;
+        }
+
         let download_task = async {
             let DownloadResult {
                 snapshot,

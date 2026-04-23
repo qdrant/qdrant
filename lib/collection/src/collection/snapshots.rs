@@ -374,6 +374,23 @@ impl Collection {
             .assert_shard_exists(shard_id)
     }
 
+    /// Drop the local shard and clear its on-disk data, before a shard snapshot
+    /// transfer downloads a replacement snapshot. See
+    /// [`ShardReplicaSet::clear_local_for_snapshot_recovery`] for details and safety
+    /// constraints.
+    pub async fn clear_local_shard_for_snapshot_recovery(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        self.shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?
+            .clear_local_for_snapshot_recovery(&self.path)
+            .await
+    }
+
     pub async fn try_take_partial_snapshot_recovery_lock(
         &self,
         shard_id: ShardId,
