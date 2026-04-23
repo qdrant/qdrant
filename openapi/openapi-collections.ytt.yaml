@@ -276,7 +276,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/VectorNameConfig"
-      responses: #@ response(type("boolean"))
+      responses: #@ response(reference("UpdateResult"))
 
     delete:
       tags:
@@ -316,7 +316,7 @@ paths:
           schema:
             type: integer
             minimum: 1
-      responses: #@ response(type("boolean"))
+      responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/cluster:
     get:
