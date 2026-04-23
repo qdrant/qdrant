@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 use std::{env, io};
 
 use api::grpc::transport_channel_pool::{
@@ -315,6 +316,31 @@ impl Settings {
         // Build and merge config and deserialize into Settings, attach any load errors we had
         let mut settings: Settings = config.build()?.try_deserialize()?;
         settings.load_errors.extend(load_errors);
+
+        // Resolve relative storage paths against the executable directory rather than
+        // the current working directory.  This ensures that data is always stored next
+        // to the binary regardless of where the user invokes qdrant from, which is
+        // especially important on Windows where users commonly run qdrant.exe from
+        // different terminal locations.
+        if let Ok(exe_path) = env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let resolve = |p: &Path| -> PathBuf {
+                    if p.is_relative() {
+                        exe_dir.join(p)
+                    } else {
+                        p.to_path_buf()
+                    }
+                };
+                let storage_path = settings.storage.storage_path.clone();
+                settings.storage.storage_path = resolve(&storage_path);
+                let snapshots_path = settings.storage.snapshots_path.clone();
+                settings.storage.snapshots_path = resolve(&snapshots_path);
+                if let Some(temp) = settings.storage.temp_path.take() {
+                    settings.storage.temp_path = Some(resolve(&temp));
+                }
+            }
+        }
+
         Ok(settings)
     }
 
