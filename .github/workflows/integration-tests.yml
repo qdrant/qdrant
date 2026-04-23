@@ -352,27 +352,12 @@ jobs:
             tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
         shell: bash
         timeout-minutes: 15
-      - name: Locate test durations file
-        if: always()
-        run: |
-          echo "=== cwd ==="
-          pwd
-          echo "=== find under workspace ==="
-          find "$GITHUB_WORKSPACE" -name '.test_durations' \
-               -not -path '*/.venv/*' -not -path '*/node_modules/*' \
-               2>/dev/null || true
-          echo "=== find under /tmp ==="
-          find /tmp -name '.test_durations' 2>/dev/null || true
       - name: Upload test durations
         if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-durations-shard-${{ matrix.shard }}
-          path: |
-            **/.test_durations
-            !**/.venv/**
-            !**/__pycache__/**
-          if-no-files-found: warn
+          path: .test_durations
           retention-days: 1
       - name: Upload test logs on failure
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
