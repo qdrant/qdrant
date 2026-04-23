@@ -22,6 +22,7 @@ use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::turboquant::quantization::{Precomputed, TurboQuantizer};
+use crate::turboquant::simd::Query4bitSimd;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -66,7 +67,12 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
 
 /// Encoded query type for Turbo Quant.
 pub struct EncodedQueryTQ {
-    rotated_query: Precomputed,
+    pub data: EncodedQueryTQData,
+}
+
+pub enum EncodedQueryTQData {
+    Native(Precomputed),
+    Simd4Bits(Query4bitSimd),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -103,7 +109,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
-        let dim = vector_parameters.dim;
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
         let metadata = Metadata {
@@ -114,7 +119,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
 
         let quantizer = TurboQuantizer::new_from_metadata(&metadata);
 
-        let mut buf = vec![0.0f64; dim];
+        let padded_dim = quantizer.padded_dim();
+        let mut buf = vec![0.0f64; padded_dim];
 
         for vector in data {
             if stopped.load(Ordering::Relaxed) {
@@ -160,7 +166,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
             quantizer,
-            encoding_buffer: vec![0.0f64; dim],
+            encoding_buffer: vec![0.0f64; padded_dim],
         })
     }
 
@@ -170,13 +176,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
 
         let quantizer = TurboQuantizer::new_from_metadata(&metadata);
 
-        let dim = metadata.vector_parameters.dim;
+        let padded_dim = quantizer.padded_dim();
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
             quantizer,
-            encoding_buffer: vec![0.0f64; dim],
+            encoding_buffer: vec![0.0f64; padded_dim],
         };
 
         Ok(result)
@@ -225,9 +231,29 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
-        EncodedQueryTQ {
-            rotated_query: self.quantizer.precompute_query(query),
-        }
+        // Pad the rotated buffer up to the slot count implied by the packed
+        // storage (`quantized_dim_size_for` bytes × 8 / bit_size).  This is
+        // always ≥ `query.len()` and a multiple of `8 / bit_size`, so the
+        // 4-bit SIMD path always gets an even-length input.  Zero-padding at
+        // the tail is scoring-neutral: zero query entries contribute nothing
+        // to the dot product regardless of which centroid they align with.
+        let bits = self.metadata.bits;
+        let distance = self.metadata.vector_parameters.distance_type;
+        let packed_bytes = TurboQuantizer::quantized_dim_size_for(query.len(), bits, distance);
+        let padded_dim = packed_bytes * (u8::BITS as usize) / bits.bit_size() as usize;
+        debug_assert!(padded_dim >= query.len());
+
+        let mut rotated: Vec<f64> = query.iter().map(|&x| f64::from(x)).collect();
+        self.quantizer.rotation.apply(&mut rotated);
+        rotated.resize(padded_dim, 0.0);
+
+        let data = if matches!(bits, TQBits::Bits4) {
+            let rotated_f32: Vec<f32> = rotated.iter().map(|&x| x as f32).collect();
+            EncodedQueryTQData::Simd4Bits(Query4bitSimd::new(&rotated_f32))
+        } else {
+            EncodedQueryTQData::Native(Precomputed::new(rotated))
+        };
+        EncodedQueryTQ { data }
     }
 
     fn score_point(
@@ -252,7 +278,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
         hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
 
-        self.quantizer.score_symmetric(&v1, &v2)
+        self.quantizer.score_internal(&v1, &v2)
     }
 
     fn quantized_vector_size(&self) -> usize {
@@ -319,7 +345,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
         hw_counter.cpu_counter().incr_delta(bytes.len());
-        self.quantizer
-            .score_precomputed(&query.rotated_query, bytes)
+        match &query.data {
+            EncodedQueryTQData::Native(precomputed) => {
+                self.quantizer.score_precomputed(precomputed, bytes)
+            }
+            EncodedQueryTQData::Simd4Bits(simd_query) => {
+                self.quantizer.score_precomputed_simd4bit(simd_query, bytes)
+            }
+        }
     }
 }

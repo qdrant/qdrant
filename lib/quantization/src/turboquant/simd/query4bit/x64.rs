@@ -273,9 +273,7 @@ mod tests {
 
     use super::super::shared::{PARITY_DIMS, pack_nibbles, random_inputs};
     use super::super::{Query4bitSimd, score_4bit_internal_scalar};
-    use super::{
-        score_4bit_internal_avx2, score_4bit_internal_sse,
-    };
+    use super::{score_4bit_internal_avx2, score_4bit_internal_sse};
 
     #[test]
     fn test_sse_matches_scalar() {

@@ -83,6 +83,16 @@ impl TurboQuantizer {
         (extras, iter)
     }
 
+    /// Split `vec` (packed dims followed by extras) into the packed-dim byte
+    /// slice and the decoded extras.  Companion to [`Self::unpack_vector`] for
+    /// callers that score the packed bytes directly (e.g. SIMD paths) and only
+    /// need the extras separately.
+    pub(super) fn split_dims_extras<'a>(&self, vec: &'a [u8]) -> (&'a [u8], TqVectorExtras) {
+        let extra_len = TqVectorExtras::size_for(self.bits, self.distance, self.mode);
+        let (dim_part, extra_part) = vec.split_at(vec.len() - extra_len);
+        (dim_part, self.unpack_extras_from(extra_part))
+    }
+
     /// Size in bytes of a vector quantized by this quantizer.
     pub fn quantized_size(&self) -> usize {
         Self::quantized_size_for(self.rotation.dim(), self.bits, self.distance, self.mode)
@@ -102,10 +112,30 @@ impl TurboQuantizer {
 
     /// Size in bytes of the quantized dimensions alone (without extras) for a
     /// vector of `dim` dimensions under the given `bits` and `distance`.
-    fn quantized_dim_size_for(dim: usize, bits: TQBits, distance: DistanceType) -> usize {
+    pub(super) fn quantized_dim_size_for(
+        dim: usize,
+        bits: TQBits,
+        distance: DistanceType,
+    ) -> usize {
         Self::assert_supported_distance(distance);
 
         (dim * bits.bit_size() as usize).div_ceil(u8::BITS as usize)
+    }
+
+    /// Number of centroid slots implied by the packed storage — i.e. the
+    /// logical `dim` rounded up to the smallest multiple of `8 / bit_size` so
+    /// that `packed_bytes = padded_dim * bit_size / 8` exactly.  This is the
+    /// length of the rotated/padded query buffer and the length of the
+    /// packing iterator in [`TurboQuantizer::quantize`].
+    pub fn padded_dim_for(dim: usize, bits: TQBits, distance: DistanceType) -> usize {
+        Self::quantized_dim_size_for(dim, bits, distance) * (u8::BITS as usize)
+            / bits.bit_size() as usize
+    }
+
+    /// Shortcut over [`Self::padded_dim_for`] using this quantizer's bits and
+    /// distance.
+    pub fn padded_dim(&self) -> usize {
+        Self::padded_dim_for(self.rotation.dim(), self.bits, self.distance)
     }
 
     /// Generates extra data that is required to store together with the quantized dimensions.
