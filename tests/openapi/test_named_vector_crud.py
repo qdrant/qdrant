@@ -13,7 +13,11 @@ VECTOR_SIZE2 = 8
 @pytest.fixture(autouse=True, scope="module")
 def setup(collection_name):
     # Drop if exists
-    requests.delete(f"{QDRANT_HOST}/collections/{collection_name}")
+    request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
 
     # Create collection with two named vectors
     response = request_with_validation(
@@ -32,7 +36,11 @@ def setup(collection_name):
     )
     assert response.ok
     yield
-    requests.delete(f"{QDRANT_HOST}/collections/{collection_name}")
+    request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
 
 
 def test_delete_recreate_vector_scroll(collection_name):
@@ -64,18 +72,22 @@ def test_delete_recreate_vector_scroll(collection_name):
     )
     assert response.ok
 
-    # Delete vec_a (use plain requests — OpenAPI response schema is mismatched)
-    response = requests.delete(
-        f"{QDRANT_HOST}/collections/{collection_name}/vectors/vec_a",
-        params={'wait': 'true'},
+    # Delete vec_a
+    response = request_with_validation(
+        api='/collections/{collection_name}/vectors/{vector_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name, 'vector_name': 'vec_a'},
+        query_params={'wait': 'true'},
     )
     assert response.ok
 
     # Recreate vec_a with different dimensions
-    response = requests.put(
-        f"{QDRANT_HOST}/collections/{collection_name}/vectors/vec_a",
-        params={'wait': 'true'},
-        json={"dense": {"size": 6, "distance": "Dot"}},
+    response = request_with_validation(
+        api='/collections/{collection_name}/vectors/{vector_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name, 'vector_name': 'vec_a'},
+        query_params={'wait': 'true'},
+        body={"dense": {"size": 6, "distance": "Dot"}},
     )
     assert response.ok
 
@@ -94,6 +106,11 @@ def test_delete_recreate_vector_scroll(collection_name):
         assert 'vec_b' in point['vector'], f"vec_b missing from point {point['id']}"
         assert len(point['vector']['vec_b']) == VECTOR_SIZE2
 
+
+# Input-validation tests below intentionally use plain `requests` because
+# `request_with_validation` would reject the body client-side (size violates
+# the spec's minimum/maximum), preventing the server-side rejection from
+# being exercised.
 
 def test_create_vector_rejects_zero_size(collection_name):
     """size: 0 must be rejected at the API boundary, not reach the storage layer."""
@@ -141,10 +158,16 @@ def _run_delete_recreate_scroll(wait_for_indexing: bool):
     num_points = 200
 
     # Setup
-    requests.delete(f"{QDRANT_HOST}/collections/{coll}")
-    response = requests.put(
-        f"{QDRANT_HOST}/collections/{coll}",
-        json={
+    request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': coll},
+    )
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': coll},
+        body={
             "vectors": {
                 "vec_a": {"size": dim_a, "distance": "Cosine"},
                 "vec_b": {"size": dim_b, "distance": "Cosine"},
@@ -167,9 +190,12 @@ def _run_delete_recreate_scroll(wait_for_indexing: bool):
         }
         for i in range(num_points)
     ]
-    response = requests.put(
-        f"{QDRANT_HOST}/collections/{coll}/points?wait=true",
-        json={"points": points},
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': coll},
+        query_params={'wait': 'true'},
+        body={"points": points},
     )
     assert response.ok
 
@@ -177,22 +203,30 @@ def _run_delete_recreate_scroll(wait_for_indexing: bool):
         wait_collection_green(coll)
 
     # Delete vec_a
-    response = requests.delete(
-        f"{QDRANT_HOST}/collections/{coll}/vectors/vec_a?wait=true",
+    response = request_with_validation(
+        api='/collections/{collection_name}/vectors/{vector_name}',
+        method="DELETE",
+        path_params={'collection_name': coll, 'vector_name': 'vec_a'},
+        query_params={'wait': 'true'},
     )
     assert response.ok
 
     # Recreate vec_a with different dimensions
-    response = requests.put(
-        f"{QDRANT_HOST}/collections/{coll}/vectors/vec_a?wait=true",
-        json={"dense": {"size": dim_a_new, "distance": "Dot"}},
+    response = request_with_validation(
+        api='/collections/{collection_name}/vectors/{vector_name}',
+        method="PUT",
+        path_params={'collection_name': coll, 'vector_name': 'vec_a'},
+        query_params={'wait': 'true'},
+        body={"dense": {"size": dim_a_new, "distance": "Dot"}},
     )
     assert response.ok
 
     # First scroll — must not panic
-    response = requests.post(
-        f"{QDRANT_HOST}/collections/{coll}/points/scroll",
-        json={"limit": 10, "with_vector": True},
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': coll},
+        body={"limit": 10, "with_vector": True},
     )
     assert response.ok
     result = response.json()['result']
@@ -213,16 +247,21 @@ def _run_delete_recreate_scroll(wait_for_indexing: bool):
         }
         for i in range(50)
     ]
-    response = requests.put(
-        f"{QDRANT_HOST}/collections/{coll}/points?wait=true",
-        json={"points": updated_points},
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': coll},
+        query_params={'wait': 'true'},
+        body={"points": updated_points},
     )
     assert response.ok
 
     # Second scroll — verify updated points have vec_a data
-    response = requests.post(
-        f"{QDRANT_HOST}/collections/{coll}/points/scroll",
-        json={"limit": num_points, "with_vector": True},
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': coll},
+        body={"limit": num_points, "with_vector": True},
     )
     assert response.ok
     result = response.json()['result']
@@ -238,14 +277,22 @@ def _run_delete_recreate_scroll(wait_for_indexing: bool):
             assert len(point['vector']['vec_a']) == dim_a_new
 
     # Cleanup
-    requests.delete(f"{QDRANT_HOST}/collections/{coll}")
+    request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': coll},
+    )
 
 
 def wait_collection_green(collection_name, timeout=30):
     """Poll collection status until optimizer is idle."""
     start = time.time()
     while time.time() - start < timeout:
-        r = requests.get(f"{QDRANT_HOST}/collections/{collection_name}")
+        r = request_with_validation(
+            api='/collections/{collection_name}',
+            method="GET",
+            path_params={'collection_name': collection_name},
+        )
         assert r.ok
         if r.json()['result']['status'] == 'green':
             return
