@@ -348,6 +348,17 @@ impl ShardReplicaSet {
         &self,
         collection_path: &Path,
     ) -> CollectionResult<()> {
+        // Callers must only invoke this while the shard is in a non-active state
+        // (e.g. `PartialSnapshot` during a shard transfer). Clearing an `Active`
+        // replica would silently drop data that may still be serving queries.
+        debug_assert!(
+            self.peer_state(self.this_peer_id())
+                .is_none_or(|s| !s.can_be_source_of_truth()),
+            "clear_local_for_snapshot_recovery called on an active replica {}:{}",
+            self.collection_id,
+            self.shard_id,
+        );
+
         let mut local = self.local.write().await;
 
         // Mark the shard as initializing before touching disk, so a crash during or
