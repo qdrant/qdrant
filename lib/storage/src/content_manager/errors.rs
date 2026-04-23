@@ -147,9 +147,6 @@ impl StorageError {
             CollectionError::InconsistentShardFailure { ref first_err, .. } => {
                 Self::from_inconsistent_shard_failure(*first_err.clone(), overriding_description)
             }
-            CollectionError::BadShardSelection { .. } => StorageError::BadRequest {
-                description: overriding_description,
-            },
             CollectionError::ForwardProxyError { error, .. } => {
                 Self::from_inconsistent_shard_failure(*error, overriding_description)
             }
@@ -207,9 +204,6 @@ impl From<CollectionError> for StorageError {
             CollectionError::InconsistentShardFailure { ref first_err, .. } => {
                 let full_description = err.to_string();
                 Self::from_inconsistent_shard_failure(*first_err.clone(), full_description)
-            }
-            CollectionError::BadShardSelection { description } => {
-                StorageError::BadRequest { description }
             }
             CollectionError::ForwardProxyError { error, .. } => {
                 let full_description = error.to_string();
