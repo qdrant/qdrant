@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package qdrant;
+
+option csharp_namespace = "Qdrant.Client.Grpc";
+
+import "storage_read_service.proto";
+
+// Shard-scoped variant of `StorageRead`. Paths are interpreted relative to a
+// single shard directory (`<storage>/collections/<collection>/<shard_id>`).
+//
+// Replicas of the same shard on different peers are not binary-compatible
+// (segment IDs, WAL positions, optimizer state all diverge), so the caller
+// is responsible for targeting the peer that owns the desired replica.
+service ShardStorageRead {
+  rpc ListFiles(ShardListFilesRequest) returns (ListFilesResponse) {}
+  rpc FileExists(ShardFileExistsRequest) returns (FileExistsResponse) {}
+  rpc FileLength(ShardFileLengthRequest) returns (FileLengthResponse) {}
+  rpc ReadBytes(ShardReadBytesRequest) returns (ReadBytesResponse) {}
+  rpc ReadBytesStream(ShardReadBytesStreamRequest) returns (stream ReadBytesStreamResponse) {}
+  rpc ReadWhole(ShardReadWholeRequest) returns (ReadWholeResponse) {}
+  rpc ReadBatch(ShardReadBatchRequest) returns (ReadBatchResponse) {}
+  rpc ReadMulti(ShardReadMultiRequest) returns (ReadMultiResponse) {}
+}
+
+message ShardListFilesRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string prefix_path = 3;
+}
+
+message ShardFileExistsRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+}
+
+message ShardFileLengthRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+}
+
+message ShardReadBytesRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+  uint64 byte_offset = 4;
+  uint64 length = 5;
+}
+
+message ShardReadBytesStreamRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+  uint64 byte_offset = 4;
+  uint64 length = 5;
+}
+
+message ShardReadWholeRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+}
+
+message ShardReadBatchRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  string path = 3;
+  repeated ReadBatchRange ranges = 4;
+}
+
+message ShardReadMultiRequest {
+  string collection_name = 1;
+  uint32 shard_id = 2;
+  repeated ReadMultiEntry reads = 3;
+}

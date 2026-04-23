@@ -68,6 +68,13 @@ pub struct ReadRange {
 }
 
 impl ReadRange {
+    pub fn new(byte_offset: u64, length: u64) -> ReadRange {
+        ReadRange {
+            byte_offset,
+            length,
+        }
+    }
+
     pub fn one(byte_offset: u64) -> ReadRange {
         ReadRange {
             byte_offset,

@@ -1,19 +1,20 @@
 use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use api::grpc::qdrant::storage_read_server::StorageRead;
+use api::grpc::qdrant::shard_storage_read_server::ShardStorageRead;
 use api::grpc::qdrant::{
-    FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesRequest,
-    ListFilesResponse, ReadBatchRequest, ReadBatchResponse, ReadBytesRequest, ReadBytesResponse,
-    ReadBytesStreamRequest, ReadBytesStreamResponse, ReadMultiRequest, ReadMultiResponse,
-    ReadWholeRequest, ReadWholeResponse,
+    FileExistsResponse, FileLengthResponse, ListFilesResponse, ReadBatchResponse,
+    ReadBytesResponse, ReadBytesStreamResponse, ReadMultiResponse, ReadWholeResponse,
+    ShardFileExistsRequest, ShardFileLengthRequest, ShardListFilesRequest, ShardReadBatchRequest,
+    ShardReadBytesRequest, ShardReadBytesStreamRequest, ShardReadMultiRequest,
+    ShardReadWholeRequest,
 };
 use common::universal_io::mmap::MmapFile;
 use common::universal_io::{ReadRange, UniversalRead};
 use futures::{Stream, StreamExt};
-use storage::dispatcher::Dispatcher;
+use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status, async_trait};
 
 use crate::tonic::api::{storage_read_common as common_ops, validate};
@@ -23,34 +24,28 @@ mod helpers;
 #[cfg(test)]
 mod tests;
 
-pub struct StorageReadService<S: UniversalRead<u8> + Send + Sync + 'static = MmapFile> {
-    dispatcher: Arc<Dispatcher>,
+pub struct ShardStorageReadService<S: UniversalRead<u8> + Send + Sync + 'static = MmapFile> {
+    toc: Arc<TableOfContent>,
     _marker: PhantomData<S>,
 }
 
-/// The collection directory is always a direct child of the collections
-/// root, so its parent is the canonicalization anchor.
-fn safe_root(base: &Path) -> &Path {
-    base.parent()
-        .expect("collection base path always has a parent")
-}
-
 #[async_trait]
-impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadService<S> {
+impl<S: UniversalRead<u8> + Send + Sync + 'static> ShardStorageRead for ShardStorageReadService<S> {
     async fn file_exists(
         &self,
-        mut request: Request<FileExistsRequest>,
+        mut request: Request<ShardFileExistsRequest>,
     ) -> Result<Response<FileExistsResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let FileExistsRequest {
+        let ShardFileExistsRequest {
             collection_name,
+            shard_id,
             path,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "file_exists")
+        let (base, safe_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "file_exists")
             .await?;
-        let path = common_ops::resolve_path(&base, safe_root(&base), &path)?;
+        let path = common_ops::resolve_path(&base, &safe_root, &path)?;
 
         let exists = common_ops::file_exists::<S>(path).await?;
         Ok(Response::new(FileExistsResponse { exists }))
@@ -58,18 +53,19 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
     async fn list_files(
         &self,
-        mut request: Request<ListFilesRequest>,
+        mut request: Request<ShardListFilesRequest>,
     ) -> Result<Response<ListFilesResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let ListFilesRequest {
+        let ShardListFilesRequest {
             collection_name,
+            shard_id,
             prefix_path,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "list_files")
+        let (base, safe_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "list_files")
             .await?;
-        let prefix_path = common_ops::resolve_path(&base, safe_root(&base), &prefix_path)?;
+        let prefix_path = common_ops::resolve_path(&base, &safe_root, &prefix_path)?;
 
         let paths = common_ops::list_files::<S>(base, prefix_path).await?;
         Ok(Response::new(ListFilesResponse { paths }))
@@ -77,18 +73,19 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
     async fn file_length(
         &self,
-        mut request: Request<FileLengthRequest>,
+        mut request: Request<ShardFileLengthRequest>,
     ) -> Result<Response<FileLengthResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let FileLengthRequest {
+        let ShardFileLengthRequest {
             collection_name,
+            shard_id,
             path,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "file_length")
+        let (base, safe_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "file_length")
             .await?;
-        let path = common_ops::resolve_path(&base, safe_root(&base), &path)?;
+        let path = common_ops::resolve_path(&base, &safe_root, &path)?;
 
         let length = common_ops::file_length::<S>(path).await?;
         Ok(Response::new(FileLengthResponse { length }))
@@ -96,21 +93,22 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
     async fn read_bytes(
         &self,
-        mut request: Request<ReadBytesRequest>,
+        mut request: Request<ShardReadBytesRequest>,
     ) -> Result<Response<ReadBytesResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let ReadBytesRequest {
+        let ShardReadBytesRequest {
             collection_name,
+            shard_id,
             path,
             byte_offset,
             length,
         } = request.into_inner();
 
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_bytes")
+        let (base, safe_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_bytes")
             .await?;
-        let path = common_ops::resolve_path(&base, safe_root(&base), &path)?;
+        let path = common_ops::resolve_path(&base, &safe_root, &path)?;
         let data = common_ops::read_bytes::<S>(path, ReadRange::new(byte_offset, length)).await?;
 
         Ok(Response::new(ReadBytesResponse { data }))
@@ -121,21 +119,22 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
     async fn read_bytes_stream(
         &self,
-        mut request: Request<ReadBytesStreamRequest>,
+        mut request: Request<ShardReadBytesStreamRequest>,
     ) -> Result<Response<Self::ReadBytesStreamStream>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let ReadBytesStreamRequest {
+        let ShardReadBytesStreamRequest {
             collection_name,
+            shard_id,
             path,
             byte_offset,
             length,
         } = request.into_inner();
 
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_bytes_stream")
+        let (base, safe_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_bytes_stream")
             .await?;
-        let path = common_ops::resolve_path(&base, safe_root(&base), &path)?;
+        let path = common_ops::resolve_path(&base, &safe_root, &path)?;
         let stream =
             common_ops::read_bytes_stream::<S>(path, ReadRange::new(byte_offset, length)).await?;
 
@@ -145,18 +144,19 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
     async fn read_whole(
         &self,
-        mut request: Request<ReadWholeRequest>,
+        mut request: Request<ShardReadWholeRequest>,
     ) -> Result<Response<ReadWholeResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let ReadWholeRequest {
+        let ShardReadWholeRequest {
             collection_name,
+            shard_id,
             path,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_whole")
+        let (base, safe_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_whole")
             .await?;
-        let path = common_ops::resolve_path(&base, safe_root(&base), &path)?;
+        let path = common_ops::resolve_path(&base, &safe_root, &path)?;
 
         let data = common_ops::read_whole::<S>(path).await?;
         Ok(Response::new(ReadWholeResponse { data }))
@@ -164,19 +164,20 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
     async fn read_batch(
         &self,
-        mut request: Request<ReadBatchRequest>,
+        mut request: Request<ShardReadBatchRequest>,
     ) -> Result<Response<ReadBatchResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let ReadBatchRequest {
+        let ShardReadBatchRequest {
             collection_name,
+            shard_id,
             path,
             ranges,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_batch")
+        let (base, safe_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_batch")
             .await?;
-        let path = common_ops::resolve_path(&base, safe_root(&base), &path)?;
+        let path = common_ops::resolve_path(&base, &safe_root, &path)?;
 
         let ranges = ranges
             .iter()
@@ -189,22 +190,23 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
     async fn read_multi(
         &self,
-        mut request: Request<ReadMultiRequest>,
+        mut request: Request<ShardReadMultiRequest>,
     ) -> Result<Response<ReadMultiResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let ReadMultiRequest {
+        let ShardReadMultiRequest {
             collection_name,
+            shard_id,
             reads,
         } = request.into_inner();
-        let base = self
-            .check_and_resolve_collection(&auth, &collection_name, "read_multi")
+        let (base, safe_root) = self
+            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_multi")
             .await?;
 
         let resolved = reads
             .iter()
             .map(|entry| {
-                let path = common_ops::resolve_path(&base, safe_root(&base), &entry.path)?;
+                let path = common_ops::resolve_path(&base, &safe_root, &entry.path)?;
                 Ok::<(PathBuf, ReadRange), Status>((
                     path,
                     ReadRange::new(entry.byte_offset, entry.length),
