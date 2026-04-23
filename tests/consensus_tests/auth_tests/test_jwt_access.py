@@ -61,6 +61,7 @@ SHARD_KEY = "existing_shard_key"
 FACET_KEY = "a"
 STORAGE_READ_TEST_PATH = "auth/storage_read_test.bin"
 STORAGE_READ_TEST_DATA = b"jwt-storage-read-test-data"
+STORAGE_READ_SHARD_ID = 0
 
 _cached_grpc_clients = None
 
@@ -85,7 +86,14 @@ def setup(jwt_cluster):
     ).raise_for_status()
 
     for peer_dir in peer_dirs:
-        test_path = Path(peer_dir) / "storage" / "collections" / COLL_NAME / STORAGE_READ_TEST_PATH
+        test_path = (
+            Path(peer_dir)
+            / "storage"
+            / "collections"
+            / COLL_NAME
+            / str(STORAGE_READ_SHARD_ID)
+            / STORAGE_READ_TEST_PATH
+        )
         test_path.parent.mkdir(parents=True, exist_ok=True)
         test_path.write_bytes(STORAGE_READ_TEST_DATA)
 
@@ -761,7 +769,14 @@ def check_grpc_access(
         _res = client.request(service=service, method=method, request=request)
     except grpc.RpcError as e:
         if should_succeed:
-            if e.code() not in [grpc.StatusCode.INVALID_ARGUMENT, grpc.StatusCode.NOT_FOUND]:
+            if e.code() not in [
+                grpc.StatusCode.INVALID_ARGUMENT,
+                grpc.StatusCode.NOT_FOUND,
+                # StorageRead fails with FailedPrecondition when the shard
+                # replica is not yet readable on the contacted peer; auth
+                # already passed by that point.
+                grpc.StatusCode.FAILED_PRECONDITION,
+            ]:
                 pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
         else:
             assert (
@@ -1998,21 +2013,33 @@ def test_update_logger_config():
 def test_storage_read_list_files():
     check_access(
         "storage_read_list_files",
-        grpc_request={"collection_name": COLL_NAME, "prefix_path": "auth/"},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "shard_id": STORAGE_READ_SHARD_ID,
+            "prefix_path": "auth/",
+        },
     )
 
 
 def test_storage_read_file_exists():
     check_access(
         "storage_read_file_exists",
-        grpc_request={"collection_name": COLL_NAME, "path": STORAGE_READ_TEST_PATH},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "shard_id": STORAGE_READ_SHARD_ID,
+            "path": STORAGE_READ_TEST_PATH,
+        },
     )
 
 
 def test_storage_read_file_length():
     check_access(
         "storage_read_file_length",
-        grpc_request={"collection_name": COLL_NAME, "path": STORAGE_READ_TEST_PATH},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "shard_id": STORAGE_READ_SHARD_ID,
+            "path": STORAGE_READ_TEST_PATH,
+        },
     )
 
 
@@ -2021,6 +2048,7 @@ def test_storage_read_read_bytes():
         "storage_read_read_bytes",
         grpc_request={
             "collection_name": COLL_NAME,
+            "shard_id": STORAGE_READ_SHARD_ID,
             "path": STORAGE_READ_TEST_PATH,
             "byteOffset": 0,
             "length": 1,
@@ -2033,6 +2061,7 @@ def test_storage_read_read_bytes_stream():
         "storage_read_read_bytes_stream",
         grpc_request={
             "collection_name": COLL_NAME,
+            "shard_id": STORAGE_READ_SHARD_ID,
             "path": STORAGE_READ_TEST_PATH,
             "byteOffset": 0,
             "length": 1,
@@ -2043,7 +2072,11 @@ def test_storage_read_read_bytes_stream():
 def test_storage_read_read_whole():
     check_access(
         "storage_read_read_whole",
-        grpc_request={"collection_name": COLL_NAME, "path": STORAGE_READ_TEST_PATH},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "shard_id": STORAGE_READ_SHARD_ID,
+            "path": STORAGE_READ_TEST_PATH,
+        },
     )
 
 
@@ -2052,6 +2085,7 @@ def test_storage_read_read_batch():
         "storage_read_read_batch",
         grpc_request={
             "collection_name": COLL_NAME,
+            "shard_id": STORAGE_READ_SHARD_ID,
             "path": STORAGE_READ_TEST_PATH,
             "ranges": [{"byteOffset": 0, "length": 1}],
         },
@@ -2063,6 +2097,7 @@ def test_storage_read_read_multi():
         "storage_read_read_multi",
         grpc_request={
             "collection_name": COLL_NAME,
+            "shard_id": STORAGE_READ_SHARD_ID,
             "reads": [{"path": STORAGE_READ_TEST_PATH, "byteOffset": 0, "length": 1}],
         },
     )
