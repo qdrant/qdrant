@@ -10,3 +10,5 @@ qdrant-edge = { path = "../qdrant-edge" }
 fs-err = "3"
 tempfile = "3"
 ureq = "3"
+# Pin transitive: i_key_sort 0.10.2 fails to compile (upstream bug, BinLayout::new missing).
+i_key_sort = "=0.10.1"
