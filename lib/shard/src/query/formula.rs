@@ -82,6 +82,11 @@ pub enum ExpressionInternal {
         midpoint: Option<f32>,
         scale: Option<f32>,
     },
+    StrDist {
+        field: JsonPath,
+        query: String,
+        func: StrDistKind,
+    },
 }
 
 impl ExpressionInternal {
@@ -188,6 +193,23 @@ impl ExpressionInternal {
                     target,
                     lambda: PreciseScoreOrdered::from(lambda),
                 }
+            }
+            ExpressionInternal::StrDist { field, query, func } => {
+                // Reject empty or whitespace-only queries here so all construction
+                // paths, not only API-layer validation, enforce the same minimum
+                // validity requirement before the expression is parsed.
+                if query.trim().is_empty() {
+                    return Err(OperationError::validation_error(
+                        "str_dist query must not be empty or whitespace-only",
+                    ));
+                }
+                if query.chars().count() > 1024 {
+                    return Err(OperationError::validation_error(
+                        "str_dist query exceeds maximum supported length of 1024 characters",
+                    ));
+                }
+                payload_vars.insert(field.clone());
+                ParsedExpression::StrDist { field, query, func }
             }
         };
 

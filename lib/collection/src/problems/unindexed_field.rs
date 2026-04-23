@@ -514,6 +514,14 @@ impl<'a> Extractor<'a> {
                 };
                 return;
             }
+            ExpressionInternal::StrDist {
+                field,
+                query: _,
+                func: _,
+            } => {
+                key = field.clone();
+                required_index = vec![FieldIndexType::Text];
+            }
         }
 
         if self.needs_index(&key, &required_index) {

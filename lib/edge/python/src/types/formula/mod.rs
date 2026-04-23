@@ -9,7 +9,7 @@ use derive_more::Into;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DecayKind, ParsedFormula,
+    DecayKind, ParsedFormula, StrDistKind,
 };
 use shard::query::formula::{ExpressionInternal, FormulaInternal};
 
@@ -94,6 +94,51 @@ impl From<PyDecayKind> for DecayKind {
             PyDecayKind::Lin => DecayKind::Lin,
             PyDecayKind::Gauss => DecayKind::Gauss,
             PyDecayKind::Exp => DecayKind::Exp,
+        }
+    }
+}
+
+#[pyclass(name = "StrDistKind", from_py_object)]
+#[derive(Copy, Clone, Debug)]
+pub enum PyStrDistKind {
+    /// levenshtein function
+    Levenshtein,
+    /// Jaro-Winkler function
+    JaroWinkler,
+}
+
+#[pymethods]
+impl PyStrDistKind {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyStrDistKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            PyStrDistKind::Levenshtein => "levenshtein",
+            PyStrDistKind::JaroWinkler => "jaro_winkler",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
+}
+
+impl From<StrDistKind> for PyStrDistKind {
+    fn from(value: StrDistKind) -> Self {
+        match value {
+            StrDistKind::Levenshtein => PyStrDistKind::Levenshtein,
+            StrDistKind::JaroWinkler => PyStrDistKind::JaroWinkler,
+        }
+    }
+}
+
+impl From<PyStrDistKind> for StrDistKind {
+    fn from(value: PyStrDistKind) -> Self {
+        match value {
+            PyStrDistKind::Levenshtein => StrDistKind::Levenshtein,
+            PyStrDistKind::JaroWinkler => StrDistKind::JaroWinkler,
         }
     }
 }

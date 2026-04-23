@@ -960,7 +960,21 @@ message Expression {
     DecayParamsExpression gauss_decay = 18;
     // Linear decay
     DecayParamsExpression lin_decay = 19;
+    // String distance function
+    StrDistParamsExpression str_dist = 20;
+
   }
+}
+
+enum StrDistFunc {
+  Levenshtein = 0;
+  JaroWinkler = 1;
+}
+
+message StrDistParamsExpression {
+  string field = 1;
+  string query = 2;
+  StrDistFunc func = 3;
 }
 
 message GeoDistance {
