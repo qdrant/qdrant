@@ -36,6 +36,7 @@ parking_lot = { workspace = true }
 ph = { workspace = true }
 quick_cache = "0.6.19"
 rand = { workspace = true }
+roaring = "0.11.3"
 schemars = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
