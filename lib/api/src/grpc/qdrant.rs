@@ -16542,7 +16542,9 @@ pub struct ListFilesRequest {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    #[prost(string, tag = "3")]
     #[validate(length(min = 1))]
     pub prefix_path: ::prost::alloc::string::String,
 }
@@ -16557,7 +16559,9 @@ pub struct FileExistsRequest {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    #[prost(string, tag = "3")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
 }
@@ -16586,7 +16590,9 @@ pub struct FileLengthRequest {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    #[prost(string, tag = "3")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
 }
@@ -16608,12 +16614,14 @@ pub struct ReadBytesRequest {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    #[prost(string, tag = "3")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub byte_offset: u64,
     #[prost(uint64, tag = "4")]
+    pub byte_offset: u64,
+    #[prost(uint64, tag = "5")]
     pub length: u64,
 }
 #[derive(serde::Serialize)]
@@ -16634,12 +16642,14 @@ pub struct ReadBytesStreamRequest {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    #[prost(string, tag = "3")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub byte_offset: u64,
     #[prost(uint64, tag = "4")]
+    pub byte_offset: u64,
+    #[prost(uint64, tag = "5")]
     pub length: u64,
 }
 #[derive(serde::Serialize)]
@@ -16660,7 +16670,9 @@ pub struct ReadWholeRequest {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    #[prost(string, tag = "3")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
 }
@@ -16692,10 +16704,12 @@ pub struct ReadBatchRequest {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    #[prost(string, tag = "3")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "4")]
     #[validate(length(min = 1))]
     pub ranges: ::prost::alloc::vec::Vec<ReadBatchRange>,
 }
@@ -16731,7 +16745,9 @@ pub struct ReadMultiRequest {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    #[prost(message, repeated, tag = "3")]
     #[validate(length(min = 1), nested)]
     pub reads: ::prost::alloc::vec::Vec<ReadMultiEntry>,
 }
@@ -16747,6 +16763,18 @@ pub mod storage_read_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    /// Shard-scoped raw I/O over on-disk collection storage.
+    ///
+    /// All requests are routed to a single shard directory
+    /// (`<storage>/collections/<collection>/<shard_id>`). Replicas of the same
+    /// shard on different peers are not binary-compatible (segment IDs, WAL
+    /// positions, optimizer state all diverge), so the caller is responsible for
+    /// targeting the peer that owns the desired replica.
+    ///
+    /// This service is intended for tooling that builds synchronization on top of
+    /// Qdrant (e.g. replica bootstrap) rather than typical user queries. It is
+    /// considered internal: the request/response shape may change between
+    /// releases.
     #[derive(Debug, Clone)]
     pub struct StorageReadClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -16827,7 +16855,7 @@ pub mod storage_read_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// List files in the storage.
+        /// List files in the shard.
         pub async fn list_files(
             &mut self,
             request: impl tonic::IntoRequest<super::ListFilesRequest>,
@@ -16853,7 +16881,7 @@ pub mod storage_read_client {
                 .insert(GrpcMethod::new("qdrant.StorageRead", "ListFiles"));
             self.inner.unary(req, path, codec).await
         }
-        /// Check if a file exists in the storage.
+        /// Check if a file exists in the shard.
         pub async fn file_exists(
             &mut self,
             request: impl tonic::IntoRequest<super::FileExistsRequest>,
@@ -16879,7 +16907,7 @@ pub mod storage_read_client {
                 .insert(GrpcMethod::new("qdrant.StorageRead", "FileExists"));
             self.inner.unary(req, path, codec).await
         }
-        /// Get the length of a file in the storage.
+        /// Get the length of a file in the shard.
         pub async fn file_length(
             &mut self,
             request: impl tonic::IntoRequest<super::FileLengthRequest>,
@@ -17044,7 +17072,7 @@ pub mod storage_read_server {
     /// Generated trait containing gRPC methods that should be implemented for use with StorageReadServer.
     #[async_trait]
     pub trait StorageRead: Send + Sync + 'static {
-        /// List files in the storage.
+        /// List files in the shard.
         async fn list_files(
             &self,
             request: tonic::Request<super::ListFilesRequest>,
@@ -17052,7 +17080,7 @@ pub mod storage_read_server {
             tonic::Response<super::ListFilesResponse>,
             tonic::Status,
         >;
-        /// Check if a file exists in the storage.
+        /// Check if a file exists in the shard.
         async fn file_exists(
             &self,
             request: tonic::Request<super::FileExistsRequest>,
@@ -17060,7 +17088,7 @@ pub mod storage_read_server {
             tonic::Response<super::FileExistsResponse>,
             tonic::Status,
         >;
-        /// Get the length of a file in the storage.
+        /// Get the length of a file in the shard.
         async fn file_length(
             &self,
             request: tonic::Request<super::FileLengthRequest>,
@@ -17115,6 +17143,18 @@ pub mod storage_read_server {
             tonic::Status,
         >;
     }
+    /// Shard-scoped raw I/O over on-disk collection storage.
+    ///
+    /// All requests are routed to a single shard directory
+    /// (`<storage>/collections/<collection>/<shard_id>`). Replicas of the same
+    /// shard on different peers are not binary-compatible (segment IDs, WAL
+    /// positions, optimizer state all diverge), so the caller is responsible for
+    /// targeting the peer that owns the desired replica.
+    ///
+    /// This service is intended for tooling that builds synchronization on top of
+    /// Qdrant (e.g. replica bootstrap) rather than typical user queries. It is
+    /// considered internal: the request/response shape may change between
+    /// releases.
     #[derive(Debug)]
     pub struct StorageReadServer<T: StorageRead> {
         inner: _Inner<T>,
@@ -17603,1013 +17643,6 @@ pub mod storage_read_server {
     }
     impl<T: StorageRead> tonic::server::NamedService for StorageReadServer<T> {
         const NAME: &'static str = "qdrant.StorageRead";
-    }
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardListFilesRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    #[validate(length(min = 1))]
-    pub prefix_path: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardFileExistsRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    #[validate(length(min = 1))]
-    pub path: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardFileLengthRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    #[validate(length(min = 1))]
-    pub path: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardReadBytesRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    #[validate(length(min = 1))]
-    pub path: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub byte_offset: u64,
-    #[prost(uint64, tag = "5")]
-    pub length: u64,
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardReadBytesStreamRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    #[validate(length(min = 1))]
-    pub path: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub byte_offset: u64,
-    #[prost(uint64, tag = "5")]
-    pub length: u64,
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardReadWholeRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    #[validate(length(min = 1))]
-    pub path: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardReadBatchRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    #[validate(length(min = 1))]
-    pub path: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "4")]
-    #[validate(length(min = 1))]
-    pub ranges: ::prost::alloc::vec::Vec<ReadBatchRange>,
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardReadMultiRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(message, repeated, tag = "3")]
-    #[validate(length(min = 1), nested)]
-    pub reads: ::prost::alloc::vec::Vec<ReadMultiEntry>,
-}
-/// Generated client implementations.
-pub mod shard_storage_read_client {
-    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
-    use tonic::codegen::http::Uri;
-    /// Shard-scoped variant of `StorageRead`. Paths are interpreted relative to a
-    /// single shard directory (`<storage>/collections/<collection>/<shard_id>`).
-    ///
-    /// Replicas of the same shard on different peers are not binary-compatible
-    /// (segment IDs, WAL positions, optimizer state all diverge), so the caller
-    /// is responsible for targeting the peer that owns the desired replica.
-    #[derive(Debug, Clone)]
-    pub struct ShardStorageReadClient<T> {
-        inner: tonic::client::Grpc<T>,
-    }
-    impl ShardStorageReadClient<tonic::transport::Channel> {
-        /// Attempt to create a new client by connecting to a given endpoint.
-        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
-        where
-            D: TryInto<tonic::transport::Endpoint>,
-            D::Error: Into<StdError>,
-        {
-            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
-            Ok(Self::new(conn))
-        }
-    }
-    impl<T> ShardStorageReadClient<T>
-    where
-        T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::Error: Into<StdError>,
-        T::ResponseBody: Body<Data = Bytes> + Send + 'static,
-        <T::ResponseBody as Body>::Error: Into<StdError> + Send,
-    {
-        pub fn new(inner: T) -> Self {
-            let inner = tonic::client::Grpc::new(inner);
-            Self { inner }
-        }
-        pub fn with_origin(inner: T, origin: Uri) -> Self {
-            let inner = tonic::client::Grpc::with_origin(inner, origin);
-            Self { inner }
-        }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> ShardStorageReadClient<InterceptedService<T, F>>
-        where
-            F: tonic::service::Interceptor,
-            T::ResponseBody: Default,
-            T: tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
-                >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
-        {
-            ShardStorageReadClient::new(InterceptedService::new(inner, interceptor))
-        }
-        /// Compress requests with the given encoding.
-        ///
-        /// This requires the server to support it otherwise it might respond with an
-        /// error.
-        #[must_use]
-        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.inner = self.inner.send_compressed(encoding);
-            self
-        }
-        /// Enable decompressing responses.
-        #[must_use]
-        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.inner = self.inner.accept_compressed(encoding);
-            self
-        }
-        /// Limits the maximum size of a decoded message.
-        ///
-        /// Default: `4MB`
-        #[must_use]
-        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-            self.inner = self.inner.max_decoding_message_size(limit);
-            self
-        }
-        /// Limits the maximum size of an encoded message.
-        ///
-        /// Default: `usize::MAX`
-        #[must_use]
-        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-            self.inner = self.inner.max_encoding_message_size(limit);
-            self
-        }
-        pub async fn list_files(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShardListFilesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListFilesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardStorageRead/ListFiles",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardStorageRead", "ListFiles"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn file_exists(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShardFileExistsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::FileExistsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardStorageRead/FileExists",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardStorageRead", "FileExists"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn file_length(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShardFileLengthRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::FileLengthResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardStorageRead/FileLength",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardStorageRead", "FileLength"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn read_bytes(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShardReadBytesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadBytesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardStorageRead/ReadBytes",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardStorageRead", "ReadBytes"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn read_bytes_stream(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShardReadBytesStreamRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::ReadBytesStreamResponse>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardStorageRead/ReadBytesStream",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardStorageRead", "ReadBytesStream"));
-            self.inner.server_streaming(req, path, codec).await
-        }
-        pub async fn read_whole(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShardReadWholeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadWholeResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardStorageRead/ReadWhole",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardStorageRead", "ReadWhole"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn read_batch(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShardReadBatchRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadBatchResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardStorageRead/ReadBatch",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardStorageRead", "ReadBatch"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn read_multi(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ShardReadMultiRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadMultiResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardStorageRead/ReadMulti",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardStorageRead", "ReadMulti"));
-            self.inner.unary(req, path, codec).await
-        }
-    }
-}
-/// Generated server implementations.
-pub mod shard_storage_read_server {
-    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with ShardStorageReadServer.
-    #[async_trait]
-    pub trait ShardStorageRead: Send + Sync + 'static {
-        async fn list_files(
-            &self,
-            request: tonic::Request<super::ShardListFilesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListFilesResponse>,
-            tonic::Status,
-        >;
-        async fn file_exists(
-            &self,
-            request: tonic::Request<super::ShardFileExistsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::FileExistsResponse>,
-            tonic::Status,
-        >;
-        async fn file_length(
-            &self,
-            request: tonic::Request<super::ShardFileLengthRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::FileLengthResponse>,
-            tonic::Status,
-        >;
-        async fn read_bytes(
-            &self,
-            request: tonic::Request<super::ShardReadBytesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadBytesResponse>,
-            tonic::Status,
-        >;
-        /// Server streaming response type for the ReadBytesStream method.
-        type ReadBytesStreamStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::ReadBytesStreamResponse, tonic::Status>,
-            >
-            + Send
-            + 'static;
-        async fn read_bytes_stream(
-            &self,
-            request: tonic::Request<super::ShardReadBytesStreamRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::ReadBytesStreamStream>,
-            tonic::Status,
-        >;
-        async fn read_whole(
-            &self,
-            request: tonic::Request<super::ShardReadWholeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadWholeResponse>,
-            tonic::Status,
-        >;
-        async fn read_batch(
-            &self,
-            request: tonic::Request<super::ShardReadBatchRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadBatchResponse>,
-            tonic::Status,
-        >;
-        async fn read_multi(
-            &self,
-            request: tonic::Request<super::ShardReadMultiRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadMultiResponse>,
-            tonic::Status,
-        >;
-    }
-    /// Shard-scoped variant of `StorageRead`. Paths are interpreted relative to a
-    /// single shard directory (`<storage>/collections/<collection>/<shard_id>`).
-    ///
-    /// Replicas of the same shard on different peers are not binary-compatible
-    /// (segment IDs, WAL positions, optimizer state all diverge), so the caller
-    /// is responsible for targeting the peer that owns the desired replica.
-    #[derive(Debug)]
-    pub struct ShardStorageReadServer<T: ShardStorageRead> {
-        inner: _Inner<T>,
-        accept_compression_encodings: EnabledCompressionEncodings,
-        send_compression_encodings: EnabledCompressionEncodings,
-        max_decoding_message_size: Option<usize>,
-        max_encoding_message_size: Option<usize>,
-    }
-    struct _Inner<T>(Arc<T>);
-    impl<T: ShardStorageRead> ShardStorageReadServer<T> {
-        pub fn new(inner: T) -> Self {
-            Self::from_arc(Arc::new(inner))
-        }
-        pub fn from_arc(inner: Arc<T>) -> Self {
-            let inner = _Inner(inner);
-            Self {
-                inner,
-                accept_compression_encodings: Default::default(),
-                send_compression_encodings: Default::default(),
-                max_decoding_message_size: None,
-                max_encoding_message_size: None,
-            }
-        }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
-        where
-            F: tonic::service::Interceptor,
-        {
-            InterceptedService::new(Self::new(inner), interceptor)
-        }
-        /// Enable decompressing requests with the given encoding.
-        #[must_use]
-        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.accept_compression_encodings.enable(encoding);
-            self
-        }
-        /// Compress responses with the given encoding, if the client supports it.
-        #[must_use]
-        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-            self.send_compression_encodings.enable(encoding);
-            self
-        }
-        /// Limits the maximum size of a decoded message.
-        ///
-        /// Default: `4MB`
-        #[must_use]
-        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-            self.max_decoding_message_size = Some(limit);
-            self
-        }
-        /// Limits the maximum size of an encoded message.
-        ///
-        /// Default: `usize::MAX`
-        #[must_use]
-        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-            self.max_encoding_message_size = Some(limit);
-            self
-        }
-    }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for ShardStorageReadServer<T>
-    where
-        T: ShardStorageRead,
-        B: Body + Send + 'static,
-        B::Error: Into<StdError> + Send + 'static,
-    {
-        type Response = http::Response<tonic::body::BoxBody>;
-        type Error = std::convert::Infallible;
-        type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<std::result::Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-        fn call(&mut self, req: http::Request<B>) -> Self::Future {
-            let inner = self.inner.clone();
-            match req.uri().path() {
-                "/qdrant.ShardStorageRead/ListFiles" => {
-                    #[allow(non_camel_case_types)]
-                    struct ListFilesSvc<T: ShardStorageRead>(pub Arc<T>);
-                    impl<
-                        T: ShardStorageRead,
-                    > tonic::server::UnaryService<super::ShardListFilesRequest>
-                    for ListFilesSvc<T> {
-                        type Response = super::ListFilesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShardListFilesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ShardStorageRead>::list_files(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ListFilesSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.ShardStorageRead/FileExists" => {
-                    #[allow(non_camel_case_types)]
-                    struct FileExistsSvc<T: ShardStorageRead>(pub Arc<T>);
-                    impl<
-                        T: ShardStorageRead,
-                    > tonic::server::UnaryService<super::ShardFileExistsRequest>
-                    for FileExistsSvc<T> {
-                        type Response = super::FileExistsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShardFileExistsRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ShardStorageRead>::file_exists(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = FileExistsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.ShardStorageRead/FileLength" => {
-                    #[allow(non_camel_case_types)]
-                    struct FileLengthSvc<T: ShardStorageRead>(pub Arc<T>);
-                    impl<
-                        T: ShardStorageRead,
-                    > tonic::server::UnaryService<super::ShardFileLengthRequest>
-                    for FileLengthSvc<T> {
-                        type Response = super::FileLengthResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShardFileLengthRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ShardStorageRead>::file_length(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = FileLengthSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.ShardStorageRead/ReadBytes" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadBytesSvc<T: ShardStorageRead>(pub Arc<T>);
-                    impl<
-                        T: ShardStorageRead,
-                    > tonic::server::UnaryService<super::ShardReadBytesRequest>
-                    for ReadBytesSvc<T> {
-                        type Response = super::ReadBytesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShardReadBytesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ShardStorageRead>::read_bytes(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ReadBytesSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.ShardStorageRead/ReadBytesStream" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadBytesStreamSvc<T: ShardStorageRead>(pub Arc<T>);
-                    impl<
-                        T: ShardStorageRead,
-                    > tonic::server::ServerStreamingService<
-                        super::ShardReadBytesStreamRequest,
-                    > for ReadBytesStreamSvc<T> {
-                        type Response = super::ReadBytesStreamResponse;
-                        type ResponseStream = T::ReadBytesStreamStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShardReadBytesStreamRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ShardStorageRead>::read_bytes_stream(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ReadBytesStreamSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.ShardStorageRead/ReadWhole" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadWholeSvc<T: ShardStorageRead>(pub Arc<T>);
-                    impl<
-                        T: ShardStorageRead,
-                    > tonic::server::UnaryService<super::ShardReadWholeRequest>
-                    for ReadWholeSvc<T> {
-                        type Response = super::ReadWholeResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShardReadWholeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ShardStorageRead>::read_whole(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ReadWholeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.ShardStorageRead/ReadBatch" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadBatchSvc<T: ShardStorageRead>(pub Arc<T>);
-                    impl<
-                        T: ShardStorageRead,
-                    > tonic::server::UnaryService<super::ShardReadBatchRequest>
-                    for ReadBatchSvc<T> {
-                        type Response = super::ReadBatchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShardReadBatchRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ShardStorageRead>::read_batch(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ReadBatchSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.ShardStorageRead/ReadMulti" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadMultiSvc<T: ShardStorageRead>(pub Arc<T>);
-                    impl<
-                        T: ShardStorageRead,
-                    > tonic::server::UnaryService<super::ShardReadMultiRequest>
-                    for ReadMultiSvc<T> {
-                        type Response = super::ReadMultiResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ShardReadMultiRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ShardStorageRead>::read_multi(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ReadMultiSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                _ => {
-                    Box::pin(async move {
-                        Ok(
-                            http::Response::builder()
-                                .status(200)
-                                .header("grpc-status", "12")
-                                .header("content-type", "application/grpc")
-                                .body(empty_body())
-                                .unwrap(),
-                        )
-                    })
-                }
-            }
-        }
-    }
-    impl<T: ShardStorageRead> Clone for ShardStorageReadServer<T> {
-        fn clone(&self) -> Self {
-            let inner = self.inner.clone();
-            Self {
-                inner,
-                accept_compression_encodings: self.accept_compression_encodings,
-                send_compression_encodings: self.send_compression_encodings,
-                max_decoding_message_size: self.max_decoding_message_size,
-                max_encoding_message_size: self.max_encoding_message_size,
-            }
-        }
-    }
-    impl<T: ShardStorageRead> Clone for _Inner<T> {
-        fn clone(&self) -> Self {
-            Self(Arc::clone(&self.0))
-        }
-    }
-    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{:?}", self.0)
-        }
-    }
-    impl<T: ShardStorageRead> tonic::server::NamedService for ShardStorageReadServer<T> {
-        const NAME: &'static str = "qdrant.ShardStorageRead";
     }
 }
 #[derive(serde::Serialize)]

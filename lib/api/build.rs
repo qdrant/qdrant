@@ -453,26 +453,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ReadMultiRequest.reads", "length(min = 1), nested"),
             ("ReadMultiEntry.path", "length(min = 1)"),
         ], &[])
-        // Service: shard_storage_read_service.proto
-        .validates(&[
-            ("ShardFileExistsRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ShardFileExistsRequest.path", "length(min = 1)"),
-            ("ShardListFilesRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ShardListFilesRequest.prefix_path", "length(min = 1)"),
-            ("ShardFileLengthRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ShardFileLengthRequest.path", "length(min = 1)"),
-            ("ShardReadBytesRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ShardReadBytesRequest.path", "length(min = 1)"),
-            ("ShardReadBytesStreamRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ShardReadBytesStreamRequest.path", "length(min = 1)"),
-            ("ShardReadWholeRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ShardReadWholeRequest.path", "length(min = 1)"),
-            ("ShardReadBatchRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ShardReadBatchRequest.path", "length(min = 1)"),
-            ("ShardReadBatchRequest.ranges", "length(min = 1)"),
-            ("ShardReadMultiRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ShardReadMultiRequest.reads", "length(min = 1), nested"),
-        ], &[])
 }
 
 fn append_to_file(path: &str, line: &str) {

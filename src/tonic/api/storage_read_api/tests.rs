@@ -25,11 +25,11 @@ use super::*;
 use crate::common::helpers::{
     create_general_purpose_runtime, create_search_runtime, create_update_runtime,
 };
-use crate::tonic::api::storage_read_common::STREAM_CHUNK_SIZE;
 
 #[cfg(unix)]
 const OTHER_COLLECTION_NAME: &str = "other-collection";
 const TEST_COLLECTION_NAME: &str = "test-collection";
+const TEST_SHARD_ID: u32 = 0;
 
 fn test_storage_config(storage_path: &Path) -> StorageConfig {
     StorageConfig {
@@ -94,6 +94,7 @@ async fn drop_service(service: StorageReadService<MmapFile>, storage_dir: TempDi
         .unwrap();
 }
 
+/// Returns the shard directory for `TEST_SHARD_ID` inside the test collection.
 fn create_service() -> (StorageReadService<MmapFile>, TempDir, PathBuf) {
     let storage_dir = tempfile::tempdir().unwrap();
     let config = test_storage_config(storage_dir.path());
@@ -110,16 +111,17 @@ fn create_service() -> (StorageReadService<MmapFile>, TempDir, PathBuf) {
         )
         .unwrap(),
     );
-    let collection_dir = storage_dir
+    let shard_dir = storage_dir
         .path()
         .join(COLLECTIONS_DIR)
-        .join(TEST_COLLECTION_NAME);
-    fs_err::create_dir_all(&collection_dir).unwrap();
+        .join(TEST_COLLECTION_NAME)
+        .join(TEST_SHARD_ID.to_string());
+    fs_err::create_dir_all(&shard_dir).unwrap();
 
     let dispatcher = Arc::new(Dispatcher::new(toc));
     let service = StorageReadService::new(dispatcher);
 
-    (service, storage_dir, collection_dir)
+    (service, storage_dir, shard_dir)
 }
 
 /// Create a request with auth restricted to a single collection.
@@ -136,8 +138,8 @@ fn request_with_access<T>(inner: T, allowed_collection: &str) -> Request<T> {
     req
 }
 
-fn write_collection_file(collection_dir: &Path, relative_path: &str, contents: &[u8]) -> PathBuf {
-    let path = collection_dir.join(relative_path);
+fn write_shard_file(shard_dir: &Path, relative_path: &str, contents: &[u8]) -> PathBuf {
+    let path = shard_dir.join(relative_path);
     fs_err::create_dir_all(path.parent().unwrap()).unwrap();
     fs_err::write(&path, contents).unwrap();
     path
@@ -145,11 +147,12 @@ fn write_collection_file(collection_dir: &Path, relative_path: &str, contents: &
 
 #[tokio::test]
 async fn file_exists_rejects_path_traversal() {
-    let (service, storage_dir, _collection_dir) = create_service_async().await;
+    let (service, storage_dir, _shard_dir) = create_service_async().await;
 
     let err = service
         .file_exists(Request::new(FileExistsRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "nested/../secret.bin".to_string(),
         }))
         .await
@@ -167,19 +170,20 @@ async fn file_exists_rejects_path_traversal() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn file_exists_rejects_symlinked_collection_dir_escape() {
+async fn file_exists_rejects_symlinked_shard_dir_escape() {
     use std::os::unix::fs::symlink;
 
-    let (service, storage_dir, collection_dir) = create_service_async().await;
+    let (service, storage_dir, shard_dir) = create_service_async().await;
     let external_dir = tempfile::tempdir().unwrap();
 
-    fs_err::remove_dir_all(&collection_dir).unwrap();
+    fs_err::remove_dir_all(&shard_dir).unwrap();
     fs_err::write(external_dir.path().join("escape.bin"), b"secret").unwrap();
-    symlink(external_dir.path(), &collection_dir).unwrap();
+    symlink(external_dir.path(), &shard_dir).unwrap();
 
     let err = service
         .file_exists(Request::new(FileExistsRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "escape.bin".to_string(),
         }))
         .await
@@ -195,18 +199,19 @@ async fn file_exists_rejects_symlinked_collection_dir_escape() {
 async fn file_exists_rejects_symlink_escape_to_other_collection() {
     use std::os::unix::fs::symlink;
 
-    let (service, storage_dir, collection_dir) = create_service_async().await;
+    let (service, storage_dir, shard_dir) = create_service_async().await;
     let other_collection_dir = storage_dir
         .path()
         .join(COLLECTIONS_DIR)
         .join(OTHER_COLLECTION_NAME);
     fs_err::create_dir_all(&other_collection_dir).unwrap();
     fs_err::write(other_collection_dir.join("secret.bin"), b"secret").unwrap();
-    symlink(&other_collection_dir, collection_dir.join("linked")).unwrap();
+    symlink(&other_collection_dir, shard_dir.join("linked")).unwrap();
 
     let err = service
         .file_exists(Request::new(FileExistsRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "linked/secret.bin".to_string(),
         }))
         .await
@@ -219,12 +224,13 @@ async fn file_exists_rejects_symlink_escape_to_other_collection() {
 
 #[tokio::test]
 async fn file_exists_reports_true_for_existing_and_false_for_missing_files() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "exists/present.bin", b"abc");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "exists/present.bin", b"abc");
 
     let existing = service
         .file_exists(Request::new(FileExistsRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "exists/present.bin".to_string(),
         }))
         .await
@@ -234,6 +240,7 @@ async fn file_exists_reports_true_for_existing_and_false_for_missing_files() {
     let missing = service
         .file_exists(Request::new(FileExistsRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "exists/missing.bin".to_string(),
         }))
         .await
@@ -247,15 +254,16 @@ async fn file_exists_reports_true_for_existing_and_false_for_missing_files() {
 }
 
 #[tokio::test]
-async fn list_files_returns_paths_relative_to_collection_dir() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "index/chunk_1.bin", b"123");
-    write_collection_file(&collection_dir, "index/chunk_2.bin", b"456");
-    write_collection_file(&collection_dir, "index/other.bin", b"789");
+async fn list_files_returns_paths_relative_to_shard_dir() {
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "index/chunk_1.bin", b"123");
+    write_shard_file(&shard_dir, "index/chunk_2.bin", b"456");
+    write_shard_file(&shard_dir, "index/other.bin", b"789");
 
     let mut paths = service
         .list_files(Request::new(ListFilesRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             prefix_path: "index/chunk_".to_string(),
         }))
         .await
@@ -278,12 +286,13 @@ async fn list_files_returns_paths_relative_to_collection_dir() {
 
 #[tokio::test]
 async fn file_length_returns_file_size() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "length/data.bin", b"1234567");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "length/data.bin", b"1234567");
 
     let response = service
         .file_length(Request::new(FileLengthRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "length/data.bin".to_string(),
         }))
         .await
@@ -297,11 +306,12 @@ async fn file_length_returns_file_size() {
 
 #[tokio::test]
 async fn file_length_not_found_returns_error() {
-    let (service, storage_dir, _collection_dir) = create_service_async().await;
+    let (service, storage_dir, _shard_dir) = create_service_async().await;
 
     let err = service
         .file_length(Request::new(FileLengthRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "nonexistent/file.bin".to_string(),
         }))
         .await
@@ -314,12 +324,13 @@ async fn file_length_not_found_returns_error() {
 
 #[tokio::test]
 async fn read_bytes_returns_requested_range() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "bytes/data.bin", b"abcdefghij");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "bytes/data.bin", b"abcdefghij");
 
     let response = service
         .read_bytes(Request::new(ReadBytesRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "bytes/data.bin".to_string(),
             byte_offset: 3,
             length: 4,
@@ -335,12 +346,13 @@ async fn read_bytes_returns_requested_range() {
 
 #[tokio::test]
 async fn read_bytes_out_of_bounds_returns_error() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "oob/data.bin", b"tiny");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "oob/data.bin", b"tiny");
 
     let err = service
         .read_bytes(Request::new(ReadBytesRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "oob/data.bin".to_string(),
             byte_offset: 0,
             length: 9999,
@@ -355,16 +367,17 @@ async fn read_bytes_out_of_bounds_returns_error() {
 
 #[tokio::test]
 async fn read_bytes_stream_splits_large_reads_into_chunks() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
+    let (service, storage_dir, shard_dir) = create_service_async().await;
     let total_len = STREAM_CHUNK_SIZE as usize + 17;
     let payload = (0..total_len)
         .map(|idx| (idx % 251) as u8)
         .collect::<Vec<_>>();
-    write_collection_file(&collection_dir, "stream/data.bin", &payload);
+    write_shard_file(&shard_dir, "stream/data.bin", &payload);
 
     let mut stream = service
         .read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "stream/data.bin".to_string(),
             byte_offset: 0,
             length: total_len as u64,
@@ -395,12 +408,13 @@ async fn read_bytes_stream_splits_large_reads_into_chunks() {
 
 #[tokio::test]
 async fn read_bytes_stream_returns_empty_stream_for_zero_length() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "stream/zero.bin", b"some data");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "stream/zero.bin", b"some data");
 
     let mut stream = service
         .read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "stream/zero.bin".to_string(),
             byte_offset: 0,
             length: 0,
@@ -416,11 +430,12 @@ async fn read_bytes_stream_returns_empty_stream_for_zero_length() {
 
 #[tokio::test]
 async fn read_bytes_stream_zero_length_checks_file_exists() {
-    let (service, storage_dir, _collection_dir) = create_service_async().await;
+    let (service, storage_dir, _shard_dir) = create_service_async().await;
 
     let Err(err) = service
         .read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "stream/missing.bin".to_string(),
             byte_offset: 0,
             length: 0,
@@ -437,13 +452,14 @@ async fn read_bytes_stream_zero_length_checks_file_exists() {
 
 #[tokio::test]
 async fn read_bytes_stream_out_of_bounds_returns_error() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
+    let (service, storage_dir, shard_dir) = create_service_async().await;
     let payload = b"short";
-    write_collection_file(&collection_dir, "stream/clamp.bin", payload);
+    write_shard_file(&shard_dir, "stream/clamp.bin", payload);
 
     let Err(err) = service
         .read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "stream/clamp.bin".to_string(),
             byte_offset: 0,
             length: 999999,
@@ -460,13 +476,14 @@ async fn read_bytes_stream_out_of_bounds_returns_error() {
 
 #[tokio::test]
 async fn read_whole_returns_entire_file() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
+    let (service, storage_dir, shard_dir) = create_service_async().await;
     let payload = b"whole file contents";
-    write_collection_file(&collection_dir, "whole/data.bin", payload);
+    write_shard_file(&shard_dir, "whole/data.bin", payload);
 
     let response = service
         .read_whole(Request::new(ReadWholeRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "whole/data.bin".to_string(),
         }))
         .await
@@ -480,12 +497,13 @@ async fn read_whole_returns_entire_file() {
 
 #[tokio::test]
 async fn read_batch_returns_each_requested_slice() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "batch/data.bin", b"0123456789");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "batch/data.bin", b"0123456789");
 
     let response = service
         .read_batch(Request::new(ReadBatchRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "batch/data.bin".to_string(),
             ranges: vec![
                 ReadBatchRange {
@@ -516,13 +534,14 @@ async fn read_batch_returns_each_requested_slice() {
 
 #[tokio::test]
 async fn read_multi_reads_ranges_in_request_order() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "segments/a.bin", b"abcdefghij");
-    write_collection_file(&collection_dir, "segments/b.bin", b"klmnopqrst");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "segments/a.bin", b"abcdefghij");
+    write_shard_file(&shard_dir, "segments/b.bin", b"klmnopqrst");
 
     let response = service
         .read_multi(Request::new(ReadMultiRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             reads: vec![
                 ReadMultiEntry {
                     path: "segments/a.bin".to_string(),
@@ -555,11 +574,12 @@ async fn read_multi_reads_ranges_in_request_order() {
 
 #[tokio::test]
 async fn read_multi_rejects_empty_entry_path() {
-    let (service, storage_dir, _collection_dir) = create_service_async().await;
+    let (service, storage_dir, _shard_dir) = create_service_async().await;
 
     let err = service
         .read_multi(Request::new(ReadMultiRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             reads: vec![ReadMultiEntry {
                 path: "".to_string(),
                 byte_offset: 0,
@@ -575,13 +595,14 @@ async fn read_multi_rejects_empty_entry_path() {
 
 #[tokio::test]
 async fn access_denied_for_wrong_collection() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "secret.bin", b"data");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "secret.bin", b"data");
 
     let err = service
         .file_exists(request_with_access(
             FileExistsRequest {
                 collection_name: TEST_COLLECTION_NAME.to_string(),
+                shard_id: TEST_SHARD_ID,
                 path: "secret.bin".to_string(),
             },
             "some-other-collection",
@@ -596,13 +617,14 @@ async fn access_denied_for_wrong_collection() {
 
 #[tokio::test]
 async fn access_granted_for_matching_collection() {
-    let (service, storage_dir, collection_dir) = create_service_async().await;
-    write_collection_file(&collection_dir, "data.bin", b"hello");
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "data.bin", b"hello");
 
     let response = service
         .file_exists(request_with_access(
             FileExistsRequest {
                 collection_name: TEST_COLLECTION_NAME.to_string(),
+                shard_id: TEST_SHARD_ID,
                 path: "data.bin".to_string(),
             },
             TEST_COLLECTION_NAME,
@@ -618,11 +640,12 @@ async fn access_granted_for_matching_collection() {
 
 #[tokio::test]
 async fn nonexistent_collection_returns_not_found() {
-    let (service, storage_dir, _collection_dir) = create_service_async().await;
+    let (service, storage_dir, _shard_dir) = create_service_async().await;
 
     let err = service
         .file_length(Request::new(FileLengthRequest {
             collection_name: "no-such-collection".to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "file.bin".to_string(),
         }))
         .await
@@ -635,11 +658,12 @@ async fn nonexistent_collection_returns_not_found() {
 
 #[tokio::test]
 async fn dot_path_is_rejected() {
-    let (service, storage_dir, _collection_dir) = create_service_async().await;
+    let (service, storage_dir, _shard_dir) = create_service_async().await;
 
     let err = service
         .file_exists(Request::new(FileExistsRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: ".".to_string(),
         }))
         .await
@@ -652,17 +676,63 @@ async fn dot_path_is_rejected() {
 
 #[tokio::test]
 async fn dot_slash_path_is_rejected() {
-    let (service, storage_dir, _collection_dir) = create_service_async().await;
+    let (service, storage_dir, _shard_dir) = create_service_async().await;
 
     let err = service
         .file_exists(Request::new(FileExistsRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
             path: "./file.bin".to_string(),
         }))
         .await
         .unwrap_err();
 
     assert_eq!(err.code(), Code::InvalidArgument);
+
+    drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn shard_id_scopes_file_access_to_that_shard() {
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+
+    write_shard_file(&shard_dir, "data.bin", b"shard-zero");
+
+    let other_shard_dir = shard_dir.parent().unwrap().join("1");
+    fs_err::create_dir_all(&other_shard_dir).unwrap();
+    fs_err::write(other_shard_dir.join("data.bin"), b"shard-one").unwrap();
+
+    let zero = service
+        .read_whole(Request::new(ReadWholeRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: 0,
+            path: "data.bin".to_string(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(zero.data, b"shard-zero".to_vec());
+
+    let one = service
+        .read_whole(Request::new(ReadWholeRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: 1,
+            path: "data.bin".to_string(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(one.data, b"shard-one".to_vec());
+
+    let err = service
+        .read_whole(Request::new(ReadWholeRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: 99,
+            path: "data.bin".to_string(),
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), Code::NotFound);
 
     drop_service(service, storage_dir).await;
 }

@@ -4,12 +4,24 @@ package qdrant;
 
 option csharp_namespace = "Qdrant.Client.Grpc";
 
+// Shard-scoped raw I/O over on-disk collection storage.
+//
+// All requests are routed to a single shard directory
+// (`<storage>/collections/<collection>/<shard_id>`). Replicas of the same
+// shard on different peers are not binary-compatible (segment IDs, WAL
+// positions, optimizer state all diverge), so the caller is responsible for
+// targeting the peer that owns the desired replica.
+//
+// This service is intended for tooling that builds synchronization on top of
+// Qdrant (e.g. replica bootstrap) rather than typical user queries. It is
+// considered internal: the request/response shape may change between
+// releases.
 service StorageRead {
-  // List files in the storage.
+  // List files in the shard.
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse) {}
-  // Check if a file exists in the storage.
+  // Check if a file exists in the shard.
   rpc FileExists(FileExistsRequest) returns (FileExistsResponse) {}
-  // Get the length of a file in the storage.
+  // Get the length of a file in the shard.
   rpc FileLength(FileLengthRequest) returns (FileLengthResponse) {}
   // Maps to UniversalRead::read() — single range from a single file.
   rpc ReadBytes(ReadBytesRequest) returns (ReadBytesResponse) {}
@@ -26,12 +38,14 @@ service StorageRead {
 message ListFilesRequest {
   // Separated from `path` so that existing collection name validation can be applied at the proto level.
   string collection_name = 1;
-  string prefix_path = 2;
+  uint32 shard_id = 2;
+  string prefix_path = 3;
 }
 
 message FileExistsRequest {
   string collection_name = 1;
-  string path = 2;
+  uint32 shard_id = 2;
+  string path = 3;
 }
 
 message FileExistsResponse {
@@ -44,7 +58,8 @@ message ListFilesResponse {
 
 message FileLengthRequest {
   string collection_name = 1;
-  string path = 2;
+  uint32 shard_id = 2;
+  string path = 3;
 }
 
 message FileLengthResponse {
@@ -53,9 +68,10 @@ message FileLengthResponse {
 
 message ReadBytesRequest {
   string collection_name = 1;
-  string path = 2;
-  uint64 byte_offset = 3;
-  uint64 length = 4;
+  uint32 shard_id = 2;
+  string path = 3;
+  uint64 byte_offset = 4;
+  uint64 length = 5;
 }
 
 message ReadBytesResponse {
@@ -64,9 +80,10 @@ message ReadBytesResponse {
 
 message ReadBytesStreamRequest {
   string collection_name = 1;
-  string path = 2;
-  uint64 byte_offset = 3;
-  uint64 length = 4;
+  uint32 shard_id = 2;
+  string path = 3;
+  uint64 byte_offset = 4;
+  uint64 length = 5;
 }
 
 message ReadBytesStreamResponse {
@@ -75,7 +92,8 @@ message ReadBytesStreamResponse {
 
 message ReadWholeRequest {
   string collection_name = 1;
-  string path = 2;
+  uint32 shard_id = 2;
+  string path = 3;
 }
 
 message ReadWholeResponse {
@@ -90,8 +108,9 @@ message ReadBatchRange {
 
 message ReadBatchRequest {
   string collection_name = 1;
-  string path = 2;
-  repeated ReadBatchRange ranges = 3;
+  uint32 shard_id = 2;
+  string path = 3;
+  repeated ReadBatchRange ranges = 4;
 }
 
 message ReadBatchResponse {
@@ -107,7 +126,8 @@ message ReadMultiEntry {
 
 message ReadMultiRequest {
   string collection_name = 1;
-  repeated ReadMultiEntry reads = 2;
+  uint32 shard_id = 2;
+  repeated ReadMultiEntry reads = 3;
 }
 
 message ReadMultiResponse {
