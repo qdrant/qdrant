@@ -9,8 +9,30 @@ on:
 env:
   CARGO_TERM_COLOR: always
   UV_VERSION: 0.9.17
+  MINIO_IMAGE: satantime/minio-server@sha256:21f80e40e980b34464ec6bb470d264e735037ab4246358b79f18198071726531
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      e2e: ${{ steps.filter.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            e2e:
+              - 'src/**'
+              - 'lib/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'Dockerfile'
+              - 'tools/**'
+              - 'config/**'
+              - 'tests/e2e_tests/**'
+              - '.github/workflows/integration-tests.yml'
+
   integration-tests:
 
     runs-on: ubuntu-latest
@@ -156,22 +178,37 @@ jobs:
 
   test-shard-snapshot-api-s3-minio:
     runs-on: ubuntu-latest
-    # Setup minio server
-    services:
-      minio:
-        image: satantime/minio-server
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ACCESS_KEY: "minioadmin"
-          MINIO_SECRET_KEY: "minioadmin"
     steps:
+      - name: Pull minio image
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        with:
+          timeout_minutes: 3
+          max_attempts: 3
+          retry_on: error
+          command: docker pull ${{ env.MINIO_IMAGE }}
+      - name: Start minio
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ACCESS_KEY=minioadmin \
+            -e MINIO_SECRET_KEY=minioadmin \
+            ${{ env.MINIO_IMAGE }}
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
+              echo "minio is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "minio did not become ready" >&2
+          docker logs minio
+          exit 1
       - name: Setup test bucket
         env:
           AWS_ACCESS_KEY_ID: "minioadmin"
           AWS_SECRET_ACCESS_KEY: "minioadmin"
           AWS_EC2_METADATA_DISABLED: "true"
-        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+        run: aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -210,65 +247,112 @@ jobs:
 
           ./tests/shard-snapshot-api.sh test-all
 
-  e2e-tests:
+  build-e2e-image:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          lfs: true
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Build Qdrant Docker image
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        with:
+          timeout_minutes: 30
+          max_attempts: 2
+          retry_on: error
+          command: |
+            docker buildx build \
+              --tag qdrant/qdrant:e2e-tests \
+              --cache-from "type=gha,scope=${{ github.ref }}-e2e" \
+              --cache-from "type=gha,scope=${{ github.base_ref }}-e2e" \
+              --cache-to "type=gha,mode=max,scope=${{ github.ref }}-e2e" \
+              --load \
+              --build-arg PROFILE=ci \
+              --build-arg FEATURES=data-consistency-check,staging \
+              .
+      - name: Save and compress image
+        run: docker save qdrant/qdrant:e2e-tests | zstd -1 -o /tmp/e2e-image.tar.zst
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-image
+          path: /tmp/e2e-image.tar.zst
+          retention-days: 1
+          compression-level: 0
 
-    # Setup minio server
-    services:
-      minio:
-        image: satantime/minio-server
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ACCESS_KEY: "minioadmin"
-          MINIO_SECRET_KEY: "minioadmin"
+  e2e-tests:
+    needs: build-e2e-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
-      - name: Setup test bucket
-        env:
-          AWS_ACCESS_KEY_ID: "minioadmin"
-          AWS_SECRET_ACCESS_KEY: "minioadmin"
-          AWS_EC2_METADATA_DISABLED: "true"
-        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           lfs: true  # Fetch LFS files automatically
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.13'
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - name: Install uv and Python dependencies
         run: |
           curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           uv --project tests lock --check
           uv --project tests sync
-      - name: Build Qdrant Docker image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+      - name: Download Qdrant image
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
-          context: .
-          tags: qdrant/qdrant:e2e-tests
-          cache-from: |
-            type=gha,scope=${{ github.ref }}-e2e
-            type=gha,scope=${{ github.base_ref }}-e2e
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}-e2e
-          load: true
-          build-args: |
-            PROFILE=ci
-            FEATURES=data-consistency-check,staging
-      - name: Verify Docker image
-        run: docker images | grep qdrant
-      - name: Run e2e tests
-        run: uv --project tests run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
+          name: e2e-image
+          path: /tmp
+      - name: Load Qdrant image
+        run: zstd -dc /tmp/e2e-image.tar.zst | docker load
+      - name: Pull minio image
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        with:
+          timeout_minutes: 3
+          max_attempts: 3
+          retry_on: error
+          command: docker pull ${{ env.MINIO_IMAGE }}
+      - name: Start minio
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ACCESS_KEY=minioadmin \
+            -e MINIO_SECRET_KEY=minioadmin \
+            ${{ env.MINIO_IMAGE }}
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
+              echo "minio is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "minio did not become ready" >&2
+          docker logs minio
+          exit 1
+      - name: Setup test bucket
+        env:
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket
+      - name: Run e2e tests (shard ${{ matrix.shard }}/3)
+        run: |
+          uv --project tests run pytest \
+            -n 2 \
+            --splits 3 --group ${{ matrix.shard }} \
+            tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
         shell: bash
-        timeout-minutes: 20
+        timeout-minutes: 15
       - name: Upload test logs on failure
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: e2e-test-logs
+          name: e2e-test-logs-shard-${{ matrix.shard }}
           path: |
             tests/e2e_tests/test_*.log
             tests/e2e_tests/**/logs/
