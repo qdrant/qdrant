@@ -5570,12 +5570,14 @@ pub struct DeleteFieldIndexCollection {
 /// Dense vector creation parameters.
 /// Only includes immutable properties that define the vector space.
 /// Storage type, index, and quantization are configured separately.
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DenseVectorCreationConfig {
     /// Size/dimensionality of the vectors
     #[prost(uint64, tag = "1")]
+    #[validate(range(min = 1, max = 65536))]
     pub size: u64,
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
@@ -5589,6 +5591,7 @@ pub struct DenseVectorCreationConfig {
 }
 /// Sparse vector creation parameters.
 /// Only includes immutable properties that define the vector space.
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5623,6 +5626,7 @@ pub struct CreateVectorNameRequest {
     pub timeout: ::core::option::Option<u64>,
     /// Configuration for the new vector - either dense or sparse
     #[prost(oneof = "create_vector_name_request::VectorConfig", tags = "4, 5")]
+    #[validate(nested)]
     pub vector_config: ::core::option::Option<create_vector_name_request::VectorConfig>,
 }
 /// Nested message and enum types in `CreateVectorNameRequest`.

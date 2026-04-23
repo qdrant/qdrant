@@ -95,6 +95,28 @@ def test_delete_recreate_vector_scroll(collection_name):
         assert len(point['vector']['vec_b']) == VECTOR_SIZE2
 
 
+def test_create_vector_rejects_zero_size(collection_name):
+    """size: 0 must be rejected at the API boundary, not reach the storage layer."""
+    response = requests.put(
+        f"{QDRANT_HOST}/collections/{collection_name}/vectors/vec_zero",
+        params={'wait': 'true'},
+        json={"dense": {"size": 0, "distance": "Cosine"}},
+    )
+    assert response.status_code == 422, response.text
+    assert "size" in response.text
+
+
+def test_create_vector_rejects_oversize(collection_name):
+    """size above 65536 must be rejected at the API boundary."""
+    response = requests.put(
+        f"{QDRANT_HOST}/collections/{collection_name}/vectors/vec_huge",
+        params={'wait': 'true'},
+        json={"dense": {"size": 65537, "distance": "Cosine"}},
+    )
+    assert response.status_code == 422, response.text
+    assert "size" in response.text
+
+
 def test_delete_recreate_indexed_vector_scroll():
     """
     Delete and recreate a named vector on indexed segments (HNSW built),

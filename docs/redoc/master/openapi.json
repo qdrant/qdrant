@@ -17724,7 +17724,8 @@
             "description": "Dimensionality of the vectors",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "maximum": 65536,
+            "minimum": 1
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"

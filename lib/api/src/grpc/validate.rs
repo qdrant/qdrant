@@ -74,6 +74,16 @@ impl Validate for grpc::vectors_config_diff::Config {
     }
 }
 
+impl Validate for grpc::create_vector_name_request::VectorConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use grpc::create_vector_name_request::VectorConfig;
+        match self {
+            VectorConfig::DenseConfig(dense) => dense.validate(),
+            VectorConfig::SparseConfig(sparse) => sparse.validate(),
+        }
+    }
+}
+
 impl Validate for grpc::quantization_config::Quantization {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use grpc::quantization_config::Quantization;
@@ -530,8 +540,9 @@ mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, GeoLineString, GeoPoint, GeoPolygon,
-        SearchPoints, UpdateCollection,
+        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest,
+        DenseVectorCreationConfig, GeoLineString, GeoPoint, GeoPolygon, SearchPoints,
+        UpdateCollection, create_vector_name_request,
     };
 
     #[test]
@@ -737,5 +748,47 @@ mod tests {
             good_polygon.validate().is_ok(),
             "good polygon should not error on validation"
         );
+    }
+
+    #[test]
+    fn test_create_vector_name_request() {
+        let request_with_zero_size = CreateVectorNameRequest {
+            collection_name: "test".into(),
+            vector_name: "vec".into(),
+            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
+                DenseVectorCreationConfig {
+                    size: 0,
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        assert!(request_with_zero_size.validate().is_err());
+
+        let request_with_oversize = CreateVectorNameRequest {
+            collection_name: "test".into(),
+            vector_name: "vec".into(),
+            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
+                DenseVectorCreationConfig {
+                    size: 65537,
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        assert!(request_with_oversize.validate().is_err());
+
+        let good_request = CreateVectorNameRequest {
+            collection_name: "test".into(),
+            vector_name: "vec".into(),
+            vector_config: Some(create_vector_name_request::VectorConfig::DenseConfig(
+                DenseVectorCreationConfig {
+                    size: 768,
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        assert!(good_request.validate().is_ok());
     }
 }

@@ -33,18 +33,20 @@ pub enum VectorNameConfig {
 }
 
 /// Wrapper for dense vector creation config.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct DenseVectorNameConfig {
     /// Dense vector parameters
+    #[validate(nested)]
     pub dense: DenseVectorConfig,
 }
 
 /// Wrapper for sparse vector creation config.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorNameConfig {
     /// Sparse vector parameters
+    #[validate(nested)]
     pub sparse: SparseVectorConfig,
 }
 
@@ -52,10 +54,11 @@ pub struct SparseVectorNameConfig {
 ///
 /// Only includes properties that define the vector space and cannot be changed
 /// after creation. Storage type, index type, and quantization are inferred.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct DenseVectorConfig {
     /// Dimensionality of the vectors
+    #[validate(range(min = 1, max = 65536))]
     pub size: usize,
     /// Distance function used for measuring distance between vectors
     pub distance: Distance,
@@ -71,7 +74,7 @@ pub struct DenseVectorConfig {
 ///
 /// Only includes properties that define the vector space and cannot be changed
 /// after creation.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorConfig {
     /// Value modifier for sparse vectors (e.g., IDF)
@@ -84,7 +87,10 @@ pub struct SparseVectorConfig {
 
 impl Validate for VectorNameConfig {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        Ok(())
+        match self {
+            VectorNameConfig::Dense(config) => config.validate(),
+            VectorNameConfig::Sparse(config) => config.validate(),
+        }
     }
 }
 

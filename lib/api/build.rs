@@ -231,6 +231,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteFieldIndexCollection.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
             ("CreateVectorNameRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("CreateVectorNameRequest.vector_config", ""),
+            ("DenseVectorCreationConfig.size", "range(min = 1, max = 65536)"),
             ("DeleteVectorNameRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("SearchPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("SearchPoints.filter", ""),
@@ -360,7 +362,9 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchMatrixPoints.sample", "range(min = 2)"),
             ("SearchMatrixPoints.limit", "range(min = 1)"),
             ("SearchMatrixPoints.timeout", "range(min = 1)")
-        ], &[])
+        ], &[
+            "SparseVectorCreationConfig",
+        ])
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
