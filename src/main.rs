@@ -25,6 +25,7 @@ use ::common::low_memory::init_low_memory_mode;
 use ::common::memory_usage::set_resident_bytes_reader;
 use ::common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use ::common::mmap::advice::set_global;
+use ::common::universal_io::OnDemandConfig;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -380,6 +381,14 @@ fn main() -> anyhow::Result<()> {
 
     // Set global low-memory mode, sourced from configuration
     init_low_memory_mode(settings.storage.low_memory_mode);
+
+    // If configured, install the OnDemand cache so immutable on-disk
+    // files served through `OnDeMmapFile` lazily mirror blocks from
+    // `storage_path` into this directory on first access.
+    if let Some(cache_dir) = settings.storage.on_demand_cache_dir.clone() {
+        fs::create_dir_all(&cache_dir)?;
+        OnDemandConfig::initialize_global(cache_dir);
+    }
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
     let reporting_id = TelemetryCollector::generate_id();

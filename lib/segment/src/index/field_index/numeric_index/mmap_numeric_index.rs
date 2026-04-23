@@ -11,7 +11,7 @@ use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalRead, UniversalWrite,
+    MmapFile, OnDeMmapFile, OpenOptions, ReadRange, TypedStorage, UniversalRead, UniversalWrite,
 };
 use fs_err as fs;
 use itertools::Either;
@@ -33,21 +33,26 @@ const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue + 'static> {
     path: PathBuf,
-    pub(super) storage: Storage<T, MmapFile>,
+    pub(super) storage: Storage<T, MmapFile, OnDeMmapFile>,
     histogram: Histogram<T>,
     deleted_count: usize,
     max_values_per_point: usize,
     is_on_disk: bool,
 }
 
+/// `SRw` backs the mutable deletion bitmask and therefore requires
+/// [`UniversalWrite<u64>`]. `SRo` backs the immutable sorted pairs and
+/// `point_to_values` mapping, for which pure [`UniversalRead`] is
+/// sufficient and which can be lazily fetched through [`OnDeMmapFile`].
 pub(super) struct Storage<
     T: Encodable + Numericable + Default + StoredValue + 'static,
-    S: UniversalWrite<u64> + UniversalRead<Point<T>> + UniversalRead<u8>,
+    SRw: UniversalWrite<u64>,
+    SRo: UniversalRead<Point<T>> + UniversalRead<u8>,
 > {
-    deleted: BufferedUpdateBitSlice<S>,
+    deleted: BufferedUpdateBitSlice<SRw>,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
-    pairs: TypedStorage<S, Point<T>>,
-    pub(super) point_to_values: StoredPointToValues<T, S>,
+    pairs: TypedStorage<SRo, Point<T>>,
+    pub(super) point_to_values: StoredPointToValues<T, SRo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

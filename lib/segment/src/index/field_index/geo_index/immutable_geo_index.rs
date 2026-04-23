@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, ReadRange, UniversalRead};
+use common::universal_io::{OnDeMmapFile, ReadRange, UniversalRead};
 
 use super::mmap_geo_index::StoredGeoMapIndex;
 use crate::common::Flusher;
@@ -59,12 +59,12 @@ pub struct ImmutableGeoMapIndex {
 }
 
 enum Storage {
-    Mmap(Box<StoredGeoMapIndex<MmapFile>>),
+    Mmap(Box<StoredGeoMapIndex<OnDeMmapFile>>),
 }
 
 impl ImmutableGeoMapIndex {
     /// Open and load immutable geo index from mmap storage
-    pub fn open_mmap(index: StoredGeoMapIndex<MmapFile>) -> OperationResult<Self> {
+    pub fn open_mmap(index: StoredGeoMapIndex<OnDeMmapFile>) -> OperationResult<Self> {
         let counts_per_hash = index
             .storage
             .counts_per_hash

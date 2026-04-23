@@ -1,6 +1,6 @@
 #[cfg(test)]
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::OnDeMmapFile;
 
 use super::super::positions::Positions;
 use crate::common::operation_error::OperationResult;
@@ -8,8 +8,8 @@ use crate::index::field_index::full_text_index::inverted_index::TokenId;
 use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::uio_postings::UniversalPostings;
 
 pub enum MmapPostingsEnum {
-    Ids(UniversalPostings<(), MmapFile>),
-    WithPositions(UniversalPostings<Positions, MmapFile>),
+    Ids(UniversalPostings<(), OnDeMmapFile>),
+    WithPositions(UniversalPostings<Positions, OnDeMmapFile>),
 }
 
 impl MmapPostingsEnum {

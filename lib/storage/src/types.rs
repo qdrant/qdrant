@@ -76,6 +76,14 @@ pub struct StorageConfig {
     #[validate(custom(function = validate_path))]
     #[serde(default)]
     pub temp_path: Option<PathBuf>,
+    /// If set, immutable on-disk files are opened through
+    /// `OnDeMmapFile`: the original `storage_path` acts as the remote,
+    /// and blocks are lazily mirrored into this directory on first
+    /// access. Intended for setups where `storage_path` lives on slow
+    /// or networked storage.
+    #[validate(custom(function = validate_path))]
+    #[serde(default)]
+    pub on_demand_cache_dir: Option<PathBuf>,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
     #[validate(nested)]

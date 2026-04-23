@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::OnDeMmapFile;
 use itertools::{Either, Itertools};
 use mutable_geo_index::InMemoryGeoMapIndex;
 use serde_json::Value;
@@ -37,7 +37,7 @@ const GEO_QUERY_MAX_REGION: usize = 12;
 pub enum GeoMapIndex {
     Mutable(MutableGeoMapIndex),
     Immutable(ImmutableGeoMapIndex),
-    Storage(Box<StoredGeoMapIndex<MmapFile>>),
+    Storage(Box<StoredGeoMapIndex<OnDeMmapFile>>),
 }
 
 impl GeoMapIndex {
@@ -656,7 +656,7 @@ mod tests {
     use std::ops::Range;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use common::universal_io::MmapFile;
+    use common::universal_io::OnDeMmapFile;
     use itertools::Itertools;
     use ordered_float::OrderedFloat;
     use rand::SeedableRng;
@@ -1787,7 +1787,7 @@ mod tests {
         let assert_all_points_match =
             |mutable_index: &GeoMapIndex,
              immutable_index: &GeoMapIndex,
-             storage_index: &super::mmap_geo_index::StoredGeoMapIndex<MmapFile>,
+             storage_index: &super::mmap_geo_index::StoredGeoMapIndex<OnDeMmapFile>,
              cases: &[(&str, Vec<GeoHash>)],
              phase: &str| {
                 for (name, hashes) in cases {

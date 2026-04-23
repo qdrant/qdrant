@@ -7,7 +7,7 @@ use common::mmap::{self, Advice, AdviceSetting, MmapSlice, create_and_ensure_len
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions};
+use common::universal_io::{MmapFile, OnDeMmapFile, OpenOptions};
 use types::ZerocopyPostingValue;
 use uio_postings::UniversalPostings;
 
@@ -139,12 +139,12 @@ impl MmapInvertedIndex {
             prevent_caching: None,
         };
         let postings = match has_positions {
-            false => MmapPostingsEnum::Ids(UniversalPostings::<(), MmapFile>::open(
+            false => MmapPostingsEnum::Ids(UniversalPostings::<(), OnDeMmapFile>::open(
                 &postings_path,
                 postings_open_options,
             )?),
             true => {
-                MmapPostingsEnum::WithPositions(UniversalPostings::<Positions, MmapFile>::open(
+                MmapPostingsEnum::WithPositions(UniversalPostings::<Positions, OnDeMmapFile>::open(
                     &postings_path,
                     postings_open_options,
                 )?)
@@ -212,7 +212,7 @@ impl MmapInvertedIndex {
         let filter = move |idx| self.is_active(idx);
 
         fn intersection<V: ZerocopyPostingValue>(
-            postings: &UniversalPostings<V, MmapFile>,
+            postings: &UniversalPostings<V, OnDeMmapFile>,
             tokens: TokenSet,
             filter: impl Fn(PointOffsetType) -> bool,
         ) -> OperationResult<Vec<PointOffsetType>> {
@@ -243,7 +243,7 @@ impl MmapInvertedIndex {
         let is_active = move |idx| self.is_active(idx);
 
         fn merge<V: ZerocopyPostingValue>(
-            postings: &UniversalPostings<V, MmapFile>,
+            postings: &UniversalPostings<V, OnDeMmapFile>,
             tokens: TokenSet,
             is_active: impl Fn(PointOffsetType) -> bool,
         ) -> OperationResult<Vec<PointOffsetType>> {
@@ -281,7 +281,7 @@ impl MmapInvertedIndex {
         }
 
         fn check_intersection<V: ZerocopyPostingValue>(
-            postings: &UniversalPostings<V, MmapFile>,
+            postings: &UniversalPostings<V, OnDeMmapFile>,
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> OperationResult<bool> {
@@ -313,7 +313,7 @@ impl MmapInvertedIndex {
         }
 
         fn check_any<V: ZerocopyPostingValue>(
-            postings: &UniversalPostings<V, MmapFile>,
+            postings: &UniversalPostings<V, OnDeMmapFile>,
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> OperationResult<bool> {

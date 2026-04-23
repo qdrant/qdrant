@@ -32,6 +32,7 @@ fn test_alias_operation() {
         snapshots_path: storage_dir.path().join("snapshots"),
         snapshots_config: Default::default(),
         temp_path: None,
+        on_demand_cache_dir: None,
         on_disk_payload: false,
         optimizers: OptimizersConfig {
             deleted_threshold: 0.5,
