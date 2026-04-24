@@ -314,7 +314,7 @@ pub async fn do_update_collection_cluster(
             // applies the same one — the consensus entry carries it explicitly.
             let method = match move_shard.method {
                 Some(method) => method,
-                None => collection.default_shard_transfer_method().await,
+                None => collection.default_shard_transfer_method(),
             };
 
             // submit operation to consensus
@@ -356,7 +356,7 @@ pub async fn do_update_collection_cluster(
             // applies the same one — the consensus entry carries it explicitly.
             let method = match replicate_shard.method {
                 Some(method) => method,
-                None => collection.default_shard_transfer_method().await,
+                None => collection.default_shard_transfer_method(),
             };
 
             // submit operation to consensus
@@ -417,7 +417,7 @@ pub async fn do_update_collection_cluster(
             validate_peer_exists(from_peer_id)?;
 
             // Decide on a transfer-method and check its validity in combination with filters.
-            let method = collection.default_shard_transfer_method().await;
+            let method = collection.default_shard_transfer_method();
             if !method.is_streaming() && filter.is_some() {
                 return Err(StorageError::bad_request(format!(
                     "Can't do shard transfer using method {method:?} in combination with a filter",

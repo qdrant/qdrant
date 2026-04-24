@@ -59,7 +59,7 @@ impl Collection {
     }
 
     /// Default shard transfer method for Qdrant 1.18.0+
-    pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+    pub fn default_shard_transfer_method(&self) -> ShardTransferMethod {
         self.shared_storage_config
             .default_shard_transfer_method
             .unwrap_or(ShardTransferMethod::Snapshot)
