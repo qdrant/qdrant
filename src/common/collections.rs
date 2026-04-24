@@ -310,6 +310,13 @@ pub async fn do_update_collection_cluster(
             validate_peer_exists(move_shard.to_peer_id)?;
             validate_peer_exists(move_shard.from_peer_id)?;
 
+            // Resolve the transfer method on this peer so the whole cluster
+            // applies the same one — the consensus entry carries it explicitly.
+            let method = match move_shard.method {
+                Some(method) => method,
+                None => collection.default_shard_transfer_method().await,
+            };
+
             // submit operation to consensus
             dispatcher
                 .submit_collection_meta_op(
@@ -321,7 +328,7 @@ pub async fn do_update_collection_cluster(
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
-                            method: move_shard.method,
+                            method: Some(method),
                             filter: None,
                         }),
                     ),
@@ -345,6 +352,13 @@ pub async fn do_update_collection_cluster(
             // validate source peer exists
             validate_peer_exists(replicate_shard.from_peer_id)?;
 
+            // Resolve the transfer method on this peer so the whole cluster
+            // applies the same one — the consensus entry carries it explicitly.
+            let method = match replicate_shard.method {
+                Some(method) => method,
+                None => collection.default_shard_transfer_method().await,
+            };
+
             // submit operation to consensus
             dispatcher
                 .submit_collection_meta_op(
@@ -356,7 +370,7 @@ pub async fn do_update_collection_cluster(
                             to: replicate_shard.to_peer_id,
                             from: replicate_shard.from_peer_id,
                             sync: true,
-                            method: replicate_shard.method,
+                            method: Some(method),
                             filter: None,
                         }),
                     ),
