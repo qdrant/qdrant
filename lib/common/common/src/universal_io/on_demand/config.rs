@@ -1,5 +1,9 @@
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+
+use fs_err as fs;
+
+use crate::universal_io::{Result, UniversalIoError};
 
 /// Suffix appended to every local cache file so local mirrors can't be
 /// mistaken for the "real" (remote) copy.
@@ -7,31 +11,37 @@ const LOCAL_FILE_SUFFIX: &str = ".ondemand";
 
 /// Configuration for [`OnDemandFile`](super::OnDemandFile).
 ///
-/// The remote directory structure is mirrored below [`local_dir`](Self::local_dir),
-/// and each mirrored file is suffixed with [`LOCAL_FILE_SUFFIX`]. Root /
-/// prefix / `.` / `..` components of the remote path are dropped when
-/// computing the local path, so the mirror is always materialised under
-/// `local_dir`.
+/// Remote files under `remote_dir` are mirrored under `local_dir`, preserving the
+/// relative path with [`LOCAL_FILE_SUFFIX`] appended to the file name.
 #[derive(Debug)]
 pub struct OnDemandConfig {
+    remote_dir: PathBuf,
     local_dir: PathBuf,
 }
 
 static GLOBAL: OnceLock<OnDemandConfig> = OnceLock::new();
 
 impl OnDemandConfig {
-    pub fn new(local_dir: PathBuf) -> Self {
-        Self { local_dir }
+    pub fn new(remote_dir: PathBuf, local_dir: PathBuf) -> Result<Self> {
+        let remote_dir = fs::canonicalize(&remote_dir)
+            .map_err(|err| UniversalIoError::extract_not_found(err, &remote_dir))?;
+        let local_dir = fs::canonicalize(&local_dir)
+            .map_err(|err| UniversalIoError::extract_not_found(err, &local_dir))?;
+        Ok(Self {
+            remote_dir,
+            local_dir,
+        })
     }
 
-    /// Install the process-wide instance. Panics if called more than once.
-    pub fn initialize_global(local_dir: PathBuf) {
+    /// Panics on construction failure or if called more than once.
+    pub fn initialize_global(remote_dir: PathBuf, local_dir: PathBuf) {
+        let cfg = Self::new(remote_dir, local_dir)
+            .expect("failed to initialise OnDemandConfig");
         GLOBAL
-            .set(Self::new(local_dir))
+            .set(cfg)
             .expect("OnDemandConfig is already initialized");
     }
 
-    /// Returns the globally-installed instance, if any.
     pub fn global() -> Option<&'static OnDemandConfig> {
         GLOBAL.get()
     }
@@ -40,51 +50,73 @@ impl OnDemandConfig {
         &self.local_dir
     }
 
-    /// Maps a remote path to its corresponding local cache path.
-    pub fn local_path_for(&self, remote_path: &Path) -> PathBuf {
-        let rel: PathBuf = remote_path
-            .components()
-            .filter(|c| matches!(c, Component::Normal(_)))
-            .collect();
+    /// Canonicalises `remote_path` (does filesystem I/O); returns
+    /// [`UniversalIoError::NotFound`] if the result isn't under `remote_dir`.
+    pub fn local_path_for(&self, remote_path: &Path) -> Result<PathBuf> {
+        let canonical = fs::canonicalize(remote_path)
+            .map_err(|err| UniversalIoError::extract_not_found(err, remote_path))?;
+        let rel = canonical
+            .strip_prefix(&self.remote_dir)
+            .map_err(|_| UniversalIoError::NotFound {
+                path: remote_path.to_path_buf(),
+            })?;
 
-        let mut local = self.local_dir.join(&rel);
-        let mut filename = local
-            .file_name()
-            .map(|f| f.to_os_string())
-            .unwrap_or_default();
-        filename.push(LOCAL_FILE_SUFFIX);
-        local.set_file_name(filename);
-        local
+        let mut local = self.local_dir.join(rel);
+        local.as_mut_os_string().push(LOCAL_FILE_SUFFIX);
+        Ok(local)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use fs_err as fs;
 
     use super::OnDemandConfig;
 
     #[test]
-    fn absolute_remote_path_is_mirrored_under_local_dir() {
-        let cfg = OnDemandConfig::new(PathBuf::from("/var/cache/ondemand"));
-        let local = cfg.local_path_for(Path::new("/storage/collections/c/segment/data.bin"));
+    fn strips_remote_dir_and_appends_suffix() {
+        let tmp = tempfile::Builder::new()
+            .prefix("ondemand-cfg")
+            .tempdir()
+            .unwrap();
+        let remote_dir = tmp.path().join("remote");
+        let local_dir = tmp.path().join("local");
+        fs::create_dir_all(remote_dir.join("collections/c/segment")).unwrap();
+        fs::create_dir_all(&local_dir).unwrap();
+        let input = remote_dir.join("collections/c/segment/data.bin");
+        fs::write(&input, b"").unwrap();
+
+        let cfg = OnDemandConfig::new(remote_dir, local_dir).unwrap();
+        let local = cfg.local_path_for(&input).unwrap();
+
         assert_eq!(
             local,
-            Path::new("/var/cache/ondemand/storage/collections/c/segment/data.bin.ondemand"),
+            cfg.local_dir()
+                .join("collections/c/segment/data.bin.ondemand"),
         );
     }
 
     #[test]
-    fn relative_remote_path_is_mirrored_as_is() {
-        let cfg = OnDemandConfig::new(PathBuf::from("/cache"));
-        let local = cfg.local_path_for(Path::new("foo/bar.bin"));
-        assert_eq!(local, Path::new("/cache/foo/bar.bin.ondemand"));
-    }
+    fn rejects_path_outside_remote_dir() {
+        let tmp = tempfile::Builder::new()
+            .prefix("ondemand-cfg")
+            .tempdir()
+            .unwrap();
+        let remote_dir = tmp.path().join("remote");
+        let other_dir = tmp.path().join("other");
+        let local_dir = tmp.path().join("local");
+        fs::create_dir_all(&remote_dir).unwrap();
+        fs::create_dir_all(&other_dir).unwrap();
+        fs::create_dir_all(&local_dir).unwrap();
+        let outside = other_dir.join("data.bin");
+        fs::write(&outside, b"").unwrap();
 
-    #[test]
-    fn parent_components_are_stripped() {
-        let cfg = OnDemandConfig::new(PathBuf::from("/cache"));
-        let local = cfg.local_path_for(Path::new("../../etc/passwd"));
-        assert_eq!(local, Path::new("/cache/etc/passwd.ondemand"));
+        let cfg = OnDemandConfig::new(remote_dir, local_dir).unwrap();
+        let err = cfg.local_path_for(&outside).unwrap_err();
+
+        assert!(
+            matches!(err, crate::universal_io::UniversalIoError::NotFound { .. }),
+            "expected NotFound, got {err:?}",
+        );
     }
 }

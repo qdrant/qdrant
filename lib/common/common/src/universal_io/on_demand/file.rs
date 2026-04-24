@@ -189,7 +189,7 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
         );
 
         let remote_path = path.as_ref();
-        let local_path = config.local_path_for(remote_path);
+        let local_path = config.local_path_for(remote_path)?;
 
         let remote_options = OpenOptions {
             writeable: false,

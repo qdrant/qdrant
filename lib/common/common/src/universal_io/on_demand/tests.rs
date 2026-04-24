@@ -46,8 +46,12 @@ impl Scenario {
             _tmp: tmp,
             remote_path,
             data,
-            config: OnDemandConfig::new(local_dir),
+            config: OnDemandConfig::new(remote_dir, local_dir).unwrap(),
         }
+    }
+
+    fn expected_local_path(&self) -> PathBuf {
+        self.config.local_path_for(&self.remote_path).unwrap()
     }
 
     fn open(&self) -> OnDemandFile<Remote> {
@@ -116,7 +120,7 @@ fn read_spanning_multiple_blocks_is_stitched() {
 #[test]
 fn local_file_is_created_on_first_read_and_removed_on_drop() {
     let scn = Scenario::new(BLOCK_SIZE * 2);
-    let expected_local = scn.config.local_path_for(&scn.remote_path);
+    let expected_local = scn.expected_local_path();
 
     let file = scn.open();
 
@@ -158,7 +162,7 @@ fn local_file_is_created_on_first_read_and_removed_on_drop() {
 #[test]
 fn empty_read_does_not_materialize_local_file() {
     let scn = Scenario::new(BLOCK_SIZE);
-    let expected_local = scn.config.local_path_for(&scn.remote_path);
+    let expected_local = scn.expected_local_path();
     let file = scn.open();
 
     let bytes = UniversalRead::<u8>::read::<Sequential>(
