@@ -21,7 +21,7 @@ use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
-use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
+use crate::index::payload_config::{FullPayloadIndexType, IndexMutability, PayloadIndexType};
 use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
@@ -108,7 +108,7 @@ impl IndexSelector<'_> {
                 .map(FieldIndex::FullTextIndex),
 
             (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => self
-                .bool_new(field, create_if_missing, id_tracker)?
+                .bool_new(field, create_if_missing, id_tracker, index_type.mutability)?
                 .map(FieldIndex::BoolIndex),
 
             (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => self
@@ -181,9 +181,14 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Text(text_index_params) => self
                 .text_new(field, text_index_params.clone(), create_if_missing)?
                 .map(|index| vec![FieldIndex::FullTextIndex(index)]),
-            PayloadSchemaParams::Bool(_) => self
-                .bool_new(field, create_if_missing, id_tracker)?
-                .map(|index| vec![FieldIndex::BoolIndex(index)]),
+            PayloadSchemaParams::Bool(_) => {
+                let mutability = match self {
+                    IndexSelector::Mmap(_) => IndexMutability::Immutable,
+                    IndexSelector::Gridstore(_) => IndexMutability::Mutable,
+                };
+                self.bool_new(field, create_if_missing, id_tracker, mutability)?
+                    .map(|index| vec![FieldIndex::BoolIndex(index)])
+            }
             PayloadSchemaParams::Datetime(_) => self
                 .numeric_new(field, create_if_missing)?
                 .map(|index| vec![FieldIndex::DatetimeIndex(index)]),
@@ -462,12 +467,22 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         create_if_missing: bool,
         id_tracker: &IdTrackerEnum,
+        mutability: IndexMutability,
     ) -> OperationResult<Option<BoolIndex>> {
         Ok(match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
                 let dir = bool_dir(dir, field);
-                ImmutableBoolIndex::open(&dir, id_tracker.deleted_point_bitslice())?
-                    .map(BoolIndex::Immutable)
+                // `MutableBoolIndex` and `ImmutableBoolIndex` share the same on-disk
+                // format; stored mutability picks which in-memory wrapper to build.
+                match mutability {
+                    IndexMutability::Immutable => {
+                        ImmutableBoolIndex::open(&dir, id_tracker.deleted_point_bitslice())?
+                            .map(BoolIndex::Immutable)
+                    }
+                    IndexMutability::Mutable => {
+                        MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mmap)
+                    }
+                }
             }
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {

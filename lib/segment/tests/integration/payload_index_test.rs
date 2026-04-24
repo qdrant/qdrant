@@ -1251,6 +1251,66 @@ fn test_update_payload_index_type() {
     assert_eq!(field_index[1].count_indexed_points(), point_num);
 }
 
+/// An appendable segment with a bool payload index must still accept updates
+/// after being reopened from disk.
+#[test]
+fn test_bool_index_appendable_reopen_accepts_updates() {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let field = JsonPath::new("flag");
+    let hw_counter = HardwareCounterCell::new();
+
+    {
+        let mut payload_storage = InMemoryPayloadStorage::default();
+        payload_storage
+            .set(0, &payload_json! {"flag": true}, &hw_counter)
+            .unwrap();
+
+        let payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
+        let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(2)));
+
+        let mut index = StructPayloadIndex::open(
+            payload_storage,
+            id_tracker,
+            HashMap::new(),
+            dir.path(),
+            true,
+            true,
+        )
+        .unwrap();
+
+        index
+            .set_indexed(&field, FieldType(PayloadSchemaType::Bool), &hw_counter)
+            .unwrap();
+
+        for field_index in index.field_indexes.get(&field).unwrap() {
+            field_index.flusher()().unwrap();
+        }
+    }
+
+    let payload_storage = Arc::new(AtomicRefCell::new(InMemoryPayloadStorage::default().into()));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(2)));
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        HashMap::new(),
+        dir.path(),
+        true,
+        false,
+    )
+    .unwrap();
+
+    index
+        .set_payload(1, &payload_json! {"flag": false}, &None, &hw_counter)
+        .expect("update on reopened bool index must succeed");
+
+    let field_indexes = index.field_indexes.get(&field).unwrap();
+    let bool_index = field_indexes
+        .iter()
+        .find(|fi| matches!(fi, FieldIndex::BoolIndex(_)))
+        .expect("bool index present after reopen");
+    assert_eq!(bool_index.count_indexed_points(), 2);
+}
+
 fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()
