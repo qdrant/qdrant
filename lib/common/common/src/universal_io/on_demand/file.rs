@@ -11,6 +11,7 @@ use roaring::RoaringBitmap;
 use super::BLOCK_SIZE;
 use super::config::OnDemandConfig;
 use crate::generic_consts::{AccessPattern, Sequential};
+use crate::mmap::{AdviceSetting, Madviseable};
 use crate::universal_io::{
     OpenOptions, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
     UniversalReadFileOps,
@@ -35,6 +36,8 @@ use crate::universal_io::{
 pub struct OnDemandFile<R> {
     remote: R,
     len_bytes: u64,
+    /// Open options for when it gets initialized
+    open_options: OpenOptions,
     /// Path to the local mmap file
     local_path: PathBuf,
     local: OnceLock<LocalState>,
@@ -51,6 +54,15 @@ struct LocalState {
     mmap: MmapRaw,
     /// Bitmask to know which blocks are have been fetched
     fetched: Mutex<RoaringBitmap>,
+}
+
+impl LocalState {
+    /// # Safety
+    /// `byte_range` must have been populated via [`OnDemandFile::ensure_byte_ranges`] first.
+    unsafe fn read_mmap_bytes(&self, byte_range: Range<u64>) -> &[u8] {
+        let bytes = unsafe { std::slice::from_raw_parts(self.mmap.as_ptr(), self.mmap.len()) };
+        &bytes[byte_range.start as usize..byte_range.end as usize]
+    }
 }
 
 impl<R: UniversalReadFileOps> UniversalReadFileOps for OnDemandFile<R> {
@@ -87,15 +99,9 @@ where
         let state = self.local_state()?;
         self.ensure_byte_ranges(state, std::iter::once(byte_range.clone()))?;
 
-        // SAFETY: `state.mmap` is `self.len_bytes` bytes long, and every
-        // byte in `byte_range` was populated by `ensure_byte_ranges`
-        // while holding `state.fetched`. The release of that mutex
-        // synchronizes with this thread's subsequent read. Because the
-        // remote is immutable, no block is ever written twice.
-        let mmap_bytes =
-            unsafe { std::slice::from_raw_parts(state.mmap.as_ptr(), state.mmap.len()) };
-        let slice = &mmap_bytes[byte_range.start as usize..byte_range.end as usize];
-        Ok(Cow::Borrowed(bytemuck::cast_slice(slice)))
+        // SAFETY: `ensure_byte_ranges` above populated `byte_range`.
+        let bytes = unsafe { state.read_mmap_bytes(byte_range) };
+        Ok(Cow::Borrowed(bytemuck::cast_slice(bytes)))
     }
 
     fn read_batch<'a, P: AccessPattern, Meta: 'a>(
@@ -133,14 +139,10 @@ where
                 .map(|(_, br)| br.clone()),
         )?;
 
-        // SAFETY: same invariants as `read`: every byte in every
-        // `byte_range` was populated by `ensure_byte_ranges` while
-        // holding `state.fetched`, and the remote is immutable.
-        let mmap_bytes =
-            unsafe { std::slice::from_raw_parts(state.mmap.as_ptr(), state.mmap.len()) };
         for (meta, byte_range) in entries {
-            let slice = &mmap_bytes[byte_range.start as usize..byte_range.end as usize];
-            callback(meta, bytemuck::cast_slice(slice))?;
+            // SAFETY: `ensure_byte_ranges` above populated every `byte_range`.
+            let bytes = unsafe { state.read_mmap_bytes(byte_range) };
+            callback(meta, bytemuck::cast_slice(bytes))?;
         }
 
         Ok(())
@@ -165,8 +167,9 @@ where
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
-        // TODO: issue madvise(DONTNEED) on the local mmap — pages are
-        // always reloadable from the local file.
+        if let Some(state) = self.local.get() {
+            state.mmap.clear_cache();
+        }
         Ok(())
     }
 
@@ -195,14 +198,18 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
             writeable: false,
             prevent_caching: Some(true),
             populate: Some(false),
-            ..options
+            need_sequential: false,
+            disk_parallel: None,
+            advice: None,
         };
+
         let remote = R::open(remote_path, remote_options)?;
         let len_bytes = UniversalRead::<u8>::len(&remote)?;
 
         Ok(Self {
             remote,
             len_bytes,
+            open_options: options,
             local_path,
             local: OnceLock::new(),
             init_lock: Mutex::new(()),
@@ -215,8 +222,7 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
             return Ok(state);
         }
 
-        // Serialise the (fallible) initialisation so two concurrent
-        // first-readers don't both truncate the same backing file.
+        // Only first thread is able to initialize
         let _guard = self.init_lock.lock();
         if let Some(state) = self.local.get() {
             return Ok(state);
@@ -234,6 +240,15 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
             fs::create_dir_all(parent)?;
         }
 
+        let OpenOptions {
+            writeable: _,       // always needs to be writeable
+            need_sequential: _, // TODO: add sequential mmap
+            disk_parallel: _,   // unsupported
+            populate: _,        // this is handled in populate() function
+            advice,
+            prevent_caching: _, // TODO: use o_direct
+        } = self.open_options;
+
         let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -242,6 +257,8 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
             .open(&self.local_path)?;
         file.set_len(self.len_bytes)?;
         let mmap = MmapRaw::map_raw(&file)?;
+
+        mmap.madvise(advice.unwrap_or(AdviceSetting::Global).resolve())?;
 
         Ok(LocalState {
             mmap,

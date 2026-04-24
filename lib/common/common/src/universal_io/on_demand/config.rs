@@ -35,8 +35,7 @@ impl OnDemandConfig {
 
     /// Panics on construction failure or if called more than once.
     pub fn initialize_global(remote_dir: PathBuf, local_dir: PathBuf) {
-        let cfg = Self::new(remote_dir, local_dir)
-            .expect("failed to initialise OnDemandConfig");
+        let cfg = Self::new(remote_dir, local_dir).expect("failed to initialise OnDemandConfig");
         GLOBAL
             .set(cfg)
             .expect("OnDemandConfig is already initialized");
@@ -55,11 +54,12 @@ impl OnDemandConfig {
     pub fn local_path_for(&self, remote_path: &Path) -> Result<PathBuf> {
         let canonical = fs::canonicalize(remote_path)
             .map_err(|err| UniversalIoError::extract_not_found(err, remote_path))?;
-        let rel = canonical
-            .strip_prefix(&self.remote_dir)
-            .map_err(|_| UniversalIoError::NotFound {
-                path: remote_path.to_path_buf(),
-            })?;
+        let rel =
+            canonical
+                .strip_prefix(&self.remote_dir)
+                .map_err(|_| UniversalIoError::NotFound {
+                    path: remote_path.to_path_buf(),
+                })?;
 
         let mut local = self.local_dir.join(rel);
         local.as_mut_os_string().push(LOCAL_FILE_SUFFIX);
