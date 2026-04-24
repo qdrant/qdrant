@@ -58,7 +58,7 @@ impl Collection {
 
     pub async fn start_shard_transfer<T, F>(
         &self,
-        mut shard_transfer: ShardTransfer,
+        shard_transfer: ShardTransfer,
         consensus: Box<dyn ShardTransferConsensus>,
         temp_dir: PathBuf,
         on_finish: T,
@@ -68,11 +68,17 @@ impl Collection {
         T: Future<Output = ()> + Send + 'static,
         F: Future<Output = ()> + Send + 'static,
     {
-        // Select transfer method
-        let default_method = self.default_shard_transfer_method().await;
+        // The coordinating peer must pick the transfer method before submitting
+        // to consensus, so that every peer applies the same method for a given
+        // transfer. If `method` is None here, a submission site forgot to fill
+        // it in — refuse rather than pick a local default that could diverge
+        // across peers.
         if shard_transfer.method.is_none() {
-            log::warn!("No shard transfer method selected, defaulting to {default_method:?}");
-            shard_transfer.method.replace(default_method);
+            return Err(CollectionError::service_error(format!(
+                "Shard transfer {}:{} -> {} has no method set; the coordinating peer must \
+                 pick a transfer method before submitting to consensus",
+                shard_transfer.shard_id, shard_transfer.from, shard_transfer.to,
+            )));
         }
 
         let do_transfer = {
@@ -99,7 +105,9 @@ impl Collection {
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
 
-            let transfer_method = shard_transfer.method.unwrap_or(default_method);
+            // Checked at the top of the function — the method is always set by the
+            // peer that submitted this transfer to consensus.
+            let transfer_method = shard_transfer.method.expect("transfer method must be set");
             let initial_state = match transfer_method {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 
