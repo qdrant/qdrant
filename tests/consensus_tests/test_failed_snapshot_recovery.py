@@ -344,7 +344,8 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     wait_for_collection_shard_transfers_count(peer_api_uris[-1], COLLECTION_NAME, 0)
 
     # Wait for all replicas to be active on the receiving peer
-    wait_for_all_replicas_active(peer_api_uris[-1], COLLECTION_NAME)
+    # Must have at least one replica on the last peer (replica may temporarily disappear when peer is restarted during snapshot recovery)
+    wait_for_all_replicas_active(peer_api_uris[-1], COLLECTION_NAME, min_local_replicas=1)
 
     # Assert that the local shard is active and not empty
     try:
