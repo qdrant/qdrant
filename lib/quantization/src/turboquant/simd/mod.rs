@@ -23,6 +23,34 @@ pub mod query1bit;
 pub mod query2bit;
 pub mod query4bit;
 
+// Re-exports below include the runtime-dispatching entry points used by the
+// crate's scoring paths (`Query{N}bitSimd`, `score_{N}bit_internal`) plus
+// scalar-reference and arch-specific kernels the benchmarks at
+// `benches/turbo_simd.rs` target directly.  Every symbol here is consumed
+// either by `turboquant::quantization` inside the crate or by benches/
+// outside — narrowing them to `pub(crate)` would break the bench build.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub use query1bit::score_1bit_internal_neon;
+pub use query1bit::{Query1bitSimd, score_1bit_internal, score_1bit_internal_scalar};
+#[cfg(target_arch = "x86_64")]
+pub use query1bit::{
+    score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,
+};
+pub use query2bit::{Query2bitSimd, score_2bit_internal, score_2bit_internal_scalar};
+#[cfg(target_arch = "x86_64")]
+pub use query2bit::{
+    score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse,
+};
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub use query2bit::{score_2bit_internal_neon, score_2bit_internal_neon_sdot};
+pub use query4bit::{Query4bitSimd, score_4bit_internal, score_4bit_internal_scalar};
+#[cfg(target_arch = "x86_64")]
+pub use query4bit::{
+    score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
+};
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub use query4bit::{score_4bit_internal_neon, score_4bit_internal_neon_sdot};
+
 /// Test-only helpers shared by every `query{N}bit` submodule.
 ///
 /// Per-bit-width specifics (`PARITY_DIMS`, `random_inputs`) still live in
@@ -74,31 +102,3 @@ mod shared {
         out
     }
 }
-
-// Re-exports below include the runtime-dispatching entry points used by the
-// crate's scoring paths (`Query{N}bitSimd`, `score_{N}bit_internal`) plus
-// scalar-reference and arch-specific kernels the benchmarks at
-// `benches/turbo_simd.rs` target directly.  Every symbol here is consumed
-// either by `turboquant::quantization` inside the crate or by benches/
-// outside — narrowing them to `pub(crate)` would break the bench build.
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-pub use query1bit::score_1bit_internal_neon;
-pub use query1bit::{Query1bitSimd, score_1bit_internal, score_1bit_internal_scalar};
-#[cfg(target_arch = "x86_64")]
-pub use query1bit::{
-    score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,
-};
-pub use query2bit::{Query2bitSimd, score_2bit_internal, score_2bit_internal_scalar};
-#[cfg(target_arch = "x86_64")]
-pub use query2bit::{
-    score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse,
-};
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-pub use query2bit::{score_2bit_internal_neon, score_2bit_internal_neon_sdot};
-pub use query4bit::{Query4bitSimd, score_4bit_internal, score_4bit_internal_scalar};
-#[cfg(target_arch = "x86_64")]
-pub use query4bit::{
-    score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
-};
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-pub use query4bit::{score_4bit_internal_neon, score_4bit_internal_neon_sdot};

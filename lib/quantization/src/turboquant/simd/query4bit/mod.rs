@@ -17,8 +17,8 @@
 //! * **x86_64** — `_mm_maddubs_epi16` and `VPDPBUSD` consume one `u8` and one
 //!   `i8` operand.  To carry full 8-bit codebook magnitude we feed it unsigned
 //!   `c_u ∈ [0, 255]` (shifted from signed by `+128`) and keep the query halves
-//!   narrower to stay under i16 pair-sum saturation:
-//!     c_u ≤ 255, q ∈ [−64, 63] → |pair| ≤ 2·255·64 = 32 640 < 32 767 ✓
+//!   narrower to stay under i16 pair-sum saturation
+//!   (`c_u ≤ 255, q ∈ [−64, 63]` → `|pair| ≤ 2·255·64 = 32 640 < 32 767` ✓).
 //!   Query halves are 7-bit signed combined as `q_signed = 128 · high + low`,
 //!   giving ~13.9-bit query precision.  The shift contributes a per-query
 //!   bias `128 · Σ q_signed` that we subtract once in `dotprod`.
