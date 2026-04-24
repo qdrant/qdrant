@@ -12,4 +12,4 @@ pub use file::OnDemandFile;
 ///
 /// Matches `disk_cache::BLOCK_SIZE` and is a small multiple of typical
 /// filesystem block sizes (usually 4 KiB).
-const BLOCK_SIZE: usize = 16 * 1024;
+const BLOCK_SIZE: usize = 16 * 1024; // 16kB

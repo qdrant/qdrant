@@ -35,18 +35,21 @@ use crate::universal_io::{
 pub struct OnDemandFile<R> {
     remote: R,
     len_bytes: u64,
+    /// Path to the local mmap file
     local_path: PathBuf,
     local: OnceLock<LocalState>,
-    /// Serializes fallible initialization of `local` across threads.
+    /// Prevents concurrent initialization of `local` across threads.
+    ///
+    /// TODO: Switch to [`OnceLock::get_or_try_init`][1] once it stabilizes
+    ///
+    /// [1]: https://github.com/rust-lang/rust/issues/109737
     init_lock: Mutex<()>,
 }
 
 #[derive(Debug)]
 struct LocalState {
-    /// `memmap2` duplicates the backing fd internally, so we don't need
-    /// to hold the original `File` alongside.
     mmap: MmapRaw,
-    path: PathBuf,
+    /// Bitmask to know which blocks are have been fetched
     fetched: Mutex<RoaringBitmap>,
 }
 
@@ -242,7 +245,6 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
 
         Ok(LocalState {
             mmap,
-            path: self.local_path.clone(),
             fetched: Mutex::new(RoaringBitmap::new()),
         })
     }
@@ -356,7 +358,7 @@ impl<R> Drop for OnDemandFile<R> {
         let Some(state) = self.local.take() else {
             return;
         };
-        let path = state.path.clone();
+        let path = self.local_path.clone();
         // Drop the mmap before unlinking so platforms other than Unix
         // don't hold the file open while we remove it.
         drop(state);
