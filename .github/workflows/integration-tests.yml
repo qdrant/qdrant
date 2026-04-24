@@ -106,9 +106,9 @@ jobs:
           context: .
           tags: qdrant_consensus
           cache-from: |
-            type=gha,scope=${{ github.ref }}
-            type=gha,scope=${{ github.base_ref }}
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref || github.ref_name }}-consensus
+            type=gha,scope=dev-consensus
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-consensus', github.ref_name) || '' }}
           load: true
           build-args: |
             PROFILE=ci
@@ -251,9 +251,9 @@ jobs:
           context: .
           tags: qdrant/qdrant:e2e-tests
           cache-from: |
-            type=gha,scope=${{ github.ref }}-e2e
-            type=gha,scope=${{ github.base_ref }}-e2e
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}-e2e
+            type=gha,scope=${{ github.base_ref || github.ref_name }}-e2e
+            type=gha,scope=dev-e2e
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-e2e', github.ref_name) || '' }}
           load: true
           build-args: |
             PROFILE=ci
