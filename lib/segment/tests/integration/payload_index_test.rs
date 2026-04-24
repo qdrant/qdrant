@@ -1311,6 +1311,87 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
     assert_eq!(bool_index.count_indexed_points(), 2);
 }
 
+/// An appendable segment with a payload field index carries a companion null
+/// index in its persisted `types`. On reopen that null index must be loaded
+/// from disk (not silently rebuilt from payload storage) and must accept
+/// subsequent updates.
+#[test]
+fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let field = JsonPath::new("name");
+    let hw_counter = HardwareCounterCell::new();
+
+    {
+        let mut payload_storage = InMemoryPayloadStorage::default();
+        payload_storage
+            .set(0, &payload_json! {"name": "foo"}, &hw_counter)
+            .unwrap();
+
+        let payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
+        let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(2)));
+
+        let mut index = StructPayloadIndex::open(
+            payload_storage,
+            id_tracker,
+            HashMap::new(),
+            dir.path(),
+            true,
+            true,
+        )
+        .unwrap();
+
+        index
+            .set_indexed(&field, FieldType(Keyword), &hw_counter)
+            .unwrap();
+
+        for field_index in index.field_indexes.get(&field).unwrap() {
+            field_index.flusher()().unwrap();
+        }
+    }
+
+    // Reopen with a fresh (empty) payload storage — same pattern as the bool
+    // test above.
+    let payload_storage = Arc::new(AtomicRefCell::new(InMemoryPayloadStorage::default().into()));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(2)));
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        HashMap::new(),
+        dir.path(),
+        true,
+        false,
+    )
+    .unwrap();
+
+    // The null index is persisted with `{ mutability: Mutable, storage_type:
+    // Mmap }` because `MutableNullIndex` and `ImmutableNullIndex` share the
+    // same on-disk format. If the reload dispatched on storage_type alone, it
+    // would open `ImmutableNullIndex` and this write would fail with "Can't
+    // add values to immutable null index" (same class of bug as #8785 for the
+    // bool index).
+    index
+        .set_payload(1, &payload_json! {"name": "bar"}, &None, &hw_counter)
+        .expect("update on reopened null index must succeed");
+
+    let field_indexes = index.field_indexes.get(&field).unwrap();
+    let null_index = field_indexes
+        .iter()
+        .find(|fi| matches!(fi, FieldIndex::NullIndex(_)))
+        .expect("null index present after reopen");
+
+    let not_empty = FieldCondition::new_is_empty(field.clone(), false);
+    let with_values: Vec<_> = null_index
+        .filter(&not_empty, &hw_counter)
+        .unwrap()
+        .expect("null index must answer is_empty filter")
+        .collect();
+    assert_eq!(
+        with_values,
+        vec![0, 1],
+        "null index must retain point 0 from before reopen and include point 1 from after",
+    );
+}
+
 fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()

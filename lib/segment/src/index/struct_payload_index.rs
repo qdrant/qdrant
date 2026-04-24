@@ -19,7 +19,9 @@ use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
 use super::field_index::{FieldIndexBuilderTrait as _, ResolvedHasId};
-use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
+use super::payload_config::{
+    FullPayloadIndexType, IndexMutability, PayloadFieldSchemaWithIndexType,
+};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
@@ -184,11 +186,16 @@ impl StructPayloadIndex {
                 );
 
                 // Special null index complements every index.
+                let null_mutability = match &selector {
+                    IndexSelector::Mmap(_) => IndexMutability::Immutable,
+                    IndexSelector::Gridstore(_) => IndexMutability::Mutable,
+                };
                 if let Some(null_index) = selector.new_null_index(
                     &self.path,
                     field,
                     create_if_missing,
                     &id_tracker_borrow,
+                    null_mutability,
                 )? {
                     indexes.push(null_index);
                 }
