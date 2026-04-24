@@ -130,9 +130,9 @@ jobs:
           context: .
           tags: qdrant_consensus
           cache-from: |
-            type=gha,scope=${{ github.ref }}
-            type=gha,scope=${{ github.base_ref }}
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref || github.ref_name }}-consensus
+            type=gha,scope=dev-consensus
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-consensus', github.ref_name) || '' }}
           load: true
           build-args: |
             PROFILE=ci
