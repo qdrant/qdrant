@@ -348,13 +348,14 @@ impl ShardReplicaSet {
         &self,
         collection_path: &Path,
     ) -> CollectionResult<()> {
-        // Callers must only invoke this while the shard is in a non-active state
-        // (e.g. `PartialSnapshot` during a shard transfer). Clearing an `Active`
-        // replica would silently drop data that may still be serving queries.
+        // Callers must only invoke this while the shard is in a state that cannot
+        // be a source of truth (e.g. `PartialSnapshot` during a shard transfer).
+        // Clearing a source-of-truth replica would silently drop data that may
+        // still be serving queries.
         debug_assert!(
             self.peer_state(self.this_peer_id())
                 .is_none_or(|s| !s.can_be_source_of_truth()),
-            "clear_local_for_snapshot_recovery called on an active replica {}:{}",
+            "clear_local_for_snapshot_recovery called on a peer that can be source-of-truth {}:{}",
             self.collection_id,
             self.shard_id,
         );
