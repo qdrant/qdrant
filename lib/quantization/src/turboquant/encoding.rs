@@ -75,7 +75,7 @@ impl TurboQuantizer {
         let mut reader = BitReader::new(dim_part);
         reader.set_bits(self.bits.bit_size());
 
-        let iter = (0..self.rotation.dim()).map(move |_| {
+        let iter = (0..self.padded_dim).map(move |_| {
             let idx: u8 = reader.read();
             f64::from(centroids[idx as usize])
         });
@@ -85,7 +85,7 @@ impl TurboQuantizer {
 
     /// Size in bytes of a vector quantized by this quantizer.
     pub fn quantized_size(&self) -> usize {
-        Self::quantized_size_for(self.rotation.dim(), self.bits, self.distance, self.mode)
+        Self::quantized_size_for(self.padded_dim, self.bits, self.distance, self.mode)
     }
 
     /// Total size in bytes of a quantized vector, including both the packed
@@ -96,16 +96,22 @@ impl TurboQuantizer {
         distance: DistanceType,
         mode: TQMode,
     ) -> usize {
-        Self::quantized_dim_size_for(dim, bits, distance)
-            + TqVectorExtras::size_for(bits, distance, mode)
-    }
-
-    /// Size in bytes of the quantized dimensions alone (without extras) for a
-    /// vector of `dim` dimensions under the given `bits` and `distance`.
-    fn quantized_dim_size_for(dim: usize, bits: TQBits, distance: DistanceType) -> usize {
         Self::assert_supported_distance(distance);
 
-        (dim * bits.bit_size() as usize).div_ceil(u8::BITS as usize)
+        let vector_data_size =
+            Self::padded_dim(dim, bits) * bits.bit_size() as usize / u8::BITS as usize;
+        let extras_size = TqVectorExtras::size_for(bits, distance, mode);
+        vector_data_size + extras_size
+    }
+
+    // Padded dimension for the vector
+    pub(crate) fn padded_dim(dim: usize, bits: TQBits) -> usize {
+        match bits {
+            TQBits::Bits1 => dim.next_multiple_of(8), // 8 elements per byte
+            TQBits::Bits1_5 => (dim * 3 / 2).next_multiple_of(8), // 8 elements per 12 bytes
+            TQBits::Bits2 => dim.next_multiple_of(4), // 4 elements per byte
+            TQBits::Bits4 => dim.next_multiple_of(2), // 2 elements per byte
+        }
     }
 
     /// Generates extra data that is required to store together with the quantized dimensions.
@@ -129,7 +135,7 @@ impl TurboQuantizer {
     /// Packs (encodes) the extras into the given buffer.
     fn pack_extras_into(&self, extras: &TqVectorExtras, buf: &mut Vec<u8>) {
         let extra_len =
-            Self::quantized_size_for(self.rotation.dim(), self.bits, self.distance, self.mode);
+            Self::quantized_size_for(self.padded_dim, self.bits, self.distance, self.mode);
 
         if extra_len == 0 {
             return;

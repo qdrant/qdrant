@@ -1,6 +1,6 @@
 use crate::DistanceType;
 use crate::turboquant::rotation::HadamardRotation;
-use crate::turboquant::{Metadata, TQBits, TQMode};
+use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, Metadata, TQBits, TQMode};
 
 /// Quantize vectors using TurboQuant.
 pub struct TurboQuantizer {
@@ -8,6 +8,7 @@ pub struct TurboQuantizer {
     pub(super) bits: TQBits,
     pub(super) mode: TQMode,
     pub(super) distance: DistanceType,
+    pub(super) padded_dim: usize,
 
     // Pre-calculated `sqrt(dim)` used in scoring.
     dim_sqrt: f32,
@@ -30,13 +31,15 @@ impl Precomputed {
 impl TurboQuantizer {
     /// Initialize a new TurboQuantizer.
     pub fn new(dim: usize, bits: TQBits, mode: TQMode, distance: DistanceType) -> Self {
-        let rotation = HadamardRotation::new(dim);
+        let padded_dim = Self::padded_dim(dim, bits);
+        let rotation = HadamardRotation::new(padded_dim);
         let dim_sqrt = (dim as f32).sqrt();
         TurboQuantizer {
             rotation,
             bits,
             mode,
             distance,
+            padded_dim,
             dim_sqrt,
         }
     }
@@ -55,11 +58,16 @@ impl TurboQuantizer {
     pub fn quantize(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
         Self::assert_supported_distance(self.distance);
 
-        debug_assert_eq!(vec.len(), buf.len());
+        debug_assert!(vec.len() <= buf.len());
 
         // Convert to f64
-        for (i, &component) in vec.iter().enumerate() {
-            buf[i] = f64::from(component);
+        for (v, b) in vec.iter().zip(buf.iter_mut()) {
+            *b = f64::from(*v);
+        }
+
+        // Fill any extra buffer space with zeros (for padded dimensions)
+        for b in buf.iter_mut().skip(vec.len()) {
+            *b = 0.0;
         }
 
         // Rotate the vector.
@@ -71,7 +79,7 @@ impl TurboQuantizer {
         // Rescale so per-coordinate variance is ~1 — matching the Lloyd-Max
         // N(0, 1) centroid grid.
         let length = f64::from(extras.l2_length.unwrap_or(1.0));
-        let scale = (self.rotation.dim() as f64).sqrt() / length;
+        let scale = (self.padded_dim as f64).sqrt() / length;
 
         // Encode and return packed vector.
         self.pack_vector(buf.iter().map(|&val| val * scale), extras)
@@ -93,23 +101,36 @@ impl TurboQuantizer {
 
         // Both sides were scaled by sqrt(dim)/||v|| during quantize; restore
         // magnitudes with l2, undo the sqrt(dim)² = dim inflation.
-        raw_dot * v1_l2 * v2_l2 / self.rotation.dim() as f32
+        raw_dot * v1_l2 * v2_l2 / self.padded_dim as f32
     }
 
     /// Precompute the Hadamard rotation of `query` so subsequent
     /// [`Self::score_precomputed`] calls skip the per-call rotation.
-    pub fn precompute_query(&self, query: &[f32]) -> Precomputed {
-        let mut rotated: Vec<f64> = query.iter().map(|&x| f64::from(x)).collect();
+    pub fn precompute_query(&self, query: &[f32]) -> EncodedQueryTQ {
+        let mut rotated: Vec<f64> = query
+            .iter()
+            .map(|&x| f64::from(x))
+            .chain(std::iter::repeat_n(0.0, self.padded_dim - query.len()))
+            .collect();
+
+        debug_assert_eq!(rotated.len(), self.padded_dim);
+
         self.rotation.apply(&mut rotated);
-        Precomputed(rotated)
+        EncodedQueryTQ {
+            data: EncodedQueryTQData::Native(Precomputed(rotated)),
+        }
     }
 
     /// Similarity score with a query that has already been rotated via
     /// [`Self::precompute_query`]. Returns an approximate `<query, v>` for Dot
     /// and `cos(θ)` for Cosine.
-    pub fn score_precomputed(&self, query: &Precomputed, vec: &[u8]) -> f32 {
+    pub fn score_precomputed(&self, query: &EncodedQueryTQ, vec: &[u8]) -> f32 {
         let (vector_extras, unpacked) = self.unpack_vector(vec);
-        let dot = dot_impl(query.as_slice().iter().copied(), unpacked);
+        let dot = match &query.data {
+            EncodedQueryTQData::Native(precomputed) => {
+                dot_impl(precomputed.as_slice().iter().copied(), unpacked)
+            } // TODO(turbo): add other variants for SIMD-optimized precomputations, etc.
+        };
 
         let l2 = vector_extras.l2_length.unwrap_or(1.0);
 
@@ -243,8 +264,8 @@ mod tests {
 
         for &bits in &bit_widths {
             for &dim in &dims {
-                let mut buf = vec![0.0f64; dim];
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
+                let mut buf = vec![0.0f64; tq.padded_dim];
                 let vec = vec![0.1; dim];
                 let result = tq.quantize(&vec, &mut buf);
                 let expected_bytes = tq.quantized_size();
@@ -268,8 +289,8 @@ mod tests {
 
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
             for &dim in &[128, 300, 768] {
-                let mut buf = vec![0.0f64; dim];
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
+                let mut buf = vec![0.0f64; tq.padded_dim];
                 let vec: Vec<f32> = (0..dim).map(|_| rng.random_range(-2.0..2.0)).collect();
 
                 let r1 = tq.quantize(&vec, &mut buf);
@@ -328,7 +349,7 @@ mod tests {
                 let n_centroids = 1u8 << bits.bit_size();
                 let vec: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
 
-                let mut buf = vec![0.0f64; dim];
+                let mut buf = vec![0.0f64; tq.padded_dim];
                 let result = tq.quantize(&vec, &mut buf);
 
                 // Correct length.
@@ -737,7 +758,9 @@ mod tests {
 
                     let out: Vec<f64> = tq.unpack_vector(&packed).1.collect();
 
-                    for (i, &v) in out.iter().enumerate() {
+                    // unpack_vector yields padded_dim values; only the first
+                    // dim correspond to caller input, the rest are padding.
+                    for (i, &v) in out.iter().take(dim).enumerate() {
                         assert_eq!(v, expected, "dim={dim}, bits={bits:?}, idx={idx}, i={i}");
                     }
                 }
