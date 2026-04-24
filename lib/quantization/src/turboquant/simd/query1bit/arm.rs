@@ -117,8 +117,8 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::super::shared::PARITY_BYTE_LENS;
     use super::super::super::shared::random_bytes;
+    use super::super::shared::PARITY_BYTE_LENS;
     use super::super::{score_1bit_internal_neon, score_1bit_internal_scalar};
 
     #[test]

@@ -312,8 +312,8 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::super::shared::{PARITY_DIMS, random_inputs};
     use super::super::super::shared::pack_codes;
+    use super::super::shared::{PARITY_DIMS, random_inputs};
     use super::super::{Query2bitSimd, score_2bit_internal_scalar};
     use super::{score_2bit_internal_neon, score_2bit_internal_neon_sdot};
 

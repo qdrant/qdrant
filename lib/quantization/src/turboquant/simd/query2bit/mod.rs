@@ -465,8 +465,7 @@ mod tests {
                 .zip(idx_b.iter())
                 .map(|(&a, &b)| centroids[a as usize] * centroids[b as usize])
                 .sum();
-            let got =
-                score_2bit_internal_scalar(&pack_codes(&idx_a, 2), &pack_codes(&idx_b, 2));
+            let got = score_2bit_internal_scalar(&pack_codes(&idx_a, 2), &pack_codes(&idx_b, 2));
 
             assert!(
                 (expected - got).abs() < 0.5,

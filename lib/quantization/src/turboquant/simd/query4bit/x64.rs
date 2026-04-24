@@ -443,8 +443,8 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::super::shared::{PARITY_DIMS, random_inputs};
     use super::super::super::shared::pack_codes;
+    use super::super::shared::{PARITY_DIMS, random_inputs};
     use super::super::{Query4bitSimd, score_4bit_internal_scalar};
     use super::{
         score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
