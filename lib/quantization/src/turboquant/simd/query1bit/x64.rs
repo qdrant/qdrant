@@ -342,7 +342,8 @@ mod tests {
     use rand::prelude::StdRng;
 
     use super::super::score_1bit_internal_scalar;
-    use super::super::shared::{PARITY_BYTE_LENS, random_bytes};
+    use super::super::shared::PARITY_BYTE_LENS;
+    use super::super::super::shared::random_bytes;
     use super::*;
 
     #[test]
