@@ -107,14 +107,14 @@ impl TurboQuantizer {
     /// Precompute the Hadamard rotation of `query` so subsequent
     /// [`Self::score_precomputed`] calls skip the per-call rotation.
     pub fn precompute_query(&self, query: &[f32]) -> EncodedQueryTQ {
+        debug_assert!(query.len() <= self.padded_dim);
+
         let mut rotated: Vec<f64> = query
             .iter()
             .map(|&x| f64::from(x))
             .chain(std::iter::repeat(0.0))
             .take(self.padded_dim)
             .collect();
-
-        debug_assert_eq!(rotated.len(), self.padded_dim);
 
         self.rotation.apply(&mut rotated);
         EncodedQueryTQ {

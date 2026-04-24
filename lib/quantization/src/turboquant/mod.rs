@@ -163,8 +163,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             encoded_vectors,
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
             quantizer,
-            encoding_buffer: vec![0.0f64; dim],
         })
     }
 
@@ -174,13 +174,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
 
         let quantizer = TurboQuantizer::new_from_metadata(&metadata);
 
-        let dim = metadata.vector_parameters.dim;
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
             quantizer,
-            encoding_buffer: vec![0.0f64; dim],
         };
 
         Ok(result)
