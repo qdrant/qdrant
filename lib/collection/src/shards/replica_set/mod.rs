@@ -27,6 +27,7 @@ use shard::operations::optimization::{
     OptimizationsRequestOptions, OptimizationsResponse, OptimizationsSummary,
 };
 use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::spawn_blocking;
 use tokio_util::task::AbortOnDropHandle;
@@ -115,7 +116,7 @@ pub struct ShardReplicaSet {
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     update_runtime: Handle,
-    search_runtime: Handle,
+    search_runtime: AdaptiveSearchHandle,
     optimizer_resource_budget: ResourceBudget,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
@@ -150,7 +151,7 @@ impl ShardReplicaSet {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
         update_runtime: Handle,
-        search_runtime: Handle,
+        search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
         init_state: Option<ReplicaState>,
     ) -> CollectionResult<Self> {
@@ -257,7 +258,7 @@ impl ShardReplicaSet {
         abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
-        search_runtime: Handle,
+        search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =

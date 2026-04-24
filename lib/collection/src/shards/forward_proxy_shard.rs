@@ -19,7 +19,7 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
-use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use super::shard::ShardId;
@@ -202,7 +202,7 @@ impl ForwardProxyShard {
         batch_size: usize,
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
-        runtime_handle: &Handle,
+        runtime_handle: &AdaptiveSearchHandle,
     ) -> CollectionResult<PreparedTransferBatch> {
         debug_assert!(batch_size > 0);
         let update_lock = self.update_lock.clone().lock_owned().await;
@@ -262,7 +262,7 @@ impl ForwardProxyShard {
         offset: Option<PointIdType>,
         batch_size: usize,
         filter: Option<&Filter>,
-        runtime_handle: &Handle,
+        runtime_handle: &AdaptiveSearchHandle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
         let limit = batch_size + 1;
 
@@ -314,7 +314,7 @@ impl ForwardProxyShard {
         offset: Option<PointIdType>,
         batch_size: usize,
         hashring_filter: &HashRingRouter,
-        runtime_handle: &Handle,
+        runtime_handle: &AdaptiveSearchHandle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
         // Oversample batch size to account for points that will be filtered out by the hash ring
         let oversample_factor = match &hashring_filter {
@@ -521,7 +521,7 @@ impl ShardOperation for ForwardProxyShard {
                         &WithPayloadInterface::Bool(false),
                         &WithVector::Bool(false),
                         Some(&filter.with_point_ids(point_ids)),
-                        &Handle::current(),
+                        &self.wrapped_shard.search_runtime,
                         None,                           // No timeout
                         HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
                         DeferredBehavior::IncludeAll,
@@ -613,7 +613,7 @@ impl ShardOperation for ForwardProxyShard {
     async fn scroll_by(
         &self,
         request: Arc<ScrollRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -630,7 +630,7 @@ impl ShardOperation for ForwardProxyShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -658,7 +658,7 @@ impl ShardOperation for ForwardProxyShard {
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -671,7 +671,7 @@ impl ShardOperation for ForwardProxyShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -693,7 +693,7 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -715,7 +715,7 @@ impl ShardOperation for ForwardProxyShard {
     async fn query_batch(
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -728,7 +728,7 @@ impl ShardOperation for ForwardProxyShard {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {

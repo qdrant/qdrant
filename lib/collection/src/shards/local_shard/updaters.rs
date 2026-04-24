@@ -104,6 +104,7 @@ mod tests {
     use tokio::sync::RwLock;
 
     use super::LocalShard;
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
     use crate::shards::shard_trait::ShardOperation;
     use crate::tests::fixtures::create_collection_config;
 
@@ -118,7 +119,8 @@ mod tests {
         let mut config = create_collection_config();
         config.optimizer_config.prevent_unoptimized = Some(false);
 
-        let current_runtime: Handle = Handle::current();
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
         let shard = LocalShard::build(
             0,
             "test".to_string(),
@@ -126,8 +128,8 @@ mod tests {
             Arc::new(RwLock::new(config.clone())),
             Arc::new(Default::default()),
             payload_index_schema,
-            current_runtime.clone(),
-            current_runtime.clone(),
+            update_runtime.clone(),
+            search_runtime.clone(),
             ResourceBudget::default(),
             config.optimizer_config.clone(),
         )
@@ -167,7 +169,8 @@ mod tests {
 
         let config = create_collection_config();
 
-        let current_runtime: Handle = Handle::current();
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
         let shard = LocalShard::build(
             0,
             "test".to_string(),
@@ -175,8 +178,8 @@ mod tests {
             Arc::new(RwLock::new(config.clone())),
             Arc::new(Default::default()),
             payload_index_schema,
-            current_runtime.clone(),
-            current_runtime.clone(),
+            update_runtime.clone(),
+            search_runtime.clone(),
             ResourceBudget::default(),
             config.optimizer_config.clone(),
         )

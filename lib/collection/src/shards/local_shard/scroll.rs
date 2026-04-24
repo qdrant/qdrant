@@ -17,7 +17,7 @@ use segment::types::{
 };
 use shard::common::stopping_guard::StoppingGuard;
 use shard::retrieve::record_internal::RecordInternal;
-use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
@@ -32,7 +32,7 @@ impl LocalShard {
     pub(super) async fn query_scroll_batch(
         &self,
         batch: Arc<Vec<QueryScrollRequestInternal>>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -63,7 +63,7 @@ impl LocalShard {
     async fn query_scroll(
         &self,
         request: &QueryScrollRequestInternal,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -146,7 +146,7 @@ impl LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -165,23 +165,27 @@ impl LocalShard {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
-                let work = || {
-                    segment.get().read().read_filtered(
-                        offset,
-                        Some(limit),
-                        filter.as_ref(),
-                        &is_stopped,
-                        &hw_counter,
-                        deferred_behavior,
-                    )
-                };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
-            });
-            AbortOnDropHandle::new(task)
+            let spawn_future =
+                search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                    let work = || {
+                        segment.get().read().read_filtered(
+                            offset,
+                            Some(limit),
+                            filter.as_ref(),
+                            &is_stopped,
+                            &hw_counter,
+                            deferred_behavior,
+                        )
+                    };
+                    match cpu_utilization {
+                        Some(cu) => cu.measure(work),
+                        None => work(),
+                    }
+                });
+            async move {
+                let task = spawn_future.await;
+                AbortOnDropHandle::new(task).await
+            }
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();
@@ -238,7 +242,7 @@ impl LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         order_by: &OrderBy,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
@@ -266,7 +270,7 @@ impl LocalShard {
 
             let hw_counter = hw_counter.fork();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let task = search_runtime_handle.spawn_blocking(move || {
+            let spawn_future = search_runtime_handle.spawn_blocking(move || {
                 let work = || {
                     segment.get().read().read_ordered_filtered(
                         Some(limit),
@@ -282,7 +286,10 @@ impl LocalShard {
                     None => work(),
                 }
             });
-            AbortOnDropHandle::new(task)
+            async move {
+                let task = spawn_future.await;
+                AbortOnDropHandle::new(task).await
+            }
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();
@@ -354,7 +361,7 @@ impl LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -376,27 +383,31 @@ impl LocalShard {
 
             let hw_counter = hw_counter.fork();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
-                let work = || -> OperationResult<_> {
-                    let get_segment = segment.get();
-                    let read_segment = get_segment.read();
+            let spawn_future =
+                search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                    let work = || -> OperationResult<_> {
+                        let get_segment = segment.get();
+                        let read_segment = get_segment.read();
 
-                    Ok((
-                        read_segment.available_point_count_without_deferred(),
-                        read_segment.read_random_filtered(
-                            limit,
-                            filter.as_ref(),
-                            &is_stopped,
-                            &hw_counter,
-                        )?,
-                    ))
-                };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
-            });
-            AbortOnDropHandle::new(task)
+                        Ok((
+                            read_segment.available_point_count_without_deferred(),
+                            read_segment.read_random_filtered(
+                                limit,
+                                filter.as_ref(),
+                                &is_stopped,
+                                &hw_counter,
+                            )?,
+                        ))
+                    };
+                    match cpu_utilization {
+                        Some(cu) => cu.measure(work),
+                        None => work(),
+                    }
+                });
+            async move {
+                let task = spawn_future.await;
+                AbortOnDropHandle::new(task).await
+            }
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();

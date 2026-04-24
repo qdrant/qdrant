@@ -39,7 +39,7 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
-use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tonic::Status;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
@@ -1143,7 +1143,7 @@ impl ShardOperation for RemoteShard {
     async fn scroll_by(
         &self,
         request: Arc<ScrollRequestInternal>,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -1214,7 +1214,7 @@ impl ShardOperation for RemoteShard {
         _with_payload_interface: &WithPayloadInterface,
         _with_vector: &WithVector,
         _filter: Option<&Filter>,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         _timeout: Option<Duration>,
         _hw_measurement_acc: HwMeasurementAcc,
         _overwrite_deferred: DeferredBehavior,
@@ -1247,7 +1247,7 @@ impl ShardOperation for RemoteShard {
     async fn core_search(
         &self,
         batch_request: Arc<CoreSearchRequestBatch>,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -1316,7 +1316,7 @@ impl ShardOperation for RemoteShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         // TODO(deferred): Find a solution for this parameter, and don't` simply ignore it. E.g. we might call `count` directly and remove the parameter from the trait signature.
@@ -1372,7 +1372,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         // TODO(deferred): Find a solution for this parameter, and don't simply ignore it.
@@ -1425,7 +1425,7 @@ impl ShardOperation for RemoteShard {
     async fn query_batch(
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -1499,7 +1499,7 @@ impl ShardOperation for RemoteShard {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
-        _search_runtime_handle: &Handle,
+        _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {

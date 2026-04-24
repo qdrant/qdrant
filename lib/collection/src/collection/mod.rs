@@ -31,6 +31,8 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
+
 use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
@@ -83,8 +85,8 @@ pub struct Collection {
     is_initialized: Arc<IsReady>,
     // Update runtime handle.
     update_runtime: Handle,
-    // Search runtime handle.
-    search_runtime: Handle,
+    // Search runtime handle, wrapped to adapt its effective blocking concurrency.
+    search_runtime: AdaptiveSearchHandle,
     optimizer_resource_budget: ResourceBudget,
     // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
@@ -112,7 +114,7 @@ impl Collection {
         on_replica_failure: ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
-        search_runtime: Option<Handle>,
+        search_runtime: Option<AdaptiveSearchHandle>,
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
@@ -154,7 +156,7 @@ impl Collection {
                 payload_index_schema.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
-                search_runtime.clone().unwrap_or_else(Handle::current),
+                search_runtime.clone().unwrap_or_else(AdaptiveSearchHandle::current),
                 optimizer_resource_budget.clone(),
                 None,
             )
@@ -193,7 +195,7 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
-            search_runtime: search_runtime.unwrap_or_else(Handle::current),
+            search_runtime: search_runtime.unwrap_or_else(AdaptiveSearchHandle::current),
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
@@ -211,7 +213,7 @@ impl Collection {
         on_replica_failure: replica_set::ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
-        search_runtime: Option<Handle>,
+        search_runtime: Option<AdaptiveSearchHandle>,
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
@@ -279,7 +281,7 @@ impl Collection {
                 abort_shard_transfer.clone(),
                 this_peer_id,
                 update_runtime.clone().unwrap_or_else(Handle::current),
-                search_runtime.clone().unwrap_or_else(Handle::current),
+                search_runtime.clone().unwrap_or_else(AdaptiveSearchHandle::current),
                 optimizer_resource_budget.clone(),
             )
             .await;
@@ -310,7 +312,7 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
-            search_runtime: search_runtime.unwrap_or_else(Handle::current),
+            search_runtime: search_runtime.unwrap_or_else(AdaptiveSearchHandle::current),
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),

@@ -20,7 +20,7 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
-use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
@@ -323,7 +323,7 @@ impl ShardOperation for QueueProxyShard {
     async fn scroll_by(
         &self,
         request: Arc<ScrollRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -340,7 +340,7 @@ impl ShardOperation for QueueProxyShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -367,7 +367,7 @@ impl ShardOperation for QueueProxyShard {
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -380,7 +380,7 @@ impl ShardOperation for QueueProxyShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -402,7 +402,7 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -424,7 +424,7 @@ impl ShardOperation for QueueProxyShard {
     async fn query_batch(
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -437,7 +437,7 @@ impl ShardOperation for QueueProxyShard {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
@@ -762,7 +762,7 @@ impl ShardOperation for Inner {
     async fn scroll_by(
         &self,
         request: Arc<ScrollRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -779,7 +779,7 @@ impl ShardOperation for Inner {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -810,7 +810,7 @@ impl ShardOperation for Inner {
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -824,7 +824,7 @@ impl ShardOperation for Inner {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -847,7 +847,7 @@ impl ShardOperation for Inner {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
@@ -870,7 +870,7 @@ impl ShardOperation for Inner {
     async fn query_batch(
         &self,
         request: Arc<Vec<ShardQueryRequest>>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -883,7 +883,7 @@ impl ShardOperation for Inner {
     async fn facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {

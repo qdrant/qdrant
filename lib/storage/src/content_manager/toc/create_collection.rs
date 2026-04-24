@@ -226,7 +226,7 @@ impl TableOfContent {
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
             ),
-            Some(self.search_runtime.handle().clone()),
+            Some(self.adaptive_search_handle.clone()),
             Some(self.update_runtime.handle().clone()),
             self.optimizer_resource_budget.clone(),
             self.storage_config.optimizers_overwrite.clone(),

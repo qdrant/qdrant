@@ -1,3 +1,4 @@
+pub mod adaptive_handle;
 pub mod batching;
 pub mod collection_size_stats;
 pub mod eta_calculator;

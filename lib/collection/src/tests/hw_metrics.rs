@@ -11,6 +11,7 @@ use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;
 use tempfile::Builder;
 use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::RwLock;
 
 use crate::operations::CollectionUpdateOperations;
@@ -31,7 +32,8 @@ async fn test_hw_metrics_cancellation() {
 
     let collection_name = "test".to_string();
 
-    let current_runtime: Handle = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -45,7 +47,7 @@ async fn test_hw_metrics_cancellation() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema.clone(),
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),

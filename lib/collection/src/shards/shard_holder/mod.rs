@@ -26,6 +26,7 @@ use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
@@ -848,7 +849,7 @@ impl ShardHolder {
         abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
-        search_runtime: Handle,
+        search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();

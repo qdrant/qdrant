@@ -6,7 +6,7 @@ use segment::types::ScoredPoint;
 use shard::common::stopping_guard::StoppingGuard;
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;
-use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -30,7 +30,7 @@ impl LocalShard {
     pub async fn do_search(
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -99,7 +99,7 @@ impl LocalShard {
     async fn do_search_impl(
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
         is_stopped_guard: &StoppingGuard,

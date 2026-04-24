@@ -11,7 +11,7 @@ use itertools::{Itertools, process_results};
 use segment::data_types::facets::{FacetParams, FacetValue, FacetValueHit};
 use segment::types::{Condition, FieldCondition, Filter, Match};
 use shard::common::stopping_guard::StoppingGuard;
-use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -24,7 +24,7 @@ impl LocalShard {
     pub async fn approx_facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<FacetValueHit>> {
@@ -36,7 +36,7 @@ impl LocalShard {
 
             let hw_counter = hw_counter.fork();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let task = search_runtime_handle.spawn_blocking(move || {
+            let spawn_future = search_runtime_handle.spawn_blocking(move || {
                 let work = || {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
@@ -48,7 +48,10 @@ impl LocalShard {
                     None => work(),
                 }
             });
-            AbortOnDropHandle::new(task)
+            async move {
+                let task = spawn_future.await;
+                AbortOnDropHandle::new(task).await
+            }
         };
 
         let all_reads = {
@@ -98,7 +101,7 @@ impl LocalShard {
     pub async fn exact_facet(
         &self,
         request: Arc<FacetParams>,
-        search_runtime_handle: &Handle,
+        search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<FacetValueHit>> {
@@ -156,7 +159,7 @@ impl LocalShard {
     async fn unique_values(
         &self,
         request: Arc<FacetParams>,
-        handle: &Handle,
+        handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<BTreeSet<FacetValue>> {
@@ -169,7 +172,7 @@ impl LocalShard {
 
             let hw_counter = hw_counter.fork();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let task = handle.spawn_blocking(move || {
+            let spawn_future = handle.spawn_blocking(move || {
                 let work = || {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
@@ -187,7 +190,10 @@ impl LocalShard {
                     None => work(),
                 }
             });
-            AbortOnDropHandle::new(task)
+            async move {
+                let task = spawn_future.await;
+                AbortOnDropHandle::new(task).await
+            }
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();

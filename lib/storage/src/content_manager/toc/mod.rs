@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
+use collection::common::adaptive_handle::AdaptiveSearchHandle;
 use collection::config::{
     CollectionConfigInternal, default_replication_factor, default_shard_number,
 };
@@ -67,7 +68,10 @@ pub const COLLECTION_DELETE_SPIN_INTERVAL: Duration = Duration::from_millis(200)
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     pub(crate) storage_config: Arc<StorageConfig>,
-    search_runtime: Runtime,
+    /// Adaptive wrapper around the search runtime. Permit budget is adjusted
+    /// based on process CPU usage to strike a balance between IO-bound
+    /// headroom and CPU contention.
+    adaptive_search_handle: AdaptiveSearchHandle,
     update_runtime: Runtime,
     general_runtime: Runtime,
     /// Global CPU budget in number of cores for all optimization tasks.
@@ -119,6 +123,9 @@ impl TableOfContent {
         // temp files (e.g. interrupted snapshot transfers from a previous run).
         temp_directories::clear_tmp_directories(storage_config)?;
 
+        // Adaptive wrapper around search runtime. Background task starts now.
+        let adaptive_search_handle = AdaptiveSearchHandle::new(search_runtime.handle().clone());
+
         let collection_paths = fs::read_dir(&collections_path)?;
         let is_distributed = consensus_proposal_sender.is_some();
 
@@ -151,7 +158,7 @@ impl TableOfContent {
             let consensus_proposal_sender = consensus_proposal_sender.clone();
             let channel_service = channel_service.clone();
             let storage_config = storage_config.clone();
-            let search_runtime_handle = search_runtime.handle().clone();
+            let search_runtime_handle = adaptive_search_handle.clone();
             let update_runtime_handle = update_runtime.handle().clone();
             let optimizer_resource_budget = optimizer_resource_budget.clone();
 
@@ -234,7 +241,7 @@ impl TableOfContent {
         Ok(TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
-            search_runtime,
+            adaptive_search_handle,
             update_runtime,
             general_runtime,
             optimizer_resource_budget,
@@ -253,6 +260,15 @@ impl TableOfContent {
     /// Return `true` if service is working in distributed mode.
     pub fn is_distributed(&self) -> bool {
         self.consensus_proposal_sender.is_some()
+    }
+
+    /// Current and available permit counts for the adaptive search thread pool.
+    /// `current` is the total permit budget; `available` is how many are free right now.
+    pub fn search_pool_permits(&self) -> (usize, usize) {
+        (
+            self.adaptive_search_handle.current_permits(),
+            self.adaptive_search_handle.available_permits(),
+        )
     }
 
     pub fn storage_path(&self) -> &Path {

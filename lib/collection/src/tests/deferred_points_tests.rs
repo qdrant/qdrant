@@ -13,6 +13,7 @@ use shard::operations::point_ops::{
 };
 use tempfile::Builder;
 use tokio::runtime::Handle;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::RwLock;
 
 use crate::operations::types::{PointRequestInternal, UpdateStatus};
@@ -53,7 +54,8 @@ async fn build_shard(
         SaveOnDisk<crate::collection::payload_index_schema::PayloadIndexSchema>,
     >,
 ) -> LocalShard {
-    let current_runtime = Handle::current();
+    let update_runtime = Handle::current();
+    let current_runtime = AdaptiveSearchHandle::current_for_tests();
     LocalShard::build(
         0,
         "test_deferred".to_string(),
@@ -61,7 +63,7 @@ async fn build_shard(
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema,
-        current_runtime.clone(),
+        update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
         config.optimizer_config.clone(),
@@ -76,7 +78,7 @@ async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
         with_payload: None,
         with_vector: WithVector::Bool(false),
     });
-    let current_runtime = Handle::current();
+    let current_runtime = AdaptiveSearchHandle::current_for_tests();
     let retrieved = shard
         .retrieve(
             request,

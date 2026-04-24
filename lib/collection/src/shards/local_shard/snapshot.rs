@@ -31,7 +31,7 @@ use crate::shards::local_shard::{LocalShard, LocalShardClocks};
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         let task = {
-            let _runtime = self.search_runtime.enter();
+            let _runtime = self.search_runtime.tokio_handle().enter();
 
             let segments = self.segments.clone();
             cancel::blocking::spawn_cancel_on_drop(move |_| segments.read().snapshot_manifest())

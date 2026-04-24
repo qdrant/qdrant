@@ -798,6 +798,7 @@ mod tests {
     use tokio::sync::RwLock;
 
     use super::*;
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
     use crate::config::*;
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
@@ -905,7 +906,7 @@ mod tests {
 
     async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
         let update_runtime = Handle::current();
-        let search_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
 
         let wal_config = WalConfig {
             wal_capacity_mb: 1,
