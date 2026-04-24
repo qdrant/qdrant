@@ -72,6 +72,9 @@ pub struct TableOfContent {
     /// based on process CPU usage to strike a balance between IO-bound
     /// headroom and CPU contention.
     adaptive_search_handle: AdaptiveSearchHandle,
+    /// Owns the search runtime so it isn't dropped while the adaptive handle
+    /// is still spawning blocking tasks against its pool.
+    _search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
     /// Global CPU budget in number of cores for all optimization tasks.
@@ -242,6 +245,7 @@ impl TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
             adaptive_search_handle,
+            _search_runtime: search_runtime,
             update_runtime,
             general_runtime,
             optimizer_resource_budget,
