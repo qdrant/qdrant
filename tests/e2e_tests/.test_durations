@@ -1,0 +1,19 @@
+{
+  "e2e_tests/test_bugs.py::TestSnapshotsInterferenceWithConsensus::test_snapshot_does_not_block_other_operations[qdrant_compose0]": 337.4045226940001,
+  "e2e_tests/test_continuous_snapshots.py::TestContinuousSnapshots::test_continuous_snapshots": 8.97672835200001,
+  "e2e_tests/test_data_compatibility.py::TestStorageCompatibility::test_compatibility[v1.16.0]@compatibility": 51.52099562599997,
+  "e2e_tests/test_data_compatibility.py::TestStorageCompatibility::test_compatibility[v1.16.1]@compatibility": 52.686344951,
+  "e2e_tests/test_data_compatibility.py::TestStorageCompatibility::test_compatibility[v1.16.2]@compatibility": 85.940226876,
+  "e2e_tests/test_data_compatibility.py::TestStorageCompatibility::test_compatibility[v1.16.3]@compatibility": 95.45315375900009,
+  "e2e_tests/test_data_compatibility.py::TestStorageCompatibility::test_compatibility[v1.17.0]@compatibility": 78.61033717200002,
+  "e2e_tests/test_data_compatibility.py::TestStorageCompatibility::test_compatibility[v1.17.1]@compatibility": 52.95291753299995,
+  "e2e_tests/test_immutable_index.py::TestImmutableIndex::test_immutable_full_text_index": 2.6313369920000014,
+  "e2e_tests/test_low_disk.py::TestLowDisk::test_low_disk_handling[indexing]": 72.443975763,
+  "e2e_tests/test_low_disk.py::TestLowDisk::test_low_disk_handling[search]": 22.052386685999977,
+  "e2e_tests/test_snapshots_recovery.py::TestSnapshotsRecovery::test_snapshots_recovery[local]": 1.3079720680000264,
+  "e2e_tests/test_snapshots_recovery.py::TestSnapshotsRecovery::test_snapshots_recovery[s3]": 1.7975209310000082,
+  "e2e_tests/test_strict_mode_memory.py::TestStrictModeMemory::test_memory_threshold_blocks_then_recovers_after_delete": 14.102287067999995,
+  "e2e_tests/test_tls.py::TestTLS::test_tls_connectivity[grpc]": 20.464151897000022,
+  "e2e_tests/test_tls.py::TestTLS::test_tls_connectivity[http]": 17.81874769999999,
+  "e2e_tests/test_tls.py::TestTLS::test_tls_shard_transfer": 6.447323200999989
+}

@@ -350,7 +350,7 @@ jobs:
           uv --project tests run pytest \
             -n 2 \
             --splits 3 --group ${{ matrix.shard }} \
-            --store-durations \
+            --store-durations --durations-path tests/e2e_tests/.test_durations \
             tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
         shell: bash
         timeout-minutes: 15
@@ -359,7 +359,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-durations-shard-${{ matrix.shard }}
-          path: .test_durations
+          path: tests/e2e_tests/.test_durations
           retention-days: 1
           include-hidden-files: true
       - name: Upload test logs on failure
