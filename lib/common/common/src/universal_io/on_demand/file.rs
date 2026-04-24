@@ -370,26 +370,6 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
     }
 }
 
-impl<R> Drop for OnDemandFile<R> {
-    fn drop(&mut self) {
-        let Some(state) = self.local.take() else {
-            return;
-        };
-        let path = self.local_path.clone();
-        // Drop the mmap before unlinking so platforms other than Unix
-        // don't hold the file open while we remove it.
-        drop(state);
-        match fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => log::warn!(
-                "failed to remove on-demand cache file {}: {err}",
-                path.display(),
-            ),
-        }
-    }
-}
-
 fn out_of_bounds<T>(start: u64, end: u64, len_bytes: u64) -> UniversalIoError {
     let t_size = size_of::<T>().max(1) as u64;
     UniversalIoError::OutOfBounds {
