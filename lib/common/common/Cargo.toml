@@ -60,6 +60,7 @@ tango-bench = "0.7.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.7.12"
+procfs = { version = "0.18", default-features = false }
 thread-priority = "3.0.0"
 
 [[bench]]
