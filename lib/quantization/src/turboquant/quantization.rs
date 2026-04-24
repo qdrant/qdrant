@@ -61,14 +61,13 @@ impl TurboQuantizer {
         debug_assert!(vec.len() <= self.padded_dim);
         debug_assert_eq!(buf.len(), self.padded_dim);
 
-        // Convert to f64
-        for (v, b) in vec.iter().zip(buf.iter_mut()) {
-            *b = f64::from(*v);
-        }
-
-        // Fill any extra buffer space with zeros (for padded dimensions)
-        for b in buf.iter_mut().skip(vec.len()) {
-            *b = 0.0;
+        // Convert to f64 and zero-pad up to `padded_dim`.
+        let padded = vec
+            .iter()
+            .map(|&x| f64::from(x))
+            .chain(std::iter::repeat(0.0));
+        for (b, v) in buf.iter_mut().zip(padded) {
+            *b = v;
         }
 
         // Rotate the vector.
