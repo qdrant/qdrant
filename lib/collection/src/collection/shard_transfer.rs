@@ -6,6 +6,7 @@ use std::time::Duration;
 use common::defaults;
 use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
+use semver::Version;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::Collection;
@@ -58,7 +59,7 @@ impl Collection {
 
     pub async fn start_shard_transfer<T, F>(
         &self,
-        shard_transfer: ShardTransfer,
+        mut shard_transfer: ShardTransfer,
         consensus: Box<dyn ShardTransferConsensus>,
         temp_dir: PathBuf,
         on_finish: T,
@@ -70,15 +71,30 @@ impl Collection {
     {
         // The coordinating peer must pick the transfer method before submitting
         // to consensus, so that every peer applies the same method for a given
-        // transfer. If `method` is None here, a submission site forgot to fill
-        // it in — refuse rather than pick a local default that could diverge
-        // across peers.
+        // transfer.
+        //
+        // Once every peer is at 1.18.0+, all submission sites guarantee the
+        // method is set, so a missing method indicates a bug — refuse it.
+        // For mixed clusters (some peers <1.18.0), an older submission site
+        // may still send `None`; fall back to this peer's local default to
+        // preserve compatibility.
         if shard_transfer.method.is_none() {
-            return Err(CollectionError::service_error(format!(
-                "Shard transfer {}:{} -> {} has no method set; the coordinating peer must \
-                 pick a transfer method before submitting to consensus",
-                shard_transfer.shard_id, shard_transfer.from, shard_transfer.to,
-            )));
+            let all_peers_enforce = self
+                .channel_service
+                .all_peers_at_version(&Version::new(1, 18, 0));
+            if all_peers_enforce {
+                return Err(CollectionError::service_error(format!(
+                    "Shard transfer {}:{} -> {} has no method set; the coordinating peer must \
+                     pick a transfer method before submitting to consensus",
+                    shard_transfer.shard_id, shard_transfer.from, shard_transfer.to,
+                )));
+            }
+            let default_method = self.default_shard_transfer_method().await;
+            log::warn!(
+                "No shard transfer method selected, defaulting to {default_method:?} \
+                 (cluster contains peers older than 1.18.0)",
+            );
+            shard_transfer.method = Some(default_method);
         }
 
         let do_transfer = {
