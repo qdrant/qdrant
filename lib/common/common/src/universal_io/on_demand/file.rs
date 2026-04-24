@@ -109,42 +109,10 @@ where
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()> {
-        // Validate every range up-front and collect the byte bounds of
-        // each, so we can issue one single batched remote fetch for
-        // every missing block across the whole batch.
-        let mut entries: Vec<(Meta, Range<u64>)> = Vec::new();
         for (meta, range) in ranges {
-            let byte_range = self.compute_byte_range::<T>(range)?;
-            entries.push((meta, byte_range));
+            let cow = self.read::<P>(range)?;
+            callback(meta, cow.as_ref())?;
         }
-        if entries.is_empty() {
-            return Ok(());
-        }
-
-        // If every request is zero-length, skip local-state init and
-        // just fan out empty slices to the callbacks.
-        if entries.iter().all(|(_, br)| br.is_empty()) {
-            for (meta, _) in entries {
-                callback(meta, &[])?;
-            }
-            return Ok(());
-        }
-
-        let state = self.local_state()?;
-        self.ensure_byte_ranges(
-            state,
-            entries
-                .iter()
-                .filter(|(_, br)| !br.is_empty())
-                .map(|(_, br)| br.clone()),
-        )?;
-
-        for (meta, byte_range) in entries {
-            // SAFETY: `ensure_byte_ranges` above populated every `byte_range`.
-            let bytes = unsafe { state.read_mmap_bytes(byte_range) };
-            callback(meta, bytemuck::cast_slice(bytes))?;
-        }
-
         Ok(())
     }
 
