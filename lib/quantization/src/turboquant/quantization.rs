@@ -33,7 +33,7 @@ impl TurboQuantizer {
     pub fn new(dim: usize, bits: TQBits, mode: TQMode, distance: DistanceType) -> Self {
         let padded_dim = Self::padded_dim(dim, bits);
         let rotation = HadamardRotation::new(padded_dim);
-        let dim_sqrt = (dim as f32).sqrt();
+        let dim_sqrt = (padded_dim as f32).sqrt();
         TurboQuantizer {
             rotation,
             bits,
@@ -58,7 +58,8 @@ impl TurboQuantizer {
     pub fn quantize(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
         Self::assert_supported_distance(self.distance);
 
-        debug_assert!(vec.len() <= buf.len());
+        debug_assert!(vec.len() <= self.padded_dim);
+        debug_assert_eq!(buf.len(), self.padded_dim);
 
         // Convert to f64
         for (v, b) in vec.iter().zip(buf.iter_mut()) {
@@ -110,7 +111,8 @@ impl TurboQuantizer {
         let mut rotated: Vec<f64> = query
             .iter()
             .map(|&x| f64::from(x))
-            .chain(std::iter::repeat_n(0.0, self.padded_dim - query.len()))
+            .chain(std::iter::repeat(0.0))
+            .take(self.padded_dim)
             .collect();
 
         debug_assert_eq!(rotated.len(), self.padded_dim);
