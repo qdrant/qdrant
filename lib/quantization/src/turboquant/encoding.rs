@@ -59,6 +59,15 @@ impl TurboQuantizer {
         out
     }
 
+    /// Split an encoded vector into its dimension bytes and the decoded extras.
+    /// Shared between [`Self::unpack_vector`] (scalar scoring) and the SIMD
+    /// scoring paths that consume the raw packed bytes directly.
+    pub(super) fn split_vector<'a>(&self, vec: &'a [u8]) -> (TqVectorExtras, &'a [u8]) {
+        let extra_len = TqVectorExtras::size_for(self.bits, self.distance, self.mode);
+        let (dim_part, extra_part) = vec.split_at(vec.len() - extra_len);
+        (self.unpack_extras_from(extra_part), dim_part)
+    }
+
     /// Unpacks `vec` into an iterator of `dim` centroid values and returns any
     /// `Extras` stored alongside.
     ///
@@ -69,11 +78,7 @@ impl TurboQuantizer {
     /// Does not apply the inverse rotation — the iterator yields values in the
     /// rotated space.
     pub fn unpack_vector(&self, vec: &[u8]) -> (TqVectorExtras, impl Iterator<Item = f64>) {
-        let extra_len = TqVectorExtras::size_for(self.bits, self.distance, self.mode);
-
-        let (dim_part, extra_part) = vec.split_at(vec.len() - extra_len);
-
-        let extras = self.unpack_extras_from(extra_part);
+        let (extras, dim_part) = self.split_vector(vec);
 
         let centroids = self.bits.get_centroids();
         let mut reader = BitReader::new(dim_part);

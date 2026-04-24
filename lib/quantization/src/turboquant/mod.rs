@@ -21,7 +21,8 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
-use crate::turboquant::quantization::{Precomputed, TurboQuantizer};
+use crate::turboquant::quantization::TurboQuantizer;
+use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -74,9 +75,15 @@ pub struct EncodedQueryTQ {
     // TODO(turbo): add precomputed extras here when needed
 }
 
+/// SIMD-ready encoded query, one variant per supported bit-width.  Each
+/// variant wraps the bit-width's [`simd::Query{N}bitSimd`] precomputation
+/// (rotation-applied query, quantized to the SIMD-friendly integer form);
+/// on architectures without a matching SIMD instruction set the scalar
+/// reference kernel inside each type takes over automatically.
 pub enum EncodedQueryTQData {
-    Native(Precomputed),
-    // TODO(turbo): add other variants for SIMD-optimized precomputations, etc.
+    Bits1(Query1bitSimd),
+    Bits2(Query2bitSimd),
+    Bits4(Query4bitSimd),
 }
 
 #[derive(Serialize, Deserialize)]

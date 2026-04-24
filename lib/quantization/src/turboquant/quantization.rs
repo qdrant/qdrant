@@ -1,5 +1,6 @@
 use crate::DistanceType;
 use crate::turboquant::rotation::HadamardRotation;
+use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
 use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, Metadata, TQBits, TQMode};
 
 /// Quantize vectors using TurboQuant.
@@ -12,20 +13,6 @@ pub struct TurboQuantizer {
 
     // Pre-calculated `sqrt(dim)` used in scoring.
     dim_sqrt: f32,
-}
-
-/// A query with the Hadamard rotation already applied. Built via
-/// [`TurboQuantizer::precompute_query`] and consumed by
-/// [`TurboQuantizer::score_precomputed`] to amortize the rotation cost across
-/// many scoring calls.
-pub struct Precomputed(Vec<f64>);
-
-impl Precomputed {
-    /// Borrow the rotated query components.
-    #[inline]
-    pub fn as_slice(&self) -> &[f64] {
-        &self.0
-    }
 }
 
 impl TurboQuantizer {
@@ -129,8 +116,9 @@ impl TurboQuantizer {
         }
     }
 
-    /// Precompute the Hadamard rotation of `query` so subsequent
-    /// [`Self::score_precomputed`] calls skip the per-call rotation.
+    /// Precompute the Hadamard rotation of `query` and hand it to the
+    /// bit-width's SIMD encoder.  Subsequent [`Self::score_precomputed`]
+    /// calls reuse this precomputation — rotation runs once, not per score.
     pub fn precompute_query(&self, query: &[f32]) -> EncodedQueryTQ {
         debug_assert!(query.len() <= self.padded_dim);
 
@@ -140,7 +128,6 @@ impl TurboQuantizer {
             .chain(std::iter::repeat(0.0))
             .take(self.padded_dim)
             .collect();
-
         self.rotation.apply(&mut rotated);
 
         let l2_norm = match self.distance {
@@ -155,8 +142,19 @@ impl TurboQuantizer {
             DistanceType::Cosine | DistanceType::Dot | DistanceType::L2 => None,
         };
 
+        // SIMD encoders consume f32 (the quantization step will re-bucket into
+        // integer codebooks anyway, so the extra f64 precision from rotation
+        // has no downstream benefit here).
+        let rotated_f32: Vec<f32> = rotated.iter().map(|&x| x as f32).collect();
+
+        let data = match self.bits {
+            TQBits::Bits1 => EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32)),
+            TQBits::Bits1_5 => EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32)),
+            TQBits::Bits2 => EncodedQueryTQData::Bits2(Query2bitSimd::new(&rotated_f32)),
+            TQBits::Bits4 => EncodedQueryTQData::Bits4(Query4bitSimd::new(&rotated_f32)),
+        };
         EncodedQueryTQ {
-            data: EncodedQueryTQData::Native(Precomputed(rotated)),
+            data,
             l2_norm,
             query,
         }
@@ -166,11 +164,11 @@ impl TurboQuantizer {
     /// [`Self::precompute_query`]. Returns an approximate `<query, v>` for Dot
     /// and `cos(θ)` for Cosine.
     pub fn score_precomputed(&self, query: &EncodedQueryTQ, vec: &[u8]) -> f32 {
-        let (vector_extras, unpacked) = self.unpack_vector(vec);
+        let (vector_extras, data_bytes) = self.split_vector(vec);
         let dot = match &query.data {
-            EncodedQueryTQData::Native(precomputed) => {
-                dot_impl(precomputed.as_slice().iter().copied(), unpacked)
-            } // TODO(turbo): add other variants for SIMD-optimized precomputations, etc.
+            EncodedQueryTQData::Bits1(q) => q.dotprod(data_bytes),
+            EncodedQueryTQData::Bits2(q) => q.dotprod(data_bytes),
+            EncodedQueryTQData::Bits4(q) => q.dotprod(data_bytes),
         };
 
         match self.distance {
