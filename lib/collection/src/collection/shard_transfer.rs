@@ -43,7 +43,8 @@ impl Collection {
             .unwrap_or(false)
     }
 
-    pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+    /// Legacy default shard transfer method for Qdrant <1.18.0
+    pub async fn legacy_default_shard_transfer_method(&self) -> ShardTransferMethod {
         if self.is_prevent_unoptimized().await {
             // With prevent_unoptimized, use snapshot as the default method.
             // For automatic transfers, mod.rs prefers WalDelta when all peers
@@ -55,6 +56,13 @@ impl Collection {
                 .default_shard_transfer_method
                 .unwrap_or(ShardTransferMethod::StreamRecords)
         }
+    }
+
+    /// Default shard transfer method for Qdrant 1.18.0+
+    pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+        self.shared_storage_config
+            .default_shard_transfer_method
+            .unwrap_or(ShardTransferMethod::Snapshot)
     }
 
     pub async fn start_shard_transfer<T, F>(
@@ -89,7 +97,7 @@ impl Collection {
                     shard_transfer.shard_id, shard_transfer.from, shard_transfer.to,
                 )));
             }
-            let default_method = self.default_shard_transfer_method().await;
+            let default_method = self.legacy_default_shard_transfer_method().await;
             log::warn!(
                 "No shard transfer method selected, defaulting to {default_method:?} \
                  (cluster contains peers older than 1.18.0)",
