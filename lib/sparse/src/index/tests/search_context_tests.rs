@@ -9,12 +9,10 @@ mod tests {
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::{PointOffsetType, ScoredPointOffset};
-    use rand::Rng;
     use tempfile::TempDir;
 
     use crate::common::scores_memory_pool::{PooledScoresHandle, ScoresMemoryPool};
-    use crate::common::sparse_vector::{RemappedSparseVector, SparseVector};
-    use crate::common::sparse_vector_fixture::random_sparse_vector;
+    use crate::common::sparse_vector::RemappedSparseVector;
     use crate::common::types::QuantizedU8;
     use crate::index::inverted_index::InvertedIndex;
     use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -484,24 +482,6 @@ mod tests {
             search_context.posting_list_len(0),
             2 // 6, 7
         );
-    }
-
-    /// Generates a random inverted index with `num_vectors` vectors
-    #[allow(dead_code)]
-    fn random_inverted_index<R: Rng + ?Sized>(
-        rnd_gen: &mut R,
-        num_vectors: u32,
-        max_sparse_dimension: usize,
-    ) -> InvertedIndexRam {
-        let mut inverted_index_ram = InvertedIndexRam::empty();
-
-        for i in 1..=num_vectors {
-            let SparseVector { indices, values } =
-                random_sparse_vector(rnd_gen, max_sparse_dimension);
-            let vector = RemappedSparseVector::new(indices, values).unwrap();
-            inverted_index_ram.upsert(i, vector, None);
-        }
-        inverted_index_ram
     }
 
     #[test]

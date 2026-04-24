@@ -3396,8 +3396,7 @@ pub enum Condition {
 #[serde(
     expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
 )]
-#[allow(clippy::large_enum_variant)]
-#[allow(dead_code)]
+#[allow(clippy::large_enum_variant, dead_code)]
 enum ConditionUntagged {
     Field(FieldCondition),
     IsEmpty(IsEmptyCondition),
@@ -4101,21 +4100,10 @@ pub(crate) mod test_utils {
 mod tests {
     use itertools::Itertools;
     use rstest::rstest;
-    use serde::de::DeserializeOwned;
     use serde_json;
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
-
-    #[allow(dead_code)]
-    fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
-        record: T,
-    ) {
-        let binary_entity = rmp_serde::to_vec(&record).expect("serialization ok");
-        let de_record: T = rmp_serde::from_slice(&binary_entity).expect("deserialization ok");
-
-        assert_eq!(record, de_record);
-    }
 
     #[test]
     #[ignore]

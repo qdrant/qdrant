@@ -90,14 +90,12 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     }
 }
 
-#[allow(dead_code)]
 pub struct QuantizedChunkedMmapStorageBuilder {
     data: ChunkedVectors<u8, MmapFile>,
     hw_counter: HardwareCounterCell,
 }
 
 impl QuantizedChunkedMmapStorageBuilder {
-    #[allow(dead_code)]
     pub fn new(path: &Path, quantized_vector_size: usize, in_ram: bool) -> OperationResult<Self> {
         let advice = if in_ram {
             AdviceSetting::from(Advice::Normal)
