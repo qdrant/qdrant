@@ -94,11 +94,23 @@ def qdrant_image(docker_client: docker.DockerClient, request) -> str:
         else:
             print(f"Building Docker image {image_tag}...")
 
-        # Build image using docker buildx
+        cache_dir = Path.home() / ".cache" / "qdrant-e2e-buildx"
+        builder_name = "qdrant-e2e-builder"
+        if subprocess.run(
+            ["docker", "buildx", "inspect", builder_name],
+            capture_output=True,
+        ).returncode != 0:
+            subprocess.run(
+                ["docker", "buildx", "create", "--name", builder_name, "--driver", "docker-container"],
+                check=True,
+            )
         build_cmd = [
             "docker", "buildx", "build",
+            f"--builder={builder_name}",
             "--build-arg=PROFILE=ci",
             "--build-arg=FEATURES=data-consistency-check,staging",
+            f"--cache-from=type=local,src={cache_dir}",
+            f"--cache-to=type=local,dest={cache_dir},mode=max",
             "--load",
             str(project_root),
             f"--tag={image_tag}"

@@ -66,3 +66,13 @@ E2E tests are split across shards in CI using [pytest-split](https://github.com/
 
 4. Revert the workflow changes from step 1.
 5. Commit the updated `tests/e2e_tests/.test_durations` together with the workflow revert.
+
+# Local buildx cache
+
+When no pre-built `qdrant/qdrant:e2e-tests` exists locally, the `qdrant_image` fixture builds one 
+via a dedicated `qdrant-e2e-builder` (docker-container driver) with a persistent cache at `~/.cache/qdrant-e2e-buildx`.
+
+- First run is cold; subsequent runs reuse the `cargo chef cook` layer while `Cargo.lock` is unchanged.
+- Cache is shared across checkouts and worktrees.
+- Reset: `rm -rf ~/.cache/qdrant-e2e-buildx`. Remove builder: `docker buildx rm qdrant-e2e-builder`.
+- CI never builds here — it loads the image from the `build-e2e-image` artifact.
