@@ -25,7 +25,9 @@ use collection::shards::replica_set;
 use collection::shards::replica_set::replica_set_state;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
+use collection::shards::transfer::{
+    ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
+};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
@@ -416,13 +418,12 @@ pub async fn do_update_collection_cluster(
             validate_peer_exists(to_peer_id)?;
             validate_peer_exists(from_peer_id)?;
 
-            // Decide on a transfer-method and check its validity in combination with filters.
-            let method = collection.default_shard_transfer_method();
-            if !method.is_streaming() && filter.is_some() {
-                return Err(StorageError::bad_request(format!(
-                    "Can't do shard transfer using method {method:?} in combination with a filter",
-                )));
-            }
+            // Require stream records based transfer if a filter is given
+            let method = if filter.is_none() {
+                collection.default_shard_transfer_method()
+            } else {
+                ShardTransferMethod::StreamRecords
+            };
 
             // submit operation to consensus
             dispatcher
