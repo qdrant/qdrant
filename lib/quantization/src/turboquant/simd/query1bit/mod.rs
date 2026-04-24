@@ -316,16 +316,9 @@ pub use x64::{
 
 #[cfg(test)]
 pub(super) mod shared {
-    use rand::RngExt;
-    use rand::prelude::StdRng;
-
     /// Byte lengths used by parity tests.  Cover: below SSE width, a single
     /// SSE chunk, an AVX2 chunk, an AVX-512 chunk, two AVX-512 chunks + tail.
     pub const PARITY_BYTE_LENS: &[usize] = &[1, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 257, 513];
-
-    pub fn random_bytes(rng: &mut StdRng, len: usize) -> Vec<u8> {
-        (0..len).map(|_| rng.random_range(0..=u8::MAX)).collect()
-    }
 }
 
 #[cfg(test)]
@@ -333,14 +326,14 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::shared::random_bytes;
+    use super::super::shared::random_bytes;
     use super::*;
-    use crate::turboquant::lloyd_max;
+    use crate::turboquant::TQBits;
 
     /// `CENTROID_ABS` must match the magnitude in `CENTROIDS_1BIT`.
     #[test]
     fn test_codebook_matches_lloyd_max() {
-        let centroids = lloyd_max::get_centroids(1);
+        let centroids = TQBits::Bits1.get_centroids();
         assert_eq!(centroids.len(), 2);
         assert!((centroids[0] + CENTROID_ABS).abs() < 1e-6);
         assert!((centroids[1] - CENTROID_ABS).abs() < 1e-6);

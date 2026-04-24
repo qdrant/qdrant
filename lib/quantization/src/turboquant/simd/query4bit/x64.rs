@@ -443,7 +443,8 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::super::shared::{PARITY_DIMS, pack_nibbles, random_inputs};
+    use super::super::shared::{PARITY_DIMS, random_inputs};
+    use super::super::super::shared::pack_codes;
     use super::super::{Query4bitSimd, score_4bit_internal_scalar};
     use super::{
         score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
@@ -508,7 +509,7 @@ mod tests {
         let dim = 65_536;
         let query = vec![1.0_f32; dim];
         let indices: Vec<u8> = vec![15; dim]; // CODEBOOK_U8[15] = 255 (max magnitude)
-        let vector = pack_nibbles(&indices);
+        let vector = pack_codes(&indices, 4);
 
         let q = Query4bitSimd::new(&query);
         let scalar = q.dotprod_raw(&vector);
@@ -602,8 +603,8 @@ mod tests {
     fn test_score_saturation_safety_64k() {
         let dim = 65_536;
         let indices: Vec<u8> = vec![15; dim]; // CODEBOOK_U8[15] = 255 → signed 127
-        let vec_a = pack_nibbles(&indices);
-        let vec_b = pack_nibbles(&indices);
+        let vec_a = pack_codes(&indices, 4);
+        let vec_b = pack_codes(&indices, 4);
 
         let scalar = score_4bit_internal_scalar(&vec_a, &vec_b);
 

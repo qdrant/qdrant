@@ -414,14 +414,15 @@ pub use arm::{score_4bit_internal_neon, score_4bit_internal_neon_sdot};
 #[cfg(target_arch = "x86_64")]
 pub use x64::{score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse};
 
-/// Shared test helpers used by the accuracy tests below and by the per-arch
-/// SIMD parity / saturation tests in [`arm`] and [`x64`].
+/// 4-bit-specific test helpers.  Bit-width-agnostic helpers (`pack_codes`,
+/// `sample_normal_vec`, `encode_to_nearest_centroid`) live in
+/// [`super::super::shared`].
 #[cfg(test)]
-mod shared {
+pub(super) mod shared {
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
-    use rand_distr::{Distribution, StandardNormal};
 
+    use super::super::shared::{pack_codes, sample_normal_vec};
     use super::Query4bitSimd;
 
     /// Corner-case dims covering every tail size the 4-bit pipeline can
@@ -436,34 +437,6 @@ mod shared {
         16, 18, 30, 32, 46, 48, 62, 128, 256, 270, 1024, 1026, 2046, 2048,
     ];
 
-    /// Packs a sequence of 4-bit indices (each in [0, 15]) two per byte:
-    /// low nibble → even lane, high nibble → odd lane.
-    pub fn pack_nibbles(indices: &[u8]) -> Vec<u8> {
-        assert_eq!(indices.len() % 2, 0);
-        indices
-            .chunks_exact(2)
-            .map(|p| p[0] | (p[1] << 4))
-            .collect()
-    }
-
-    pub fn sample_normal_vec(rng: &mut StdRng, len: usize) -> Vec<f32> {
-        (0..len).map(|_| StandardNormal.sample(rng)).collect()
-    }
-
-    /// Map each raw float to the index of its nearest centroid.
-    pub fn encode_to_nearest_centroid(centroids: &[f32], raw: &[f32]) -> Vec<u8> {
-        raw.iter()
-            .map(|&v| {
-                centroids
-                    .iter()
-                    .enumerate()
-                    .min_by(|a, b| (a.1 - v).abs().partial_cmp(&(b.1 - v).abs()).unwrap())
-                    .map(|(k, _)| k as u8)
-                    .unwrap()
-            })
-            .collect()
-    }
-
     /// Parity-test helper: query ~ N(0,1), balanced index distribution (each
     /// centroid appears `dim/16` times, shuffled).  Index distribution doesn't
     /// affect scalar-vs-SIMD parity; we just need non-trivial data.
@@ -471,7 +444,7 @@ mod shared {
         let query = sample_normal_vec(rng, dim);
         let mut indices: Vec<u8> = (0..dim).map(|i| (i % 16) as u8).collect();
         indices.shuffle(rng);
-        (Query4bitSimd::new(&query), pack_nibbles(&indices))
+        (Query4bitSimd::new(&query), pack_codes(&indices, 4))
     }
 }
 
@@ -487,16 +460,16 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::shared::{encode_to_nearest_centroid, pack_nibbles, sample_normal_vec};
+    use super::super::shared::{encode_to_nearest_centroid, pack_codes, sample_normal_vec};
     use super::{CODEBOOK_ABS_MAX, Query4bitSimd};
-    use crate::turboquant::lloyd_max;
+    use crate::turboquant::TQBits;
 
     /// Whichever codebook representation the current arch uses (signed i8 on
     /// aarch64, shifted u8 on x86_64), it must match what the runtime recipe
     /// would produce from `CENTROIDS_4BIT`.
     #[test]
     fn test_codebook_matches_lloyd_max() {
-        let centroids = lloyd_max::get_centroids(4);
+        let centroids = TQBits::Bits4.get_centroids();
         assert_eq!(centroids.len(), 16);
 
         let c_abs_max = centroids
@@ -557,7 +530,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let n_trials = 64;
 
-        let centroids = lloyd_max::get_centroids(4);
+        let centroids = TQBits::Bits4.get_centroids();
 
         for _ in 0..n_trials {
             let query = sample_normal_vec(&mut rng, dim);
@@ -566,7 +539,7 @@ mod tests {
             let v_pq: Vec<f32> = indices.iter().map(|&k| centroids[k as usize]).collect();
 
             let pq_dot: f32 = query.iter().zip(v_pq.iter()).map(|(a, b)| a * b).sum();
-            let simd_dot = Query4bitSimd::new(&query).dotprod(&pack_nibbles(&indices));
+            let simd_dot = Query4bitSimd::new(&query).dotprod(&pack_codes(&indices, 4));
 
             // Error scales roughly like √dim · σ_q · ε_c.  Allow a tolerance
             // that is comfortably above the 3σ tail for dim up to ~2K.
@@ -588,7 +561,7 @@ mod tests {
         let dim = 256;
         let n_trials = 256;
 
-        let centroids = lloyd_max::get_centroids(4);
+        let centroids = TQBits::Bits4.get_centroids();
 
         let mut sq_pq_noise = 0.0_f64;
         let mut sq_simd_noise = 0.0_f64;
@@ -609,7 +582,7 @@ mod tests {
                 .zip(v_pq.iter())
                 .map(|(a, b)| f64::from(*a) * f64::from(*b))
                 .sum();
-            let simd_dot = f64::from(Query4bitSimd::new(&query).dotprod(&pack_nibbles(&indices)));
+            let simd_dot = f64::from(Query4bitSimd::new(&query).dotprod(&pack_codes(&indices, 4)));
 
             sq_pq_noise += (pq_dot - true_dot).powi(2);
             sq_simd_noise += (simd_dot - pq_dot).powi(2);
@@ -640,7 +613,7 @@ mod tests {
     #[test]
     fn test_score_4bit_internal_matches_centroid_product() {
         let mut rng = StdRng::seed_from_u64(7);
-        let centroids = lloyd_max::get_centroids(4);
+        let centroids = TQBits::Bits4.get_centroids();
         let dim = 256;
         let n_trials = 32;
 
@@ -657,7 +630,7 @@ mod tests {
                     f64::from(centroids[ia as usize]) * f64::from(centroids[ib as usize])
                 })
                 .sum();
-            let score = super::score_4bit_internal(&pack_nibbles(&idx_a), &pack_nibbles(&idx_b));
+            let score = super::score_4bit_internal(&pack_codes(&idx_a, 4), &pack_codes(&idx_b, 4));
 
             // Codebook quantization budget: Δc ≈ max|c|/127 ≈ 0.022, so each
             // term has error ≲ 2·c·Δc ≲ 0.12; over d=256 independent terms

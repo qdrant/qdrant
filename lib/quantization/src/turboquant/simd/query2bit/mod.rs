@@ -337,14 +337,15 @@ pub use arm::{score_2bit_internal_neon, score_2bit_internal_neon_sdot};
 #[cfg(target_arch = "x86_64")]
 pub use x64::{score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse};
 
-/// Shared test helpers used by the accuracy tests below and by the per-arch
-/// SIMD parity / saturation tests in [`arm`] and [`x64`].
+/// 2-bit-specific test helpers.  Bit-width-agnostic helpers (`pack_codes`,
+/// `sample_normal_vec`, `encode_to_nearest_centroid`) live in
+/// [`super::super::shared`].
 #[cfg(test)]
-mod shared {
+pub(super) mod shared {
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
-    use rand_distr::{Distribution, StandardNormal};
 
+    use super::super::shared::{pack_codes, sample_normal_vec};
     use super::Query2bitSimd;
 
     /// Corner-case dims covering every tail size the 2-bit pipeline can
@@ -357,39 +358,12 @@ mod shared {
         16, 20, 28, 32, 44, 48, 60, 64, 128, 256, 268, 1024, 1028, 2044, 2048,
     ];
 
-    /// Packs a sequence of 2-bit indices (each in [0, 3]) four per byte:
-    /// `byte = c0 | (c1 << 2) | (c2 << 4) | (c3 << 6)`.
-    pub fn pack_codes_2bit(indices: &[u8]) -> Vec<u8> {
-        assert_eq!(indices.len() % 4, 0);
-        indices
-            .chunks_exact(4)
-            .map(|p| p[0] | (p[1] << 2) | (p[2] << 4) | (p[3] << 6))
-            .collect()
-    }
-
-    pub fn sample_normal_vec(rng: &mut StdRng, len: usize) -> Vec<f32> {
-        (0..len).map(|_| StandardNormal.sample(rng)).collect()
-    }
-
-    pub fn encode_to_nearest_centroid(centroids: &[f32], raw: &[f32]) -> Vec<u8> {
-        raw.iter()
-            .map(|&v| {
-                centroids
-                    .iter()
-                    .enumerate()
-                    .min_by(|a, b| (a.1 - v).abs().partial_cmp(&(b.1 - v).abs()).unwrap())
-                    .map(|(k, _)| k as u8)
-                    .unwrap()
-            })
-            .collect()
-    }
-
     /// Parity-test helper: query ~ N(0, 1), balanced index distribution.
     pub fn random_inputs(rng: &mut StdRng, dim: usize) -> (Query2bitSimd, Vec<u8>) {
         let query = sample_normal_vec(rng, dim);
         let mut indices: Vec<u8> = (0..dim).map(|i| (i % 4) as u8).collect();
         indices.shuffle(rng);
-        (Query2bitSimd::new(&query), pack_codes_2bit(&indices))
+        (Query2bitSimd::new(&query), pack_codes(&indices, 2))
     }
 }
 
@@ -400,13 +374,13 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::shared::{encode_to_nearest_centroid, pack_codes_2bit, sample_normal_vec};
+    use super::super::shared::{encode_to_nearest_centroid, pack_codes, sample_normal_vec};
     use super::{CODEBOOK_ABS_MAX, Query2bitSimd, score_2bit_internal_scalar};
-    use crate::turboquant::lloyd_max;
+    use crate::turboquant::TQBits;
 
     #[test]
     fn test_codebook_matches_lloyd_max() {
-        let centroids = lloyd_max::get_centroids(2);
+        let centroids = TQBits::Bits2.get_centroids();
         assert_eq!(centroids.len(), 4);
 
         let c_abs_max = centroids
@@ -451,7 +425,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let n_trials = 64;
 
-        let centroids = lloyd_max::get_centroids(2);
+        let centroids = TQBits::Bits2.get_centroids();
 
         for _ in 0..n_trials {
             let query = sample_normal_vec(&mut rng, dim);
@@ -460,7 +434,7 @@ mod tests {
             let v_pq: Vec<f32> = indices.iter().map(|&k| centroids[k as usize]).collect();
 
             let pq_dot: f32 = query.iter().zip(v_pq.iter()).map(|(a, b)| a * b).sum();
-            let simd_dot = Query2bitSimd::new(&query).dotprod(&pack_codes_2bit(&indices));
+            let simd_dot = Query2bitSimd::new(&query).dotprod(&pack_codes(&indices, 2));
 
             // SIMD-added error scales like √dim · σ_q · ε_c.  Scale tolerance
             // with √dim so large-dim trials don't falsely fail on 3σ tails.
@@ -477,7 +451,7 @@ mod tests {
     fn test_score_2bit_internal_matches_centroid_product() {
         let mut rng = StdRng::seed_from_u64(0xBAD);
         let dim = 256;
-        let centroids = lloyd_max::get_centroids(2);
+        let centroids = TQBits::Bits2.get_centroids();
         let n_trials = 16;
 
         for _ in 0..n_trials {
@@ -492,7 +466,7 @@ mod tests {
                 .map(|(&a, &b)| centroids[a as usize] * centroids[b as usize])
                 .sum();
             let got =
-                score_2bit_internal_scalar(&pack_codes_2bit(&idx_a), &pack_codes_2bit(&idx_b));
+                score_2bit_internal_scalar(&pack_codes(&idx_a, 2), &pack_codes(&idx_b, 2));
 
             assert!(
                 (expected - got).abs() < 0.5,

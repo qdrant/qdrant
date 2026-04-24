@@ -451,7 +451,8 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::super::shared::{PARITY_DIMS, pack_codes_2bit, random_inputs};
+    use super::super::shared::{PARITY_DIMS, random_inputs};
+    use super::super::super::shared::pack_codes;
     use super::super::{Query2bitSimd, score_2bit_internal_scalar};
     use super::*;
 
@@ -505,7 +506,7 @@ mod tests {
         let dim = 65_536;
         let query = vec![1.0_f32; dim];
         let indices: Vec<u8> = vec![3; dim]; // max-magnitude centroid
-        let vector = pack_codes_2bit(&indices);
+        let vector = pack_codes(&indices, 2);
 
         let q = Query2bitSimd::new(&query);
         let scalar = q.dotprod_raw(&vector);
@@ -590,8 +591,8 @@ mod tests {
     fn test_score_saturation_safety_64k() {
         let dim = 65_536;
         let indices: Vec<u8> = vec![3; dim];
-        let vec_a = pack_codes_2bit(&indices);
-        let vec_b = pack_codes_2bit(&indices);
+        let vec_a = pack_codes(&indices, 2);
+        let vec_b = pack_codes(&indices, 2);
         let scalar = score_2bit_internal_scalar(&vec_a, &vec_b);
 
         unsafe {
