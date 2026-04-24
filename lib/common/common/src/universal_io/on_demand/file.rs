@@ -19,19 +19,8 @@ use crate::universal_io::{
 
 /// A lazily-populated local mirror of an immutable remote file.
 ///
-/// - On [`open`](UniversalRead::open): the remote is opened with
-///   `prevent_caching: true`; no double caching should happen.
-/// - On the first read: a zero-filled file of the same size is created
-///   under [`OnDemandConfig`]'s mirror path, writable-mmapped, and kept
-///   around for the lifetime of the value.
-/// - Every subsequent read that touches a new block fetches that block
-///   from the remote, copies it into the local mmap, and records it in
-///   a [`RoaringBitmap`]. Reads that only touch already-fetched blocks
-///   are served directly from the local mmap (zero-copy borrows).
-/// - On drop: the local cache file is unlinked.
-///
 /// The remote is assumed to be immutable for the lifetime of the file;
-/// this type implements [`UniversalRead`] only, never [`UniversalWrite`].
+/// this type implements [`UniversalRead`] only, but not [`UniversalWrite`].
 #[derive(Debug)]
 pub struct OnDemandFile<R> {
     remote: R,
@@ -147,8 +136,7 @@ where
 }
 
 impl<R: UniversalRead<u8>> OnDemandFile<R> {
-    /// Open an [`OnDemandFile`] with an explicit configuration instead of
-    /// the globally-installed one.
+    /// Open an [`OnDemandFile`] with an explicit configuration
     pub fn open_with_config(
         config: &OnDemandConfig,
         path: impl AsRef<Path>,
@@ -257,16 +245,12 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
         Ok(byte_offset..byte_end)
     }
 
-    // TODO: Fine-grain locking. `state.fetched` is currently held
-    // across the whole remote batch, so concurrent misses serialise
-    // through this one mutex. An atomic bitvec should allow misses to not
-    // block reads.
+    // TODO: Fine-grained locking. `state.fetched` is currently held
+    // across the whole remote fetch. An atomic bitvec should enable
+    // cached reads to be handed out while other threads are handling misses.
     //
     /// Ensure every byte in the union of `byte_ranges` is present in
-    /// the local mmap. All blocks missing across the input set are
-    /// fetched in a single `R::read_batch` call so the backend sees
-    /// the full batch and can reorder / pipeline / coalesce it however
-    /// it prefers.
+    /// the local mmap.
     fn ensure_byte_ranges(
         &self,
         state: &LocalState,

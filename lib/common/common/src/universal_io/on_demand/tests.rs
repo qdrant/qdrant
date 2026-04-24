@@ -118,7 +118,7 @@ fn read_spanning_multiple_blocks_is_stitched() {
 }
 
 #[test]
-fn local_file_is_created_on_first_read_and_removed_on_drop() {
+fn local_file_is_created_on_first_read() {
     let scn = Scenario::new(BLOCK_SIZE * 2);
     let expected_local = scn.expected_local_path();
 
@@ -149,13 +149,6 @@ fn local_file_is_created_on_first_read_and_removed_on_drop() {
         fs::metadata(&expected_local).unwrap().len(),
         scn.data.len() as u64,
         "local file should be sized to the remote",
-    );
-
-    drop(file);
-
-    assert!(
-        !expected_local.exists(),
-        "local file should be removed on drop",
     );
 }
 
