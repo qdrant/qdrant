@@ -1,6 +1,5 @@
 mod error;
 mod pool;
-mod read_iter;
 mod runtime;
 
 #[cfg(test)]
@@ -18,10 +17,10 @@ use fs_err::os::unix::fs::{FileExt as _, OpenOptionsExt as _};
 
 use self::error::*;
 use self::pool::*;
-use self::read_iter::*;
 use self::runtime::*;
 use super::*;
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::read::UniversalReadPipeline;
 
 #[derive(Debug)]
 pub struct IoUringFile {
@@ -51,6 +50,8 @@ impl UniversalReadFileOps for IoUringFile {
 }
 
 impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
+    type ReadPipeline<'a, P: AccessPattern, Meta> = IoUringPipeline<'a, T, Meta>;
+
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         // Check that io_uring is supported on this system.
         pool::check_io_uring_support()?;
@@ -90,58 +91,6 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         Ok(Cow::Owned(items))
     }
 
-    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
-        &'a self,
-        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()> {
-        for record in self.read_iter::<P, Meta>(ranges)? {
-            let (meta, items) = record?;
-            callback(meta, &items)?;
-        }
-
-        Ok(())
-    }
-
-    fn read_iter<P: AccessPattern, Meta>(
-        &self,
-        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
-        let fd = self.fd();
-        let direct_io = self.direct_io;
-        let ranges = ranges
-            .into_iter()
-            .map(move |(meta, range)| (meta, fd, direct_io, range));
-        Ok(IoUringReadIter::new(ranges)?
-            .map(|result| result.map(|(meta, items)| (meta, Cow::Owned(items)))))
-    }
-
-    fn read_multi<'a, P: AccessPattern, Meta: 'a>(
-        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
-        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        Self: 'a,
-    {
-        for record in Self::read_multi_iter::<'a, P, Meta>(reads)? {
-            let (meta, items) = record?;
-            callback(meta, &items)?;
-        }
-
-        Ok(())
-    }
-
-    fn read_multi_iter<'a, P: AccessPattern, Meta>(
-        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>> {
-        let ranges = reads
-            .into_iter()
-            .map(|(meta, file, range)| (meta, file.fd(), file.direct_io, range));
-
-        Ok(IoUringReadIter::new(ranges)?
-            .map(|result| result.map(|(meta, items)| (meta, Cow::Owned(items)))))
-    }
-
     fn len(&self) -> Result<u64> {
         let byte_len = self.file.metadata()?.len();
 
@@ -178,6 +127,57 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
     fn kind() -> UniversalKind {
         UniversalKind::IoUring
+    }
+}
+
+pub struct IoUringPipeline<'a, T: bytemuck::Pod, Meta> {
+    runtime: IoUringRuntime<'a, T, Meta>,
+}
+
+impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, IoUringFile, Meta>
+    for IoUringPipeline<'a, T, Meta>
+{
+    fn new() -> Result<Self> {
+        Ok(Self {
+            runtime: IoUringRuntime::new()?,
+        })
+    }
+
+    fn can_schedule(&mut self) -> bool {
+        let squeue = self.runtime.io_uring.submission();
+        self.runtime.in_progress + squeue.len() < IO_URING_QUEUE_LENGTH as _
+    }
+
+    fn schedule(&mut self, meta: Meta, file: &'a IoUringFile, range: ReadRange) -> Result<()> {
+        let mut squeue = self.runtime.io_uring.submission();
+        if self.runtime.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
+            return Err(UniversalIoError::QueueIsFull);
+        }
+        let entry = self
+            .runtime
+            .state
+            .read(meta, file.fd(), range, file.direct_io);
+        unsafe {
+            squeue.push(&entry).expect("submission queue is not full");
+        }
+        Ok(())
+    }
+
+    fn wait(&mut self) -> Result<Option<(Meta, Cow<'a, [T]>)>> {
+        if self.runtime.completion_is_empty() {
+            let has_pending = !self.runtime.io_uring.submission().is_empty();
+            if !has_pending && self.runtime.in_progress == 0 {
+                return Ok(None);
+            }
+            self.runtime.submit_and_wait(1)?;
+        }
+
+        Ok(self
+            .runtime
+            .completed()
+            .next()
+            .transpose()?
+            .map(|(meta, resp)| (meta, Cow::Owned(resp.expect_read()))))
     }
 }
 

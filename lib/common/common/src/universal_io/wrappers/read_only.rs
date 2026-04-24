@@ -1,12 +1,16 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+use bytemuck::TransparentWrapper;
+
 use super::super::{
     OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps,
 };
+use super::WrappedReadPipeline;
 use crate::generic_consts::AccessPattern;
 
-#[derive(Debug)]
+#[derive(Debug, TransparentWrapper)]
+#[repr(transparent)]
 pub struct ReadOnly<S>(S);
 
 impl<S> UniversalReadFileOps for ReadOnly<S>
@@ -29,6 +33,11 @@ where
     S: UniversalRead<T>,
     T: Copy + 'static,
 {
+    type ReadPipeline<'a, P: AccessPattern, Meta>
+        = WrappedReadPipeline<'a, T, S, P, Meta>
+    where
+        Self: 'a;
+
     #[inline]
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         debug_assert!(!options.writeable);
@@ -56,10 +65,10 @@ where
     }
 
     #[inline]
-    fn read_iter<'a, P: AccessPattern, Meta>(
-        &'a self,
+    fn read_iter<P: AccessPattern, Meta>(
+        &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>> {
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
         self.0.read_iter::<P, Meta>(ranges)
     }
 

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{fs, slice};
@@ -8,6 +9,7 @@ use memmap2::MmapRaw;
 use super::*;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
+use crate::universal_io::read::UniversalReadPipeline;
 
 #[derive(Debug)]
 pub struct MmapFile {
@@ -30,6 +32,8 @@ impl<T> UniversalRead<T> for MmapFile
 where
     T: bytemuck::Pod,
 {
+    type ReadPipeline<'a, P: AccessPattern, Meta> = MmapReadPipeline<'a, T, P, Meta>;
+
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
             writeable,
@@ -75,21 +79,6 @@ where
         Ok(Cow::Borrowed(items))
     }
 
-    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
-        &'a self,
-        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()> {
-        let mmap = self.as_bytes::<P>();
-
-        for (meta, range) in ranges {
-            let items = read(mmap, range)?;
-            callback(meta, items)?;
-        }
-
-        Ok(())
-    }
-
     fn len(&self) -> Result<u64> {
         let len = self.mmap.len() / size_of::<T>();
         Ok(len as u64)
@@ -112,6 +101,39 @@ where
 
     fn kind() -> UniversalKind {
         UniversalKind::Mmap
+    }
+}
+
+pub struct MmapReadPipeline<'a, T, P, Meta> {
+    result: Option<(Meta, &'a [T])>,
+    _phantom: PhantomData<P>,
+}
+
+impl<'a, T: bytemuck::Pod, P: AccessPattern, Meta> UniversalReadPipeline<'a, T, MmapFile, Meta>
+    for MmapReadPipeline<'a, T, P, Meta>
+{
+    fn new() -> Result<Self> {
+        Ok(Self {
+            result: None,
+            _phantom: PhantomData,
+        })
+    }
+
+    fn can_schedule(&mut self) -> bool {
+        self.result.is_none()
+    }
+
+    fn schedule(&mut self, meta: Meta, file: &'a MmapFile, range: ReadRange) -> Result<()> {
+        if self.result.is_some() {
+            return Err(UniversalIoError::QueueIsFull);
+        }
+        self.result = Some((meta, read(file.as_bytes::<P>(), range)?));
+        Ok(())
+    }
+
+    fn wait(&mut self) -> Result<Option<(Meta, Cow<'a, [T]>)>> {
+        let result = self.result.take();
+        Ok(result.map(|(meta, items)| (meta, Cow::Borrowed(items))))
     }
 }
 

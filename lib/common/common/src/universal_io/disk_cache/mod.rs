@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use fs_err as fs;
 
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, Random};
+use crate::universal_io::read::UniversalReadPipeline;
 use crate::universal_io::{
     OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
     local_file_ops,
@@ -66,6 +67,11 @@ impl<T> UniversalReadFileOps for CachedSlice<T> {
 }
 
 impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
+    type ReadPipeline<'a, P: AccessPattern, Meta>
+        = DiskCacheReadPipeline<'a, T, Meta>
+    where
+        Self: 'a;
+
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let Some(controller) = CacheController::global() else {
             return Err(UniversalIoError::uninitialized(
@@ -98,19 +104,6 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
         Ok(self.get_range(range)?)
     }
 
-    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
-        &'a self,
-        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()> {
-        for (meta, range) in ranges {
-            let data = self.read::<P>(range)?;
-            callback(meta, &data)?;
-        }
-
-        Ok(())
-    }
-
     fn len(&self) -> Result<u64> {
         Ok(Self::len(self) as u64)
     }
@@ -126,5 +119,33 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
 
     fn kind() -> UniversalKind {
         UniversalKind::DiskCache
+    }
+}
+
+pub struct DiskCacheReadPipeline<'a, T: bytemuck::Pod, Meta> {
+    result: Option<(Meta, Cow<'a, [T]>)>,
+}
+
+impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, CachedSlice<T>, Meta>
+    for DiskCacheReadPipeline<'a, T, Meta>
+{
+    fn new() -> Result<Self> {
+        Ok(Self { result: None })
+    }
+
+    fn can_schedule(&mut self) -> bool {
+        self.result.is_none()
+    }
+
+    fn schedule(&mut self, meta: Meta, file: &'a CachedSlice<T>, range: ReadRange) -> Result<()> {
+        if self.result.is_some() {
+            return Err(UniversalIoError::QueueIsFull);
+        }
+        self.result = Some((meta, file.read::<Random>(range)?));
+        Ok(())
+    }
+
+    fn wait(&mut self) -> Result<Option<(Meta, Cow<'a, [T]>)>> {
+        Ok(self.result.take())
     }
 }

@@ -156,13 +156,14 @@ impl From<UniversalIoError> for OperationError {
             UniversalIoError::Io(err) => Self::from(err),
             UniversalIoError::Mmap(err) => Self::from(err),
 
-            UniversalIoError::IoUringNotSupported(_)
+            UniversalIoError::BytemuckCast(_)
+            | UniversalIoError::ZerocopySize(_)
+            | UniversalIoError::IoUringNotSupported(_)
             | UniversalIoError::NotFound { .. }
             | UniversalIoError::OutOfBounds { .. }
-            | UniversalIoError::InvalidFileIndex { .. } => Self::service_error(err.to_string()),
-            UniversalIoError::BytemuckCast(_) => Self::service_error(err.to_string()),
-            UniversalIoError::Uninitialized { .. } => Self::service_error(err.to_string()),
-            UniversalIoError::ZerocopySize(_) => Self::service_error(err.to_string()),
+            | UniversalIoError::InvalidFileIndex { .. }
+            | UniversalIoError::Uninitialized { .. }
+            | UniversalIoError::QueueIsFull => Self::service_error(err.to_string()),
         }
     }
 }

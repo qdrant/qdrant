@@ -9,8 +9,8 @@ use super::*;
 use crate::maybe_uninit;
 
 pub struct IoUringRuntime<'data, T, Meta = u64> {
-    io_uring: IoUringGuard,
-    state: IoUringState<'data, T, Meta>,
+    pub io_uring: IoUringGuard,
+    pub state: IoUringState<'data, T, Meta>,
     pub in_progress: usize,
 }
 

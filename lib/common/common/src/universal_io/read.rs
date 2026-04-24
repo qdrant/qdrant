@@ -9,6 +9,10 @@ use crate::universal_io::file_ops::UniversalReadFileOps;
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 #[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
+    type ReadPipeline<'a, P: AccessPattern, Meta>: UniversalReadPipeline<'a, T, Self, Meta>
+    where
+        Self: 'a;
+
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
     /// Prefer [`read_batch`] if you need high performance.
@@ -29,8 +33,14 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn read_batch<'a, P: AccessPattern, Meta: 'a>(
         &'a self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-        callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()>;
+        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
+    ) -> Result<()> {
+        for record in self.read_iter::<P, Meta>(ranges)? {
+            let (meta, data) = record?;
+            callback(meta, &data)?;
+        }
+        Ok(())
+    }
 
     /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator instead of
     /// accepting a callback.
@@ -38,9 +48,11 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
-        Ok(ranges
-            .into_iter()
-            .map(move |(meta, range)| self.read::<P>(range).map(|data| (meta, data))))
+        Self::read_multi_iter::<P, Meta>(
+            ranges
+                .into_iter()
+                .map(move |(meta, range)| (meta, self, range)),
+        )
     }
 
     fn len(&self) -> Result<u64>;
@@ -63,11 +75,10 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     where
         Self: 'a,
     {
-        for (meta, file, range) in reads {
-            let data = file.read::<P>(range)?;
-            callback(meta, &data)?;
+        for record in Self::read_multi_iter::<P, Meta>(reads)? {
+            let (meta, items) = record?;
+            callback(meta, &items)?;
         }
-
         Ok(())
     }
 
@@ -79,13 +90,40 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     where
         Self: 'a,
     {
-        Ok(reads.into_iter().map(move |(meta, file, range)| {
-            let data = file.read::<P>(range)?;
-            Ok((meta, data))
+        let mut pipeline = Self::ReadPipeline::<'a, P, Meta>::new()?;
+        let mut reads = reads.into_iter();
+        Ok(std::iter::from_fn(move || {
+            while pipeline.can_schedule()
+                && let Some((meta, file, range)) = reads.next()
+            {
+                if let Err(err) = pipeline.schedule(meta, file, range) {
+                    return Some(Err(err));
+                }
+            }
+            pipeline.wait().transpose()
         }))
     }
 
     fn kind() -> UniversalKind;
 
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
+}
+
+pub trait UniversalReadPipeline<'a, T: Copy + 'static, S, Meta>: Sized {
+    fn new() -> Result<Self>;
+
+    fn can_schedule(&mut self) -> bool;
+
+    /// Schedule read operation.
+    ///
+    /// Note: an implementation might add it to internal queue, but not actually
+    /// execute it until [`UniversalReadPipeline::wait()`] is called.
+    ///
+    /// Should be called only when [`UniversalReadPipeline::can_schedule()`] is
+    /// `true`. Returns [`UniversalIoError::QueueIsFull`] otherwise.
+    fn schedule(&mut self, meta: Meta, file: &'a S, range: ReadRange) -> Result<()>;
+
+    /// Block until any of the scheduled operations is completed and consume its
+    /// result.
+    fn wait(&mut self) -> Result<Option<(Meta, Cow<'a, [T]>)>>;
 }

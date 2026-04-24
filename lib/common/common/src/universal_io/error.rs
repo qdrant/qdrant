@@ -33,8 +33,12 @@ pub enum UniversalIoError {
     /// Source id is not valid for this multi-source storage.
     #[error("invalid file index {file_index} during multi-file operation, {files} files provided")]
     InvalidFileIndex { file_index: usize, files: usize },
+
     #[error("Resource was not initialized: {description}")]
     Uninitialized { description: String },
+
+    #[error("Request queue is full")]
+    QueueIsFull,
 }
 
 impl UniversalIoError {

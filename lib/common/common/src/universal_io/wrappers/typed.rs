@@ -8,6 +8,7 @@ use super::super::{
     ByteOffset, FileIndex, Flusher, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead,
     UniversalReadFileOps, UniversalWrite,
 };
+use super::WrappedReadPipeline;
 use crate::generic_consts::AccessPattern;
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds `T` to a
@@ -46,6 +47,11 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalReadFileOps for TypedStora
 }
 
 impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S, T> {
+    type ReadPipeline<'a, P: AccessPattern, Meta>
+        = WrappedReadPipeline<'a, T, S, P, Meta>
+    where
+        Self: 'a;
+
     #[inline]
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         S::open(path, options).map(|inner| TypedStorage {
