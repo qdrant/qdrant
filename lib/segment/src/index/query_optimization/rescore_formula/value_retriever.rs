@@ -1,4 +1,3 @@
-#![allow(dead_code)] // TODO: remove this
 use std::collections::{HashMap, HashSet};
 
 use common::counter::hardware_counter::HardwareCounterCell;

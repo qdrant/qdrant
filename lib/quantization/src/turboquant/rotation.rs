@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::turboquant::permutation::Permutation;
 
 const N_PERMUTATIONS: usize = 3;

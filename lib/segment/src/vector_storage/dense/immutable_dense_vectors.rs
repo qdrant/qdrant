@@ -173,7 +173,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
         }
     }
 
-    #[allow(dead_code)] // only used on Linux
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fn for_each_in_batch_async<F>(&self, keys: &[PointOffsetType], mut callback: F)
     where
         F: FnMut(usize, &[T]),

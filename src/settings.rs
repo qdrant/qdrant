@@ -188,7 +188,6 @@ pub struct TlsConfig {
     pub cert_ttl: Option<u64>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize, Validate)]
 pub struct GpuConfig {
     /// Enable GPU indexing.

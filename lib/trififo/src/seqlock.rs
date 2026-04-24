@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::cell::UnsafeCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering, fence};
@@ -284,6 +282,7 @@ mod tests {
         );
     }
 
+    #[allow(dead_code)] // body is compile-time `assert_impl_all!` checks, function is never called
     fn assert_correct_send_sync() {
         use std::rc::Rc;
         use std::sync::Mutex;

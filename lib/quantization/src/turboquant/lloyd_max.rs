@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::turboquant::TQBits;
 
 /// 1-bit (2 centroids): Lloyd-Max for N(0,1)
