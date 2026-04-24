@@ -10,10 +10,10 @@ use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Distance, Filter, PointIdType};
 use tempfile::{Builder, TempDir};
 use tokio::runtime::Handle;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::RwLock;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,

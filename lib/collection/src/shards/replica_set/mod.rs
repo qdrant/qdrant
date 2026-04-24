@@ -27,7 +27,6 @@ use shard::operations::optimization::{
     OptimizationsRequestOptions, OptimizationsResponse, OptimizationsSummary,
 };
 use tokio::runtime::Handle;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::spawn_blocking;
 use tokio_util::task::AbortOnDropHandle;
@@ -39,6 +38,7 @@ use super::local_shard::{LocalShard, LocalShardOptimizations};
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;

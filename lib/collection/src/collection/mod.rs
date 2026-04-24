@@ -31,11 +31,10 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
-
 use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::{
     CollectionSizeAtomicStats, CollectionSizeStats, CollectionSizeStatsCache,
 };
@@ -156,7 +155,9 @@ impl Collection {
                 payload_index_schema.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
-                search_runtime.clone().unwrap_or_else(AdaptiveSearchHandle::current),
+                search_runtime
+                    .clone()
+                    .unwrap_or_else(AdaptiveSearchHandle::current),
                 optimizer_resource_budget.clone(),
                 None,
             )
@@ -281,7 +282,9 @@ impl Collection {
                 abort_shard_transfer.clone(),
                 this_peer_id,
                 update_runtime.clone().unwrap_or_else(Handle::current),
-                search_runtime.clone().unwrap_or_else(AdaptiveSearchHandle::current),
+                search_runtime
+                    .clone()
+                    .unwrap_or_else(AdaptiveSearchHandle::current),
                 optimizer_resource_budget.clone(),
             )
             .await;

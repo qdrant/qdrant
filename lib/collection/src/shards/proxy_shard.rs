@@ -20,12 +20,12 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::operations::OperationWithClockTag;
 use crate::operations::operation_effect::{

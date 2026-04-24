@@ -6,10 +6,10 @@ use segment::types::ScoredPoint;
 use shard::common::stopping_guard::StoppingGuard;
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 // Chunk requests for parallelism in certain scenarios

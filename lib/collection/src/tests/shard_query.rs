@@ -9,9 +9,9 @@ use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use shard::query::query_enum::QueryEnum;
 use tempfile::Builder;
 use tokio::runtime::Handle;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::RwLock;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::CollectionError;
 use crate::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,

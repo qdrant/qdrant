@@ -39,7 +39,6 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tonic::Status;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
@@ -50,6 +49,7 @@ use super::conversions::{
     internal_update_vectors,
 };
 use super::local_shard::clock_map::RecoveryPoint;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};

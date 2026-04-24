@@ -12,9 +12,9 @@ use shard::operations::point_ops::{
 };
 use tempfile::Builder;
 use tokio::runtime::Handle;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::RwLock;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::PointRequestInternal;
 use crate::shards::local_shard::LocalShard;

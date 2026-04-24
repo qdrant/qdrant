@@ -9,8 +9,9 @@
 //! Currently only Linux is supported (via `/proc/self/stat`); other
 //! platforms return `None`.
 
-use parking_lot::Mutex;
 use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
 
 /// Sampling window: how often we query the OS for process CPU time.
 /// Also doubles as the averaging window for the returned value.

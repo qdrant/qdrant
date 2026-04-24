@@ -14,11 +14,11 @@ use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use shard::query::planned_query::RescoreStages;
 use shard::search::CoreSearchRequestBatch;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 
 use super::LocalShard;
 use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, QueryScrollRequestInternal, ScrollOrder,
 };

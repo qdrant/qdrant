@@ -11,12 +11,12 @@ use itertools::{Itertools, process_results};
 use segment::data_types::facets::{FacetParams, FacetValue, FacetValueHit};
 use segment::types::{Condition, FieldCondition, Filter, Match};
 use shard::common::stopping_guard::StoppingGuard;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 impl LocalShard {

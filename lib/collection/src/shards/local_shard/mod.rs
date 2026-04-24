@@ -58,7 +58,6 @@ use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperation
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
 use tokio_util::task::AbortOnDropHandle;
@@ -72,6 +71,7 @@ use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentH
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::file_utils::{move_dir, move_file};
 use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::config::CollectionConfigInternal;

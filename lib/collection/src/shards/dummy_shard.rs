@@ -15,8 +15,8 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,

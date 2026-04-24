@@ -20,7 +20,6 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
@@ -28,6 +27,7 @@ use super::transfer::driver::MAX_RETRY_COUNT;
 use super::transfer::transfer_tasks_pool::TransferTaskProgress;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::operations::OperationWithClockTag;
 use crate::operations::point_ops::WriteOrdering;

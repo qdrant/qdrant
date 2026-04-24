@@ -7,9 +7,9 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use strum::IntoEnumIterator;
 use tempfile::Builder;
 use tokio::runtime::Handle;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::RwLock;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::CollectionError;
 use crate::shards::local_shard::LocalShard;
 use crate::tests::fixtures::*;

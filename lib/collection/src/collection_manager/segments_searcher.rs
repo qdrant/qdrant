@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DeferredBehavior, ScoreType};
@@ -31,6 +30,7 @@ use tokio_util::task::AbortOnDropHandle;
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 

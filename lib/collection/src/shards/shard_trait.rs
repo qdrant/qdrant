@@ -10,8 +10,8 @@ use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::*;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};

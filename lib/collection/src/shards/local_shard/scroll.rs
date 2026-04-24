@@ -17,12 +17,12 @@ use segment::types::{
 };
 use shard::common::stopping_guard::StoppingGuard;
 use shard::retrieve::record_internal::RecordInternal;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{
     CollectionError, CollectionResult, QueryScrollRequestInternal, ScrollOrder,
 };

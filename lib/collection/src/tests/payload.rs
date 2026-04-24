@@ -12,10 +12,10 @@ use segment::types::{
 };
 use tempfile::Builder;
 use tokio::runtime::Handle;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::RwLock;
 
 use crate::collection::payload_index_schema::{self, PayloadIndexSchema};
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};

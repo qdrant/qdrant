@@ -13,12 +13,12 @@ use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
-use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio::time::error::Elapsed;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
