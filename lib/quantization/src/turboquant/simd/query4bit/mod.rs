@@ -1,28 +1,30 @@
-// # Encoding strategy (arch-specific)
-//
-// Both architectures share the same storage layout for `query_data`
-// (`Vec<[[i8; 16]; 2]>`) and the same `dot_raw` → float reconstruction formula
-// (`postprocess_scale · (dot_raw − bias_correction)`), but the numerical
-// encoding of the codebook and query differs to squeeze the most precision out
-// of each SIMD instruction set:
-//
-// * **aarch64** — `vmull_s8` and `sdot` are true `i8 × i8 → i16/i32` signed
-//   multiplies, so we can store the full `i8 ∈ [−127, 127]` codebook directly
-//   with no offset.  Query halves are full `i8 ∈ [−128, 127]` combined as
-//   `q_signed = 256 · high + low`, giving ~15.9-bit query precision.  The
-//   reconstruction needs no bias correction.
-//
-// * **x86_64** — `_mm_maddubs_epi16` and `VPDPBUSD` consume one `u8` and one
-//   `i8` operand.  To carry full 8-bit codebook magnitude we feed it unsigned
-//   `c_u ∈ [0, 255]` (shifted from signed by `+128`) and keep the query halves
-//   narrower to stay under i16 pair-sum saturation:
-//     c_u ≤ 255, q ∈ [−64, 63] → |pair| ≤ 2·255·64 = 32 640 < 32 767 ✓
-//   Query halves are 7-bit signed combined as `q_signed = 128 · high + low`,
-//   giving ~13.9-bit query precision.  The shift contributes a per-query
-//   bias `128 · Σ q_signed` that we subtract once in `dotprod`.
-//
-// Both codebooks derive from `CENTROIDS_4BIT` (Lloyd-Max on N(0,1)); see
-// `test_codebook_matches_lloyd_max` for the consistency check.
+//! 4-bit product-quantization scoring.
+//!
+//! # Encoding strategy (arch-specific)
+//!
+//! Both architectures share the same storage layout for `query_data`
+//! (`Vec<[[i8; 16]; 2]>`) and the same `dot_raw` → float reconstruction formula
+//! (`postprocess_scale · (dot_raw − bias_correction)`), but the numerical
+//! encoding of the codebook and query differs to squeeze the most precision out
+//! of each SIMD instruction set:
+//!
+//! * **aarch64** — `vmull_s8` and `sdot` are true `i8 × i8 → i16/i32` signed
+//!   multiplies, so we can store the full `i8 ∈ [−127, 127]` codebook directly
+//!   with no offset.  Query halves are full `i8 ∈ [−128, 127]` combined as
+//!   `q_signed = 256 · high + low`, giving ~15.9-bit query precision.  The
+//!   reconstruction needs no bias correction.
+//!
+//! * **x86_64** — `_mm_maddubs_epi16` and `VPDPBUSD` consume one `u8` and one
+//!   `i8` operand.  To carry full 8-bit codebook magnitude we feed it unsigned
+//!   `c_u ∈ [0, 255]` (shifted from signed by `+128`) and keep the query halves
+//!   narrower to stay under i16 pair-sum saturation:
+//!     c_u ≤ 255, q ∈ [−64, 63] → |pair| ≤ 2·255·64 = 32 640 < 32 767 ✓
+//!   Query halves are 7-bit signed combined as `q_signed = 128 · high + low`,
+//!   giving ~13.9-bit query precision.  The shift contributes a per-query
+//!   bias `128 · Σ q_signed` that we subtract once in `dotprod`.
+//!
+//! Both codebooks derive from `CENTROIDS_4BIT` (Lloyd-Max on N(0,1)); see
+//! `test_codebook_matches_lloyd_max` for the consistency check.
 
 /// `max|c|` over `CENTROIDS_4BIT` — the extreme centroid.  Shared by both archs.
 const CODEBOOK_ABS_MAX: f32 = 2.733;
@@ -134,9 +136,24 @@ fn codebook_signed_i64(idx: u8) -> i64 {
     codebook_value_i64(idx) - CODEBOOK_OFFSET
 }
 
+/// Encoded query for asymmetric 4-bit PQ scoring.
+///
+/// # Encoding
+/// The f32 query is quantized to signed integers
+/// `q_signed ∈ [−QUERY_ABS_MAX, QUERY_ABS_MAX]` and split into two i8 halves
+/// combined as `q_signed = QUERY_HIGH_COEF · high + low` — see the module-level
+/// docs for the per-arch values of `QUERY_HIGH_COEF` (256 on aarch64, 128 on
+/// x86_64) and the reasoning behind the split.  Storage is 16-dim chunks of
+/// `[low, high]` plus a scalar-handled tail of up to 14 dims (`dim % 2 == 0`).
+/// A matryoshka-trimmed model at any even dim fits without re-encoding.
+///
+/// # Scoring
+/// `dotprod_raw = Σ_j q_signed[j] · c_raw[v[j]]`.  The float result is
+/// `postprocess_scale · (dot_raw − bias_correction)`, where `bias_correction`
+/// absorbs the `+OFFSET` shift in the x86 unsigned-codebook layout and is 0
+/// on aarch64 (signed codebook, no shift).
 pub struct Query4bitSimd {
-    /// Full 16-dim chunks of the query, each stored as `[low, high]` i8 halves
-    /// (see the struct-level docs for the encoding scheme).
+    /// Full 16-dim chunks of the query, each stored as `[low, high]` i8 halves.
     query_data: Vec<[[i8; 16]; 2]>,
     /// Trailing dims that don't fill a 16-dim chunk — up to 14 (since
     /// `dim % 2 == 0`).  Arrays are sized to a full 16-lane SIMD register
@@ -228,6 +245,13 @@ impl Query4bitSimd {
         }
     }
 
+    /// Score the encoded query against a 4-bit PQ-encoded `vector`
+    /// (two centroid indices per byte; low nibble = even lane, high nibble
+    /// = odd lane).  `vector.len()` must equal `ceil(dim / 2)` — full chunks
+    /// first, then the tail bytes covering `tail_dims`.
+    ///
+    /// Dispatches at runtime to the best SIMD backend available on the host
+    /// CPU (AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar).
     pub fn dotprod(&self, vector: &[u8]) -> f32 {
         // No per-vector correction loop: `bias_correction` was baked in at `new()`.
         let dot_raw = self.dotprod_raw_best(vector);

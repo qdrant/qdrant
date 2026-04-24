@@ -1,11 +1,20 @@
 //! 1-bit product-quantization scoring.
 //!
 //! The 1-bit codebook is `[-c, +c]` (see `CENTROIDS_1BIT`), so each code is a
-//! single sign bit.  Input vectors pack 8 lanes per byte.  Vector-vs-vector
-//! scoring collapses to `c² · (n_match − n_mismatch)` which is a plain
-//! `XOR + popcount`, so the only per-arch machinery is picking the fastest
-//! popcount primitive available.  The query-scoring variant
-//! ([`Query1bitSimd`]) is still a stub.
+//! single sign bit.  Input vectors pack 8 lanes per byte.
+//!
+//! Two scoring paths live here:
+//!
+//! * [`score_1bit_internal`] — dot between two packed vectors.  Collapses to
+//!   `c² · (n_match − n_mismatch)`, a plain `XOR + popcount`, so the per-arch
+//!   work is just picking the fastest popcount primitive (AVX-512 VPOPCNTDQ,
+//!   AVX2 / SSE `pshufb`-nibble lookup, NEON `vcntq_u8`).
+//!
+//! * [`Query1bitSimd<BITS>`] — asymmetric scoring of an original query against
+//!   packed data.  The query is quantized to `BITS`-bit signed integers
+//!   (default 8), bit-plane-transposed into a block-interleaved layout, and
+//!   scored per block as `Σ_b w_b · popcount(data AND plane_b)` where
+//!   `w_b = 2^b` for b < BITS−1 and `−2^(BITS−1)` for the sign plane.
 
 /// `|c|` for the 1-bit codebook — Lloyd-Max on N(0, 1) gives `sqrt(2/π)`.
 /// Kept in sync with `CENTROIDS_1BIT` in `lloyd_max.rs` by a test below.
@@ -181,12 +190,8 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
             let data_block = &vector[block_idx * BLOCK_BYTES..(block_idx + 1) * BLOCK_BYTES];
             v_dot_q += self.score_block_scalar(data_block, block_idx);
         }
-        if self.tail_bytes > 0 {
-            let mut buf = [0u8; BLOCK_BYTES];
-            let tail_start = self.num_full_blocks * BLOCK_BYTES;
-            let tail_len = self.tail_bytes as usize;
-            buf[..tail_len].copy_from_slice(&vector[tail_start..tail_start + tail_len]);
-            v_dot_q += self.score_block_scalar(&buf, self.num_full_blocks);
+        if let Some((buf, block_idx)) = self.tail_block_scratch(vector) {
+            v_dot_q += self.score_block_scalar(&buf, block_idx);
         }
         v_dot_q
     }
@@ -321,6 +326,8 @@ pub(super) mod shared {
     pub const PARITY_BYTE_LENS: &[usize] = &[1, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 257, 513];
 }
 
+/// Accuracy / precision tests for `score_1bit_internal` and `Query1bitSimd`.
+/// Per-arch SIMD parity tests live in the `arm` / `x64` submodules.
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng as _;

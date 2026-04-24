@@ -1,8 +1,23 @@
 //! SIMD query-encoding + dot-product routines, one submodule per bit-width.
 //!
-//! 4-bit is the only bit-width with a full SIMD path today.  Lower bit-widths
-//! (1, 2) will land alongside in their own submodules — see `lloyd_max` for
-//! the corresponding codebooks.
+//! Every `query{N}bit` submodule exposes two public entry points:
+//!
+//! * [`Query{N}bitSimd`](query4bit::Query4bitSimd) — a rotation-applied query
+//!   precomputed for fast asymmetric scoring (original-query × PQ-vector).
+//!   `dotprod(vector)` dispatches at runtime to the best SIMD backend available
+//!   on the host CPU.
+//! * [`score_{N}bit_internal`](query4bit::score_4bit_internal) — dot product of
+//!   two already-encoded PQ vectors (symmetric scoring), same runtime dispatch.
+//!
+//! Available SIMD backends per bit-width:
+//!
+//! | Bits | x86_64                                        | aarch64              |
+//! |------|-----------------------------------------------|----------------------|
+//! |  1   | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3         | NEON                 |
+//! |  2   | AVX-512 VNNI, AVX2, SSE4.1+SSSE3              | NEON + SDOT, NEON    |
+//! |  4   | AVX-512 VNNI, AVX2, SSE4.1+SSSE3              | NEON + SDOT, NEON    |
+//!
+//! On any other target the scalar reference kernels in each module take over.
 
 pub mod query1bit;
 pub mod query2bit;
@@ -60,6 +75,12 @@ mod shared {
     }
 }
 
+// Re-exports below include the runtime-dispatching entry points used by the
+// crate's scoring paths (`Query{N}bitSimd`, `score_{N}bit_internal`) plus
+// scalar-reference and arch-specific kernels the benchmarks at
+// `benches/turbo_simd.rs` target directly.  Every symbol here is consumed
+// either by `turboquant::quantization` inside the crate or by benches/
+// outside — narrowing them to `pub(crate)` would break the bench build.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub use query1bit::score_1bit_internal_neon;
 pub use query1bit::{Query1bitSimd, score_1bit_internal, score_1bit_internal_scalar};

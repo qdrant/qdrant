@@ -100,9 +100,24 @@ fn codebook_signed_i64(idx: u8) -> i64 {
     codebook_value_i64(idx) - CODEBOOK_OFFSET
 }
 
+/// Encoded query for asymmetric 2-bit PQ scoring.
+///
+/// # Encoding
+/// The f32 query is quantized to signed integers
+/// `q_signed ∈ [−QUERY_ABS_MAX, QUERY_ABS_MAX]` and split into two i8 halves
+/// combined as `q_signed = QUERY_HIGH_COEF · high + low` (`K = 256` on
+/// aarch64 for full-range i8 halves, `K = 128` on x86_64 to keep the x86
+/// `maddubs` pair sum inside i16).  Storage is 16-dim chunks of `[low, high]`
+/// plus a scalar-handled tail of up to 12 dims (`dim % 4 == 0`).
+///
+/// # Scoring
+/// `dotprod_raw = Σ_j q_signed[j] · c_raw[v[j]]` accumulated from the SIMD
+/// kernel's chunk pass plus the scalar tail.  The float result is
+/// `postprocess_scale · (dot_raw − bias_correction)`, where `bias_correction`
+/// absorbs the `+OFFSET` shift in the x86 unsigned-codebook layout and is 0
+/// on aarch64 (signed codebook, no shift).
 pub struct Query2bitSimd {
-    /// Full 16-dim chunks of the query.  See struct-level docs for the
-    /// encoding scheme.  Each chunk covers 16 dims → 4 packed data bytes.
+    /// Full 16-dim chunks of the query — each covers 16 dims → 4 packed data bytes.
     query_data: Vec<[[i8; 16]; 2]>,
     /// Trailing dims that didn't fill a 16-dim chunk — up to 12 (since
     /// `dim % 4 == 0`: tail is one of 0, 4, 8, 12 dims).
@@ -110,7 +125,10 @@ pub struct Query2bitSimd {
     tail_high: [i8; 12],
     /// Number of meaningful entries in the tail arrays (`0..=12`, multiple of 4).
     tail_dims: u8,
+    /// `1 / (q_scale · c_scale)` — prefactor from integer to float dot product.
     postprocess_scale: f32,
+    /// `CODEBOOK_OFFSET · Σ q_signed[j]` — subtracted from `dot_raw` to
+    /// recover the true signed dot.  `0` on aarch64 (signed codebook).
     bias_correction: i64,
 }
 
@@ -184,6 +202,13 @@ impl Query2bitSimd {
         }
     }
 
+    /// Score the encoded query against a 2-bit PQ-encoded `vector`
+    /// (four centroid indices per byte; bits `[2k..2k+2]` hold the code for
+    /// lane `k ∈ 0..=3`).  `vector.len()` must equal `ceil(dim * 2 / 8)` —
+    /// full chunks first, then the tail bytes covering `tail_dims`.
+    ///
+    /// Dispatches at runtime to the best SIMD backend available on the host
+    /// CPU (AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar).
     pub fn dotprod(&self, vector: &[u8]) -> f32 {
         let dot_raw = self.dotprod_raw_best(vector);
         self.postprocess_scale * (dot_raw - self.bias_correction) as f32
