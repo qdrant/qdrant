@@ -238,20 +238,23 @@ mod tests {
     /// produce in-range centroid indices rather than panicking or wrapping.
     #[test]
     fn quantize_extreme_values() {
-        let dim = 128;
-        let mut buf = vec![0.0f64; dim];
+        for &dim in &[127, 128, 513] {
+            for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+                let tq = make_tq(dim, bits, DistanceType::Cosine);
+                let mut buf = vec![0.0f64; tq.padded_dim];
+                let n_centroids = 1u8 << bits.bit_size();
 
-        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-            let tq = make_tq(dim, bits, DistanceType::Cosine);
-            let n_centroids = 1u8 << bits.bit_size();
+                for &val in &[1000.0f32, -1000.0, f32::MAX / 2.0, f32::MIN / 2.0] {
+                    let vec = vec![val; dim];
+                    let result = tq.quantize(&vec, &mut buf);
 
-            for &val in &[1000.0f32, -1000.0, f32::MAX / 2.0, f32::MIN / 2.0] {
-                let vec = vec![val; dim];
-                let result = tq.quantize(&vec, &mut buf);
-
-                let indices = unpack_indices(&result, dim, bits);
-                for &idx in &indices {
-                    assert!(idx < n_centroids, "index {idx} out of range for {bits:?}");
+                    let indices = unpack_indices(&result, dim, bits);
+                    for &idx in &indices {
+                        assert!(
+                            idx < n_centroids,
+                            "dim={dim}, index {idx} out of range for {bits:?}"
+                        );
+                    }
                 }
             }
         }
@@ -289,7 +292,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(123);
 
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-            for &dim in &[128, 300, 768] {
+            for &dim in &[127, 128, 300, 513, 768] {
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let mut buf = vec![0.0f64; tq.padded_dim];
                 let vec: Vec<f32> = (0..dim).map(|_| rng.random_range(-2.0..2.0)).collect();
@@ -313,9 +316,9 @@ mod tests {
             let middle_low = n_centroids / 2 - 1;
             let middle_high = n_centroids / 2;
 
-            for &dim in &[128, 256, 512] {
-                let mut buf = vec![0.0f64; dim];
+            for &dim in &[127, 128, 256, 512, 513] {
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
+                let mut buf = vec![0.0f64; tq.padded_dim];
                 let vec = vec![0.0; dim];
                 let result = tq.quantize(&vec, &mut buf);
                 let indices = unpack_indices(&result, dim, bits);
@@ -410,13 +413,13 @@ mod tests {
     /// of the true dot/cosine similarity across a range of pair similarities.
     #[test]
     fn score_approximates_true_similarity() {
-        for dim in [128, 300, 512, 1000, 1024, 2000, 4000] {
+        for dim in [127, 128, 300, 512, 513, 1000, 1024, 1025, 2000, 4000] {
             let bits = TQBits::Bits4;
             let mut rng = StdRng::seed_from_u64(42);
 
             for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
                 let tq = make_tq(dim, bits, distance);
-                let mut buf = vec![0.0f64; dim];
+                let mut buf = vec![0.0f64; tq.padded_dim];
 
                 for &similarity in &[0.2f32, 0.5, 0.8] {
                     let (a_raw, b_raw) =
@@ -466,12 +469,12 @@ mod tests {
     fn score_self_similarity() {
         let bits = TQBits::Bits4;
 
-        for dim in [128, 300, 512, 1024, 2000] {
+        for dim in [127, 128, 300, 512, 513, 1024, 1025, 2000] {
             let mut rng = StdRng::seed_from_u64(42);
 
             for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
                 let tq = make_tq(dim, bits, distance);
-                let mut buf = vec![0.0f64; dim];
+                let mut buf = vec![0.0f64; tq.padded_dim];
 
                 let raw = random_vector(dim, &mut rng);
                 let v = match distance {
@@ -510,12 +513,12 @@ mod tests {
     fn score_antipodal_is_negative() {
         let bits = TQBits::Bits4;
 
-        for dim in [128, 300, 512, 1024, 2000] {
+        for dim in [127, 128, 300, 512, 513, 1024, 1025, 2000] {
             let mut rng = StdRng::seed_from_u64(42);
 
             for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
                 let tq = make_tq(dim, bits, distance);
-                let mut buf = vec![0.0f64; dim];
+                let mut buf = vec![0.0f64; tq.padded_dim];
 
                 let raw = random_vector(dim, &mut rng);
                 let v = match distance {
@@ -554,43 +557,44 @@ mod tests {
     /// MAE(Bits4) ≤ MAE(Bits2) ≤ MAE(Bits1) across a batch of random pairs.
     #[test]
     fn higher_bits_reduce_error() {
-        let dim = 512;
         let n_pairs = 32;
 
-        for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
-            let mae = |bits: TQBits| -> f32 {
-                let mut rng = StdRng::seed_from_u64(42);
-                let tq = make_tq(dim, bits, distance);
-                let mut buf = vec![0.0f64; dim];
+        for dim in [512, 513] {
+            for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
+                let mae = |bits: TQBits| -> f32 {
+                    let mut rng = StdRng::seed_from_u64(42);
+                    let tq = make_tq(dim, bits, distance);
+                    let mut buf = vec![0.0f64; tq.padded_dim];
 
-                let total: f32 = (0..n_pairs)
-                    .map(|_| {
-                        let (a_raw, b_raw) =
-                            generate_random_vector_pair_with_similarity(dim, 0.5, &mut rng);
-                        let (a, b) = match distance {
-                            DistanceType::Cosine => {
-                                (normalize_vector(&a_raw), normalize_vector(&b_raw))
-                            }
-                            _ => (a_raw, b_raw),
-                        };
-                        let truth = dot_f32_impl(a.iter().copied(), b.iter().copied());
-                        let a_q = tq.quantize(&a, &mut buf);
-                        let b_q = tq.quantize(&b, &mut buf);
-                        (tq.score_symmetric(&a_q, &b_q) - truth).abs()
-                    })
-                    .sum();
-                total / n_pairs as f32
-            };
+                    let total: f32 = (0..n_pairs)
+                        .map(|_| {
+                            let (a_raw, b_raw) =
+                                generate_random_vector_pair_with_similarity(dim, 0.5, &mut rng);
+                            let (a, b) = match distance {
+                                DistanceType::Cosine => {
+                                    (normalize_vector(&a_raw), normalize_vector(&b_raw))
+                                }
+                                _ => (a_raw, b_raw),
+                            };
+                            let truth = dot_f32_impl(a.iter().copied(), b.iter().copied());
+                            let a_q = tq.quantize(&a, &mut buf);
+                            let b_q = tq.quantize(&b, &mut buf);
+                            (tq.score_symmetric(&a_q, &b_q) - truth).abs()
+                        })
+                        .sum();
+                    total / n_pairs as f32
+                };
 
-            let mae_1 = mae(TQBits::Bits1);
-            let mae_2 = mae(TQBits::Bits2);
-            let mae_4 = mae(TQBits::Bits4);
+                let mae_1 = mae(TQBits::Bits1);
+                let mae_2 = mae(TQBits::Bits2);
+                let mae_4 = mae(TQBits::Bits4);
 
-            assert!(
-                mae_4 <= mae_2 && mae_2 <= mae_1,
-                "distance={distance:?}: MAE not monotonic in bits — \
-                 Bits1={mae_1}, Bits2={mae_2}, Bits4={mae_4}"
-            );
+                assert!(
+                    mae_4 <= mae_2 && mae_2 <= mae_1,
+                    "dim={dim}, distance={distance:?}: MAE not monotonic in bits — \
+                     Bits1={mae_1}, Bits2={mae_2}, Bits4={mae_4}"
+                );
+            }
         }
     }
 
@@ -598,32 +602,33 @@ mod tests {
     /// results — not NaN or ±Inf — on both symmetric and asymmetric paths.
     #[test]
     fn score_extreme_magnitudes_finite() {
-        let dim = 128;
         let bits = TQBits::Bits4;
-        let mut buf = vec![0.0f64; dim];
 
-        for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
-            let tq = make_tq(dim, bits, distance);
+        for dim in [127, 128, 513] {
+            for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
+                let tq = make_tq(dim, bits, distance);
+                let mut buf = vec![0.0f64; tq.padded_dim];
 
-            for &val in &[1000.0f32, -1000.0, 1e6, -1e6] {
-                let raw = vec![val; dim];
-                let v = match distance {
-                    DistanceType::Cosine => normalize_vector(&raw),
-                    _ => raw,
-                };
+                for &val in &[1000.0f32, -1000.0, 1e6, -1e6] {
+                    let raw = vec![val; dim];
+                    let v = match distance {
+                        DistanceType::Cosine => normalize_vector(&raw),
+                        _ => raw,
+                    };
 
-                let v_q = tq.quantize(&v, &mut buf);
-                let sym = tq.score_symmetric(&v_q, &v_q);
-                let asym = asymmetric_score_helper(&tq, &v, &v_q);
+                    let v_q = tq.quantize(&v, &mut buf);
+                    let sym = tq.score_symmetric(&v_q, &v_q);
+                    let asym = asymmetric_score_helper(&tq, &v, &v_q);
 
-                assert!(
-                    sym.is_finite(),
-                    "symmetric: distance={distance:?}, val={val}: got {sym}"
-                );
-                assert!(
-                    asym.is_finite(),
-                    "asymmetric: distance={distance:?}, val={val}: got {asym}"
-                );
+                    assert!(
+                        sym.is_finite(),
+                        "symmetric: dim={dim}, distance={distance:?}, val={val}: got {sym}"
+                    );
+                    assert!(
+                        asym.is_finite(),
+                        "asymmetric: dim={dim}, distance={distance:?}, val={val}: got {asym}"
+                    );
+                }
             }
         }
     }
@@ -633,69 +638,70 @@ mod tests {
     /// pairwise comparisons.
     #[test]
     fn rank_preservation() {
-        let dim = 512;
         let bits = TQBits::Bits4;
-        let mut buf = vec![0.0f64; dim];
 
-        for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
-            let mut rng = StdRng::seed_from_u64(42);
-            let tq = make_tq(dim, bits, distance);
+        for dim in [512, 513] {
+            for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
+                let mut rng = StdRng::seed_from_u64(42);
+                let tq = make_tq(dim, bits, distance);
+                let mut buf = vec![0.0f64; tq.padded_dim];
 
-            let query_raw = random_vector(dim, &mut rng);
-            let similarities: Vec<f32> = (1..=10).map(|i| i as f32 / 10.0).collect();
-            let candidates_raw: Vec<Vec<f32>> = similarities
-                .iter()
-                .map(|&s| {
-                    let noise = random_vector(dim, &mut rng);
-                    query_raw
-                        .iter()
-                        .zip(&noise)
-                        .map(|(&q, &n)| s * q + (1.0 - s) * n)
-                        .collect()
-                })
-                .collect();
+                let query_raw = random_vector(dim, &mut rng);
+                let similarities: Vec<f32> = (1..=10).map(|i| i as f32 / 10.0).collect();
+                let candidates_raw: Vec<Vec<f32>> = similarities
+                    .iter()
+                    .map(|&s| {
+                        let noise = random_vector(dim, &mut rng);
+                        query_raw
+                            .iter()
+                            .zip(&noise)
+                            .map(|(&q, &n)| s * q + (1.0 - s) * n)
+                            .collect()
+                    })
+                    .collect();
 
-            let query = match distance {
-                DistanceType::Cosine => normalize_vector(&query_raw),
-                _ => query_raw,
-            };
-            let candidates: Vec<Vec<f32>> = candidates_raw
-                .iter()
-                .map(|c| match distance {
-                    DistanceType::Cosine => normalize_vector(c),
-                    _ => c.clone(),
-                })
-                .collect();
+                let query = match distance {
+                    DistanceType::Cosine => normalize_vector(&query_raw),
+                    _ => query_raw,
+                };
+                let candidates: Vec<Vec<f32>> = candidates_raw
+                    .iter()
+                    .map(|c| match distance {
+                        DistanceType::Cosine => normalize_vector(c),
+                        _ => c.clone(),
+                    })
+                    .collect();
 
-            let true_scores: Vec<f32> = candidates
-                .iter()
-                .map(|c| dot_f32_impl(query.iter().copied(), c.iter().copied()))
-                .collect();
-            let quant_scores: Vec<f32> = candidates
-                .iter()
-                .map(|c| {
-                    let cq = tq.quantize(c, &mut buf);
-                    asymmetric_score_helper(&tq, &query, &cq)
-                })
-                .collect();
+                let true_scores: Vec<f32> = candidates
+                    .iter()
+                    .map(|c| dot_f32_impl(query.iter().copied(), c.iter().copied()))
+                    .collect();
+                let quant_scores: Vec<f32> = candidates
+                    .iter()
+                    .map(|c| {
+                        let cq = tq.quantize(c, &mut buf);
+                        asymmetric_score_helper(&tq, &query, &cq)
+                    })
+                    .collect();
 
-            let n = candidates.len();
-            let mut inversions = 0;
-            for i in 0..n {
-                for j in (i + 1)..n {
-                    let true_sign = (true_scores[i] - true_scores[j]).signum();
-                    let quant_sign = (quant_scores[i] - quant_scores[j]).signum();
-                    if true_sign != 0.0 && true_sign != quant_sign {
-                        inversions += 1;
+                let n = candidates.len();
+                let mut inversions = 0;
+                for i in 0..n {
+                    for j in (i + 1)..n {
+                        let true_sign = (true_scores[i] - true_scores[j]).signum();
+                        let quant_sign = (quant_scores[i] - quant_scores[j]).signum();
+                        if true_sign != 0.0 && true_sign != quant_sign {
+                            inversions += 1;
+                        }
                     }
                 }
-            }
-            let total_pairs = n * (n - 1) / 2;
+                let total_pairs = n * (n - 1) / 2;
 
-            assert!(
-                inversions * 100 < 15 * total_pairs,
-                "distance={distance:?}: {inversions}/{total_pairs} pairs inverted"
-            );
+                assert!(
+                    inversions * 100 < 15 * total_pairs,
+                    "dim={dim}, distance={distance:?}: {inversions}/{total_pairs} pairs inverted"
+                );
+            }
         }
     }
 
@@ -705,39 +711,41 @@ mod tests {
     /// (Cosine's contract requires unit-norm inputs, so scaling is out-of-scope.)
     #[test]
     fn score_linearity_dot() {
-        let dim = 512;
         let bits = TQBits::Bits4;
-        let mut rng = StdRng::seed_from_u64(42);
-        let tq = make_tq(dim, bits, DistanceType::Dot);
-        let mut buf = vec![0.0f64; dim];
 
-        let (q, v) = generate_random_vector_pair_with_similarity(dim, 0.5, &mut rng);
-        let true_dot = dot_f32_impl(q.iter().copied(), v.iter().copied());
+        for dim in [512, 513] {
+            let mut rng = StdRng::seed_from_u64(42);
+            let tq = make_tq(dim, bits, DistanceType::Dot);
+            let mut buf = vec![0.0f64; tq.padded_dim];
 
-        for &k in &[0.5f32, 2.0, 5.0] {
-            let q_scaled: Vec<f32> = q.iter().map(|&x| x * k).collect();
-            let v_scaled: Vec<f32> = v.iter().map(|&x| x * k).collect();
+            let (q, v) = generate_random_vector_pair_with_similarity(dim, 0.5, &mut rng);
+            let true_dot = dot_f32_impl(q.iter().copied(), v.iter().copied());
 
-            let q_scaled_q = tq.quantize(&q_scaled, &mut buf);
-            let v_scaled_q = tq.quantize(&v_scaled, &mut buf);
+            for &k in &[0.5f32, 2.0, 5.0] {
+                let q_scaled: Vec<f32> = q.iter().map(|&x| x * k).collect();
+                let v_scaled: Vec<f32> = v.iter().map(|&x| x * k).collect();
 
-            let expected_asym = k * true_dot;
-            let expected_sym = k * k * true_dot;
+                let q_scaled_q = tq.quantize(&q_scaled, &mut buf);
+                let v_scaled_q = tq.quantize(&v_scaled, &mut buf);
 
-            let asym = asymmetric_score_helper(&tq, &q, &v_scaled_q);
-            let sym = tq.score_symmetric(&q_scaled_q, &v_scaled_q);
+                let expected_asym = k * true_dot;
+                let expected_sym = k * k * true_dot;
 
-            let tol_asym = 0.05 * (l2_norm(&q) * l2_norm(&v_scaled)) as f32;
-            let tol_sym = 0.05 * (l2_norm(&q_scaled) * l2_norm(&v_scaled)) as f32;
+                let asym = asymmetric_score_helper(&tq, &q, &v_scaled_q);
+                let sym = tq.score_symmetric(&q_scaled_q, &v_scaled_q);
 
-            assert!(
-                (asym - expected_asym).abs() < tol_asym,
-                "asymmetric: k={k}, got {asym}, expected {expected_asym} (tol {tol_asym})"
-            );
-            assert!(
-                (sym - expected_sym).abs() < tol_sym,
-                "symmetric: k={k}, got {sym}, expected {expected_sym} (tol {tol_sym})"
-            );
+                let tol_asym = 0.05 * (l2_norm(&q) * l2_norm(&v_scaled)) as f32;
+                let tol_sym = 0.05 * (l2_norm(&q_scaled) * l2_norm(&v_scaled)) as f32;
+
+                assert!(
+                    (asym - expected_asym).abs() < tol_asym,
+                    "asymmetric: dim={dim}, k={k}, got {asym}, expected {expected_asym} (tol {tol_asym})"
+                );
+                assert!(
+                    (sym - expected_sym).abs() < tol_sym,
+                    "symmetric: dim={dim}, k={k}, got {sym}, expected {expected_sym} (tol {tol_sym})"
+                );
+            }
         }
     }
 

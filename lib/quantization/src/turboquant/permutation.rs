@@ -140,18 +140,22 @@ mod tests {
 
     #[test]
     fn different_seeds_produce_different_permutations() {
-        let count = 64;
-        let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
+        for &count in &[63, 64, 65] {
+            let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
 
-        let p1 = Permutation::new(1, count);
-        let p2 = Permutation::new(2, count);
+            let p1 = Permutation::new(1, count);
+            let p2 = Permutation::new(2, count);
 
-        let mut a = original.clone();
-        let mut b = original.clone();
-        p1.permute(&mut a);
-        p2.permute(&mut b);
+            let mut a = original.clone();
+            let mut b = original.clone();
+            p1.permute(&mut a);
+            p2.permute(&mut b);
 
-        assert_ne!(a, b, "different seeds should yield different permutations");
+            assert_ne!(
+                a, b,
+                "count={count}: different seeds should yield different permutations"
+            );
+        }
     }
 
     #[test]
@@ -186,17 +190,18 @@ mod tests {
 
     #[test]
     fn permute_is_a_valid_permutation() {
-        let count = 100;
-        let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
-        let perm = Permutation::new(42, count);
+        for &count in &[99, 100, 101] {
+            let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
+            let perm = Permutation::new(42, count);
 
-        let mut arr = original.clone();
-        perm.permute(&mut arr);
+            let mut arr = original.clone();
+            perm.permute(&mut arr);
 
-        // Every element should appear exactly once.
-        let mut sorted = arr.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        assert_eq!(sorted, original);
+            // Every element should appear exactly once.
+            let mut sorted = arr.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            assert_eq!(sorted, original, "count={count}");
+        }
     }
 
     /// Regression test: with bare `% bound` on raw LCG state, the lowest bit
@@ -228,17 +233,21 @@ mod tests {
 
     #[test]
     fn deterministic_with_same_seed() {
-        let count = 100;
-        let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
+        for &count in &[99, 100, 101] {
+            let original: Vec<f64> = (0..count).map(|i| i as f64).collect();
 
-        let p1 = Permutation::new(42, count);
-        let p2 = Permutation::new(42, count);
+            let p1 = Permutation::new(42, count);
+            let p2 = Permutation::new(42, count);
 
-        let mut a = original.clone();
-        let mut b = original.clone();
-        p1.permute(&mut a);
-        p2.permute(&mut b);
+            let mut a = original.clone();
+            let mut b = original.clone();
+            p1.permute(&mut a);
+            p2.permute(&mut b);
 
-        assert_eq!(a, b, "same seed should produce identical permutations");
+            assert_eq!(
+                a, b,
+                "count={count}: same seed should produce identical permutations"
+            );
+        }
     }
 }

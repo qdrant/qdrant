@@ -178,7 +178,7 @@ mod test {
         use crate::VectorParameters;
         use crate::vector_stats::VectorStats;
 
-        for dim in [100, 300, 384, 512, 1024, 1586] {
+        for dim in [100, 101, 300, 384, 512, 1024, 1025, 1586] {
             let n_vectors = 200;
             let rot = HadamardRotation::new(dim);
 

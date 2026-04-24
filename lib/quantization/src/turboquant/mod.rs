@@ -108,7 +108,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
-        let dim = vector_parameters.dim;
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
         let metadata = Metadata {
