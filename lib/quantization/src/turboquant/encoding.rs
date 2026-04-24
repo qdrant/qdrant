@@ -108,7 +108,7 @@ impl TurboQuantizer {
     pub(crate) fn padded_dim(dim: usize, bits: TQBits) -> usize {
         match bits {
             TQBits::Bits1 => dim.next_multiple_of(8), // 8 elements per byte
-            TQBits::Bits1_5 => (dim * 3 / 2).next_multiple_of(8), // 8 elements per 12 bytes
+            TQBits::Bits1_5 => (dim * 3 / 2).next_multiple_of(8), // // 16 elements per 3 bytes
             TQBits::Bits2 => dim.next_multiple_of(4), // 4 elements per byte
             TQBits::Bits4 => dim.next_multiple_of(2), // 2 elements per byte
         }
