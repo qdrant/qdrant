@@ -9,12 +9,12 @@
 //! Currently only Linux is supported (via `/proc/self/stat`); other
 //! platforms return `None`.
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
 /// Sampling window: how often we query the OS for process CPU time.
 /// Also doubles as the averaging window for the returned value.
-pub const CPU_USAGE_WINDOW: Duration = Duration::from_secs(1);
+pub const CPU_USAGE_WINDOW: Duration = Duration::from_secs(5);
 
 #[cfg(target_os = "linux")]
 #[derive(Copy, Clone)]
@@ -60,7 +60,7 @@ mod linux {
     use super::*;
 
     pub(super) fn process_cpu_usage_cores() -> Option<f32> {
-        let mut guard = CACHE.lock().ok()?;
+        let mut guard = CACHE.lock();
         let now = Instant::now();
 
         if let Some(sample) = guard.last_sample
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn first_call_returns_none() {
         {
-            let mut guard = CACHE.lock().unwrap();
+            let mut guard = CACHE.lock();
             guard.last_sample = None;
             guard.last_value = None;
         }
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn returns_positive_for_busy_work() {
         {
-            let mut guard = CACHE.lock().unwrap();
+            let mut guard = CACHE.lock();
             guard.last_sample = None;
             guard.last_value = None;
         }
