@@ -12479,6 +12479,16 @@
                 "nullable": true
               }
             ]
+          },
+          "search_pool": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchThreadPoolTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12687,6 +12697,12 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0,
+            "nullable": true
+          },
+          "cpu_cores_used": {
+            "description": "Average number of CPU cores used by this process over roughly the last [`common::process_cpu_usage::CPU_USAGE_WINDOW`]. `None` on unsupported platforms.",
+            "type": "number",
+            "format": "float",
             "nullable": true
           },
           "ram_size": {
@@ -14390,6 +14406,28 @@
             "minimum": 0
           },
           "vector_io_write": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "SearchThreadPoolTelemetry": {
+        "description": "Live snapshot of the adaptive search thread pool.",
+        "type": "object",
+        "required": [
+          "available_permits",
+          "current_permits"
+        ],
+        "properties": {
+          "current_permits": {
+            "description": "Total permit budget (target thread count). Adjusted dynamically based on process CPU usage.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "available_permits": {
+            "description": "Permits currently free — not held by any running `spawn_blocking` task. `current_permits - available_permits` ≈ concurrent in-flight blocking tasks.",
             "type": "integer",
             "format": "uint",
             "minimum": 0
