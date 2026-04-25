@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 
 /// Sampling window: how often we query the OS for process CPU time.
 /// Also doubles as the averaging window for the returned value.
-pub const CPU_USAGE_WINDOW: Duration = Duration::from_secs(5);
+pub const CPU_USAGE_WINDOW: Duration = Duration::from_secs(2);
 
 #[cfg(target_os = "linux")]
 #[derive(Copy, Clone)]
