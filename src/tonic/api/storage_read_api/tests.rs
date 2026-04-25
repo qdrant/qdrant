@@ -22,9 +22,6 @@ use tempfile::TempDir;
 use tonic::Code;
 
 use super::*;
-use crate::common::helpers::{
-    create_general_purpose_runtime, create_search_runtime, create_update_runtime,
-};
 
 #[cfg(unix)]
 const OTHER_COLLECTION_NAME: &str = "other-collection";
@@ -99,9 +96,6 @@ fn create_service() -> (StorageReadService<MmapFile>, TempDir, PathBuf) {
     let toc = Arc::new(
         TableOfContent::new(
             &config,
-            create_search_runtime(1).unwrap(),
-            create_update_runtime(1).unwrap(),
-            create_general_purpose_runtime().unwrap(),
             ResourceBudget::default(),
             ChannelService::new(6333, false, None, None),
             0,

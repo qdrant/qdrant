@@ -19,7 +19,6 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements, Auth};
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::Builder;
-use tokio::runtime::Runtime;
 
 const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
 
@@ -74,22 +73,12 @@ fn test_alias_operation() {
         max_collections: None,
     };
 
-    let search_runtime = Runtime::new().unwrap();
-    let handle = search_runtime.handle().clone();
-
-    let update_runtime = Runtime::new().unwrap();
-
-    let general_runtime = Runtime::new().unwrap();
-
     let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
     let propose_operation_sender = OperationSender::new(propose_sender);
 
     let toc = Arc::new(
         TableOfContent::new(
             &config,
-            search_runtime,
-            update_runtime,
-            general_runtime,
             ResourceBudget::default(),
             ChannelService::new(6333, false, None, None),
             0,
@@ -97,6 +86,7 @@ fn test_alias_operation() {
         )
         .unwrap(),
     );
+    let handle = toc.general_runtime_handle().clone();
     let dispatcher = Dispatcher::new(toc);
 
     handle

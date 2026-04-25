@@ -200,15 +200,10 @@ impl SegmentsSearcher {
         );
         let is_stopped = is_stopped_guard.get_is_stopped().clone();
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
-        let task = AbortOnDropHandle::new(
-            search_runtime_handle
-                .spawn_blocking(move || {
-                    cpu_utilization.measure(|| {
-                        fill_query_context(query_context, segments, timeout, &is_stopped)
-                    })
-                })
-                .await,
-        )
+        let task = AbortOnDropHandle::new(search_runtime_handle.spawn_blocking(move || {
+            cpu_utilization
+                .measure(|| fill_query_context(query_context, segments, timeout, &is_stopped))
+        }))
         .await??;
         Ok(task)
     }
@@ -250,45 +245,42 @@ impl SegmentsSearcher {
                 && segments.len() > 1
                 && query_context_arc.available_point_count() > 0;
 
-            let spawn_futures = segments.into_iter().map(|segment| {
-                let query_context_arc_segment = query_context_arc.clone();
-                // update timeout
-                let timeout = timeout.saturating_sub(start.elapsed());
-                let spawn_future = runtime_handle.spawn_blocking({
-                    let (segment, batch_request) = (segment.clone(), batch_request.clone());
-                    let cpu_utilization = query_context_arc_segment
-                        .hardware_usage_accumulator()
-                        .cpu_utilization();
-                    move || {
-                        cpu_utilization.measure(|| {
-                            let segment_query_context =
-                                query_context_arc_segment.get_segment_query_context();
+            segments
+                .into_iter()
+                .map(|segment| {
+                    let query_context_arc_segment = query_context_arc.clone();
+                    // update timeout
+                    let timeout = timeout.saturating_sub(start.elapsed());
+                    let search = runtime_handle.spawn_blocking({
+                        let (segment, batch_request) = (segment.clone(), batch_request.clone());
+                        let cpu_utilization = query_context_arc_segment
+                            .hardware_usage_accumulator()
+                            .cpu_utilization();
+                        move || {
+                            cpu_utilization.measure(|| {
+                                let segment_query_context =
+                                    query_context_arc_segment.get_segment_query_context();
 
-                            search_in_segment(
-                                segment,
-                                batch_request,
-                                use_sampling,
-                                &segment_query_context,
-                                timeout,
-                            )
-                        })
-                    }
-                });
+                                search_in_segment(
+                                    segment,
+                                    batch_request,
+                                    use_sampling,
+                                    &segment_query_context,
+                                    timeout,
+                                )
+                            })
+                        }
+                    });
 
-                async move {
                     // We MUST wrap the search handle in AbortOnDropHandle to ensure that we skip
                     // all searches for futures that are already dropped. Not using this allows
                     // users to create a humongous queue of search tasks, even though the searches
                     // are already invalidated.
                     // See: <https://github.com/qdrant/qdrant/pull/7530>
-                    let search = AbortOnDropHandle::new(spawn_future.await);
-                    (segment, search)
-                }
-            });
+                    let search = AbortOnDropHandle::new(search);
 
-            futures::future::join_all(spawn_futures)
-                .await
-                .into_iter()
+                    (segment, search)
+                })
                 .unzip()
         };
 
@@ -331,22 +323,20 @@ impl SegmentsSearcher {
                     let cpu_utilization = query_context_arc_segment
                         .hardware_usage_accumulator()
                         .cpu_utilization();
-                    let handle = runtime_handle
-                        .spawn_blocking(move || {
-                            cpu_utilization.measure(|| {
-                                let segment_query_context =
-                                    query_context_arc_segment.get_segment_query_context();
+                    let handle = runtime_handle.spawn_blocking(move || {
+                        cpu_utilization.measure(|| {
+                            let segment_query_context =
+                                query_context_arc_segment.get_segment_query_context();
 
-                                search_in_segment(
-                                    segment,
-                                    partial_batch_request,
-                                    false,
-                                    &segment_query_context,
-                                    timeout,
-                                )
-                            })
+                            search_in_segment(
+                                segment,
+                                partial_batch_request,
+                                false,
+                                &segment_query_context,
+                                timeout,
+                            )
                         })
-                        .await;
+                    });
 
                     // We MUST wrap the search handle in AbortOnDropHandle to ensure that we skip
                     // all searches for futures that are already dropped. Not using this allows
@@ -404,28 +394,26 @@ impl SegmentsSearcher {
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
-        let points = runtime_handle
-            .spawn_blocking({
-                let segments = segments.clone();
-                let points = points.to_vec();
-                let with_payload = with_payload.clone();
-                let with_vector = with_vector.clone();
-                let is_stopped = stopping_guard.get_is_stopped();
-                // TODO create one Task per segment level retrieve
-                move || {
-                    retrieve_blocking(
-                        segments,
-                        &points,
-                        &with_payload,
-                        &with_vector,
-                        timeout,
-                        &is_stopped,
-                        hw_measurement_acc,
-                        deferred_behavior,
-                    )
-                }
-            })
-            .await;
+        let points = runtime_handle.spawn_blocking({
+            let segments = segments.clone();
+            let points = points.to_vec();
+            let with_payload = with_payload.clone();
+            let with_vector = with_vector.clone();
+            let is_stopped = stopping_guard.get_is_stopped();
+            // TODO create one Task per segment level retrieve
+            move || {
+                retrieve_blocking(
+                    segments,
+                    &points,
+                    &with_payload,
+                    &with_vector,
+                    timeout,
+                    &is_stopped,
+                    hw_measurement_acc,
+                    deferred_behavior,
+                )
+            }
+        });
         Ok(AbortOnDropHandle::new(points).await??)
     }
 
@@ -440,47 +428,45 @@ impl SegmentsSearcher {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
         let filter = filter.cloned();
-        let points = runtime_handle
-            .spawn_blocking(move || {
-                let is_stopped = stopping_guard.get_is_stopped();
+        let points = runtime_handle.spawn_blocking(move || {
+            let is_stopped = stopping_guard.get_is_stopped();
 
-                // Collect the segments first so we don't lock the segment holder during the operations.
-                let segments: Vec<_> = {
-                    match timeout {
-                        None => Ok(segments.read()),
-                        Some(t) => segments
-                            .try_read_for(t)
-                            .ok_or_else(|| CollectionError::timeout(t, "read_filtered")),
-                    }?
-                    .non_appendable_then_appendable_segments()
-                    .collect()
-                };
+            // Collect the segments first so we don't lock the segment holder during the operations.
+            let segments: Vec<_> = {
+                match timeout {
+                    None => Ok(segments.read()),
+                    Some(t) => segments
+                        .try_read_for(t)
+                        .ok_or_else(|| CollectionError::timeout(t, "read_filtered")),
+                }?
+                .non_appendable_then_appendable_segments()
+                .collect()
+            };
 
-                let hw_counter = hw_measurement_acc.get_counter_cell();
+            let hw_counter = hw_measurement_acc.get_counter_cell();
 
-                let work = || -> CollectionResult<_> {
-                    let all_points: BTreeSet<_> = segments
-                        .into_iter()
-                        .map(|segment| {
-                            segment.get().read().read_filtered(
-                                None,
-                                None,
-                                filter.as_ref(),
-                                &is_stopped,
-                                &hw_counter,
-                                deferred_behavior,
-                            )
-                        })
-                        .process_results(|iter| iter.flatten().collect())?;
-                    Ok(all_points)
-                };
+            let work = || -> CollectionResult<_> {
+                let all_points: BTreeSet<_> = segments
+                    .into_iter()
+                    .map(|segment| {
+                        segment.get().read().read_filtered(
+                            None,
+                            None,
+                            filter.as_ref(),
+                            &is_stopped,
+                            &hw_counter,
+                            deferred_behavior,
+                        )
+                    })
+                    .process_results(|iter| iter.flatten().collect())?;
+                Ok(all_points)
+            };
 
-                match hw_counter.cpu_utilization() {
-                    Some(cpu_util) => cpu_util.measure(work),
-                    None => work(),
-                }
-            })
-            .await;
+            match hw_counter.cpu_utilization() {
+                Some(cpu_util) => cpu_util.measure(work),
+                None => work(),
+            }
+        });
         AbortOnDropHandle::new(points).await?
     }
 
@@ -507,10 +493,10 @@ impl SegmentsSearcher {
                     .collect()
             };
 
-            let collected = FuturesUnordered::new();
-            for segment in segments {
-                let handle = runtime_handle
-                    .spawn_blocking({
+            segments
+                .into_iter()
+                .map(|segment| {
+                    let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();
                         let hw_counter = hw_measurement_acc.get_counter_cell();
                         let cpu_utilization = hw_measurement_acc.cpu_utilization();
@@ -522,11 +508,10 @@ impl SegmentsSearcher {
                                     .rescore_with_formula(arc_ctx, &hw_counter)
                             })
                         }
-                    })
-                    .await;
-                collected.push(AbortOnDropHandle::new(handle));
-            }
-            collected
+                    });
+                    AbortOnDropHandle::new(handle)
+                })
+                .collect::<FuturesUnordered<_>>()
         };
 
         let mut segments_results = Vec::with_capacity(futures.len());

@@ -56,7 +56,7 @@ fn batch_search_bench(c: &mut Criterion) {
 
     let runtime = Runtime::new().unwrap();
     let search_runtime = Runtime::new().unwrap();
-    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone(), 4);
+    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
     let handle = runtime.handle().clone();
 
     let wal_config = WalConfig {

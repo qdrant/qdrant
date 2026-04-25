@@ -14413,21 +14413,26 @@
         }
       },
       "SearchThreadPoolTelemetry": {
-        "description": "Live snapshot of the adaptive search thread pool.",
+        "description": "Live snapshot of the adaptive search routing.\n\n`mode` is the runtime currently selected by [`SearchMode`]; `high_cpu_threads` and `high_io_threads` are the blocking-thread budgets of the two underlying runtimes that the adaptive handle routes between.",
         "type": "object",
         "required": [
-          "available_permits",
-          "current_permits"
+          "high_cpu_threads",
+          "high_io_threads",
+          "mode"
         ],
         "properties": {
-          "current_permits": {
-            "description": "Total permit budget (target thread count). Adjusted dynamically based on process CPU usage.",
+          "mode": {
+            "description": "Currently active mode (`high_cpu` or `high_io`).",
+            "type": "string"
+          },
+          "high_cpu_threads": {
+            "description": "Blocking-thread count of the high-CPU runtime.",
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
-          "available_permits": {
-            "description": "Permits currently free — not held by any running `spawn_blocking` task. `current_permits - available_permits` ≈ concurrent in-flight blocking tasks.",
+          "high_io_threads": {
+            "description": "Blocking-thread count of the high-IO runtime.",
             "type": "integer",
             "format": "uint",
             "minimum": 0

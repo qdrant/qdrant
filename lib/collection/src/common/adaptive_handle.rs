@@ -1,44 +1,71 @@
-//! Adaptive wrapper around a Tokio runtime [`Handle`] for the search pool.
+//! Adaptive wrapper that routes search `spawn_blocking` calls between two
+//! pre-built Tokio runtimes — one sized for CPU-bound load (`num_cpus`
+//! blocking threads) and one for IO-bound load (`4 * num_cpus`). The choice
+//! is re-evaluated lazily on the spawn path, at most once per
+//! [`ADJUST_INTERVAL`].
 //!
-//! Limits concurrency of `spawn_blocking` calls via a semaphore whose permit
-//! count is re-evaluated lazily — before acquiring a permit in
-//! `spawn_blocking`, but at most once per [`ADJUST_INTERVAL`].
+//! - Start in [`SearchMode::HighIo`] (over-committed) so cold starts make
+//!   progress on IO without waiting for a CPU sample.
+//! - Switch to [`SearchMode::HighCpu`] when the process is over
+//!   [`HIGH_CPU_THRESHOLD`] of total cores — extra threads just thrash.
+//! - Switch back to [`SearchMode::HighIo`] when CPU drops below
+//!   [`LOW_CPU_THRESHOLD`] — search is likely IO-bound and more parallelism
+//!   helps.
 //!
-//! - Start with `2 * num_cpus` permits.
-//! - Scale down by 1 (toward `num_cpus`) when CPU is saturated — more threads
-//!   would only add contention.
-//! - Scale up by 1 (toward `4 * num_cpus`) when CPU has headroom — search is
-//!   likely IO-bound and more threads can make progress.
-//!
-//! Permit acquisition happens *outside* [`Handle::spawn_blocking`]: the caller
-//! awaits a permit, then the closure is spawned carrying the permit. The
-//! permit is released when the blocking work finishes.
+//! The hot path is two relaxed atomic loads (mode + last-adjust timestamp)
+//! plus the same `Handle::spawn_blocking` call as before — no semaphore.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::cpu::get_num_cpus;
 use common::process_cpu_usage::{CPU_USAGE_WINDOW, process_cpu_usage_cores};
 use tokio::runtime::Handle;
-use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 
-/// Minimum interval between permit-budget re-evaluations. Matches the CPU
-/// sampling window so each adjustment sees a fresh reading.
+/// Minimum interval between mode re-evaluations. Matches the CPU sampling
+/// window so each adjustment sees a fresh reading.
 const ADJUST_INTERVAL: Duration = CPU_USAGE_WINDOW;
 
-/// Scale down when the process uses more than this fraction of all CPUs.
+/// Switch to [`SearchMode::HighCpu`] when the process uses more than this
+/// fraction of all CPUs.
 const HIGH_CPU_THRESHOLD: f32 = 0.9;
 
-/// Scale up when the process uses less than this fraction of all CPUs.
+/// Switch back to [`SearchMode::HighIo`] when the process uses less than
+/// this fraction of all CPUs.
 const LOW_CPU_THRESHOLD: f32 = 0.5;
 
-/// Upper bound on the thread budget, as a multiple of `num_cpus`.
-const MAX_MULT: usize = 4;
+/// Active search runtime — encoded in [`Inner::mode`] as a `u8`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SearchMode {
+    /// CPU-bound: route to the runtime with `num_cpus` blocking threads.
+    HighCpu,
+    /// IO-bound: route to the runtime with `4 * num_cpus` blocking threads.
+    HighIo,
+}
 
-/// Initial thread budget, as a multiple of `num_cpus`.
-const INITIAL_MULT: usize = 2;
+impl SearchMode {
+    fn as_u8(self) -> u8 {
+        match self {
+            SearchMode::HighCpu => 0,
+            SearchMode::HighIo => 1,
+        }
+    }
+
+    fn from_u8(v: u8) -> Self {
+        match v {
+            0 => SearchMode::HighCpu,
+            _ => SearchMode::HighIo,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SearchMode::HighCpu => "high_cpu",
+            SearchMode::HighIo => "high_io",
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AdaptiveSearchHandle {
@@ -46,25 +73,19 @@ pub struct AdaptiveSearchHandle {
 }
 
 struct Inner {
-    handle: Handle,
-    semaphore: Arc<Semaphore>,
+    high_cpu: Handle,
+    high_io: Handle,
     /// Number of logical CPUs, read once at construction. Used as the
     /// denominator when converting process CPU usage to a utilization ratio.
     num_cpus: usize,
-    /// Lower bound: `num_cpus` permits. Never shrink below this.
-    min_permits: usize,
-    /// Upper bound: `MAX_MULT * num_cpus` permits.
-    max_permits: usize,
-    /// Current total permit budget — including those currently held by tasks.
-    /// Mirrors actual semaphore size but is cheap to read without acquiring.
-    current_permits: AtomicUsize,
-    /// Monotonic ns (relative to [`Inner::start`]) at which the budget was
-    /// last re-evaluated. Initialized so the first adjust is suppressed until
-    /// [`ADJUST_INTERVAL`] elapses — [`process_cpu_usage_cores`] returns
-    /// `None` until it has two samples anyway.
+    /// Current mode (encoded via [`SearchMode::as_u8`]).
+    mode: AtomicU8,
+    /// Monotonic ns (relative to [`Inner::start`]) at which the mode was
+    /// last re-evaluated. Initialized so the first adjust is suppressed
+    /// until [`ADJUST_INTERVAL`] elapses — [`process_cpu_usage_cores`]
+    /// returns `None` until it has two samples anyway.
     last_adjust_ns: AtomicU64,
-    /// Reference instant for `last_adjust_ns`. Using a single monotonic base
-    /// lets us store the timestamp as a plain `AtomicU64`.
+    /// Reference instant for `last_adjust_ns`.
     start: Instant,
 }
 
@@ -73,90 +94,59 @@ struct Inner {
 // =============================================================================
 
 impl AdaptiveSearchHandle {
-    /// Build from a Tokio runtime handle. Permit budget is re-evaluated
-    /// lazily on `spawn_blocking`, no background task is spawned.
-    pub fn new(handle: Handle) -> Self {
-        let num_cpus = get_num_cpus().max(1);
-        let min_permits = num_cpus;
-        let max_permits = MAX_MULT * num_cpus;
-        let initial = (INITIAL_MULT * num_cpus).clamp(min_permits, max_permits);
-
+    /// Build from the two pre-constructed search runtimes.
+    pub fn new(high_cpu: Handle, high_io: Handle) -> Self {
+        let num_cpus = common::cpu::get_num_cpus().max(1);
         let inner = Arc::new(Inner {
-            handle,
-            semaphore: Arc::new(Semaphore::new(initial)),
+            high_cpu,
+            high_io,
             num_cpus,
-            min_permits,
-            max_permits,
-            current_permits: AtomicUsize::new(initial),
+            mode: AtomicU8::new(SearchMode::HighIo.as_u8()),
             last_adjust_ns: AtomicU64::new(0),
             start: Instant::now(),
         });
-
         Self { inner }
     }
 
-    /// Access the underlying Tokio handle. Use only where spawning outside
-    /// the adaptive pool is genuinely needed (e.g. spawning non-blocking
-    /// async tasks).
-    pub fn tokio_handle(&self) -> &Handle {
-        &self.inner.handle
-    }
-
-    /// Spawn a blocking closure on the search runtime, awaiting an adaptive
-    /// permit first. The permit is held for the duration of the closure.
-    ///
-    /// Before acquiring a permit we attempt a lazy budget re-evaluation,
-    /// rate-limited to at most once per [`ADJUST_INTERVAL`].
-    pub async fn spawn_blocking<F, R>(&self, f: F) -> JoinHandle<R>
+    /// Spawn a blocking closure on the search runtime selected by the
+    /// current mode. Before spawning, attempt a lazy mode re-evaluation
+    /// rate-limited to once per [`ADJUST_INTERVAL`].
+    pub fn spawn_blocking<F, R>(&self, f: F) -> JoinHandle<R>
     where
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        let retire_on_complete = self.maybe_adjust();
-
-        let permit = Arc::clone(&self.inner.semaphore)
-            .acquire_owned()
-            .await
-            .expect("search semaphore was closed");
-
-        self.inner.handle.spawn_blocking(move || {
-            let result = f();
-            // If this call won the shrink tick, retire its own permit
-            // (forget it) instead of returning it to the semaphore. Budget
-            // was decremented in `maybe_adjust` already.
-            if retire_on_complete {
-                permit.forget();
-            } else {
-                drop(permit);
-            }
-            result
-        })
+        self.maybe_adjust();
+        self.handle_for_current_mode().spawn_blocking(f)
     }
 
-    /// Current total permit budget (allocated; may include in-use permits).
-    pub fn current_permits(&self) -> usize {
-        self.inner.current_permits.load(Ordering::Relaxed)
+    /// Currently active mode.
+    pub fn current_mode(&self) -> SearchMode {
+        SearchMode::from_u8(self.inner.mode.load(Ordering::Relaxed))
     }
 
-    /// Number of permits currently free (not held by any task).
-    pub fn available_permits(&self) -> usize {
-        self.inner.semaphore.available_permits()
+    /// Tokio handle for the currently active mode. Exposed for the rare
+    /// caller that needs to `.enter()` the runtime context (e.g. snapshot
+    /// creation that internally calls `tokio::task::spawn_blocking`).
+    pub fn tokio_handle(&self) -> &Handle {
+        self.handle_for_current_mode()
     }
 
-    /// Attempt to adjust the permit budget. No-op if we adjusted less than
-    /// [`ADJUST_INTERVAL`] ago or if CPU usage is unavailable.
-    ///
-    /// Returns `true` iff the caller should retire its permit (forget it
-    /// after the blocking work completes) — i.e., a shrink was elected this
-    /// tick. `current_permits` has already been decremented in that case.
-    fn maybe_adjust(&self) -> bool {
-        // Rate-limit: at most one adjustment per window. Use CAS so concurrent
-        // callers elect a single adjuster; the rest skip.
+    fn handle_for_current_mode(&self) -> &Handle {
+        match self.current_mode() {
+            SearchMode::HighCpu => &self.inner.high_cpu,
+            SearchMode::HighIo => &self.inner.high_io,
+        }
+    }
+
+    /// Attempt to re-evaluate the active mode. No-op if we adjusted less
+    /// than [`ADJUST_INTERVAL`] ago or if a CPU sample is unavailable.
+    fn maybe_adjust(&self) {
         let now_ns = self.inner.start.elapsed().as_nanos() as u64;
         let interval_ns = ADJUST_INTERVAL.as_nanos() as u64;
         let last = self.inner.last_adjust_ns.load(Ordering::Relaxed);
         if last != 0 && now_ns.saturating_sub(last) < interval_ns {
-            return false;
+            return;
         }
         if self
             .inner
@@ -164,44 +154,27 @@ impl AdaptiveSearchHandle {
             .compare_exchange(last, now_ns, Ordering::Relaxed, Ordering::Relaxed)
             .is_err()
         {
-            // Another caller just claimed this tick.
-            return false;
+            return;
         }
 
         let Some(cores_used) = process_cpu_usage_cores() else {
-            // CPU usage unavailable — hold permits steady. Note we've still
-            // consumed this tick; next attempt will be after ADJUST_INTERVAL.
-            return false;
+            return;
         };
-
         let ratio = cores_used / self.inner.num_cpus as f32;
-        let current = self.inner.current_permits.load(Ordering::Relaxed);
-
-        if ratio > HIGH_CPU_THRESHOLD && current > self.inner.min_permits {
-            // Mark the caller's permit for retirement; budget reflects target
-            // immediately.
-            let prev = self.inner.current_permits.fetch_sub(1, Ordering::Relaxed);
-            log::debug!(
-                "adaptive search pool: shrinking to {} permits (was {prev})",
-                prev - 1,
-            );
-            true
-        } else if ratio < LOW_CPU_THRESHOLD && current < self.inner.max_permits {
-            grow_one(&self.inner);
-            false
-        } else {
-            false
-        }
+        let current = self.current_mode();
+        let next = match current {
+            SearchMode::HighIo if ratio > HIGH_CPU_THRESHOLD => SearchMode::HighCpu,
+            SearchMode::HighCpu if ratio < LOW_CPU_THRESHOLD => SearchMode::HighIo,
+            _ => return,
+        };
+        self.inner.mode.store(next.as_u8(), Ordering::Relaxed);
+        log::debug!(
+            "adaptive search pool: switching mode {} -> {} (cpu ratio {:.2})",
+            current.as_str(),
+            next.as_str(),
+            ratio,
+        );
     }
-}
-
-fn grow_one(inner: &Inner) {
-    let prev = inner.current_permits.fetch_add(1, Ordering::Relaxed);
-    inner.semaphore.add_permits(1);
-    log::debug!(
-        "adaptive search pool: grew to {} permits (was {prev})",
-        prev + 1,
-    );
 }
 
 // =============================================================================
@@ -210,22 +183,22 @@ fn grow_one(inner: &Inner) {
 // Compiled into the production binary but only hit at runtime by integration
 // tests that pass `None` for the search runtime to `Collection::new` /
 // `Collection::load`. Production wiring always constructs an adaptive handle
-// via `AdaptiveSearchHandle::new` on the search runtime and threads it
-// through, so these paths are unreachable in real deployments.
+// via `AdaptiveSearchHandle::new` and threads it through, so these paths are
+// unreachable in real deployments.
 // =============================================================================
 
 impl AdaptiveSearchHandle {
-    /// Non-adaptive, fixed-size handle bound to the current runtime with
-    /// `num_cpus` permits. Used as the `unwrap_or_else` fallback when a
-    /// caller passes `None` for the search runtime.
+    /// Non-adaptive handle bound to the current runtime. Used as the
+    /// `unwrap_or_else` fallback when a caller passes `None` for the search
+    /// runtime.
     pub fn current() -> Self {
-        Self::new_fixed(Handle::current(), get_num_cpus().max(1))
+        Self::new_fixed(Handle::current())
     }
 
-    /// Same as current, but only for tests
+    /// Same as [`current`](Self::current), but only for tests.
     #[cfg(any(test, feature = "testing"))]
     pub fn current_for_tests() -> Self {
-        Self::new_fixed(Handle::current(), get_num_cpus().max(1))
+        Self::new_fixed(Handle::current())
     }
 }
 
@@ -233,22 +206,19 @@ impl AdaptiveSearchHandle {
 // Test and bench helpers
 //
 // Direct-construction helpers for tests and bench harnesses that want a
-// predictable, non-adaptive pool without wiring up the full TOC.
+// predictable, non-adaptive handle without wiring up two runtimes.
 // =============================================================================
 
 impl AdaptiveSearchHandle {
-    /// Non-adaptive handle with a caller-chosen permit count. `maybe_adjust`
-    /// is disabled (via `last_adjust_ns = u64::MAX`), so neither CPU sampling
-    /// nor permit resizing happens.
-    pub fn new_fixed(handle: Handle, permits: usize) -> Self {
-        let permits = permits.max(1);
+    /// Non-adaptive handle bound to a single Tokio runtime. Both modes route
+    /// to the same handle; `maybe_adjust` is disabled (via
+    /// `last_adjust_ns = u64::MAX`) so no CPU sampling happens.
+    pub fn new_fixed(handle: Handle) -> Self {
         let inner = Arc::new(Inner {
-            handle,
-            semaphore: Arc::new(Semaphore::new(permits)),
-            num_cpus: get_num_cpus().max(1),
-            min_permits: permits,
-            max_permits: permits,
-            current_permits: AtomicUsize::new(permits),
+            high_cpu: handle.clone(),
+            high_io: handle,
+            num_cpus: common::cpu::get_num_cpus().max(1),
+            mode: AtomicU8::new(SearchMode::HighIo.as_u8()),
             last_adjust_ns: AtomicU64::new(u64::MAX),
             start: Instant::now(),
         });
@@ -262,48 +232,23 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn spawn_blocking_runs_closure() {
-        let handle = Handle::current();
-        let adaptive = AdaptiveSearchHandle::new_fixed(handle, 2);
-        let jh = adaptive.spawn_blocking(|| 42u32).await;
+        let adaptive = AdaptiveSearchHandle::new_fixed(Handle::current());
+        let jh = adaptive.spawn_blocking(|| 42u32);
         assert_eq!(jh.await.unwrap(), 42);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn fixed_handle_bounds_concurrency() {
-        use std::sync::atomic::AtomicUsize;
-        let handle = Handle::current();
-        let adaptive = AdaptiveSearchHandle::new_fixed(handle, 2);
-        let active = Arc::new(AtomicUsize::new(0));
-        let peak = Arc::new(AtomicUsize::new(0));
-
+    async fn fixed_handle_runs_many_tasks() {
+        let adaptive = AdaptiveSearchHandle::new_fixed(Handle::current());
         let mut joins = Vec::new();
-        for _ in 0..10 {
-            let active = Arc::clone(&active);
-            let peak = Arc::clone(&peak);
-            let jh = adaptive
-                .spawn_blocking(move || {
-                    let n = active.fetch_add(1, Ordering::SeqCst) + 1;
-                    peak.fetch_max(n, Ordering::SeqCst);
-                    std::thread::sleep(Duration::from_millis(50));
-                    active.fetch_sub(1, Ordering::SeqCst);
-                })
-                .await;
-            joins.push(jh);
+        for i in 0..16u32 {
+            joins.push(adaptive.spawn_blocking(move || i * 2));
         }
+        let mut sum = 0u32;
         for jh in joins {
-            jh.await.unwrap();
+            sum += jh.await.unwrap();
         }
-        assert!(peak.load(Ordering::SeqCst) <= 2, "peak was {peak:?}");
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn grow_one_increases_permits() {
-        let handle = Handle::current();
-        let adaptive = AdaptiveSearchHandle::new_fixed(handle, 2);
-        // Bypass clamp by calling grow_one directly.
-        let start = adaptive.current_permits();
-        grow_one(&adaptive.inner);
-        assert_eq!(adaptive.current_permits(), start + 1);
-        assert_eq!(adaptive.available_permits(), start + 1);
+        let expected: u32 = (0..16u32).map(|i| i * 2).sum();
+        assert_eq!(sum, expected);
     }
 }

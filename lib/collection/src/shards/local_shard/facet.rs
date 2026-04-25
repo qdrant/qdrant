@@ -36,7 +36,7 @@ impl LocalShard {
 
             let hw_counter = hw_counter.fork();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let spawn_future = search_runtime_handle.spawn_blocking(move || {
+            let task = search_runtime_handle.spawn_blocking(move || {
                 let work = || {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
@@ -48,10 +48,7 @@ impl LocalShard {
                     None => work(),
                 }
             });
-            async move {
-                let task = spawn_future.await;
-                AbortOnDropHandle::new(task).await
-            }
+            AbortOnDropHandle::new(task)
         };
 
         let all_reads = {
@@ -172,7 +169,7 @@ impl LocalShard {
 
             let hw_counter = hw_counter.fork();
             let cpu_utilization = hw_counter.cpu_utilization();
-            let spawn_future = handle.spawn_blocking(move || {
+            let task = handle.spawn_blocking(move || {
                 let work = || {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
@@ -190,10 +187,7 @@ impl LocalShard {
                     None => work(),
                 }
             });
-            async move {
-                let task = spawn_future.await;
-                AbortOnDropHandle::new(task).await
-            }
+            AbortOnDropHandle::new(task)
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();

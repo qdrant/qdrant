@@ -1,26 +1,36 @@
+use collection::common::adaptive_handle::SearchMode;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 use storage::content_manager::toc::TableOfContent;
 
-/// Live snapshot of the adaptive search thread pool.
+/// Live snapshot of the adaptive search routing.
+///
+/// `mode` is the runtime currently selected by [`SearchMode`]; `high_cpu_threads`
+/// and `high_io_threads` are the blocking-thread budgets of the two underlying
+/// runtimes that the adaptive handle routes between.
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 #[anonymize(false)]
 pub struct SearchThreadPoolTelemetry {
-    /// Total permit budget (target thread count). Adjusted dynamically based on
-    /// process CPU usage.
-    pub current_permits: usize,
-    /// Permits currently free — not held by any running `spawn_blocking` task.
-    /// `current_permits - available_permits` ≈ concurrent in-flight blocking tasks.
-    pub available_permits: usize,
+    /// Currently active mode (`high_cpu` or `high_io`).
+    pub mode: &'static str,
+    /// Blocking-thread count of the high-CPU runtime.
+    pub high_cpu_threads: usize,
+    /// Blocking-thread count of the high-IO runtime.
+    pub high_io_threads: usize,
 }
 
 impl SearchThreadPoolTelemetry {
     pub fn collect(toc: &TableOfContent) -> Self {
-        let (current_permits, available_permits) = toc.search_pool_permits();
+        let (high_cpu_threads, high_io_threads) = toc.search_pool_thread_counts();
         Self {
-            current_permits,
-            available_permits,
+            mode: mode_str(toc.search_pool_mode()),
+            high_cpu_threads,
+            high_io_threads,
         }
     }
+}
+
+fn mode_str(mode: SearchMode) -> &'static str {
+    mode.as_str()
 }

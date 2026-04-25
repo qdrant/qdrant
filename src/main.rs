@@ -48,10 +48,7 @@ use storage::rbac::Access;
 ))]
 use tikv_jemallocator::Jemalloc;
 
-use crate::common::helpers::{
-    create_general_purpose_runtime, create_search_runtime, create_update_runtime,
-    load_tls_client_config,
-};
+use crate::common::helpers::load_tls_client_config;
 use crate::common::inference::service::InferenceService;
 use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_reporting::TelemetryReporter;
@@ -492,25 +489,9 @@ fn main() -> anyhow::Result<()> {
     );
 
     //
-    // Async runtimes & resource budgets
+    // Resource budgets
     //
-
-    // Create and own search runtime out of the scope of async context to ensure correct
-    // destruction of it
-    let search_runtime = create_search_runtime(settings.storage.performance.max_search_threads)
-        .expect("Can't search create runtime.");
-
-    let update_runtime = create_update_runtime(
-        settings
-            .storage
-            .performance
-            .max_optimization_runtime_threads,
-    )
-    .expect("Can't optimizer create runtime.");
-
-    let general_runtime =
-        create_general_purpose_runtime().expect("Can't optimizer general purpose runtime.");
-    let runtime_handle = general_runtime.handle().clone();
+    // Async runtimes are owned by `TableOfContent` (constructed below).
 
     // Use global CPU budget for optimizations based on settings
     let cpu_budget = get_cpu_budget(settings.storage.performance.optimizer_cpu_budget);
@@ -546,14 +527,12 @@ fn main() -> anyhow::Result<()> {
 
     let toc = TableOfContent::new(
         &settings.storage,
-        search_runtime,
-        update_runtime,
-        general_runtime,
         optimizer_resource_budget,
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
     )?;
+    let runtime_handle = toc.general_runtime_handle().clone();
 
     // Here we load all stored collections.
     runtime_handle.block_on(async {

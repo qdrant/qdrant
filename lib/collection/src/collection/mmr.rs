@@ -26,20 +26,18 @@ pub async fn mmr_from_points_with_vector(
         .and_then(|vector_params| vector_params.multivector_config);
 
     let cpu_utilization = hw_measurement_acc.cpu_utilization();
-    let handle = search_runtime_handle
-        .spawn_blocking(move || {
-            cpu_utilization.measure(|| {
-                mmr_from_points_with_vector_impl(
-                    points_with_vector,
-                    mmr,
-                    distance,
-                    multivector_config,
-                    limit,
-                    hw_measurement_acc,
-                )
-            })
+    let handle = search_runtime_handle.spawn_blocking(move || {
+        cpu_utilization.measure(|| {
+            mmr_from_points_with_vector_impl(
+                points_with_vector,
+                mmr,
+                distance,
+                multivector_config,
+                limit,
+                hw_measurement_acc,
+            )
         })
-        .await;
+    });
     let task = AbortOnDropHandle::new(handle);
 
     let result = tokio::time::timeout(timeout, task)

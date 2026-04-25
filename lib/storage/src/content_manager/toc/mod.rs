@@ -5,6 +5,7 @@ pub mod dispatcher;
 mod point_ops;
 mod point_ops_internal;
 pub mod request_hw_counter;
+mod runtimes;
 mod snapshots;
 mod telemetry;
 mod temp_directories;
@@ -19,7 +20,7 @@ use std::time::Duration;
 
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
-use collection::common::adaptive_handle::AdaptiveSearchHandle;
+use collection::common::adaptive_handle::{AdaptiveSearchHandle, SearchMode};
 use collection::config::{
     CollectionConfigInternal, default_replication_factor, default_shard_number,
 };
@@ -68,13 +69,16 @@ pub const COLLECTION_DELETE_SPIN_INTERVAL: Duration = Duration::from_millis(200)
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     pub(crate) storage_config: Arc<StorageConfig>,
-    /// Adaptive wrapper around the search runtime. Permit budget is adjusted
-    /// based on process CPU usage to strike a balance between IO-bound
-    /// headroom and CPU contention.
+    /// Adaptive wrapper that routes search `spawn_blocking` calls between
+    /// the high-CPU and high-IO search runtimes based on process CPU usage.
     adaptive_search_handle: AdaptiveSearchHandle,
-    /// Owns the search runtime so it isn't dropped while the adaptive handle
-    /// is still spawning blocking tasks against its pool.
-    _search_runtime: Runtime,
+    /// Search runtime sized for CPU-bound load (`num_cpus` blocking
+    /// threads). Owned here so the runtime outlives all Handles routed
+    /// through `adaptive_search_handle`.
+    _high_cpu_search_runtime: Runtime,
+    /// Search runtime sized for IO-bound load (`4 * num_cpus` blocking
+    /// threads). Owned here for the same reason as `_high_cpu_search_runtime`.
+    _high_io_search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
     /// Global CPU budget in number of cores for all optimization tasks.
@@ -107,9 +111,6 @@ impl TableOfContent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
-        search_runtime: Runtime,
-        update_runtime: Runtime,
-        general_runtime: Runtime,
         optimizer_resource_budget: ResourceBudget,
         channel_service: ChannelService,
         this_peer_id: PeerId,
@@ -126,8 +127,31 @@ impl TableOfContent {
         // temp files (e.g. interrupted snapshot transfers from a previous run).
         temp_directories::clear_tmp_directories(storage_config)?;
 
-        // Adaptive wrapper around search runtime. Background task starts now.
-        let adaptive_search_handle = AdaptiveSearchHandle::new(search_runtime.handle().clone());
+        // Build the runtimes. They must be constructed outside any async
+        // context so they can be dropped from a sync context without panic.
+        let max_search_threads = storage_config.performance.max_search_threads;
+        let high_cpu_search_runtime = runtimes::create_high_cpu_search_runtime(max_search_threads)
+            .map_err(|err| {
+                StorageError::service_error(format!("Can't create high-CPU search runtime: {err}"))
+            })?;
+        let high_io_search_runtime = runtimes::create_high_io_search_runtime(max_search_threads)
+            .map_err(|err| {
+                StorageError::service_error(format!("Can't create high-IO search runtime: {err}"))
+            })?;
+        let update_runtime = runtimes::create_update_runtime(
+            storage_config.performance.max_optimization_runtime_threads,
+        )
+        .map_err(|err| {
+            StorageError::service_error(format!("Can't create update runtime: {err}"))
+        })?;
+        let general_runtime = runtimes::create_general_purpose_runtime().map_err(|err| {
+            StorageError::service_error(format!("Can't create general purpose runtime: {err}"))
+        })?;
+
+        let adaptive_search_handle = AdaptiveSearchHandle::new(
+            high_cpu_search_runtime.handle().clone(),
+            high_io_search_runtime.handle().clone(),
+        );
 
         let collection_paths = fs::read_dir(&collections_path)?;
         let is_distributed = consensus_proposal_sender.is_some();
@@ -245,7 +269,8 @@ impl TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
             adaptive_search_handle,
-            _search_runtime: search_runtime,
+            _high_cpu_search_runtime: high_cpu_search_runtime,
+            _high_io_search_runtime: high_io_search_runtime,
             update_runtime,
             general_runtime,
             optimizer_resource_budget,
@@ -266,12 +291,18 @@ impl TableOfContent {
         self.consensus_proposal_sender.is_some()
     }
 
-    /// Current and available permit counts for the adaptive search thread pool.
-    /// `current` is the total permit budget; `available` is how many are free right now.
-    pub fn search_pool_permits(&self) -> (usize, usize) {
+    /// Currently active search mode (high_cpu / high_io).
+    pub fn search_pool_mode(&self) -> SearchMode {
+        self.adaptive_search_handle.current_mode()
+    }
+
+    /// Blocking-thread counts for the two search runtimes
+    /// (high_cpu, high_io).
+    pub fn search_pool_thread_counts(&self) -> (usize, usize) {
+        let max_search_threads = self.storage_config.performance.max_search_threads;
         (
-            self.adaptive_search_handle.current_permits(),
-            self.adaptive_search_handle.available_permits(),
+            runtimes::high_cpu_blocking_threads(max_search_threads),
+            runtimes::high_io_blocking_threads(max_search_threads),
         )
     }
 

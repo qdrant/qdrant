@@ -92,7 +92,7 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
             Default::default(),
             payload_index_schema,
             handle.clone(),
-            AdaptiveSearchHandle::new_fixed(handle.clone(), 4),
+            AdaptiveSearchHandle::new_fixed(handle.clone()),
             ResourceBudget::default(),
             optimizers_config,
         ))
@@ -158,7 +158,7 @@ fn some_filters() -> Vec<Option<Filter>> {
 fn batch_search_bench(c: &mut Criterion) {
     let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone(), 4);
+    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
 
     let mut group = c.benchmark_group("batch-search-bench");
 
@@ -238,7 +238,7 @@ fn batch_search_bench(c: &mut Criterion) {
 fn batch_rrf_query_bench(c: &mut Criterion) {
     let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone(), 4);
+    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
 
     let mut group = c.benchmark_group("batch-rrf-bench");
 
@@ -308,7 +308,7 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
 fn batch_rescore_bench(c: &mut Criterion) {
     let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone(), 4);
+    let search_runtime_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
 
     let mut group = c.benchmark_group("batch-rescore-bench");
 
