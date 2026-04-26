@@ -108,38 +108,37 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         Ok(Some(value))
     }
 
-    pub fn for_each_in_batch<P, F>(
+    pub fn for_each_in_batch<P, F, E>(
         &self,
         point_offsets: &[PointOffset],
         mut callback: F,
         hw_counter: &HardwareCounterCell,
-    ) -> Result<()>
+    ) -> std::result::Result<(), E>
     where
         P: AccessPattern,
-        F: FnMut(usize, V),
+        F: FnMut(usize, Option<V>) -> std::result::Result<(), E>,
+        E: From<GridstoreError>,
     {
         // Resolve all pointers in a single batched tracker read so async backends
-        // (e.g. io_uring) can fetch them in parallel. Missing offsets are silently
-        // skipped to match the `Ok(None)` behavior of `get_value`.
+        // (e.g. io_uring) can fetch them in parallel.
         let pointers = self.tracker.get_batch(point_offsets)?;
 
-        // Map from internal idx (within the filtered pointer list) back to the
-        // caller's idx into `point_offsets`.
-        let mut original_idxs = Vec::with_capacity(pointers.len());
-        let valid_pointers: Vec<ValuePointer> = pointers
-            .into_iter()
-            .enumerate()
-            .filter_map(|(idx, opt)| {
-                opt.map(|ptr| {
-                    original_idxs.push(idx);
-                    ptr
-                })
-            })
-            .collect();
+        let valid_pointers: Vec<ValuePointer> = pointers.iter().copied().flatten().collect();
 
         let values = self
             .pages
             .read_batch_from_pages::<P, _>(valid_pointers, self.config)?;
+
+        // Map from internal idx (n-th valid pointer) to the caller's idx.
+        let valid_to_original: Vec<usize> = pointers
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, opt)| opt.as_ref().map(|_| idx))
+            .collect();
+
+        // Buffer decoded values so we can invoke the callback with `Option<V>` in
+        // input order, matching the caller's `point_offsets` indexing 1-to-1.
+        let mut value_buffer: Vec<Option<V>> = (0..pointers.len()).map(|_| None).collect();
 
         for result in values {
             let (internal_idx, raw) = result?;
@@ -149,7 +148,11 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
             let decompressed = self.decompress(raw);
             let value = V::from_bytes(&decompressed);
 
-            callback(original_idxs[internal_idx], value);
+            value_buffer[valid_to_original[internal_idx]] = Some(value);
+        }
+
+        for (idx, value) in value_buffer.into_iter().enumerate() {
+            callback(idx, value)?;
         }
 
         Ok(())

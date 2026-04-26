@@ -1366,10 +1366,11 @@ fn test_for_each_in_batch_congruent_with_get_value() {
 
     let mut batch_results: Vec<Option<Payload>> = vec![None; offsets.len()];
     storage
-        .for_each_in_batch::<Random, _>(
+        .for_each_in_batch::<Random, _, GridstoreError>(
             &offsets,
             |idx, value| {
-                batch_results[idx] = Some(value);
+                batch_results[idx] = value;
+                Ok(())
             },
             &hw_counter,
         )

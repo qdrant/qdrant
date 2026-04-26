@@ -375,17 +375,18 @@ impl<V: Blob> Gridstore<V> {
         self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
     }
 
-    pub fn for_each_in_batch<P, F>(
+    pub fn for_each_in_batch<P, F, E>(
         &self,
         offsets: &[PointOffset],
         callback: F,
         hw_counter: &HardwareCounterCell,
-    ) -> Result<()>
+    ) -> std::result::Result<(), E>
     where
         P: AccessPattern,
-        F: FnMut(usize, V),
+        F: FnMut(usize, Option<V>) -> std::result::Result<(), E>,
+        E: From<GridstoreError>,
     {
-        self.with_view(|view| view.for_each_in_batch::<P, F>(offsets, callback, hw_counter))
+        self.with_view(|view| view.for_each_in_batch::<P, F, E>(offsets, callback, hw_counter))
     }
 
     #[cfg(test)]
