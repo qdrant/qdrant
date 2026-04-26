@@ -9,6 +9,7 @@ use common::maybe_uninit::assume_init_vec;
 use common::universal_io::{
     FileIndex, Flusher, OpenOptions, ReadRange, UniversalRead, UniversalWrite,
 };
+use itertools::Either;
 
 use crate::Result;
 use crate::config::StorageConfig;
@@ -136,10 +137,24 @@ impl<S: UniversalRead<u8>> Pages<S> {
         let value_start = u64::from(block_offset) * block_size_bytes;
         assert!(value_start < page_len);
 
+        // A zero-length pointer would otherwise yield no entries; emit a single
+        // empty range so callers (read_from_pages, read_batch_from_pages,
+        // write_to_pages) get a uniform per-pointer iteration.
+        if total_length == 0 {
+            return Either::Left(std::iter::once((
+                0,
+                page_id,
+                ReadRange {
+                    byte_offset: value_start,
+                    length: 0,
+                },
+            )));
+        }
+
         let mut buf_offset = 0;
         let mut start = value_start;
 
-        std::iter::from_fn(move || {
+        Either::Right(std::iter::from_fn(move || {
             if buf_offset >= total_length {
                 return None;
             }
@@ -157,7 +172,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
             page_id += 1;
             start = 0;
             Some(result)
-        })
+        }))
     }
 
     pub fn value_len_pages(pointer: ValuePointer, config: &StorageConfig) -> usize {
@@ -227,22 +242,12 @@ impl<S: UniversalRead<u8>> Pages<S> {
             len_pages: usize,
         }
 
-        // Zero-length values produce no entries in `get_page_value_ranges`, so they are
-        // invisible to the per-chunk read pipeline. Track them here so we can emit empty
-        // buffers for them after consuming all chunks — matching `read_from_pages` which
-        // returns an empty `Cow` for zero-length pointers.
-        let mut zero_len_idxs: Vec<usize> = Vec::new();
-
-        let reads: Vec<_> = pointers
+        let reads = pointers
             .into_iter()
             .enumerate()
-            .flat_map(|(value_idx, pointer)| {
+            .flat_map(move |(value_idx, pointer)| {
                 let len_bytes = pointer.length as usize;
                 let len_pages = Self::value_len_pages(pointer, config);
-
-                if len_bytes == 0 {
-                    zero_len_idxs.push(value_idx);
-                }
 
                 Self::get_page_value_ranges(pointer, config).map(
                     move |(buffer_offset, page_idx, range)| {
@@ -257,8 +262,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
                         (meta, page, range)
                     },
                 )
-            })
-            .collect();
+            });
 
         let mut chunks = S::read_multi_iter::<P, _>(reads)?;
         let mut values = ahash::HashMap::new();
@@ -277,7 +281,9 @@ impl<S: UniversalRead<u8>> Pages<S> {
                     len_pages,
                 } = meta;
 
-                if len_pages == 1 {
+                // Single-chunk values (incl. zero-length, which now yields one empty range
+                // from `get_page_value_ranges`) can be returned without buffering.
+                if len_pages <= 1 {
                     return Some(Ok((value_idx, bytes)));
                 }
 
@@ -296,11 +302,6 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
                     return Some(Ok((value_idx, Cow::Owned(value_buffer))));
                 }
-            }
-
-            // All chunks drained, emit pending zero-length values.
-            if let Some(idx) = zero_len_idxs.pop() {
-                return Some(Ok((idx, Cow::Borrowed(&[]))));
             }
 
             None
