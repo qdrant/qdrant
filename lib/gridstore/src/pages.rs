@@ -227,12 +227,22 @@ impl<S: UniversalRead<u8>> Pages<S> {
             len_pages: usize,
         }
 
-        let reads = pointers
+        // Zero-length values produce no entries in `get_page_value_ranges`, so they are
+        // invisible to the per-chunk read pipeline. Track them here so we can emit empty
+        // buffers for them after consuming all chunks — matching `read_from_pages` which
+        // returns an empty `Cow` for zero-length pointers.
+        let mut zero_len_idxs: Vec<usize> = Vec::new();
+
+        let reads: Vec<_> = pointers
             .into_iter()
             .enumerate()
-            .flat_map(move |(value_idx, pointer)| {
+            .flat_map(|(value_idx, pointer)| {
                 let len_bytes = pointer.length as usize;
                 let len_pages = Self::value_len_pages(pointer, config);
+
+                if len_bytes == 0 {
+                    zero_len_idxs.push(value_idx);
+                }
 
                 Self::get_page_value_ranges(pointer, config).map(
                     move |(buffer_offset, page_idx, range)| {
@@ -247,7 +257,8 @@ impl<S: UniversalRead<u8>> Pages<S> {
                         (meta, page, range)
                     },
                 )
-            });
+            })
+            .collect();
 
         let mut chunks = S::read_multi_iter::<P, _>(reads)?;
         let mut values = ahash::HashMap::new();
@@ -285,6 +296,11 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
                     return Some(Ok((value_idx, Cow::Owned(value_buffer))));
                 }
+            }
+
+            // All chunks drained, emit pending zero-length values.
+            if let Some(idx) = zero_len_idxs.pop() {
+                return Some(Ok((idx, Cow::Borrowed(&[]))));
             }
 
             None
