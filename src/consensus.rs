@@ -1564,7 +1564,7 @@ mod tests {
 
         // When
 
-        // New runtime is used as timers need to be enabled.
+        // `handle` is the TOC general runtime (same as passed into `Consensus::new`).
         handle
             .block_on(
                 dispatcher.submit_collection_meta_op(

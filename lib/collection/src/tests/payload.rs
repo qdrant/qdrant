@@ -30,7 +30,7 @@ async fn test_payload_missing_index_check() {
     let collection_name = "test".to_string();
 
     let update_runtime = Handle::current();
-    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+    let search_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
 
     let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
     let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
@@ -45,7 +45,7 @@ async fn test_payload_missing_index_check() {
         Arc::new(Default::default()),
         payload_index_schema.clone(),
         update_runtime.clone(),
-        current_runtime.clone(),
+        search_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
     )

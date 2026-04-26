@@ -44,8 +44,8 @@ pub struct RunningEnvironmentTelemetry {
     #[anonymize(false)]
     cores: Option<usize>,
     /// Average number of CPU cores used by this process over roughly the last
-    /// [`common::process_cpu_usage::CPU_USAGE_WINDOW`]. `None` on unsupported
-    /// platforms.
+    /// two seconds. `None` on unsupported platforms, before two samples are
+    /// collected, or on transient failures reading process CPU time.
     #[anonymize(false)]
     #[serde(skip_serializing_if = "Option::is_none")]
     cpu_cores_used: Option<f32>,

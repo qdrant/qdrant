@@ -1,6 +1,7 @@
 //! Adaptive wrapper that routes search `spawn_blocking` calls between two
-//! pre-built Tokio runtimes — one sized for CPU-bound load (`num_cpus`
-//! blocking threads) and one for IO-bound load (`4 * num_cpus`). The choice
+//! pre-built Tokio runtimes — one with a smaller blocking pool for CPU-bound
+//! load and one sized via [`common::defaults::search_thread_count`] for
+//! IO-bound load. The choice
 //! is re-evaluated lazily on the spawn path, at most once per
 //! [`ADJUST_INTERVAL`].
 //!
@@ -38,9 +39,9 @@ const LOW_CPU_THRESHOLD: f32 = 0.5;
 /// Active search runtime — encoded in [`Inner::mode`] as a `u8`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SearchMode {
-    /// CPU-bound: route to the runtime with `num_cpus` blocking threads.
+    /// CPU-bound: route to the runtime with the smaller blocking pool.
     HighCpu,
-    /// IO-bound: route to the runtime with `4 * num_cpus` blocking threads.
+    /// IO-bound: route to the runtime sized via [`common::defaults::search_thread_count`].
     HighIo,
 }
 

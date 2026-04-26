@@ -28,12 +28,15 @@ struct CpuSample {
 struct Cache {
     last_sample: Option<CpuSample>,
     last_value: Option<f32>,
+    /// After a failed procfs read, suppress retries (and debug logs) until this elapses.
+    last_failed_read_at: Option<Instant>,
 }
 
 #[cfg(target_os = "linux")]
 static CACHE: Mutex<Cache> = Mutex::new(Cache {
     last_sample: None,
     last_value: None,
+    last_failed_read_at: None,
 });
 
 /// Average number of CPU cores used by this process over the last
@@ -70,13 +73,21 @@ mod linux {
             return guard.last_value;
         }
 
+        if let Some(failed_at) = guard.last_failed_read_at
+            && now.duration_since(failed_at) < CPU_USAGE_WINDOW
+        {
+            return guard.last_value;
+        }
+
         let cpu_time_secs = match read_process_cpu_time_secs() {
             Ok(v) => v,
             Err(err) => {
                 log::debug!("Failed to read process CPU time from procfs: {err}");
+                guard.last_failed_read_at = Some(now);
                 return guard.last_value;
             }
         };
+        guard.last_failed_read_at = None;
         let new_sample = CpuSample {
             at: now,
             cpu_time_secs,
@@ -105,14 +116,20 @@ mod linux {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
+    use std::sync::Mutex as StdMutex;
+
     use super::*;
+
+    static TEST_LOCK: StdMutex<()> = StdMutex::new(());
 
     #[test]
     fn first_call_returns_none() {
+        let _g = TEST_LOCK.lock().unwrap();
         {
             let mut guard = CACHE.lock();
             guard.last_sample = None;
             guard.last_value = None;
+            guard.last_failed_read_at = None;
         }
 
         assert!(process_cpu_usage_cores().is_none());
@@ -120,10 +137,12 @@ mod tests {
 
     #[test]
     fn returns_positive_for_busy_work() {
+        let _g = TEST_LOCK.lock().unwrap();
         {
             let mut guard = CACHE.lock();
             guard.last_sample = None;
             guard.last_value = None;
+            guard.last_failed_read_at = None;
         }
 
         // Prime the sample.

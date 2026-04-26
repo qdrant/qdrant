@@ -72,12 +72,14 @@ pub struct TableOfContent {
     /// Adaptive wrapper that routes search `spawn_blocking` calls between
     /// the high-CPU and high-IO search runtimes based on process CPU usage.
     adaptive_search_handle: AdaptiveSearchHandle,
-    /// Search runtime sized for CPU-bound load (`num_cpus` blocking
-    /// threads). Owned here so the runtime outlives all Handles routed
-    /// through `adaptive_search_handle`.
+    /// Search runtime sized for CPU-bound load (`high_cpu_blocking_threads` in
+    /// TOC runtime setup — typically one blocking thread per CPU when
+    /// `max_search_threads` is unset). Owned here so the runtime outlives all
+    /// Handles routed through `adaptive_search_handle`.
     _high_cpu_search_runtime: Runtime,
-    /// Search runtime sized for IO-bound load (`4 * num_cpus` blocking
-    /// threads). Owned here for the same reason as `_high_cpu_search_runtime`.
+    /// Search runtime sized for IO-bound load (`high_io_blocking_threads`,
+    /// which delegates to `common::defaults::search_thread_count`). Owned here
+    /// for the same reason as `_high_cpu_search_runtime`.
     _high_io_search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,

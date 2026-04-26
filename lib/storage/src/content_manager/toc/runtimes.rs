@@ -1,10 +1,11 @@
 //! Tokio runtimes owned by [`TableOfContent`].
 //!
 //! Two search runtimes are built side-by-side: `high_cpu` matches the
-//! traditional sizing (`num_cpus` blocking threads) and is used when the
-//! process is CPU-saturated, while `high_io` over-commits to `4 * num_cpus`
-//! blocking threads so IO-bound search can hide latency by running more
-//! parallel segment scans. [`AdaptiveSearchHandle`](
+//! traditional sizing (`high_cpu_blocking_threads`) and is used when the
+//! process is CPU-saturated, while `high_io` uses
+//! [`common::defaults::search_thread_count`] via `high_io_blocking_threads` so
+//! IO-bound search can hide latency with more parallel segment scans.
+//! [`AdaptiveSearchHandle`](
 //! collection::common::adaptive_handle::AdaptiveSearchHandle) routes
 //! `spawn_blocking` calls between them based on observed CPU usage.
 
@@ -36,9 +37,9 @@ pub(super) fn create_high_cpu_search_runtime(max_search_threads: usize) -> io::R
         .build()
 }
 
-/// Build the IO-friendly search runtime. Over-committed to `4 * num_cpus`
-/// blocking threads so search can hide IO latency by running many segment
-/// scans in parallel.
+/// Build the IO-friendly search runtime. Blocking pool size comes from
+/// [`common::defaults::search_thread_count`] so search can hide IO latency with
+/// many parallel segment scans.
 pub(super) fn create_high_io_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
     let blocking_threads = high_io_blocking_threads(max_search_threads);
     let async_workers = SEARCH_ASYNC_WORKERS.min(blocking_threads.max(1));

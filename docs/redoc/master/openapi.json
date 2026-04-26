@@ -12700,7 +12700,7 @@
             "nullable": true
           },
           "cpu_cores_used": {
-            "description": "Average number of CPU cores used by this process over roughly the last [`common::process_cpu_usage::CPU_USAGE_WINDOW`]. `None` on unsupported platforms.",
+            "description": "Average number of CPU cores used by this process over roughly the last 2 seconds. Null on unsupported platforms, before two samples exist, or on transient failures reading process CPU time.",
             "type": "number",
             "format": "float",
             "nullable": true
