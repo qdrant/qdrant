@@ -385,8 +385,7 @@ impl<S: UniversalRead<u8>> Tracker<S> {
         let storage_len = self.storage.len()?;
 
         let mut result: Vec<Option<ValuePointer>> = vec![None; point_offsets.len()];
-        let mut storage_reads: Vec<(usize, ReadRange)> =
-            Vec::with_capacity(point_offsets.len());
+        let mut storage_reads: Vec<(usize, ReadRange)> = Vec::with_capacity(point_offsets.len());
 
         for (i, &point_offset) in point_offsets.iter().enumerate() {
             // Pending updates take precedence over storage.
