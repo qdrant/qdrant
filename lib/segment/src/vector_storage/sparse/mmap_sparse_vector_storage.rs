@@ -203,14 +203,26 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
     where
         F: FnMut(usize, SparseVector),
     {
+        // The underlying `for_each_in_batch` callback is infallible, so capture any sparse vector
+        // conversion error in a closure variable and surface it after the batch completes.
+        let mut conversion_err: Option<OperationError> = None;
         self.storage.for_each_in_batch::<Random, _>(
             keys,
             |idx, vector| {
-                let vector = SparseVector::try_from(vector).expect("valid sparse vector");
-                callback(idx, vector);
+                if conversion_err.is_some() {
+                    return;
+                }
+                match SparseVector::try_from(vector) {
+                    Ok(vector) => callback(idx, vector),
+                    Err(err) => conversion_err = Some(err),
+                }
             },
             &HardwareCounterCell::disposable(),
         )?;
+
+        if let Some(err) = conversion_err {
+            return Err(err);
+        }
 
         Ok(())
     }
