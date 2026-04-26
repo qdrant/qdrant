@@ -87,16 +87,6 @@ impl<
     }
 
     #[inline]
-    fn score_stored_batch_impl(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert!(
-            false,
-            "score_stored_batch_impl should not be used, use score_stored_batch instead"
-        );
-
-        self.score_stored_batch(ids, scores); // fallback
-    }
-
-    #[inline]
     fn score(&self, v2: &[TElement]) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
         TMetric::similarity(&self.query, v2)

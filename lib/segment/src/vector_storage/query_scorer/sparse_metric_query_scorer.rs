@@ -77,16 +77,6 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
             .expect("sparse vectors read");
     }
 
-    #[inline]
-    fn score_stored_batch_impl(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert!(
-            false,
-            "score_stored_batch_impl should not be used, use score_stored_batch instead"
-        );
-
-        self.score_stored_batch(ids, scores); // fallback
-    }
-
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let v1 = self
             .vector_storage
