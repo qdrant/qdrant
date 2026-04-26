@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::iter;
 use std::ops::ControlFlow;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -119,43 +118,41 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         P: AccessPattern,
         F: FnMut(usize, V),
     {
-        // Read value pointers for given point offsets, until there's read error or value pointer
-        // does not exist, extract any error from the iterator into `result` variable
-        let mut result = Ok(());
-        let mut point_offsets = point_offsets.iter();
-        let pointers = iter::from_fn(|| {
-            let &point_offset = point_offsets.next()?;
-            match self.get_pointer(point_offset) {
-                Ok(Some(ptr)) => Some(ptr),
-                Ok(None) => {
-                    result = Err(GridstoreError::ValueNotFound { point_offset });
-                    None
-                }
-                Err(err) => {
-                    result = Err(err);
-                    None
-                }
-            }
-        });
+        // Resolve all pointers in a single batched tracker read so async backends
+        // (e.g. io_uring) can fetch them in parallel. Missing offsets are silently
+        // skipped to match the `Ok(None)` behavior of `get_value`.
+        let pointers = self.tracker.get_batch(point_offsets)?;
 
-        // `read_batch_from_pages` iterator would stop, as soon as there's a value pointer error
+        // Map from internal idx (within the filtered pointer list) back to the
+        // caller's idx into `point_offsets`.
+        let mut original_idxs = Vec::with_capacity(pointers.len());
+        let valid_pointers: Vec<ValuePointer> = pointers
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, opt)| {
+                opt.map(|ptr| {
+                    original_idxs.push(idx);
+                    ptr
+                })
+            })
+            .collect();
+
         let values = self
             .pages
-            .read_batch_from_pages::<P, _>(pointers, self.config)?;
+            .read_batch_from_pages::<P, _>(valid_pointers, self.config)?;
 
         for result in values {
-            let (idx, raw) = result?;
+            let (internal_idx, raw) = result?;
 
             hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
             let decompressed = self.decompress(raw);
             let value = V::from_bytes(&decompressed);
 
-            callback(idx, value);
+            callback(original_idxs[internal_idx], value);
         }
 
-        // And we can propagate value pointer error to the caller
-        result
+        Ok(())
     }
 
     /// Iterate over all the values in the storage.
