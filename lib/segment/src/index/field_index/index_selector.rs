@@ -119,17 +119,7 @@ impl IndexSelector<'_> {
                 .map(FieldIndex::UuidMapIndex),
 
             (PayloadIndexType::NullIndex, _) => {
-                let dir = match self {
-                    IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => *dir,
-                    IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => *dir,
-                };
-                self.new_null_index(
-                    dir,
-                    field,
-                    create_if_missing,
-                    id_tracker,
-                    index_type.mutability,
-                )?
+                self.new_null_index(field, create_if_missing, id_tracker, index_type.mutability)?
             }
 
             // Storage inconsistency. Should never happen.
@@ -391,18 +381,25 @@ impl IndexSelector<'_> {
         }
     }
 
+    fn dir(&self) -> &Path {
+        match self {
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => dir,
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => dir,
+        }
+    }
+
     pub fn null_builder(
         &self,
-        dir: &Path,
         field: &JsonPath,
         total_point_count: usize,
     ) -> OperationResult<FieldIndexBuilder> {
+        let null_dir = null_dir(self.dir(), field);
         let builder = match self {
             IndexSelector::Mmap(_) => FieldIndexBuilder::ImmutableNullIndex(
-                ImmutableNullIndex::builder(&null_dir(dir, field), total_point_count)?,
+                ImmutableNullIndex::builder(&null_dir, total_point_count)?,
             ),
             IndexSelector::Gridstore(_) => FieldIndexBuilder::MutableNullIndex(
-                MutableNullIndex::builder(&null_dir(dir, field), total_point_count)?,
+                MutableNullIndex::builder(&null_dir, total_point_count)?,
             ),
         };
         Ok(builder)
@@ -410,14 +407,13 @@ impl IndexSelector<'_> {
 
     pub fn new_null_index(
         &self,
-        dir: &Path,
         field: &JsonPath,
         create_if_missing: bool,
         id_tracker: &IdTrackerEnum,
         mutability: IndexMutability,
     ) -> OperationResult<Option<FieldIndex>> {
         let total_point_count = id_tracker.total_point_count();
-        let null_dir = null_dir(dir, field);
+        let null_dir = null_dir(self.dir(), field);
         // `MutableNullIndex` and `ImmutableNullIndex` share the same on-disk
         // format; stored mutability picks which in-memory wrapper to build.
         // Gridstore segments are always appendable, so the null index is

@@ -174,7 +174,7 @@ impl StructPayloadIndex {
                 field,
                 &payload_schema.schema,
                 create_if_missing,
-                &self.id_tracker.borrow(),
+                &id_tracker_borrow,
             )?;
 
             if let Some(mut indexes) = indexes {
@@ -191,7 +191,6 @@ impl StructPayloadIndex {
                     IndexSelector::Gridstore(_) => IndexMutability::Mutable,
                 };
                 if let Some(null_index) = selector.new_null_index(
-                    &self.path,
                     field,
                     create_if_missing,
                     &id_tracker_borrow,
@@ -210,7 +209,6 @@ impl StructPayloadIndex {
                 vec![]
             }
         } else {
-            let id_tracker_borrow = self.id_tracker.borrow();
             payload_schema
                 .types
                 .iter()
@@ -336,8 +334,7 @@ impl StructPayloadIndex {
         // storage (e.g. after `clear_payload`), matching the regular "no value" points.
         // Bug: <https://github.com/qdrant/qdrant/issues/8723>
         let total_point_count = self.id_tracker.borrow().total_point_count();
-        // Special null index complements every index.
-        let null_index = selector.null_builder(&self.path, field, total_point_count)?;
+        let null_index = selector.null_builder(field, total_point_count)?;
         builders.push(null_index);
 
         for index in &mut builders {
