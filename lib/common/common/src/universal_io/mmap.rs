@@ -272,15 +272,28 @@ where
     } = range;
 
     let start = byte_offset as usize;
-    let end = start + size_of::<T>() * items as usize;
+    let requested_end = start + size_of::<T>() * items as usize;
 
-    let bytes = bytes
-        .get(start..end)
-        .ok_or_else(|| UniversalIoError::OutOfBounds {
+    if start > bytes.len() {
+        return Err(UniversalIoError::OutOfBounds {
             start: start as _,
-            end: end as _,
+            end: requested_end as _,
             elements: bytes.len() / size_of::<T>(),
-        })?;
+        });
+    }
+
+    let range = if requested_end <= bytes.len() {
+        start..requested_end
+    } else {
+        // allow short reads, but align them to size of T
+        let avail_bytes = bytes.len() - start;
+        let truncated_items = avail_bytes / size_of::<T>() * size_of::<T>();
+        let end = start + truncated_items;
+
+        start..end
+    };
+
+    let bytes = &bytes[range];
 
     // `bytemuck::cast_slice` checks that `bytes` size and alignment match `T` requirements
     let items = bytemuck::cast_slice(bytes);
