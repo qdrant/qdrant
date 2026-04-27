@@ -42,10 +42,14 @@ def test_max_segment_size(tmp_path: pathlib.Path):
 
     upsert_random_points(peer_api_uris[0], 20, batch_size=5)
 
-    collection_cluster_info_after = get_collection_info(peer_api_uris[0], COLLECTION_NAME)
+    # The optimization worker creates a new appendable segment asynchronously
+    # once existing ones exceed max_segment_size_kb, and the payload index
+    # backfill is async too. Poll for both.
+    def optimizer_caught_up():
+        info = get_collection_info(peer_api_uris[0], COLLECTION_NAME)
+        return (
+            info["segments_count"] > collection_cluster_info_before["segments_count"]
+            and info["payload_schema"]["city"]["points"] == 20
+        )
 
-    # Number of segments must have grown due to limited segment size
-    assert collection_cluster_info_before["segments_count"] < collection_cluster_info_after["segments_count"]
-
-    # We must have indexed all points
-    assert collection_cluster_info_after["payload_schema"]["city"]["points"] == 20
+    wait_for(optimizer_caught_up)
