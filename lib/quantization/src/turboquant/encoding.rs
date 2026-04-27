@@ -166,12 +166,11 @@ impl TurboQuantizer {
 
         // Additional l2 for dot vectors.
         match self.distance {
-            DistanceType::Dot => {
+            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
                 let l2_bytes: [u8; 4] = src[..4].try_into().unwrap(); // TODO(turbo): maybe add error handling.
                 extras.l2_length = Some(f32::from_le_bytes(l2_bytes));
             }
             DistanceType::Cosine => {}
-            DistanceType::L1 | DistanceType::L2 => unreachable!(),
         }
 
         extras

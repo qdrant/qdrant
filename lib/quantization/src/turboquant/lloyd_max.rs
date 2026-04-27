@@ -34,7 +34,7 @@ impl TQBits {
     pub fn get_centroids(&self) -> &'static [f32] {
         match self {
             TQBits::Bits1 => &CENTROIDS_1BIT,
-            TQBits::Bits1_5 => unimplemented!("1.5Bit not yet implemented"),
+            TQBits::Bits1_5 => &CENTROIDS_1BIT,
             TQBits::Bits2 => &CENTROIDS_2BIT,
             TQBits::Bits4 => &CENTROIDS_4BIT,
         }
@@ -48,7 +48,7 @@ impl TQBits {
     pub fn get_centroid_boundaries(&self) -> &'static [f32] {
         match self {
             TQBits::Bits1 => &CENTROIDS_1BIT_BOUNDARIES,
-            TQBits::Bits1_5 => unimplemented!("1.5Bit not yet implemented"),
+            TQBits::Bits1_5 => &CENTROIDS_1BIT_BOUNDARIES,
             TQBits::Bits2 => &CENTROIDS_2BIT_BOUNDARIES,
             TQBits::Bits4 => &CENTROIDS_4BIT_BOUNDARIES,
         }

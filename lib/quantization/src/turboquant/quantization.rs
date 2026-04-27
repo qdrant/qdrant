@@ -97,9 +97,19 @@ impl TurboQuantizer {
         let v1_l2 = extra_v1.l2_length.unwrap_or(1.0);
         let v2_l2 = extra_v2.l2_length.unwrap_or(1.0);
 
-        // Both sides were scaled by sqrt(dim)/||v|| during quantize; restore
-        // magnitudes with l2, undo the sqrt(dim)² = dim inflation.
-        raw_dot * v1_l2 * v2_l2 / self.padded_dim as f32
+        match self.distance {
+            DistanceType::Cosine | DistanceType::Dot => {
+                raw_dot * v1_l2 * v2_l2 / self.padded_dim as f32
+            }
+            DistanceType::L2 => {
+                // For L2, the "dot" we calculated is actually ||v1||² + ||v2||² - 2*||v1||*||v2||*<v1_normalized, v2_normalized>>,
+                // so we need to do some extra math to recover the actual <v1, v2>.
+                v1_l2 * v1_l2 + v2_l2 * v2_l2 - 2.0 * v1_l2 * v2_l2 * raw_dot / self.padded_dim as f32
+            },
+            DistanceType::L1 => {
+                unreachable!()
+            },
+        }
     }
 
     /// Precompute the Hadamard rotation of `query` so subsequent

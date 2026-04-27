@@ -37,10 +37,8 @@ impl TQBits {
         match self {
             TQBits::Bits4 => 4,
             TQBits::Bits2 => 2,
-            TQBits::Bits1_5 => {
-                // TODO(turbo): Implement
-                unimplemented!()
-            }
+            // 1.5 bits is implemented as 1 bit with x1.5 dimension padding
+            TQBits::Bits1_5 => 1,
             TQBits::Bits1 => 1,
         }
     }

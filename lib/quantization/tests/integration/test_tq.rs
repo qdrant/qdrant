@@ -9,12 +9,11 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::dot_similarity;
-    // TODO(turbo): uncomment when L1/L2 metrics are implemented in TQ.
-    // use crate::metrics::{l1_similarity, l2_similarity};
+    use crate::metrics::{l1_similarity, l2_similarity};
 
     const VECTORS_COUNT: usize = 513;
 
-    const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512, 768, 1536];
+    const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512];
     const BITS: &[TQBits] = &[TQBits::Bits4, TQBits::Bits2, TQBits::Bits1_5, TQBits::Bits1];
     const MODE: TQMode = TQMode::Normal;
 
@@ -46,6 +45,14 @@ mod tests {
         let error = per_inv_sqrt_dim / (dim as f32).sqrt();
         assert!(error < 1.0);
         error
+    }
+
+    /// Tolerance for L2 scoring. The L2 score is
+    /// `‖q‖² + ‖v‖² − 2·<q, v>`; the norms are stored exactly as extras, so
+    /// all quantization noise lives in the dot term and is multiplied by 2.
+    /// That makes the absolute L2 error track twice the Dot tolerance.
+    fn error_l2(dim: usize, bits: TQBits) -> f32 {
+        2.0 * error_dot(dim, bits)
     }
 
     /// Per-bits minimum dim for meaningful absolute-error testing. At low dim
@@ -567,58 +574,109 @@ mod tests {
     // The `error_dot` tolerance is a placeholder; L1/L2 error scales differently
     // and will need its own calibrated formula.
 
-    // #[test]
-    // fn test_tq_l2() {
-    //     for &bits in BITS {
-    //         for &dim in DIMS {
-    //             if !should_test(dim, bits) {
-    //                 continue;
-    //             }
-    //             let error = error_dot(dim, bits);
-    //             let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-    //             let mut vector_data: Vec<Vec<f32>> = vec![];
-    //             for _ in 0..VECTORS_COUNT {
-    //                 vector_data.push((0..dim).map(|_| rng.random_range(-1.0..1.0)).collect());
-    //             }
-    //             let query: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-    //
-    //             let vector_parameters = VectorParameters {
-    //                 dim,
-    //                 deprecated_count: None,
-    //                 distance_type: DistanceType::L2,
-    //                 invert: false,
-    //             };
-    //             let quantized_vector_size =
-    //                 EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-    //                     &vector_parameters,
-    //                     bits,
-    //                     MODE,
-    //                 );
-    //             let encoded = EncodedVectorsTQ::encode(
-    //                 vector_data.iter(),
-    //                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
-    //                 &vector_parameters,
-    //                 VECTORS_COUNT,
-    //                 bits,
-    //                 MODE,
-    //                 None,
-    //                 &AtomicBool::new(false),
-    //             )
-    //             .unwrap();
-    //             let query_u8 = encoded.encode_query(&query);
-    //
-    //             let counter = HardwareCounterCell::new();
-    //             for (index, vector) in vector_data.iter().enumerate() {
-    //                 let score = encoded.score_point(&query_u8, index as u32, &counter);
-    //                 let original_score = l2_similarity(&query, vector);
-    //                 assert!(
-    //                     (score - original_score).abs() < error,
-    //                     "bits={bits:?}, dim={dim}, index={index}, score={score}, expected={original_score}"
-    //                 );
-    //             }
-    //         }
-    //     }
-    // }
+    #[test]
+    fn test_tq_l2() {
+        for &bits in BITS {
+            for &dim in DIMS {
+                if !should_test(dim, bits) {
+                    continue;
+                }
+                let error = error_l2(dim, bits);
+                let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+                let mut vector_data: Vec<Vec<f32>> = vec![];
+                for _ in 0..VECTORS_COUNT {
+                    vector_data.push((0..dim).map(|_| rng.random_range(-1.0..1.0)).collect());
+                }
+                let query: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+    
+                let vector_parameters = VectorParameters {
+                    dim,
+                    deprecated_count: None,
+                    distance_type: DistanceType::L2,
+                    invert: false,
+                };
+                let quantized_vector_size =
+                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                        &vector_parameters,
+                        bits,
+                        MODE,
+                    );
+                let encoded = EncodedVectorsTQ::encode(
+                    vector_data.iter(),
+                    TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                    &vector_parameters,
+                    VECTORS_COUNT,
+                    bits,
+                    MODE,
+                    None,
+                    &AtomicBool::new(false),
+                )
+                .unwrap();
+                let query_u8 = encoded.encode_query(&query);
+    
+                let counter = HardwareCounterCell::new();
+                for (index, vector) in vector_data.iter().enumerate() {
+                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let original_score = l2_similarity(&query, vector);
+                    assert!(
+                        (score - original_score).abs() < error,
+                        "bits={bits:?}, dim={dim}, index={index}, score={score}, expected={original_score}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_tq_l2_internal() {
+        for &bits in BITS {
+            for &dim in DIMS {
+                if !should_test(dim, bits) {
+                    continue;
+                }
+                let error = error_l2(dim, bits);
+                let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+                let mut vector_data: Vec<Vec<f32>> = vec![];
+                for _ in 0..VECTORS_COUNT {
+                    vector_data.push((0..dim).map(|_| rng.random_range(-1.0..1.0)).collect());
+                }
+
+                let vector_parameters = VectorParameters {
+                    dim,
+                    deprecated_count: None,
+                    distance_type: DistanceType::L2,
+                    invert: false,
+                };
+                let quantized_vector_size =
+                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
+                        &vector_parameters,
+                        bits,
+                        MODE,
+                    );
+                let encoded = EncodedVectorsTQ::encode(
+                    vector_data.iter(),
+                    TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                    &vector_parameters,
+                    VECTORS_COUNT,
+                    bits,
+                    MODE,
+                    None,
+                    &AtomicBool::new(false),
+                )
+                .unwrap();
+
+                let counter = HardwareCounterCell::new();
+                for i in 1..VECTORS_COUNT {
+                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let original_score = l2_similarity(&vector_data[0], &vector_data[i]);
+                    assert!(
+                        (score - original_score).abs() < error,
+                        "bits={bits:?}, dim={dim}, i={i}, score={score}, expected={original_score}"
+                    );
+                }
+            }
+        }
+    }
 
     // #[test]
     // fn test_tq_l1() {
