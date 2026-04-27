@@ -7,6 +7,7 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
 use super::{BLOCK_SIZE, CacheController, CachedSlice};
+use crate::universal_io::ReadRange;
 
 #[test]
 fn test_cacher() {
@@ -20,30 +21,57 @@ fn test_cacher() {
 
     eprintln!(
         "data0: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 3).unwrap())
+        fancy_decode(
+            &fd.get_range(ReadRange {
+                byte_offset: (BLOCK_SIZE * 3) as u64,
+                length: 0
+            })
+            .unwrap()
+        )
     );
 
     eprintln!(
         "data0a: {}",
         fancy_decode(
-            &fd.get_range(BLOCK_SIZE * 3 + 3..BLOCK_SIZE * 3 + 14)
-                .unwrap()
+            &fd.get_range(ReadRange {
+                byte_offset: (BLOCK_SIZE * 3 + 3) as u64,
+                length: 14
+            })
+            .unwrap()
         )
     );
 
     eprintln!(
         "data1: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 - 1).unwrap())
+        fancy_decode(
+            &fd.get_range(ReadRange {
+                byte_offset: (BLOCK_SIZE * 3) as u64,
+                length: BLOCK_SIZE as u64 - 1
+            })
+            .unwrap()
+        )
     );
 
     eprintln!(
         "data2: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4).unwrap())
+        fancy_decode(
+            &fd.get_range(ReadRange {
+                byte_offset: (BLOCK_SIZE * 3) as u64,
+                length: BLOCK_SIZE as u64
+            })
+            .unwrap()
+        )
     );
 
     eprintln!(
         "data3: {}",
-        fancy_decode(&fd.get_range(BLOCK_SIZE * 3..BLOCK_SIZE * 4 + 1).unwrap())
+        fancy_decode(
+            &fd.get_range(ReadRange {
+                byte_offset: (BLOCK_SIZE * 3) as u64,
+                length: (BLOCK_SIZE + 1) as u64
+            })
+            .unwrap()
+        )
     );
 }
 
@@ -138,7 +166,11 @@ fn test_cached_slice_vectors_sequential() {
     for vec_idx in 0..NUM_VECTORS {
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
-        let cached_vec = cached_slice.get_range(start..end).unwrap();
+        let range = ReadRange {
+            byte_offset: (vec_idx * VECTOR_DIM * size_of::<f32>()) as u64,
+            length: VECTOR_DIM as u64,
+        };
+        let cached_vec = cached_slice.get_range(range).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
             &vectors[start..end],
@@ -181,7 +213,11 @@ fn test_cached_slice_vectors_random_access() {
         let vec_idx = rng.random_range(0..NUM_VECTORS);
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
-        let cached_vec = cached_slice.get_range(start..end).unwrap();
+        let range = ReadRange {
+            byte_offset: (vec_idx * VECTOR_DIM * size_of::<f32>()) as u64,
+            length: VECTOR_DIM as u64,
+        };
+        let cached_vec = cached_slice.get_range(range).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
             &vectors[start..end],
@@ -197,7 +233,13 @@ fn test_cached_slice_vectors_random_access() {
             continue;
         }
         let b = a + rng.random_range(1..=max_len);
-        let cached_range = cached_slice.get_range(a..b).unwrap();
+        dbg!(a..b);
+        let range = ReadRange {
+            byte_offset: (a * size_of::<f32>()) as u64,
+            length: (b - a) as u64,
+        };
+        dbg!(range);
+        let cached_range = cached_slice.get_range(range).unwrap();
         assert_eq!(
             cached_range.as_ref(),
             &vectors[a..b],
@@ -246,8 +288,11 @@ fn test_no_more_blocks_concurrent_exhaustion() {
             std::thread::spawn(move || {
                 barrier.wait();
                 for block in 0..blocks_per_file {
-                    fd.get_range(block * BLOCK_SIZE..(block + 1) * BLOCK_SIZE)
-                        .unwrap();
+                    fd.get_range(ReadRange {
+                        byte_offset: (block * BLOCK_SIZE) as u64,
+                        length: BLOCK_SIZE as u64,
+                    })
+                    .unwrap();
                 }
             })
         })

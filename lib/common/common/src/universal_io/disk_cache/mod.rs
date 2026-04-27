@@ -16,7 +16,7 @@ mod controller;
 mod tests;
 
 pub use cached_slice::CachedSlice;
-use controller::{CacheController, CacheRead};
+use controller::CacheController;
 
 use super::UniversalKind;
 
@@ -89,26 +89,28 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
     }
 
     fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let elem_start = usize::try_from(range.byte_offset).expect("range.start is within usize")
-            / size_of::<T>();
-        let elem_length = usize::try_from(range.length).expect("range.length is within usize");
-
-        let range = elem_start..elem_start + elem_length;
-
-        Ok(self.get_range(range)?)
+        self.get_range(range)
     }
 
     fn read_batch<'a, P: AccessPattern, Meta: 'a>(
         &'a self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
+        callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()> {
-        for (meta, range) in ranges {
-            let data = self.read::<P>(range)?;
-            callback(meta, &data)?;
-        }
+        CachedSlice::read_multi(
+            ranges.into_iter().map(|(meta, range)| (meta, self, range)),
+            callback,
+        )
+    }
 
-        Ok(())
+    fn read_multi<'a, P: AccessPattern, Meta: 'a>(
+        reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
+        callback: impl FnMut(Meta, &[T]) -> Result<()>,
+    ) -> Result<()>
+    where
+        Self: 'a,
+    {
+        CachedSlice::read_multi(reads, callback)
     }
 
     fn len(&self) -> Result<u64> {

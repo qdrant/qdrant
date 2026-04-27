@@ -86,7 +86,11 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         let mut items = vec![T::zeroed(); range.length as usize];
         let bytes = bytemuck::cast_slice_mut(&mut items);
-        self.file.read_exact_at(bytes, range.byte_offset)?;
+        if self.direct_io {
+            self.file.read_at(bytes, range.byte_offset)?;
+        } else {
+            self.file.read_exact_at(bytes, range.byte_offset)?;
+        }
         Ok(Cow::Owned(items))
     }
 
