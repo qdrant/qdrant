@@ -95,15 +95,6 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
             .expect("sparse vectors read");
     }
 
-    fn score_stored_batch_impl(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert!(
-            false,
-            "score_stored_batch_impl should not be used, use score_stored_batch instead"
-        );
-
-        self.score_stored_batch(ids, scores); // fallback
-    }
-
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
     }

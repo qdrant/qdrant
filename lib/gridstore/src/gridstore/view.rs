@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::iter;
 use std::ops::ControlFlow;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -109,53 +108,33 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         Ok(Some(value))
     }
 
-    pub fn for_each_in_batch<P, F>(
+    pub fn for_each_in_batch<P, F, E>(
         &self,
         point_offsets: &[PointOffset],
         mut callback: F,
         hw_counter: &HardwareCounterCell,
-    ) -> Result<()>
+    ) -> std::result::Result<(), E>
     where
         P: AccessPattern,
-        F: FnMut(usize, V),
+        F: FnMut(usize, Option<V>) -> std::result::Result<(), E>,
+        E: From<GridstoreError>,
     {
-        // Read value pointers for given point offsets, until there's read error or value pointer
-        // does not exist, extract any error from the iterator into `result` variable
-        let mut result = Ok(());
-        let mut point_offsets = point_offsets.iter();
-        let pointers = iter::from_fn(|| {
-            let &point_offset = point_offsets.next()?;
-            match self.get_pointer(point_offset) {
-                Ok(Some(ptr)) => Some(ptr),
-                Ok(None) => {
-                    result = Err(GridstoreError::ValueNotFound { point_offset });
-                    None
-                }
-                Err(err) => {
-                    result = Err(err);
-                    None
-                }
-            }
-        });
+        // Resolve all pointers in a single batched tracker read so async backends
+        // (e.g. io_uring) can fetch them in parallel.
+        let pointers = self.tracker.get_batch(point_offsets)?;
 
-        // `read_batch_from_pages` iterator would stop, as soon as there's a value pointer error
-        let values = self
-            .pages
-            .read_batch_from_pages::<P, _>(pointers, self.config)?;
-
-        for result in values {
-            let (idx, raw) = result?;
-
-            hw_counter.payload_io_read_counter().incr_delta(raw.len());
-
-            let decompressed = self.decompress(raw);
-            let value = V::from_bytes(&decompressed);
-
-            callback(idx, value);
-        }
-
-        // And we can propagate value pointer error to the caller
-        result
+        // Stream decoded values straight to the caller — no intermediate buffer.
+        // The callback `idx` maps 1-to-1 to `point_offsets`; missing offsets are
+        // delivered as `None`.
+        self.pages
+            .read_batch_from_pages::<P, _, E>(pointers, self.config, |idx, raw_opt| {
+                let value = raw_opt.map(|raw| {
+                    hw_counter.payload_io_read_counter().incr_delta(raw.len());
+                    let decompressed = self.decompress(raw);
+                    V::from_bytes(&decompressed)
+                });
+                callback(idx, value)
+            })
     }
 
     /// Iterate over all the values in the storage.

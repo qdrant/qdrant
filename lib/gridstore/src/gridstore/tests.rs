@@ -1262,3 +1262,126 @@ fn test_skip_deferred_flush_after_clear() {
     assert!(storage.get_pointer(0).is_none(), "point must not exist");
     assert_eq!(storage.max_point_offset(), 0, "must have zero points");
 }
+
+/// `Pages::read_batch_from_pages` must yield the same bytes as calling
+/// `read_from_pages` for each pointer individually. Covers the small/multi-page mix
+/// and synthetic zero-length pointers.
+#[test]
+fn test_read_batch_from_pages_congruent_with_read_from_pages() {
+    // Use small pages so larger payloads span multiple pages.
+    let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+    let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    // Mix of payload sizes so we exercise both single-page and multi-page reads.
+    let num_payloads = 50u32;
+    for point_offset in 0..num_payloads {
+        let size_factor = (point_offset % 8) as usize + 1;
+        let payload = random_payload(rng, size_factor);
+        storage
+            .put_value(point_offset, &payload, hw_counter_ref)
+            .unwrap();
+    }
+
+    let mut pointers: Vec<ValuePointer> = (0..num_payloads)
+        .map(|i| storage.get_pointer(i).unwrap())
+        .collect();
+
+    // Synthetic zero-length pointer to exercise that branch.
+    pointers.push(ValuePointer::new(0, 0, 0));
+
+    pointers.shuffle(rng);
+
+    let pages = storage.pages.read();
+
+    let single_results: Vec<Vec<u8>> = pointers
+        .iter()
+        .map(|ptr| {
+            pages
+                .read_from_pages::<Random>(*ptr, &storage.config)
+                .unwrap()
+                .into_owned()
+        })
+        .collect();
+
+    let mut batch_results: Vec<Option<Vec<u8>>> = vec![None; pointers.len()];
+
+    let pointers_opt: Vec<_> = pointers.into_iter().map(Some).collect();
+    pages
+        .read_batch_from_pages::<Random, _, GridstoreError>(
+            pointers_opt,
+            &storage.config,
+            |idx, raw_opt| {
+                batch_results[idx] = raw_opt.map(|raw| raw.into_owned());
+                Ok(())
+            },
+        )
+        .unwrap();
+
+    for (i, single) in single_results.iter().enumerate() {
+        assert_eq!(
+            batch_results[i].as_ref(),
+            Some(single),
+            "batch read mismatch at idx {i}, len {}",
+            single.len(),
+        );
+    }
+}
+
+/// `GridstoreView::for_each_in_batch` must yield the same values as calling
+/// `get_value` per offset, including missing/out-of-range offsets that should be
+/// silently skipped (matching `get_value`'s `Ok(None)`).
+#[test]
+fn test_for_each_in_batch_congruent_with_get_value() {
+    let (_dir, mut storage) = empty_storage();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+
+    let num_payloads = 100u32;
+    for point_offset in 0..num_payloads {
+        let size_factor = (point_offset % 5) as usize + 1;
+        let payload = random_payload(rng, size_factor);
+        storage
+            .put_value(point_offset, &payload, hw_counter_ref)
+            .unwrap();
+    }
+
+    // Delete a few values to create gaps.
+    for &id in &[3u32, 17, 42, 88] {
+        storage.delete_value(id).unwrap();
+    }
+
+    // Build offsets including deleted points and out-of-range ones.
+    let mut offsets: Vec<u32> = (0..num_payloads).collect();
+    offsets.push(num_payloads + 5);
+    offsets.push(num_payloads + 100);
+    offsets.shuffle(rng);
+
+    let single_results: Vec<Option<Payload>> = offsets
+        .iter()
+        .map(|&o| storage.get_value::<Random>(o, &hw_counter).unwrap())
+        .collect();
+
+    let mut batch_results: Vec<Option<Payload>> = vec![None; offsets.len()];
+    storage
+        .for_each_in_batch::<Random, _, GridstoreError>(
+            &offsets,
+            |idx, value| {
+                batch_results[idx] = value;
+                Ok(())
+            },
+            &hw_counter,
+        )
+        .unwrap();
+
+    for (i, (single, batch)) in single_results.iter().zip(&batch_results).enumerate() {
+        assert_eq!(single, batch, "mismatch at idx {i} (offset {})", offsets[i]);
+    }
+}

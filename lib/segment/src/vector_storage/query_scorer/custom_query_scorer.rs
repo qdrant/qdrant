@@ -101,16 +101,6 @@ impl<
     }
 
     #[inline]
-    fn score_stored_batch_impl(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert!(
-            false,
-            "score_stored_batch_impl should not be used, use score_stored_batch instead"
-        );
-
-        self.score_stored_batch(ids, scores); // fallback
-    }
-
-    #[inline]
     fn score(&self, against: &[TElement]) -> ScoreType {
         let cpu_counter = self.hardware_counter.cpu_counter();
 

@@ -373,6 +373,61 @@ impl<S: UniversalRead<u8>> Tracker<S> {
         }
     }
 
+    /// Get the page pointers for a batch of point offsets.
+    ///
+    /// Issues a single batched read against the underlying storage so async
+    /// backends (e.g. io_uring) can fetch all entries in parallel. Pending
+    /// updates and out-of-range offsets are handled before/after the batch
+    /// read, mirroring [`get`](Self::get).
+    pub fn get_batch(&self, point_offsets: &[PointOffset]) -> Result<Vec<Option<ValuePointer>>> {
+        let item_size = std::mem::size_of::<Optional<ValuePointer>>();
+        let header_size = std::mem::size_of::<TrackerHeader>();
+        let storage_len = self.storage.len()?;
+
+        let mut result: Vec<Option<ValuePointer>> = vec![None; point_offsets.len()];
+        let mut storage_reads: Vec<(usize, ReadRange)> = Vec::with_capacity(point_offsets.len());
+
+        for (i, &point_offset) in point_offsets.iter().enumerate() {
+            // Pending updates take precedence over storage.
+            if let Some(pending) = self.pending_updates.get(&point_offset) {
+                if pending.is_empty() {
+                    debug_assert!(false, "pending updates must not be empty");
+                } else {
+                    result[i] = pending.current;
+                    continue;
+                }
+            }
+
+            let start_offset = header_size + point_offset as usize * item_size;
+            let end_offset = start_offset + item_size;
+            if end_offset as u64 > storage_len {
+                // Out of range, leave as None.
+                continue;
+            }
+
+            storage_reads.push((
+                i,
+                ReadRange {
+                    byte_offset: start_offset as u64,
+                    length: item_size as u64,
+                },
+            ));
+        }
+
+        let reads = storage_reads
+            .iter()
+            .map(|(i, range)| (*i, &self.storage, *range));
+
+        for read_result in S::read_multi_iter::<Random, _>(reads)? {
+            let (i, bytes) = read_result?;
+            #[expect(deprecated, reason = "legacy code")]
+            let opt: &Optional<ValuePointer> = unsafe { transmute_from_u8(bytes.as_ref()) };
+            result[i] = opt.is_some().copied();
+        }
+
+        Ok(result)
+    }
+
     /// Iterate over the pointers in the tracker
     /// Starts from the given point offset
     pub fn iter_pointers(

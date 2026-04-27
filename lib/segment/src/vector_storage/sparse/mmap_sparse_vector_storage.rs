@@ -203,16 +203,16 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
     where
         F: FnMut(usize, SparseVector),
     {
-        self.storage.for_each_in_batch::<Random, _>(
+        self.storage.for_each_in_batch::<Random, _, OperationError>(
             keys,
             |idx, vector| {
-                let vector = SparseVector::try_from(vector).expect("valid sparse vector");
-                callback(idx, vector);
+                if let Some(vector) = vector {
+                    callback(idx, SparseVector::try_from(vector)?);
+                }
+                Ok(())
             },
             &HardwareCounterCell::disposable(),
-        )?;
-
-        Ok(())
+        )
     }
 }
 
