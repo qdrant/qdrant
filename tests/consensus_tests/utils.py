@@ -84,7 +84,10 @@ def get_port() -> int:
             s.bind(('', 0))
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             allocated_port = s.getsockname()[1]
-            if allocated_port in busy_ports:
+            # Reserve a ±2 buffer so a restart using `port=p.p2p_port` (which
+            # also occupies port+1, port+2) cannot collide with another live
+            # peer's randomly-allocated port.
+            if any((allocated_port + d) in busy_ports for d in range(-2, 3)):
                 continue
             return allocated_port
 
