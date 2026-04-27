@@ -20,6 +20,14 @@ impl Query4bitSimd {
     pub unsafe fn dotprod_raw_sse(&self, vector: &[u8]) -> i64 {
         use core::arch::x86_64::*;
 
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query4bitSimd::dotprod_raw_sse: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
+
         unsafe {
             let codebook = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
             let ones = _mm_set1_epi16(1);
@@ -74,6 +82,14 @@ impl Query4bitSimd {
     #[target_feature(enable = "avx2")]
     pub unsafe fn dotprod_raw_avx2(&self, vector: &[u8]) -> i64 {
         use core::arch::x86_64::*;
+
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query4bitSimd::dotprod_raw_avx2: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
 
         unsafe {
             let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
@@ -131,6 +147,14 @@ impl Query4bitSimd {
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni,sse4.1,ssse3")]
     pub unsafe fn dotprod_raw_avx512_vnni(&self, vector: &[u8]) -> i64 {
         use core::arch::x86_64::*;
+
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query4bitSimd::dotprod_raw_avx512_vnni: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
 
         unsafe {
             let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());

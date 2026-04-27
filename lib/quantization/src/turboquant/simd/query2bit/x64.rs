@@ -82,6 +82,14 @@ impl Query2bitSimd {
     pub unsafe fn dotprod_raw_sse(&self, vector: &[u8]) -> i64 {
         use core::arch::x86_64::*;
 
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query2bitSimd::dotprod_raw_sse: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
+
         unsafe {
             let mut acc_low = _mm_setzero_si128();
             let mut acc_high = _mm_setzero_si128();
@@ -117,6 +125,14 @@ impl Query2bitSimd {
     #[target_feature(enable = "avx2,sse4.1,ssse3")]
     pub unsafe fn dotprod_raw_avx2(&self, vector: &[u8]) -> i64 {
         use core::arch::x86_64::*;
+
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query2bitSimd::dotprod_raw_avx2: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
 
         unsafe {
             let ones = _mm256_set1_epi16(1);
@@ -188,6 +204,14 @@ impl Query2bitSimd {
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni,sse4.1,ssse3")]
     pub unsafe fn dotprod_raw_avx512_vnni(&self, vector: &[u8]) -> i64 {
         use core::arch::x86_64::*;
+
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query2bitSimd::dotprod_raw_avx512_vnni: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
 
         unsafe {
             let mut acc_low = _mm512_setzero_si512();

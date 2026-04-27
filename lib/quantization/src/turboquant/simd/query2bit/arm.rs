@@ -85,6 +85,14 @@ impl Query2bitSimd {
     pub unsafe fn dotprod_raw_neon(&self, vector: &[u8]) -> i64 {
         use core::arch::aarch64::*;
 
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query2bitSimd::dotprod_raw_neon: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
+
         unsafe {
             let mut acc_low = vdupq_n_s32(0);
             let mut acc_high = vdupq_n_s32(0);
@@ -122,6 +130,14 @@ impl Query2bitSimd {
     #[target_feature(enable = "neon,dotprod")]
     pub unsafe fn dotprod_raw_neon_sdot(&self, vector: &[u8]) -> i64 {
         use core::arch::aarch64::*;
+
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query2bitSimd::dotprod_raw_neon_sdot: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
 
         unsafe {
             let mut acc_low_0 = vdupq_n_s32(0);
@@ -376,7 +392,7 @@ mod tests {
             let neon = unsafe { score_2bit_internal_neon(&vec_a, &vec_b) };
             assert_eq!(scalar, neon, "score neon parity fail at dim {dim}");
 
-            if std::arch::is_aarch64_feature_detected!("dotprod") && dim.is_multiple_of(32) {
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
                 let sdot = unsafe { score_2bit_internal_neon_sdot(&vec_a, &vec_b) };
                 assert_eq!(scalar, sdot, "score sdot parity fail at dim {dim}");
             }

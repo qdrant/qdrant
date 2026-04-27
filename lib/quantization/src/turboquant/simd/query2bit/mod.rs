@@ -202,6 +202,13 @@ impl Query2bitSimd {
         }
     }
 
+    /// Number of `vector` bytes the encoded query expects: 4 bytes per full
+    /// 16-dim chunk plus the packed tail (four 2-bit codes per byte).
+    #[inline]
+    pub(super) fn expected_vector_bytes(&self) -> usize {
+        self.query_data.len() * 4 + (self.tail_dims as usize).div_ceil(4)
+    }
+
     /// Score the encoded query against a 2-bit PQ-encoded `vector`
     /// (four centroid indices per byte; bits `[2k..2k+2]` hold the code for
     /// lane `k ∈ 0..=3`).  `vector.len()` must equal `ceil(dim * 2 / 8)` —
@@ -249,6 +256,13 @@ impl Query2bitSimd {
     /// bits `[2k..2k+2]` for `k ∈ 0..=3` hold codes `0..=3` of the byte,
     /// in low-to-high bit order.
     pub fn dotprod_raw(&self, vector: &[u8]) -> i64 {
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query2bitSimd::dotprod_raw: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
         let mut acc_low: i64 = 0;
         let mut acc_high: i64 = 0;
         for (chunk_idx, [low, high]) in self.query_data.iter().enumerate() {

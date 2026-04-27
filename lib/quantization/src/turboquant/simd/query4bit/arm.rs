@@ -16,6 +16,14 @@ impl Query4bitSimd {
     pub unsafe fn dotprod_raw_neon(&self, vector: &[u8]) -> i64 {
         use core::arch::aarch64::*;
 
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query4bitSimd::dotprod_raw_neon: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
+
         unsafe {
             let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());
             let mut acc_low = vdupq_n_s32(0);
@@ -89,6 +97,14 @@ impl Query4bitSimd {
     #[target_feature(enable = "neon,dotprod")]
     pub unsafe fn dotprod_raw_neon_sdot(&self, vector: &[u8]) -> i64 {
         use core::arch::aarch64::*;
+
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query4bitSimd::dotprod_raw_neon_sdot: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
 
         unsafe {
             let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());

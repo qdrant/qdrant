@@ -245,6 +245,13 @@ impl Query4bitSimd {
         }
     }
 
+    /// Number of `vector` bytes the encoded query expects: 8 bytes per full
+    /// 16-dim chunk plus the packed tail (two 4-bit codes per byte).
+    #[inline]
+    pub(super) fn expected_vector_bytes(&self) -> usize {
+        self.query_data.len() * 8 + (self.tail_dims as usize).div_ceil(2)
+    }
+
     /// Score the encoded query against a 4-bit PQ-encoded `vector`
     /// (two centroid indices per byte; low nibble = even lane, high nibble
     /// = odd lane).  `vector.len()` must equal `ceil(dim / 2)` — full chunks
@@ -294,6 +301,13 @@ impl Query4bitSimd {
     /// the low nibble is the index for the even lane (j = 2k), the high nibble
     /// for the odd lane (j = 2k + 1).
     pub fn dotprod_raw(&self, vector: &[u8]) -> i64 {
+        assert_eq!(
+            vector.len(),
+            self.expected_vector_bytes(),
+            "Query4bitSimd::dotprod_raw: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.expected_vector_bytes(),
+        );
         let mut acc_low: i64 = 0;
         let mut acc_high: i64 = 0;
         for (chunk_idx, [low, high]) in self.query_data.iter().enumerate() {
