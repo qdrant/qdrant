@@ -16,57 +16,56 @@ mod tests {
     const BITS: &[TQBits] = &[TQBits::Bits4, TQBits::Bits2, TQBits::Bits1_5, TQBits::Bits1];
     const MODE: TQMode = TQMode::Normal;
 
-    /// Tolerance for Dot-product scoring. For centered U[-1, 1] inputs the dot
-    /// product magnitude scales as sqrt(dim) (std of the true score plus the
-    /// Lloyd-Max quantization error both scale the same way), so the tolerance
-    /// follows suit. Coefficients are empirically calibrated (~1.8x observed
-    /// max across VECTORS_COUNT trials on both symmetric and asymmetric paths).
-    fn error_dot(dim: usize, bits: TQBits) -> f32 {
-        let per_sqrt_dim = match bits {
-            TQBits::Bits4 => 0.3,
-            TQBits::Bits2 => 1.0,
-            TQBits::Bits1_5 => 1.5,
-            TQBits::Bits1 => 1.7,
-        };
-        per_sqrt_dim * (dim as f32).sqrt()
-    }
-
-    /// Tolerance for Cosine scoring. Unit-norm inputs mean cos(θ) ∈ [-1, 1] and
-    /// the quantization error on the score shrinks as 1/sqrt(dim). Coefficients
-    /// are empirically calibrated (~1.8x observed max).
-    fn error_cosine(dim: usize, bits: TQBits) -> f32 {
-        let per_inv_sqrt_dim = match bits {
-            TQBits::Bits4 => 1.0,
-            TQBits::Bits2 => 3.0,
+    /// Absolute tolerance for an approximate score: an empirical per-bit
+    /// coefficient (≈ 1.8x observed max across VECTORS_COUNT trials) times
+    /// the signal-std of the input data. The mean-error / signal-std ratio
+    /// is shared by the Dot, Cosine, and L2 paths, so the same coefficient
+    /// table is used; only the caller's `signal_std` differs by metric and
+    /// data distribution.
+    fn error(bits: TQBits, signal_std: f32) -> f32 {
+        let coef = match bits {
+            TQBits::Bits1 => 5.1,
             TQBits::Bits1_5 => 4.0,
-            TQBits::Bits1 => 5.0,
+            TQBits::Bits2 => 3.0,
+            TQBits::Bits4 => 0.9,
         };
-        let error = per_inv_sqrt_dim / (dim as f32).sqrt();
-        assert!(error < 1.0);
-        error
+        coef * signal_std
     }
 
-    /// Tolerance for L2 scoring. The L2 score is
-    /// `‖q‖² + ‖v‖² − 2·<q, v>`; the norms are stored exactly as extras, so
-    /// all quantization noise lives in the dot term and is multiplied by 2.
-    /// That makes the absolute L2 error track twice the Dot tolerance.
-    fn error_l2(dim: usize, bits: TQBits) -> f32 {
-        2.0 * error_dot(dim, bits)
+    /// Signal-std of dot products of two independent U[-1, 1]^d vectors.
+    fn dot_signal_std(dim: usize) -> f32 {
+        (dim as f32 / 9.0).sqrt()
     }
 
-    /// Tolerance for L1 scoring. The L1 path dequantizes both sides (full
-    /// inverse rotation + Lloyd-Max noise per coord) before summing |a−b|.
-    /// Per-coord errors enter the sum signed (sign(a_i−b_i)·δ_i), so the
-    /// cancellation makes the total error scale as sqrt(dim) rather than
-    /// linearly. Coefficients are empirically calibrated (~1.8x observed max
-    /// across both symmetric and asymmetric paths); the symmetric path
-    /// dominates at low bits because both vectors carry dequantization noise.
+    /// Signal-std of cosine of two independent unit-norm random vectors in d-dim.
+    fn cosine_signal_std(dim: usize) -> f32 {
+        1.0 / (dim as f32).sqrt()
+    }
+
+    /// Signal-std of the L2-squared score for two independent U[-1, 1]^d
+    /// vectors. The score is `‖q‖² + ‖v‖² − 2·<q, v>`; the norms are stored
+    /// exactly as extras and contribute no quantization noise, so the
+    /// signal variance is dominated by the `−2·<q, v>` term — i.e. twice
+    /// the dot-product std.
+    fn l2_signal_std(dim: usize) -> f32 {
+        2.0 * dot_signal_std(dim)
+    }
+
+    /// Tolerance for L1 scoring. Has its own per-bit coefficient table
+    /// because the L1 path's noise/signal ratio doesn't track the dot/cosine
+    /// pattern: it dequantizes both sides (full inverse rotation + Lloyd-Max
+    /// noise per coord) before summing |a − b|. Per-coord errors enter the
+    /// sum signed (sign(a_i − b_i)·δ_i), so cancellation makes the total
+    /// scale as sqrt(dim). Coefficients are empirically calibrated
+    /// (~1.8x observed max across both symmetric and asymmetric paths);
+    /// the symmetric path dominates at low bits because both vectors carry
+    /// dequantization noise.
     fn error_l1(dim: usize, bits: TQBits) -> f32 {
         let per_sqrt_dim = match bits {
-            TQBits::Bits4 => 0.7,
-            TQBits::Bits2 => 3.0,
-            TQBits::Bits1_5 => 4.5,
             TQBits::Bits1 => 7.5,
+            TQBits::Bits1_5 => 4.5,
+            TQBits::Bits2 => 3.0,
+            TQBits::Bits4 => 0.7,
         };
         per_sqrt_dim * (dim as f32).sqrt()
     }
@@ -77,10 +76,10 @@ mod tests {
     /// for the tolerance formulas above to be useful.
     fn should_test(dim: usize, bits: TQBits) -> bool {
         let min_dim = match bits {
-            TQBits::Bits4 => 8,
-            TQBits::Bits2 => 32,
-            TQBits::Bits1_5 => 48,
             TQBits::Bits1 => 64,
+            TQBits::Bits1_5 => 48,
+            TQBits::Bits2 => 32,
+            TQBits::Bits4 => 8,
         };
         dim >= min_dim
     }
@@ -105,7 +104,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_dot(dim, bits);
+                let error = error(bits, dot_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let mut vector_data: Vec<Vec<f32>> = vec![];
                 for _ in 0..VECTORS_COUNT {
@@ -158,7 +157,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_cosine(dim, bits);
+                let error = error(bits, cosine_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let mut vector_data: Vec<Vec<f32>> = vec![];
                 for _ in 0..VECTORS_COUNT {
@@ -213,7 +212,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_dot(dim, bits);
+                let error = error(bits, dot_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let mut vector_data: Vec<Vec<f32>> = vec![];
                 for _ in 0..VECTORS_COUNT {
@@ -264,7 +263,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_cosine(dim, bits);
+                let error = error(bits, cosine_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let mut vector_data: Vec<Vec<f32>> = vec![];
                 for _ in 0..VECTORS_COUNT {
@@ -319,7 +318,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_dot(dim, bits);
+                let error = error(bits, dot_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 // Place the zero vector at index 0; fill the rest with random
                 // data so the encoded batch resembles a realistic input.
@@ -373,7 +372,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_dot(dim, bits);
+                let error = error(bits, dot_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let mut vector_data: Vec<Vec<f32>> = vec![];
                 for _ in 0..VECTORS_COUNT {
@@ -430,7 +429,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_cosine(dim, bits);
+                let error = error(bits, cosine_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 // Index 0 is the zero vector (not routed through `normalize`,
                 // which would divide by zero); the rest are unit-norm random.
@@ -487,7 +486,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_cosine(dim, bits);
+                let error = error(bits, cosine_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let mut vector_data: Vec<Vec<f32>> = vec![];
                 for _ in 0..VECTORS_COUNT {
@@ -583,12 +582,9 @@ mod tests {
         }
     }
 
-    // The L1 and L2 tests below are disabled because TQ does not yet implement
-    // those metrics (encoding panics with `unimplemented!()`). They are kept
-    // here so they can be enabled once support lands — uncomment the matching
-    // `use crate::metrics::{l1_similarity, l2_similarity};` above as well.
-    // The `error_dot` tolerance is a placeholder; L1/L2 error scales differently
-    // and will need its own calibrated formula.
+    // L2 (squared) and L1 score tests. Tolerance for L2 reuses the unified
+    // `error()` with `l2_signal_std`; L1 has its own coefficient table
+    // because its noise/signal scaling per bit doesn't match dot/cosine.
 
     #[test]
     fn test_tq_l2() {
@@ -597,7 +593,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_l2(dim, bits);
+                let error = error(bits, l2_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let mut vector_data: Vec<Vec<f32>> = vec![];
                 for _ in 0..VECTORS_COUNT {
@@ -650,7 +646,7 @@ mod tests {
                 if !should_test(dim, bits) {
                     continue;
                 }
-                let error = error_l2(dim, bits);
+                let error = error(bits, l2_signal_std(dim));
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let mut vector_data: Vec<Vec<f32>> = vec![];
                 for _ in 0..VECTORS_COUNT {

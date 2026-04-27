@@ -9,11 +9,12 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::{ScoreType, ScoredPointOffset};
-use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
+use rand_distr::StandardNormal;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::{NonAppendableSegmentEntry, SegmentEntry};
-use segment::fixtures::payload_fixtures::{STR_KEY, random_vector};
+use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::{VectorIndex, VectorIndexEnum};
 use segment::json_path::JsonPath;
@@ -26,7 +27,8 @@ use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
     CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
     Indexes, ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
-    ScalarQuantizationConfig, SearchParams,
+    ScalarQuantizationConfig, SearchParams, TurboQuantBitSize, TurboQuantQuantizationConfig,
+    TurboQuantization,
 };
 use segment::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
@@ -41,6 +43,32 @@ pub fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -
         .collect::<BTreeSet<_>>()
         .intersection(&b[0].iter().map(|x| x.idx).collect())
         .count()
+}
+
+/// Sample test vectors with a distribution suited to the distance metric.
+///
+/// * Cosine: uniform on the unit sphere (standard normal per coordinate
+///   then normalized). The result is symmetric around zero, matching what
+///   typical embedding pipelines (BERT, CLIP, ...) produce.
+/// * Dot, Euclid, Manhattan: standard normal per coordinate, *not*
+///   normalized. This gives vectors with non-trivial magnitudes, so a dot
+///   test actually exercises dot product and not an implicit cosine
+///   similarity (which would be the case for unit-norm input).
+///
+/// Avoids `segment::fixtures::random_vector` (which gives values in
+/// `[0, 1)` — a positive-orthant distribution that is unrepresentative
+/// for cosine-similarity benchmarking).
+fn random_test_vector(rng: &mut StdRng, dim: usize, distance: Distance) -> Vec<f32> {
+    let raw: Vec<f32> = (0..dim)
+        .map(|_| rng.sample::<f64, _>(StandardNormal) as f32)
+        .collect();
+    match distance {
+        Distance::Cosine => {
+            let l2 = raw.iter().map(|x| x * x).sum::<f32>().sqrt();
+            raw.into_iter().map(|x| x / l2).collect()
+        }
+        Distance::Dot | Distance::Euclid | Distance::Manhattan => raw,
+    }
 }
 
 fn hnsw_quantized_search_test(
@@ -72,7 +100,7 @@ fn hnsw_quantized_search_test(
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rng, dim);
+        let vector = random_test_vector(&mut rng, dim, distance);
         segment
             .upsert_point(op_num, idx, only_default_vector(&vector), &hw_counter)
             .unwrap();
@@ -150,7 +178,7 @@ fn hnsw_quantized_search_test(
     .unwrap();
 
     let query_vectors = (0..attempts)
-        .map(|_| random_vector(&mut rng, dim).into())
+        .map(|_| random_test_vector(&mut rng, dim, distance).into())
         .collect::<Vec<_>>();
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         JsonPath::new(STR_KEY),
@@ -408,6 +436,190 @@ fn hnsw_product_quantization_manhattan_test() {
         }
         .into(),
         false,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_cosine_test() {
+    // Bits4 has enough headroom to use the standard helper (40% recall floor),
+    // matching the scalar/PQ tests' shape (filtered + unfiltered check_matches,
+    // check_oversampling, check_rescoring on zero-overwritten vectors).
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_dot_test() {
+    // See `hnsw_turbo_quantization_cosine_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Dot,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_cosine_larger_test() {
+    // See `hnsw_turbo_quantization_cosine_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        2003,
+        256,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_cosine_bits2_test() {
+    // Bits2 also clears the standard helper's 40% recall floor on
+    // unit-sphere data, so it can share the scalar/PQ test shape.
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_dot_bits2_test() {
+    // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Dot,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
+    // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        2003,
+        131,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+    );
+}
+
+// L2 (Euclid) and L1 (Manhattan) coverage at Bits4 and Bits2.
+// Bits1 and Bits1_5 are intentionally omitted across all distances:
+// they don't reliably clear the standard helper's 40% recall floor
+// and would be flaky-to-failing under this shape.
+
+#[test]
+fn hnsw_turbo_quantization_euclid_test() {
+    hnsw_quantized_search_test(
+        Distance::Euclid,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_manhattan_test() {
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits4),
+            },
+        }),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_euclid_bits2_test() {
+    hnsw_quantized_search_test(
+        Distance::Euclid,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_manhattan_bits2_test() {
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                plus: None,
+                bits: Some(TurboQuantBitSize::Bits2),
+            },
+        }),
+        true,
     );
 }
 
