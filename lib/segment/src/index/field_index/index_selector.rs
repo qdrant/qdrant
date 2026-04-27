@@ -177,14 +177,14 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Text(text_index_params) => self
                 .text_new(field, text_index_params.clone(), create_if_missing)?
                 .map(|index| vec![FieldIndex::FullTextIndex(index)]),
-            PayloadSchemaParams::Bool(_) => {
-                let mutability = match self {
-                    IndexSelector::Mmap(_) => IndexMutability::Immutable,
-                    IndexSelector::Gridstore(_) => IndexMutability::Mutable,
-                };
-                self.bool_new(field, create_if_missing, id_tracker, mutability)?
-                    .map(|index| vec![FieldIndex::BoolIndex(index)])
-            }
+            PayloadSchemaParams::Bool(_) => self
+                .bool_new(
+                    field,
+                    create_if_missing,
+                    id_tracker,
+                    self.default_mutability(),
+                )?
+                .map(|index| vec![FieldIndex::BoolIndex(index)]),
             PayloadSchemaParams::Datetime(_) => self
                 .numeric_new(field, create_if_missing)?
                 .map(|index| vec![FieldIndex::DatetimeIndex(index)]),
@@ -385,6 +385,16 @@ impl IndexSelector<'_> {
         match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => dir,
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => dir,
+        }
+    }
+
+    /// Default mutability for indexes that share an on-disk format across
+    /// mutability variants (e.g. bool, null): Mmap segments are immutable,
+    /// Gridstore segments are appendable/mutable.
+    pub fn default_mutability(&self) -> IndexMutability {
+        match self {
+            IndexSelector::Mmap(_) => IndexMutability::Immutable,
+            IndexSelector::Gridstore(_) => IndexMutability::Mutable,
         }
     }
 
