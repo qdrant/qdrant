@@ -91,6 +91,37 @@ def get_port() -> int:
                 continue
             return allocated_port
 
+
+def get_port_triple() -> int:
+    # Allocate a contiguous triple (port, port+1, port+2) for a peer's
+    # p2p/grpc/http ports. Required so that restarts with `port=p.p2p_port`
+    # — which derive grpc=port+1, http=port+2 — find those slots free even
+    # under pytest-xdist, where other workers' `busy_ports` are not visible.
+    # Verifies bindability across processes by probing all three with bind().
+    while True:
+        s0 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s0.bind(('', 0))
+            base = s0.getsockname()[1]
+            if any((base + d) in busy_ports for d in range(-2, 5)):
+                s0.close()
+                continue
+            s1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s1.bind(('', base + 1))
+                s2.bind(('', base + 2))
+                return base
+            except OSError:
+                continue
+            finally:
+                s1.close()
+                s2.close()
+        except OSError:
+            continue
+        finally:
+            s0.close()
+
 def is_coverage_mode() -> bool:
     return os.getenv("COVERAGE") == "1"
 
@@ -149,11 +180,12 @@ def init_pytest_log_folder() -> str:
 def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, reinit=False, uris_in_env=False) -> str:
     if extra_env is None:
         extra_env = {}
-    p2p_port = get_port() if port is None else port + 0
+    base_port = get_port_triple() if port is None else port
+    p2p_port = base_port + 0
     _occupy_port(p2p_port)
-    grpc_port = get_port() if port is None else port + 1
+    grpc_port = base_port + 1
     _occupy_port(grpc_port)
-    http_port = get_port() if port is None else port + 2
+    http_port = base_port + 2
     _occupy_port(http_port)
 
     test_log_folder = init_pytest_log_folder()
@@ -190,11 +222,12 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     if extra_env is None:
         extra_env = {}
 
-    p2p_port = get_port() if port is None else port + 0
+    base_port = get_port_triple() if port is None else port
+    p2p_port = base_port + 0
     _occupy_port(p2p_port)
-    grpc_port = get_port() if port is None else port + 1
+    grpc_port = base_port + 1
     _occupy_port(grpc_port)
-    http_port = get_port() if port is None else port + 2
+    http_port = base_port + 2
     _occupy_port(http_port)
 
     test_log_folder = init_pytest_log_folder()

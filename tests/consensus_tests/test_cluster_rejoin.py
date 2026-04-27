@@ -344,9 +344,9 @@ def start_preconfigured_cluster(tmp_path: pathlib.Path, peers: int = 3):
     shutil.copytree(PROJECT_ROOT / "tests/consensus_tests/test_cluster_rejoin_data", f"{peer_dirs[0]}/storage")
 
     # Modify peer URI in Raft state to prevent URI change on startup 🙄
-    p2p_port = get_port()
-    grpc_port = get_port()
-    http_port = get_port()
+    p2p_port = get_port_triple()
+    grpc_port = p2p_port + 1
+    http_port = p2p_port + 2
 
     with open(f"{peer_dirs[0]}/storage/raft_state.json", "r+") as file:
         state = json.load(file)
