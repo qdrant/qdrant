@@ -272,15 +272,22 @@ where
     } = range;
 
     let start = byte_offset as usize;
-    let end = start + size_of::<T>() * items as usize;
+    let requested_end = start + size_of::<T>() * items as usize;
 
-    let bytes = bytes
-        .get(start..end)
-        .ok_or_else(|| UniversalIoError::OutOfBounds {
+    // Reads that start past EOF are still an error; reads that straddle
+    // EOF return what's available (truncated to a `T`-sized boundary),
+    // matching Unix `pread` and `IoUringFile`'s direct-I/O semantics.
+    if start > bytes.len() {
+        return Err(UniversalIoError::OutOfBounds {
             start: start as _,
-            end: end as _,
+            end: requested_end as _,
             elements: bytes.len() / size_of::<T>(),
-        })?;
+        });
+    }
+    let avail = bytes.len() - start;
+    let end = start + (requested_end - start).min(avail - avail % size_of::<T>().max(1));
+
+    let bytes = &bytes[start..end];
 
     // `bytemuck::cast_slice` checks that `bytes` size and alignment match `T` requirements
     let items = bytemuck::cast_slice(bytes);

@@ -276,21 +276,18 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
             return Ok(());
         }
 
-        // Emit one BLOCK_SIZE-capped range per missing block. Backends
-        // that benefit from coalescing (e.g. high-latency object
-        // stores) can merge contiguous ranges inside their own
-        // `read_batch`; backends that benefit from keeping them
-        // separate (e.g. io_uring, where queue depth is the source of
-        // parallelism) can submit them individually.
+        // Always request a full BLOCK_SIZE so backends needing aligned
+        // reads (e.g. IoUringFile with O_DIRECT) get a kernel-acceptable
+        // request. Backends are expected to return a shorter slice when
+        // the request straddles EOF.
         let len_bytes = self.len_bytes;
         let ranges = to_fetch.iter().map(|block| {
             let byte_offset = u64::from(block) * BLOCK_SIZE as u64;
-            let length = (BLOCK_SIZE as u64).min(len_bytes - byte_offset);
             (
                 block,
                 ReadRange {
                     byte_offset,
-                    length,
+                    length: BLOCK_SIZE as u64,
                 },
             )
         });
@@ -298,14 +295,17 @@ impl<R: UniversalRead<u8>> OnDemandFile<R> {
         self.remote
             .read_batch::<Sequential, _>(ranges, |block, bytes| {
                 let byte_offset = u64::from(block) * BLOCK_SIZE as u64;
+                let expected = (BLOCK_SIZE as u64).min(len_bytes - byte_offset);
                 debug_assert_eq!(
                     bytes.len() as u64,
-                    (BLOCK_SIZE as u64).min(len_bytes - byte_offset),
+                    expected,
+                    "remote returned {} bytes for block {block}, expected {expected}",
+                    bytes.len(),
                 );
 
                 // SAFETY: `[byte_offset, byte_offset + bytes.len())` lies
-                // within the mmap. This block was not in `fetched`, so
-                // no prior writer touched it; `state.fetched` is held
+                // within the mmap (bytes.len() <= len_bytes - byte_offset).
+                // This block was not in `fetched`; `state.fetched` is held
                 // for the whole batch, excluding concurrent writers.
                 unsafe {
                     std::ptr::copy_nonoverlapping(
