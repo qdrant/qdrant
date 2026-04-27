@@ -64,7 +64,13 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
 /// Encoded query type for Turbo Quant.
 pub struct EncodedQueryTQ {
     data: EncodedQueryTQData,
+
+    // Store the original query's l2 norm for Dot and L2 distances, where we can compute it once and reuse for all distance computations.
     l2_norm: Option<f32>,
+
+    // Store the original query in pre-rotated form for L1 distance, where we need to dequantize vectors and apply inverse rotation to them.
+    query: Option<Vec<f32>>,
+
     // TODO(turbo): add precomputed extras here when needed
 }
 

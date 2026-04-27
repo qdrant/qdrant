@@ -83,6 +83,13 @@ impl TurboQuantizer {
         self.pack_vector(buf.iter().map(|&val| val * scale), extras)
     }
 
+    pub fn dequantize(&self, quantized: &[u8]) -> Vec<f64> {
+        let (extras, unpacked) = self.unpack_vector(quantized);
+        let length = f64::from(extras.l2_length.unwrap_or(1.0));
+        let scale = length / (self.padded_dim as f64).sqrt();
+        unpacked.map(|x| x * scale).collect()
+    }
+
     /// Similarity score between two vectors that were both encoded with this
     /// quantizer. Returns an approximate `<v1, v2>` for Dot and `cos(θ)` for
     /// Cosine.
@@ -107,7 +114,12 @@ impl TurboQuantizer {
                 v1_l2 * v1_l2 + v2_l2 * v2_l2 - 2.0 * v1_l2 * v2_l2 * raw_dot / self.padded_dim as f32
             },
             DistanceType::L1 => {
-                unreachable!()
+                // Fallback case for L1, where we need to fully dequantize both vectors.
+                let mut deq_v1: Vec<f64> = self.dequantize(v1);
+                self.rotation.apply_inverse(deq_v1.as_mut_slice());
+                let mut deq_v2: Vec<f64> = self.dequantize(v2);
+                self.rotation.apply_inverse(deq_v2.as_mut_slice());
+                deq_v1.iter().zip(deq_v2.iter()).map(|(&x, &y)| (x - y).abs() as f32).sum()
             },
         }
     }
@@ -133,9 +145,15 @@ impl TurboQuantizer {
             DistanceType::Cosine => None,
         };
 
+        let query = match self.distance {
+            DistanceType::L1 => Some(query.to_vec()),
+            DistanceType::Cosine | DistanceType::Dot | DistanceType::L2 => None,
+        };
+
         EncodedQueryTQ {
             data: EncodedQueryTQData::Native(Precomputed(rotated)),
             l2_norm,
+            query,
         }
     }
 
@@ -167,7 +185,11 @@ impl TurboQuantizer {
                 let query_l2 = query.l2_norm.unwrap_or(1.0);
                 query_l2 * query_l2 + l2 * l2 - 2.0 * l2 * dot / self.dim_sqrt
             }
-            DistanceType::L1 => unreachable!(),
+            DistanceType::L1 => {
+                let mut deq_v: Vec<f64> = self.dequantize(vec);
+                self.rotation.apply_inverse(deq_v.as_mut_slice());
+                query.query.as_ref().unwrap().iter().zip(deq_v.iter()).map(|(&q, &v)| (q as f64 - v).abs() as f32).sum()
+            }
         }
     }
 }
