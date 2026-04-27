@@ -120,7 +120,7 @@ impl IndexSelector<'_> {
 
             (PayloadIndexType::NullIndex, _) => {
                 let dir = match self {
-                    IndexSelector::Mmap(IndexSelectorMmap { dir, .. }) => *dir,
+                    IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => *dir,
                     IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => *dir,
                 };
                 self.new_null_index(
@@ -418,29 +418,26 @@ impl IndexSelector<'_> {
     ) -> OperationResult<Option<FieldIndex>> {
         let total_point_count = id_tracker.total_point_count();
         let null_dir = null_dir(dir, field);
-        let open_mutable = || -> OperationResult<Option<FieldIndex>> {
-            Ok(
-                MutableNullIndex::open(&null_dir, total_point_count, create_if_missing)?
-                    .map(NullIndex::Mutable)
-                    .map(FieldIndex::NullIndex),
-            )
-        };
-        match self {
-            // `MutableNullIndex` and `ImmutableNullIndex` share the same on-disk
-            // format; stored mutability picks which in-memory wrapper to build.
-            IndexSelector::Mmap(_) => match mutability {
-                IndexMutability::Immutable => Ok(ImmutableNullIndex::open(
-                    &null_dir,
-                    total_point_count,
-                    id_tracker.deleted_point_bitslice(),
-                )?
-                .map(NullIndex::Immutable)
-                .map(FieldIndex::NullIndex)),
-                IndexMutability::Mutable => open_mutable(),
-            },
-            // Gridstore segments are always appendable, so the null index is
-            // always mutable regardless of the stored mutability marker.
-            IndexSelector::Gridstore(_) => open_mutable(),
+        // `MutableNullIndex` and `ImmutableNullIndex` share the same on-disk
+        // format; stored mutability picks which in-memory wrapper to build.
+        // Gridstore segments are always appendable, so the null index is
+        // always mutable regardless of the stored mutability marker.
+        match (self, mutability) {
+            (IndexSelector::Mmap(_), IndexMutability::Immutable) => Ok(ImmutableNullIndex::open(
+                &null_dir,
+                total_point_count,
+                id_tracker.deleted_point_bitslice(),
+            )?
+            .map(NullIndex::Immutable)
+            .map(FieldIndex::NullIndex)),
+            (IndexSelector::Mmap(_), IndexMutability::Mutable)
+            | (IndexSelector::Gridstore(_), _) => {
+                Ok(
+                    MutableNullIndex::open(&null_dir, total_point_count, create_if_missing)?
+                        .map(NullIndex::Mutable)
+                        .map(FieldIndex::NullIndex),
+                )
+            }
         }
     }
 

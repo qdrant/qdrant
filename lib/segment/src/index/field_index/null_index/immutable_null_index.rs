@@ -409,11 +409,10 @@ mod tests {
         builder.add_point(1, &[&json!(true)], &hw_counter).unwrap();
         builder.add_point(2, &[&json!(false)], &hw_counter).unwrap();
 
-        let mut index = builder.finalize().unwrap();
+        let index = builder.finalize().unwrap();
 
         let mut deleted = BitVec::repeat(false, 3);
         deleted.set(1, true);
-        index.remove_point(1).unwrap();
         drop(index);
 
         let reopened_index = ImmutableNullIndex::open(dir.path(), 3, &deleted)
