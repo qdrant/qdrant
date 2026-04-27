@@ -41,6 +41,8 @@ jobs:
         # TODO: switch to extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3.1.0 once this PR is merged:
         # https://github.com/extractions/setup-crate/pull/8
         uses: xzfc/setup-just@fb4bb125d47d4680296d3f3766c6ec83f70b3523
+        with:
+          just-version: "1.50.0"
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
