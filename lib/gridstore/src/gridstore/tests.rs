@@ -1309,13 +1309,18 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
         .collect();
 
     let mut batch_results: Vec<Option<Vec<u8>>> = vec![None; pointers.len()];
-    let batch_iter = pages
-        .read_batch_from_pages::<Random, _>(pointers.iter().copied(), &storage.config)
+
+    let pointers_opt: Vec<_> = pointers.into_iter().map(Some).collect();
+    pages
+        .read_batch_from_pages::<Random, _, GridstoreError>(
+            pointers_opt,
+            &storage.config,
+            |idx, raw_opt| {
+                batch_results[idx] = raw_opt.map(|raw| raw.into_owned());
+                Ok(())
+            },
+        )
         .unwrap();
-    for result in batch_iter {
-        let (idx, raw) = result.unwrap();
-        batch_results[idx] = Some(raw.into_owned());
-    }
 
     for (i, single) in single_results.iter().enumerate() {
         assert_eq!(

@@ -123,39 +123,18 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         // (e.g. io_uring) can fetch them in parallel.
         let pointers = self.tracker.get_batch(point_offsets)?;
 
-        let valid_pointers: Vec<ValuePointer> = pointers.iter().copied().flatten().collect();
-
-        let values = self
-            .pages
-            .read_batch_from_pages::<P, _>(valid_pointers, self.config)?;
-
-        // Map from internal idx (n-th valid pointer) to the caller's idx.
-        let valid_to_original: Vec<usize> = pointers
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, opt)| opt.as_ref().map(|_| idx))
-            .collect();
-
-        // Buffer decoded values so we can invoke the callback with `Option<V>` in
-        // input order, matching the caller's `point_offsets` indexing 1-to-1.
-        let mut value_buffer: Vec<Option<V>> = (0..pointers.len()).map(|_| None).collect();
-
-        for result in values {
-            let (internal_idx, raw) = result?;
-
-            hw_counter.payload_io_read_counter().incr_delta(raw.len());
-
-            let decompressed = self.decompress(raw);
-            let value = V::from_bytes(&decompressed);
-
-            value_buffer[valid_to_original[internal_idx]] = Some(value);
-        }
-
-        for (idx, value) in value_buffer.into_iter().enumerate() {
-            callback(idx, value)?;
-        }
-
-        Ok(())
+        // Stream decoded values straight to the caller — no intermediate buffer.
+        // The callback `idx` maps 1-to-1 to `point_offsets`; missing offsets are
+        // delivered as `None`.
+        self.pages
+            .read_batch_from_pages::<P, _, E>(pointers, self.config, |idx, raw_opt| {
+                let value = raw_opt.map(|raw| {
+                    hw_counter.payload_io_read_counter().incr_delta(raw.len());
+                    let decompressed = self.decompress(raw);
+                    V::from_bytes(&decompressed)
+                });
+                callback(idx, value)
+            })
     }
 
     /// Iterate over all the values in the storage.
