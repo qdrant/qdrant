@@ -119,6 +119,7 @@ impl Query2bitSimd {
         use core::arch::x86_64::*;
 
         unsafe {
+            let ones = _mm256_set1_epi16(1);
             let mut acc_low = _mm256_setzero_si256();
             let mut acc_high = _mm256_setzero_si256();
 
@@ -142,7 +143,6 @@ impl Query2bitSimd {
 
                 let prod_low = _mm256_maddubs_epi16(c, q_low);
                 let prod_high = _mm256_maddubs_epi16(c, q_high);
-                let ones = _mm256_set1_epi16(1);
                 acc_low = _mm256_add_epi32(acc_low, _mm256_madd_epi16(prod_low, ones));
                 acc_high = _mm256_add_epi32(acc_high, _mm256_madd_epi16(prod_high, ones));
             }
@@ -241,12 +241,12 @@ impl Query2bitSimd {
             // Tail (0..3 chunks) via plain SSE `maddubs + madd_epi16` —
             // avoids pulling in avx512vl for the narrow VPDPBUSD variants.
             let tail_start = n_quads * 4;
+            let ones = _mm_set1_epi16(1);
             for p in tail_start..n_chunks {
                 let [q_lo_chunk, q_hi_chunk] = &self.query_data[p];
                 let c = unpack_16_codes_sse(vector.as_ptr().add(4 * p));
                 let q_low = _mm_loadu_si128(q_lo_chunk.as_ptr().cast::<__m128i>());
                 let q_high = _mm_loadu_si128(q_hi_chunk.as_ptr().cast::<__m128i>());
-                let ones = _mm_set1_epi16(1);
                 let prod_low = _mm_maddubs_epi16(c, q_low);
                 let prod_high = _mm_maddubs_epi16(c, q_high);
                 total_low += i64::from(hsum_i32_sse(_mm_madd_epi16(prod_low, ones)));
@@ -424,10 +424,10 @@ pub unsafe fn score_2bit_internal_avx512_vnni(a: &[u8], b: &[u8]) -> f32 {
 
         // Tail (0..3 chunks) via SSE `madd_epi16` — no avx512vl needed.
         let tail_start = n_quads * 4;
+        let shift_128 = _mm_set1_epi8(-128_i8);
         for p in tail_start..n_chunks {
-            let shift = _mm_set1_epi8(-128_i8);
-            let c_a = _mm_xor_si128(unpack_16_codes_sse(a.as_ptr().add(4 * p)), shift);
-            let c_b = _mm_xor_si128(unpack_16_codes_sse(b.as_ptr().add(4 * p)), shift);
+            let c_a = _mm_xor_si128(unpack_16_codes_sse(a.as_ptr().add(4 * p)), shift_128);
+            let c_b = _mm_xor_si128(unpack_16_codes_sse(b.as_ptr().add(4 * p)), shift_128);
             let c_a_lo = _mm_cvtepi8_epi16(c_a);
             let c_a_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_a, 8));
             let c_b_lo = _mm_cvtepi8_epi16(c_b);

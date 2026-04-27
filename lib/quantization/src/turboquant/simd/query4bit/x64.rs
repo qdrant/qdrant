@@ -79,6 +79,7 @@ impl Query4bitSimd {
             let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
             let codebook = _mm256_broadcastsi128_si256(codebook_128);
             let ones = _mm256_set1_epi16(1);
+            let ones_128 = _mm_set1_epi16(1);
             let nibble_mask = _mm_set1_epi8(0x0F);
             let mut acc = _mm256_setzero_si256();
 
@@ -103,13 +104,9 @@ impl Query4bitSimd {
             // Tail: one extra SSE chunk on a zero-padded scratch — matches
             // the SSE variant's post-loop kernel.
             if let Some(buf) = self.tail_chunk_scratch(vector) {
-                let nibble_mask_128 = _mm_set1_epi8(0x0F);
-                let ones_128 = _mm_set1_epi16(1);
-                let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
-
                 let v_packed = _mm_loadl_epi64(buf.as_ptr().cast::<__m128i>());
-                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
+                let v_lo = _mm_and_si128(v_packed, nibble_mask);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
                 let v = _mm_unpacklo_epi8(v_lo, v_hi);
                 let c_u = _mm_shuffle_epi8(codebook_128, v);
                 let q_low = _mm_loadu_si128(self.tail_low.as_ptr().cast::<__m128i>());
@@ -139,6 +136,7 @@ impl Query4bitSimd {
             let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
             let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
             let nibble_mask_128 = _mm_set1_epi8(0x0F);
+            let ones_128 = _mm_set1_epi16(1);
             let mut acc = _mm512_setzero_si512();
 
             let chunks = self.query_data.as_slice();
@@ -177,44 +175,37 @@ impl Query4bitSimd {
             if chunks.len() % 2 == 1 {
                 let tail_chunk = 2 * n_pairs;
                 let [low, high] = chunks[tail_chunk];
-                let codebook_xmm = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
-                let ones = _mm_set1_epi16(1);
-                let nibble_mask = _mm_set1_epi8(0x0F);
 
                 let v_packed =
                     _mm_loadl_epi64(vector.as_ptr().add(tail_chunk * 8).cast::<__m128i>());
-                let v_lo = _mm_and_si128(v_packed, nibble_mask);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
+                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
                 let v = _mm_unpacklo_epi8(v_lo, v_hi);
-                let c_u = _mm_shuffle_epi8(codebook_xmm, v);
+                let c_u = _mm_shuffle_epi8(codebook_128, v);
 
                 let q_low = _mm_loadu_si128(low.as_ptr().cast::<__m128i>());
                 let q_high = _mm_loadu_si128(high.as_ptr().cast::<__m128i>());
                 let prod_low = _mm_maddubs_epi16(c_u, q_low);
                 let prod_high = _mm_maddubs_epi16(c_u, q_high);
-                sum_low_xmm = _mm_add_epi32(sum_low_xmm, _mm_madd_epi16(prod_low, ones));
-                sum_high_xmm = _mm_add_epi32(sum_high_xmm, _mm_madd_epi16(prod_high, ones));
+                sum_low_xmm = _mm_add_epi32(sum_low_xmm, _mm_madd_epi16(prod_low, ones_128));
+                sum_high_xmm = _mm_add_epi32(sum_high_xmm, _mm_madd_epi16(prod_high, ones_128));
             }
 
             // Tail dims (< 14 remaining after the optional leftover chunk):
             // one SSE chunk on a zero-padded scratch, same as the SSE variant.
             if let Some(buf) = self.tail_chunk_scratch(vector) {
-                let codebook_xmm = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
-                let ones = _mm_set1_epi16(1);
-                let nibble_mask = _mm_set1_epi8(0x0F);
-
                 let v_packed = _mm_loadl_epi64(buf.as_ptr().cast::<__m128i>());
-                let v_lo = _mm_and_si128(v_packed, nibble_mask);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
+                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
+                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
                 let v = _mm_unpacklo_epi8(v_lo, v_hi);
-                let c_u = _mm_shuffle_epi8(codebook_xmm, v);
+                let c_u = _mm_shuffle_epi8(codebook_128, v);
 
                 let q_low = _mm_loadu_si128(self.tail_low.as_ptr().cast::<__m128i>());
                 let q_high = _mm_loadu_si128(self.tail_high.as_ptr().cast::<__m128i>());
                 let prod_low = _mm_maddubs_epi16(c_u, q_low);
                 let prod_high = _mm_maddubs_epi16(c_u, q_high);
-                sum_low_xmm = _mm_add_epi32(sum_low_xmm, _mm_madd_epi16(prod_low, ones));
-                sum_high_xmm = _mm_add_epi32(sum_high_xmm, _mm_madd_epi16(prod_high, ones));
+                sum_low_xmm = _mm_add_epi32(sum_low_xmm, _mm_madd_epi16(prod_low, ones_128));
+                sum_high_xmm = _mm_add_epi32(sum_high_xmm, _mm_madd_epi16(prod_high, ones_128));
             }
 
             i64::from(hsum_i32_sse(sum_low_xmm))
