@@ -25,10 +25,10 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
-    Indexes, ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
-    ScalarQuantizationConfig, SearchParams, TurboQuantBitSize, TurboQuantQuantizationConfig,
-    TurboQuantization,
+    BinaryQuantizationConfig, BinaryQuantizationEncoding, CompressionRatio, Condition, Distance,
+    FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, ProductQuantizationConfig,
+    QuantizationConfig, QuantizationSearchParams, ScalarQuantizationConfig, SearchParams,
+    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
 };
 use segment::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
@@ -620,6 +620,345 @@ fn hnsw_turbo_quantization_manhattan_bits2_test() {
             },
         }),
         true,
+    );
+}
+
+/// Bits1/Bits1_5 are below the standard helper's recall floor; instead
+/// anchor on binary quantization at the same effective bit-width and
+/// assert the quantization-error gap (rescored top-K score sum vs. exact
+/// top-K) is at most BQ's and not dramatically smaller.
+fn hnsw_quantized_low_bit_compare_test(
+    distance: Distance,
+    num_vectors: u64,
+    dim: usize,
+    tq_bits: TurboQuantBitSize,
+    bq_encoding: BinaryQuantizationEncoding,
+) {
+    let stopped = AtomicBool::new(false);
+
+    let m = 16;
+    let ef = 64;
+    let ef_construct = 64;
+    let top = 20;
+    let attempts = 25;
+    let payloads_count: u64 = 50;
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let vectors: Vec<Vec<f32>> = (0..num_vectors)
+        .map(|_| random_test_vector(&mut rng, dim, distance))
+        .collect();
+    let queries: Vec<QueryVector> = (0..attempts)
+        .map(|_| random_test_vector(&mut rng, dim, distance).into())
+        .collect();
+
+    let tq_config = QuantizationConfig::Turbo(TurboQuantization {
+        turbo: TurboQuantQuantizationConfig {
+            always_ram: Some(true),
+            plus: None,
+            bits: Some(tq_bits),
+        },
+    });
+    let bq_config: QuantizationConfig = BinaryQuantizationConfig {
+        always_ram: Some(true),
+        encoding: Some(bq_encoding),
+        query_encoding: None,
+    }
+    .into();
+
+    let (tq_segment, tq_index, _tq_dirs) = build_quantized_hnsw_for_compare(
+        &vectors,
+        distance,
+        &tq_config,
+        m,
+        ef_construct,
+        payloads_count,
+        &mut rng,
+        &stopped,
+    );
+    let (_bq_segment, bq_index, _bq_dirs) = build_quantized_hnsw_for_compare(
+        &vectors,
+        distance,
+        &bq_config,
+        m,
+        ef_construct,
+        payloads_count,
+        &mut rng,
+        &stopped,
+    );
+
+    let rescored_params = SearchParams {
+        hnsw_ef: Some(ef),
+        quantization: Some(QuantizationSearchParams {
+            rescore: Some(true),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let mut tq_total_loss: f64 = 0.0;
+    let mut bq_total_loss: f64 = 0.0;
+    for query in &queries {
+        let exact_result = tq_segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_index
+            .borrow()
+            .search(&[query], None, top, None, &Default::default())
+            .unwrap();
+        let exact_sum: f64 = exact_result[0].iter().map(|p| f64::from(p.score)).sum();
+
+        let tq_result = tq_index
+            .search(
+                &[query],
+                None,
+                top,
+                Some(&rescored_params),
+                &Default::default(),
+            )
+            .unwrap();
+        let tq_sum: f64 = tq_result[0].iter().map(|p| f64::from(p.score)).sum();
+
+        let bq_result = bq_index
+            .search(
+                &[query],
+                None,
+                top,
+                Some(&rescored_params),
+                &Default::default(),
+            )
+            .unwrap();
+        let bq_sum: f64 = bq_result[0].iter().map(|p| f64::from(p.score)).sum();
+
+        tq_total_loss += exact_sum - tq_sum;
+        bq_total_loss += exact_sum - bq_sum;
+    }
+
+    let tq_avg_loss = tq_total_loss / f64::from(attempts);
+    let bq_avg_loss = bq_total_loss / f64::from(attempts);
+    println!(
+        "low-bit compare: distance={distance:?}, dim={dim}, num={num_vectors}, \
+         tq_bits={tq_bits:?}, bq_encoding={bq_encoding:?}, \
+         tq_avg_loss={tq_avg_loss:.6}, bq_avg_loss={bq_avg_loss:.6}",
+    );
+
+    let eps = f64::from(ScoreType::EPSILON);
+    assert!(
+        tq_avg_loss >= -eps,
+        "tq_avg_loss should be non-negative, got {tq_avg_loss}",
+    );
+    assert!(
+        bq_avg_loss >= -eps,
+        "bq_avg_loss should be non-negative, got {bq_avg_loss}",
+    );
+
+    // Slack absorbs single-query noise around the TQ <= BQ inequality.
+    let upper_tolerance = bq_avg_loss.abs() * 0.10 + 1e-3;
+    assert!(
+        tq_avg_loss <= bq_avg_loss + upper_tolerance,
+        "Expected TurboQuant error <= Binary error \
+         (distance={distance:?}, tq_bits={tq_bits:?}, bq_encoding={bq_encoding:?}): \
+         tq_avg_loss={tq_avg_loss}, bq_avg_loss={bq_avg_loss}",
+    );
+
+    // Loose floor: catches a broken TQ (e.g. accidentally near-lossless)
+    // without rejecting TQ's genuine accuracy edge over BQ on this data.
+    let lower_tolerance = bq_avg_loss.abs() * 0.05 + 1e-3;
+    assert!(
+        tq_avg_loss + lower_tolerance >= bq_avg_loss * 0.10,
+        "Expected TurboQuant error to be in the same ballpark as Binary error \
+         (distance={distance:?}, tq_bits={tq_bits:?}, bq_encoding={bq_encoding:?}): \
+         tq_avg_loss={tq_avg_loss}, bq_avg_loss={bq_avg_loss}",
+    );
+}
+
+/// Caller must keep the returned tempdirs alive for as long as the segment
+/// and HNSW index are used.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn build_quantized_hnsw_for_compare(
+    vectors: &[Vec<f32>],
+    distance: Distance,
+    quantization_config: &QuantizationConfig,
+    m: usize,
+    ef_construct: usize,
+    payloads_count: u64,
+    rng: &mut StdRng,
+    stopped: &AtomicBool,
+) -> (
+    Segment,
+    HNSWIndex,
+    (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir),
+) {
+    let dim = vectors[0].len();
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let quantized_dir = Builder::new().prefix("quantized_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut segment = build_simple_segment(segment_dir.path(), dim, distance).unwrap();
+    let mut op_num: u64 = 0;
+    for (n, vector) in vectors.iter().enumerate() {
+        let idx = (n as u64).into();
+        segment
+            .upsert_point(op_num, idx, only_default_vector(vector), &hw_counter)
+            .unwrap();
+        op_num += 1;
+    }
+
+    segment
+        .create_field_index(
+            op_num,
+            &JsonPath::new(STR_KEY),
+            Some(&Keyword.into()),
+            &hw_counter,
+        )
+        .unwrap();
+    op_num += 1;
+    for n in 0..payloads_count {
+        let idx = n.into();
+        let payload = payload_json! {STR_KEY: STR_KEY};
+        segment
+            .set_full_payload(op_num, idx, &payload, &hw_counter)
+            .unwrap();
+        op_num += 1;
+    }
+
+    segment.vector_data.values_mut().for_each(|vector_storage| {
+        let quantized_vectors = QuantizedVectors::create(
+            &vector_storage.vector_storage.borrow(),
+            quantization_config,
+            QuantizedVectorsStorageType::Immutable,
+            quantized_dir.path(),
+            4,
+            stopped,
+        )
+        .unwrap();
+        vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));
+    });
+
+    let hnsw_config = HnswConfig {
+        m,
+        ef_construct,
+        full_scan_threshold: 2 * payloads_count as usize,
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        payload_m: None,
+        inline_storage: None,
+    };
+
+    let permit = Arc::new(ResourcePermit::dummy(2));
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
+                .quantized_vectors
+                .clone(),
+            payload_index: segment.payload_index.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            old_indices: &[],
+            gpu_device: None,
+            rng,
+            stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
+            feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
+        },
+    )
+    .unwrap();
+
+    (segment, hnsw_index, (segment_dir, hnsw_dir, quantized_dir))
+}
+
+#[test]
+fn hnsw_turbo_quantization_cosine_bits1_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Cosine,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1,
+        BinaryQuantizationEncoding::OneBit,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_dot_bits1_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Dot,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1,
+        BinaryQuantizationEncoding::OneBit,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_euclid_bits1_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Euclid,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1,
+        BinaryQuantizationEncoding::OneBit,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_manhattan_bits1_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Manhattan,
+        503,
+        64,
+        TurboQuantBitSize::Bits1,
+        BinaryQuantizationEncoding::OneBit,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_cosine_bits1_5_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Cosine,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1_5,
+        BinaryQuantizationEncoding::OneAndHalfBits,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_dot_bits1_5_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Dot,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1_5,
+        BinaryQuantizationEncoding::OneAndHalfBits,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_euclid_bits1_5_test() {
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Euclid,
+        1003,
+        128,
+        TurboQuantBitSize::Bits1_5,
+        BinaryQuantizationEncoding::OneAndHalfBits,
+    );
+}
+
+#[test]
+fn hnsw_turbo_quantization_manhattan_bits1_5_test() {
+    // See `hnsw_turbo_quantization_manhattan_bits1_test` for rationale.
+    hnsw_quantized_low_bit_compare_test(
+        Distance::Manhattan,
+        503,
+        64,
+        TurboQuantBitSize::Bits1_5,
+        BinaryQuantizationEncoding::OneAndHalfBits,
     );
 }
 
