@@ -1,0 +1,10 @@
+/.gradle/
+/build/
+/qdrant-edge/build/
+/qdrant-edge-ffi/build/
+/qdrant-edge-ffi/src/main/jniLibs/*/libqdrant_edge_ffi.so
+/qdrant-edge-ffi/src/main/kotlin/
+/example/build/
+local.properties
+*.iml
+.idea/
