@@ -8,8 +8,7 @@ mod tests {
     use quantization::turboquant::{EncodedVectorsTQ, TQBits, TQMode};
     use rand::{RngExt, SeedableRng};
 
-    use crate::metrics::dot_similarity;
-    use crate::metrics::{l1_similarity, l2_similarity};
+    use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
 
     const VECTORS_COUNT: usize = 513;
 
@@ -605,7 +604,7 @@ mod tests {
                     vector_data.push((0..dim).map(|_| rng.random_range(-1.0..1.0)).collect());
                 }
                 let query: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-    
+
                 let vector_parameters = VectorParameters {
                     dim,
                     deprecated_count: None,
@@ -630,7 +629,7 @@ mod tests {
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
-    
+
                 let counter = HardwareCounterCell::new();
                 for (index, vector) in vector_data.iter().enumerate() {
                     let score = encoded.score_point(&query_u8, index as u32, &counter);

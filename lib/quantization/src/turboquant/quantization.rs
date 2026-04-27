@@ -111,16 +111,21 @@ impl TurboQuantizer {
             DistanceType::L2 => {
                 // For L2, the "dot" we calculated is actually ||v1||² + ||v2||² - 2*||v1||*||v2||*<v1_normalized, v2_normalized>>,
                 // so we need to do some extra math to recover the actual <v1, v2>.
-                v1_l2 * v1_l2 + v2_l2 * v2_l2 - 2.0 * v1_l2 * v2_l2 * raw_dot / self.padded_dim as f32
-            },
+                v1_l2 * v1_l2 + v2_l2 * v2_l2
+                    - 2.0 * v1_l2 * v2_l2 * raw_dot / self.padded_dim as f32
+            }
             DistanceType::L1 => {
                 // Fallback case for L1, where we need to fully dequantize both vectors.
                 let mut deq_v1: Vec<f64> = self.dequantize(v1);
                 self.rotation.apply_inverse(deq_v1.as_mut_slice());
                 let mut deq_v2: Vec<f64> = self.dequantize(v2);
                 self.rotation.apply_inverse(deq_v2.as_mut_slice());
-                deq_v1.iter().zip(deq_v2.iter()).map(|(&x, &y)| (x - y).abs() as f32).sum()
-            },
+                deq_v1
+                    .iter()
+                    .zip(deq_v2.iter())
+                    .map(|(&x, &y)| (x - y).abs() as f32)
+                    .sum()
+            }
         }
     }
 
@@ -188,7 +193,14 @@ impl TurboQuantizer {
             DistanceType::L1 => {
                 let mut deq_v: Vec<f64> = self.dequantize(vec);
                 self.rotation.apply_inverse(deq_v.as_mut_slice());
-                query.query.as_ref().unwrap().iter().zip(deq_v.iter()).map(|(&q, &v)| (q as f64 - v).abs() as f32).sum()
+                query
+                    .query
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .zip(deq_v.iter())
+                    .map(|(&q, &v)| (f64::from(q) - v).abs() as f32)
+                    .sum()
             }
         }
     }

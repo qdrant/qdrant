@@ -70,7 +70,6 @@ pub struct EncodedQueryTQ {
 
     // Store the original query in pre-rotated form for L1 distance, where we need to dequantize vectors and apply inverse rotation to them.
     query: Option<Vec<f32>>,
-
     // TODO(turbo): add precomputed extras here when needed
 }
 
