@@ -1,0 +1,16 @@
+[package]
+name = "qdrant-edge-ffi-bindgen"
+version = "0.1.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+uniffi = { version = "0.31", features = ["cli"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "main.rs"
