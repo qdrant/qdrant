@@ -361,6 +361,8 @@ members = [
     "lib/edge",
     "lib/edge/python",
     "lib/edge/python/codegen",
+    "lib/edge/ffi",
+    "lib/edge/ffi/bindgen",
     "lib/edge/tools/shard_query",
     "lib/gridstore",
     "lib/macros",
@@ -377,6 +379,17 @@ members = [
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+# Profile for mobile XCFramework / AAR builds.
+# Trades a bit of runtime perf for much faster link times and smaller binaries.
+# Panics abort instead of unwinding — which is also what we want on iOS/Android
+# to avoid surprise aborts-in-Drop across the FFI boundary.
+[profile.release-mobile]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
 
 # Inherit from release, because we are not rebuilding often,
 # and we don't want the huge binary sizes from debug builds.
