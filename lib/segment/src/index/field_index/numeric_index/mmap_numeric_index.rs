@@ -29,6 +29,17 @@ const PAIRS_PATH: &str = "data.bin";
 const DELETED_PATH: &str = "deleted.bin";
 const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
+/// Mmap-backed immutable numeric index.
+///
+/// On-disk state (`data.bin`, `deleted.bin`, `point_to_values.*`, etc.) is
+/// written once during [`Self::build`] and not mutated afterwards: `deleted.bin`
+/// records only the points whose payload was empty at build time.
+///
+/// Runtime deletions live in the in-memory `Storage::deleted` bitvec. They are
+/// **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove_point`]
+/// only updates the in-memory bitvec. Callers must re-supply the authoritative
+/// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
+/// `deleted_points` argument to [`Self::open`] on reload.
 pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue + 'static> {
     path: PathBuf,
     pub(super) storage: Storage<T, MmapFile>,
@@ -233,6 +244,8 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         files
     }
 
+    /// No-op flusher: the on-disk state is build-time only. See the type-level
+    /// docs on [`MmapNumericIndex`] for the deletion durability contract.
     pub fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }
@@ -309,6 +322,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
             .map(|Point { val, idx, .. }| (val, idx)))
     }
 
+    /// Marks `idx` as deleted in the in-memory deletion bitvec.
+    ///
+    /// Not persisted: on reopen, deletions must be re-supplied via the
+    /// `deleted_points` argument to [`Self::open`].
     pub fn remove_point(&mut self, idx: PointOffsetType) {
         let idx = idx as usize;
         if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {

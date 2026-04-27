@@ -270,7 +270,6 @@ where
         0
     }
 
-
     fn get_range(&self, point_id: PointOffsetType) -> OperationResult<Option<MmapRange>> {
         if point_id < self.header.points_count as PointOffsetType {
             let range_offset = (self.header.ranges_start as usize)

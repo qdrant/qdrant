@@ -109,7 +109,12 @@ impl IndexSelector<'_> {
                 .map(FieldIndex::FullTextIndex),
 
             (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => self
-                .bool_new(field, create_if_missing, deleted_points, index_type.mutability)?
+                .bool_new(
+                    field,
+                    create_if_missing,
+                    deleted_points,
+                    index_type.mutability,
+                )?
                 .map(FieldIndex::BoolIndex),
 
             (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => self
@@ -520,8 +525,9 @@ impl IndexSelector<'_> {
                 // `MutableBoolIndex` and `ImmutableBoolIndex` share the same on-disk
                 // format; stored mutability picks which in-memory wrapper to build.
                 match mutability {
-                    IndexMutability::Immutable => ImmutableBoolIndex::open(&dir, deleted_points)?
-                        .map(BoolIndex::Immutable),
+                    IndexMutability::Immutable => {
+                        ImmutableBoolIndex::open(&dir, deleted_points)?.map(BoolIndex::Immutable)
+                    }
                     IndexMutability::Mutable => {
                         MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mmap)
                     }
