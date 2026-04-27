@@ -68,11 +68,38 @@ def kill_all_processes():
             print(f"Cleanup error for {p.pid}: {e}")
 
 
+# Each pytest-xdist worker owns a disjoint slice of the port space, so concurrent
+# workers never compete for the same port range. Ports stay below the Linux
+# default ephemeral range (32768) so OS-assigned random sockets don't collide
+# either. Slice size of 300 = 100 peer triples, which comfortably covers any
+# single test even with dynamically added peers.
+_PORT_SLICE_BASE = 20000
+_PORT_SLICE_SIZE = 300
+
+
+def _xdist_worker_index() -> int:
+    name = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    if name.startswith("gw") and name[2:].isdigit():
+        return int(name[2:])
+    return 0
+
+
+_WORKER_SLICE_START = _PORT_SLICE_BASE + _xdist_worker_index() * _PORT_SLICE_SIZE
+_WORKER_SLICE_END = _WORKER_SLICE_START + _PORT_SLICE_SIZE
+_next_port_in_slice = _WORKER_SLICE_START
+
+
+def _reset_port_slice():
+    global _next_port_in_slice
+    _next_port_in_slice = _WORKER_SLICE_START
+
+
 @pytest.fixture(autouse=True)
 def every_test():
     if processes:
         print(f"WARN: {len(processes)} leaked peer processes from previous test, cleaning")
         kill_all_processes()
+    _reset_port_slice()
     yield
     kill_all_processes()
 
@@ -92,20 +119,44 @@ def get_port() -> int:
             return allocated_port
 
 
+def _try_bind_triple(base: int) -> bool:
+    sockets = []
+    try:
+        for offset in range(3):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.bind(('', base + offset))
+                sockets.append(s)
+            except OSError:
+                return False
+        return True
+    finally:
+        for s in sockets:
+            s.close()
+
+
 def get_port_triple() -> int:
-    # Allocate a contiguous triple (port, port+1, port+2) for a peer's
-    # p2p/grpc/http ports. Required so that restarts with `port=p.p2p_port`
-    # — which derive grpc=port+1, http=port+2 — find those slots free even
-    # under pytest-xdist, where other workers' `busy_ports` are not visible.
-    # Verifies bindability across processes by probing all three with bind().
+    # Allocate a contiguous triple (p2p, grpc, http) for a peer. Each xdist
+    # worker draws from its own slice, so the original cross-worker collision
+    # on `port+1` / `port+2` (which restart paths derive from p2p_port) cannot
+    # happen. Within the slice we still probe-bind() each candidate so
+    # unrelated processes occupying a slot are skipped, not deterministically
+    # crashed-into. Falls back to OS-assigned ports if the slice is exhausted.
+    global _next_port_in_slice
+    while _next_port_in_slice + 3 <= _WORKER_SLICE_END:
+        base = _next_port_in_slice
+        _next_port_in_slice += 3
+        if _try_bind_triple(base):
+            return base
+    return _get_port_triple_from_os()
+
+
+def _get_port_triple_from_os() -> int:
     while True:
         s0 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s0.bind(('', 0))
             base = s0.getsockname()[1]
-            if any((base + d) in busy_ports for d in range(-2, 5)):
-                s0.close()
-                continue
             s1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
