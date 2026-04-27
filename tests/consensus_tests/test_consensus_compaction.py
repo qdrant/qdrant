@@ -1,7 +1,6 @@
 import io
 import pathlib
 import shutil
-from time import sleep
 from typing import Any
 
 import requests
@@ -12,7 +11,6 @@ from .utils import *
 N_PEERS = 3
 N_REPLICA = 1
 N_SHARDS = 1
-CONSENSUS_WAIT_SECONDS = 0.5
 
 
 def test_consensus_compaction(tmp_path: pathlib.Path):
@@ -178,16 +176,25 @@ def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replicatio
 def put_metadata_key(peer_uris: list[str], key: str, value: Any):
     resp = requests.put(f"{peer_uris[0]}/cluster/metadata/keys/{key}?wait=true", json=value)
     assert_http_ok(resp)
-    sleep(CONSENSUS_WAIT_SECONDS)
     assert_consistent_metadata_key(peer_uris, key, value)
+
+
+def peer_has_metadata_key(peer_uri: str, key: str, expected_value: Any) -> bool:
+    resp = requests.get(f"{peer_uri}/cluster/metadata/keys/{key}")
+    assert_http_ok(resp)
+    return resp.json()['result'] == expected_value
 
 
 def assert_consistent_metadata_key(peer_uris: list[str], key: str, expected_value: Any):
     for peer_id, peer_uri in enumerate(peer_uris):
-        resp = requests.get(f"{peer_uri}/cluster/metadata/keys/{key}")
-        assert_http_ok(resp)
-        peer_key_value = resp.json()['result']
-        assert peer_key_value == expected_value, f"incorrect metadata key value for peers[{peer_id}] '{peer_uri}' - expected '{expected_value}' but got '{peer_key_value}'"
+        try:
+            wait_for(peer_has_metadata_key, peer_uri, key, expected_value)
+        except Exception:
+            resp = requests.get(f"{peer_uri}/cluster/metadata/keys/{key}")
+            peer_key_value = resp.json().get('result') if resp.ok else None
+            raise AssertionError(
+                f"incorrect metadata key value for peers[{peer_id}] '{peer_uri}' - expected '{expected_value}' but got '{peer_key_value}'"
+            )
 
 
 def check_shard_keys(peer_uris: list[str], collection_name: str, shard_keys: dict[int, Any]):
