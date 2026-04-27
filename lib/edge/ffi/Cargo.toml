@@ -1,0 +1,30 @@
+[package]
+name = "qdrant-edge-ffi"
+version = "0.1.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[lib]
+name = "qdrant_edge_ffi"
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[dependencies]
+edge = { path = ".." }
+segment = { path = "../../segment", default-features = false }
+shard = { path = "../../shard" }
+sparse = { path = "../../sparse" }
+
+uniffi = "0.31"
+thiserror = "2"
+uuid = "1"
+ahash = { workspace = true }
+parking_lot = { workspace = true }
+serde_json = { workspace = true }
+ordered-float = { workspace = true }
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"] }
