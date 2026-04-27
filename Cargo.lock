@@ -1948,7 +1948,7 @@ dependencies = [
  "flate2",
  "fs-err",
  "indicatif",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
 ]
 
 [[package]]
@@ -5752,7 +5752,7 @@ dependencies = [
  "names",
  "pprof-pyroscope-fork",
  "prost 0.14.3",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde_json",
  "thiserror 2.0.18",
  "url",
@@ -5801,7 +5801,7 @@ dependencies = [
  "raft",
  "raft-proto",
  "rand 0.10.1",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "rstack-self",
  "rustls",
  "rustls-pemfile",
@@ -6347,9 +6347,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.13.2"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
+checksum = "62e0021ea2c22aed41653bc7e1419abb2c97e038ff2c33d0e1309e49a97deec0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -7595,7 +7595,7 @@ dependencies = [
  "prost 0.11.9",
  "raft",
  "rand 0.10.1",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "schemars 0.8.22",
  "segment",
  "semver",

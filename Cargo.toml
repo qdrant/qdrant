@@ -260,7 +260,7 @@ raft = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a
 rand = "0.10.1"
 rand_distr = "0.6.0"
 rmp-serde = "~1.3"
-reqwest = { version = "0.13.2", default-features = false, features = [
+reqwest = { version = "0.13.3", default-features = false, features = [
     "json",
     "http2",
     "stream",
