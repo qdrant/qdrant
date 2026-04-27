@@ -5740,9 +5740,9 @@ dependencies = [
 
 [[package]]
 name = "pyroscope"
-version = "2.0.1"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "480661d88db8b4dfb7cb34b1626a0c77e01572cc34de2b08f88200beaa52adbb"
+checksum = "fc050356140f6c47dcaab95b6554ce12d461e4902c0a5baf4e888fcc86dcfaf4"
 dependencies = [
  "jemalloc_pprof",
  "lazy_static",
