@@ -348,7 +348,7 @@ async fn read_bytes_out_of_bounds_returns_error() {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             shard_id: TEST_SHARD_ID,
             path: "oob/data.bin".to_string(),
-            byte_offset: 0,
+            byte_offset: 5,
             length: 9999,
         }))
         .await
