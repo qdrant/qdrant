@@ -252,11 +252,16 @@ impl<S: UniversalRead<u8>> Pages<S> {
             len_pages: usize,
         }
 
+        let mut empty_values = Vec::new(); // expect (almost) no values
+
         let reads = pointers
             .iter()
             .copied()
             .enumerate()
             .flat_map(|(value_idx, pointer_opt)| {
+                if pointer_opt.is_none() {
+                    empty_values.push(value_idx);
+                }
                 pointer_opt.into_iter().flat_map(move |pointer| {
                     let len_bytes = pointer.length as usize;
                     let len_pages = Self::value_len_pages(pointer, config);
@@ -320,10 +325,8 @@ impl<S: UniversalRead<u8>> Pages<S> {
             "all valid pointers should have been delivered",
         );
 
-        for (idx, opt) in pointers.iter().enumerate() {
-            if opt.is_none() {
-                callback(idx, None)?;
-            }
+        for idx in empty_values {
+            callback(idx, None)?;
         }
 
         Ok(())
