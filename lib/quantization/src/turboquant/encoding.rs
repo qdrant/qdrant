@@ -22,8 +22,12 @@ impl TqVectorExtras {
                 size += size_of::<f32>();
             }
             DistanceType::Cosine => {}
-            DistanceType::L1 => unimplemented!("L1 metric not yet implemented"),
-            DistanceType::L2 => unimplemented!("L2 metric not yet implemented"),
+            DistanceType::L1 => {
+                size += size_of::<f32>();
+            }
+            DistanceType::L2 => {
+                size += size_of::<f32>();
+            }
         }
 
         size
@@ -96,8 +100,6 @@ impl TurboQuantizer {
         distance: DistanceType,
         mode: TQMode,
     ) -> usize {
-        Self::assert_supported_distance(distance);
-
         let vector_data_size =
             Self::padded_dim(dim, bits) * bits.bit_size() as usize / u8::BITS as usize;
         let extras_size = TqVectorExtras::size_for(bits, distance, mode);
@@ -119,14 +121,15 @@ impl TurboQuantizer {
     ///
     /// Not all configurations need extras.
     pub(super) fn calculate_extras(&self, rotated_vec: &[f64]) -> TqVectorExtras {
-        // TODO(turbo): fully implement
-        Self::assert_supported_distance(self.distance);
-
         let mut extras = TqVectorExtras::default();
 
-        // Additional l2 for dot vectors.
-        if matches!(self.distance, DistanceType::Dot) {
-            extras.l2_length = Some(rotated_vec.iter().map(|&i| i * i).sum::<f64>().sqrt() as f32);
+        match self.distance {
+            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
+                // For Dot product we need to additionally store the original vectors l2.
+                extras.l2_length =
+                    Some(rotated_vec.iter().map(|&i| i * i).sum::<f64>().sqrt() as f32);
+            }
+            DistanceType::Cosine => {}
         }
 
         extras
@@ -172,14 +175,6 @@ impl TurboQuantizer {
         }
 
         extras
-    }
-
-    /// TODO(turbo): remove once all distance have been implemented.
-    pub(super) fn assert_supported_distance(distance: DistanceType) {
-        if !matches!(distance, DistanceType::Dot | DistanceType::Cosine) {
-            // TODO(turbo): implement for other metrics too.
-            unimplemented!("Quantization currently only implemented for cosine and dot product");
-        }
     }
 }
 

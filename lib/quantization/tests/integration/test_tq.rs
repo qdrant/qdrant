@@ -15,9 +15,7 @@ mod tests {
     const VECTORS_COUNT: usize = 513;
 
     const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512, 768, 1536];
-    /// Bit widths exercised by each test. `Bits1_5` is excluded: its
-    /// `bit_size` is not yet implemented and panics.
-    const BITS: &[TQBits] = &[TQBits::Bits4, TQBits::Bits2, TQBits::Bits1];
+    const BITS: &[TQBits] = &[TQBits::Bits4, TQBits::Bits2, TQBits::Bits1_5, TQBits::Bits1];
     const MODE: TQMode = TQMode::Normal;
 
     /// Tolerance for Dot-product scoring. For centered U[-1, 1] inputs the dot
@@ -29,8 +27,8 @@ mod tests {
         let per_sqrt_dim = match bits {
             TQBits::Bits4 => 0.3,
             TQBits::Bits2 => 1.0,
+            TQBits::Bits1_5 => 1.5,
             TQBits::Bits1 => 1.7,
-            TQBits::Bits1_5 => unreachable!("Bits1_5 is not implemented"),
         };
         per_sqrt_dim * (dim as f32).sqrt()
     }
@@ -42,8 +40,8 @@ mod tests {
         let per_inv_sqrt_dim = match bits {
             TQBits::Bits4 => 1.0,
             TQBits::Bits2 => 3.0,
+            TQBits::Bits1_5 => 4.0,
             TQBits::Bits1 => 5.0,
-            TQBits::Bits1_5 => unreachable!("Bits1_5 is not implemented"),
         };
         let error = per_inv_sqrt_dim / (dim as f32).sqrt();
         assert!(error < 1.0);
@@ -58,8 +56,8 @@ mod tests {
         let min_dim = match bits {
             TQBits::Bits4 => 8,
             TQBits::Bits2 => 32,
+            TQBits::Bits1_5 => 48,
             TQBits::Bits1 => 64,
-            TQBits::Bits1_5 => unreachable!("Bits1_5 is not implemented"),
         };
         dim >= min_dim
     }

@@ -66,6 +66,7 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
 /// Encoded query type for Turbo Quant.
 pub struct EncodedQueryTQ {
     data: EncodedQueryTQData,
+    l2_norm: Option<f32>,
     // TODO(turbo): add precomputed extras here when needed
 }
 
@@ -252,7 +253,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
         hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
 
-        self.quantizer.score_symmetric(&v1, &v2)
+        let score = self.quantizer.score_symmetric(&v1, &v2);
+        if self.metadata.vector_parameters.invert {
+            -score
+        } else {
+            score
+        }
     }
 
     fn quantized_vector_size(&self) -> usize {
@@ -319,6 +325,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
         hw_counter.cpu_counter().incr_delta(bytes.len());
-        self.quantizer.score_precomputed(query, bytes)
+        let score = self.quantizer.score_precomputed(query, bytes);
+        if self.metadata.vector_parameters.invert {
+            -score
+        } else {
+            score
+        }
     }
 }
