@@ -728,6 +728,64 @@ fn test_numeric_index_reload(#[case] index_type: IndexType) {
     assert_eq!(index.inner().get_points_count(), 6);
 }
 
+/// Regression test: when reloading an mmap numeric index with a `deleted_points`
+/// bitslice shorter than `point_to_values.len()`, missing entries must default
+/// to live, not deleted. Empty-payload bits from the on-disk `deleted.bin` and
+/// any deletions encoded inside the short bitslice must still be honored.
+#[rstest]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_numeric_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
+    let (temp_dir, mut index_builder) = get_index_builder(index_type);
+
+    // 9 points with ids 1..=9 → point_to_values.len() == 10.
+    // Point 4 has an empty payload, so build-time `deleted.bin` will mark it.
+    let values: Vec<Vec<f64>> = vec![
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![], // empty payload at id 4
+        vec![1.0],
+        vec![2.0],
+        vec![2.5],
+        vec![2.6],
+        vec![3.0],
+    ];
+
+    let hw_counter = HardwareCounterCell::new();
+    values.into_iter().enumerate().for_each(|(idx, values)| {
+        let values = values.iter().map(|v| Value::from(*v)).collect_vec();
+        let values = values.iter().collect_vec();
+        let new_idx = idx as PointOffsetType + 1;
+        index_builder
+            .add_point(new_idx, &values, &hw_counter)
+            .unwrap();
+    });
+    let index = index_builder.finalize().unwrap();
+    drop(index);
+
+    // Reload with a bitslice shorter than `point_to_values.len()` that still
+    // marks point 1 as deleted. Models an id-tracker whose internal range
+    // hasn't yet caught up to the index's highest internal id.
+    let mut short_deleted = BitVec::repeat(false, 3);
+    short_deleted.set(1, true);
+    let index = open_index_from_disk(temp_dir.path(), index_type, &short_deleted);
+
+    // Expect: id 1 deleted (from short bitslice), id 4 deleted (from build-time
+    // empty payload), every other id live including those beyond the bitslice.
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(1.0),
+            lt: None,
+            lte: None,
+        },
+        vec![2, 3, 5, 6, 7, 8, 9],
+    );
+    assert_eq!(index.inner().get_points_count(), 7);
+}
+
 fn test_cond<
     T: Encodable + Numericable + PartialOrd + Clone + StoredValue + Send + Sync + Default + 'static,
 >(

@@ -175,9 +175,12 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         let deleted_payload_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
-        // The `id_tracker`'s deleted mask can be shorter or longer, but `deleted` length must match the
-        // `point_to_values` length because it only tracks the index's contents.
-        deleted.resize(point_to_values.len(), true);
+        // `deleted` length must match `point_to_values.len()` because it only
+        // tracks the index's contents. The id-tracker's deleted mask can be
+        // shorter or longer; if shorter, the missing entries default to live
+        // (the id-tracker is the source of truth for deletions, and a shorter
+        // mask just means it doesn't yet know about those higher offsets).
+        deleted.resize(point_to_values.len(), false);
         deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
 
         let deleted_count = deleted.count_ones();
