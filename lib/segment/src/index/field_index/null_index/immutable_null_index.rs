@@ -138,12 +138,13 @@ impl PayloadFieldIndex for ImmutableNullIndex {
     }
 
     #[inline]
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<PayloadBlockCondition>> + '_> {
-        self.0.payload_blocks(threshold, key)
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.0.for_each_payload_block(threshold, key, f)
     }
 
     #[inline]

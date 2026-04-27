@@ -183,14 +183,15 @@ impl PayloadFieldIndex for NullIndex {
         }
     }
 
-    fn payload_blocks(
+    fn for_each_payload_block(
         &self,
         threshold: usize,
         key: crate::types::PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = OperationResult<super::PayloadBlockCondition>> + '_> {
+        f: &mut dyn FnMut(super::PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         match self {
-            NullIndex::Mutable(mutable) => mutable.payload_blocks(threshold, key),
-            NullIndex::Immutable(immutable) => immutable.payload_blocks(threshold, key),
+            NullIndex::Mutable(mutable) => mutable.for_each_payload_block(threshold, key, f),
+            NullIndex::Immutable(immutable) => immutable.for_each_payload_block(threshold, key, f),
         }
     }
 }
