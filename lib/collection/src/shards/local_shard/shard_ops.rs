@@ -324,11 +324,10 @@ impl ShardOperation for LocalShard {
                 .map_err(|_: Elapsed| CollectionError::timeout(timeout, "count"))??;
                 Ok(all_points.len())
             } else {
-                Ok(
-                    self.estimate_cardinality(request.filter.as_ref(), &hw_measurement_acc)
-                        .await?
-                        .exp,
-                )
+                Ok(self
+                    .estimate_cardinality(request.filter.as_ref(), &hw_measurement_acc)
+                    .await?
+                    .exp)
             }
         }
         .await;
