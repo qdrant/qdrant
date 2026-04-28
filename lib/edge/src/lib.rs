@@ -1,3 +1,4 @@
+pub mod bm25;
 mod builders;
 mod config;
 mod count;

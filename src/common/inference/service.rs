@@ -407,7 +407,7 @@ mod test {
 
     use super::*;
     use crate::common::inference::api_keys::InferenceApiKeys;
-    use crate::common::inference::bm25::Bm25;
+    use crate::common::inference::bm25_inference::Bm25;
     use crate::common::inference::inference_input::InferenceDataType;
 
     const BM25_LOCAL_MODEL_NAME: &str = "bm25";
