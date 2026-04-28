@@ -362,7 +362,7 @@ mod tests {
 
         // Create a field index for a geo point.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = GeoMapIndex::builder_mmap(dir.path(), false);
+        let mut builder = GeoMapIndex::builder_mmap(dir.path(), false, &deleted_points);
 
         builder.add_point(0, &[], &hw_counter).unwrap();
         builder

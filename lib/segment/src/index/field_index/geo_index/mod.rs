@@ -1,6 +1,7 @@
 use std::cmp::{max, min};
 use std::path::{Path, PathBuf};
 
+use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
@@ -41,7 +42,11 @@ pub enum GeoMapIndex {
 }
 
 impl GeoMapIndex {
-    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
+    pub fn new_mmap(
+        path: &Path,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
         // Low-memory mode downgrades the in-RAM `Immutable` wrapper to the
         // pure-mmap `Storage` variant at load time. Files are shared between
         // variants; the persisted `is_on_disk` flag in `mmap_index` is
@@ -49,7 +54,8 @@ impl GeoMapIndex {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(mmap_index) = StoredGeoMapIndex::open(path, effective_is_on_disk)? else {
+        let Some(mmap_index) = StoredGeoMapIndex::open(path, effective_is_on_disk, deleted_points)?
+        else {
             // Files don't exist, cannot load
             return Ok(None);
         };
@@ -67,11 +73,16 @@ impl GeoMapIndex {
         Ok(MutableGeoMapIndex::open_gridstore(dir, create_if_missing)?.map(GeoMapIndex::Mutable))
     }
 
-    pub fn builder_mmap(path: &Path, is_on_disk: bool) -> GeoMapIndexMmapBuilder {
+    pub fn builder_mmap(
+        path: &Path,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> GeoMapIndexMmapBuilder {
         GeoMapIndexMmapBuilder {
             path: path.to_owned(),
             in_memory_index: InMemoryGeoMapIndex::new(),
             is_on_disk,
+            deleted_points: deleted_points.to_owned(),
         }
     }
 
@@ -303,7 +314,7 @@ impl GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.ram_usage_bytes(),
             GeoMapIndex::Immutable(index) => index.ram_usage_bytes(),
-            GeoMapIndex::Storage(_) => 0,
+            GeoMapIndex::Storage(index) => index.ram_usage_bytes(),
         }
     }
 
@@ -360,6 +371,7 @@ pub struct GeoMapIndexMmapBuilder {
     path: PathBuf,
     in_memory_index: InMemoryGeoMapIndex,
     is_on_disk: bool,
+    deleted_points: BitVec,
 }
 
 impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
@@ -388,6 +400,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
             self.in_memory_index,
             &self.path,
             self.is_on_disk,
+            &self.deleted_points,
         )?)))
     }
 }
@@ -669,6 +682,27 @@ mod tests {
     use crate::types::test_utils::build_polygon;
     use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius};
 
+    /// Generous default size for the deleted-points bitslice used in tests.
+    ///
+    /// Must be larger than the stored mmap deletion bitslice for any test in
+    /// this file (which is sized to the highest point id, rounded up to a
+    /// `usize` boundary). 4096 bits comfortably covers all current tests.
+    const TEST_DELETED_BITS: usize = 4096;
+
+    /// All-zero deletion bitslice for tests that don't care about deletions.
+    fn empty_deleted() -> BitVec {
+        BitVec::repeat(false, TEST_DELETED_BITS)
+    }
+
+    /// Deletion bitslice with specific points marked as deleted.
+    fn deleted_with(points: &[PointOffsetType]) -> BitVec {
+        let mut v = empty_deleted();
+        for &p in points {
+            v.set(p as usize, true);
+        }
+        v
+    }
+
     type Database = ();
 
     #[derive(Clone, Copy, PartialEq, Debug)]
@@ -750,10 +784,16 @@ mod tests {
             IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
                 GeoMapIndex::builder_gridstore(temp_dir.path().to_path_buf()),
             ),
-            IndexType::Mmap => IndexBuilder::Mmap(GeoMapIndex::builder_mmap(temp_dir.path(), true)),
-            IndexType::RamMmap => {
-                IndexBuilder::RamMmap(GeoMapIndex::builder_mmap(temp_dir.path(), false))
-            }
+            IndexType::Mmap => IndexBuilder::Mmap(GeoMapIndex::builder_mmap(
+                temp_dir.path(),
+                true,
+                &empty_deleted(),
+            )),
+            IndexType::RamMmap => IndexBuilder::RamMmap(GeoMapIndex::builder_mmap(
+                temp_dir.path(),
+                false,
+                &empty_deleted(),
+            )),
         };
         match &mut builder {
             IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
@@ -1239,12 +1279,12 @@ mod tests {
                     .unwrap()
                     .unwrap()
             }
-            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false)
+            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false, &empty_deleted())
                 .unwrap()
                 .unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(
                 ImmutableGeoMapIndex::open_mmap(
-                    StoredGeoMapIndex::open(temp_dir.path(), false)
+                    StoredGeoMapIndex::open(temp_dir.path(), false, &empty_deleted())
                         .unwrap()
                         .unwrap(),
                 )
@@ -1322,12 +1362,12 @@ mod tests {
                     .unwrap()
                     .unwrap()
             }
-            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false)
+            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false, &deleted_with(&[1]))
                 .unwrap()
                 .unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(
                 ImmutableGeoMapIndex::open_mmap(
-                    StoredGeoMapIndex::open(temp_dir.path(), false)
+                    StoredGeoMapIndex::open(temp_dir.path(), false, &deleted_with(&[1]))
                         .unwrap()
                         .unwrap(),
                 )
@@ -1842,5 +1882,185 @@ mod tests {
             &cases,
             "after point deletions",
         );
+    }
+
+    /// Reload contract: runtime deletions are not persisted by the mmap geo
+    /// index. Callers must re-supply the deletion bitslice on reload.
+    #[rstest]
+    #[case(IndexType::MutableGridstore)]
+    #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
+    fn test_geo_index_reload(#[case] index_type: IndexType) {
+        let temp_dir = {
+            let (mut builder, temp_dir, _) = create_builder(index_type);
+
+            let hw_counter = HardwareCounterCell::new();
+
+            // ids 1..=4 in/near Berlin, ids 5..=6 in Tokyo, id 7 in NYC.
+            let berlin = json!({ "lon": BERLIN.lon, "lat": BERLIN.lat });
+            let potsdam = json!({ "lon": POTSDAM.lon, "lat": POTSDAM.lat });
+            let tokyo = json!({ "lon": TOKYO.lon, "lat": TOKYO.lat });
+            let nyc = json!({ "lon": NYC.lon, "lat": NYC.lat });
+
+            builder.add_point(1, &[&berlin], &hw_counter).unwrap();
+            builder.add_point(2, &[&berlin], &hw_counter).unwrap();
+            builder.add_point(3, &[&potsdam], &hw_counter).unwrap();
+            builder.add_point(4, &[&potsdam], &hw_counter).unwrap();
+            builder.add_point(5, &[&tokyo], &hw_counter).unwrap();
+            builder.add_point(6, &[&tokyo], &hw_counter).unwrap();
+            builder.add_point(7, &[&nyc], &hw_counter).unwrap();
+
+            let mut index = builder.finalize().unwrap();
+
+            // Remove some points and flush. For Mmap/RamMmap the flush is a
+            // no-op for the deletion bitvec — the test below verifies the
+            // reload contract.
+            index.remove_point(2).unwrap();
+            index.remove_point(3).unwrap();
+            index.remove_point(6).unwrap();
+            index.flusher()().unwrap();
+            assert_eq!(index.points_count(), 4);
+            drop(index);
+            temp_dir
+        };
+
+        // Reload from disk, re-supplying the runtime deletions for the mmap
+        // variants. For the gridstore variant the argument is ignored.
+        let deleted = deleted_with(&[2, 3, 6]);
+        let new_index = match index_type {
+            IndexType::MutableGridstore => {
+                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf(), true)
+                    .unwrap()
+                    .unwrap()
+            }
+            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false, &deleted)
+                .unwrap()
+                .unwrap(),
+            IndexType::RamMmap => GeoMapIndex::Immutable(
+                ImmutableGeoMapIndex::open_mmap(
+                    StoredGeoMapIndex::open(temp_dir.path(), false, &deleted)
+                        .unwrap()
+                        .unwrap(),
+                )
+                .unwrap(),
+            ),
+        };
+
+        assert_eq!(new_index.points_count(), 4);
+
+        // Berlin radius covers Berlin + Potsdam — ids 1, 2, 3, 4 originally,
+        // expect 1, 4 after deletions.
+        let berlin_radius = GeoRadius {
+            center: BERLIN,
+            radius: OrderedFloat(50_000.0),
+        };
+        let field_condition = condition_for_geo_radius("test", berlin_radius);
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+        let mut hits: Vec<PointOffsetType> = new_index
+            .filter(&field_condition, &hw_counter)
+            .unwrap()
+            .unwrap()
+            .collect();
+        hits.sort();
+        assert_eq!(hits, vec![1, 4]);
+
+        // Tokyo radius — id 5 only after deletion of 6.
+        let tokyo_radius = GeoRadius {
+            center: TOKYO,
+            radius: OrderedFloat(50_000.0),
+        };
+        let field_condition = condition_for_geo_radius("test", tokyo_radius);
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+        let mut hits: Vec<PointOffsetType> = new_index
+            .filter(&field_condition, &hw_counter)
+            .unwrap()
+            .unwrap()
+            .collect();
+        hits.sort();
+        assert_eq!(hits, vec![5]);
+
+        // NYC radius — id 7 untouched.
+        let nyc_radius = GeoRadius {
+            center: NYC,
+            radius: OrderedFloat(50_000.0),
+        };
+        let field_condition = condition_for_geo_radius("test", nyc_radius);
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+        let mut hits: Vec<PointOffsetType> = new_index
+            .filter(&field_condition, &hw_counter)
+            .unwrap()
+            .unwrap()
+            .collect();
+        hits.sort();
+        assert_eq!(hits, vec![7]);
+    }
+
+    /// Regression test: when reloading an mmap geo index with a `deleted_points`
+    /// bitslice shorter than `point_to_values.len()`, missing entries must
+    /// default to live, not deleted. Empty-payload bits from the on-disk
+    /// `deleted.bin` and any deletions encoded inside the short bitslice must
+    /// still be honored.
+    #[rstest]
+    #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
+    fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
+        let temp_dir = {
+            let (mut builder, temp_dir, _) = create_builder(index_type);
+
+            let hw_counter = HardwareCounterCell::new();
+
+            let berlin = json!({ "lon": BERLIN.lon, "lat": BERLIN.lat });
+
+            // ids 1..=4 with Berlin payload; id 3 has an empty payload, so
+            // build-time `deleted.bin` will mark it.
+            builder.add_point(1, &[&berlin], &hw_counter).unwrap();
+            builder.add_point(2, &[&berlin], &hw_counter).unwrap();
+            builder.add_point(3, &[], &hw_counter).unwrap();
+            builder.add_point(4, &[&berlin], &hw_counter).unwrap();
+
+            builder.finalize().unwrap();
+            temp_dir
+        };
+
+        // Reload with a bitslice shorter than `point_to_values.len()` that
+        // marks point 1 as deleted. Models an id-tracker whose internal range
+        // hasn't yet caught up to the index's highest internal id.
+        let mut short_deleted = BitVec::repeat(false, 2);
+        short_deleted.set(1, true);
+        let new_index = match index_type {
+            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false, &short_deleted)
+                .unwrap()
+                .unwrap(),
+            IndexType::RamMmap => GeoMapIndex::Immutable(
+                ImmutableGeoMapIndex::open_mmap(
+                    StoredGeoMapIndex::open(temp_dir.path(), false, &short_deleted)
+                        .unwrap()
+                        .unwrap(),
+                )
+                .unwrap(),
+            ),
+            IndexType::MutableGridstore => unreachable!(),
+        };
+
+        // Expect: id 1 deleted (from short bitslice), id 3 deleted (from
+        // build-time empty payload), ids 2 and 4 live (with id 4 being beyond
+        // the short bitslice).
+        let berlin_radius = GeoRadius {
+            center: BERLIN,
+            radius: OrderedFloat(50_000.0),
+        };
+        let field_condition = condition_for_geo_radius("test", berlin_radius);
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+        let mut hits: Vec<PointOffsetType> = new_index
+            .filter(&field_condition, &hw_counter)
+            .unwrap()
+            .unwrap()
+            .collect();
+        hits.sort();
+        assert_eq!(hits, vec![2, 4]);
     }
 }

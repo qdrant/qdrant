@@ -1,11 +1,13 @@
 use std::borrow::Cow;
+use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
 use common::binary_search::binary_search_by;
+use common::bitvec::{BitSlice, BitSliceExt, BitVec};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::{atomic_save_json, read_json};
+use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{MmapSlice, create_and_ensure_length};
@@ -18,7 +20,6 @@ use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;
 use crate::common::Flusher;
-use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, GeoHashRaw};
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
@@ -77,6 +78,18 @@ impl<T> StoredGeoMapIndexStorage for T where
 ///  └─────────────────────────────────────────────────────────┘
 ///   points_map_ids
 ///
+/// Mmap-backed immutable geo index.
+///
+/// On-disk state (`counts_per_hash.bin`, `points_map.bin`, `points_map_ids.bin`,
+/// `deleted.bin`, `point_to_values.*`, etc.) is written once during
+/// [`Self::build`] and not mutated afterwards: `deleted.bin` records only the
+/// points whose payload was empty at build time.
+///
+/// Runtime deletions live in the in-memory `Storage::deleted` bitvec. They are
+/// **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove_point`]
+/// only updates the in-memory bitvec. Callers must re-supply the authoritative
+/// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
+/// `deleted_points` argument to [`Self::open`] on reload.
 pub struct StoredGeoMapIndex<S: StoredGeoMapIndexStorage> {
     path: PathBuf,
     pub(super) storage: Storage<S>,
@@ -97,8 +110,28 @@ pub(super) struct Storage<S: StoredGeoMapIndexStorage> {
     pub(super) points_map_ids: TypedStorage<S, PointOffsetType>,
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
     pub(super) point_to_values: StoredPointToValues<GeoPoint, S>,
-    /// Deleted flags for each PointOffsetType
-    pub(super) deleted: BufferedUpdateBitSlice<MmapFile>,
+    /// In-memory deletion bitmap. Reconstructed at load time as the union of
+    /// the build-time empty-payload bits read from `deleted.bin` and the
+    /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
+    pub(super) deleted: BitVec,
+}
+
+impl<S: StoredGeoMapIndexStorage> Storage<S> {
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            counts_per_hash,
+            points_map,
+            points_map_ids,
+            point_to_values,
+            deleted,
+        } = self;
+
+        counts_per_hash.ram_usage_bytes()
+            + points_map.ram_usage_bytes()
+            + points_map_ids.ram_usage_bytes()
+            + point_to_values.ram_usage_bytes()
+            + deleted.capacity().div_ceil(u8::BITS as usize)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +145,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         dynamic_index: InMemoryGeoMapIndex,
         path: &Path,
         is_on_disk: bool,
+        deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
@@ -219,12 +253,16 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
             },
         )?;
 
-        Self::open(path, is_on_disk)?.ok_or_else(|| {
+        Self::open(path, is_on_disk, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open StoredGeoMapIndex after building it")
         })
     }
 
-    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
+    pub fn open(
+        path: &Path,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
         let deleted_path = path.join(DELETED_PATH);
         let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
@@ -253,14 +291,20 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         let points_map_ids = UniversalRead::open(&points_map_ids_path, open_options)?;
         let point_to_values = StoredPointToValues::open(path, true)?;
 
-        let deleted = MmapBitSlice::open(
-            &deleted_path,
-            OpenOptions {
-                populate: Some(populate),
-                ..OpenOptions::default()
-            },
-        )?;
-        let deleted_count = deleted.count_ones()?;
+        let mut deleted = deleted_points.to_owned();
+
+        let deleted_payload_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+        let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
+
+        // `deleted` length must match `point_to_values.len()` because it only
+        // tracks the index's contents. The id-tracker's deleted mask can be
+        // shorter or longer; if shorter, the missing entries default to live
+        // (the id-tracker is the source of truth for deletions, and a shorter
+        // mask just means it doesn't yet know about those higher offsets).
+        deleted.resize(point_to_values.len(), false);
+        deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
+
+        let deleted_count = deleted.count_ones();
 
         Ok(Some(Self {
             path: path.to_owned(),
@@ -269,7 +313,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
                 points_map,
                 points_map_ids,
                 point_to_values,
-                deleted: BufferedUpdateBitSlice::new(deleted),
+                deleted,
             },
             deleted_count,
             points_values_count: stats.points_values_count,
@@ -285,17 +329,15 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
         let hw_counter = self.make_conditioned_counter(hw_counter);
-        self.storage
-            .deleted
-            .get(idx as usize)
-            .filter(|b| !b)
-            .map(|_| {
-                self.storage
-                    .point_to_values
-                    .check_values_any(idx, |v| check_fn(v), &hw_counter)
-            })
-            .map(|r| r.unwrap_or(false)) // FIXME: don't silently ignore error
-            .unwrap_or(false)
+        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+            self.storage
+                .point_to_values
+                .check_values_any(idx, |v| check_fn(v), &hw_counter)
+                // FIXME: don't silently ignore error
+                .unwrap_or(false)
+        } else {
+            false
+        }
     }
 
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
@@ -308,12 +350,16 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        self.storage
-            .deleted
-            .get(idx as usize)
-            .filter(|b| !b)
-            .and_then(|_| self.storage.point_to_values.get_values_count(idx).ok()?)
-            .unwrap_or(0)
+        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+            self.storage
+                .point_to_values
+                .get_values_count(idx)
+                .ok()
+                .flatten()
+                .unwrap_or(0)
+        } else {
+            0
+        }
     }
 
     pub(super) fn points_per_hash(
@@ -412,6 +458,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         let mut files = vec![
+            self.path.join(DELETED_PATH),
             self.path.join(COUNTS_PER_HASH),
             self.path.join(POINTS_MAP),
             self.path.join(POINTS_MAP_IDS),
@@ -421,15 +468,19 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         files
     }
 
+    /// No-op flusher: the on-disk state is build-time only. See the type-level
+    /// docs on [`StoredGeoMapIndex`] for the deletion durability contract.
     pub fn flusher(&self) -> Flusher {
-        self.storage.deleted.flusher()
+        Box::new(|| Ok(()))
     }
 
+    /// Marks `idx` as deleted in the in-memory deletion bitvec.
+    ///
+    /// Not persisted: on reopen, deletions must be re-supplied via the
+    /// `deleted_points` argument to [`Self::open`].
     pub fn remove_point(&mut self, idx: PointOffsetType) {
         let idx = idx as usize;
-        if let Some(deleted) = self.storage.deleted.get(idx)
-            && !deleted
-        {
+        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
             self.storage.deleted.set(idx, true);
             self.deleted_count += 1;
         }
@@ -540,7 +591,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
                     values
                         .iter()
                         .copied()
-                        .filter(|&id| !self.storage.deleted.get(id as usize).unwrap_or(true)),
+                        .filter(|&id| !self.storage.deleted.get_bit(id as usize).unwrap_or(true)),
                 );
                 Ok(())
             },
@@ -588,7 +639,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         let Self {
-            path: _,
+            path,
             storage,
             deleted_count: _,
             points_values_count: _,
@@ -600,13 +651,17 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
             points_map,
             points_map_ids,
             point_to_values,
-            deleted,
+            deleted: _,
         } = storage;
-        deleted.clear_cache()?;
+        clear_disk_cache(&path.join(DELETED_PATH))?;
         counts_per_hash.clear_ram_cache()?;
         points_map.clear_ram_cache()?;
         points_map_ids.clear_ram_cache()?;
         point_to_values.clear_cache()?;
         Ok(())
+    }
+
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        self.storage.ram_usage_bytes()
     }
 }

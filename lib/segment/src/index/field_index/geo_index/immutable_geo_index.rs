@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+use common::bitvec::BitSliceExt;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, ReadRange, UniversalRead};
@@ -93,7 +94,12 @@ impl ImmutableGeoMapIndex {
                 points_map_hashes.push(points_map_entries[i].hash.normalize());
                 points_map_offsets.push(points_map_ids.len() as u32);
                 for &id in ids {
-                    if !index.storage.deleted.get(id as usize).unwrap_or_default() {
+                    if !index
+                        .storage
+                        .deleted
+                        .get_bit(id as usize)
+                        .unwrap_or_default()
+                    {
                         points_map_ids.push(id);
                     }
                 }
@@ -114,7 +120,11 @@ impl ImmutableGeoMapIndex {
                 .iter()
                 .map(|id_values| {
                     let (id, values) = id_values?;
-                    let is_deleted = index.storage.deleted.get(id as usize).unwrap_or_default();
+                    let is_deleted = index
+                        .storage
+                        .deleted
+                        .get_bit(id as usize)
+                        .unwrap_or_default();
                     let values = match (is_deleted, values) {
                         (false, Some(values)) => values.map(Cow::into_owned).collect(),
                         (false, None) => vec![],
