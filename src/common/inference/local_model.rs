@@ -1,7 +1,7 @@
 use collection::operations::point_ops::VectorPersisted;
 use storage::content_manager::errors::StorageError;
 
-use super::bm25::Bm25;
+use super::bm25_inference::Bm25;
 use super::service::{InferenceInput, InferenceType};
 use crate::common::inference::inference_input::InferenceDataType;
 

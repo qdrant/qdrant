@@ -1,3 +1,4 @@
+pub mod bm25;
 mod config;
 mod count;
 mod facet;

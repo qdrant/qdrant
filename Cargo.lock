@@ -1027,6 +1027,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bm25"
+version = "0.1.0"
+dependencies = [
+ "murmur3",
+ "serde",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2163,6 +2171,7 @@ name = "edge"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "bm25",
  "common",
  "fs-err",
  "itertools 0.14.0",
@@ -5806,6 +5815,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "api",
+ "bm25",
  "cancel",
  "chrono",
  "clap",
@@ -5879,6 +5889,7 @@ name = "qdrant-edge-py"
 version = "0.6.1"
 dependencies = [
  "ahash",
+ "bm25",
  "bytemuck",
  "derive_more 2.1.1",
  "edge",
