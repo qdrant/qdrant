@@ -9,7 +9,7 @@ use rand::seq::IteratorRandom as _;
 use super::utils::{Result, delete_random_vectors, insert_distributed_vectors, sampler};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::Distance;
 use crate::vector_storage::VectorStorageEnum;

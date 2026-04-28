@@ -9,7 +9,7 @@ use rand::distr::StandardUniform;
 use segment::data_types::named_vectors::CowVector;
 use segment::data_types::vectors::{DenseVector, QueryVector};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
-use segment::id_tracker::IdTracker;
+use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use segment::types::Distance;
 use segment::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;

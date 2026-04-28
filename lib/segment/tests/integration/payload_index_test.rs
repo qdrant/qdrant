@@ -27,7 +27,7 @@ use segment::fixtures::payload_fixtures::{
     STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY, generate_diverse_nested_payload,
     generate_diverse_payload, random_filter, random_nested_filter, random_vector,
 };
-use segment::id_tracker::IdTracker;
+use segment::id_tracker::IdTrackerRead;
 use segment::index::PayloadIndex;
 use segment::index::field_index::{FieldIndex, PrimaryCondition};
 use segment::index::struct_payload_index::StructPayloadIndex;

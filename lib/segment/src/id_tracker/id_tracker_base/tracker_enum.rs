@@ -4,7 +4,7 @@ use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 
 use super::point_mappings_ref::PointMappingsRefEnum;
-use super::trait_def::IdTracker;
+use super::trait_def::{IdTracker, IdTrackerRead};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
@@ -20,7 +20,7 @@ pub enum IdTrackerEnum {
     InMemoryIdTracker(InMemoryIdTracker),
 }
 
-impl IdTracker for IdTrackerEnum {
+impl IdTrackerRead for IdTrackerEnum {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.internal_version(internal_id),
@@ -29,24 +29,6 @@ impl IdTracker for IdTrackerEnum {
             }
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.internal_version(internal_id)
-            }
-        }
-    }
-
-    fn set_internal_version(
-        &mut self,
-        internal_id: PointOffsetType,
-        version: SeqNumberType,
-    ) -> OperationResult<()> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => {
-                id_tracker.set_internal_version(internal_id, version)
-            }
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                id_tracker.set_internal_version(internal_id, version)
-            }
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
-                id_tracker.set_internal_version(internal_id, version)
             }
         }
     }
@@ -67,61 +49,11 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn set_link(
-        &mut self,
-        external_id: PointIdType,
-        internal_id: PointOffsetType,
-    ) -> OperationResult<()> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => {
-                id_tracker.set_link(external_id, internal_id)
-            }
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                id_tracker.set_link(external_id, internal_id)
-            }
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
-                id_tracker.set_link(external_id, internal_id)
-            }
-        }
-    }
-
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id),
-        }
-    }
-
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-        }
-    }
-
     fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.point_mappings(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.point_mappings(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.point_mappings(),
-        }
-    }
-
-    fn mapping_flusher(&self) -> Flusher {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.mapping_flusher(),
-        }
-    }
-
-    fn versions_flusher(&self) -> Flusher {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.versions_flusher(),
         }
     }
 
@@ -176,6 +108,76 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
+        }
+    }
+}
+
+impl IdTracker for IdTrackerEnum {
+    fn set_internal_version(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.set_internal_version(internal_id, version)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.set_internal_version(internal_id, version)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.set_internal_version(internal_id, version)
+            }
+        }
+    }
+
+    fn set_link(
+        &mut self,
+        external_id: PointIdType,
+        internal_id: PointOffsetType,
+    ) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.set_link(external_id, internal_id)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.set_link(external_id, internal_id)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.set_link(external_id, internal_id)
+            }
+        }
+    }
+
+    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id),
+        }
+    }
+
+    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+        }
+    }
+
+    fn mapping_flusher(&self) -> Flusher {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.mapping_flusher(),
+        }
+    }
+
+    fn versions_flusher(&self) -> Flusher {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.versions_flusher(),
         }
     }
 

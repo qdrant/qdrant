@@ -26,24 +26,12 @@ pub const DELETED_POINT_VERSION: SeqNumberType = 0;
 /// This tracker is used to convert external (i.e. user-facing) point id into internal point id
 /// as well as for keeping track on point version
 /// Internal ids are useful for contiguous-ness
-pub trait IdTracker: fmt::Debug {
-    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
-
+pub trait IdTracker: IdTrackerRead + fmt::Debug {
     fn set_internal_version(
         &mut self,
         internal_id: PointOffsetType,
         version: SeqNumberType,
     ) -> OperationResult<()>;
-
-    /// Returns internal ID of the point, which is used inside this segment
-    ///
-    /// Excludes soft deleted points.
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;
-
-    /// Return external ID for internal point, defined by user
-    ///
-    /// Excludes soft deleted points.
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType>;
 
     /// Set mapping
     fn set_link(
@@ -59,72 +47,11 @@ pub trait IdTracker: fmt::Debug {
     /// If mapping doesn't exist, still removes( unsets ) version.
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()>;
 
-    /// Get a reference to the point mappings, which provides iteration methods.
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_>;
-
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
 
     /// Flush points versions to disk
     fn versions_flusher(&self) -> Flusher;
-
-    /// Number of total points
-    ///
-    /// - includes soft deleted points
-    fn total_point_count(&self) -> usize;
-
-    /// Number of available points
-    ///
-    /// - excludes soft deleted points
-    fn available_point_count(&self) -> usize {
-        self.total_point_count() - self.deleted_point_count()
-    }
-
-    /// Number of deleted points
-    fn deleted_point_count(&self) -> usize;
-
-    /// Get [`BitSlice`] representation for deleted points with deletion flags
-    ///
-    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
-    /// vectors in this segment.
-    fn deleted_point_bitslice(&self) -> &BitSlice;
-
-    /// Check whether the given point is soft deleted
-    fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
-
-    fn name(&self) -> &'static str;
-
-    /// Iterator over `n` random IDs which are not deleted
-    ///
-    /// A [`BitSlice`] of deleted vectors may optionally be given to also consider deleted named
-    /// vectors.
-    fn sample_ids<'a>(
-        &'a self,
-        deleted_vector_bitslice: Option<&'a BitSlice>,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        // Use seeded randomness, prevents 'inconsistencies' in search results with sampling
-        let mut rng = StdRng::seed_from_u64(SEED);
-
-        let total = self.total_point_count() as PointOffsetType;
-        Box::new(
-            (0..total)
-                .map(move |_| rng.random_range(0..total))
-                .filter(move |&x| {
-                    // Check for deleted vector first, as that is more likely
-                    !deleted_vector_bitslice
-                        .and_then(|d| d.get_bit(x as usize))
-                        .unwrap_or(false)
-                    // Also check point deletion for integrity
-                    && !self.is_deleted_point(x)
-                }),
-        )
-    }
-
-    /// Iterate over all stored internal versions, even if they were deleted
-    /// Required for cleanup on segment open
-    fn iter_internal_versions(
-        &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>;
 
     /// Finds inconsistencies between id mapping and versions storage.
     /// It might happen that point doesn't have version due to un-flushed WAL.
@@ -172,4 +99,79 @@ pub trait IdTracker: fmt::Debug {
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new()
     }
+}
+
+pub trait IdTrackerRead {
+    /// Get a reference to the point mappings, which provides iteration methods.
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_>;
+
+    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
+
+    /// Returns internal ID of the point, which is used inside this segment
+    ///
+    /// Excludes soft deleted points.
+    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;
+
+    /// Return external ID for internal point, defined by user
+    ///
+    /// Excludes soft deleted points.
+    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType>;
+
+    /// Number of total points
+    ///
+    /// - includes soft deleted points
+    fn total_point_count(&self) -> usize;
+
+    /// Number of available points
+    ///
+    /// - excludes soft deleted points
+    fn available_point_count(&self) -> usize {
+        self.total_point_count() - self.deleted_point_count()
+    }
+
+    /// Number of deleted points
+    fn deleted_point_count(&self) -> usize;
+
+    /// Get [`BitSlice`] representation for deleted points with deletion flags
+    ///
+    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
+    /// vectors in this segment.
+    fn deleted_point_bitslice(&self) -> &BitSlice;
+
+    /// Check whether the given point is soft deleted
+    fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
+
+    fn name(&self) -> &'static str;
+
+    /// Iterator over `n` random IDs which are not deleted
+    ///
+    /// A [`BitSlice`] of deleted vectors may optionally be given to also consider deleted named
+    /// vectors.
+    fn sample_ids<'a>(
+        &'a self,
+        deleted_vector_bitslice: Option<&'a BitSlice>,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        // Use seeded randomness, prevents 'inconsistencies' in search results with sampling
+        let mut rng = StdRng::seed_from_u64(SEED);
+
+        let total = self.total_point_count() as PointOffsetType;
+        Box::new(
+            (0..total)
+                .map(move |_| rng.random_range(0..total))
+                .filter(move |&x| {
+                    // Check for deleted vector first, as that is more likely
+                    !deleted_vector_bitslice
+                        .and_then(|d| d.get_bit(x as usize))
+                        .unwrap_or(false)
+                        // Also check point deletion for integrity
+                        && !self.is_deleted_point(x)
+                }),
+        )
+    }
+
+    /// Iterate over all stored internal versions, even if they were deleted
+    /// Required for cleanup on segment open
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>;
 }

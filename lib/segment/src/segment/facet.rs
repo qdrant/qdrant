@@ -9,7 +9,7 @@ use super::Segment;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::entry::ReadSegmentEntry;
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndex;
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;

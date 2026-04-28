@@ -22,7 +22,7 @@ use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExt
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::point_mappings::FileEndianess;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
@@ -414,11 +414,55 @@ fn mmap_size<T>(len: usize) -> usize {
     len.div_ceil(item_width) * item_width // Make it a multiple of usize-width.
 }
 
-impl IdTracker for ImmutableIdTracker {
+impl IdTrackerRead for ImmutableIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id)
     }
 
+    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
+        self.mappings.internal_id(&external_id)
+    }
+
+    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+        self.mappings.external_id(internal_id)
+    }
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+        PointMappingsRefEnum::Compressed(&self.mappings)
+    }
+
+    fn total_point_count(&self) -> usize {
+        self.mappings.total_point_count()
+    }
+
+    fn available_point_count(&self) -> usize {
+        self.mappings.available_point_count()
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        self.total_point_count() - self.available_point_count()
+    }
+
+    fn deleted_point_bitslice(&self) -> &BitSlice {
+        self.mappings.deleted()
+    }
+
+    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
+        self.mappings.is_deleted_point(key)
+    }
+
+    fn name(&self) -> &'static str {
+        "immutable id tracker"
+    }
+
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
+        Box::new(self.internal_to_version.iter())
+    }
+}
+
+impl IdTracker for ImmutableIdTracker {
     fn set_internal_version(
         &mut self,
         internal_id: PointOffsetType,
@@ -435,14 +479,6 @@ impl IdTracker for ImmutableIdTracker {
         }
 
         Ok(())
-    }
-
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        self.mappings.internal_id(&external_id)
-    }
-
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        self.mappings.external_id(internal_id)
     }
 
     fn set_link(
@@ -475,10 +511,6 @@ impl IdTracker for ImmutableIdTracker {
         Ok(())
     }
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
-        PointMappingsRefEnum::Compressed(&self.mappings)
-    }
-
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
     fn mapping_flusher(&self) -> Flusher {
         // Only flush deletions because mappings are immutable
@@ -489,36 +521,6 @@ impl IdTracker for ImmutableIdTracker {
     fn versions_flusher(&self) -> Flusher {
         let flusher = self.internal_to_version_wrapper.flusher();
         Box::new(move || flusher().map_err(OperationError::from))
-    }
-
-    fn total_point_count(&self) -> usize {
-        self.mappings.total_point_count()
-    }
-
-    fn available_point_count(&self) -> usize {
-        self.mappings.available_point_count()
-    }
-
-    fn deleted_point_count(&self) -> usize {
-        self.total_point_count() - self.available_point_count()
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        self.mappings.deleted()
-    }
-
-    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        self.mappings.is_deleted_point(key)
-    }
-
-    fn name(&self) -> &'static str {
-        "immutable id tracker"
-    }
-
-    fn iter_internal_versions(
-        &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(self.internal_to_version.iter())
     }
 
     fn files(&self) -> Vec<PathBuf> {

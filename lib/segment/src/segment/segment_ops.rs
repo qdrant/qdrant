@@ -22,7 +22,7 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorInternal;
 use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,

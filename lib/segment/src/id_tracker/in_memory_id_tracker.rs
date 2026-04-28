@@ -10,7 +10,7 @@ use rand::rngs::StdRng;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 /// A non-persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
@@ -59,26 +59,9 @@ impl InMemoryIdTracker {
     }
 }
 
-impl IdTracker for InMemoryIdTracker {
+impl IdTrackerRead for InMemoryIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id as usize).copied()
-    }
-
-    fn set_internal_version(
-        &mut self,
-        internal_id: PointOffsetType,
-        version: SeqNumberType,
-    ) -> OperationResult<()> {
-        if self.external_id(internal_id).is_some() {
-            if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
-                *old_version = version;
-            } else {
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
-                self.internal_to_version[internal_id as usize] = version;
-            }
-        }
-
-        Ok(())
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
@@ -89,47 +72,8 @@ impl IdTracker for InMemoryIdTracker {
         self.mappings.external_id(internal_id)
     }
 
-    fn set_link(
-        &mut self,
-        external_id: PointIdType,
-        internal_id: PointOffsetType,
-    ) -> OperationResult<()> {
-        let _replaced_internal_id = self.mappings.set_link(external_id, internal_id);
-        Ok(())
-    }
-
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        // Unset version first because it still requires the mapping to exist
-        if let Some(internal_id) = self.internal_id(external_id) {
-            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
-        }
-        self.mappings.drop(external_id);
-        Ok(())
-    }
-
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
-        // Unset version first because it still requires the mapping to exist
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
-        if let Some(external_id) = self.mappings.external_id(internal_id) {
-            self.mappings.drop(external_id);
-        }
-        Ok(())
-    }
-
     fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
         PointMappingsRefEnum::Plain(&self.mappings)
-    }
-
-    /// Creates a flusher function, that writes the deleted points bitvec to disk.
-    fn mapping_flusher(&self) -> Flusher {
-        debug_assert!(false, "InMemoryIdTracker should not be flushed");
-        Box::new(|| Ok(()))
-    }
-
-    /// Creates a flusher function, that writes the points versions to disk.
-    fn versions_flusher(&self) -> Flusher {
-        debug_assert!(false, "InMemoryIdTracker should not be flushed");
-        Box::new(|| Ok(()))
     }
 
     fn total_point_count(&self) -> usize {
@@ -165,6 +109,64 @@ impl IdTracker for InMemoryIdTracker {
                 .enumerate()
                 .map(|(i, version)| (i as PointOffsetType, *version)),
         )
+    }
+}
+
+impl IdTracker for InMemoryIdTracker {
+    fn set_internal_version(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
+        if self.external_id(internal_id).is_some() {
+            if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
+                *old_version = version;
+            } else {
+                self.internal_to_version.resize(internal_id as usize + 1, 0);
+                self.internal_to_version[internal_id as usize] = version;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn set_link(
+        &mut self,
+        external_id: PointIdType,
+        internal_id: PointOffsetType,
+    ) -> OperationResult<()> {
+        let _replaced_internal_id = self.mappings.set_link(external_id, internal_id);
+        Ok(())
+    }
+
+    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+        // Unset version first because it still requires the mapping to exist
+        if let Some(internal_id) = self.internal_id(external_id) {
+            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        }
+        self.mappings.drop(external_id);
+        Ok(())
+    }
+
+    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        // Unset version first because it still requires the mapping to exist
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        if let Some(external_id) = self.mappings.external_id(internal_id) {
+            self.mappings.drop(external_id);
+        }
+        Ok(())
+    }
+
+    /// Creates a flusher function, that writes the deleted points bitvec to disk.
+    fn mapping_flusher(&self) -> Flusher {
+        debug_assert!(false, "InMemoryIdTracker should not be flushed");
+        Box::new(|| Ok(()))
+    }
+
+    /// Creates a flusher function, that writes the points versions to disk.
+    fn versions_flusher(&self) -> Flusher {
+        debug_assert!(false, "InMemoryIdTracker should not be flushed");
+        Box::new(|| Ok(()))
     }
 
     fn files(&self) -> Vec<PathBuf> {

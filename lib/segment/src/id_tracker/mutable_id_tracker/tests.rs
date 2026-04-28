@@ -15,9 +15,9 @@ use super::mappings_storage::{load_mappings, mappings_path, read_mappings};
 use super::versions_storage::{
     VERSION_ELEMENT_SIZE, load_versions, store_version_changes, versions_path,
 };
-use crate::id_tracker::IdTracker;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::types::{PointIdType, SeqNumberType};
 
 const RAND_SEED: u64 = 42;

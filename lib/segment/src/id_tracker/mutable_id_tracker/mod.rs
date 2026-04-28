@@ -26,7 +26,7 @@ use self::versions_storage::{
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 /// Mutable in-memory ID tracker with simple file based backing storage
@@ -156,11 +156,60 @@ impl MutableIdTracker {
     }
 }
 
-impl IdTracker for MutableIdTracker {
+impl IdTrackerRead for MutableIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id as usize).copied()
     }
 
+    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
+        self.mappings.internal_id(&external_id)
+    }
+
+    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+        self.mappings.external_id(internal_id)
+    }
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+        PointMappingsRefEnum::Plain(&self.mappings)
+    }
+
+    fn total_point_count(&self) -> usize {
+        self.mappings.total_point_count()
+    }
+
+    fn available_point_count(&self) -> usize {
+        self.mappings.available_point_count()
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        self.total_point_count() - self.available_point_count()
+    }
+
+    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
+        self.mappings.is_deleted_point(key)
+    }
+
+    fn deleted_point_bitslice(&self) -> &BitSlice {
+        self.mappings.deleted()
+    }
+
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
+        Box::new(
+            self.internal_to_version
+                .iter()
+                .enumerate()
+                .map(|(i, version)| (i as PointOffsetType, *version)),
+        )
+    }
+
+    fn name(&self) -> &'static str {
+        "mutable id tracker"
+    }
+}
+
+impl IdTracker for MutableIdTracker {
     fn set_internal_version(
         &mut self,
         internal_id: PointOffsetType,
@@ -182,14 +231,6 @@ impl IdTracker for MutableIdTracker {
         self.internal_to_version[internal_id as usize] = version;
         self.pending_versions.lock().insert(internal_id, version);
         Ok(())
-    }
-
-    fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        self.mappings.internal_id(&external_id)
-    }
-
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        self.mappings.external_id(internal_id)
     }
 
     fn set_link(
@@ -226,22 +267,6 @@ impl IdTracker for MutableIdTracker {
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
 
         Ok(())
-    }
-
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
-        PointMappingsRefEnum::Plain(&self.mappings)
-    }
-
-    fn total_point_count(&self) -> usize {
-        self.mappings.total_point_count()
-    }
-
-    fn available_point_count(&self) -> usize {
-        self.mappings.available_point_count()
-    }
-
-    fn deleted_point_count(&self) -> usize {
-        self.total_point_count() - self.available_point_count()
     }
 
     /// Creates a flusher function, that persists the removed points in the mapping database
@@ -330,29 +355,6 @@ impl IdTracker for MutableIdTracker {
 
             Ok(())
         })
-    }
-
-    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        self.mappings.is_deleted_point(key)
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        self.mappings.deleted()
-    }
-
-    fn iter_internal_versions(
-        &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(
-            self.internal_to_version
-                .iter()
-                .enumerate()
-                .map(|(i, version)| (i as PointOffsetType, *version)),
-        )
-    }
-
-    fn name(&self) -> &'static str {
-        "mutable id tracker"
     }
 
     #[inline]

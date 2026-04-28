@@ -8,7 +8,7 @@ use match_converter::get_match_checkers;
 use ordered_float::OrderedFloat;
 use serde_json::Value;
 
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::null_index::NullIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;

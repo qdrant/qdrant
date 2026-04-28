@@ -6,7 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use super::Segment;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vector_name_config::VectorNameConfig;
-use crate::id_tracker::IdTracker as _;
+use crate::id_tracker::IdTrackerRead as _;
 use crate::index::VectorIndexEnum;
 use crate::index::plain_vector_index::PlainVectorIndex;
 use crate::index::sparse_index::sparse_index_config::SparseIndexType;

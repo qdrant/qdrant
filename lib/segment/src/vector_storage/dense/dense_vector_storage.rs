@@ -389,7 +389,7 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType};
     use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
-    use crate::id_tracker::IdTracker;
+    use crate::id_tracker::{IdTracker, IdTrackerRead};
     use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;

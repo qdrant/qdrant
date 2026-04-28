@@ -30,7 +30,7 @@ use segment::data_types::vectors::{
 };
 use segment::entry::{SegmentEntry as _, StorageSegmentEntry as _};
 use segment::fixtures::index_fixtures::random_vector;
-use segment::id_tracker::{IdTracker, IdTrackerEnum};
+use segment::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::{VectorIndex as _, VectorIndexEnum};
