@@ -314,7 +314,7 @@ impl Dispatcher {
                 .await;
 
             for replica_set in shard_holder.all_shards() {
-                if replica_set.shard_key() != Some(&shard_key) {
+                if replica_set.shard_key().as_ref() != Some(&shard_key) {
                     continue;
                 }
 

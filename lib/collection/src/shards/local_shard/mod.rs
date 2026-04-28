@@ -116,6 +116,7 @@ pub struct LocalShard {
     pub(super) search_runtime: AdaptiveSearchHandle,
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
+    write_rate_limiter: Option<ParkingMutex<RateLimiter>>,
 
     is_gracefully_stopped: bool,
 
@@ -301,6 +302,12 @@ impl LocalShard {
                 .map(RateLimiter::new_per_minute)
                 .map(ParkingMutex::new)
         });
+        let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
+            strict_mode
+                .write_rate_limit
+                .map(RateLimiter::new_per_minute)
+                .map(ParkingMutex::new)
+        });
 
         drop(config); // release `shared_config` from borrow checker
 
@@ -322,6 +329,7 @@ impl LocalShard {
             total_optimized_points,
             disk_usage_watcher,
             read_rate_limiter,
+            write_rate_limiter,
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
             applied_seq_handler,
@@ -902,23 +910,24 @@ impl LocalShard {
     }
 
     /// Apply shard's strict mode configuration update
-    /// - Update read rate limiter
+    /// - Update read and write rate limiters
     pub async fn on_strict_mode_config_update(&mut self) {
         let config = self.collection_config.read().await;
 
-        if let Some(strict_mode_config) = &config.strict_mode_config
-            && strict_mode_config.enabled == Some(true)
-        {
-            // update read rate limiter
-            if let Some(read_rate_limit_per_min) = strict_mode_config.read_rate_limit {
-                let new_read_rate_limiter = RateLimiter::new_per_minute(read_rate_limit_per_min);
-                self.read_rate_limiter
-                    .replace(parking_lot::Mutex::new(new_read_rate_limiter));
-                return;
-            }
-        }
-        // remove read rate limiter for all other situations
-        self.read_rate_limiter.take();
+        let strict_mode = config
+            .strict_mode_config
+            .as_ref()
+            .filter(|cfg| cfg.enabled == Some(true));
+
+        let read_rate_limit_per_min = strict_mode.and_then(|cfg| cfg.read_rate_limit);
+        let write_rate_limit_per_min = strict_mode.and_then(|cfg| cfg.write_rate_limit);
+
+        self.read_rate_limiter = read_rate_limit_per_min
+            .map(RateLimiter::new_per_minute)
+            .map(ParkingMutex::new);
+        self.write_rate_limiter = write_rate_limit_per_min
+            .map(RateLimiter::new_per_minute)
+            .map(ParkingMutex::new);
     }
 
     pub async fn estimate_cardinality<'a>(
@@ -1310,6 +1319,33 @@ impl LocalShard {
                     log::debug!("Read rate limit error on {context} with {err:?}");
                     CollectionError::rate_limit_error(err, cost, false)
                 })?;
+        }
+        Ok(())
+    }
+
+    /// Check if the write rate limiter allows the operation to proceed.
+    ///
+    /// Mirrors `check_read_rate_limiter` but for writes; the cost is computed
+    /// lazily via `cost_fn` (which may be async, e.g. cardinality estimates).
+    /// Returns an error if the rate limit is exceeded.
+    pub(crate) async fn check_write_rate_limiter<F>(
+        &self,
+        hw_measurement_acc: &HwMeasurementAcc,
+        cost_fn: F,
+    ) -> CollectionResult<()>
+    where
+        F: AsyncFnOnce() -> usize,
+    {
+        // Do not rate limit internal operation tagged with disposable measurement
+        if hw_measurement_acc.is_disposable() {
+            return Ok(());
+        }
+        if let Some(rate_limiter) = &self.write_rate_limiter {
+            let cost = cost_fn().await;
+            rate_limiter
+                .lock()
+                .try_consume(cost as f64)
+                .map_err(|err| CollectionError::rate_limit_error(err, cost, true))?;
         }
         Ok(())
     }

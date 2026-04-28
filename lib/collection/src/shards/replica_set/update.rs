@@ -588,28 +588,35 @@ impl ShardReplicaSet {
 
     /// Check write rate limiter for the operation
     ///
-    /// Lazily compute the cost of the operation and check against the write rate limiter
+    /// Lazily compute the cost of the operation and check against the write
+    /// rate limiter. The limiter lives on `LocalShard`; proxy wrappers forward
+    /// writes to that same local shard, so we resolve the wrapped local shard
+    /// uniformly via [`Shard::local_shard`]. `Dummy` shards have no limiter.
     async fn check_operation_write_rate_limiter(
         &self,
         hw_measurement: &HwMeasurementAcc,
         local: &Shard,
         operation: &OperationWithClockTag,
     ) -> CollectionResult<()> {
-        self.check_write_rate_limiter(hw_measurement, || async {
-            let mut ratelimiter_cost = 1;
+        let Some(local_shard) = local.local_shard() else {
+            return Ok(());
+        };
+        local_shard
+            .check_write_rate_limiter(hw_measurement, async || {
+                let mut ratelimiter_cost = 1;
 
-            // Estimate the cost based on affected points if filter is available.
-            match local
-                .estimate_request_cardinality(&operation.operation, hw_measurement)
-                .await
-            {
-                Ok(est) => ratelimiter_cost = 1.max(est.exp),
-                Err(err) => log::error!("Estimating cardinality: {err:?}"),
-            }
+                // Estimate the cost based on affected points if filter is available.
+                match local
+                    .estimate_request_cardinality(&operation.operation, hw_measurement)
+                    .await
+                {
+                    Ok(est) => ratelimiter_cost = 1.max(est.exp),
+                    Err(err) => log::error!("Estimating cardinality: {err:?}"),
+                }
 
-            ratelimiter_cost
-        })
-        .await?;
+                ratelimiter_cost
+            })
+            .await?;
         Ok(())
     }
 

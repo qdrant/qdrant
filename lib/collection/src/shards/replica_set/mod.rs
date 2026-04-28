@@ -17,7 +17,6 @@ use std::time::Duration;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
@@ -106,7 +105,10 @@ pub struct ShardReplicaSet {
     locally_disabled_peers: parking_lot::RwLock<locally_disabled_peers::Registry>,
     pub(crate) shard_path: PathBuf,
     pub(crate) shard_id: ShardId,
-    shard_key: Option<ShardKey>,
+    /// Optional shard key. Wrapped in `parking_lot::RwLock` so it can be
+    /// reassigned via `&self` (e.g. when applying snapshot state on a shard
+    /// that was already mounted).
+    shard_key: parking_lot::RwLock<Option<ShardKey>>,
     notify_peer_failure_cb: ChangePeerFromState,
     abort_shard_transfer_cb: AbortShardTransfer,
     channel_service: ChannelService,
@@ -122,7 +124,6 @@ pub struct ShardReplicaSet {
     write_ordering_lock: Mutex<()>,
     /// Local clock set, used to tag new operations on this shard.
     clock_set: Mutex<ClockSet>,
-    write_rate_limiter: Option<parking_lot::Mutex<RateLimiter>>,
     pub partial_snapshot_meta: PartialSnapshotMeta,
 }
 
@@ -201,19 +202,9 @@ impl ShardReplicaSet {
         let replica_set_shard_config = ShardConfig::new_replica_set();
         replica_set_shard_config.save(&shard_path)?;
 
-        // Initialize the write rate limiter
-        let config = collection_config.read().await;
-        let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
-            strict_mode
-                .write_rate_limit
-                .map(RateLimiter::new_per_minute)
-                .map(parking_lot::Mutex::new)
-        });
-        drop(config);
-
         Ok(Self {
             shard_id,
-            shard_key,
+            shard_key: parking_lot::RwLock::new(shard_key),
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
@@ -232,7 +223,6 @@ impl ShardReplicaSet {
             optimizer_resource_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
-            write_rate_limiter,
             partial_snapshot_meta: PartialSnapshotMeta::default(),
         })
     }
@@ -342,19 +332,9 @@ impl ShardReplicaSet {
             None
         };
 
-        // Initialize the write rate limiter
-        let config = collection_config.read().await;
-        let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
-            strict_mode
-                .write_rate_limit
-                .map(RateLimiter::new_per_minute)
-                .map(parking_lot::Mutex::new)
-        });
-        drop(config);
-
         let replica_set = Self {
             shard_id,
-            shard_key,
+            shard_key: parking_lot::RwLock::new(shard_key),
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
@@ -374,7 +354,6 @@ impl ShardReplicaSet {
             optimizer_resource_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
-            write_rate_limiter,
             partial_snapshot_meta: PartialSnapshotMeta::default(),
         };
 
@@ -389,14 +368,14 @@ impl ShardReplicaSet {
         replica_set
     }
 
-    pub async fn stop_gracefully(self) {
+    pub async fn stop_gracefully(&self) {
         if let Some(local) = self.local.write().await.take() {
             local.stop_gracefully().await;
         }
     }
 
-    pub fn shard_key(&self) -> Option<&ShardKey> {
-        self.shard_key.as_ref()
+    pub fn shard_key(&self) -> Option<ShardKey> {
+        self.shard_key.read().clone()
     }
 
     pub fn this_peer_id(&self) -> PeerId {
@@ -838,7 +817,7 @@ impl ShardReplicaSet {
     }
 
     pub async fn apply_state(
-        &mut self,
+        &self,
         replicas: HashMap<PeerId, ReplicaState>,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
@@ -931,7 +910,7 @@ impl ShardReplicaSet {
         }
 
         // Apply shard key
-        self.shard_key = shard_key;
+        *self.shard_key.write() = shard_key;
 
         Ok(())
     }
@@ -949,53 +928,12 @@ impl ShardReplicaSet {
     }
 
     /// Apply shard's strict mode configuration update
-    /// - Update read and write rate limiters
-    pub(crate) async fn on_strict_mode_config_update(&mut self) -> CollectionResult<()> {
-        let mut read_local = self.local.write().await;
-        if let Some(shard) = read_local.as_mut() {
-            shard.on_strict_mode_config_update().await
-        }
-        drop(read_local);
-        let config = self.collection_config.read().await;
-        if let Some(strict_mode_config) = &config.strict_mode_config
-            && strict_mode_config.enabled == Some(true)
-        {
-            // update write rate limiter
-            if let Some(write_rate_limit_per_min) = strict_mode_config.write_rate_limit {
-                let new_write_rate_limiter = RateLimiter::new_per_minute(write_rate_limit_per_min);
-                self.write_rate_limiter
-                    .replace(parking_lot::Mutex::new(new_write_rate_limiter));
-                return Ok(());
-            }
-        }
-        // remove write rate limiter for all other situations
-        self.write_rate_limiter.take();
-        Ok(())
-    }
-
-    /// Check if the write rate limiter allows the operation to proceed
-    /// - hw_measurement_acc: the current hardware measurement accumulator
-    /// - cost_fn: the cost of the operation called lazily
     ///
-    /// Returns an error if the rate limit is exceeded.
-    async fn check_write_rate_limiter<F>(
-        &self,
-        hw_measurement_acc: &HwMeasurementAcc,
-        cost_fn: F,
-    ) -> CollectionResult<()>
-    where
-        F: AsyncFnOnce() -> usize,
-    {
-        // Do not rate limit internal operation tagged with disposable measurement
-        if hw_measurement_acc.is_disposable() {
-            return Ok(());
-        }
-        if let Some(rate_limiter) = &self.write_rate_limiter {
-            let cost = cost_fn().await;
-            rate_limiter
-                .lock()
-                .try_consume(cost as f64)
-                .map_err(|err| CollectionError::rate_limit_error(err, cost, true))?;
+    /// The actual rate limiters live on `LocalShard`, so this just delegates
+    /// while we hold the local-shard write lock.
+    pub(crate) async fn on_strict_mode_config_update(&self) -> CollectionResult<()> {
+        if let Some(shard) = self.local.write().await.as_mut() {
+            shard.on_strict_mode_config_update().await;
         }
         Ok(())
     }

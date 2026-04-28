@@ -187,9 +187,9 @@ impl Collection {
         // update collection config
         self.collection_config.read().await.save(&self.path)?;
         // apply config change to all shards
-        let mut shard_holder = self.shards_holder.write().await;
+        let shard_holder = self.shards_holder.write().await;
         let updates = shard_holder
-            .all_shards_mut()
+            .all_shards()
             .map(|replica_set| replica_set.on_strict_mode_config_update());
         future::try_join_all(updates).await?;
         Ok(())

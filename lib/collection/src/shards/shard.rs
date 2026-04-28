@@ -77,6 +77,21 @@ impl Shard {
         }
     }
 
+    /// Return the underlying [`LocalShard`] if this shard wraps one.
+    ///
+    /// Proxy variants forward writes to a wrapped local shard, so callers
+    /// that need the local-shard's state (e.g. rate limiters) can reach it
+    /// uniformly through this accessor. `Dummy` returns `None`.
+    pub fn local_shard(&self) -> Option<&LocalShard> {
+        match self {
+            Shard::Local(local_shard) => Some(local_shard),
+            Shard::Proxy(proxy_shard) => Some(&proxy_shard.wrapped_shard),
+            Shard::ForwardProxy(proxy_shard) => Some(&proxy_shard.wrapped_shard),
+            Shard::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard(),
+            Shard::Dummy(_) => None,
+        }
+    }
+
     pub async fn get_telemetry_data(
         &self,
         detail: TelemetryDetail,

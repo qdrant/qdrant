@@ -65,7 +65,13 @@ pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 pub struct ShardHolder {
     /// `BTreeMap` for deterministic iteration order by `ShardId` — iteration is externally
     /// observable (fan-out, telemetry, consensus state apply).
-    shards: BTreeMap<ShardId, ShardReplicaSet>,
+    ///
+    /// Values are `Arc` so consumers can clone a handle, drop the outer
+    /// `ShardHolder` lock, and still operate on the shard. This matters
+    /// especially for searches: holding the `ShardHolder` read lock across
+    /// every `core_search` await would block writers (e.g. shard creation)
+    /// for the duration of the search.
+    shards: BTreeMap<ShardId, Arc<ShardReplicaSet>>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
@@ -130,7 +136,7 @@ impl ShardHolder {
     pub async fn stop_gracefully(&mut self) {
         let futures = std::mem::take(&mut self.shards)
             .into_values()
-            .map(|shard| shard.stop_gracefully());
+            .map(|shard| async move { shard.stop_gracefully().await });
         futures::future::join_all(futures).await;
     }
 
@@ -227,7 +233,7 @@ impl ShardHolder {
         shard: ShardReplicaSet,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
-        let evicted = self.shards.insert(shard_id, shard);
+        let evicted = self.shards.insert(shard_id, Arc::new(shard));
         if let Some(evicted) = evicted {
             debug_assert!(false, "Overwriting existing shard id {shard_id}");
             evicted.stop_gracefully().await;
@@ -333,7 +339,7 @@ impl ShardHolder {
         extra_shards: AHashMap<ShardId, ShardReplicaSet>,
     ) -> CollectionResult<()> {
         for (extra_shard_id, extra_shard) in extra_shards {
-            let evicted = self.shards.insert(extra_shard_id, extra_shard);
+            let evicted = self.shards.insert(extra_shard_id, Arc::new(extra_shard));
             if let Some(evicted) = evicted {
                 evicted.stop_gracefully().await;
             }
@@ -358,31 +364,23 @@ impl ShardHolder {
         self.shards.contains_key(&shard_id)
     }
 
-    pub fn get_shard(&self, shard_id: ShardId) -> Option<&ShardReplicaSet> {
+    pub fn get_shard(&self, shard_id: ShardId) -> Option<&Arc<ShardReplicaSet>> {
         self.shards.get(&shard_id)
     }
 
-    pub fn get_shard_mut(&mut self, shard_id: ShardId) -> Option<&mut ShardReplicaSet> {
-        self.shards.get_mut(&shard_id)
-    }
-
-    pub fn get_shards(&self) -> impl Iterator<Item = (ShardId, &ShardReplicaSet)> {
+    pub fn get_shards(&self) -> impl Iterator<Item = (ShardId, &Arc<ShardReplicaSet>)> {
         self.shards.iter().map(|(id, shard)| (*id, shard))
     }
 
-    pub fn all_shards(&self) -> impl Iterator<Item = &ShardReplicaSet> {
+    pub fn all_shards(&self) -> impl Iterator<Item = &Arc<ShardReplicaSet>> {
         self.shards.values()
-    }
-
-    pub fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardReplicaSet> {
-        self.shards.values_mut()
     }
 
     pub fn split_by_shard<O: SplitByShard + Clone>(
         &self,
         operation: O,
         shard_keys_selection: &Option<ShardKey>,
-    ) -> CollectionResult<Vec<(&ShardReplicaSet, O)>> {
+    ) -> CollectionResult<Vec<(&Arc<ShardReplicaSet>, O)>> {
         let Some(hashring) = self.rings.get(&shard_keys_selection.clone()) else {
             return if let Some(shard_key) = shard_keys_selection {
                 Err(CollectionError::bad_input(format!(
@@ -568,7 +566,7 @@ impl ShardHolder {
     pub fn select_shards<'a>(
         &'a self,
         shard_selector: &'a ShardSelectorInternal,
-    ) -> CollectionResult<Vec<(&'a ShardReplicaSet, Option<&'a ShardKey>)>> {
+    ) -> CollectionResult<Vec<(&'a Arc<ShardReplicaSet>, Option<&'a ShardKey>)>> {
         let mut res = Vec::new();
 
         match shard_selector {
@@ -1162,7 +1160,7 @@ impl ShardHolder {
     ///
     /// This method is cancel safe.
     pub async fn stream_shard_snapshot(
-        shard: OwnedRwLockReadGuard<ShardHolder, ShardReplicaSet>,
+        shard: OwnedRwLockReadGuard<ShardHolder, Arc<ShardReplicaSet>>,
         collection_name: &str,
         shard_id: ShardId,
         manifest: Option<SnapshotManifest>,
