@@ -48,11 +48,10 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
-        Self::read_multi_iter::<P, Meta>(
-            ranges
-                .into_iter()
-                .map(move |(meta, range)| (meta, self, range)),
-        )
+        let reads = ranges
+            .into_iter()
+            .map(move |(meta, range)| (meta, self, range));
+        Self::read_multi_iter::<P, Meta>(reads)
     }
 
     fn len(&self) -> Result<u64>;
@@ -92,16 +91,18 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     {
         let mut pipeline = Self::ReadPipeline::<'a, P, Meta>::new()?;
         let mut reads = reads.into_iter();
-        Ok(std::iter::from_fn(move || {
+        let iter = std::iter::from_fn(move || {
             while pipeline.can_schedule()
-                && let Some((meta, file, range)) = reads.next()
+                && let Some(read) = reads.next()
             {
+                let (meta, file, range) = read;
                 if let Err(err) = pipeline.schedule(meta, file, range) {
                     return Some(Err(err));
                 }
             }
             pipeline.wait().transpose()
-        }))
+        });
+        Ok(iter)
     }
 
     fn kind() -> UniversalKind;
