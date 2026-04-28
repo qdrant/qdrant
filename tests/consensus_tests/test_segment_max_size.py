@@ -1,7 +1,4 @@
-import multiprocessing
 import pathlib
-import random
-from time import sleep
 
 from .fixtures import upsert_random_points, create_collection, create_field_index
 from .utils import *
@@ -41,6 +38,11 @@ def test_max_segment_size(tmp_path: pathlib.Path):
     assert collection_cluster_info_before["payload_schema"]["city"]["points"] == 0
 
     upsert_random_points(peer_api_uris[0], 20, batch_size=5)
+
+    # Wait for the optimizer to create new segments (it runs asynchronously)
+    wait_for(
+        lambda: get_collection_info(peer_api_uris[0], COLLECTION_NAME)["segments_count"] > 2,
+    )
 
     collection_cluster_info_after = get_collection_info(peer_api_uris[0], COLLECTION_NAME)
 
