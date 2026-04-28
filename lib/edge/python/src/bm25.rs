@@ -4,14 +4,10 @@ use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use edge::bm25::{EdgeBm25, EdgeBm25Config};
 use pyo3::prelude::*;
-use segment::data_types::index::{
-    StemmingAlgorithm, StopwordsInterface, TokenizerType,
-};
+use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 
 use crate::repr::*;
-use crate::types::payload_schema::{
-    PyStemmingAlgorithm, PyStopwords, PyTokenizerType,
-};
+use crate::types::payload_schema::{PyStemmingAlgorithm, PyStopwords, PyTokenizerType};
 use crate::types::vector::PySparseVector;
 
 /// Configuration for an edge-side BM25 model.
