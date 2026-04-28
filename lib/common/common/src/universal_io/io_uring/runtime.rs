@@ -22,7 +22,7 @@ impl PageAlignedBytes {
     fn as_maybe_bytes(slice: &[Self]) -> &[MaybeUninit<u8>] {
         unsafe {
             std::slice::from_raw_parts(
-                slice.as_ptr() as *const MaybeUninit<u8>,
+                slice.as_ptr().cast::<MaybeUninit<u8>>(),
                 slice.len() * KERNEL_PAGE_SIZE as usize,
             )
         }
@@ -368,7 +368,6 @@ pub enum IoUringRequest<'data, T> {
 
 impl<'data, T> IoUringRequest<'data, T> {
     pub fn expect_read(&mut self) -> &mut Vec<MaybeUninit<T>> {
-        #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             IoUringRequest::Read { items } => items,
             _ => panic!(),
@@ -376,7 +375,6 @@ impl<'data, T> IoUringRequest<'data, T> {
     }
 
     pub fn expect_o_direct_read(&mut self) -> &mut Vec<PageAlignedBytes> {
-        #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             IoUringRequest::ODirectRead {
                 buffer,
@@ -388,7 +386,6 @@ impl<'data, T> IoUringRequest<'data, T> {
     }
 
     pub fn expect_write(&self) -> &'data [T] {
-        #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             IoUringRequest::Write(items) => items,
             _ => panic!(),
