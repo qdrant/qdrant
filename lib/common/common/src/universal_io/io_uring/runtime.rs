@@ -10,6 +10,27 @@ use crate::maybe_uninit;
 
 const KERNEL_PAGE_SIZE: u64 = 4096; // 4 kB
 
+#[derive(Debug, Clone)]
+#[repr(C, align(4096))]
+pub struct PageAlignedBytes([MaybeUninit<u8>; KERNEL_PAGE_SIZE as usize]);
+
+impl PageAlignedBytes {
+    const fn uninit() -> Self {
+        Self([MaybeUninit::uninit(); KERNEL_PAGE_SIZE as usize])
+    }
+
+    fn as_maybe_bytes(vec: Vec<Self>) -> Vec<MaybeUninit<u8>> {
+        let (ptr, length, capacity) = vec.into_raw_parts();
+        unsafe {
+            Vec::from_raw_parts(
+                ptr as *mut MaybeUninit<u8>,
+                length * KERNEL_PAGE_SIZE as usize,
+                capacity * KERNEL_PAGE_SIZE as usize,
+            )
+        }
+    }
+}
+
 pub struct IoUringRuntime<'data, T: bytemuck::Pod, Meta = u64> {
     pub io_uring: IoUringGuard,
     pub state: IoUringState<'data, T, Meta>,
@@ -196,9 +217,13 @@ where
         let page_byte_offset = byte_offset & !(KERNEL_PAGE_SIZE - 1); // page-aligned byte offset
         let inner_byte_offset = byte_offset - page_byte_offset; // offset within buffer where the request starts
 
-        let buffer_len =
+        let bytes_len =
             (inner_byte_offset + length * size_of::<T>() as u64).next_multiple_of(KERNEL_PAGE_SIZE);
-        let buffer: Vec<MaybeUninit<u8>> = vec![MaybeUninit::uninit(); buffer_len as _];
+
+        let num_pages = bytes_len / KERNEL_PAGE_SIZE;
+
+        let buffer: Vec<PageAlignedBytes> = vec![PageAlignedBytes::uninit(); num_pages as _];
+
         let (slot, req) = self.init(
             meta,
             IoUringRequest::ODirectRead {
@@ -209,10 +234,10 @@ where
         );
         let buffer = req.expect_o_direct_read();
 
-        let buffer_len = u32::try_from(buffer_len).expect("read buffer length fit within u32");
+        let bytes_len = u32::try_from(bytes_len).expect("read buffer length fit within u32");
         let bytes_ptr = buffer.as_mut_ptr().cast();
 
-        opcode::Read::new(fd, bytes_ptr, buffer_len)
+        opcode::Read::new(fd, bytes_ptr, bytes_len)
             .offset(byte_offset)
             .build()
             .user_data(slot as u64)
@@ -271,19 +296,22 @@ where
                 inner_byte_offset,
                 items_len,
             } => {
-                // We need to return an aligned Vec
+                let buffer_bytes = PageAlignedBytes::as_maybe_bytes(buffer);
 
-                // TODO: if aligment matches, we can cast the buffer and return
+                // We need to return a `T`-aligned Vec
+
+                // TODO(perf): if aligment matches a page size, we can cast the buffer and return
+                // without a second allocation.
 
                 //
-                // buffer
+                // buffer_bytes
                 // │     ┌────┬────items┬────┬────┐      byte_length    │
                 // ├─────┤ 1  │ 2  │ 3  │ 4  │ 5  ├───────────>|────────┤
                 // │     └────┴────┴────┴────┴────┘                     │
                 //       ^
-                //   byte_start
+                //   inner_byte_offset
 
-                let initialized_bytes = unsafe { buffer[..byte_length].assume_init_ref() };
+                let initialized_bytes = unsafe { buffer_bytes[..byte_length].assume_init_ref() };
 
                 // Make sure there are at least the requested num of items
                 let avail_items = byte_length.saturating_sub(inner_byte_offset) / size_of::<T>();
@@ -332,7 +360,7 @@ pub enum IoUringRequest<'data, T> {
     },
 
     ODirectRead {
-        buffer: Vec<MaybeUninit<u8>>,
+        buffer: Vec<PageAlignedBytes>,
         inner_byte_offset: usize,
         items_len: usize,
     },
@@ -349,7 +377,7 @@ impl<'data, T> IoUringRequest<'data, T> {
         }
     }
 
-    pub fn expect_o_direct_read(&mut self) -> &mut Vec<MaybeUninit<u8>> {
+    pub fn expect_o_direct_read(&mut self) -> &mut Vec<PageAlignedBytes> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             IoUringRequest::ODirectRead {
