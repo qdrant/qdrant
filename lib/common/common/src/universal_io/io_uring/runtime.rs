@@ -300,7 +300,7 @@ where
 
                 // We need to return a `T`-aligned Vec
 
-                // TODO(perf): if aligment matches a page size, we can cast the buffer and return
+                // TODO(perf): if T's alignment matches a page size, we can cast the buffer and return
                 // without a second allocation.
 
                 //
