@@ -2,14 +2,17 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use nix::libc;
+use rstest::rstest;
 
 use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
 use crate::universal_io::read::UniversalRead;
 
-#[test]
-fn test_io_uring_file_for_u64() -> Result<()> {
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_io_uring_file_for_u64(#[case] o_direct: bool) -> Result<()> {
     // 1. Write some u64 binary data to a file using regular std::fs APIs
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test_u64.bin");
@@ -18,8 +21,13 @@ fn test_io_uring_file_for_u64() -> Result<()> {
     let bytes = bytemuck::cast_slice(&data);
     fs_err::write(&path, bytes).unwrap();
 
+    let opts = OpenOptions {
+        prevent_caching: Some(o_direct),
+        ..Default::default()
+    };
+
     // 2. Read data back using `IoUringFile` and verify it matches what was written
-    let file = TypedStorage::<IoUringFile, u64>::open(&path, OpenOptions::default())?;
+    let file = TypedStorage::<IoUringFile, u64>::open(&path, opts)?;
 
     // Read all elements
     let read_back = file.read::<Sequential>(ReadRange {
@@ -42,15 +50,22 @@ fn test_io_uring_file_for_u64() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_io_uring_read_batch() -> Result<()> {
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test_batch.bin");
 
     let data: Vec<u64> = (0..256).collect();
     fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-    let file = TypedStorage::<IoUringFile, u64>::open(&path, OpenOptions::default())?;
+    let opts = OpenOptions {
+        prevent_caching: Some(o_direct),
+        ..Default::default()
+    };
+
+    let file = TypedStorage::<IoUringFile, u64>::open(&path, opts)?;
     let elem = size_of::<u64>() as u64;
 
     // Non-contiguous ranges across the file.
@@ -122,8 +137,10 @@ fn test_io_uring_read_batch() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_io_uring_concurrent_read_iter() -> Result<()> {
+#[rstest]
+#[case(true)]
+#[case(false)]
+fn test_io_uring_concurrent_read_iter(#[case] o_direct: bool) -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let elem = size_of::<u64>() as u64;
 
@@ -143,8 +160,7 @@ fn test_io_uring_concurrent_read_iter() -> Result<()> {
     fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
     let opts = OpenOptions {
-        // TODO: should use O_DIRECT (Some(true)), but it hangs - needs separate investigation
-        prevent_caching: Some(false),
+        prevent_caching: Some(o_direct),
         ..Default::default()
     };
     let file_a = TypedStorage::<IoUringFile, u64>::open(&path_a, opts)?;
@@ -191,8 +207,10 @@ fn test_io_uring_concurrent_read_iter() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_io_uring_read_multi_iter_basic() -> Result<()> {
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let elem = size_of::<u64>() as u64;
 
@@ -206,7 +224,10 @@ fn test_io_uring_read_multi_iter_basic() -> Result<()> {
     let data_1: Vec<u64> = (1000..1128).collect();
     fs_err::write(&path_1, bytemuck::cast_slice(&data_1)).unwrap();
 
-    let opts = OpenOptions::default();
+    let opts = OpenOptions {
+        prevent_caching: Some(o_direct),
+        ..Default::default()
+    };
     let file_0 = <IoUringFile as UniversalRead<u64>>::open(&path_0, opts)?;
     let file_1 = <IoUringFile as UniversalRead<u64>>::open(&path_1, opts)?;
     let files = [file_0, file_1];
@@ -241,8 +262,10 @@ fn test_io_uring_read_multi_iter_basic() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let elem = size_of::<u64>() as u64;
 
@@ -253,13 +276,18 @@ fn test_io_uring_read_multi_iter_many_ranges() -> Result<()> {
     let mut all_data: Vec<Vec<u64>> = Vec::new();
     let mut files: Vec<IoUringFile> = Vec::new();
 
+    let opts = OpenOptions {
+        prevent_caching: Some(o_direct),
+        ..Default::default()
+    };
+
     for i in 0..NUM_FILES {
         let base = (i as u64) * 10_000;
         let data: Vec<u64> = (base..base + ELEMENTS_PER_FILE).collect();
         let path = dir.path().join(format!("f{i}.bin"));
         fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-        let file = <IoUringFile as UniversalRead<u64>>::open(&path, OpenOptions::default())?;
+        let file = <IoUringFile as UniversalRead<u64>>::open(&path, opts)?;
         files.push(file);
         all_data.push(data);
     }
