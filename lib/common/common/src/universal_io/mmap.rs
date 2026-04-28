@@ -17,10 +17,6 @@ pub struct MmapFile {
 
     // `mmap` and `mmap_seq` own the mmaps.
     mmap: Arc<MmapRaw>,
-    #[expect(
-        dead_code,
-        reason = "Accessed through ptr_seq. This field is only needed for the Drop impl."
-    )]
     mmap_seq: Option<MmapRaw>,
 
     // `len`, `ptr`, `ptr_seq` contain the same values as `mmap`, `mmap_seq`,
