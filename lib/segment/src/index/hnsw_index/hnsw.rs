@@ -406,8 +406,8 @@ impl HNSWIndex {
                 &quantized_vectors_ref,
                 stopped,
             )?;
-            if build_main_graph {
-                if let Some(gpu_constructed_graph) = Self::build_main_graph_on_gpu(
+            if build_main_graph
+                && let Some(gpu_constructed_graph) = Self::build_main_graph_on_gpu(
                     id_tracker_ref.deref(),
                     &vector_storage_ref,
                     &quantized_vectors_ref,
@@ -416,11 +416,11 @@ impl HNSWIndex {
                     deleted_bitslice,
                     num_entries,
                     stopped,
-                )? {
-                    graph_layers_builder = gpu_constructed_graph;
-                    build_main_graph = false;
-                    debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
-                }
+                )?
+            {
+                graph_layers_builder = gpu_constructed_graph;
+                build_main_graph = false;
+                debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
             }
             gpu_vectors
         } else {
