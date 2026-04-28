@@ -9,8 +9,11 @@
 //! Currently only Linux is supported (via `/proc/self/stat`); other
 //! platforms return `None`.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(target_os = "linux")]
+use std::time::Instant;
 
+#[cfg(target_os = "linux")]
 use parking_lot::Mutex;
 
 /// Sampling window: how often we query the OS for process CPU time.
