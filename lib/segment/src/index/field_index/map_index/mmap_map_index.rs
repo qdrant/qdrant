@@ -1,13 +1,15 @@
 use std::borrow::{Borrow, Cow};
 use std::iter;
 use std::mem::size_of;
+use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
+use common::bitvec::{BitSlice, BitSliceExt, BitVec};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
-use common::fs::{atomic_save_json, read_json};
+use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap::create_and_ensure_length;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::stored_bitslice::MmapBitSlice;
@@ -19,7 +21,6 @@ use serde::{Deserialize, Serialize};
 
 use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
-use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::stored_point_to_values::{StoredPointToValues, ValuesIter};
 
@@ -27,6 +28,18 @@ const DELETED_PATH: &str = "deleted.bin";
 const HASHMAP_PATH: &str = "values_to_points.bin";
 const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
+/// Mmap-backed immutable map index.
+///
+/// On-disk state (`values_to_points.bin`, `deleted.bin`, `point_to_values.*`,
+/// `mmap_field_index_config.json`) is written once during [`Self::build`] and
+/// not mutated afterwards: `deleted.bin` records only the points whose payload
+/// was empty at build time.
+///
+/// Runtime deletions live in the in-memory `Storage::deleted` bitvec. They are
+/// **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove_point`]
+/// only updates the in-memory bitvec. Callers must re-supply the authoritative
+/// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
+/// `deleted_points` argument to [`Self::open`] on reload.
 pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
     path: PathBuf,
     pub(super) storage: Storage<N>,
@@ -38,7 +51,23 @@ pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized> {
     pub(super) value_to_points: MmapHashMap<N, PointOffsetType>,
     point_to_values: StoredPointToValues<N, MmapFile>,
-    pub(super) deleted: BufferedUpdateBitSlice<MmapFile>,
+    /// In-memory deletion bitmap. Reconstructed at load time as the union of
+    /// the build-time empty-payload bits read from `deleted.bin` and the
+    /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
+    pub(super) deleted: BitVec,
+}
+
+impl<N: MapIndexKey + Key + ?Sized> Storage<N> {
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            value_to_points: _,
+            point_to_values,
+            deleted,
+        } = self;
+
+        // `value_to_points` is a mmap-backed hashmap with no in-memory state.
+        point_to_values.ram_usage_bytes() + deleted.capacity().div_ceil(u8::BITS as usize)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,7 +77,11 @@ struct MmapMapIndexConfig {
 
 impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     /// Open and load mmap map index from the given path
-    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
+    pub fn open(
+        path: &Path,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
         let hashmap_path = path.join(HASHMAP_PATH);
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
@@ -65,21 +98,27 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let hashmap = MmapHashMap::open(&hashmap_path, do_populate)?;
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
 
-        let deleted = MmapBitSlice::open(
-            &deleted_path,
-            OpenOptions {
-                populate: Some(do_populate),
-                ..OpenOptions::default()
-            },
-        )?;
-        let deleted_count = deleted.count_ones()?;
+        let mut deleted = deleted_points.to_owned();
+
+        let deleted_payload_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+        let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
+
+        // `deleted` length must match `point_to_values.len()` because it only
+        // tracks the index's contents. The id-tracker's deleted mask can be
+        // shorter or longer; if shorter, the missing entries default to live
+        // (the id-tracker is the source of truth for deletions, and a shorter
+        // mask just means it doesn't yet know about those higher offsets).
+        deleted.resize(point_to_values.len(), false);
+        deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
+
+        let deleted_count = deleted.count_ones();
 
         Ok(Some(Self {
             path: path.to_path_buf(),
             storage: Storage {
                 value_to_points: hashmap,
                 point_to_values,
-                deleted: BufferedUpdateBitSlice::new(deleted),
+                deleted,
             },
             deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,
@@ -92,6 +131,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         point_to_values: Vec<Vec<<N as MapIndexKey>::Owned>>,
         values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
         is_on_disk: bool,
+        deleted_points: &BitSlice,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
@@ -143,13 +183,15 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             deleted.flusher()()?;
         }
 
-        Self::open(path, is_on_disk)?.ok_or_else(|| {
+        Self::open(path, is_on_disk, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open MmapMapIndex after building it")
         })
     }
 
+    /// No-op flusher: the on-disk state is build-time only. See the type-level
+    /// docs on [`MmapMapIndex`] for the deletion durability contract.
     pub fn flusher(&self) -> Flusher {
-        self.storage.deleted.flusher()
+        Box::new(|| Ok(()))
     }
 
     pub fn wipe(self) -> OperationResult<()> {
@@ -175,16 +217,22 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        let mut files = vec![self.path.join(HASHMAP_PATH), self.path.join(CONFIG_PATH)];
+        let mut files = vec![
+            self.path.join(HASHMAP_PATH),
+            self.path.join(DELETED_PATH),
+            self.path.join(CONFIG_PATH),
+        ];
         files.extend(self.storage.point_to_values.immutable_files());
         files
     }
 
+    /// Marks `idx` as deleted in the in-memory deletion bitvec.
+    ///
+    /// Not persisted: on reopen, deletions must be re-supplied via the
+    /// `deleted_points` argument to [`Self::open`].
     pub fn remove_point(&mut self, idx: PointOffsetType) {
         let idx = idx as usize;
-        if let Some(deleted) = self.storage.deleted.get(idx)
-            && !deleted
-        {
+        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
             self.storage.deleted.set(idx, true);
             self.deleted_count += 1;
         }
@@ -203,7 +251,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             .payload_index_io_read_counter()
             .incr_delta(size_of::<bool>());
 
-        let is_deleted = self.storage.deleted.get(idx as usize).is_some_and(|b| b);
+        let is_deleted = self
+            .storage
+            .deleted
+            .get_bit(idx as usize)
+            .is_some_and(|b| b);
 
         Ok(!is_deleted
             && self
@@ -222,17 +274,15 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         // We can account cost of reading `bool`, but it will likely be more expensive, than
         // actually reading bool itself.
 
-        self.storage
-            .deleted
-            .get(idx as usize)
-            .filter(|b| !b)
-            .and_then(|_| {
-                self.storage
-                    .point_to_values
-                    .values_iter(idx, hw_counter)
-                    .ok()?
-                    .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = Cow<'_, N>>>)
-            })
+        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+            self.storage
+                .point_to_values
+                .values_iter(idx, hw_counter)
+                .ok()?
+                .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = Cow<'_, N>>>)
+        } else {
+            None
+        }
     }
 
     pub fn for_points_values(
@@ -244,7 +294,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         points.try_for_each(|idx| {
-            if self.storage.deleted.get(idx as usize) != Some(false) {
+            if self.storage.deleted.get_bit(idx as usize) != Some(false) {
                 return Ok(());
             }
             if let Some(iter) = self.storage.point_to_values.values_iter(idx, hw_counter)? {
@@ -255,11 +305,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        self.storage
-            .deleted
-            .get(idx as usize)
-            .filter(|b| !b)
-            .and_then(|_| self.storage.point_to_values.get_values_count(idx).ok()?)
+        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+            self.storage.point_to_values.get_values_count(idx).ok()?
+        } else {
+            None
+        }
     }
 
     pub fn get_indexed_points(&self) -> usize {
@@ -319,7 +369,13 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 Box::new(
                     slice
                         .iter()
-                        .filter(|idx| !self.storage.deleted.get(**idx as usize).unwrap_or(false))
+                        .filter(|idx| {
+                            !self
+                                .storage
+                                .deleted
+                                .get_bit(**idx as usize)
+                                .unwrap_or(false)
+                        })
                         .copied(),
                 )
             }
@@ -357,7 +413,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             let count = v
                 .iter()
                 .filter(|&&idx| {
-                    !self.storage.deleted.get(idx as usize).unwrap_or(true)
+                    !self.storage.deleted.get_bit(idx as usize).unwrap_or(true)
 
                     // TODO(deferred): Maybe we can improve this filter and use take_while instead. For this we
                     // need to make sure that `v` is always sorted which we _can_ enforce when finalizing the index.
@@ -387,7 +443,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 let mut iter = v
                     .iter()
                     .copied()
-                    .filter(|idx| !self.storage.deleted.get(*idx as usize).unwrap_or(true))
+                    .filter(|idx| !self.storage.deleted.get_bit(*idx as usize).unwrap_or(true))
                     .measure_hw_with_acc(
                         hw_counter.new_accumulator(),
                         size_of::<PointOffsetType>(),
@@ -420,7 +476,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         let Self {
-            path: _,
+            path,
             storage,
             deleted_count: _,
             total_key_value_pairs: _,
@@ -429,11 +485,15 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let Storage {
             value_to_points,
             point_to_values,
-            deleted,
+            deleted: _,
         } = storage;
         value_to_points.clear_cache()?;
-        deleted.clear_cache()?;
+        clear_disk_cache(&path.join(DELETED_PATH))?;
         point_to_values.clear_cache()?;
         Ok(())
+    }
+
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        self.storage.ram_usage_bytes()
     }
 }

@@ -4,7 +4,7 @@ use std::iter;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use common::bitvec::BitVec;
+use common::bitvec::{BitSliceExt, BitVec};
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
 use gridstore::Blob;
@@ -54,7 +54,11 @@ where
                 (
                     value,
                     ids.iter().copied().filter(|idx| {
-                        let is_deleted = index.storage.deleted.get(*idx as usize).unwrap_or(false);
+                        let is_deleted = index
+                            .storage
+                            .deleted
+                            .get_bit(*idx as usize)
+                            .unwrap_or(false);
                         !is_deleted
                     }),
                 )
