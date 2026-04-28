@@ -19,13 +19,11 @@ impl PageAlignedBytes {
         Self([MaybeUninit::uninit(); KERNEL_PAGE_SIZE as usize])
     }
 
-    fn as_maybe_bytes(vec: Vec<Self>) -> Vec<MaybeUninit<u8>> {
-        let (ptr, length, capacity) = vec.into_raw_parts();
+    fn as_maybe_bytes(slice: &[Self]) -> &[MaybeUninit<u8>] {
         unsafe {
-            Vec::from_raw_parts(
-                ptr as *mut MaybeUninit<u8>,
-                length * KERNEL_PAGE_SIZE as usize,
-                capacity * KERNEL_PAGE_SIZE as usize,
+            std::slice::from_raw_parts(
+                slice.as_ptr() as *const MaybeUninit<u8>,
+                slice.len() * KERNEL_PAGE_SIZE as usize,
             )
         }
     }
@@ -238,7 +236,7 @@ where
         let bytes_ptr = buffer.as_mut_ptr().cast();
 
         opcode::Read::new(fd, bytes_ptr, bytes_len)
-            .offset(byte_offset)
+            .offset(page_byte_offset)
             .build()
             .user_data(slot as u64)
     }
@@ -296,7 +294,7 @@ where
                 inner_byte_offset,
                 items_len,
             } => {
-                let buffer_bytes = PageAlignedBytes::as_maybe_bytes(buffer);
+                let buffer_bytes = PageAlignedBytes::as_maybe_bytes(&buffer);
 
                 // We need to return a `T`-aligned Vec
 
