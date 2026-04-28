@@ -323,8 +323,8 @@ def rejoin_cluster_test(
     # Wait until remove-origin ConfChange is applied on both surviving peers.
     # Otherwise raft can drop the new peer's add-peer proposal as a conflicting
     # in-flight conf change, and AddPeerToKnown silently times out at 10s.
-    wait_for(check_cluster_size, second_peer_uri, peers - 1)
-    wait_for(check_cluster_size, peer_uris[2], peers - 1)
+    wait_peer_added(second_peer_uri, expected_size=peers - 1)
+    wait_peer_added(peer_uris[2], expected_size=peers - 1)
 
     # Add new peer to cluster
     new_peer_uri, new_peer_dir = add_new_peer(tmp_path, peers, bootstrap_uri, collection)
