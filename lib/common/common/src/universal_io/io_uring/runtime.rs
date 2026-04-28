@@ -164,50 +164,55 @@ where
 
     /// Allocates `Vec<MaybeUninit<T>>`, reinterprets it as `Vec<MaybeUninit<u8>>`, and stores the byte buffer
     /// so the kernel writes into correctly aligned memory for `T`.
-    pub fn read(&mut self, meta: Meta, fd: Fd, range: ReadRange, direct_io: bool) -> squeue::Entry {
+    pub fn read(&mut self, meta: Meta, fd: Fd, range: ReadRange) -> squeue::Entry {
         let ReadRange {
             byte_offset,
             length,
         } = range;
 
-        let (slot, bytes_ptr, byte_length, byte_offset) = if direct_io {
-            // Make sure read buffer is kernel-page aligned
-            let page_byte_offset = byte_offset & !(KERNEL_PAGE_SIZE - 1); // page-aligned byte offset
-            let read_byte_offset = byte_offset - page_byte_offset; // offset within buffer where the request starts
+        // Size the buffer exactly to the number of items to read
+        let items: Vec<MaybeUninit<T>> = vec![MaybeUninit::uninit(); length as _];
+        let (slot, req) = self.init(meta, IoUringRequest::Read { items });
+        let items = req.expect_read();
 
-            let buffer_len = (read_byte_offset + length * size_of::<T>() as u64)
-                .next_multiple_of(KERNEL_PAGE_SIZE);
-            let buffer: Vec<MaybeUninit<u8>> = vec![MaybeUninit::uninit(); buffer_len as _];
-            let (slot, req) = self.init(
-                meta,
-                IoUringRequest::ODirectRead {
-                    buffer,
-                    byte_offset: page_byte_offset as usize,
-                    items_len: length as usize,
-                },
-            );
-            let buffer = req.expect_o_direct_read();
-
-            let byte_length = buffer.len();
-            let byte_length =
-                u32::try_from(byte_length).expect("read buffer length fit within u32");
-            let bytes_ptr = buffer.as_mut_ptr().cast();
-
-            (slot, bytes_ptr, byte_length, page_byte_offset)
-        } else {
-            // Size the buffer exactly to the number of items to read
-            let items: Vec<MaybeUninit<T>> = vec![MaybeUninit::uninit(); length as _];
-            let (slot, req) = self.init(meta, IoUringRequest::Read { items });
-            let items = req.expect_read();
-
-            let bytes_ptr = items.as_mut_ptr().cast();
-            let byte_length = length * size_of::<T>() as u64;
-            let byte_length =
-                u32::try_from(byte_length).expect("read buffer length fit within u32");
-            (slot, bytes_ptr, byte_length, byte_offset)
-        };
+        let bytes_ptr = items.as_mut_ptr().cast();
+        let byte_length = length * size_of::<T>() as u64;
+        let byte_length = u32::try_from(byte_length).expect("read buffer length fit within u32");
 
         opcode::Read::new(fd, bytes_ptr, byte_length)
+            .offset(byte_offset)
+            .build()
+            .user_data(slot as u64)
+    }
+
+    /// Allocates a `Vec<MaybeUninit<u8>>` aligned to 4kB.
+    pub fn read_o_direct(&mut self, meta: Meta, fd: Fd, range: ReadRange) -> squeue::Entry {
+        let ReadRange {
+            byte_offset,
+            length,
+        } = range;
+
+        // Make sure read buffer is kernel-page aligned
+        let page_byte_offset = byte_offset & !(KERNEL_PAGE_SIZE - 1); // page-aligned byte offset
+        let read_byte_offset = byte_offset - page_byte_offset; // offset within buffer where the request starts
+
+        let buffer_len =
+            (read_byte_offset + length * size_of::<T>() as u64).next_multiple_of(KERNEL_PAGE_SIZE);
+        let buffer: Vec<MaybeUninit<u8>> = vec![MaybeUninit::uninit(); buffer_len as _];
+        let (slot, req) = self.init(
+            meta,
+            IoUringRequest::ODirectRead {
+                buffer,
+                byte_offset: page_byte_offset as usize,
+                items_len: length as usize,
+            },
+        );
+        let buffer = req.expect_o_direct_read();
+
+        let buffer_len = u32::try_from(buffer_len).expect("read buffer length fit within u32");
+        let bytes_ptr = buffer.as_mut_ptr().cast();
+
+        opcode::Read::new(fd, bytes_ptr, buffer_len)
             .offset(byte_offset)
             .build()
             .user_data(slot as u64)
