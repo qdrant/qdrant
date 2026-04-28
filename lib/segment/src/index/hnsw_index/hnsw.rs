@@ -389,10 +389,16 @@ impl HNSWIndex {
             graph_layers_builder.set_levels(vector_id, level);
         }
 
-        // Try to build the main graph on GPU if possible.
+        // Try to build graphs on GPU if possible.
         // Store created gpu vectors to reuse them for payload links.
         #[cfg(feature = "gpu")]
-        let gpu_vectors = if build_main_graph {
+        let needs_gpu_vectors = build_main_graph
+            || additional_links_params
+                .as_ref()
+                .is_some_and(|(_, indexed_fields)| !indexed_fields.is_empty());
+
+        #[cfg(feature = "gpu")]
+        let gpu_vectors = if needs_gpu_vectors {
             let timer = std::time::Instant::now();
             let gpu_vectors = Self::create_gpu_vectors(
                 gpu_device,
@@ -400,19 +406,21 @@ impl HNSWIndex {
                 &quantized_vectors_ref,
                 stopped,
             )?;
-            if let Some(gpu_constructed_graph) = Self::build_main_graph_on_gpu(
-                id_tracker_ref.deref(),
-                &vector_storage_ref,
-                &quantized_vectors_ref,
-                gpu_vectors.as_ref(),
-                &graph_layers_builder,
-                deleted_bitslice,
-                num_entries,
-                stopped,
-            )? {
-                graph_layers_builder = gpu_constructed_graph;
-                build_main_graph = false;
-                debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+            if build_main_graph {
+                if let Some(gpu_constructed_graph) = Self::build_main_graph_on_gpu(
+                    id_tracker_ref.deref(),
+                    &vector_storage_ref,
+                    &quantized_vectors_ref,
+                    gpu_vectors.as_ref(),
+                    &graph_layers_builder,
+                    deleted_bitslice,
+                    num_entries,
+                    stopped,
+                )? {
+                    graph_layers_builder = gpu_constructed_graph;
+                    build_main_graph = false;
+                    debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+                }
             }
             gpu_vectors
         } else {
