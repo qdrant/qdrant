@@ -194,16 +194,16 @@ where
 
         // Make sure read buffer is kernel-page aligned
         let page_byte_offset = byte_offset & !(KERNEL_PAGE_SIZE - 1); // page-aligned byte offset
-        let read_byte_offset = byte_offset - page_byte_offset; // offset within buffer where the request starts
+        let inner_byte_offset = byte_offset - page_byte_offset; // offset within buffer where the request starts
 
         let buffer_len =
-            (read_byte_offset + length * size_of::<T>() as u64).next_multiple_of(KERNEL_PAGE_SIZE);
+            (inner_byte_offset + length * size_of::<T>() as u64).next_multiple_of(KERNEL_PAGE_SIZE);
         let buffer: Vec<MaybeUninit<u8>> = vec![MaybeUninit::uninit(); buffer_len as _];
         let (slot, req) = self.init(
             meta,
             IoUringRequest::ODirectRead {
                 buffer,
-                byte_offset: page_byte_offset as usize,
+                inner_byte_offset: inner_byte_offset as usize,
                 items_len: length as usize,
             },
         );
@@ -268,7 +268,7 @@ where
             }
             IoUringRequest::ODirectRead {
                 buffer,
-                byte_offset,
+                inner_byte_offset,
                 items_len,
             } => {
                 // We need to return an aligned Vec
@@ -286,14 +286,14 @@ where
                 let initialized_bytes = unsafe { buffer[..byte_length].assume_init_ref() };
 
                 // Make sure there are at least the requested num of items
-                let avail_items = byte_length.saturating_sub(byte_offset) / size_of::<T>();
+                let avail_items = byte_length.saturating_sub(inner_byte_offset) / size_of::<T>();
                 assert!(
                     items_len <= avail_items,
                     "expected at least {items_len} items, got {avail_items}"
                 );
 
                 // Cast requested range into &[T]
-                let items_range = byte_offset..byte_offset + items_len * size_of::<T>();
+                let items_range = inner_byte_offset..inner_byte_offset + items_len * size_of::<T>();
                 let items_bytes = &initialized_bytes[items_range];
                 let items_slice = bytemuck::cast_slice(items_bytes);
 
@@ -333,7 +333,7 @@ pub enum IoUringRequest<'data, T> {
 
     ODirectRead {
         buffer: Vec<MaybeUninit<u8>>,
-        byte_offset: usize,
+        inner_byte_offset: usize,
         items_len: usize,
     },
 
@@ -354,7 +354,7 @@ impl<'data, T> IoUringRequest<'data, T> {
         match self {
             IoUringRequest::ODirectRead {
                 buffer,
-                byte_offset: _,
+                inner_byte_offset: _,
                 items_len: _,
             } => buffer,
             _ => panic!(),
