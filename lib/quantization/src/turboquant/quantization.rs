@@ -1,4 +1,5 @@
 use crate::DistanceType;
+use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
 use crate::turboquant::simd::{
     Query1bitSimd, Query2bitSimd, Query4bitSimd, score_1bit_internal, score_2bit_internal,
@@ -61,21 +62,30 @@ impl TurboQuantizer {
         // Rotate the vector.
         self.rotation.apply(buf);
 
-        // Calculate data that needs to be stored additionally.
-        let extras = self.calculate_extras(buf);
+        // Compute the L2 length once: it both feeds the rescale below and
+        // gets serialized into the extras bytes appended by pack_vector.
+        let l2_length = self.compute_l2_length(buf);
 
         // Rescale so per-coordinate variance is ~1 — matching the Lloyd-Max
         // N(0, 1) centroid grid.
-        let length = f64::from(extras.l2_length.unwrap_or(1.0));
+        let length = f64::from(l2_length.unwrap_or(1.0));
         let scale = (self.padded_dim as f64).sqrt() / length;
+
+        let mut extras_bytes = Vec::with_capacity(TqVectorExtras::size_for(
+            self.bits,
+            self.distance,
+            self.mode,
+        ));
+        self.pack_extras_into(l2_length, &mut extras_bytes);
+        let extras = TqVectorExtras::from_bytes(&extras_bytes);
 
         // Encode and return packed vector.
         self.pack_vector(buf.iter().map(|&val| val * scale), extras)
     }
 
     pub fn dequantize(&self, quantized: &[u8]) -> Vec<f64> {
-        let (extras, unpacked) = self.unpack_vector(quantized);
-        let length = f64::from(extras.l2_length.unwrap_or(1.0));
+        let (unpacked, extras) = self.unpack_vector(quantized);
+        let length = f64::from(extras.l2_length(self).unwrap_or(1.0));
         let scale = length / (self.padded_dim as f64).sqrt();
         unpacked.map(|x| x * scale).collect()
     }
@@ -87,8 +97,8 @@ impl TurboQuantizer {
     /// For asymmetric scoring (original vector against quantized vector), refer to [`Self::score_precomputed`]
     /// and precompute the query first.
     pub fn score_symmetric(&self, v1: &[u8], v2: &[u8]) -> f32 {
-        let (extra_v1, data_v1) = self.split_vector(v1);
-        let (extra_v2, data_v2) = self.split_vector(v2);
+        let (data_v1, extra_v1) = self.split_vector(v1);
+        let (data_v2, extra_v2) = self.split_vector(v2);
 
         // `score_{N}bit_internal` computes `Σ centroid(a_k) · centroid(b_k)`
         // directly on packed bytes — same quantity the old
@@ -101,8 +111,8 @@ impl TurboQuantizer {
             TQBits::Bits4 => score_4bit_internal(data_v1, data_v2),
         };
 
-        let v1_l2 = extra_v1.l2_length.unwrap_or(1.0);
-        let v2_l2 = extra_v2.l2_length.unwrap_or(1.0);
+        let v1_l2 = extra_v1.l2_length(self).unwrap_or(1.0);
+        let v2_l2 = extra_v2.l2_length(self).unwrap_or(1.0);
 
         match self.distance {
             DistanceType::Cosine | DistanceType::Dot => {
@@ -177,7 +187,7 @@ impl TurboQuantizer {
     /// [`Self::precompute_query`]. Returns an approximate `<query, v>` for Dot
     /// and `cos(θ)` for Cosine.
     pub fn score_precomputed(&self, query: &EncodedQueryTQ, vec: &[u8]) -> f32 {
-        let (vector_extras, data_bytes) = self.split_vector(vec);
+        let (data_bytes, vector_extras) = self.split_vector(vec);
         let dot = match &query.data {
             EncodedQueryTQData::Bits1(q) => q.dotprod(data_bytes),
             EncodedQueryTQData::Bits2(q) => q.dotprod(data_bytes),
@@ -191,11 +201,11 @@ impl TurboQuantizer {
                 dot / self.dim_sqrt
             }
             DistanceType::Dot => {
-                let l2 = vector_extras.l2_length.unwrap_or(1.0);
+                let l2 = vector_extras.l2_length(self).unwrap_or(1.0);
                 dot * l2 / self.dim_sqrt
             }
             DistanceType::L2 => {
-                let l2 = vector_extras.l2_length.unwrap_or(1.0);
+                let l2 = vector_extras.l2_length(self).unwrap_or(1.0);
                 // For L2, the "dot" we calculated is actually ||query||² + ||v||² - 2*||v||²*<query, v_normalized>>,
                 // so we need to do some extra math to recover the actual <query, v>.
                 let query_l2 = query.l2_norm.unwrap_or(1.0);
@@ -225,7 +235,6 @@ mod tests {
 
     use super::*;
     use crate::VectorParameters;
-    use crate::turboquant::encoding::TqVectorExtras;
 
     fn make_tq(dim: usize, bits: TQBits, distance: DistanceType) -> TurboQuantizer {
         let metadata = Metadata {
@@ -460,9 +469,10 @@ mod tests {
                     .map(|&idx| f64::from(centroids[idx as usize]))
                     .collect();
 
-                let packed = tq.pack_vector(values.iter().copied(), TqVectorExtras::default());
+                let packed =
+                    tq.pack_vector(values.iter().copied(), TqVectorExtras::from_bytes(&[]));
 
-                let out: Vec<f64> = tq.unpack_vector(&packed).1.collect();
+                let out: Vec<f64> = tq.unpack_vector(&packed).0.collect();
 
                 for (i, (&expected, &value)) in values.iter().zip(out.iter()).enumerate() {
                     assert_eq!(
@@ -829,9 +839,10 @@ mod tests {
                 for &idx in &[0u8, max_idx] {
                     let expected = f64::from(centroids[idx as usize]);
                     let values = vec![expected; dim];
-                    let packed = tq.pack_vector(values.iter().copied(), TqVectorExtras::default());
+                    let packed =
+                        tq.pack_vector(values.iter().copied(), TqVectorExtras::from_bytes(&[]));
 
-                    let out: Vec<f64> = tq.unpack_vector(&packed).1.collect();
+                    let out: Vec<f64> = tq.unpack_vector(&packed).0.collect();
 
                     // unpack_vector yields padded_dim values; only the first
                     // dim correspond to caller input, the rest are padding.

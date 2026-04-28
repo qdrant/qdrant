@@ -4,14 +4,31 @@ use crate::encoded_vectors::DistanceType;
 use crate::turboquant::quantization::TurboQuantizer;
 use crate::turboquant::{TQBits, TQMode};
 
-/// Additional data that needs to be stored along quantized vectors.
-#[derive(Default, Copy, Clone)]
-pub struct TqVectorExtras {
-    // TODO(turbo): add all fields.
-    pub(super) l2_length: Option<f32>,
+/// Lazy view over the encoded extra-data attached to a TurboQuant-quantized
+/// vector. Holds nothing but the underlying byte slice; the metadata required
+/// to interpret those bytes is supplied per-call by passing a
+/// [`TurboQuantizer`] reference to the getters.
+#[derive(Clone, Copy)]
+pub struct TqVectorExtras<'a> {
+    src: &'a [u8],
 }
 
-impl TqVectorExtras {
+impl<'a> TqVectorExtras<'a> {
+    /// Wrap previously-encoded extras bytes for lazy decoding. Validity of
+    /// `src.len()` against the configuration is the caller's responsibility —
+    /// in practice the bytes come from [`TurboQuantizer::split_vector`] or
+    /// [`TurboQuantizer::pack_extras_into`].
+    pub(super) fn from_bytes(src: &'a [u8]) -> Self {
+        Self { src }
+    }
+
+    /// Raw bytes backing this view. Intended for re-emitting the encoded
+    /// extras into a packed vector — prefer the typed getters for inspection.
+    #[inline]
+    pub(super) fn as_bytes(&self) -> &'a [u8] {
+        self.src
+    }
+
     /// Returns the size (in bytes) required for the extras.
     pub(super) fn size_for(_bits: TQBits, distance: DistanceType, _mode: TQMode) -> usize {
         let mut size = 0;
@@ -32,19 +49,41 @@ impl TqVectorExtras {
 
         size
     }
+
+    /// L2 length of the rotated source vector, decoded on access from the
+    /// underlying bytes. Returns `None` for distance metrics that don't store
+    /// it (e.g. Cosine).
+    pub fn l2_length(&self, quantizer: &TurboQuantizer) -> Option<f32> {
+        match quantizer.distance {
+            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
+                let bytes: [u8; 4] = self.src[..size_of::<f32>()]
+                    .try_into()
+                    .expect("expected at least 4 bytes for l2_length");
+                Some(f32::from_le_bytes(bytes))
+            }
+            DistanceType::Cosine => None,
+        }
+    }
 }
 
 impl TurboQuantizer {
     /// Bit-pack a sequence of rotated, Lloyd-Max-scaled values into a compact
     /// byte vector. Each value is mapped to its nearest centroid index via the
-    /// bit-width's decision boundaries before packing.
+    /// bit-width's decision boundaries before packing. The `extras` view is
+    /// appended verbatim and must already match [`TqVectorExtras::size_for`].
     ///
     /// Symmetric inverse of [`Self::unpack_vector`]: feeding its yielded f64s
     /// back through `pack_vector` reproduces the same byte layout.
-    pub(super) fn pack_vector<I>(&self, scaled: I, extras: TqVectorExtras) -> Vec<u8>
+    pub(super) fn pack_vector<I>(&self, scaled: I, extras: TqVectorExtras<'_>) -> Vec<u8>
     where
         I: IntoIterator<Item = f64>,
     {
+        debug_assert_eq!(
+            extras.as_bytes().len(),
+            TqVectorExtras::size_for(self.bits, self.distance, self.mode),
+            "extras must match the configured extras size",
+        );
+
         let mut out = Vec::with_capacity(self.quantized_size());
         let mut bit_writer = BitWriter::new(&mut out);
 
@@ -55,21 +94,22 @@ impl TurboQuantizer {
             bit_writer.write(idx, bits);
         }
         bit_writer.finish();
-        self.pack_extras_into(&extras, &mut out);
+        out.extend_from_slice(extras.as_bytes());
         out
     }
 
-    /// Split an encoded vector into its dimension bytes and the decoded extras.
-    /// Shared between [`Self::unpack_vector`] (scalar scoring) and the SIMD
-    /// scoring paths that consume the raw packed bytes directly.
-    pub(super) fn split_vector<'a>(&self, vec: &'a [u8]) -> (TqVectorExtras, &'a [u8]) {
+    /// Splits an encoded vector into its packed dimension bytes and a lazy
+    /// view over the extras stored alongside them. Shared between
+    /// [`Self::unpack_vector`] (scalar scoring) and the SIMD scoring paths
+    /// that consume the raw packed bytes directly.
+    pub(super) fn split_vector<'a>(&self, vec: &'a [u8]) -> (&'a [u8], TqVectorExtras<'a>) {
         let extra_len = TqVectorExtras::size_for(self.bits, self.distance, self.mode);
         let (dim_part, extra_part) = vec.split_at(vec.len() - extra_len);
-        (self.unpack_extras_from(extra_part), dim_part)
+        (dim_part, TqVectorExtras::from_bytes(extra_part))
     }
 
-    /// Unpacks `vec` into an iterator of `dim` centroid values and returns any
-    /// `Extras` stored alongside.
+    /// Unpacks `vec` into an iterator of `dim` centroid values and returns a
+    /// lazy [`TqVectorExtras`] view over the bytes stored alongside them.
     ///
     /// The iterator lazily decodes one centroid per step, so callers scoring a
     /// vector can `zip` it with a query and compute the dot in a single pass
@@ -77,8 +117,11 @@ impl TurboQuantizer {
     ///
     /// Does not apply the inverse rotation — the iterator yields values in the
     /// rotated space.
-    pub fn unpack_vector(&self, vec: &[u8]) -> (TqVectorExtras, impl Iterator<Item = f64>) {
-        let (extras, dim_part) = self.split_vector(vec);
+    pub fn unpack_vector<'a>(
+        &self,
+        vec: &'a [u8],
+    ) -> (impl Iterator<Item = f64> + 'a, TqVectorExtras<'a>) {
+        let (dim_part, extras) = self.split_vector(vec);
 
         let centroids = self.bits.get_centroids();
         let mut reader = BitReader::new(dim_part);
@@ -89,7 +132,7 @@ impl TurboQuantizer {
             f64::from(centroids[idx as usize])
         });
 
-        (extras, iter)
+        (iter, extras)
     }
 
     /// Size in bytes of a vector quantized by this quantizer.
@@ -121,64 +164,29 @@ impl TurboQuantizer {
         }
     }
 
-    /// Generates extra data that is required to store together with the quantized dimensions.
-    /// This depends on the  metadata of the `TurboQuantizer`, such as distance-type or TQ-Mode.
-    ///
-    /// Not all configurations need extras.
-    pub(super) fn calculate_extras(&self, rotated_vec: &[f64]) -> TqVectorExtras {
-        let mut extras = TqVectorExtras::default();
-
+    /// Computes the L2 length of `rotated_vec` for the distance metrics that
+    /// store it. Returns `None` for metrics that don't (Cosine).
+    pub(super) fn compute_l2_length(&self, rotated_vec: &[f64]) -> Option<f32> {
         match self.distance {
             DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
-                // For Dot product we need to additionally store the original vectors l2.
-                extras.l2_length =
-                    Some(rotated_vec.iter().map(|&i| i * i).sum::<f64>().sqrt() as f32);
+                Some(rotated_vec.iter().map(|&i| i * i).sum::<f64>().sqrt() as f32)
             }
-            DistanceType::Cosine => {}
-        }
-
-        extras
-    }
-
-    /// Packs (encodes) the extras into the given buffer.
-    fn pack_extras_into(&self, extras: &TqVectorExtras, buf: &mut Vec<u8>) {
-        let extra_len =
-            Self::quantized_size_for(self.padded_dim, self.bits, self.distance, self.mode);
-
-        if extra_len == 0 {
-            return;
-        }
-
-        buf.reserve(extra_len);
-
-        // Additional l2 for dot vectors.
-        if let Some(l2) = extras.l2_length {
-            buf.extend(&l2.to_le_bytes());
+            DistanceType::Cosine => None,
         }
     }
 
-    /// Decodes `src` containing encoded 'extra'-data and returns the decoded `Extras`.
-    ///
-    /// This function requires `src` to have extra data encoded.
-    fn unpack_extras_from(&self, src: &[u8]) -> TqVectorExtras {
-        debug_assert_eq!(
-            src.len(),
-            TqVectorExtras::size_for(self.bits, self.distance, self.mode),
-            "src must contain encoded extras data of the expected size"
-        );
-
-        let mut extras = TqVectorExtras::default();
-
-        // Additional l2 for dot vectors.
+    /// Encodes the given raw extras values and appends them to `buf`. Caller
+    /// must provide a value for every field the configured distance requires —
+    /// e.g. `l2_length` is mandatory for Dot/L1/L2.
+    pub(super) fn pack_extras_into(&self, l2_length: Option<f32>, buf: &mut Vec<u8>) {
+        // Additional l2 for dot/L1/L2 vectors.
         match self.distance {
             DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
-                let l2_bytes: [u8; 4] = src[..4].try_into().unwrap(); // TODO(turbo): maybe add error handling.
-                extras.l2_length = Some(f32::from_le_bytes(l2_bytes));
+                let l2 = l2_length.expect("l2_length required for this distance");
+                buf.extend(&l2.to_le_bytes());
             }
             DistanceType::Cosine => {}
         }
-
-        extras
     }
 }
 
@@ -191,27 +199,29 @@ mod tests {
     const SUPPORTED_BITS: &[TQBits] = &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4];
     /// Distances exercised by the extras tests. `L1`/`L2` are excluded: their
     /// `size_for` arms panic with `unimplemented!`.
-    const SUPPORTED_DISTANCES: &[DistanceType] = &[DistanceType::Dot, DistanceType::Cosine];
+    const SUPPORTED_DISTANCES: &[DistanceType] = &[
+        DistanceType::Dot,
+        DistanceType::Cosine,
+        DistanceType::L1,
+        DistanceType::L2,
+    ];
     const ALL_MODES: &[TQMode] = &[TQMode::Normal, TQMode::Plus];
 
-    fn example_extras(distance: DistanceType) -> TqVectorExtras {
+    fn example_l2(distance: DistanceType) -> Option<f32> {
         match distance {
-            DistanceType::Dot => TqVectorExtras {
-                l2_length: Some(1.25),
-            },
-            DistanceType::Cosine => TqVectorExtras { l2_length: None },
-            DistanceType::L1 | DistanceType::L2 => {
-                unreachable!("unsupported distance in test")
-            }
+            DistanceType::Dot => Some(1.25),
+            DistanceType::Cosine => None,
+            DistanceType::L1 | DistanceType::L2 => Some(1.3),
         }
     }
 
     /// For every supported (bits, mode, distance) combo, assert:
     ///   1. `pack_extras_into` writes exactly `size_for` bytes.
-    ///   2. `unpack_extras_from` recovers the packed extras field-for-field.
+    ///   2. A `TqVectorExtras` view over those bytes recovers the packed values
+    ///      via its getters.
     ///
-    /// Unpacking uses a destructuring pattern so adding a new field to
-    /// `TqVectorExtras` will force this test to be updated.
+    /// When a new field is added to `TqVectorExtras`, extend this test with an
+    /// assertion for its getter — there is no struct destructuring to force it.
     #[test]
     fn extras_size_matches_pack_and_roundtrips_unpack() {
         let dim = 64;
@@ -222,10 +232,10 @@ mod tests {
                     let predicted_extra_size = TqVectorExtras::size_for(bits, distance, mode);
 
                     let tq = TurboQuantizer::new(dim, bits, mode, distance);
-                    let expected = example_extras(distance);
+                    let expected_l2 = example_l2(distance);
 
                     let mut buf = Vec::new();
-                    tq.pack_extras_into(&expected, &mut buf);
+                    tq.pack_extras_into(expected_l2, &mut buf);
                     assert_eq!(
                         buf.len(),
                         predicted_extra_size,
@@ -236,12 +246,10 @@ mod tests {
                         continue;
                     }
 
-                    let TqVectorExtras { l2_length } = tq.unpack_extras_from(&buf);
-                    let TqVectorExtras {
-                        l2_length: expected_l2,
-                    } = expected;
+                    let extras = TqVectorExtras::from_bytes(&buf);
                     assert_eq!(
-                        l2_length, expected_l2,
+                        extras.l2_length(&tq),
+                        expected_l2,
                         "l2_length roundtrip (bits={bits:?}, mode={mode:?}, distance={distance:?})",
                     );
                 }
