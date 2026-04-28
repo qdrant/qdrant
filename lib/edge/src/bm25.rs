@@ -14,9 +14,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use bm25::{Bm25Document, SparseEmbedding};
-use segment::data_types::index::{
-    Language, StemmingAlgorithm, StopwordsInterface, TokenizerType,
-};
+use segment::data_types::index::{Language, StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
 use segment::index::field_index::full_text_index::tokenizers::{
     Stemmer, Tokenizer, TokensProcessor,

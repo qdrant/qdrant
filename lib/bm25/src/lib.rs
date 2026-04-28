@@ -224,7 +224,8 @@ mod tests {
         };
         let bm = Bm25::new(params, Whitespace);
         let short = bm.embed_document("foo bar foo");
-        let long = bm.embed_document("foo bar foo lorem ipsum dolor sit amet consectetur adipiscing");
+        let long =
+            bm.embed_document("foo bar foo lorem ipsum dolor sit amet consectetur adipiscing");
         let foo = token_id("foo");
         let v_short = short
             .indices
@@ -240,7 +241,10 @@ mod tests {
             .find(|(i, _)| **i == foo)
             .map(|(_, v)| *v)
             .unwrap();
-        assert!(v_long < v_short, "longer doc should down-weight repeated terms ({v_short} vs {v_long})");
+        assert!(
+            v_long < v_short,
+            "longer doc should down-weight repeated terms ({v_short} vs {v_long})"
+        );
     }
 
     #[test]
