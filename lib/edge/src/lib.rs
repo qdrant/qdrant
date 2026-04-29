@@ -1,4 +1,4 @@
-pub mod bm25;
+pub mod bm25_embed;
 mod config;
 mod count;
 mod facet;
