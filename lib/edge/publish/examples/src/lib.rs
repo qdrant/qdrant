@@ -43,6 +43,7 @@ pub fn load_new_shard() -> Result<EdgeShard, Box<dyn Error>> {
         hnsw_config: Default::default(),
         quantization_config: None,
         optimizers: Default::default(),
+        inference_models: HashMap::new(),
     };
 
     Ok(EdgeShard::load(Path::new(TMP_DIR), Some(config))?)

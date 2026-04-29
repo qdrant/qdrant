@@ -1,5 +1,6 @@
 pub mod bm25_embed;
-mod config;
+pub mod config;
+pub mod inference;
 mod count;
 mod facet;
 mod info;
@@ -45,6 +46,7 @@ pub struct EdgeShard {
     config: SaveOnDisk<EdgeConfig>,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
+    inference: inference::Inference,
 }
 
 const WAL_PATH: &str = "wal";
@@ -66,6 +68,8 @@ impl EdgeShard {
         let mut segments = SegmentHolder::default();
         ensure_appendable_segment(&mut segments, path, &segments_path, &config)?;
 
+        let inference = build_inference(&config);
+
         let config_path = path.join(EDGE_CONFIG_FILE);
         let config = SaveOnDisk::new(&config_path, config)
             .map_err(|e| OperationError::service_error(e.to_string()))?;
@@ -75,6 +79,7 @@ impl EdgeShard {
             config,
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
+            inference,
         })
     }
 
@@ -107,6 +112,8 @@ impl EdgeShard {
             OperationError::service_error("edge config is not provided and no segments were loaded")
         })?;
 
+        let inference = build_inference(&config);
+
         let config_path = path.join(EDGE_CONFIG_FILE);
         let config = SaveOnDisk::new(&config_path, config)
             .map_err(|e| OperationError::service_error(e.to_string()))?;
@@ -116,11 +123,29 @@ impl EdgeShard {
             config,
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
+            inference,
         })
     }
 
     pub fn config(&self) -> parking_lot::RwLockReadGuard<'_, EdgeConfig> {
         self.config.read()
+    }
+
+    /// Embed a document using the registered model in **query mode**
+    /// (unit weights for BM25). Use the resulting vector to construct any
+    /// query — this is the escape hatch when nesting a document inside a
+    /// complex query (prefetches, fusion, recommend) that doesn't yet
+    /// support documents directly.
+    pub fn embed_query(&self, document: &Document) -> OperationResult<Vector> {
+        self.inference.resolve(document, inference::EmbedKind::Query)
+    }
+
+    /// Embed a document using the registered model in **document mode**
+    /// (TF-weighted for BM25). Equivalent to what [`Self::upsert`] does
+    /// internally, exposed for callers that want to pre-compute embeddings.
+    pub fn embed_document(&self, document: &Document) -> OperationResult<Vector> {
+        self.inference
+            .resolve(document, inference::EmbedKind::Document)
     }
 
     pub fn path(&self) -> &Path {
@@ -182,6 +207,14 @@ fn default_wal_options() -> WalOptions {
         segment_queue_len: 0,
         retain_closed: NonZero::new(1).unwrap(),
     }
+}
+
+fn build_inference(config: &EdgeConfig) -> inference::Inference {
+    let mut registry = inference::Inference::new();
+    for (name, model_config) in &config.inference_models {
+        registry.register(name.clone(), model_config.build());
+    }
+    registry
 }
 
 fn has_existing_segments(path: &Path) -> bool {

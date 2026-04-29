@@ -27,7 +27,7 @@ const DEFAULT_LANGUAGE: &str = "english";
 ///
 /// Defaults match standard BM25 (`k1 = 1.2`, `b = 0.75`, `avg_doc_len = 256`)
 /// and english-language tokenization. Override any field as needed.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EdgeBm25Config {
     pub k1: Option<f64>,
     pub b: Option<f64>,

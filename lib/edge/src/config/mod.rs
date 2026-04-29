@@ -4,6 +4,7 @@
 //! per-vector quantization. Use `on_disk_payload`, `on_disk` per vector, and
 //! global `quantization_config` / `hnsw_config`.
 
+pub mod inference;
 pub mod optimizers;
 pub mod shard;
 pub mod vectors;

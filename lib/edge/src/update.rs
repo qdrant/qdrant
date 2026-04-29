@@ -2,6 +2,7 @@ use std::fmt;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::{OperationError, OperationResult};
+use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::operations::vector_name_ops::VectorNameConfig;
 use shard::operations::{CollectionUpdateOperations, VectorNameOperations};
 use shard::update::*;
@@ -9,8 +10,26 @@ use shard::wal::WalRawRecord;
 
 use crate::EdgeShard;
 use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
+use crate::types::EdgePoint;
 
 impl EdgeShard {
+    /// Insert points that may include unresolved [`Document`](crate::Document)
+    /// inputs. Documents are resolved using the inference registry built from
+    /// [`EdgeConfig::inference_models`](crate::EdgeConfig) before the points
+    /// are forwarded to the underlying update path.
+    pub fn upsert(&self, points: Vec<EdgePoint>) -> OperationResult<()> {
+        let resolved = points
+            .into_iter()
+            .map(|p| self.inference.resolve_point(p))
+            .collect::<OperationResult<Vec<_>>>()?;
+
+        let operation = CollectionUpdateOperations::PointOperation(
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(resolved)),
+        );
+
+        self.update(operation)
+    }
+
     pub fn update(&self, operation: CollectionUpdateOperations) -> OperationResult<()> {
         let record = WalRawRecord::new(&operation).map_err(service_error)?;
 
