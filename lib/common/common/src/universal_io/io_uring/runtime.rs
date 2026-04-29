@@ -324,9 +324,7 @@ where
                 let items_slice = bytemuck::cast_slice(items_bytes);
 
                 // Copy into new Vec
-                let mut items: Vec<T> = Vec::with_capacity(items_len as _);
-                items.spare_capacity_mut().write_clone_of_slice(items_slice);
-                unsafe { items.set_len(items_len as _) }
+                let items: Vec<T> = items_slice.to_vec();
 
                 IoUringResponse::Read(items)
             }
