@@ -158,9 +158,11 @@ pub struct PyBm25(EdgeBm25);
 impl PyBm25 {
     #[new]
     #[pyo3(signature = (config = None))]
-    pub fn new(config: Option<PyBm25Config>) -> Self {
+    pub fn new(config: Option<PyBm25Config>) -> PyResult<Self> {
         let config = config.map(EdgeBm25Config::from).unwrap_or_default();
-        Self(EdgeBm25::new(config))
+        EdgeBm25::new(config)
+            .map(Self)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// Embed `text` as a search query: each unique token gets weight 1.0.

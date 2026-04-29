@@ -8,7 +8,7 @@ use std::borrow::Cow;
 
 use crate::Tokenizer;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct BasicTokenizer {
     pub lowercase: bool,
 }
@@ -20,6 +20,12 @@ impl BasicTokenizer {
 
     pub fn case_sensitive() -> Self {
         Self { lowercase: false }
+    }
+}
+
+impl Default for BasicTokenizer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

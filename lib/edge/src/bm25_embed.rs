@@ -10,6 +10,7 @@
 //! from their own input format.
 
 use std::borrow::Cow;
+use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -22,7 +23,33 @@ use segment::index::field_index::full_text_index::tokenizers::{
 };
 use sparse::common::sparse_vector::SparseVector;
 
-const DEFAULT_LANGUAGE: &str = "english";
+const DEFAULT_LANGUAGE: Language = Language::English;
+
+/// Error returned by [`EdgeBm25::new`] for invalid configuration.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EdgeBm25Error {
+    /// BM25 hyperparameters failed validation (see [`bm25::Bm25Error`]).
+    Bm25(bm25::Bm25Error),
+    /// `language` did not match any supported [`Language`] variant.
+    UnsupportedLanguage(String),
+}
+
+impl fmt::Display for EdgeBm25Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Bm25(e) => write!(f, "{e}"),
+            Self::UnsupportedLanguage(lang) => write!(f, "unsupported language: {lang:?}"),
+        }
+    }
+}
+
+impl std::error::Error for EdgeBm25Error {}
+
+impl From<bm25::Bm25Error> for EdgeBm25Error {
+    fn from(e: bm25::Bm25Error) -> Self {
+        Self::Bm25(e)
+    }
+}
 
 /// Configuration for an edge-side BM25 model.
 ///
@@ -117,7 +144,7 @@ impl bm25::Tokenizer for EdgeSegmentTokenizer {
 }
 
 impl EdgeBm25 {
-    pub fn new(config: EdgeBm25Config) -> Self {
+    pub fn new(config: EdgeBm25Config) -> Result<Self, EdgeBm25Error> {
         let params = bm25::Bm25Params {
             k1: config.k.into_inner(),
             b: config.b.into_inner(),
@@ -132,12 +159,12 @@ impl EdgeBm25 {
             config.stemmer,
             config.min_token_len,
             config.max_token_len,
-        );
+        )?;
         let tokenizer = Tokenizer::new(config.tokenizer, processor);
 
-        Self {
-            inner: bm25::Bm25::new(params, EdgeSegmentTokenizer(tokenizer)),
-        }
+        Ok(Self {
+            inner: bm25::Bm25::new(params, EdgeSegmentTokenizer(tokenizer))?,
+        })
     }
 
     pub fn embed_query(&self, doc: &Bm25Document) -> SparseVector {
@@ -164,31 +191,38 @@ fn build_tokens_processor(
     stemmer: Option<StemmingAlgorithm>,
     min_token_len: Option<usize>,
     max_token_len: Option<usize>,
-) -> TokensProcessor {
+) -> Result<TokensProcessor, EdgeBm25Error> {
     let lowercase = lowercase.unwrap_or(true);
     let ascii_folding = ascii_folding.unwrap_or(false);
-    let language = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
+
+    // Resolve language up-front so a typo / unsupported value fails the build
+    // instead of silently disabling stemming and stopwords.
+    let resolved_language = match language {
+        Some(name) => {
+            Language::from_str(&name).map_err(|_| EdgeBm25Error::UnsupportedLanguage(name))?
+        }
+        None => DEFAULT_LANGUAGE,
+    };
+    let language_str = resolved_language.to_string();
 
     let stemmer = match stemmer {
-        None => Stemmer::try_default_from_language(&language),
+        None => Stemmer::try_default_from_language(&language_str),
         Some(algorithm) => Some(Stemmer::from_algorithm(&algorithm)),
     };
 
     let stopwords_config = match stopwords {
-        None => Language::from_str(&language)
-            .ok()
-            .map(StopwordsInterface::Language),
+        None => Some(StopwordsInterface::Language(resolved_language)),
         Some(interface) => Some(interface),
     };
 
-    TokensProcessor::new(
+    Ok(TokensProcessor::new(
         lowercase,
         ascii_folding,
         Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
         stemmer,
         min_token_len,
         max_token_len,
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -197,7 +231,7 @@ mod tests {
 
     #[test]
     fn defaults_construct_a_working_model() {
-        let model = EdgeBm25::new(EdgeBm25Config::default());
+        let model = EdgeBm25::new(EdgeBm25Config::default()).unwrap();
         let doc = Bm25Document::new("the quick brown fox jumps over the lazy dog");
         let q = model.embed_query(&doc);
         let d = model.embed_document(&doc);
@@ -210,7 +244,7 @@ mod tests {
 
     #[test]
     fn english_stopwords_are_filtered_by_default() {
-        let model = EdgeBm25::new(EdgeBm25Config::default());
+        let model = EdgeBm25::new(EdgeBm25Config::default()).unwrap();
         // "the", "a", "is" are stopwords — should not contribute distinct indices.
         let with_stops = model.embed_query(&Bm25Document::new("the cat is a hunter"));
         let without_stops = model.embed_query(&Bm25Document::new("cat hunter"));
@@ -225,9 +259,29 @@ mod tests {
             avg_len: NotNan::new(100.0).unwrap(),
             ..Default::default()
         };
-        let model = EdgeBm25::new(cfg);
+        let model = EdgeBm25::new(cfg).unwrap();
         let doc = Bm25Document::new("alpha beta gamma");
         let v = model.embed_document(&doc);
         assert_eq!(v.indices.len(), 3);
+    }
+
+    #[test]
+    fn unsupported_language_is_rejected() {
+        let cfg = EdgeBm25Config {
+            language: Some("klingon".to_string()),
+            ..Default::default()
+        };
+        let err = EdgeBm25::new(cfg).expect_err("klingon should not be accepted");
+        assert!(matches!(err, EdgeBm25Error::UnsupportedLanguage(ref s) if s == "klingon"));
+    }
+
+    #[test]
+    fn invalid_avg_len_is_rejected() {
+        let cfg = EdgeBm25Config {
+            avg_len: NotNan::new(0.0).unwrap(),
+            ..Default::default()
+        };
+        let err = EdgeBm25::new(cfg).expect_err("avg_len=0 should not be accepted");
+        assert!(matches!(err, EdgeBm25Error::Bm25(_)));
     }
 }

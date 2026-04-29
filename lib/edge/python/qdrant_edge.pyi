@@ -949,6 +949,9 @@ class Bm25:
     def __init__(self, config: Optional[Bm25Config] = None) -> None:
         """
         Create a Bm25 model with the given configuration (defaults if `None`).
+
+        Raises `ValueError` for invalid configuration: unsupported `language`,
+        non-positive `avg_len`, `b` outside `[0.0, 1.0]`, or negative `k`.
         """
         ...
 
