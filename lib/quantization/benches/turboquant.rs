@@ -20,6 +20,7 @@ fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
         },
         bits,
         mode: TQMode::Normal,
+        error_correction: None,
     };
     TurboQuantizer::new_from_metadata(&metadata)
 }

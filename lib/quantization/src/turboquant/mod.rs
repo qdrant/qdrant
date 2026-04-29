@@ -178,8 +178,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                 });
                 let padded_dim = pre_quantizer.padded_dim;
                 let mut buf = vec![0.0f64; padded_dim];
-                let mut coord_values: Vec<Vec<f32>> =
-                    (0..padded_dim).map(|_| Vec::new()).collect();
+                let mut coord_values: Vec<Vec<f32>> = (0..padded_dim).map(|_| Vec::new()).collect();
                 for vector in data.clone().take(MAX_STATS_VECTORS) {
                     if stopped.load(Ordering::Relaxed) {
                         return Err(EncodingError::Stopped);
@@ -196,9 +195,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                     if values.is_empty() {
                         continue;
                     }
-                    values.sort_by(|a, b| {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     let n = values.len();
                     let median = if n % 2 == 0 {
                         (values[n / 2 - 1] + values[n / 2]) / 2.0

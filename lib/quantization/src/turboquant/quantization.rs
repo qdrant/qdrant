@@ -373,8 +373,8 @@ impl TurboQuantizer {
         &self,
         data_v1: &[u8],
         data_v2: &[u8],
-        _extra_v1: &TqVectorExtras<'_>,
-        _extra_v2: &TqVectorExtras<'_>,
+        extra_v1: &TqVectorExtras<'_>,
+        extra_v2: &TqVectorExtras<'_>,
         ec: &ErrorCorrection,
     ) -> f32 {
         let centroids = self.bits.get_centroids();
@@ -393,8 +393,8 @@ impl TurboQuantizer {
             weighted += c1 * c2 * ec.d_prime_sq[i];
         }
 
-        let xm_a = _extra_v1.ec_correction();
-        let xm_b = _extra_v2.ec_correction();
+        let xm_a = extra_v1.ec_correction();
+        let xm_b = extra_v2.ec_correction();
         weighted + xm_a + xm_b - ec.mm_const
     }
 
