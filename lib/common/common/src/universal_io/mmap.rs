@@ -138,6 +138,8 @@ pub struct MmapReadPipeline<'a, T, P, Meta> {
 impl<'a, T: bytemuck::Pod, P: AccessPattern, Meta> UniversalReadPipeline<'a, T, MmapFile, Meta>
     for MmapReadPipeline<'a, T, P, Meta>
 {
+    type File = MmapFile;
+
     fn new() -> Result<Self> {
         Ok(Self {
             result: None,

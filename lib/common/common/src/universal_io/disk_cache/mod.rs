@@ -129,6 +129,8 @@ pub struct DiskCacheReadPipeline<'a, T: bytemuck::Pod, Meta> {
 impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, CachedSlice<T>, Meta>
     for DiskCacheReadPipeline<'a, T, Meta>
 {
+    type File = CachedSlice<T>;
+
     fn new() -> Result<Self> {
         Ok(Self { result: None })
     }

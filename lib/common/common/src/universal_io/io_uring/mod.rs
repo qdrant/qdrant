@@ -137,6 +137,8 @@ pub struct IoUringPipeline<'a, T: bytemuck::Pod, Meta> {
 impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, IoUringFile, Meta>
     for IoUringPipeline<'a, T, Meta>
 {
+    type File = IoUringFile;
+
     fn new() -> Result<Self> {
         Ok(Self {
             runtime: IoUringRuntime::new()?,

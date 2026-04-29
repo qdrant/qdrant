@@ -111,6 +111,8 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
 }
 
 pub trait UniversalReadPipeline<'a, T: Copy + 'static, S, Meta>: Sized {
+    type File;
+
     fn new() -> Result<Self>;
 
     fn can_schedule(&mut self) -> bool;

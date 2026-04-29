@@ -21,6 +21,8 @@ where
     S: UniversalRead<T>,
     P: AccessPattern,
 {
+    type File = Outer;
+
     #[inline]
     fn new() -> Result<Self> {
         Ok(Self(UniversalReadPipeline::new()?))
