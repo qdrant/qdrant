@@ -30,14 +30,21 @@ impl<'a> TqVectorExtras<'a> {
     }
 
     /// Returns the size (in bytes) required for the extras.
-    pub(super) fn size_for(_bits: TQBits, distance: DistanceType, _mode: TQMode) -> usize {
-        match distance {
+    pub(super) fn size_for(_bits: TQBits, distance: DistanceType, mode: TQMode) -> usize {
+        let scaling_factor_size = match distance {
             // 4 Bytes for merged l2 with re-normalization applied.
             DistanceType::Dot => size_of::<f32>(),
             // 4 Bytes for re-normalization.
             DistanceType::Cosine => size_of::<f32>(),
             DistanceType::L1 | DistanceType::L2 => size_of::<f32>(),
-        }
+        };
+        let ec_correction_size = match mode {
+            // TQ+ stores `xm = ⟨X, M⟩` per vector for the symmetric-scoring
+            // slow path.
+            TQMode::Plus => size_of::<f32>(),
+            TQMode::Normal => 0,
+        };
+        scaling_factor_size + ec_correction_size
     }
 
     /// Per-vector scaling factor that scoring multiplies into the centroid dot.
@@ -47,6 +54,21 @@ impl<'a> TqVectorExtras<'a> {
         let bytes: [u8; 4] = self.src[..size_of::<f32>()]
             .try_into()
             .expect("expected at least 4 bytes for scaling_factor");
+        f32::from_le_bytes(bytes)
+    }
+
+    /// TQ+ per-vector `⟨X, M⟩` correction. Only present when the quantizer
+    /// was configured with [`TQMode::Plus`]; the caller is responsible for
+    /// only calling this getter in that mode (validated via `debug_assert`).
+    pub fn ec_correction(&self) -> f32 {
+        debug_assert!(
+            self.src.len() >= 2 * size_of::<f32>(),
+            "ec_correction is only stored for TQMode::Plus"
+        );
+        let off = size_of::<f32>();
+        let bytes: [u8; 4] = self.src[off..off + size_of::<f32>()]
+            .try_into()
+            .expect("expected 4 bytes for ec_correction");
         f32::from_le_bytes(bytes)
     }
 }
@@ -161,10 +183,13 @@ impl TurboQuantizer {
     }
 
     /// Encodes the given raw extras values and appends them to `buf`.
+    /// `ec_correction` (`xm = ⟨X, M⟩`) is required when the quantizer is in
+    /// [`TQMode::Plus`] and ignored otherwise.
     pub(super) fn pack_extras_into(
         &self,
         l2_length: Option<f32>,
         centroid_norm: Option<f32>,
+        ec_correction: Option<f32>,
         buf: &mut Vec<u8>,
     ) {
         let scaling_factor = match self.distance {
@@ -175,6 +200,10 @@ impl TurboQuantizer {
         };
 
         buf.extend(&scaling_factor.to_le_bytes());
+
+        if matches!(self.mode, TQMode::Plus) {
+            buf.extend(&ec_correction.unwrap_or(0.0).to_le_bytes());
+        }
     }
 }
 
@@ -222,11 +251,15 @@ mod tests {
                 for &distance in SUPPORTED_DISTANCES {
                     let predicted_extra_size = TqVectorExtras::size_for(bits, distance, mode);
 
-                    let tq = TurboQuantizer::new(dim, bits, mode, distance);
+                    let tq = TurboQuantizer::new(dim, bits, mode, distance, None);
                     let (l2_length, centroid_norm, expected_scaling) = example_extras(distance);
+                    let expected_ec = match mode {
+                        TQMode::Plus => Some(-0.5),
+                        TQMode::Normal => None,
+                    };
 
                     let mut buf = Vec::new();
-                    tq.pack_extras_into(l2_length, centroid_norm, &mut buf);
+                    tq.pack_extras_into(l2_length, centroid_norm, expected_ec, &mut buf);
                     assert_eq!(
                         buf.len(),
                         predicted_extra_size,
@@ -243,6 +276,13 @@ mod tests {
                         expected_scaling,
                         "scaling_factor roundtrip (bits={bits:?}, mode={mode:?}, distance={distance:?})",
                     );
+                    if let Some(expected) = expected_ec {
+                        assert_eq!(
+                            extras.ec_correction(),
+                            expected,
+                            "ec_correction roundtrip (bits={bits:?}, mode={mode:?}, distance={distance:?})",
+                        );
+                    }
                 }
             }
         }

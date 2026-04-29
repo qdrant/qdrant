@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
-use crate::turboquant::quantization::TurboQuantizer;
+use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
 use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,7 +72,11 @@ pub struct EncodedQueryTQ {
 
     // Store the original query in pre-rotated form for L1 distance, where we need to dequantize vectors and apply inverse rotation to them.
     query: Option<Vec<f32>>,
-    // TODO(turbo): add precomputed extras here when needed
+
+    /// TQ+ asymmetric-scoring scalar correction `qm = ⟨Q, M⟩ = -⟨rotated_q, shift⟩`.
+    /// `0.0` when EC is not configured. Added to the SIMD raw_dot so the
+    /// existing score formulas can stay unchanged.
+    ec_correction: f32,
 }
 
 /// SIMD-ready encoded query, one variant per supported bit-width.  Each
@@ -91,6 +95,16 @@ pub struct Metadata {
     pub vector_parameters: VectorParameters,
     pub bits: TQBits,
     pub mode: TQMode,
+    pub error_correction: Option<ErrorCorrectionMetadata>,
+}
+
+/// On-disk form of TQ+'s [`ErrorCorrection`]. Stores only `shift` and `scale`
+/// — derived caches like `D'_i²` and `⟨M, M⟩` are recomputed at load time so
+/// `shift` / `scale` remain the single source of truth.
+#[derive(Serialize, Deserialize)]
+pub struct ErrorCorrectionMetadata {
+    pub shift: Vec<f32>,
+    pub scale: Vec<f32>,
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
@@ -122,10 +136,43 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
+        // TQ+: first pass over `data` to fit per-coordinate shift/scale that
+        // pulls the rotated, length-rescaled coordinates onto the Lloyd-Max
+        // N(0, 1) codebook before quantization.
+        let error_correction = match mode {
+            TQMode::Normal => None,
+            TQMode::Plus => {
+                let pre_quantizer = TurboQuantizer::new_from_metadata(&Metadata {
+                    vector_parameters: *vector_parameters,
+                    bits,
+                    mode,
+                    error_correction: None,
+                });
+                let padded_dim = pre_quantizer.padded_dim;
+                let mut buf = vec![0.0f64; padded_dim];
+                let mut stats_builder =
+                    crate::vector_stats::VectorStatsBuilder::new(padded_dim);
+                for vector in data.clone() {
+                    if stopped.load(Ordering::Relaxed) {
+                        return Err(EncodingError::Stopped);
+                    }
+                    pre_quantizer.preprocess_into(vector.as_ref(), &mut buf);
+                    stats_builder.add(buf.as_slice());
+                }
+                Some(ErrorCorrection::from_stats(&stats_builder.build()))
+            }
+        };
+
         let metadata = Metadata {
             vector_parameters: *vector_parameters,
             bits,
             mode,
+            error_correction: error_correction
+                .as_ref()
+                .map(|ec| ErrorCorrectionMetadata {
+                    shift: ec.shift.clone(),
+                    scale: ec.scale.clone(),
+                }),
         };
 
         let quantizer = TurboQuantizer::new_from_metadata(&metadata);

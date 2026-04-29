@@ -14,7 +14,7 @@ mod tests {
 
     const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512];
     const BITS: &[TQBits] = &[TQBits::Bits4, TQBits::Bits2, TQBits::Bits1_5, TQBits::Bits1];
-    const MODE: TQMode = TQMode::Normal;
+
 
     /// Absolute tolerance for an approximate score: an empirical per-bit
     /// coefficient (≈ 1.8x observed max across VECTORS_COUNT trials) times
@@ -97,8 +97,10 @@ mod tests {
         dot_similarity(a, b) / (l2_norm(a) * l2_norm(b))
     }
 
-    #[test]
-    fn test_tq_dot() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_dot(#[case] mode: TQMode) {
         for &bits in BITS {
             for &dim in DIMS {
                 if !should_test(dim, bits) {
@@ -122,7 +124,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -130,7 +132,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -150,8 +152,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_cosine() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_cosine(#[case] mode: TQMode) {
         for &bits in BITS {
             for &dim in DIMS {
                 if !should_test(dim, bits) {
@@ -177,7 +181,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -185,7 +189,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -205,8 +209,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_dot_internal() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_dot_internal(#[case] mode: TQMode) {
         for &bits in BITS {
             for &dim in DIMS {
                 if !should_test(dim, bits) {
@@ -229,7 +235,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -237,7 +243,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -256,8 +262,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_cosine_internal() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_cosine_internal(#[case] mode: TQMode) {
         for &bits in BITS {
             for &dim in DIMS {
                 if !should_test(dim, bits) {
@@ -281,7 +289,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -289,7 +297,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -308,8 +316,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_zero_vector_dot() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_zero_vector_dot(#[case] mode: TQMode) {
         // A zero vector stored in the dataset, scored with Dot against a
         // non-zero query, should produce a score close to the true dot
         // product, which is exactly 0.
@@ -338,7 +348,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -346,7 +356,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -363,8 +373,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_zero_query_dot() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_zero_query_dot(#[case] mode: TQMode) {
         // A zero query, scored with Dot against any encoded vector, should
         // produce a score close to the true dot product, which is exactly 0.
         for &bits in BITS {
@@ -390,7 +402,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -398,7 +410,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -417,8 +429,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_zero_vector_cosine() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_zero_vector_cosine(#[case] mode: TQMode) {
         // A zero vector stored in the dataset, scored with Cosine against a
         // unit-norm query, should produce a score close to 0. Cosine of a
         // zero vector is mathematically undefined; the implementation's
@@ -451,7 +465,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -459,7 +473,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -476,8 +490,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_zero_query_cosine() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_zero_query_cosine(#[case] mode: TQMode) {
         // A zero query, scored with Cosine against any unit-norm vector,
         // should produce a score close to 0. Same convention as above:
         // zero is preserved through query preprocessing.
@@ -505,7 +521,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -513,7 +529,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -532,8 +548,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_dim_one_dot() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_dim_one_dot(#[case] mode: TQMode) {
         // dim=1 is degenerate (no room for Hadamard Gaussianization, quant
         // noise dominates). Just verify the path doesn't panic and yields
         // finite, sanely bounded scores; accuracy bounds elsewhere don't apply.
@@ -556,7 +574,7 @@ mod tests {
                 EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                     &vector_parameters,
                     bits,
-                    MODE,
+                    mode,
                 );
             let encoded = EncodedVectorsTQ::encode(
                 vector_data.iter(),
@@ -564,7 +582,7 @@ mod tests {
                 &vector_parameters,
                 VECTORS_COUNT,
                 bits,
-                MODE,
+                mode,
                 None,
                 &AtomicBool::new(false),
             )
@@ -586,8 +604,10 @@ mod tests {
     // `error()` with `l2_signal_std`; L1 has its own coefficient table
     // because its noise/signal scaling per bit doesn't match dot/cosine.
 
-    #[test]
-    fn test_tq_l2() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_l2(#[case] mode: TQMode) {
         for &bits in BITS {
             for &dim in DIMS {
                 if !should_test(dim, bits) {
@@ -611,7 +631,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -619,7 +639,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -639,8 +659,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_l2_internal() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_l2_internal(#[case] mode: TQMode) {
         for &bits in BITS {
             for &dim in DIMS {
                 if !should_test(dim, bits) {
@@ -663,7 +685,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -671,7 +693,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -690,8 +712,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_l1() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_l1(#[case] mode: TQMode) {
         for &bits in BITS {
             for &dim in DIMS {
                 if !should_test(dim, bits) {
@@ -715,7 +739,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -723,7 +747,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -743,8 +767,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tq_l1_internal() {
+    #[rstest::rstest]
+    #[case::normal(TQMode::Normal)]
+    #[case::plus(TQMode::Plus)]
+    fn test_tq_l1_internal(#[case] mode: TQMode) {
         for &bits in BITS {
             for &dim in DIMS {
                 if !should_test(dim, bits) {
@@ -767,7 +793,7 @@ mod tests {
                     EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
-                        MODE,
+                        mode,
                     );
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
@@ -775,7 +801,7 @@ mod tests {
                     &vector_parameters,
                     VECTORS_COUNT,
                     bits,
-                    MODE,
+                    mode,
                     None,
                     &AtomicBool::new(false),
                 )

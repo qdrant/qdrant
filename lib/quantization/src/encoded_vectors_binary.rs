@@ -447,7 +447,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         };
 
         let vector_stats = if storage_encoding_needs_states || query_encoding_needs_stats {
-            Some(VectorStats::build(orig_data.clone(), vector_parameters))
+            Some(VectorStats::build(orig_data.clone(), vector_parameters.dim))
         } else {
             None
         };

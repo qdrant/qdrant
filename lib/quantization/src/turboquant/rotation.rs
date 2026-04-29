@@ -173,7 +173,6 @@ mod test {
     /// reducing distortion in vectors where energy is concentrated.
     #[test]
     fn hadamard_reduces_distortion() {
-        use crate::VectorParameters;
         use crate::vector_stats::VectorStats;
 
         for dim in [100, 101, 300, 384, 512, 1024, 1025, 1586] {
@@ -209,17 +208,8 @@ mod test {
                 .map(|v| v.into_iter().map(|i| i as f32).collect::<Vec<_>>())
                 .collect();
 
-            let mut params = VectorParameters {
-                dim,
-                distance_type: crate::DistanceType::Dot,
-                invert: false,
-                deprecated_count: None,
-            };
-
-            let stats_before = VectorStats::build(vectors.iter(), &params);
-
-            params.dim = rot.dim;
-            let stats_after = VectorStats::build(rotated.iter(), &params);
+            let stats_before = VectorStats::build(vectors.iter(), dim);
+            let stats_after = VectorStats::build(rotated.iter(), rot.dim);
 
             // Measure how uniform the per-dimension stddevs are by looking at
             // the ratio between max and min stddev across dimensions.
