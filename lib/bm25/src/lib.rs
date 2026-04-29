@@ -6,6 +6,7 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 
 use murmur3::murmur3_32_of_slice;
 
@@ -31,6 +32,22 @@ impl Bm25Params {
     pub const DEFAULT_K1: f64 = 1.2;
     pub const DEFAULT_B: f64 = 0.75;
     pub const DEFAULT_AVG_DOC_LEN: f64 = 256.0;
+
+    /// Reject parameters that would produce `NaN` or nonsensical weights:
+    /// `k1` must be finite and non-negative, `b` must be in `[0.0, 1.0]`,
+    /// and `avg_doc_len` must be finite and strictly positive (it is a divisor).
+    pub fn validate(&self) -> Result<(), Bm25Error> {
+        if !self.k1.is_finite() || self.k1 < 0.0 {
+            return Err(Bm25Error::InvalidK1(self.k1));
+        }
+        if !self.b.is_finite() || !(0.0..=1.0).contains(&self.b) {
+            return Err(Bm25Error::InvalidB(self.b));
+        }
+        if !self.avg_doc_len.is_finite() || self.avg_doc_len <= 0.0 {
+            return Err(Bm25Error::InvalidAvgDocLen(self.avg_doc_len));
+        }
+        Ok(())
+    }
 }
 
 impl Default for Bm25Params {
@@ -42,6 +59,31 @@ impl Default for Bm25Params {
         }
     }
 }
+
+/// Error returned by [`Bm25Params::validate`] / [`Bm25::new`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Bm25Error {
+    /// `k1` was negative, NaN, or infinite.
+    InvalidK1(f64),
+    /// `b` was outside `[0.0, 1.0]`, NaN, or infinite.
+    InvalidB(f64),
+    /// `avg_doc_len` was non-positive, NaN, or infinite.
+    InvalidAvgDocLen(f64),
+}
+
+impl fmt::Display for Bm25Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidK1(v) => write!(f, "BM25 k1 must be finite and >= 0, got {v}"),
+            Self::InvalidB(v) => write!(f, "BM25 b must be finite and in [0.0, 1.0], got {v}"),
+            Self::InvalidAvgDocLen(v) => {
+                write!(f, "BM25 avg_doc_len must be finite and > 0, got {v}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for Bm25Error {}
 
 /// Sparse output of an embedding step. Indices are token hashes (see [`token_id`]),
 /// values are TF-weights for documents or `1.0` for queries.
@@ -78,8 +120,9 @@ pub struct Bm25<T: Tokenizer> {
 }
 
 impl<T: Tokenizer> Bm25<T> {
-    pub fn new(params: Bm25Params, tokenizer: T) -> Self {
-        Self { params, tokenizer }
+    pub fn new(params: Bm25Params, tokenizer: T) -> Result<Self, Bm25Error> {
+        params.validate()?;
+        Ok(Self { params, tokenizer })
     }
 
     pub fn params(&self) -> &Bm25Params {
@@ -175,14 +218,14 @@ mod tests {
 
     #[test]
     fn empty_input_yields_empty_embedding() {
-        let bm = Bm25::new(Bm25Params::default(), Whitespace);
+        let bm = Bm25::new(Bm25Params::default(), Whitespace).unwrap();
         assert!(bm.embed_query("").is_empty());
         assert!(bm.embed_document("   ").is_empty());
     }
 
     #[test]
     fn query_dedupes_and_uses_unit_weights() {
-        let bm = Bm25::new(Bm25Params::default(), Whitespace);
+        let bm = Bm25::new(Bm25Params::default(), Whitespace).unwrap();
         let e = bm.embed_query("foo bar foo baz bar");
         assert_eq!(e.indices.len(), 3);
         assert!(e.values.iter().all(|&v| v == 1.0));
@@ -201,7 +244,7 @@ mod tests {
             b: 0.75,
             avg_doc_len: 5.0,
         };
-        let bm = Bm25::new(params, Whitespace);
+        let bm = Bm25::new(params, Whitespace).unwrap();
         let e = bm.embed_document("the cat sat on the");
         let id_the = token_id("the");
         let v = e
@@ -222,7 +265,7 @@ mod tests {
             b: 0.75,
             avg_doc_len: 5.0,
         };
-        let bm = Bm25::new(params, Whitespace);
+        let bm = Bm25::new(params, Whitespace).unwrap();
         let short = bm.embed_document("foo bar foo");
         let long =
             bm.embed_document("foo bar foo lorem ipsum dolor sit amet consectetur adipiscing");
@@ -254,5 +297,33 @@ mod tests {
         assert_eq!(token_id(""), token_id(""));
         assert_eq!(token_id("hello"), token_id("hello"));
         assert_ne!(token_id("hello"), token_id("Hello"));
+    }
+
+    #[test]
+    fn invalid_params_are_rejected() {
+        let cases = [
+            Bm25Params {
+                k1: -1.0,
+                ..Default::default()
+            },
+            Bm25Params {
+                b: 1.5,
+                ..Default::default()
+            },
+            Bm25Params {
+                avg_doc_len: 0.0,
+                ..Default::default()
+            },
+            Bm25Params {
+                avg_doc_len: f64::NAN,
+                ..Default::default()
+            },
+        ];
+        for params in cases {
+            assert!(
+                Bm25::new(params, Whitespace).is_err(),
+                "expected validation failure for {params:?}",
+            );
+        }
     }
 }

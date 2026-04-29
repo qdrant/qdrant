@@ -11,7 +11,7 @@
 //! # }
 //! use bm25::{Bm25, Bm25Document, Bm25Params};
 //!
-//! let model = Bm25::new(Bm25Params::default(), WS);
+//! let model = Bm25::new(Bm25Params::default(), WS).unwrap();
 //! let doc = Bm25Document::new("the quick brown fox");
 //! let _embedding = doc.embed_document(&model);
 //! ```
@@ -68,14 +68,14 @@ mod tests {
 
     #[test]
     fn document_query_matches_bm25_embed_query() {
-        let bm = Bm25::new(Bm25Params::default(), Whitespace);
+        let bm = Bm25::new(Bm25Params::default(), Whitespace).unwrap();
         let doc = Bm25Document::new("foo bar foo");
         assert_eq!(doc.embed_query(&bm), bm.embed_query("foo bar foo"));
     }
 
     #[test]
     fn document_doc_matches_bm25_embed_document() {
-        let bm = Bm25::new(Bm25Params::default(), Whitespace);
+        let bm = Bm25::new(Bm25Params::default(), Whitespace).unwrap();
         let doc = Bm25Document::new("foo bar foo");
         assert_eq!(doc.embed_document(&bm), bm.embed_document("foo bar foo"));
     }

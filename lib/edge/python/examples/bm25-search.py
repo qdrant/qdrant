@@ -22,7 +22,7 @@ os.makedirs(path)
 config = EdgeConfig(
     sparse_vectors={"text": EdgeSparseVectorParams(modifier=Modifier.Idf)},
 )
-shard = EdgeShard.create(path, config)
+shard = EdgeShard.create(str(path), config)
 
 bm25 = Bm25(Bm25Config(language="english"))
 
