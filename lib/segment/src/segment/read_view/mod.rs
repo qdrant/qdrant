@@ -3,9 +3,8 @@ use crate::data_types::query_context::SegmentQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::IdTrackerRead;
 use crate::types::{
-    Filter, PointIdType, ScoredPoint,
-    SearchParams, SeqNumberType, VectorName
-    , WithPayload, WithVector,
+    Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, VectorName, WithPayload,
+    WithVector,
 };
 
 pub struct SegmentReadView<'segment, TIdTracker: IdTrackerRead> {
@@ -34,5 +33,4 @@ impl<'s, TIdTracker: IdTrackerRead> SegmentReadView<'s, TIdTracker> {
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         todo!()
     }
-
 }
