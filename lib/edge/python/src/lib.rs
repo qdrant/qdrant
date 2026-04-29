@@ -2,6 +2,7 @@ pub mod bm25;
 pub mod config;
 pub mod count;
 pub mod facet;
+pub mod inference;
 pub mod info;
 pub mod query;
 pub mod repr;
@@ -90,6 +91,8 @@ mod qdrant_edge {
         PyRecommendQuery,
     };
     #[pymodule_export]
+    use super::inference::{PyDocument, PyEdgePoint};
+    #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PyScoredPoint, PySparseVector};
     #[pymodule_export]
     use super::update::{PyUpdateMode, PyUpdateOperation};
@@ -135,6 +138,35 @@ impl PyEdgeShard {
     pub fn update(&self, operation: PyUpdateOperation) -> Result<()> {
         self.get_shard()?.update(operation.into())?;
         Ok(())
+    }
+
+    /// Insert points that may include unembedded [`Document`](crate::PyDocument)
+    /// inputs. Documents are embedded using the inference model registered
+    /// under their `model` name in [`EdgeConfig.inference_models`].
+    pub fn upsert(&self, points: Vec<self::inference::PyEdgePoint>) -> Result<()> {
+        let points = points.into_iter().map(|p| p.0).collect();
+        self.get_shard()?.upsert(points)?;
+        Ok(())
+    }
+
+    /// Embed a document in **query mode** (unit weights for BM25). Use when
+    /// nesting a document inside a complex query construction.
+    pub fn embed_query(
+        &self,
+        document: self::inference::PyDocument,
+    ) -> Result<crate::types::PySparseVector> {
+        let v = self.get_shard()?.embed_query(&document.0)?;
+        sparse_from_vector(v)
+    }
+
+    /// Embed a document in **document mode** (TF-weighted for BM25). Same
+    /// embedding [`upsert`](Self::upsert) does internally.
+    pub fn embed_document(
+        &self,
+        document: self::inference::PyDocument,
+    ) -> Result<crate::types::PySparseVector> {
+        let v = self.get_shard()?.embed_document(&document.0)?;
+        sparse_from_vector(v)
     }
 
     pub fn query(&self, query: PyQueryRequest) -> Result<Vec<PyScoredPoint>> {
@@ -208,6 +240,20 @@ impl PyEdgeShard {
     ) -> Result<()> {
         self._update_from_snapshot(snapshot_path, tmp_dir)?;
         Ok(())
+    }
+}
+
+/// Convert an in-memory `Vector` (from inference) to a `PySparseVector`.
+/// Errors out if the inference produced something other than sparse — today
+/// only BM25 resolvers are implemented and they always produce sparse, so
+/// this should never fail in practice.
+fn sparse_from_vector(v: edge::Vector) -> Result<crate::types::PySparseVector> {
+    use segment::data_types::vectors::VectorInternal;
+    match v.0 {
+        VectorInternal::Sparse(s) => Ok(crate::types::PySparseVector(s)),
+        other => Err(PyError(OperationError::service_error(format!(
+            "expected sparse vector from inference, got {other:?}",
+        )))),
     }
 }
 

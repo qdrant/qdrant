@@ -724,6 +724,7 @@ mod tests {
             quantization_config: None,
             optimizers: Default::default(),
             wal_options: None,
+            inference_models: HashMap::new(),
         }
     }
 
