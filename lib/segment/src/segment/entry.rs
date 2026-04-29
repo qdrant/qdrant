@@ -53,10 +53,7 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
-        let id_tracker = self.id_tracker.borrow();
-        id_tracker
-            .internal_id(point_id)
-            .and_then(|internal_id| id_tracker.internal_version(internal_id))
+        self.with_view(|view| view.point_version(point_id))
     }
 
     fn search_batch(
