@@ -1,15 +1,19 @@
 //! Python bindings for edge-side inference inputs.
 
+use std::collections::HashMap;
+
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use edge::{Document, EdgePoint, NamedVectorInput, PointVectorsInput, bm25_embed::EdgeBm25Config};
 use pyo3::prelude::*;
+use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal};
 use segment::types::{Payload, PointIdType};
-use std::collections::HashMap;
+use shard::operations::point_ops::VectorPersisted;
 
 use crate::bm25::PyBm25Config;
 use crate::repr::*;
-use crate::{PyPayload, PyPointId, PyVector};
+use crate::types::vector::PyNamedVector;
+use crate::{PyPayload, PyPointId};
 
 /// Text document for an edge inference model.
 ///
@@ -78,52 +82,27 @@ impl FromPyObject<'_, '_> for PyNamedVectorInput {
     type Error = PyErr;
 
     fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        // Try Document first — otherwise fall back to a regular vector.
+        // Try Document first — otherwise fall back to a regular vector via
+        // the existing PyNamedVector parser.
         if let Ok(doc) = value.extract::<PyDocument>() {
             return Ok(Self(NamedVectorInput::Document(doc.0)));
         }
-
-        // Reuse the existing per-slot vector parser. PyVector wraps the
-        // resolved struct form; we extract the named-slot single value via
-        // the `PyNamedVector` helper used inside it.
-        let helper = NamedVectorHelper::extract(value)?;
-        Ok(Self(NamedVectorInput::Vector(helper.into_internal())))
+        let vec: PyNamedVector = value.extract()?;
+        let persisted: VectorPersisted = vec.into();
+        let internal = persisted_to_internal(persisted)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(Self(NamedVectorInput::Vector(internal)))
     }
 }
 
-/// Helper mirroring PyNamedVector's variants but converting straight to
-/// [`segment::data_types::vectors::VectorInternal`] for use in
-/// [`NamedVectorInput::Vector`].
-struct NamedVectorHelper(segment::data_types::vectors::VectorInternal);
-
-impl NamedVectorHelper {
-    fn into_internal(self) -> segment::data_types::vectors::VectorInternal {
-        self.0
-    }
-
-    fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal};
-        use sparse::common::sparse_vector::SparseVector;
-
-        #[derive(FromPyObject)]
-        enum Variant {
-            Dense(Vec<f32>),
-            Sparse(crate::types::vector::PySparseVector),
-            MultiDense(Vec<Vec<f32>>),
-        }
-
-        let internal = match value.extract::<Variant>()? {
-            Variant::Dense(d) => VectorInternal::Dense(d),
-            Variant::Sparse(s) => VectorInternal::Sparse(SparseVector::from(s)),
-            Variant::MultiDense(m) => {
-                VectorInternal::MultiDense(MultiDenseVectorInternal::try_from_matrix(m).map_err(
-                    |e| pyo3::exceptions::PyValueError::new_err(format!("{e}")),
-                )?)
-            }
-        };
-
-        Ok(Self(internal))
-    }
+fn persisted_to_internal(v: VectorPersisted) -> Result<VectorInternal, String> {
+    Ok(match v {
+        VectorPersisted::Dense(d) => VectorInternal::Dense(d),
+        VectorPersisted::Sparse(s) => VectorInternal::Sparse(s),
+        VectorPersisted::MultiDense(m) => VectorInternal::MultiDense(
+            MultiDenseVectorInternal::try_from_matrix(m).map_err(|e| e.to_string())?,
+        ),
+    })
 }
 
 /// A point that may carry unembedded [`Document`] inputs. Use with
@@ -190,6 +169,3 @@ impl FromPyObject<'_, '_> for PyEdgePointVectors {
     }
 }
 
-// Suppress dead-code warnings for unused imports introduced for clarity.
-#[allow(dead_code)]
-fn _force_used(_v: &PyVector) {}

@@ -3,6 +3,8 @@
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use edge::bm25_embed::{EdgeBm25, EdgeBm25Config};
+use ordered_float::NotNan;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 
@@ -22,9 +24,9 @@ impl PyBm25Config {
     #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (
-        k1 = None,
+        k = None,
         b = None,
-        avg_doc_len = None,
+        avg_len = None,
         tokenizer = None,
         language = None,
         lowercase = None,
@@ -35,9 +37,9 @@ impl PyBm25Config {
         max_token_len = None,
     ))]
     pub fn new(
-        k1: Option<f64>,
+        k: Option<f64>,
         b: Option<f64>,
-        avg_doc_len: Option<f64>,
+        avg_len: Option<f64>,
         tokenizer: Option<PyTokenizerType>,
         language: Option<String>,
         lowercase: Option<bool>,
@@ -46,35 +48,44 @@ impl PyBm25Config {
         stemmer: Option<PyStemmingAlgorithm>,
         min_token_len: Option<usize>,
         max_token_len: Option<usize>,
-    ) -> Self {
-        Self(EdgeBm25Config {
-            k1,
-            b,
-            avg_doc_len,
-            tokenizer: tokenizer.map(TokenizerType::from).unwrap_or_default(),
-            language,
-            lowercase,
-            ascii_folding,
-            stopwords: stopwords.map(StopwordsInterface::from),
-            stemmer: stemmer.map(StemmingAlgorithm::from),
-            min_token_len,
-            max_token_len,
-        })
+    ) -> PyResult<Self> {
+        let mut cfg = EdgeBm25Config::default();
+        if let Some(k) = k {
+            cfg.k = NotNan::new(k).map_err(|_| PyValueError::new_err("k must not be NaN"))?;
+        }
+        if let Some(b) = b {
+            cfg.b = NotNan::new(b).map_err(|_| PyValueError::new_err("b must not be NaN"))?;
+        }
+        if let Some(avg_len) = avg_len {
+            cfg.avg_len = NotNan::new(avg_len)
+                .map_err(|_| PyValueError::new_err("avg_len must not be NaN"))?;
+        }
+        if let Some(tokenizer) = tokenizer {
+            cfg.tokenizer = TokenizerType::from(tokenizer);
+        }
+        cfg.language = language;
+        cfg.lowercase = lowercase;
+        cfg.ascii_folding = ascii_folding;
+        cfg.stopwords = stopwords.map(StopwordsInterface::from);
+        cfg.stemmer = stemmer.map(StemmingAlgorithm::from);
+        cfg.min_token_len = min_token_len;
+        cfg.max_token_len = max_token_len;
+        Ok(Self(cfg))
     }
 
     #[getter]
-    pub fn k1(&self) -> Option<f64> {
-        self.0.k1
+    pub fn k(&self) -> f64 {
+        self.0.k.into_inner()
     }
 
     #[getter]
-    pub fn b(&self) -> Option<f64> {
-        self.0.b
+    pub fn b(&self) -> f64 {
+        self.0.b.into_inner()
     }
 
     #[getter]
-    pub fn avg_doc_len(&self) -> Option<f64> {
-        self.0.avg_doc_len
+    pub fn avg_len(&self) -> f64 {
+        self.0.avg_len.into_inner()
     }
 
     #[getter]
@@ -122,9 +133,9 @@ impl PyBm25Config {
     fn _getters(self) {
         // Every field should have a getter method
         let EdgeBm25Config {
-            k1: _,
+            k: _,
             b: _,
-            avg_doc_len: _,
+            avg_len: _,
             tokenizer: _,
             language: _,
             lowercase: _,
@@ -158,7 +169,7 @@ impl PyBm25 {
         PySparseVector(self.0.embed_query(&doc))
     }
 
-    /// Embed `text` as an indexed document: term-frequency weights with `(k1, b, avg_doc_len)`.
+    /// Embed `text` as an indexed document: term-frequency weights with `(k, b, avg_len)`.
     pub fn embed_document(&self, text: &str) -> PySparseVector {
         let doc = bm25::Bm25Document::new(text);
         PySparseVector(self.0.embed_document(&doc))

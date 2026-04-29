@@ -902,15 +902,16 @@ class SparseVector:
 class Bm25Config:
     """Configuration for an edge-side BM25 model.
 
-    Defaults match standard BM25 (k1=1.2, b=0.75, avg_doc_len=256) and
-    English-language tokenization. Override any field as needed.
+    JSON shape mirrors the Qdrant REST/gRPC `Bm25Config` so configs are
+    portable between cloud and edge. Defaults match standard BM25
+    (k=1.2, b=0.75, avg_len=256) and English-language tokenization.
     """
 
     def __init__(
         self,
-        k1: Optional[float] = None,
+        k: Optional[float] = None,
         b: Optional[float] = None,
-        avg_doc_len: Optional[float] = None,
+        avg_len: Optional[float] = None,
         tokenizer: Optional["TokenizerType"] = None,
         language: Optional[str] = None,
         lowercase: Optional[bool] = None,
@@ -924,9 +925,9 @@ class Bm25Config:
         Create a Bm25Config.
 
         Args:
-            k1: Term-frequency saturation. Higher = TF has more impact. Default 1.2.
+            k: Term-frequency saturation. Higher = TF has more impact. Default 1.2.
             b: Length normalization. 0=none, 1=full. Default 0.75.
-            avg_doc_len: Expected average document length in tokens. Default 256.
+            avg_len: Expected average document length in tokens. Default 256.
             tokenizer: Tokenizer type to use.
             language: Language for default stopwords/stemmer (e.g., "english").
             lowercase: Lowercase before tokenization. Default True.
@@ -939,13 +940,13 @@ class Bm25Config:
         ...
 
     @property
-    def k1(self) -> Optional[float]: ...
+    def k(self) -> float: ...
 
     @property
-    def b(self) -> Optional[float]: ...
+    def b(self) -> float: ...
 
     @property
-    def avg_doc_len(self) -> Optional[float]: ...
+    def avg_len(self) -> float: ...
 
     @property
     def tokenizer(self) -> "TokenizerType": ...
@@ -989,7 +990,7 @@ class Bm25:
     def embed_document(self, text: str) -> SparseVector:
         """
         Embed `text` as an indexed document: term-frequency weights with
-        `(k1, b, avg_doc_len)` from the model config.
+        `(k, b, avg_len)` from the model config.
         """
         ...
 

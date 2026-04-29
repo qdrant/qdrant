@@ -23,23 +23,17 @@ use crate::types::{
     Document, DocumentOptions, EdgePoint, NamedVectorInput, PointVectorsInput,
 };
 
-/// How a document is being embedded — call sites use this to pick the right
-/// scoring (TF-weighted documents vs unit-weighted queries for BM25).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EmbedKind {
-    /// Indexed document (e.g. an upserted point's content).
-    Document,
-    /// Search query.
-    Query,
-}
-
 /// Backend that turns a [`Document`] into a concrete [`Vector`].
 ///
 /// Both local in-process models and remote inference services implement this
 /// trait so the edge layer can dispatch on model name without caring where
-/// the model runs.
+/// the model runs. The query/document split lets BM25-style scorings apply
+/// the right weighting (TF for documents, unit for queries).
 pub trait ModelResolver: Send + Sync + fmt::Debug {
-    fn embed(&self, doc: &Document, kind: EmbedKind) -> OperationResult<Vector>;
+    /// Embed for indexed-document use (e.g. upsert): TF-weighted for BM25.
+    fn embed_document(&self, doc: &Document) -> OperationResult<Vector>;
+    /// Embed for query use: unit-weighted for BM25.
+    fn embed_query(&self, doc: &Document) -> OperationResult<Vector>;
 }
 
 /// Registry of [`ModelResolver`]s keyed by model name.
@@ -65,15 +59,22 @@ impl Inference {
         self.resolvers.is_empty()
     }
 
-    /// Resolve a single document to a vector.
-    pub fn resolve(&self, doc: &Document, kind: EmbedKind) -> OperationResult<Vector> {
-        let resolver = self.resolvers.get(&doc.model).ok_or_else(|| {
+    /// Resolve a document for query use (unit-weighted for BM25).
+    pub fn resolve_query(&self, doc: &Document) -> OperationResult<Vector> {
+        self.lookup(&doc.model)?.embed_query(doc)
+    }
+
+    /// Resolve a document for indexed-document use (TF-weighted for BM25).
+    pub fn resolve_document(&self, doc: &Document) -> OperationResult<Vector> {
+        self.lookup(&doc.model)?.embed_document(doc)
+    }
+
+    fn lookup(&self, model: &str) -> OperationResult<&Arc<dyn ModelResolver>> {
+        self.resolvers.get(model).ok_or_else(|| {
             OperationError::validation_error(format!(
-                "no inference model registered for '{}'",
-                doc.model,
+                "no inference model registered for '{model}'",
             ))
-        })?;
-        resolver.embed(doc, kind)
+        })
     }
 
     /// Resolve an [`EdgePoint`] (which may carry [`Document`] inputs) into the
@@ -94,7 +95,7 @@ impl Inference {
                     let v = match input {
                         NamedVectorInput::Vector(v) => vector_internal_to_persisted(v),
                         NamedVectorInput::Document(doc) => {
-                            let resolved = self.resolve(&doc, EmbedKind::Document)?;
+                            let resolved = self.resolve_document(&doc)?;
                             vector_internal_to_persisted(resolved.0)
                         }
                     };
@@ -134,25 +135,33 @@ impl Bm25Resolver {
     }
 }
 
-impl ModelResolver for Bm25Resolver {
-    fn embed(&self, doc: &Document, kind: EmbedKind) -> OperationResult<Vector> {
-        // Per-call BM25 overrides via `DocumentOptions::Bm25` would require
-        // building a fresh model — out of scope for the registered fast path.
-        // Reject explicitly so callers don't silently get the registered
-        // model's params instead of their override.
+impl Bm25Resolver {
+    /// Per-call BM25 overrides via `DocumentOptions::Bm25` would require
+    /// building a fresh model — out of scope for the registered fast path.
+    /// Reject explicitly so callers don't silently get the registered
+    /// model's params instead of their override.
+    fn check_options(doc: &Document) -> OperationResult<()> {
         if let Some(DocumentOptions::Bm25(_)) = doc.options.as_ref() {
             return Err(OperationError::validation_error(
                 "per-document BM25 option overrides are not yet supported; \
                  register a separate model under a different name instead",
             ));
         }
+        Ok(())
+    }
+}
 
+impl ModelResolver for Bm25Resolver {
+    fn embed_document(&self, doc: &Document) -> OperationResult<Vector> {
+        Self::check_options(doc)?;
         let bm25_doc = bm25::Bm25Document::new(&doc.text);
-        let sparse = match kind {
-            EmbedKind::Document => self.model.embed_document(&bm25_doc),
-            EmbedKind::Query => self.model.embed_query(&bm25_doc),
-        };
-        Ok(Vector::from(sparse))
+        Ok(Vector::from(self.model.embed_document(&bm25_doc)))
+    }
+
+    fn embed_query(&self, doc: &Document) -> OperationResult<Vector> {
+        Self::check_options(doc)?;
+        let bm25_doc = bm25::Bm25Document::new(&doc.text);
+        Ok(Vector::from(self.model.embed_query(&bm25_doc)))
     }
 }
 

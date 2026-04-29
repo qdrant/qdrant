@@ -14,6 +14,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use bm25::{Bm25Document, SparseEmbedding};
+use ordered_float::NotNan;
 use segment::data_types::index::{Language, StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
 use segment::index::field_index::full_text_index::tokenizers::{
@@ -25,21 +26,79 @@ const DEFAULT_LANGUAGE: &str = "english";
 
 /// Configuration for an edge-side BM25 model.
 ///
-/// Defaults match standard BM25 (`k1 = 1.2`, `b = 0.75`, `avg_doc_len = 256`)
-/// and english-language tokenization. Override any field as needed.
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+/// JSON shape mirrors `lib/api`'s REST `Bm25Config` so configs are portable
+/// between cloud and edge: `k`, `b`, `avg_len`, `tokenizer`, plus the
+/// preprocessing fields (`language`, `lowercase`, `ascii_folding`, `stopwords`,
+/// `stemmer`, `min_token_len`, `max_token_len`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EdgeBm25Config {
-    pub k1: Option<f64>,
-    pub b: Option<f64>,
-    pub avg_doc_len: Option<f64>,
+    /// Term-frequency saturation. Higher values make TF have more impact.
+    /// Default 1.2.
+    #[serde(default = "default_k")]
+    pub k: NotNan<f64>,
+    /// Document length normalization. 0 = none, 1 = full. Default 0.75.
+    #[serde(default = "default_b")]
+    pub b: NotNan<f64>,
+    /// Expected average document length in tokens. Default 256.
+    #[serde(default = "default_avg_len")]
+    pub avg_len: NotNan<f64>,
+    /// Tokenizer type used for text preprocessing.
+    #[serde(default)]
     pub tokenizer: TokenizerType,
+    /// Language for default stopwords / stemmer (English if unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// Lowercase before tokenization. Default true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lowercase: Option<bool>,
+    /// Fold accented characters to ASCII (e.g. `"ação" → "acao"`). Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ascii_folding: Option<bool>,
+    /// Stopwords filter configuration; defaults from `language`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopwords: Option<StopwordsInterface>,
+    /// Stemmer configuration; defaults from `language`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stemmer: Option<StemmingAlgorithm>,
+    /// Discard tokens shorter than this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_token_len: Option<usize>,
+    /// Discard tokens longer than this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_token_len: Option<usize>,
+}
+
+const fn default_k() -> NotNan<f64> {
+    // Safe: 1.2 is not NaN.
+    unsafe { NotNan::new_unchecked(1.2) }
+}
+
+const fn default_b() -> NotNan<f64> {
+    // Safe: 0.75 is not NaN.
+    unsafe { NotNan::new_unchecked(0.75) }
+}
+
+const fn default_avg_len() -> NotNan<f64> {
+    // Safe: 256.0 is not NaN.
+    unsafe { NotNan::new_unchecked(256.0) }
+}
+
+impl Default for EdgeBm25Config {
+    fn default() -> Self {
+        Self {
+            k: default_k(),
+            b: default_b(),
+            avg_len: default_avg_len(),
+            tokenizer: TokenizerType::default(),
+            language: None,
+            lowercase: None,
+            ascii_folding: None,
+            stopwords: None,
+            stemmer: None,
+            min_token_len: None,
+            max_token_len: None,
+        }
+    }
 }
 
 /// Edge-side BM25 model. Embeds [`Bm25Document`]s into [`SparseVector`].
@@ -60,11 +119,9 @@ impl bm25::Tokenizer for EdgeSegmentTokenizer {
 impl EdgeBm25 {
     pub fn new(config: EdgeBm25Config) -> Self {
         let params = bm25::Bm25Params {
-            k1: config.k1.unwrap_or(bm25::Bm25Params::DEFAULT_K1),
-            b: config.b.unwrap_or(bm25::Bm25Params::DEFAULT_B),
-            avg_doc_len: config
-                .avg_doc_len
-                .unwrap_or(bm25::Bm25Params::DEFAULT_AVG_DOC_LEN),
+            k1: config.k.into_inner(),
+            b: config.b.into_inner(),
+            avg_doc_len: config.avg_len.into_inner(),
         };
 
         let processor = build_tokens_processor(
@@ -163,9 +220,9 @@ mod tests {
     #[test]
     fn custom_params_propagate() {
         let cfg = EdgeBm25Config {
-            k1: Some(2.0),
-            b: Some(0.5),
-            avg_doc_len: Some(100.0),
+            k: NotNan::new(2.0).unwrap(),
+            b: NotNan::new(0.5).unwrap(),
+            avg_len: NotNan::new(100.0).unwrap(),
             ..Default::default()
         };
         let model = EdgeBm25::new(cfg);
