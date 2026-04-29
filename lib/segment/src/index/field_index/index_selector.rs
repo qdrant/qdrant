@@ -105,7 +105,7 @@ impl IndexSelector<'_> {
                 .map(FieldIndex::GeoIndex),
 
             (PayloadIndexType::FullTextIndex, PayloadSchemaParams::Text(params)) => self
-                .text_new(field, params.clone(), create_if_missing)?
+                .text_new(field, params.clone(), create_if_missing, deleted_points)?
                 .map(FieldIndex::FullTextIndex),
 
             (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => self
@@ -182,7 +182,12 @@ impl IndexSelector<'_> {
                 .geo_new(field, create_if_missing, deleted_points)?
                 .map(|index| vec![FieldIndex::GeoIndex(index)]),
             PayloadSchemaParams::Text(text_index_params) => self
-                .text_new(field, text_index_params.clone(), create_if_missing)?
+                .text_new(
+                    field,
+                    text_index_params.clone(),
+                    create_if_missing,
+                    deleted_points,
+                )?
                 .map(|index| vec![FieldIndex::FullTextIndex(index)]),
             PayloadSchemaParams::Bool(_) => self
                 .bool_new(
@@ -262,7 +267,7 @@ impl IndexSelector<'_> {
                 )]
             }
             PayloadSchemaParams::Text(text_index_params) => {
-                vec![self.text_builder(field, text_index_params.clone())]
+                vec![self.text_builder(field, text_index_params.clone(), deleted_points)]
             }
             PayloadSchemaParams::Bool(_) => {
                 vec![self.bool_builder(field)?]
@@ -468,10 +473,11 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         config: TextIndexParams,
         create_if_missing: bool,
+        deleted_points: &BitSlice,
     ) -> OperationResult<Option<FullTextIndex>> {
         Ok(match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
-                FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
+                FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk, deleted_points)?
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 FullTextIndex::new_gridstore(text_dir(dir, field), config, create_if_missing)?
@@ -479,13 +485,19 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn text_builder(&self, field: &JsonPath, config: TextIndexParams) -> FieldIndexBuilder {
+    fn text_builder(
+        &self,
+        field: &JsonPath,
+        config: TextIndexParams,
+        deleted_points: &BitSlice,
+    ) -> FieldIndexBuilder {
         match self {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
                     text_dir(dir, field),
                     config,
                     *is_on_disk,
+                    deleted_points,
                 ))
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {

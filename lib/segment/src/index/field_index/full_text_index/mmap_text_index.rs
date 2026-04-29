@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -27,17 +28,23 @@ impl MmapFullTextIndex {
         path: PathBuf,
         config: TextIndexParams,
         is_on_disk: bool,
+        deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let populate = !is_on_disk;
 
         let has_positions = config.phrase_matching == Some(true);
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
+        let inverted_index =
+            MmapInvertedIndex::open(path, populate, has_positions, deleted_points)?;
         Ok(inverted_index.map(|inverted_index| Self {
             inverted_index,
             tokenizer,
         }))
+    }
+
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        self.inverted_index.ram_usage_bytes()
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -96,10 +103,16 @@ pub struct FullTextMmapIndexBuilder {
     config: TextIndexParams,
     is_on_disk: bool,
     tokenizer: Tokenizer,
+    deleted_points: BitVec,
 }
 
 impl FullTextMmapIndexBuilder {
-    pub fn new(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> Self {
+    pub fn new(
+        path: PathBuf,
+        config: TextIndexParams,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> Self {
         let with_positions = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
         Self {
@@ -108,6 +121,7 @@ impl FullTextMmapIndexBuilder {
             config,
             is_on_disk,
             tokenizer,
+            deleted_points: deleted_points.to_owned(),
         }
     }
 }
@@ -184,6 +198,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
             config,
             is_on_disk,
             tokenizer,
+            deleted_points,
         } = self;
 
         let immutable = ImmutableInvertedIndex::from(mutable_index);
@@ -195,11 +210,13 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let populate = !is_on_disk;
         let has_positions = config.phrase_matching.unwrap_or_default();
         let inverted_index =
-            MmapInvertedIndex::open(path, populate, has_positions)?.ok_or_else(|| {
-                OperationError::service_error(
-                    "Failed to open MmapInvertedIndex that was just created",
-                )
-            })?;
+            MmapInvertedIndex::open(path, populate, has_positions, &deleted_points)?.ok_or_else(
+                || {
+                    OperationError::service_error(
+                        "Failed to open MmapInvertedIndex that was just created",
+                    )
+                },
+            )?;
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,

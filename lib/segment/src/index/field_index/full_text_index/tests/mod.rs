@@ -1,5 +1,6 @@
 mod test_congruence;
 
+use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use tempfile::Builder;
@@ -224,8 +225,13 @@ fn test_phrase_matching() {
             .make_empty()
             .unwrap();
 
-    let mut mmap_builder =
-        FullTextIndex::builder_mmap(temp_dir.path().to_path_buf(), config.clone(), true);
+    let empty_deleted = BitVec::new();
+    let mut mmap_builder = FullTextIndex::builder_mmap(
+        temp_dir.path().to_path_buf(),
+        config.clone(),
+        true,
+        &empty_deleted,
+    );
     mmap_builder.init().unwrap();
 
     // Add some test documents with phrases

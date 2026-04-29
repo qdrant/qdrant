@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
@@ -87,6 +88,7 @@ fn create_builder(
         ..TextIndexParams::default()
     };
 
+    let empty_deleted = BitVec::new();
     let mut builder = match index_type {
         IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
             FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
@@ -95,11 +97,13 @@ fn create_builder(
             temp_dir.path().to_path_buf(),
             config,
             true,
+            &empty_deleted,
         )),
         IndexType::ImmRamMmap => IndexBuilder::ImmRamMmap(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
             config,
             false,
+            &empty_deleted,
         )),
     };
     match &mut builder {
@@ -116,11 +120,23 @@ fn reopen_index(
     temp_dir: &TempDir,
     #[allow(unused_variables)] db: &Database,
     phrase_matching: bool,
+    num_points: usize,
 ) -> FullTextIndex {
     let config = TextIndexParams {
         phrase_matching: Some(phrase_matching),
         ..TextIndexParams::default()
     };
+
+    // Capture the deletion state so we can re-supply it on reopen of the
+    // mmap-backed variants. The mmap index no longer persists runtime
+    // deletions: callers (id-tracker in production, this test in unit tests)
+    // are responsible for the cumulative deletion mask.
+    let mut deleted = BitVec::repeat(false, num_points);
+    for point_id in 0..num_points as PointOffsetType {
+        if index.values_is_empty(point_id) {
+            deleted.set(point_id as usize, true);
+        }
+    }
 
     // Drop the original index to ensure files are flushed
     drop(index);
@@ -134,14 +150,14 @@ fn reopen_index(
         }
         IndexType::ImmMmap => {
             // Reopen with is_on_disk = true (mmap directly)
-            FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, true)
+            FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, true, &deleted)
                 .unwrap()
                 .expect("Failed to reopen ImmMmap index")
         }
         IndexType::ImmRamMmap => {
             // Reopen with is_on_disk = false (load into RAM)
             // This is the path that will call ImmutableFullTextIndex::open_mmap
-            FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, false)
+            FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, false, &deleted)
                 .unwrap()
                 .expect("Failed to reopen ImmRamMmap index")
         }
@@ -192,7 +208,14 @@ fn build_random_index(
 
     // Reopen the index if requested
     let index = if reopen {
-        reopen_index(index, index_type, &temp_dir, &db, phrase_matching)
+        reopen_index(
+            index,
+            index_type,
+            &temp_dir,
+            &db,
+            phrase_matching,
+            num_points,
+        )
     } else {
         index
     };

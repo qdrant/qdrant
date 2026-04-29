@@ -405,6 +405,7 @@ pub trait InvertedIndex {
 #[cfg(test)]
 mod tests {
 
+    use common::bitvec::{BitSliceExt, BitVec};
     use common::counter::hardware_counter::HardwareCounterCell;
     use rand::RngExt;
     use rand::seq::SliceRandom;
@@ -543,9 +544,15 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         MmapInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
-        let mmap = MmapInvertedIndex::open(mmap_dir.path().into(), false, phrase_matching)
-            .unwrap()
-            .unwrap();
+        let empty_deleted = BitVec::new();
+        let mmap = MmapInvertedIndex::open(
+            mmap_dir.path().into(),
+            false,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
 
         let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
 
@@ -579,7 +586,7 @@ mod tests {
         for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
             // Check same deleted points
             assert_eq!(
-                mmap.storage.deleted_points.get(point_id).unwrap(),
+                mmap.storage.deleted_points.get_bit(point_id).unwrap(),
                 *count == 0,
                 "point_id: {point_id}",
             );
@@ -609,10 +616,15 @@ mod tests {
 
         let immutable = ImmutableInvertedIndex::from(mut_index.clone());
         MmapInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
-        let mut mmap_index =
-            MmapInvertedIndex::open(mmap_dir.path().into(), false, phrase_matching)
-                .unwrap()
-                .unwrap();
+        let empty_deleted = BitVec::new();
+        let mut mmap_index = MmapInvertedIndex::open(
+            mmap_dir.path().into(),
+            false,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
 
         let mut imm_mmap_index = ImmutableInvertedIndex::try_from(&mmap_index).unwrap();
 

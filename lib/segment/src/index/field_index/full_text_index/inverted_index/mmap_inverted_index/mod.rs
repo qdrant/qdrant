@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::ops::BitOrAssign;
 use std::path::PathBuf;
 
-use common::bitvec::BitVec;
+use common::bitvec::{BitSlice, BitSliceExt, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::clear_disk_cache;
 use common::mmap::{self, Advice, AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::stored_bitslice::MmapBitSlice;
@@ -21,7 +23,6 @@ use super::postings_iterator::{
 };
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
-use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
@@ -39,6 +40,18 @@ const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
+/// Mmap-backed immutable full-text inverted index.
+///
+/// On-disk state (`postings.dat`, `vocab.dat`, `point_to_tokens_count.dat`,
+/// `deleted_points.dat`) is written once during [`Self::create`] and not
+/// mutated afterwards: `deleted_points.dat` records only the points whose
+/// document was empty at build time.
+///
+/// Runtime deletions live in the in-memory `Storage::deleted_points` bitvec.
+/// They are **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove`]
+/// only updates the in-memory bitvec. Callers must re-supply the authoritative
+/// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
+/// `deleted_points` argument to [`Self::open`] on reload.
 pub struct MmapInvertedIndex {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
     pub(in crate::index::field_index::full_text_index) storage: Storage,
@@ -51,8 +64,20 @@ pub(in crate::index::field_index::full_text_index) struct Storage {
     pub(in crate::index::field_index::full_text_index) postings: MmapPostingsEnum,
     pub(in crate::index::field_index::full_text_index) vocab: MmapHashMap<str, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: MmapSlice<usize>,
-    pub(in crate::index::field_index::full_text_index) deleted_points:
-        BufferedUpdateBitSlice<MmapFile>,
+    pub(in crate::index::field_index::full_text_index) deleted_points: BitVec,
+}
+
+impl Storage {
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            postings: _,
+            vocab: _,
+            point_to_tokens_count: _,
+            deleted_points,
+        } = self;
+
+        deleted_points.capacity().div_ceil(u8::BITS as usize)
+    }
 }
 
 impl MmapInvertedIndex {
@@ -119,6 +144,7 @@ impl MmapInvertedIndex {
         path: PathBuf,
         populate: bool,
         has_positions: bool,
+        deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
@@ -160,15 +186,21 @@ impl MmapInvertedIndex {
             )?)?
         };
 
-        let deleted = MmapBitSlice::open(
-            &deleted_points_path,
-            OpenOptions {
-                populate: Some(populate),
-                ..OpenOptions::default()
-            },
-        )?;
-        let num_deleted_points = deleted.count_ones()?;
-        let deleted_points = BufferedUpdateBitSlice::new(deleted);
+        let deleted_payload_mmap =
+            MmapBitSlice::open(&deleted_points_path, OpenOptions::default())?;
+        let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
+
+        // `deleted` length must match `point_to_tokens_count.len()` because it
+        // only tracks the index's contents. The id-tracker's deleted mask can
+        // be shorter or longer; if shorter, the missing entries default to
+        // live (the id-tracker is the source of truth for deletions, and a
+        // shorter mask just means it doesn't yet know about those higher
+        // offsets).
+        let mut deleted = deleted_points.to_owned();
+        deleted.resize(point_to_tokens_count.len(), false);
+        deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
+
+        let num_deleted_points = deleted.count_ones();
         let points_count = point_to_tokens_count.len() - num_deleted_points;
 
         Ok(Some(Self {
@@ -177,7 +209,7 @@ impl MmapInvertedIndex {
                 postings,
                 vocab,
                 point_to_tokens_count,
-                deleted_points,
+                deleted_points: deleted,
             },
             active_points_count: points_count,
             is_on_disk: !populate,
@@ -197,7 +229,7 @@ impl MmapInvertedIndex {
         let is_deleted = self
             .storage
             .deleted_points
-            .get(point_id as usize)
+            .get_bit(point_id as usize)
             .unwrap_or(true);
         !is_deleted
     }
@@ -401,11 +433,23 @@ impl MmapInvertedIndex {
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        vec![self.path.join(POSTINGS_FILE), self.path.join(VOCAB_FILE)]
+        vec![
+            self.path.join(POSTINGS_FILE),
+            self.path.join(VOCAB_FILE),
+            self.path.join(POINT_TO_TOKENS_COUNT_FILE),
+            self.path.join(DELETED_POINTS_FILE),
+        ]
     }
 
+    /// No-op flusher: the on-disk state is build-time only. See the type-level
+    /// docs on [`MmapInvertedIndex`] for the deletion durability contract.
+    #[allow(clippy::unused_self)]
     pub fn flusher(&self) -> Flusher {
-        self.storage.deleted_points.flusher()
+        Box::new(|| Ok(()))
+    }
+
+    pub(crate) fn ram_usage_bytes(&self) -> usize {
+        self.storage.ram_usage_bytes()
     }
 
     pub fn is_on_disk(&self) -> bool {
@@ -424,7 +468,7 @@ impl MmapInvertedIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         let Self {
-            path: _,
+            path,
             storage,
             active_points_count: _,
             is_on_disk: _,
@@ -433,12 +477,12 @@ impl MmapInvertedIndex {
             postings,
             vocab,
             point_to_tokens_count,
-            deleted_points,
+            deleted_points: _,
         } = storage;
         postings.clear_cache()?;
         vocab.clear_cache()?;
         point_to_tokens_count.clear_cache()?;
-        deleted_points.clear_cache()?;
+        clear_disk_cache(&path.join(DELETED_POINTS_FILE))?;
         Ok(())
     }
 }
@@ -471,7 +515,7 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn remove(&mut self, idx: PointOffsetType) -> bool {
-        let Some(is_deleted) = self.storage.deleted_points.get(idx as usize) else {
+        let Some(is_deleted) = self.storage.deleted_points.get_bit(idx as usize) else {
             return false; // Never existed
         };
 
@@ -480,14 +524,7 @@ impl InvertedIndex for MmapInvertedIndex {
         }
 
         self.storage.deleted_points.set(idx as usize, true);
-        if let Some(count) = self.storage.point_to_tokens_count.get_mut(idx as usize) {
-            *count = 0;
-
-            // `deleted_points`'s length can be larger than `point_to_tokens_count`'s length.
-            // Only if the index is within bounds of `point_to_tokens_count`, we decrement the active points count.
-            self.active_points_count -= 1;
-        }
-
+        self.active_points_count -= 1;
         true
     }
 
@@ -542,7 +579,7 @@ impl InvertedIndex for MmapInvertedIndex {
         if self
             .storage
             .deleted_points
-            .get(point_id as usize)
+            .get_bit(point_id as usize)
             .unwrap_or(true)
         {
             return true;
@@ -559,7 +596,7 @@ impl InvertedIndex for MmapInvertedIndex {
         if self
             .storage
             .deleted_points
-            .get(point_id as usize)
+            .get_bit(point_id as usize)
             .unwrap_or(true)
         {
             return 0;

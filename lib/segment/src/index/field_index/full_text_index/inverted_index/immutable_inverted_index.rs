@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use ahash::AHashMap;
+use common::bitvec::BitSliceExt;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Either;
@@ -508,10 +509,21 @@ impl TryFrom<&MmapInvertedIndex> for ImmutableInvertedIndex {
             "postings and vocab must be the same size",
         );
 
+        // The in-RAM index uses `count == 0` as its deletion marker. The mmap
+        // variant tracks deletions in a separate in-memory bitmask and leaves
+        // `point_to_tokens_count` untouched on disk, so we apply the bitmask
+        // here when materializing the count vector.
+        let mut point_to_tokens_count = index.storage.point_to_tokens_count.to_vec();
+        for (idx, count) in point_to_tokens_count.iter_mut().enumerate() {
+            if index.storage.deleted_points.get_bit(idx).unwrap_or(false) {
+                *count = 0;
+            }
+        }
+
         Ok(ImmutableInvertedIndex {
             postings,
             vocab,
-            point_to_tokens_count: index.storage.point_to_tokens_count.to_vec(),
+            point_to_tokens_count,
             points_count: index.points_count(),
         })
     }
