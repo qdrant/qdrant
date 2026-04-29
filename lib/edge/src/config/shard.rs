@@ -11,7 +11,6 @@ use segment::types::{
 use serde::{Deserialize, Serialize};
 use shard::operations::optimization::OptimizerThresholds;
 
-use super::inference::InferenceModelConfig;
 use super::optimizers::EdgeOptimizersConfig;
 use super::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
@@ -40,11 +39,6 @@ pub struct EdgeConfig {
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default)]
     pub optimizers: EdgeOptimizersConfig,
-    /// Inference models registered with this shard, keyed by model name.
-    /// At update/query time, a [`Document`](crate::Document) with `model: "<name>"`
-    /// is resolved using the corresponding entry here.
-    #[serde(default)]
-    pub inference_models: HashMap<String, InferenceModelConfig>,
 }
 
 fn default_on_disk_payload() -> bool {
@@ -60,7 +54,6 @@ impl Default for EdgeConfig {
             hnsw_config: HnswConfig::default(),
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
-            inference_models: HashMap::new(),
         }
     }
 }
@@ -117,7 +110,6 @@ impl EdgeConfig {
             hnsw_config,
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
-            inference_models: HashMap::new(),
         }
     }
 
