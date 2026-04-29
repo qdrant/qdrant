@@ -62,7 +62,7 @@ impl SparseEmbedding {
     }
 }
 
-/// Pluggable tokenization. Implementors push tokens for `input` to `out`.
+/// Pluggable tokenization. Implementers push tokens for `input` to `out`.
 ///
 /// The same method is called for both queries and documents — if you need to
 /// tokenize them differently, configure your tokenizer accordingly.
