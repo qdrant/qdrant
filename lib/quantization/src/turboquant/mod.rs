@@ -152,6 +152,21 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         // TQ+: first pass over `data` to fit per-coordinate shift/scale that
         // pulls the rotated, length-rescaled coordinates onto the Lloyd-Max
         // N(0, 1) codebook before quantization.
+        //
+        // Shift uses per-coordinate **median**, not mean. For 1-bit storage
+        // the codebook boundary sits at 0, so post-shift values are
+        // quantized purely by sign — median is the sign-balance point of the
+        // distribution, mean isn't (skewed coords pull mean off the median).
+        // On highly anisotropic embeddings (dbpedia-openai is the reference
+        // case) this swaps a 60/40 biased sign distribution for 50/50 and
+        // recovers the recall the mean-based shift loses. Higher bit-widths
+        // are less sensitive but still benefit. Matches llama-turbo-quant.
+        //
+        // Median requires the per-coord samples in memory, so we cap the
+        // stats pass at `MAX_STATS_VECTORS` and use only the first chunk.
+        // Median estimates converge fast (~ √N), so 10K is plenty even for
+        // million-vector indexes.
+        const MAX_STATS_VECTORS: usize = 10_000;
         let error_correction = match mode {
             TQMode::Normal => None,
             TQMode::Plus => {
@@ -163,15 +178,44 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                 });
                 let padded_dim = pre_quantizer.padded_dim;
                 let mut buf = vec![0.0f64; padded_dim];
-                let mut stats_builder = crate::vector_stats::VectorStatsBuilder::new(padded_dim);
-                for vector in data.clone() {
+                let mut coord_values: Vec<Vec<f32>> =
+                    (0..padded_dim).map(|_| Vec::new()).collect();
+                for vector in data.clone().take(MAX_STATS_VECTORS) {
                     if stopped.load(Ordering::Relaxed) {
                         return Err(EncodingError::Stopped);
                     }
                     pre_quantizer.preprocess_into(vector.as_ref(), &mut buf);
-                    stats_builder.add(buf.as_slice());
+                    for (slot, &v) in coord_values.iter_mut().zip(buf.iter()) {
+                        slot.push(v as f32);
+                    }
                 }
-                Some(ErrorCorrection::from_stats(&stats_builder.build()))
+
+                let mut shift = vec![0.0f32; padded_dim];
+                let mut scale = vec![1.0f32; padded_dim];
+                for (i, values) in coord_values.iter_mut().enumerate() {
+                    if values.is_empty() {
+                        continue;
+                    }
+                    values.sort_by(|a, b| {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    let n = values.len();
+                    let median = if n % 2 == 0 {
+                        (values[n / 2 - 1] + values[n / 2]) / 2.0
+                    } else {
+                        values[n / 2]
+                    };
+                    // Stddev around the mean (matches llama, biased estimator).
+                    let mean = values.iter().sum::<f32>() / n as f32;
+                    let variance =
+                        values.iter().map(|&v| (v - mean) * (v - mean)).sum::<f32>() / n as f32;
+                    let sigma = variance.sqrt();
+                    if sigma > f32::EPSILON {
+                        shift[i] = -median;
+                        scale[i] = sigma.recip();
+                    }
+                }
+                Some(ErrorCorrection::new(shift, scale))
             }
         };
 

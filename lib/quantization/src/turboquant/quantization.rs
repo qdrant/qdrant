@@ -64,7 +64,7 @@ impl ErrorCorrection {
         Self::new(shift, scale)
     }
 
-    fn new(shift: Vec<f32>, scale: Vec<f32>) -> Self {
+    pub(super) fn new(shift: Vec<f32>, scale: Vec<f32>) -> Self {
         let mm_const = shift.iter().map(|&s| s * s).sum();
         let d_prime_sq = scale
             .iter()
