@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use shard::operations::optimization::OptimizerThresholds;
 use wal::WalOptions;
 
-use super::inference::InferenceModelConfig;
 use super::optimizers::EdgeOptimizersConfig;
 use super::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
@@ -46,11 +45,6 @@ pub struct EdgeConfig {
     /// where the default segment size is too large.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wal_options: Option<WalOptions>,
-    /// Inference models registered with this shard, keyed by model name.
-    /// At update/query time, a [`Document`](crate::Document) with `model: "<name>"`
-    /// is resolved using the corresponding entry here.
-    #[serde(default)]
-    pub inference_models: HashMap<String, InferenceModelConfig>,
 }
 
 fn default_on_disk_payload() -> bool {
@@ -67,7 +61,6 @@ impl Default for EdgeConfig {
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
             wal_options: None,
-            inference_models: HashMap::new(),
         }
     }
 }
@@ -130,7 +123,6 @@ impl EdgeConfig {
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
             wal_options: None,
-            inference_models: HashMap::new(),
         }
     }
 

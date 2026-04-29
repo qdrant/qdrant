@@ -111,28 +111,6 @@ class EdgeShard:
         """
         ...
 
-    def upsert(self, points: List["EdgePoint"]) -> None:
-        """
-        Insert points that may carry unembedded `Document` inputs. Documents
-        are embedded with the matching model registered in
-        `EdgeConfig.inference_models` before the points are persisted.
-        """
-        ...
-
-    def embed_query(self, document: "Document") -> "SparseVector":
-        """
-        Embed a document in **query mode** (unit weights for BM25). Use when
-        nesting a document inside a complex query construction.
-        """
-        ...
-
-    def embed_document(self, document: "Document") -> "SparseVector":
-        """
-        Embed a document in **document mode** (TF-weighted for BM25). Same
-        embedding `upsert` does internally.
-        """
-        ...
-
     def query(self, query: "QueryRequest") -> List["ScoredPoint"]:
         """
         Execute a query against the shard.
@@ -274,7 +252,6 @@ class EdgeConfig:
         hnsw_config: Optional["HnswIndexConfig"] = None,
         quantization_config: Optional[QuantizationConfigType] = None,
         optimizers: Optional["EdgeOptimizersConfig"] = None,
-        inference_models: Optional[Dict[str, "Bm25Config"]] = None,
     ) -> None:
         """
         Create an EdgeConfig.
@@ -288,10 +265,6 @@ class EdgeConfig:
             hnsw_config: Optional global HNSW config (used when building HNSW index).
             quantization_config: Optional global quantization config.
             optimizers: Optional optimizer settings.
-            inference_models: Local embedding models registered on the shard,
-                keyed by model name. Today only `Bm25Config` is accepted; pass a
-                `Document(text=..., model="<name>")` to a `Point` and the matching
-                model will embed it at update time.
         """
         ...
 
@@ -3319,54 +3292,3 @@ class UpdateOperation:
         ...
 
 
-class Document:
-    """
-    Text document for an edge inference model.
-
-    Pass instances anywhere a vector is accepted in `EdgePoint` — they're
-    embedded at update time using the model registered under `Document.model`
-    in `EdgeConfig.inference_models`.
-    """
-
-    def __init__(
-        self,
-        text: str,
-        model: str,
-        options: Optional["Bm25Config"] = None,
-    ) -> None:
-        """
-        Create a Document.
-
-        Args:
-            text: Raw text to embed.
-            model: Name of the inference model to use (e.g. `"qdrant/bm25"`).
-                Must match a key in `EdgeConfig.inference_models`.
-            options: Optional model-specific overrides. Today only `Bm25Config`
-                is honored, and per-call overrides are not yet supported —
-                register a separate model under a different name instead.
-        """
-        ...
-
-    @property
-    def text(self) -> str: ...
-
-    @property
-    def model(self) -> str: ...
-
-
-class EdgePoint:
-    """
-    Point that may carry unembedded `Document` inputs in its named vectors.
-    Use with `EdgeShard.upsert` to insert.
-    """
-
-    def __init__(
-        self,
-        id: PointId,
-        vector: Union[
-            List[float],
-            List[List[float]],
-            Dict[str, Union[List[float], List[List[float]], "SparseVector", "Document"]],
-        ],
-        payload: Optional[Dict[str, Any]] = None,
-    ) -> None: ...

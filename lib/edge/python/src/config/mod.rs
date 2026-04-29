@@ -7,11 +7,8 @@ use std::collections::HashMap;
 
 use derive_more::Into;
 use edge::EdgeConfig;
-use edge::config::inference::InferenceModelConfig;
 use pyo3::prelude::*;
 use segment::types::{QuantizationConfig, VectorNameBuf};
-
-use crate::bm25::PyBm25Config;
 
 pub use self::optimizers::*;
 pub use self::quantization::*;
@@ -28,8 +25,7 @@ pub struct PyEdgeConfig(pub EdgeConfig);
 #[pymethods]
 impl PyEdgeConfig {
     #[new]
-    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=true, hnsw_config=None, quantization_config=None, optimizers=None, inference_models=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=true, hnsw_config=None, quantization_config=None, optimizers=None))]
     pub fn new(
         #[pyo3(from_py_with = option_edge_vectors_helper)] vectors: Option<
             HashMap<String, PyEdgeVectorParams>,
@@ -39,7 +35,6 @@ impl PyEdgeConfig {
         hnsw_config: Option<PyHnswIndexConfig>,
         quantization_config: Option<PyQuantizationConfig>,
         optimizers: Option<PyEdgeOptimizersConfig>,
-        inference_models: Option<HashMap<String, PyBm25Config>>,
     ) -> PyResult<Self> {
         let vectors = vectors.unwrap_or_default();
         let sparse_vectors = sparse_vectors.unwrap_or_default();
@@ -52,11 +47,6 @@ impl PyEdgeConfig {
         let sparse_vectors = PyEdgeSparseVectorParams::peel_map(sparse_vectors);
         let vectors: HashMap<VectorNameBuf, _> = vectors.into_iter().collect();
         let sparse_vectors: HashMap<VectorNameBuf, _> = sparse_vectors.into_iter().collect();
-        let inference_models = inference_models
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(name, cfg)| (name, InferenceModelConfig::Bm25(cfg.into())))
-            .collect();
         Ok(Self(EdgeConfig {
             on_disk_payload,
             vectors,
@@ -65,7 +55,6 @@ impl PyEdgeConfig {
             quantization_config: quantization_config.map(QuantizationConfig::from),
             optimizers: optimizers.map(|o| o.0).unwrap_or_default(),
             wal_options: None,
-            inference_models,
         }))
     }
 
@@ -114,7 +103,6 @@ impl PyEdgeConfig {
             quantization_config: _,
             optimizers: _,
             wal_options: _,
-            inference_models: _,
         } = self.0;
     }
 }
