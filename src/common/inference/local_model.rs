@@ -60,7 +60,7 @@ pub fn infer_local(
         let embedding = match model_name {
             LocalModelName::Bm25 => {
                 let bm25_config = InferenceInput::parse_bm25_config(options)?;
-                let bm25 = Bm25::new(bm25_config);
+                let bm25 = Bm25::new(bm25_config)?;
 
                 match inference_type {
                     InferenceType::Update => bm25.doc_embed(input_str),

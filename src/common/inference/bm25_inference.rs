@@ -10,6 +10,7 @@ use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
 use segment::index::field_index::full_text_index::tokenizers::{
     Stemmer, Tokenizer, TokensProcessor,
 };
+use storage::content_manager::errors::StorageError;
 
 const DEFAULT_LANGUAGE: &str = "english";
 
@@ -30,7 +31,7 @@ impl bm25::Tokenizer for SegmentTokenizer {
 pub struct Bm25(Bm25Core<SegmentTokenizer>);
 
 impl Bm25 {
-    pub fn new(mut config: Bm25Config) -> Self {
+    pub fn new(mut config: Bm25Config) -> Result<Self, StorageError> {
         let preproc = std::mem::take(&mut config.text_preprocessing_config);
         let processor = build_tokens_processor(preproc);
         let tokenizer = Tokenizer::new(config.tokenizer, processor);
@@ -41,7 +42,9 @@ impl Bm25 {
             avg_doc_len: config.avg_len.into_inner(),
         };
 
-        Self(Bm25Core::new(params, SegmentTokenizer(tokenizer)))
+        Bm25Core::new(params, SegmentTokenizer(tokenizer))
+            .map(Self)
+            .map_err(|e| StorageError::bad_input(e.to_string()))
     }
 
     pub fn search_embed(&self, input: &str) -> VectorPersisted {
