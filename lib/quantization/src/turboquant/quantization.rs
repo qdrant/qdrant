@@ -15,7 +15,7 @@ pub struct TurboQuantizer {
     pub(super) distance: DistanceType,
     pub(super) padded_dim: usize,
 
-    // Pre-calculated `sqrt(dim)` used in scoring.
+    // Pre-calculated `sqrt(dim)` used in L2 scoring.
     dim_sqrt: f32,
 }
 
@@ -71,23 +71,80 @@ impl TurboQuantizer {
         let length = f64::from(l2_length.unwrap_or(1.0));
         let scale = (self.padded_dim as f64).sqrt() / length;
 
+        // Compute the post-quantization centroid norm for Dot and Cosine so
+        // re-normalized scoring can divide by ||c|| instead of sqrt(d).
+        //
+        // Cosine guard: a zero (or near-zero) input produces an all-zero
+        // rotated buf, which quantizes to the small "middle" centroids.
+        // ||c|| collapses, and renormalizing would amplify quantization
+        // noise instead of correcting bias. Substitute sqrt(padded_dim) so
+        // the renormalized denominator equals padded_dim — i.e. renorm is a
+        // no-op for these degenerate inputs, preserving baseline behavior.
+        let centroid_norm = match self.distance {
+            DistanceType::Dot => Some(self.compute_centroid_norm(buf, scale)),
+            DistanceType::Cosine => {
+                let rotated_l2_sq: f64 = buf.iter().map(|&x| x * x).sum();
+                if rotated_l2_sq < 1e-12 {
+                    Some((self.padded_dim as f32).sqrt())
+                } else {
+                    Some(self.compute_centroid_norm(buf, scale))
+                }
+            }
+            DistanceType::L1 | DistanceType::L2 => None,
+        };
+
         let mut extras_bytes = Vec::with_capacity(TqVectorExtras::size_for(
             self.bits,
             self.distance,
             self.mode,
         ));
-        self.pack_extras_into(l2_length, &mut extras_bytes);
+        self.pack_extras_into(l2_length, centroid_norm, &mut extras_bytes);
         let extras = TqVectorExtras::from_bytes(&extras_bytes);
 
         // Encode and return packed vector.
         self.pack_vector(buf.iter().map(|&val| val * scale), extras)
     }
 
+    /// L2 norm of the centroid vector chosen by quantizing `buf * scale`.
+    fn compute_centroid_norm(&self, buf: &[f64], scale: f64) -> f32 {
+        let centroids = self.bits.get_centroids();
+        let boundaries = self.bits.get_centroid_boundaries();
+        let mut sq_sum = 0.0_f64;
+        for &val in buf {
+            let scaled = val * scale;
+            let idx = boundaries.partition_point(|&b| (scaled as f32) > b);
+            let c = f64::from(centroids[idx]);
+            sq_sum += c * c;
+        }
+        let norm = sq_sum.sqrt() as f32;
+        debug_assert!(
+            norm.is_finite() && norm > 0.0,
+            "centroid_norm must be finite and positive, got {norm}"
+        );
+        norm
+    }
+
     pub fn dequantize(&self, quantized: &[u8]) -> Vec<f64> {
         let (unpacked, extras) = self.unpack_vector(quantized);
-        let length = f64::from(extras.l2_length(self).unwrap_or(1.0));
-        let scale = length / (self.padded_dim as f64).sqrt();
-        unpacked.map(|x| x * scale).collect()
+        let scaling_factor = f64::from(extras.scaling_factor());
+
+        // Stored field is `l2/cn_quant` (`l2 == 1.0` for Cosine).
+        // To recover the original l2 length, we need to `* cn_quant`.
+        let recovered_l2 = match self.distance {
+            DistanceType::Dot | DistanceType::Cosine => {
+                let cn_quant = self
+                    .unpack_vector(quantized)
+                    .0
+                    .map(|x| x * x)
+                    .sum::<f64>()
+                    .sqrt();
+                scaling_factor * cn_quant
+            }
+            DistanceType::L1 | DistanceType::L2 => scaling_factor,
+        };
+
+        let scale = recovered_l2 / (self.padded_dim as f64).sqrt();
+        unpacked.into_iter().map(|x| x * scale).collect()
     }
 
     /// Similarity score between two vectors that were both encoded with this
@@ -111,18 +168,17 @@ impl TurboQuantizer {
             TQBits::Bits4 => score_4bit_internal(data_v1, data_v2),
         };
 
-        let v1_l2 = extra_v1.l2_length(self).unwrap_or(1.0);
-        let v2_l2 = extra_v2.l2_length(self).unwrap_or(1.0);
+        let v1_scale = extra_v1.scaling_factor();
+        let v2_scale = extra_v2.scaling_factor();
 
         match self.distance {
-            DistanceType::Cosine | DistanceType::Dot => {
-                raw_dot * v1_l2 * v2_l2 / self.padded_dim as f32
-            }
+            DistanceType::Cosine | DistanceType::Dot => raw_dot * v1_scale * v2_scale,
             DistanceType::L2 => {
                 // For L2, the "dot" we calculated is actually ||v1||² + ||v2||² - 2*||v1||*||v2||*<v1_normalized, v2_normalized>>,
                 // so we need to do some extra math to recover the actual <v1, v2>.
-                v1_l2 * v1_l2 + v2_l2 * v2_l2
-                    - 2.0 * v1_l2 * v2_l2 * raw_dot / self.padded_dim as f32
+                // Note that `v*_scale` is equal to ||v*||² for L2 distance metric.
+                v1_scale * v1_scale + v2_scale * v2_scale
+                    - 2.0 * v1_scale * v2_scale * raw_dot / self.padded_dim as f32
             }
             DistanceType::L1 => {
                 // Fallback case for L1, where we need to fully dequantize both vectors.
@@ -195,17 +251,12 @@ impl TurboQuantizer {
         };
 
         match self.distance {
-            DistanceType::Cosine => {
-                // Only the stored vector carries the sqrt(dim)/||v|| scaling, so we
-                // compensate by multiplying by ||v|| and dividing by sqrt(dim).
-                dot / self.dim_sqrt
-            }
-            DistanceType::Dot => {
-                let l2 = vector_extras.l2_length(self).unwrap_or(1.0);
-                dot * l2 / self.dim_sqrt
+            DistanceType::Cosine | DistanceType::Dot => {
+                let scaling_factor = vector_extras.scaling_factor();
+                dot * scaling_factor
             }
             DistanceType::L2 => {
-                let l2 = vector_extras.l2_length(self).unwrap_or(1.0);
+                let l2 = vector_extras.scaling_factor();
                 // For L2, the "dot" we calculated is actually ||query||² + ||v||² - 2*||v||²*<query, v_normalized>>,
                 // so we need to do some extra math to recover the actual <query, v>.
                 let query_l2 = query.l2_norm.unwrap_or(1.0);
@@ -234,20 +285,9 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use super::*;
-    use crate::VectorParameters;
 
     fn make_tq(dim: usize, bits: TQBits, distance: DistanceType) -> TurboQuantizer {
-        let metadata = Metadata {
-            vector_parameters: VectorParameters {
-                dim,
-                distance_type: distance,
-                invert: false,
-                deprecated_count: None,
-            },
-            bits,
-            mode: TQMode::Normal,
-        };
-        TurboQuantizer::new_from_metadata(&metadata)
+        TurboQuantizer::new(dim, bits, TQMode::Normal, distance)
     }
 
     /// Build a vector pair that has a given magnitude of similarity, tuned by `similarity`.
@@ -469,8 +509,13 @@ mod tests {
                     .map(|&idx| f64::from(centroids[idx as usize]))
                     .collect();
 
-                let packed =
-                    tq.pack_vector(values.iter().copied(), TqVectorExtras::from_bytes(&[]));
+                // Cosine extras are 4 bytes (centroid_norm); dummy value is fine
+                // for this test since we only inspect the unpacked centroid values.
+                let dummy_extras = 1.0_f32.to_le_bytes();
+                let packed = tq.pack_vector(
+                    values.iter().copied(),
+                    TqVectorExtras::from_bytes(&dummy_extras),
+                );
 
                 let out: Vec<f64> = tq.unpack_vector(&packed).0.collect();
 
@@ -839,8 +884,13 @@ mod tests {
                 for &idx in &[0u8, max_idx] {
                     let expected = f64::from(centroids[idx as usize]);
                     let values = vec![expected; dim];
-                    let packed =
-                        tq.pack_vector(values.iter().copied(), TqVectorExtras::from_bytes(&[]));
+                    // Cosine extras are 4 bytes (centroid_norm); dummy value is
+                    // fine here since we only inspect the unpacked centroid values.
+                    let dummy_extras = 1.0_f32.to_le_bytes();
+                    let packed = tq.pack_vector(
+                        values.iter().copied(),
+                        TqVectorExtras::from_bytes(&dummy_extras),
+                    );
 
                     let out: Vec<f64> = tq.unpack_vector(&packed).0.collect();
 

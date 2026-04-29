@@ -31,38 +31,23 @@ impl<'a> TqVectorExtras<'a> {
 
     /// Returns the size (in bytes) required for the extras.
     pub(super) fn size_for(_bits: TQBits, distance: DistanceType, _mode: TQMode) -> usize {
-        let mut size = 0;
-
         match distance {
-            DistanceType::Dot => {
-                // For Dot product we need to additionally store the original vectors l2.
-                size += size_of::<f32>();
-            }
-            DistanceType::Cosine => {}
-            DistanceType::L1 => {
-                size += size_of::<f32>();
-            }
-            DistanceType::L2 => {
-                size += size_of::<f32>();
-            }
+            // 4 Bytes for merged l2 with re-normalization applied.
+            DistanceType::Dot => size_of::<f32>(),
+            // 4 Bytes for re-normalization.
+            DistanceType::Cosine => size_of::<f32>(),
+            DistanceType::L1 | DistanceType::L2 => size_of::<f32>(),
         }
-
-        size
     }
 
-    /// L2 length of the rotated source vector, decoded on access from the
-    /// underlying bytes. Returns `None` for distance metrics that don't store
-    /// it (e.g. Cosine).
-    pub fn l2_length(&self, quantizer: &TurboQuantizer) -> Option<f32> {
-        match quantizer.distance {
-            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
-                let bytes: [u8; 4] = self.src[..size_of::<f32>()]
-                    .try_into()
-                    .expect("expected at least 4 bytes for l2_length");
-                Some(f32::from_le_bytes(bytes))
-            }
-            DistanceType::Cosine => None,
-        }
+    /// Per-vector scaling factor that scoring multiplies into the centroid dot.
+    /// Combined from `l2_length` and `centroid_norm` at quantize time —
+    /// see [`TurboQuantizer::pack_extras_into`] for the per-distance formula.
+    pub fn scaling_factor(&self) -> f32 {
+        let bytes: [u8; 4] = self.src[..size_of::<f32>()]
+            .try_into()
+            .expect("expected at least 4 bytes for scaling_factor");
+        f32::from_le_bytes(bytes)
     }
 }
 
@@ -175,18 +160,21 @@ impl TurboQuantizer {
         }
     }
 
-    /// Encodes the given raw extras values and appends them to `buf`. Caller
-    /// must provide a value for every field the configured distance requires —
-    /// e.g. `l2_length` is mandatory for Dot/L1/L2.
-    pub(super) fn pack_extras_into(&self, l2_length: Option<f32>, buf: &mut Vec<u8>) {
-        // Additional l2 for dot/L1/L2 vectors.
-        match self.distance {
-            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
-                let l2 = l2_length.expect("l2_length required for this distance");
-                buf.extend(&l2.to_le_bytes());
+    /// Encodes the given raw extras values and appends them to `buf`.
+    pub(super) fn pack_extras_into(
+        &self,
+        l2_length: Option<f32>,
+        centroid_norm: Option<f32>,
+        buf: &mut Vec<u8>,
+    ) {
+        let scaling_factor = match self.distance {
+            DistanceType::Dot | DistanceType::Cosine => {
+                l2_length.unwrap_or(1.0) / centroid_norm.unwrap()
             }
-            DistanceType::Cosine => {}
-        }
+            DistanceType::L1 | DistanceType::L2 => l2_length.unwrap(),
+        };
+
+        buf.extend(&scaling_factor.to_le_bytes());
     }
 }
 
@@ -207,11 +195,14 @@ mod tests {
     ];
     const ALL_MODES: &[TQMode] = &[TQMode::Normal, TQMode::Plus];
 
-    fn example_l2(distance: DistanceType) -> Option<f32> {
+    /// `(l2_length, centroid_norm, expected_scaling_factor)` per distance:
+    /// the first two are the raw inputs to `pack_extras_into`; the third is
+    /// the merged f32 that `scaling_factor()` should read back.
+    fn example_extras(distance: DistanceType) -> (Option<f32>, Option<f32>, f32) {
         match distance {
-            DistanceType::Dot => Some(1.25),
-            DistanceType::Cosine => None,
-            DistanceType::L1 | DistanceType::L2 => Some(1.3),
+            DistanceType::Dot => (Some(1.25), Some(15.5), 1.25 / 15.5),
+            DistanceType::Cosine => (None, Some(0.875), 1.0 / 0.875),
+            DistanceType::L1 | DistanceType::L2 => (Some(1.3), None, 1.3),
         }
     }
 
@@ -232,10 +223,10 @@ mod tests {
                     let predicted_extra_size = TqVectorExtras::size_for(bits, distance, mode);
 
                     let tq = TurboQuantizer::new(dim, bits, mode, distance);
-                    let expected_l2 = example_l2(distance);
+                    let (l2_length, centroid_norm, expected_scaling) = example_extras(distance);
 
                     let mut buf = Vec::new();
-                    tq.pack_extras_into(expected_l2, &mut buf);
+                    tq.pack_extras_into(l2_length, centroid_norm, &mut buf);
                     assert_eq!(
                         buf.len(),
                         predicted_extra_size,
@@ -248,9 +239,9 @@ mod tests {
 
                     let extras = TqVectorExtras::from_bytes(&buf);
                     assert_eq!(
-                        extras.l2_length(&tq),
-                        expected_l2,
-                        "l2_length roundtrip (bits={bits:?}, mode={mode:?}, distance={distance:?})",
+                        extras.scaling_factor(),
+                        expected_scaling,
+                        "scaling_factor roundtrip (bits={bits:?}, mode={mode:?}, distance={distance:?})",
                     );
                 }
             }
