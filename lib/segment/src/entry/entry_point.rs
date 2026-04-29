@@ -32,7 +32,7 @@ use crate::types::{
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait ReadSegmentEntry: SnapshotEntry {
+pub trait ReadSegmentEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
@@ -258,7 +258,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
 }
 
 /// Segment with storage.
-pub trait StorageSegmentEntry: ReadSegmentEntry {
+pub trait StorageSegmentEntry: ReadSegmentEntry + SnapshotEntry {
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;
 
