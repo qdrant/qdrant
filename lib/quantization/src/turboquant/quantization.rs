@@ -449,15 +449,15 @@ impl TurboQuantizer {
         let rotated_f32: Vec<f32> = rotated.iter().map(|&x| x as f32).collect();
 
         // For TQ+ + Bits1 storage, widen query quantization from the default
-        // 8 bits to 12. The per-coord `D'` pre-scaling can push some coords
-        // toward the small end of the integer range; 8 bits loses too much
-        // there. 12 bits drops the SIMD scoring error by ~10× per the
-        // `test_query_dotprod_matches_reference` parity test in `query1bit`.
+        // 8 bits to the kernel's max of 16. The per-coord `D'` pre-scaling
+        // can push some coords toward the small end of the integer range;
+        // 8 bits loses too much there. 16 bits gives enough headroom to
+        // recover recall on real datasets where D' has wide variance.
         let use_wide_query =
             self.error_correction.is_some() && matches!(self.bits, TQBits::Bits1 | TQBits::Bits1_5);
         let data = match self.bits {
             TQBits::Bits1 | TQBits::Bits1_5 if use_wide_query => {
-                EncodedQueryTQData::Bits1Wide(Query1bitSimd::<12>::new(&rotated_f32))
+                EncodedQueryTQData::Bits1Wide(Query1bitSimd::<16>::new(&rotated_f32))
             }
             TQBits::Bits1 => EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32)),
             TQBits::Bits1_5 => EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32)),
