@@ -819,4 +819,93 @@ mod tests {
             }
         }
     }
+
+    /// Recall regression probe — non-uniform per-coordinate variance data
+    /// (the case where TQ+ should HELP, not hurt). Asserts Plus-mode recall@k
+    /// stays close to Normal-mode on data with a few high-variance "spike"
+    /// directions. Catches the failure mode where renorm's `cn` drifts because
+    /// `‖X+‖` has chi-squared spread across vectors — see
+    /// [`TurboQuantizer::compute_centroid_norm`] for the EC-revert that fixes it.
+    #[rstest::rstest]
+    #[case::bits2(TQBits::Bits2)]
+    #[case::bits4(TQBits::Bits4)]
+    fn recall_skewed_data(#[case] bits: TQBits) {
+        use rand::prelude::StdRng;
+        let dim = 256;
+        let n = 1000;
+        let n_queries = 50;
+        let topk = 10;
+        let mut rng = StdRng::seed_from_u64(42);
+        // Pre-rotation per-coord scale: a few coords have huge variance, most
+        // have small. Realistic embeddings have similar structure (a few
+        // "spike" directions).
+        let coord_scales: Vec<f32> = (0..dim)
+            .map(|i| if i < 8 { 100.0 } else { 1.0 })
+            .collect();
+        let make_vec = |rng: &mut StdRng| -> Vec<f32> {
+            coord_scales
+                .iter()
+                .map(|&s| s * (rng.random_range(-1.0..1.0)))
+                .collect()
+        };
+        let vectors: Vec<Vec<f32>> = (0..n).map(|_| make_vec(&mut rng)).collect();
+        let queries: Vec<Vec<f32>> = (0..n_queries).map(|_| make_vec(&mut rng)).collect();
+        let true_dot = |a: &[f32], b: &[f32]| -> f32 {
+            a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
+        };
+
+        let recall_for = |mode: TQMode| -> f32 {
+            let vp = VectorParameters {
+                dim,
+                distance_type: DistanceType::Dot,
+                invert: false,
+                deprecated_count: None,
+            };
+            let qsize =
+                EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(&vp, bits, mode);
+            let encoded = EncodedVectorsTQ::encode(
+                vectors.iter(),
+                TestEncodedStorageBuilder::new(None, qsize),
+                &vp,
+                n,
+                bits,
+                mode,
+                None,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            let counter = HardwareCounterCell::new();
+            let mut total = 0.0;
+            for q in &queries {
+                let mut truth: Vec<(usize, f32)> = vectors
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (i, true_dot(q, v)))
+                    .collect();
+                truth.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                let truth_top: Vec<usize> = truth.iter().take(topk).map(|x| x.0).collect();
+
+                let qq = encoded.encode_query(q);
+                let mut q_scores: Vec<(usize, f32)> = (0..n)
+                    .map(|i| (i, encoded.score_point(&qq, i as u32, &counter)))
+                    .collect();
+                q_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                let q_top: Vec<usize> = q_scores.iter().take(topk).map(|x| x.0).collect();
+
+                let hits = truth_top.iter().filter(|i| q_top.contains(i)).count();
+                total += hits as f32 / topk as f32;
+            }
+            total / n_queries as f32
+        };
+
+        let normal = recall_for(TQMode::Normal);
+        let plus = recall_for(TQMode::Plus);
+        // Plus must not be meaningfully worse than Normal. We allow a small
+        // 2% slack since the codebook is the same and EC's value comes from
+        // distribution fit, which on this seed is marginal.
+        assert!(
+            plus >= normal - 0.02,
+            "bits={bits:?}: Plus recall regressed (Normal={normal:.3}, Plus={plus:.3})"
+        );
+    }
 }

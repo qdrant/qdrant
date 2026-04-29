@@ -73,6 +73,13 @@ pub struct EncodedQueryTQ {
     // Store the original query in pre-rotated form for L1 distance, where we need to dequantize vectors and apply inverse rotation to them.
     query: Option<Vec<f32>>,
 
+    /// Rotated query (pre-EC) — populated only for TQ+ Dot/Cosine/L2.  The
+    /// asymmetric SIMD path can't represent the per-coordinate `D'_i`
+    /// weighting TQ+ requires, so scoring decodes centroids on the fly and
+    /// folds in `D'_i` from a scalar loop. SIMD support for this is a
+    /// follow-up.
+    pub(super) rotated_query: Option<Vec<f32>>,
+
     /// TQ+ asymmetric-scoring scalar correction `qm = ⟨Q, M⟩ = -⟨rotated_q, shift⟩`.
     /// `0.0` when EC is not configured. Added to the SIMD raw_dot so the
     /// existing score formulas can stay unchanged.
