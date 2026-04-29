@@ -89,8 +89,16 @@ pub struct EncodedQueryTQ {
 /// (rotation-applied query, quantized to the SIMD-friendly integer form);
 /// on architectures without a matching SIMD instruction set the scalar
 /// reference kernel inside each type takes over automatically.
+///
+/// `Bits1Wide` is the same kernel as `Bits1` but with 12-bit query
+/// quantization instead of the default 8-bit. Used in TQ+ for 1-bit storage:
+/// the per-coord `D'` pre-scaling pushes some query coords into the bottom
+/// of the 8-bit integer range, where rounding noise is large relative to
+/// the signal — widening to 12 bits drops the scoring error by ~10× and
+/// recovers most of the recall the 8-bit form loses.
 pub enum EncodedQueryTQData {
     Bits1(Query1bitSimd),
+    Bits1Wide(Query1bitSimd<12>),
     Bits2(Query2bitSimd),
     Bits4(Query4bitSimd),
 }
@@ -155,8 +163,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                 });
                 let padded_dim = pre_quantizer.padded_dim;
                 let mut buf = vec![0.0f64; padded_dim];
-                let mut stats_builder =
-                    crate::vector_stats::VectorStatsBuilder::new(padded_dim);
+                let mut stats_builder = crate::vector_stats::VectorStatsBuilder::new(padded_dim);
                 for vector in data.clone() {
                     if stopped.load(Ordering::Relaxed) {
                         return Err(EncodingError::Stopped);
@@ -172,12 +179,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             vector_parameters: *vector_parameters,
             bits,
             mode,
-            error_correction: error_correction
-                .as_ref()
-                .map(|ec| ErrorCorrectionMetadata {
-                    shift: ec.shift.clone(),
-                    scale: ec.scale.clone(),
-                }),
+            error_correction: error_correction.as_ref().map(|ec| ErrorCorrectionMetadata {
+                shift: ec.shift.clone(),
+                scale: ec.scale.clone(),
+            }),
         };
 
         let quantizer = TurboQuantizer::new_from_metadata(&metadata);

@@ -15,7 +15,6 @@ mod tests {
     const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512];
     const BITS: &[TQBits] = &[TQBits::Bits4, TQBits::Bits2, TQBits::Bits1_5, TQBits::Bits1];
 
-
     /// Absolute tolerance for an approximate score: an empirical per-bit
     /// coefficient (≈ 1.8x observed max across VECTORS_COUNT trials) times
     /// the signal-std of the input data. The mean-error / signal-std ratio
@@ -827,6 +826,7 @@ mod tests {
     /// `‖X+‖` has chi-squared spread across vectors — see
     /// [`TurboQuantizer::compute_centroid_norm`] for the EC-revert that fixes it.
     #[rstest::rstest]
+    #[case::bits1(TQBits::Bits1)]
     #[case::bits2(TQBits::Bits2)]
     #[case::bits4(TQBits::Bits4)]
     fn recall_skewed_data(#[case] bits: TQBits) {
@@ -839,9 +839,7 @@ mod tests {
         // Pre-rotation per-coord scale: a few coords have huge variance, most
         // have small. Realistic embeddings have similar structure (a few
         // "spike" directions).
-        let coord_scales: Vec<f32> = (0..dim)
-            .map(|i| if i < 8 { 100.0 } else { 1.0 })
-            .collect();
+        let coord_scales: Vec<f32> = (0..dim).map(|i| if i < 8 { 100.0 } else { 1.0 }).collect();
         let make_vec = |rng: &mut StdRng| -> Vec<f32> {
             coord_scales
                 .iter()
@@ -850,9 +848,8 @@ mod tests {
         };
         let vectors: Vec<Vec<f32>> = (0..n).map(|_| make_vec(&mut rng)).collect();
         let queries: Vec<Vec<f32>> = (0..n_queries).map(|_| make_vec(&mut rng)).collect();
-        let true_dot = |a: &[f32], b: &[f32]| -> f32 {
-            a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
-        };
+        let true_dot =
+            |a: &[f32], b: &[f32]| -> f32 { a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum() };
 
         let recall_for = |mode: TQMode| -> f32 {
             let vp = VectorParameters {
