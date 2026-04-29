@@ -365,35 +365,6 @@ impl TurboQuantizer {
         }
     }
 
-    /// TQ+ asymmetric-scoring slow path. Decodes the stored centroids and
-    /// computes `Σ R_q_i · c_i · D'_i = Σ R_q_i · (rescaled_i − M_i)`. Caller
-    /// adds `qm = ⟨R_q, M⟩` to recover `⟨R_q, rescaled⟩`.
-    fn score_precomputed_ec(
-        &self,
-        data_bytes: &[u8],
-        query: &EncodedQueryTQ,
-        ec: &ErrorCorrection,
-    ) -> f32 {
-        let centroids = self.bits.get_centroids();
-        let bit_size = self.bits.bit_size();
-        let mut reader = common::bitpacking::BitReader::new(data_bytes);
-        reader.set_bits(bit_size);
-
-        let rotated_q = query
-            .rotated_query
-            .as_ref()
-            .expect("TQ+ asymmetric scoring requires rotated_query in EncodedQueryTQ");
-
-        let mut sum: f32 = 0.0;
-        for (i, &q) in rotated_q.iter().enumerate() {
-            let idx: u8 = reader.read();
-            let c = centroids[idx as usize];
-            // c · D'_i = c / scale_i (since scale = 1/D').
-            sum += q * c / ec.scale[i];
-        }
-        sum
-    }
-
     /// TQ+ symmetric-scoring slow path. Decodes both packed vectors into
     /// centroids, takes a per-coord-weighted dot with `D'_i²`, and folds in
     /// the precomputed `xm_a + xm_b − ⟨M, M⟩` so the caller can apply the
@@ -449,20 +420,20 @@ impl TurboQuantizer {
         };
 
         // TQ+ asymmetric: ⟨Q, X⟩ = ⟨Q .* D', X+⟩ + ⟨Q, M⟩, where D' = 1/scale
-        // and M = -shift. We deliberately do NOT pre-scale `rotated` by `D'`
-        // here. The SIMD encoder normalizes by `max(|input|)`, so a query whose
-        // coords have wildly varying magnitudes (which `R_q · D'` does when
-        // stats produce a non-flat `D'` — exactly the data TQ+ is meant for)
-        // gets quantized with poor precision on the small-D' coords. Instead,
-        // we keep `rotated` unscaled and let `score_precomputed` do a scalar
-        // decode-and-dot that folds in `D'_i` per coord.  SIMD support for
-        // this path is a follow-up.
+        // and M = -shift. Pre-scale `rotated` by `D'` so the existing SIMD
+        // raw_dot computes ⟨Q+, X+⟩, and stash `qm = ⟨Q, M⟩` for the scalar
+        // correction. The whole point of TQ+ is that scoring code-paths stay
+        // identical — only the query precomputation changes.
         let ec_correction: f32 = if let Some(ec) = &self.error_correction {
-            rotated
+            let qm: f64 = rotated
                 .iter()
                 .zip(ec.shift.iter())
                 .map(|(&q, &s)| q * f64::from(-s))
-                .sum::<f64>() as f32
+                .sum();
+            for (q, &s) in rotated.iter_mut().zip(ec.scale.iter()) {
+                *q /= f64::from(s);
+            }
+            qm as f32
         } else {
             0.0
         };
@@ -477,29 +448,16 @@ impl TurboQuantizer {
         // has no downstream benefit here).
         let rotated_f32: Vec<f32> = rotated.iter().map(|&x| x as f32).collect();
 
-        let (data, rotated_query) = match (&self.error_correction, self.distance) {
-            // TQ+ Dot/Cosine/L2: skip SIMD encoding (can't represent per-coord
-            // `D'_i` weighting); store rotated query for the scalar path.
-            (Some(_), DistanceType::Dot | DistanceType::Cosine | DistanceType::L2) => {
-                (None, Some(rotated_f32))
-            }
-            // Normal mode (any distance) and TQ+ L1 (uses dequantize fallback):
-            // build the SIMD encoding.
-            _ => {
-                let data = match self.bits {
-                    TQBits::Bits1 => EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32)),
-                    TQBits::Bits1_5 => EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32)),
-                    TQBits::Bits2 => EncodedQueryTQData::Bits2(Query2bitSimd::new(&rotated_f32)),
-                    TQBits::Bits4 => EncodedQueryTQData::Bits4(Query4bitSimd::new(&rotated_f32)),
-                };
-                (Some(data), None)
-            }
+        let data = match self.bits {
+            TQBits::Bits1 => EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32)),
+            TQBits::Bits1_5 => EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32)),
+            TQBits::Bits2 => EncodedQueryTQData::Bits2(Query2bitSimd::new(&rotated_f32)),
+            TQBits::Bits4 => EncodedQueryTQData::Bits4(Query4bitSimd::new(&rotated_f32)),
         };
         EncodedQueryTQ {
             data,
             l2_norm,
             query,
-            rotated_query,
             ec_correction,
         }
     }
@@ -509,27 +467,14 @@ impl TurboQuantizer {
     /// and `cos(θ)` for Cosine.
     pub fn score_precomputed(&self, query: &EncodedQueryTQ, vec: &[u8]) -> f32 {
         let (data_bytes, vector_extras) = self.split_vector(vec);
-        // TQ+: SIMD's uniform-weight dot can't carry the per-coord `D'_i`
-        // weighting required to recover ⟨Q, rescaled_v⟩ from `c ≈ X+`.
-        // Decode centroids in a scalar loop and fold in `D'_i` from `ec.scale`.
-        // The +qm correction is added below. L1 short-circuits to the
-        // dequantize-and-L1 path below, so we skip the dot computation for it.
-        let needs_dot = !matches!(self.distance, DistanceType::L1);
-        let dot = if !needs_dot {
-            0.0
-        } else if let Some(ec) = &self.error_correction {
-            self.score_precomputed_ec(data_bytes, query, ec) + query.ec_correction
-        } else {
-            match query
-                .data
-                .as_ref()
-                .expect("Normal-mode asymmetric scoring requires SIMD data")
-            {
-                EncodedQueryTQData::Bits1(q) => q.dotprod(data_bytes),
-                EncodedQueryTQData::Bits2(q) => q.dotprod(data_bytes),
-                EncodedQueryTQData::Bits4(q) => q.dotprod(data_bytes),
-            }
+        let raw_dot = match &query.data {
+            EncodedQueryTQData::Bits1(q) => q.dotprod(data_bytes),
+            EncodedQueryTQData::Bits2(q) => q.dotprod(data_bytes),
+            EncodedQueryTQData::Bits4(q) => q.dotprod(data_bytes),
         };
+        // TQ+: SIMD raw_dot ≈ ⟨Q · D', X+⟩; add `qm = ⟨Q, M⟩` to recover
+        // ⟨Q, rescaled_v⟩, which is the quantity the existing arms expect.
+        let dot = raw_dot + query.ec_correction;
 
         match self.distance {
             DistanceType::Cosine | DistanceType::Dot => {
