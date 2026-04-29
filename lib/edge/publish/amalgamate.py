@@ -33,6 +33,7 @@ REPO_ROOT = Path(__file__).parent.parent.parent.parent
 AMALGAMATION = Path(__file__).parent / "qdrant-edge"
 
 PACKAGES_TO_INCLUDE = [
+    "bm25",
     "common",
     "edge",
     "gridstore",

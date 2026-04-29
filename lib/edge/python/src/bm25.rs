@@ -1,8 +1,8 @@
-//! Python bindings for [`edge::bm25`].
+//! Python bindings for [`edge::bm25_embed`].
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use edge::bm25::{EdgeBm25, EdgeBm25Config};
+use edge::bm25_embed::{EdgeBm25, EdgeBm25Config};
 use pyo3::prelude::*;
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 
