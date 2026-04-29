@@ -65,7 +65,11 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
 
 /// Encoded query type for Turbo Quant.
 pub struct EncodedQueryTQ {
-    data: EncodedQueryTQData,
+    /// SIMD-encoded query for the Normal-mode asymmetric path. `None` when
+    /// EC is configured: the SIMD encoder can't carry the per-coordinate
+    /// `D'_i` weighting TQ+ requires, so we skip the encoding entirely and
+    /// score via the scalar `score_precomputed_ec` path using `rotated_query`.
+    data: Option<EncodedQueryTQData>,
 
     // Store the original query's l2 norm for Dot and L2 distances, where we can compute it once and reuse for all distance computations.
     l2_norm: Option<f32>,
