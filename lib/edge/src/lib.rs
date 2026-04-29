@@ -137,15 +137,14 @@ impl EdgeShard {
     /// complex query (prefetches, fusion, recommend) that doesn't yet
     /// support documents directly.
     pub fn embed_query(&self, document: &Document) -> OperationResult<Vector> {
-        self.inference.resolve(document, inference::EmbedKind::Query)
+        self.inference.resolve_query(document)
     }
 
     /// Embed a document using the registered model in **document mode**
     /// (TF-weighted for BM25). Equivalent to what [`Self::upsert`] does
     /// internally, exposed for callers that want to pre-compute embeddings.
     pub fn embed_document(&self, document: &Document) -> OperationResult<Vector> {
-        self.inference
-            .resolve(document, inference::EmbedKind::Document)
+        self.inference.resolve_document(document)
     }
 
     pub fn path(&self) -> &Path {
