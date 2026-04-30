@@ -162,12 +162,10 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, IoUringFile, Meta>
         if self.runtime.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
             return Err(UniversalIoError::QueueIsFull);
         }
-        let state = &mut self.runtime.state;
-        let entry = if file.direct_io {
-            state.read_o_direct(meta, file.fd(), range)
-        } else {
-            state.read(meta, file.fd(), range)
-        };
+        let entry = self
+            .runtime
+            .state
+            .read(meta, file.fd(), range, file.direct_io);
         unsafe {
             squeue.push(&entry).expect("submission queue is not full");
         }

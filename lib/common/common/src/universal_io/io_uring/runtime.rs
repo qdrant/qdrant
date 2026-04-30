@@ -181,9 +181,18 @@ where
         }
     }
 
+    /// Prepare the buffer for storing the read with correct alignment, and returns the queue entry.
+    pub fn read(&mut self, meta: Meta, fd: Fd, range: ReadRange, o_direct: bool) -> squeue::Entry {
+        if o_direct {
+            self.read_o_direct(meta, fd, range)
+        } else {
+            self.read_exact(meta, fd, range)
+        }
+    }
+
     /// Allocates `Vec<MaybeUninit<T>>`, reinterprets it as `Vec<MaybeUninit<u8>>`, and stores the byte buffer
     /// so the kernel writes into correctly aligned memory for `T`.
-    pub fn read(&mut self, meta: Meta, fd: Fd, range: ReadRange) -> squeue::Entry {
+    fn read_exact(&mut self, meta: Meta, fd: Fd, range: ReadRange) -> squeue::Entry {
         let ReadRange {
             byte_offset,
             length,
@@ -205,7 +214,7 @@ where
     }
 
     /// Allocates a `Vec<MaybeUninit<u8>>` aligned to 4kB.
-    pub fn read_o_direct(&mut self, meta: Meta, fd: Fd, range: ReadRange) -> squeue::Entry {
+    fn read_o_direct(&mut self, meta: Meta, fd: Fd, range: ReadRange) -> squeue::Entry {
         let ReadRange {
             byte_offset,
             length,
