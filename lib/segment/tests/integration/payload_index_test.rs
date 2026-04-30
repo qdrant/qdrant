@@ -28,9 +28,9 @@ use segment::fixtures::payload_fixtures::{
     generate_diverse_payload, random_filter, random_nested_filter, random_vector,
 };
 use segment::id_tracker::IdTrackerRead;
-use segment::index::{PayloadIndex, PayloadIndexRead};
 use segment::index::field_index::{FieldIndex, PrimaryCondition};
 use segment::index::struct_payload_index::StructPayloadIndex;
+use segment::index::{PayloadIndex, PayloadIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::payload_storage::PayloadStorage;
