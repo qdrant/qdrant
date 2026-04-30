@@ -7,10 +7,10 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
-use crate::payload_storage::PayloadStorage;
 #[cfg(feature = "testing")]
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
+use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::types::Payload;
 
 #[derive(Debug)]
@@ -30,6 +30,59 @@ impl From<InMemoryPayloadStorage> for PayloadStorageEnum {
 impl From<MmapPayloadStorage> for PayloadStorageEnum {
     fn from(a: MmapPayloadStorage) -> Self {
         PayloadStorageEnum::MmapPayloadStorage(a)
+    }
+}
+
+impl PayloadStorageRead for PayloadStorageEnum {
+    fn get(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id, hw_counter),
+        }
+    }
+
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+        }
+    }
+
+    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
+    {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter),
+        }
+    }
+
+    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_storage_size_bytes(),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_storage_size_bytes(),
+        }
+    }
+
+    fn is_on_disk(&self) -> bool {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.is_on_disk(),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.is_on_disk(),
+        }
     }
 }
 
@@ -80,30 +133,6 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn get(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id, hw_counter),
-        }
-    }
-
-    fn get_sequential(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
-        }
-    }
-
     fn delete(
         &mut self,
         point_id: PointOffsetType,
@@ -146,17 +175,6 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
-    where
-        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
-    {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter),
-        }
-    }
-
     fn files(&self) -> Vec<PathBuf> {
         match self {
             #[cfg(feature = "testing")]
@@ -170,22 +188,6 @@ impl PayloadStorage for PayloadStorageEnum {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.immutable_files(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.immutable_files(),
-        }
-    }
-
-    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_storage_size_bytes(),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_storage_size_bytes(),
-        }
-    }
-
-    fn is_on_disk(&self) -> bool {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.is_on_disk(),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.is_on_disk(),
         }
     }
 }

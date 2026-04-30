@@ -14,7 +14,7 @@ use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::payload_storage::{ConditionChecker, PayloadStorageRead};
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, MinShould,
     OwnedPayloadRef, Payload, PayloadContainer, PayloadKeyType, VectorNameBuf,

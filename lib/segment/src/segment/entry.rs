@@ -32,7 +32,7 @@ use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::query_estimator::adjust_for_deferred_points;
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndexRead};
 use crate::json_path::JsonPath;
-use crate::payload_storage::PayloadStorage;
+use crate::payload_storage::PayloadStorageRead;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,

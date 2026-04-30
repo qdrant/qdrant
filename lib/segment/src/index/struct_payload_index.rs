@@ -35,7 +35,7 @@ use crate::index::visited_pool::VisitedPool;
 use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::{FilterContext, PayloadStorage};
+use crate::payload_storage::{FilterContext, PayloadStorage, PayloadStorageRead};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, Payload,

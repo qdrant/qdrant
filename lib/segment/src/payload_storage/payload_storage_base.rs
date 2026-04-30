@@ -9,8 +9,41 @@ use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 use crate::types::{Filter, Payload};
 
-/// Trait for payload data storage. Should allow filter checks
-pub trait PayloadStorage {
+/// Read-only trait for payload data storage.
+///
+/// Defines all read operations on payload storage. Search and retrieval logic
+/// only requires this trait, which makes it possible to implement read-only
+/// segments without duplicating storage code.
+pub trait PayloadStorageRead {
+    fn get(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    /// Iterate over all stored payload and apply the provided callback.
+    /// Stop iteration if callback returns false or error.
+    ///
+    /// Required for building payload index.
+    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
+
+    /// Return storage size in bytes
+    fn get_storage_size_bytes(&self) -> OperationResult<usize>;
+
+    /// Whether this storage is on-disk or in-memory.
+    fn is_on_disk(&self) -> bool;
+}
+
+/// Trait for payload data storage with mutating operations. Should allow filter checks
+pub trait PayloadStorage: PayloadStorageRead {
     /// Overwrite payload for point_id. If payload already exists, replace it
     fn overwrite(
         &mut self,
@@ -36,18 +69,6 @@ pub trait PayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
-    fn get(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
-
-    fn get_sequential(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
-
     /// Delete payload by point_id and key
     fn delete(
         &mut self,
@@ -70,14 +91,6 @@ pub trait PayloadStorage {
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
 
-    /// Iterate over all stored payload and apply the provided callback.
-    /// Stop iteration if callback returns false or error.
-    ///
-    /// Required for building payload index.
-    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
-    where
-        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
-
     /// Return all files that are used by storage to include in snapshots.
     /// RocksDB storages are captured outside of this trait.
     fn files(&self) -> Vec<PathBuf>;
@@ -86,12 +99,6 @@ pub trait PayloadStorage {
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new()
     }
-
-    /// Return storage size in bytes
-    fn get_storage_size_bytes(&self) -> OperationResult<usize>;
-
-    /// Whether this storage is on-disk or in-memory.
-    fn is_on_disk(&self) -> bool;
 }
 
 pub trait ConditionChecker {

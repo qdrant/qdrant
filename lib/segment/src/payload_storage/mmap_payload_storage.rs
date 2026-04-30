@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::json_path::JsonPath;
-use crate::payload_storage::PayloadStorage;
+use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::types::{Payload, PayloadKeyTypeRef};
 
 const STORAGE_PATH: &str = "payload_storage";
@@ -82,6 +82,48 @@ impl MmapPayloadStorage {
     }
 }
 
+impl PayloadStorageRead for MmapPayloadStorage {
+    fn get(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        match self.storage.get_value::<Random>(point_id, hw_counter)? {
+            Some(payload) => Ok(payload),
+            None => Ok(Default::default()),
+        }
+    }
+
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        match self.storage.get_value::<Sequential>(point_id, hw_counter)? {
+            Some(payload) => Ok(payload),
+            None => Ok(Default::default()),
+        }
+    }
+
+    fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
+    {
+        self.storage.iter(
+            |point_id, payload| callback(point_id, &payload),
+            hw_counter.ref_payload_io_read_counter(),
+        )
+    }
+
+    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+        Ok(self.storage.get_storage_size_bytes()?)
+    }
+
+    fn is_on_disk(&self) -> bool {
+        !self.populate
+    }
+}
+
 impl PayloadStorage for MmapPayloadStorage {
     fn overwrite(
         &mut self,
@@ -149,28 +191,6 @@ impl PayloadStorage for MmapPayloadStorage {
         Ok(())
     }
 
-    fn get(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self.storage.get_value::<Random>(point_id, hw_counter)? {
-            Some(payload) => Ok(payload),
-            None => Ok(Default::default()),
-        }
-    }
-
-    fn get_sequential(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self.storage.get_value::<Sequential>(point_id, hw_counter)? {
-            Some(payload) => Ok(payload),
-            None => Ok(Default::default()),
-        }
-    }
-
     fn delete(
         &mut self,
         point_id: PointOffsetType,
@@ -220,30 +240,12 @@ impl PayloadStorage for MmapPayloadStorage {
         })
     }
 
-    fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
-    where
-        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
-    {
-        self.storage.iter(
-            |point_id, payload| callback(point_id, &payload),
-            hw_counter.ref_payload_io_read_counter(),
-        )
-    }
-
     fn files(&self) -> Vec<PathBuf> {
         self.storage.files()
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.storage.immutable_files()
-    }
-
-    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
-        Ok(self.storage.get_storage_size_bytes()?)
-    }
-
-    fn is_on_disk(&self) -> bool {
-        !self.populate
     }
 }
 
