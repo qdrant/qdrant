@@ -5,8 +5,9 @@ use std::time::Duration;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
+use event_listener::{Event, Listener};
 use fs_err::{File, tokio as tokio_fs};
-use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::tar_ext;
@@ -15,8 +16,7 @@ use crate::tar_ext;
 /// when write guard is dropped.
 #[derive(Debug, Default)]
 pub struct SaveOnDisk<T> {
-    change_notification: Condvar,
-    notification_lock: Mutex<()>,
+    change_notification: Event,
     data: RwLock<T>,
     path: PathBuf,
 }
@@ -52,8 +52,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             init()
         };
         Ok(Self {
-            change_notification: Condvar::new(),
-            notification_lock: Default::default(),
+            change_notification: Event::new(),
             data: RwLock::new(data),
             path,
         })
@@ -64,8 +63,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     /// If data already exists on disk, it will be immediately overwritten.
     pub fn new(path: impl Into<PathBuf>, data: T) -> Result<Self, Error> {
         let data = Self {
-            change_notification: Condvar::new(),
-            notification_lock: Default::default(),
+            change_notification: Event::new(),
             data: RwLock::new(data),
             path: path.into(),
         };
@@ -85,21 +83,21 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     {
         let deadline = std::time::Instant::now() + timeout;
         loop {
+            // Subscribe before reading the value: any notification sent after
+            // `listen()` returns is guaranteed to wake this listener, even if
+            // we have not yet called `wait`. This closes the missed-wakeup gap
+            // between the predicate check and parking.
+            let listener = self.change_notification.listen();
+            if check(&self.data.read()) {
+                return true;
+            }
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             if remaining.is_zero() {
                 return false;
             }
-            let mut data_read_guard = self.data.read();
-            if check(&data_read_guard) {
-                return true;
+            if listener.wait_timeout(remaining).is_none() {
+                return check(&self.data.read());
             }
-            let notification_guard = self.notification_lock.lock();
-            // Based on https://github.com/Amanieu/parking_lot/issues/165
-            RwLockReadGuard::unlocked(&mut data_read_guard, || {
-                // Move the guard in so it gets unlocked before we re-lock the RwLock read guard
-                let mut guard = notification_guard;
-                self.change_notification.wait_for(&mut guard, remaining);
-            });
         }
     }
 
@@ -115,7 +113,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
             *write_data = output;
             drop(write_data);
-            self.notify_change();
+            self.change_notification.notify(usize::MAX);
             Ok(true)
         } else {
             Ok(false)
@@ -132,20 +130,8 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
 
         *write_data = data_copy;
         drop(write_data);
-        self.notify_change();
+        self.change_notification.notify(usize::MAX);
         Ok(output)
-    }
-
-    /// Wake up any threads waiting in [`Self::wait_for`].
-    ///
-    /// Acquires `notification_lock` around `notify_all` so that a waiter
-    /// cannot miss the notification while it is in the window between
-    /// releasing its read guard on `data` and parking on the condvar: the
-    /// waiter holds `notification_lock` across that gap, so this call blocks
-    /// until the waiter has actually parked.
-    fn notify_change(&self) {
-        let _guard = self.notification_lock.lock();
-        self.change_notification.notify_all();
     }
 
     fn save_data_to(path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {

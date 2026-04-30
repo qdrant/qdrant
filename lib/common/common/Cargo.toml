@@ -22,6 +22,7 @@ bincode = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
+event-listener = "5.4"
 fs-err = { workspace = true }
 fs_extra = { workspace = true }
 itertools = { workspace = true }

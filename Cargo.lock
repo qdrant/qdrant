@@ -1428,6 +1428,7 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
+ "event-listener",
  "fs-err",
  "fs_extra",
  "io-uring",
