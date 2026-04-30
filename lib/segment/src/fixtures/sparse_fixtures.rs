@@ -41,14 +41,14 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
     let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(vectors.len())));
     let payload_storage = InMemoryPayloadStorage::default();
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
-    let payload_index = StructPayloadIndex::open(
+    let payload_index = futures::executor::block_on(StructPayloadIndex::open(
         wrapped_payload_storage,
         id_tracker.clone(),
         std::collections::HashMap::new(),
         payload_dir,
         true,
         true,
-    )?;
+    ))?;
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let vector_storage = Arc::new(AtomicRefCell::new(VectorStorageEnum::SparseMmap(

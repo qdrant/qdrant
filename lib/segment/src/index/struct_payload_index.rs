@@ -14,14 +14,16 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::_serde_json::Value;
 
+use async_trait::async_trait;
+
 use super::field_index::facet_index::FacetIndexEnum;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
 use super::field_index::{FieldIndexBuilderTrait as _, ResolvedHasId};
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::AsyncFlusher;
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::{
@@ -129,7 +131,7 @@ impl StructPayloadIndex {
         self.config.save(&config_path)
     }
 
-    fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
+    async fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
         let mut indices = std::mem::take(&mut self.config.indices);
@@ -137,8 +139,9 @@ impl StructPayloadIndex {
 
         for (field, payload_schema) in indices.iter_mut() {
             let started = Instant::now();
-            let (field_index, dirty) =
-                self.load_from_db(field, payload_schema, create_if_missing)?;
+            let (field_index, dirty) = self
+                .load_from_db(field, payload_schema, create_if_missing)
+                .await?;
             log_load_timing(&self.path, &format!("field `{field}`"), started);
             field_indexes.insert(field.clone(), field_index);
             is_dirty |= dirty;
@@ -155,9 +158,9 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    fn load_from_db(
+    async fn load_from_db(
         &self,
-        field: PayloadKeyTypeRef,
+        field: &JsonPath,
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
         create_if_missing: bool,
@@ -236,11 +239,13 @@ impl StructPayloadIndex {
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
             log::debug!("Rebuilding payload index for field `{field}`...");
-            indexes = self.build_field_indexes(
-                field,
-                &payload_schema.schema,
-                &HardwareCounterCell::disposable(), // Internal operation
-            )?;
+            indexes = self
+                .build_field_indexes(
+                    field,
+                    &payload_schema.schema,
+                    &HardwareCounterCell::disposable(), // Internal operation
+                )
+                .await?;
 
             // Persist exact payload index types of newly built indices
             is_dirty = true;
@@ -250,7 +255,7 @@ impl StructPayloadIndex {
         Ok((indexes, is_dirty))
     }
 
-    pub fn open(
+    pub async fn open(
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
@@ -288,7 +293,7 @@ impl StructPayloadIndex {
             index.save_config()?;
         }
 
-        index.load_all_fields(create)?;
+        index.load_all_fields(create).await?;
 
         Ok(index)
     }
@@ -315,9 +320,9 @@ impl StructPayloadIndex {
         self.vector_storages.remove(vector_name);
     }
 
-    pub fn build_field_indexes(
+    pub async fn build_field_indexes(
         &self,
-        field: PayloadKeyTypeRef,
+        field: PayloadKeyTypeRef<'_>,
         payload_schema: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
@@ -342,16 +347,18 @@ impl StructPayloadIndex {
             index.init()?;
         }
 
-        payload_storage.iter(
-            |point_id, point_payload| {
-                let field_value = &point_payload.get_value(field);
-                for builder in builders.iter_mut() {
-                    builder.add_point(point_id, field_value, hw_counter)?;
-                }
-                Ok(true)
-            },
-            hw_counter,
-        )?;
+        payload_storage
+            .iter(
+                |point_id, point_payload| {
+                    let field_value = &point_payload.get_value(field);
+                    for builder in builders.iter_mut() {
+                        builder.add_point(point_id, field_value, hw_counter)?;
+                    }
+                    Ok(true)
+                },
+                hw_counter,
+            )
+            .await?;
 
         builders
             .into_iter()
@@ -645,14 +652,15 @@ impl StructPayloadIndex {
     }
 }
 
+#[async_trait(?Send)]
 impl PayloadIndex for StructPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.config.indices.to_schemas()
     }
 
-    fn build_index(
+    async fn build_index(
         &self,
-        field: PayloadKeyTypeRef,
+        field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult> {
@@ -665,7 +673,7 @@ impl PayloadIndex for StructPayloadIndex {
                 Ok(BuildIndexResult::IncompatibleSchema)
             };
         }
-        let indexes = self.build_field_indexes(field, payload_schema, hw_counter)?;
+        let indexes = self.build_field_indexes(field, payload_schema, hw_counter).await?;
         Ok(BuildIndexResult::Built(indexes))
     }
 
@@ -691,17 +699,15 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn set_indexed(
+    async fn set_indexed(
         &mut self,
-        field: PayloadKeyTypeRef,
-        payload_schema: impl Into<PayloadFieldSchema>,
+        field: &JsonPath,
+        payload_schema: PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let payload_schema = payload_schema.into();
-
         self.drop_index_if_incompatible(field, &payload_schema)?;
 
-        let field_index = match self.build_index(field, &payload_schema, hw_counter)? {
+        let field_index = match self.build_index(field, &payload_schema, hw_counter).await? {
             BuildIndexResult::Built(field_index) => field_index,
             BuildIndexResult::AlreadyBuilt => {
                 // Index already built, no need to do anything
@@ -841,7 +847,7 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn overwrite_payload(
+    async fn overwrite_payload(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -849,7 +855,8 @@ impl PayloadIndex for StructPayloadIndex {
     ) -> OperationResult<()> {
         self.payload
             .borrow_mut()
-            .overwrite(point_id, payload, hw_counter)?;
+            .overwrite(point_id, payload, hw_counter)
+            .await?;
 
         for (field, field_index) in &mut self.field_indexes {
             let field_value = payload.get_value(field);
@@ -866,7 +873,7 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn set_payload(
+    async fn set_payload(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -876,14 +883,16 @@ impl PayloadIndex for StructPayloadIndex {
         if let Some(key) = key {
             self.payload
                 .borrow_mut()
-                .set_by_key(point_id, payload, key, hw_counter)?;
+                .set_by_key(point_id, payload, key, hw_counter)
+                .await?;
         } else {
             self.payload
                 .borrow_mut()
-                .set(point_id, payload, hw_counter)?;
+                .set(point_id, payload, hw_counter)
+                .await?;
         };
 
-        let updated_payload = self.get_payload(point_id, hw_counter)?;
+        let updated_payload = self.get_payload(point_id, hw_counter).await?;
         for (field, field_index) in &mut self.field_indexes {
             if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
                 continue;
@@ -902,26 +911,29 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn get_payload(
+    async fn get_payload(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        self.payload.borrow().get(point_id, hw_counter)
+        self.payload.borrow().get(point_id, hw_counter).await
     }
 
-    fn get_payload_sequential(
+    async fn get_payload_sequential(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        self.payload.borrow().get_sequential(point_id, hw_counter)
+        self.payload
+            .borrow()
+            .get_sequential(point_id, hw_counter)
+            .await
     }
 
-    fn delete_payload(
+    async fn delete_payload(
         &mut self,
         point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
         if let Some(indexes) = self.field_indexes.get_mut(key) {
@@ -929,35 +941,43 @@ impl PayloadIndex for StructPayloadIndex {
                 index.remove_point(point_id)?;
             }
         }
-        self.payload.borrow_mut().delete(point_id, key, hw_counter)
+        self.payload
+            .borrow_mut()
+            .delete(point_id, key, hw_counter)
+            .await
     }
 
-    fn clear_payload(
+    async fn clear_payload(
         &mut self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
         self.clear_index_for_point(point_id)?;
-        self.payload.borrow_mut().clear(point_id, hw_counter)
+        self.payload
+            .borrow_mut()
+            .clear(point_id, hw_counter)
+            .await
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> AsyncFlusher {
         // Most field indices have either 2 or 3 indices (including null), we also have an extra
         // payload storage flusher. Overallocate to save potential reallocations.
-        let mut flushers = Vec::with_capacity(self.field_indexes.len() * 3 + 1);
+        let mut sync_flushers = Vec::with_capacity(self.field_indexes.len() * 3);
 
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                flushers.push(index.flusher());
+                sync_flushers.push(index.flusher());
             }
         }
-        flushers.push(self.payload.borrow().flusher());
+        let payload_async_flusher = self.payload.borrow().flusher();
 
         Box::new(move || {
-            for flusher in flushers {
-                flusher()?;
-            }
-            Ok(())
+            Box::pin(async move {
+                for flusher in sync_flushers {
+                    flusher()?;
+                }
+                payload_async_flusher().await
+            })
         })
     }
 
@@ -1018,24 +1038,31 @@ mod tests {
 
         let full_segment_path = {
             let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
-            segment
-                .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
-                .unwrap();
+            futures::executor::block_on(segment.upsert_point(
+                0,
+                0.into(),
+                only_default_vector(&[1.0, 1.0]),
+                &hw_counter,
+            ))
+            .unwrap();
 
             let payload: Payload = serde_json::from_str(data).unwrap();
 
-            segment
-                .set_full_payload(0, 0.into(), &payload, &hw_counter)
-                .unwrap();
+            futures::executor::block_on(segment.set_full_payload(
+                0,
+                0.into(),
+                &payload,
+                &hw_counter,
+            ))
+            .unwrap();
 
-            segment
-                .create_field_index(
-                    0,
-                    &key,
-                    Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-                    &HardwareCounterCell::new(),
-                )
-                .unwrap();
+            futures::executor::block_on(segment.create_field_index(
+                0,
+                &key,
+                Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+                &HardwareCounterCell::new(),
+            ))
+            .unwrap();
 
             segment.segment_path.clone()
         };

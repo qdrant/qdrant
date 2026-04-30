@@ -374,8 +374,10 @@ impl SegmentBuilder {
 
             let old_internal_id = point_data.internal_id;
 
-            let other_payload = payloads[point_data.segment_index.get() as usize]
-                .get_payload_sequential(old_internal_id, &hw_counter)?; // Internal operation, no measurement needed!
+            let other_payload = futures::executor::block_on(
+                payloads[point_data.segment_index.get() as usize]
+                    .get_payload_sequential(old_internal_id, &hw_counter),
+            )?; // Internal operation, no measurement needed!
 
             match self
                 .id_tracker
@@ -402,8 +404,9 @@ impl SegmentBuilder {
                         )?;
                         self.id_tracker
                             .set_internal_version(new_internal_id, point_data.version)?;
-                        self.payload_storage
-                            .clear(existing_internal_id, &hw_counter)?;
+                        futures::executor::block_on(
+                            self.payload_storage.clear(existing_internal_id, &hw_counter),
+                        )?;
 
                         existing_internal_id
                     } else {
@@ -427,11 +430,11 @@ impl SegmentBuilder {
 
             // Propagate payload to new segment
             if !other_payload.is_empty() {
-                self.payload_storage.set(
+                futures::executor::block_on(self.payload_storage.set(
                     new_internal_id,
                     &other_payload,
                     &HardwareCounterCell::disposable(),
-                )?;
+                ))?;
             }
         }
 
@@ -502,7 +505,7 @@ impl SegmentBuilder {
 
             let appendable_flag = segment_config.is_appendable();
 
-            payload_storage.flusher()()?;
+            futures::executor::block_on(payload_storage.flusher()())?;
             let payload_storage_arc = Arc::new(AtomicRefCell::new(payload_storage));
 
             let id_tracker = match id_tracker {
@@ -519,8 +522,8 @@ impl SegmentBuilder {
                 }
             };
 
-            id_tracker.mapping_flusher()()?;
-            id_tracker.versions_flusher()()?;
+            futures::executor::block_on(id_tracker.mapping_flusher()())?;
+            futures::executor::block_on(id_tracker.versions_flusher()())?;
             let id_tracker_arc = Arc::new(AtomicRefCell::new(id_tracker));
 
             let mut quantized_vectors = Self::update_quantization(
@@ -542,7 +545,7 @@ impl SegmentBuilder {
                     )));
                 };
 
-                vector_info.vector_storage.flusher()()?;
+                futures::executor::block_on(vector_info.vector_storage.flusher()())?;
 
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_info.vector_storage));
 
@@ -558,7 +561,7 @@ impl SegmentBuilder {
                     )));
                 };
 
-                vector_info.vector_storage.flusher()()?;
+                futures::executor::block_on(vector_info.vector_storage.flusher()())?;
 
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_info.vector_storage));
 
@@ -568,22 +571,26 @@ impl SegmentBuilder {
             let payload_index_path = get_payload_index_path(temp_dir.path());
 
             progress_payload_index.start();
-            let mut payload_index = StructPayloadIndex::open(
+            let mut payload_index = futures::executor::block_on(StructPayloadIndex::open(
                 payload_storage_arc.clone(),
                 id_tracker_arc.clone(),
                 vector_storages_arc.clone(),
                 &payload_index_path,
                 appendable_flag,
                 true,
-            )?;
+            ))?;
             for (field, payload_schema, progress) in indexed_fields {
                 progress.start();
-                payload_index.set_indexed(&field, payload_schema, hw_counter)?;
+                futures::executor::block_on(payload_index.set_indexed(
+                    &field,
+                    payload_schema,
+                    hw_counter,
+                ))?;
                 check_process_stopped(stopped)?;
             }
             drop(progress_payload_index);
 
-            payload_index.flusher()()?;
+            futures::executor::block_on(payload_index.flusher()())?;
             let payload_index_arc = Arc::new(AtomicRefCell::new(payload_index));
 
             // Try to lock GPU device.

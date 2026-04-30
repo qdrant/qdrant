@@ -17,11 +17,11 @@ fn test_insert_fail_recovery() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    segment
-        .upsert_point(1, 1.into(), only_default_vector(&vec1), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(1, 1.into(), only_default_vector(&vec1), &hw_counter))
         .unwrap();
-    segment
-        .upsert_point(1, 2.into(), only_default_vector(&vec1), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(1, 2.into(), only_default_vector(&vec1), &hw_counter))
         .unwrap();
 
     segment.error_status = Some(SegmentFailedState {
@@ -31,44 +31,44 @@ fn test_insert_fail_recovery() {
     });
 
     // op_num is greater than errored. Skip because not recovered yet
-    let fail_res = segment.set_payload(
+    let fail_res = futures::executor::block_on(segment.set_payload(
         3,
         1.into(),
         &payload_json! {"color": vec!["red".to_string()]},
         &None,
         &hw_counter,
-    );
+    ));
     assert!(fail_res.is_err());
 
     // Also skip even with another point operation
-    let fail_res = segment.set_payload(
+    let fail_res = futures::executor::block_on(segment.set_payload(
         3,
         2.into(),
         &payload_json! {"color": vec!["red".to_string()]},
         &None,
         &hw_counter,
-    );
+    ));
     assert!(fail_res.is_err());
 
     // Perform operation, but keep error status: operation is not fully recovered yet
-    let ok_res = segment.set_payload(
+    let ok_res = futures::executor::block_on(segment.set_payload(
         2,
         2.into(),
         &payload_json! {"color": vec!["red".to_string()]},
         &None,
         &hw_counter,
-    );
+    ));
     assert!(ok_res.is_ok());
     assert!(segment.error_status.is_some());
 
     // Perform operation and recover the error - operation is fixed now
-    let recover_res = segment.set_payload(
+    let recover_res = futures::executor::block_on(segment.set_payload(
         2,
         1.into(),
         &payload_json! {"color": vec!["red".to_string()]},
         &None,
         &hw_counter,
-    );
+    ));
 
     assert!(recover_res.is_ok());
     assert!(segment.error_status.is_none());

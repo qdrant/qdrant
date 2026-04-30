@@ -149,8 +149,8 @@ fn test_store_load_mutated() {
             }
         }
 
-        id_tracker.mapping_flusher()().unwrap();
-        id_tracker.versions_flusher()().unwrap();
+        futures::executor::block_on(id_tracker.mapping_flusher()()).unwrap();
+        futures::executor::block_on(id_tracker.versions_flusher()()).unwrap();
 
         (dropped_points, custom_version)
     };
@@ -245,8 +245,8 @@ fn test_point_deletion_persists_reload() {
             .expect("Point to delete exists.");
         assert!(!id_tracker.is_deleted_point(intetrnal_id));
         id_tracker.drop(point_to_delete).unwrap();
-        id_tracker.mapping_flusher()().unwrap();
-        id_tracker.versions_flusher()().unwrap();
+        futures::executor::block_on(id_tracker.mapping_flusher()()).unwrap();
+        futures::executor::block_on(id_tracker.versions_flusher()()).unwrap();
         id_tracker.mappings
     };
 
@@ -478,8 +478,8 @@ fn make_mutable_tracker(path: &Path) -> MutableIdTracker {
             .unwrap()
     }
 
-    id_tracker.mapping_flusher()().expect("failed to flush ID tracker mappings");
-    id_tracker.versions_flusher()().expect("failed to flush ID tracker versions");
+    futures::executor::block_on(id_tracker.mapping_flusher()()).expect("failed to flush ID tracker mappings");
+    futures::executor::block_on(id_tracker.versions_flusher()()).expect("failed to flush ID tracker versions");
 
     id_tracker
 }
@@ -609,7 +609,7 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
     check_trackers(&simple_id_tracker, &mutable_id_tracker);
 
     // Persist and reload mutable tracker and test again
-    mutable_id_tracker.mapping_flusher()().unwrap();
+    futures::executor::block_on(mutable_id_tracker.mapping_flusher()()).unwrap();
     mutable_id_tracker.versions_flusher()().unwrap();
     drop(mutable_id_tracker);
     let mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();

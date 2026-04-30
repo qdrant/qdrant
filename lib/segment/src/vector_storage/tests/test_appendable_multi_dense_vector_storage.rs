@@ -294,7 +294,7 @@ fn test_delete_points_in_multi_dense_vector_storage(#[case] storage_type: MultiD
         let mut storage = create_vector_storage(storage_type, vec_dim, dir.path());
         do_test_delete_points(vec_dim, vec_count, &mut storage);
         let count = storage.total_vector_count();
-        storage.flusher()().unwrap();
+        futures::executor::block_on(storage.flusher()()).unwrap();
         count
     };
     let storage = create_vector_storage(storage_type, vec_dim, dir.path());
@@ -325,7 +325,7 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
         let mut storage = create_vector_storage(storage_type, vec_dim, dir.path());
         do_test_update_from_delete_points(vec_dim, vec_count, &mut storage);
         let count = storage.total_vector_count();
-        storage.flusher()().unwrap();
+        futures::executor::block_on(storage.flusher()()).unwrap();
         count
     };
     let storage = create_vector_storage(storage_type, vec_dim, dir.path());

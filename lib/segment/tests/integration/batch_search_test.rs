@@ -42,13 +42,13 @@ fn test_batch_and_single_request_equivalency() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    segment
+    futures::executor::block_on(segment
         .create_field_index(
             0,
             &JsonPath::new(int_key),
             Some(&PayloadSchemaType::Integer.into()),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     for n in 0..num_vectors {
@@ -58,16 +58,16 @@ fn test_batch_and_single_request_equivalency() {
         let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
-        segment
+        futures::executor::block_on(segment
             .upsert_point(
                 n as SeqNumberType,
                 idx,
                 only_default_vector(&vector),
                 &hw_counter,
-            )
+            ))
             .unwrap();
-        segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+        futures::executor::block_on(segment
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
             .unwrap();
     }
 
@@ -82,7 +82,7 @@ fn test_batch_and_single_request_equivalency() {
             payload_value.into(),
         )));
 
-        let search_res_1 = segment
+        let search_res_1 = futures::executor::block_on(segment
             .search(
                 DEFAULT_VECTOR_NAME,
                 &query_vector_1,
@@ -91,10 +91,10 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-            )
+            ))
             .unwrap();
 
-        let search_res_2 = segment
+        let search_res_2 = futures::executor::block_on(segment
             .search(
                 DEFAULT_VECTOR_NAME,
                 &query_vector_2,
@@ -103,13 +103,13 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-            )
+            ))
             .unwrap();
 
         let query_context = QueryContext::default();
         let segment_query_context = query_context.get_segment_query_context();
 
-        let batch_res = segment
+        let batch_res = futures::executor::block_on(segment
             .search_batch(
                 DEFAULT_VECTOR_NAME,
                 &[&query_vector_1, &query_vector_2],
@@ -119,7 +119,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &segment_query_context,
-            )
+            ))
             .unwrap();
 
         assert_eq!(search_res_1, batch_res[0]);

@@ -67,7 +67,7 @@ impl EdgeShard {
         let mut points_by_segment = Vec::with_capacity(segments.len());
 
         for segment in segments {
-            let batched_points = segment.get().read().search_batch(
+            let batched_points = futures::executor::block_on(segment.get().read().search_batch(
                 &vector_name,
                 &[&query_vector],
                 &with_payload,
@@ -76,7 +76,7 @@ impl EdgeShard {
                 offset + limit,
                 params.as_ref(),
                 &context.get_segment_query_context(),
-            )?;
+            ))?;
 
             debug_assert_eq!(batched_points.len(), 1);
 

@@ -52,9 +52,12 @@ pub fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryP
 
     for id in 0..num_points {
         let payload = generate_diverse_payload(&mut rng);
-        payload_storage
-            .set(id as PointOffsetType, &payload, &hw_counter)
-            .unwrap();
+        futures::executor::block_on(payload_storage.set(
+            id as PointOffsetType,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     payload_storage
@@ -106,60 +109,54 @@ pub fn create_struct_payload_index(
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(num_points)));
 
-    let mut index = StructPayloadIndex::open(
+    let mut index = futures::executor::block_on(StructPayloadIndex::open(
         payload_storage,
         id_tracker,
         std::collections::HashMap::new(),
         path,
         true,
         true,
-    )
+    ))
     .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
-    index
-        .set_indexed(
-            &STR_KEY.parse().unwrap(),
-            PayloadSchemaType::Keyword,
-            &hw_counter,
-        )
-        .unwrap();
-    index
-        .set_indexed(
-            &INT_KEY.parse().unwrap(),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
-        .unwrap();
-    index
-        .set_indexed(
-            &FLT_KEY.parse().unwrap(),
-            PayloadSchemaType::Float,
-            &hw_counter,
-        )
-        .unwrap();
-    index
-        .set_indexed(
-            &GEO_KEY.parse().unwrap(),
-            PayloadSchemaType::Geo,
-            &hw_counter,
-        )
-        .unwrap();
-    index
-        .set_indexed(
-            &TEXT_KEY.parse().unwrap(),
-            PayloadSchemaType::Text,
-            &hw_counter,
-        )
-        .unwrap();
-    index
-        .set_indexed(
-            &BOOL_KEY.parse().unwrap(),
-            PayloadSchemaType::Bool,
-            &hw_counter,
-        )
-        .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &STR_KEY.parse().unwrap(),
+        PayloadSchemaType::Keyword.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &INT_KEY.parse().unwrap(),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &FLT_KEY.parse().unwrap(),
+        PayloadSchemaType::Float.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &GEO_KEY.parse().unwrap(),
+        PayloadSchemaType::Geo.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &TEXT_KEY.parse().unwrap(),
+        PayloadSchemaType::Text.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &BOOL_KEY.parse().unwrap(),
+        PayloadSchemaType::Bool.into(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     index
 }

@@ -114,10 +114,10 @@ mod tests {
             .collect_vec();
 
         for &point_id in &segment_points_to_delete {
-            segment
+            futures::executor::block_on(segment
                 .get()
                 .write()
-                .delete_point(101, point_id, &hw_counter)
+                .delete_point(101, point_id, &hw_counter))
                 .unwrap();
         }
 
@@ -138,7 +138,7 @@ mod tests {
             .collect_vec();
 
         for &point_id in &segment_points_to_assign1 {
-            segment
+            futures::executor::block_on(segment
                 .get()
                 .write()
                 .set_payload(
@@ -147,12 +147,12 @@ mod tests {
                     &payload_json! {"color": "red"},
                     &None,
                     &hw_counter,
-                )
+                ))
                 .unwrap();
         }
 
         for &point_id in &segment_points_to_assign2 {
-            segment
+            futures::executor::block_on(segment
                 .get()
                 .write()
                 .set_payload(
@@ -161,7 +161,7 @@ mod tests {
                     &payload_json! {"size": 0.42},
                     &None,
                     &hw_counter,
-                )
+                ))
                 .unwrap();
         }
 
@@ -216,7 +216,7 @@ mod tests {
         // Check payload is preserved in optimized segment
         for &point_id in &segment_points_to_assign1 {
             assert!(segment_guard.has_point(point_id));
-            let payload = segment_guard.payload(point_id, &hw_counter).unwrap();
+            let payload = futures::executor::block_on(segment_guard.payload(point_id, &hw_counter)).unwrap();
             let payload_color = payload
                 .get_value(&"color".parse().unwrap())
                 .into_iter()
@@ -287,13 +287,13 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        segment
+        futures::executor::block_on(segment
             .create_field_index(
                 101,
                 &"keyword".parse().unwrap(),
                 Some(&PayloadSchemaType::Keyword.into()),
                 &hw_counter,
-            )
+            ))
             .unwrap();
 
         let mut segment_id = holder.add_new(segment);
@@ -369,7 +369,7 @@ mod tests {
                 .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
             for &point_id in &segment_points_to_delete {
-                segment.delete_point(201, point_id, &hw_counter).unwrap();
+                futures::executor::block_on(segment.delete_point(201, point_id, &hw_counter)).unwrap();
             }
 
             // Delete 25% of vectors named vector1

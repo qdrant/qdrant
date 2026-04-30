@@ -57,40 +57,43 @@ fn range_filtering(c: &mut Criterion) {
             INT_KEY: rng.random_range(0..MAX_RANGE.round() as usize),
             FLT_KEY: rng.random_range(0.0..MAX_RANGE),
         };
-        payload_storage
-            .set(id as PointOffsetType, &payload, &hw_counter)
-            .unwrap();
+        futures::executor::block_on(payload_storage.set(
+            id as PointOffsetType,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     let payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
     let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(NUM_POINTS)));
 
-    let mut index = StructPayloadIndex::open(
+    let mut index = futures::executor::block_on(StructPayloadIndex::open(
         payload_storage.clone(),
         id_tracker.clone(),
         std::collections::HashMap::new(),
         dir.path(),
         true,
         true,
-    )
+    ))
     .unwrap();
 
     // add numeric float index
-    index
+    futures::executor::block_on(index
         .set_indexed(
             &FLT_KEY.parse().unwrap(),
-            PayloadSchemaType::Float,
+            PayloadSchemaType::Float.into(),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     // add numeric integer index
-    index
+    futures::executor::block_on(index
         .set_indexed(
             &INT_KEY.parse().unwrap(),
-            PayloadSchemaType::Integer,
+            PayloadSchemaType::Integer.into(),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     // make sure all points are indexed
@@ -129,18 +132,18 @@ fn range_filtering(c: &mut Criterion) {
     });
 
     // flush data
-    index.flusher()().unwrap();
+    futures::executor::block_on(index.flusher()()).unwrap();
     drop(index);
 
     // reload as IMMUTABLE index
-    let index = StructPayloadIndex::open(
+    let index = futures::executor::block_on(StructPayloadIndex::open(
         payload_storage,
         id_tracker,
         std::collections::HashMap::new(),
         dir.path(),
         false,
         true,
-    )
+    ))
     .unwrap();
 
     group.bench_function("float-immutable-index", |b| {

@@ -7,8 +7,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
@@ -145,8 +145,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
         Ok(start_index..end_index)
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
+    fn flusher(&self) -> AsyncFlusher {
+        async_flusher_from_sync(|| Ok(()))
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {

@@ -103,22 +103,22 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut index = StructPayloadIndex::open(
+    let mut index = futures::executor::block_on(StructPayloadIndex::open(
         payload_storage,
         id_tracker,
         std::collections::HashMap::new(),
         dir.path(),
         true,
         true,
-    )
+    ))
     .unwrap();
 
-    index
+    futures::executor::block_on(index
         .set_indexed(
             &BOOL_KEY.parse().unwrap(),
-            PayloadSchemaType::Keyword,
+            PayloadSchemaType::Keyword.into(),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     let is_stopped = AtomicBool::new(false);

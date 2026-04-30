@@ -225,7 +225,7 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
     // Delete selective vectors
     storage.delete_vector(1).unwrap();
     storage.delete_vector(3).unwrap();
-    storage.flusher()().unwrap();
+    futures::executor::block_on(storage.flusher()()).unwrap();
 
     let deleted_vector_count = storage.deleted_vector_count();
     let available_vector_count = storage.available_vector_count();
@@ -262,7 +262,7 @@ fn test_delete_points_in_mmap_sparse_vector_storage() {
         VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
     do_test_delete_points(&mut storage);
 
-    storage.flusher()().unwrap();
+    futures::executor::block_on(storage.flusher()()).unwrap();
 
     drop(storage);
 
@@ -277,7 +277,7 @@ fn test_update_from_delete_points_mmap_sparse_vector_storage() {
         VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
 
     do_test_update_from_delete_points(&mut storage);
-    storage.flusher()().unwrap();
+    futures::executor::block_on(storage.flusher()()).unwrap();
 
     drop(storage);
 

@@ -23,7 +23,7 @@ use self::mappings_storage::{
 use self::versions_storage::{
     load_versions, reconcile_persisted_version_changes, store_version_changes, versions_path,
 };
-use crate::common::Flusher;
+use crate::common::{AsyncFlusher, Flusher, async_flusher_from};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
@@ -272,13 +272,14 @@ impl IdTracker for MutableIdTracker {
     /// Creates a flusher function, that persists the removed points in the mapping database
     /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> AsyncFlusher {
         let mappings_path = mappings_path(&self.segment_path);
 
         let changes = {
             let changes_guard = self.pending_mappings.lock();
             if changes_guard.is_empty() {
-                return Box::new(|| Ok(()));
+                let sync: Flusher = Box::new(|| Ok(()));
+                return async_flusher_from(sync);
             }
             changes_guard.clone()
         };
@@ -287,7 +288,7 @@ impl IdTracker for MutableIdTracker {
         let pending_mappings_weak = Arc::downgrade(&self.pending_mappings);
         let mappings_expected_len = self.mappings_expected_len.clone();
 
-        Box::new(move || {
+        let sync: Flusher = Box::new(move || {
             let (Some(is_alive_guard), Some(pending_mappings_arc)) = (
                 is_alive_handle.lock_if_alive(),
                 pending_mappings_weak.upgrade(),
@@ -297,9 +298,6 @@ impl IdTracker for MutableIdTracker {
 
             let stored = store_mapping_changes(&mappings_path, &changes, &mappings_expected_len);
 
-            // If persisting mappings failed, try to truncate mappings file to what we had before
-            // in an best effort to get rid of partially persisted mappings. We can safely ignore
-            // truncate errors because load should properly handle partial entries as well.
             if let Err(err) = stored {
                 let expected_len = mappings_expected_len.load(std::sync::atomic::Ordering::Relaxed);
                 let truncate_result = File::options()
@@ -319,17 +317,19 @@ impl IdTracker for MutableIdTracker {
             drop(is_alive_guard);
 
             Ok(())
-        })
+        });
+        async_flusher_from(sync)
     }
 
     /// Creates a flusher function, that persists the removed points in the version database
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> AsyncFlusher {
         let changes = {
             let changes_guard = self.pending_versions.lock();
             if changes_guard.is_empty() {
-                return Box::new(|| Ok(()));
+                let sync: Flusher = Box::new(|| Ok(()));
+                return async_flusher_from(sync);
             }
             changes_guard.clone()
         };
@@ -339,7 +339,7 @@ impl IdTracker for MutableIdTracker {
         let pending_versions_weak = Arc::downgrade(&self.pending_versions);
         let is_alive_handle = self.is_alive_lock.handle();
 
-        Box::new(move || {
+        let sync: Flusher = Box::new(move || {
             let (Some(is_alive_guard), Some(pending_versions_arc)) = (
                 is_alive_handle.lock_if_alive(),
                 pending_versions_weak.upgrade(),
@@ -354,7 +354,8 @@ impl IdTracker for MutableIdTracker {
             drop(is_alive_guard);
 
             Ok(())
-        })
+        });
+        async_flusher_from(sync)
     }
 
     #[inline]

@@ -94,11 +94,11 @@ fn test_multi_filterable_hnsw(
         let payload = payload_json! {int_key: int_payload};
 
         let named_vectors = only_default_multi_vector(&multi_vec);
-        segment
-            .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter)
+        futures::executor::block_on(segment
+            .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter))
             .unwrap();
-        segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+        futures::executor::block_on(segment
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
             .unwrap();
     }
     assert_eq!(
@@ -110,13 +110,13 @@ fn test_multi_filterable_hnsw(
     );
 
     let payload_index_ptr = segment.payload_index.clone();
-    payload_index_ptr
+    futures::executor::block_on(payload_index_ptr
         .borrow_mut()
         .set_indexed(
             &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
+            PayloadSchemaType::Integer.into(),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     let hnsw_config = HnswConfig {

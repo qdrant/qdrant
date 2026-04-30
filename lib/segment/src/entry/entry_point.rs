@@ -4,11 +4,12 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use async_trait::async_trait;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
-use crate::common::Flusher;
+use crate::common::AsyncFlusher;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
@@ -23,15 +24,16 @@ use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, ScoredPoint,
+    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorName,
+    VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Define all operations on segment that do not require mutable access.
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
+#[async_trait(?Send)]
 pub trait ReadSegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
@@ -44,7 +46,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType>;
 
     #[allow(clippy::too_many_arguments)]
-    fn search_batch(
+    async fn search_batch(
         &self,
         vector_name: &VectorName,
         query_vectors: &[&QueryVector],
@@ -59,20 +61,20 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// Rescore results with a formula that can reference payload values.
     ///
     /// A deleted bitslice is passed to exclude points from a wrapped segment.
-    fn rescore_with_formula(
+    async fn rescore_with_formula(
         &self,
         formula_ctx: Arc<FormulaContext>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
-    fn vector(
+    async fn vector(
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>>;
 
-    fn all_vectors(
+    async fn all_vectors(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
@@ -83,7 +85,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// WARNING:
     /// This function may return fewer records than requested, if some points are not found.
     /// Order of returned records is not guaranteed to match order of requested point ids.
-    fn retrieve(
+    async fn retrieve(
         &self,
         point_ids: &[PointIdType],
         with_payload: &WithPayload,
@@ -95,7 +97,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
 
     /// Retrieve payload for the point
     /// If not found, return empty payload
-    fn payload(
+    async fn payload(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
@@ -107,7 +109,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     ///
     /// Cancelled by `is_stopped` flag.
-    fn read_filtered(
+    async fn read_filtered(
         &self,
         offset: Option<PointIdType>,
         limit: Option<usize>,
@@ -122,7 +124,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     ///
     /// Will fail if there is no index for the order_by key.
     /// Cancelled by `is_stopped` flag.
-    fn read_ordered_filtered<'a>(
+    async fn read_ordered_filtered<'a>(
         &'a self,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
@@ -135,7 +137,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// Return random points which satisfies filtering condition.
     ///
     /// Cancelled by `is_stopped` flag.
-    fn read_random_filtered(
+    async fn read_random_filtered(
         &self,
         limit: usize,
         filter: Option<&Filter>,
@@ -147,7 +149,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
 
     /// Return all unique values for the given key.
-    fn unique_values(
+    async fn unique_values(
         &self,
         key: &JsonPath,
         filter: Option<&Filter>,
@@ -156,7 +158,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     ) -> OperationResult<BTreeSet<FacetValue>>;
 
     /// Return the largest counts for the given facet request.
-    fn facet(
+    async fn facet(
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
@@ -169,7 +171,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     fn has_point(&self, point_id: PointIdType) -> bool;
 
     /// Estimate available point count in this segment for given filter.
-    fn estimate_point_count<'a>(
+    async fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
@@ -264,6 +266,7 @@ pub trait ReadSegmentEntry: SnapshotEntry {
 }
 
 /// Segment with storage.
+#[async_trait(?Send)]
 pub trait StorageSegmentEntry: ReadSegmentEntry {
     /// Get current persistent version of the segment
     fn persistent_version(&self) -> SeqNumberType;
@@ -271,13 +274,13 @@ pub trait StorageSegmentEntry: ReadSegmentEntry {
     /// Returns a function, which when called, will flush all pending changes to disk.
     /// If there are currently no changes to flush, returns None.
     /// If `force` is true, will return a flusher even if there are no changes to flush.
-    fn flusher(&self, force: bool) -> Option<Flusher>;
+    fn flusher(&self, force: bool) -> Option<AsyncFlusher>;
 
     /// Immediately flush all changes to disk and return persisted version.
-    /// Blocks the current thread.
-    fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
+    /// Awaits on the Tokio runtime; cooperative with other I/O.
+    async fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
         if let Some(flusher) = self.flusher(force) {
-            flusher()?;
+            flusher().await?;
         }
         Ok(self.persistent_version())
     }
@@ -293,8 +296,9 @@ pub trait StorageSegmentEntry: ReadSegmentEntry {
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
+#[async_trait(?Send)]
 pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
-    fn delete_point(
+    async fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -302,31 +306,31 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
     ) -> OperationResult<bool>;
 
     /// Delete field index, if exists
-    fn delete_field_index(
+    async fn delete_field_index(
         &mut self,
         op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
     ) -> OperationResult<bool>;
 
     /// Delete field index, if exists and doesn't match the schema
-    fn delete_field_index_if_incompatible(
+    async fn delete_field_index_if_incompatible(
         &mut self,
         op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
         field_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool>;
 
     /// Build the field index for the key and schema, if not built before.
-    fn build_field_index(
+    async fn build_field_index(
         &self,
         op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
         field_type: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildFieldIndexResult>;
 
     /// Apply a built index. Returns whether it was actually applied or not.
-    fn apply_field_index(
+    async fn apply_field_index(
         &mut self,
         op_num: SeqNumberType,
         key: PayloadKeyType,
@@ -335,10 +339,10 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
     ) -> OperationResult<bool>;
 
     /// Create index for a payload field, if not exists
-    fn create_field_index(
+    async fn create_field_index(
         &mut self,
         op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
         field_schema: Option<&PayloadFieldSchema>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
@@ -350,34 +354,38 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
             });
         };
 
-        self.delete_field_index_if_incompatible(op_num, key, field_schema)?;
+        self.delete_field_index_if_incompatible(op_num, key, field_schema)
+            .await?;
 
-        let (schema, indexes) =
-            match self.build_field_index(op_num, key, field_schema, hw_counter)? {
-                BuildFieldIndexResult::SkippedByVersion => {
-                    return Ok(false);
-                }
-                BuildFieldIndexResult::AlreadyExists => {
-                    return Ok(false);
-                }
-                BuildFieldIndexResult::IncompatibleSchema => {
-                    // This is a service error, as we should have just removed the old index
-                    // So it should not be possible to get this error
-                    return Err(OperationError::service_error(format!(
-                        "Incompatible schema for field index on field {key}",
-                    )));
-                }
-                BuildFieldIndexResult::Built { schema, indexes } => (schema, indexes),
-            };
+        let (schema, indexes) = match self
+            .build_field_index(op_num, key, field_schema, hw_counter)
+            .await?
+        {
+            BuildFieldIndexResult::SkippedByVersion => {
+                return Ok(false);
+            }
+            BuildFieldIndexResult::AlreadyExists => {
+                return Ok(false);
+            }
+            BuildFieldIndexResult::IncompatibleSchema => {
+                // This is a service error, as we should have just removed the old index
+                // So it should not be possible to get this error
+                return Err(OperationError::service_error(format!(
+                    "Incompatible schema for field index on field {key}",
+                )));
+            }
+            BuildFieldIndexResult::Built { schema, indexes } => (schema, indexes),
+        };
 
         self.apply_field_index(op_num, key.to_owned(), schema, indexes)
+            .await
     }
 
     /// Create a new named vector in the segment.
     /// For appendable segments: creates a real, writable vector storage + plain index.
     /// For immutable segments: creates a placeholder (empty) vector storage.
     /// Returns Ok(false) if the vector already exists (idempotent).
-    fn create_vector_name(
+    async fn create_vector_name(
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
@@ -388,7 +396,7 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
     /// Removes vector storage, index, and quantization data.
     /// Removes the vector from segment config.
     /// Returns Ok(false) if the vector does not exist (idempotent).
-    fn delete_vector_name(
+    async fn delete_vector_name(
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
@@ -399,31 +407,32 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
+#[async_trait(?Send)]
 pub trait SegmentEntry: NonAppendableSegmentEntry {
-    fn upsert_point(
+    async fn upsert_point<'a>(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: NamedVectors,
+        vectors: NamedVectors<'a>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
-    fn update_vectors(
+    async fn update_vectors<'a>(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: NamedVectors,
+        vectors: NamedVectors<'a>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
-    fn delete_vector(
+    async fn delete_vector(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
         vector_name: &VectorName,
     ) -> OperationResult<bool>;
 
-    fn set_payload(
+    async fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -432,7 +441,7 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
-    fn set_full_payload(
+    async fn set_full_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -440,15 +449,15 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
-    fn delete_payload(
+    async fn delete_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
-    fn clear_payload(
+    async fn clear_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,

@@ -24,6 +24,9 @@ sparse = { path = "../sparse" }
 wal = { path = "../wal" }
 
 ahash = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }

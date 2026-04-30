@@ -19,23 +19,28 @@ impl EdgeShard {
         let points_count = if exact {
             segments
                 .map(|segment| {
-                    segment.get().read().read_filtered(
+                    futures::executor::block_on(segment.get().read().read_filtered(
                         None,
                         None,
                         filter.as_ref(),
                         &AtomicBool::new(false),
                         &HardwareCounterCell::disposable(),
                         DeferredBehavior::Exclude,
-                    )
+                    ))
                 })
                 .process_results(|iter| iter.flatten().count())?
         } else {
             let cardinality = segments
                 .map(|segment| {
-                    segment
-                        .get()
-                        .read() // blocking sync lock
-                        .estimate_point_count(filter.as_ref(), &HardwareCounterCell::disposable())
+                    futures::executor::block_on(
+                        segment
+                            .get()
+                            .read()
+                            .estimate_point_count(
+                                filter.as_ref(),
+                                &HardwareCounterCell::disposable(),
+                            ),
+                    )
                 })
                 .process_results(|iter| iter.merge_independent())?;
 

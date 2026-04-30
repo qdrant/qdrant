@@ -426,12 +426,12 @@ impl LocalShard {
                         &AtomicBool::new(false),
                     )?;
 
-                    segment.check_consistency_and_repair()?;
+                    futures::executor::block_on(segment.check_consistency_and_repair())?;
 
                     if rebuild_payload_index {
-                        segment.update_all_field_indices(
+                        futures::executor::block_on(segment.update_all_field_indices(
                             &payload_index_schema.read().schema.clone(),
-                        )?;
+                        ))?;
                     }
 
                     // Reconcile named vectors: create vectors that exist in collection config
@@ -941,10 +941,12 @@ impl LocalShard {
             segments
                 .into_iter()
                 .map(|segment| {
-                    segment
-                        .get()
-                        .read() // blocking sync lock
-                        .estimate_point_count(filter.as_ref(), &hw_counter)
+                    futures::executor::block_on(
+                        segment
+                            .get()
+                            .read()
+                            .estimate_point_count(filter.as_ref(), &hw_counter),
+                    )
                 })
                 .process_results(|iter| iter.merge_independent())
         });

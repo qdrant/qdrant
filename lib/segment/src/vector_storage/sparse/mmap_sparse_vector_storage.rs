@@ -285,10 +285,10 @@ impl VectorStorage for MmapSparseVectorStorage {
         Ok(start_index..self.next_point_offset as PointOffsetType)
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
+    fn flusher(&self) -> crate::common::AsyncFlusher {
         let storage_flusher = self.storage.flusher();
         let deleted_flags_flusher = self.deleted.flusher();
-        Box::new(move || {
+        crate::common::async_flusher_from_sync(move || {
             deleted_flags_flusher()?;
             storage_flusher().map_err(|err| {
                 OperationError::service_error(format!(
@@ -428,7 +428,7 @@ mod test {
             storage
                 .insert_vector(4, VectorRef::from(&vector), &hw_counter)
                 .unwrap();
-            storage.flusher()().unwrap();
+            futures::executor::block_on(storage.flusher()()).unwrap();
         }
 
         let storage = MmapSparseVectorStorage::open(tmp_dir.path()).unwrap();
@@ -467,7 +467,7 @@ mod test {
             }
             storage.delete_vector(internal_id).unwrap();
         }
-        storage.flusher()().unwrap();
+        futures::executor::block_on(storage.flusher()()).unwrap();
 
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
         let found_files = find_storage_files(dir.path())

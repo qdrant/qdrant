@@ -8,8 +8,8 @@ use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
@@ -196,8 +196,8 @@ impl VectorStorage for VolatileSparseVectorStorage {
         Ok(start_index..self.total_vector_count as PointOffsetType)
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
+    fn flusher(&self) -> AsyncFlusher {
+        async_flusher_from_sync(|| Ok(()))
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {

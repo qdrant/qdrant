@@ -7,7 +7,7 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
 use super::point_mappings_ref::PointMappingsRefEnum;
-use crate::common::Flusher;
+use crate::common::AsyncFlusher;
 use crate::common::operation_error::OperationResult;
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -48,10 +48,10 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()>;
 
     /// Flush id mapping to disk
-    fn mapping_flusher(&self) -> Flusher;
+    fn mapping_flusher(&self) -> AsyncFlusher;
 
     /// Flush points versions to disk
-    fn versions_flusher(&self) -> Flusher;
+    fn versions_flusher(&self) -> AsyncFlusher;
 
     /// Finds inconsistencies between id mapping and versions storage.
     /// It might happen that point doesn't have version due to un-flushed WAL.

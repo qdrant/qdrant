@@ -4,6 +4,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use futures::FutureExt;
 
 use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -52,8 +53,15 @@ impl PayloadProvider {
             // Rewrite condition checking code to support error reporting.
             // Which may lead to slowdown and assumes a lot of changes.
             PayloadStorageEnum::MmapPayloadStorage(s) => {
+                // Mmap-backed `get` is async-by-signature only — its body is
+                // synchronous (page faults, no real awaits). `now_or_never`
+                // pulls the value without spinning a nested executor, which
+                // would deadlock or panic when this call site already runs
+                // inside `block_on`.
                 let payload = s
                     .get(point_id, hw_counter)
+                    .now_or_never()
+                    .expect("Mmap payload `get` future is always immediately ready")
                     .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"));
                 Some(OwnedPayloadRef::from(payload))
             }

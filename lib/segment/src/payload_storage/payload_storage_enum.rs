@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
+use async_trait::async_trait;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use crate::common::Flusher;
+use crate::common::AsyncFlusher;
 use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
@@ -33,8 +34,9 @@ impl From<MmapPayloadStorage> for PayloadStorageEnum {
     }
 }
 
+#[async_trait(?Send)]
 impl PayloadStorage for PayloadStorageEnum {
-    fn overwrite(
+    async fn overwrite(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -43,13 +45,15 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => {
-                s.overwrite(point_id, payload, hw_counter)
+                s.overwrite(point_id, payload, hw_counter).await
             }
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.overwrite(point_id, payload, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => {
+                s.overwrite(point_id, payload, hw_counter).await
+            }
         }
     }
 
-    fn set(
+    async fn set(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -57,12 +61,16 @@ impl PayloadStorage for PayloadStorageEnum {
     ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set(point_id, payload, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.set(point_id, payload, hw_counter).await
+            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => {
+                s.set(point_id, payload, hw_counter).await
+            }
         }
     }
 
-    fn set_by_key(
+    async fn set_by_key(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -72,39 +80,43 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => {
-                s.set_by_key(point_id, payload, key, hw_counter)
+                s.set_by_key(point_id, payload, key, hw_counter).await
             }
             PayloadStorageEnum::MmapPayloadStorage(s) => {
-                s.set_by_key(point_id, payload, key, hw_counter)
+                s.set_by_key(point_id, payload, key, hw_counter).await
             }
         }
     }
 
-    fn get(
+    async fn get(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id, hw_counter).await,
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id, hw_counter).await,
         }
     }
 
-    fn get_sequential(
+    async fn get_sequential(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.get_sequential(point_id, hw_counter).await
+            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => {
+                s.get_sequential(point_id, hw_counter).await
+            }
         }
     }
 
-    fn delete(
+    async fn delete(
         &mut self,
         point_id: PointOffsetType,
         key: &JsonPath,
@@ -112,33 +124,37 @@ impl PayloadStorage for PayloadStorageEnum {
     ) -> OperationResult<Vec<Value>> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.delete(point_id, key, hw_counter).await
+            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => {
+                s.delete(point_id, key, hw_counter).await
+            }
         }
     }
 
-    fn clear(
+    async fn clear(
         &mut self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear(point_id, hw_counter).await,
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id, hw_counter).await,
         }
     }
 
     #[cfg(test)]
-    fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    async fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear_all(hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_all(hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear_all(hw_counter).await,
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_all(hw_counter).await,
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> AsyncFlusher {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flusher(),
@@ -146,14 +162,14 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    async fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback, hw_counter).await,
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter).await,
         }
     }
 
@@ -222,7 +238,8 @@ mod tests {
     use crate::types::Payload;
 
     #[rstest]
-    fn test_mmap_storage(#[values(false, true)] populate: bool) {
+    #[tokio::test]
+    async fn test_mmap_storage(#[values(false, true)] populate: bool) {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let hw_counter = HardwareCounterCell::new();
@@ -232,13 +249,16 @@ mod tests {
                 .unwrap()
                 .into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
-        storage.set(100, &payload, &hw_counter).unwrap();
-        storage.clear_all(&hw_counter).unwrap();
-        storage.set(100, &payload, &hw_counter).unwrap();
-        storage.clear_all(&hw_counter).unwrap();
-        storage.set(100, &payload, &hw_counter).unwrap();
-        assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.clear_all(&hw_counter).unwrap();
-        assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
+        storage.set(100, &payload, &hw_counter).await.unwrap();
+        storage.clear_all(&hw_counter).await.unwrap();
+        storage.set(100, &payload, &hw_counter).await.unwrap();
+        storage.clear_all(&hw_counter).await.unwrap();
+        storage.set(100, &payload, &hw_counter).await.unwrap();
+        assert!(!storage.get(100, &hw_counter).await.unwrap().is_empty());
+        storage.clear_all(&hw_counter).await.unwrap();
+        assert_eq!(
+            storage.get(100, &hw_counter).await.unwrap(),
+            Default::default()
+        );
     }
 }

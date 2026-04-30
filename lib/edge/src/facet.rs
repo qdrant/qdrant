@@ -37,11 +37,11 @@ impl EdgeShard {
         // Collect and merge facet results from all segments
         let mut merged_counts = HashMap::new();
         for segment in segments {
-            let segment_result =
-                segment
-                    .get()
-                    .read()
-                    .facet(&facet_params, &is_stopped, &hw_counter)?;
+            let segment_result = futures::executor::block_on(segment.get().read().facet(
+                &facet_params,
+                &is_stopped,
+                &hw_counter,
+            ))?;
 
             for (value, count) in segment_result {
                 *merged_counts.entry(value).or_insert(0) += count;

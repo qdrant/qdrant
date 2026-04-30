@@ -14,12 +14,42 @@ pub mod vector_utils;
 
 use std::sync::atomic::AtomicBool;
 
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorName};
 
+/// Synchronous flusher (legacy). Used by non-trait helpers that haven't been
+/// migrated to async yet. New trait-level flushers should use [`AsyncFlusher`].
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
+
+/// Async flusher: a one-shot closure that returns a future performing the flush.
+/// Returned from async storage traits ([`PayloadStorage`], [`VectorStorage`],
+/// [`IdTracker`], …) so that flushing cooperates with the Tokio runtime.
+///
+/// The returned future is `!Send` because some segment internals
+/// (e.g. parking_lot guards held across awaits, [`HardwareCounterCell`]) are
+/// not `Sync`. Run flushers on a single-threaded executor or `LocalSet`.
+pub type AsyncFlusher =
+    Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = OperationResult<()>>>> + Send>;
+
+/// Wrap a synchronous flush body in an [`AsyncFlusher`]. Convenience for
+/// mmap-backed and in-memory storages whose flush body is sync today.
+pub fn async_flusher_from_sync<F>(f: F) -> AsyncFlusher
+where
+    F: FnOnce() -> OperationResult<()> + Send + 'static,
+{
+    Box::new(move || Box::pin(async move { f() }))
+}
+
+/// Wrap an existing sync [`Flusher`] in an [`AsyncFlusher`]. Useful when an
+/// async trait impl needs to delegate to an inner sync helper.
+pub fn async_flusher_from(flusher: Flusher) -> AsyncFlusher {
+    Box::new(move || Box::pin(async move { flusher() }))
+}
 
 /// Check that the given vector name is part of the segment config.
 ///

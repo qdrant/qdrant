@@ -48,13 +48,13 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    segment
+    futures::executor::block_on(segment
         .create_field_index(
             0,
             &JsonPath::new(int_key),
             Some(&PayloadSchemaType::Integer.into()),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
@@ -77,16 +77,16 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
-        segment
+        futures::executor::block_on(segment
             .upsert_point(
                 n as SeqNumberType,
                 idx,
                 only_default_vector(&vector),
                 &hw_counter,
-            )
+            ))
             .unwrap();
-        segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+        futures::executor::block_on(segment
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
             .unwrap();
 
         let internal_id = segment.id_tracker.borrow().internal_id(idx).unwrap();

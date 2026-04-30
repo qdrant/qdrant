@@ -92,27 +92,31 @@ impl ProxySegment {
 
             if existing_schema != Some(expected_schema) {
                 if existing_schema.is_some() {
-                    segment_to_update
-                        .get()
-                        .write()
-                        .delete_field_index(op_num, expected_field)?;
+                    futures::executor::block_on(
+                        segment_to_update
+                            .get()
+                            .write()
+                            .delete_field_index(op_num, expected_field),
+                    )?;
                 }
-                segment_to_update.get().write().create_field_index(
+                futures::executor::block_on(segment_to_update.get().write().create_field_index(
                     op_num,
                     expected_field,
                     Some(expected_schema),
                     hw_counter,
-                )?;
+                ))?;
             }
         }
 
         // Remove extra indexes
         for existing_field in existing_indexes.keys() {
             if !expected_indexes.contains_key(existing_field) {
-                segment_to_update
-                    .get()
-                    .write()
-                    .delete_field_index(op_num, existing_field)?;
+                futures::executor::block_on(
+                    segment_to_update
+                        .get()
+                        .write()
+                        .delete_field_index(op_num, existing_field),
+                )?;
             }
         }
 
@@ -196,19 +200,23 @@ impl ProxySegment {
                         );
                         match change {
                             ProxyIndexChange::Create(schema, version) => {
-                                wrapped_segment.create_field_index(
+                                futures::executor::block_on(wrapped_segment.create_field_index(
                                     *version,
                                     field_name,
                                     Some(schema),
-                                    &HardwareCounterCell::disposable(), // Internal operation
-                                )?;
+                                    &HardwareCounterCell::disposable(),
+                                ))?;
                             }
                             ProxyIndexChange::Delete(version) => {
-                                wrapped_segment.delete_field_index(*version, field_name)?;
+                                futures::executor::block_on(
+                                    wrapped_segment.delete_field_index(*version, field_name),
+                                )?;
                             }
                             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                                wrapped_segment.delete_field_index_if_incompatible(
-                                    *version, field_name, schema,
+                                futures::executor::block_on(
+                                    wrapped_segment.delete_field_index_if_incompatible(
+                                        *version, field_name, schema,
+                                    ),
                                 )?;
                             }
                         }
@@ -226,7 +234,9 @@ impl ProxySegment {
                     for (vector_name, intent) in self.changed_vector_names.iter_ordered() {
                         match intent {
                             IntendedVector::Absent { version } => {
-                                wrapped_segment.delete_vector_name(*version, vector_name)?;
+                                futures::executor::block_on(
+                                    wrapped_segment.delete_vector_name(*version, vector_name),
+                                )?;
                             }
                             IntendedVector::Present {
                                 config,
@@ -234,16 +244,15 @@ impl ProxySegment {
                                 supersedes_wrapped,
                             } => {
                                 if *supersedes_wrapped {
-                                    // `create_vector_name_impl` is idempotent and would
-                                    // silently keep the wrapped's stale storage. Clear it
-                                    // first so the new schema actually takes effect.
-                                    wrapped_segment.delete_vector_name(*version, vector_name)?;
+                                    futures::executor::block_on(
+                                        wrapped_segment.delete_vector_name(*version, vector_name),
+                                    )?;
                                 }
-                                wrapped_segment.create_vector_name(
+                                futures::executor::block_on(wrapped_segment.create_vector_name(
                                     *version,
                                     vector_name,
                                     config,
-                                )?;
+                                ))?;
                             }
                         }
                     }
@@ -259,17 +268,11 @@ impl ProxySegment {
             if !self.deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (point_id, versions) in self.deleted_points.iter() {
-                        // Note:
-                        // Queued deletes may have an older version than what is currently in the
-                        // wrapped segment. Such deletes are ignored because the point in the
-                        // wrapped segment is considered to be newer. This is possible because
-                        // different proxy segments can share state through a common write segment.
-                        // See: <https://github.com/qdrant/qdrant/pull/7208>
-                        wrapped_segment.delete_point(
+                        futures::executor::block_on(wrapped_segment.delete_point(
                             versions.operation_version,
                             *point_id,
-                            &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
-                        )?;
+                            &HardwareCounterCell::disposable(),
+                        ))?;
                     }
                     OperationResult::Ok(())
                 })?;

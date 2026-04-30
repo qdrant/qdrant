@@ -21,13 +21,13 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     for i in 0..3 {
         let key = format!("key{i}");
         payload.insert(key.clone(), "value".to_string().into());
-        segment
+        futures::executor::block_on(segment
             .create_field_index(
                 100,
                 &JsonPath::new(&key),
                 Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
                 &HardwareCounterCell::new(),
-            )
+            ))
             .unwrap();
     }
     let payload = Payload::from(payload);
@@ -35,11 +35,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let hw_counter = HardwareCounterCell::new();
 
     for id in 0..100000u64 {
-        segment
-            .upsert_point(100, id.into(), only_default_vector(&vector), &hw_counter)
+        futures::executor::block_on(segment
+            .upsert_point(100, id.into(), only_default_vector(&vector), &hw_counter))
             .unwrap();
-        segment
-            .set_payload(100, id.into(), &payload, &None, &hw_counter)
+        futures::executor::block_on(segment
+            .set_payload(100, id.into(), &payload, &None, &hw_counter))
             .unwrap();
     }
 

@@ -401,8 +401,8 @@ fn sparse_vector_index_ram_filtered_search() {
 
     // create payload field index
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
-    payload_index
-        .set_indexed(&JsonPath::new(field_name), Keyword, &hw_counter)
+    futures::executor::block_on(payload_index
+        .set_indexed(&JsonPath::new(field_name), Keyword.into(), &hw_counter))
         .unwrap();
     drop(payload_index);
 
@@ -425,8 +425,8 @@ fn sparse_vector_index_ram_filtered_search() {
     let hw_counter = HardwareCounterCell::new();
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..half_indexed_count {
-        payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
+        futures::executor::block_on(payload_index
+            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter))
             .unwrap();
     }
     drop(payload_index);
@@ -498,8 +498,8 @@ fn sparse_vector_index_plain_search() {
     // add payload to all points
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {
-        payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
+        futures::executor::block_on(payload_index
+            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter))
             .unwrap();
     }
     drop(payload_index);
@@ -611,16 +611,16 @@ fn sparse_vector_index_persistence_test() {
         let mut named_vector = NamedVectors::default();
         named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
         let idx = n.into();
-        segment
-            .upsert_point(n as SeqNumberType, idx, named_vector, &hw_counter)
+        futures::executor::block_on(segment
+            .upsert_point(n as SeqNumberType, idx, named_vector, &hw_counter))
             .unwrap();
     }
-    segment.flush(false).unwrap();
+    futures::executor::block_on(segment.flush(false)).unwrap();
 
     let search_vector = random_sparse_vector(&mut rnd, dim);
     let query_vector: QueryVector = search_vector.into();
 
-    let search_result = segment
+    let search_result = futures::executor::block_on(segment
         .search(
             SPARSE_VECTOR_NAME,
             &query_vector,
@@ -629,7 +629,7 @@ fn sparse_vector_index_persistence_test() {
             None,
             top,
             None,
-        )
+        ))
         .unwrap();
 
     assert_eq!(search_result.len(), top);
@@ -640,7 +640,7 @@ fn sparse_vector_index_persistence_test() {
     // persistence using rebuild of inverted index
     // for appendable segment vector index has to be rebuilt
     let segment = load_segment(&path, Uuid::nil(), None, &stopped).unwrap();
-    let search_after_reload_result = segment
+    let search_after_reload_result = futures::executor::block_on(segment
         .search(
             SPARSE_VECTOR_NAME,
             &query_vector,
@@ -649,7 +649,7 @@ fn sparse_vector_index_persistence_test() {
             None,
             top,
             None,
-        )
+        ))
         .unwrap();
 
     assert_eq!(search_after_reload_result.len(), top);
@@ -787,8 +787,8 @@ fn sparse_vector_test_large_index() {
     let mut named_vector = NamedVectors::default();
     named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
     let idx = 0.into();
-    segment
-        .upsert_point(0 as SeqNumberType, idx, named_vector, &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(0 as SeqNumberType, idx, named_vector, &hw_counter))
         .unwrap();
 
     let borrowed_vector_index = segment.vector_data[SPARSE_VECTOR_NAME]

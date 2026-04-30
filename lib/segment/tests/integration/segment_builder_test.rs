@@ -53,14 +53,13 @@ fn test_building_new_segment() {
     let hw_counter = HardwareCounterCell::new();
 
     // Include overlapping with segment1 to check the
-    segment2
-        .upsert_point(
-            100,
-            3.into(),
-            only_default_vector(&[0., 0., 0., 0.]),
-            &hw_counter,
-        )
-        .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        100,
+        3.into(),
+        only_default_vector(&[0., 0., 0., 0.]),
+        &hw_counter,
+    ))
+    .unwrap();
 
     builder
         .update(&[&segment1, &segment2, &segment2], &stopped, &hw_counter)
@@ -114,13 +113,13 @@ fn test_building_new_defragmented_segment() {
     let payload_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
     let mut segment1 = build_segment_1(dir.path());
-    segment1
-        .create_field_index(7, &defragment_key, Some(&payload_schema), &hw_counter)
+    futures::executor::block_on(segment1
+        .create_field_index(7, &defragment_key, Some(&payload_schema), &hw_counter))
         .unwrap();
 
     let mut segment2 = build_segment_2(dir.path());
-    segment2
-        .create_field_index(17, &defragment_key, Some(&payload_schema), &hw_counter)
+    futures::executor::block_on(segment2
+        .create_field_index(17, &defragment_key, Some(&payload_schema), &hw_counter))
         .unwrap();
 
     let mut builder = SegmentBuilder::new(
@@ -131,14 +130,13 @@ fn test_building_new_defragmented_segment() {
     .unwrap();
 
     // Include overlapping with segment1 to check the
-    segment2
-        .upsert_point(
-            100,
-            3.into(),
-            only_default_vector(&[0., 0., 0., 0.]),
-            &hw_counter,
-        )
-        .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        100,
+        3.into(),
+        only_default_vector(&[0., 0., 0., 0.]),
+        &hw_counter,
+    ))
+    .unwrap();
 
     builder.set_defragment_keys(vec![defragment_key.clone()]);
 
@@ -202,7 +200,7 @@ fn check_points_defragmented(
 
     for internal_id in id_tracker.point_mappings().iter_internal() {
         let external_id = id_tracker.external_id(internal_id).unwrap();
-        let payload = segment.payload(external_id, &hw_counter).unwrap();
+        let payload = futures::executor::block_on(segment.payload(external_id, &hw_counter)).unwrap();
         let values = payload.get_value(defragment_key);
 
         if values.is_empty() {
@@ -258,13 +256,13 @@ fn test_building_new_sparse_segment() {
 
     // Include overlapping with segment1 to check the
     let vec = SparseVector::new(vec![0, 1, 2, 3], vec![0.0, 0.0, 0.0, 0.0]).unwrap();
-    segment2
+    futures::executor::block_on(segment2
         .upsert_point(
             100,
             3.into(),
             NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec)),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     builder
@@ -412,18 +410,17 @@ fn test_building_new_segment_bug_5614() {
     // Do this in a specific order so that:
     // - the latter segment has a higher point version
     // - the internal point IDs don't match across segments
-    segment1
-        .upsert_point(123, 100.into(), vector_100_low, &hw_counter)
+    futures::executor::block_on(segment1.upsert_point(123, 100.into(), vector_100_low, &hw_counter))
         .unwrap();
-    segment1
-        .upsert_point(123, 101.into(), vector_101_low, &hw_counter)
+    futures::executor::block_on(segment1
+        .upsert_point(123, 101.into(), vector_101_low, &hw_counter))
         .unwrap();
 
-    segment2
-        .upsert_point(124, 101.into(), vector_101_high.clone(), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(124, 101.into(), vector_101_high.clone(), &hw_counter))
         .unwrap();
-    segment2
-        .upsert_point(124, 100.into(), vector_100_high.clone(), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(124, 100.into(), vector_100_high.clone(), &hw_counter))
         .unwrap();
 
     builder
@@ -441,11 +438,11 @@ fn test_building_new_segment_bug_5614() {
     // Assert correct vectors still belong to the point
     // This was broken before <https://github.com/qdrant/qdrant/pull/5543>
     assert_eq!(
-        merged_segment.all_vectors(100.into(), &hw_counter).unwrap(),
+        futures::executor::block_on(merged_segment.all_vectors(100.into(), &hw_counter)).unwrap(),
         vector_100_high,
     );
     assert_eq!(
-        merged_segment.all_vectors(101.into(), &hw_counter).unwrap(),
+        futures::executor::block_on(merged_segment.all_vectors(101.into(), &hw_counter)).unwrap(),
         vector_101_high,
     );
 }
@@ -466,29 +463,29 @@ fn test_building_cancellation() {
     let hw_counter = HardwareCounterCell::new();
 
     for idx in 0..2000 {
-        baseline_segment
+        futures::executor::block_on(baseline_segment
             .upsert_point(
                 1,
                 idx.into(),
                 only_default_vector(&[0., 0., 0., 0.]),
                 &hw_counter,
-            )
+            ))
             .unwrap();
-        segment
+        futures::executor::block_on(segment
             .upsert_point(
                 1,
                 idx.into(),
                 only_default_vector(&[0., 0., 0., 0.]),
                 &hw_counter,
-            )
+            ))
             .unwrap();
-        segment_2
+        futures::executor::block_on(segment_2
             .upsert_point(
                 1,
                 idx.into(),
                 only_default_vector(&[0., 0., 0., 0.]),
                 &hw_counter,
-            )
+            ))
             .unwrap();
     }
 
@@ -550,14 +547,13 @@ fn test_building_new_segment_with_mmap_payload() {
     let hw_counter = HardwareCounterCell::new();
 
     // add one point
-    segment1
-        .upsert_point(
-            1,
-            1.into(),
-            only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
-            &hw_counter,
-        )
-        .unwrap();
+    futures::executor::block_on(segment1.upsert_point(
+        1,
+        1.into(),
+        only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let builder = SegmentBuilder::new(
         temp_dir.path(),

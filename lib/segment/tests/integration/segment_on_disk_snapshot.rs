@@ -48,31 +48,31 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
 
     let hw_counter = HardwareCounterCell::new();
 
-    segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter))
         .unwrap();
-    segment
-        .upsert_point(1, 1.into(), only_default_vector(&[2.0, 2.0]), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(1, 1.into(), only_default_vector(&[2.0, 2.0]), &hw_counter))
         .unwrap();
 
-    segment
+    futures::executor::block_on(segment
         .set_full_payload(
             2,
             0.into(),
             &serde_json::from_str(data).unwrap(),
             &hw_counter,
-        )
+        ))
         .unwrap();
-    segment
+    futures::executor::block_on(segment
         .set_full_payload(
             3,
             0.into(),
             &serde_json::from_str(data).unwrap(),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
-    segment
+    futures::executor::block_on(segment
         .create_field_index(
             4,
             &JsonPath::new("names"),
@@ -85,9 +85,9 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                 }),
             )),
             &hw_counter,
-        )
+        ))
         .unwrap();
-    segment
+    futures::executor::block_on(segment
         .create_field_index(
             5,
             &JsonPath::new("ages"),
@@ -102,7 +102,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                 }),
             )),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     let segment_config = SegmentConfig {
@@ -218,12 +218,12 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     let hw_counter = HardwareCounterCell::new();
 
     for id in segment.iter_points() {
-        let vectors = segment.all_vectors(id, &hw_counter).unwrap();
-        let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
+        let vectors = futures::executor::block_on(segment.all_vectors(id, &hw_counter)).unwrap();
+        let restored_vectors = futures::executor::block_on(restored_segment.all_vectors(id, &hw_counter)).unwrap();
         assert_eq!(vectors, restored_vectors);
 
-        let payload = segment.payload(id, &hw_counter).unwrap();
-        let restored_payload = restored_segment.payload(id, &hw_counter).unwrap();
+        let payload = futures::executor::block_on(segment.payload(id, &hw_counter)).unwrap();
+        let restored_payload = futures::executor::block_on(restored_segment.payload(id, &hw_counter)).unwrap();
         assert_eq!(payload, restored_payload);
     }
 }

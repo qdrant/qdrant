@@ -278,7 +278,10 @@ impl ConditionChecker for SimpleConditionChecker {
                             s.payload_ptr(point_id).map(Into::into)
                         }
                         PayloadStorageEnum::MmapPayloadStorage(s) => {
-                            let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
+                            let payload = futures::executor::block_on(
+                                s.get(point_id, &hw_counter),
+                            )
+                            .unwrap_or_else(|err| {
                                 panic!("Payload storage is corrupted: {err}")
                             });
                             Some(OwnedPayloadRef::from(payload))
@@ -346,7 +349,7 @@ mod tests {
         id_tracker.set_link(1.into(), 1).unwrap();
         id_tracker.set_link(2.into(), 2).unwrap();
         id_tracker.set_link(10.into(), 10).unwrap();
-        payload_storage.overwrite(0, &payload, &hw_counter).unwrap();
+        futures::executor::block_on(payload_storage.overwrite(0, &payload, &hw_counter)).unwrap();
 
         let payload_checker = SimpleConditionChecker::new(
             Arc::new(AtomicRefCell::new(payload_storage)),

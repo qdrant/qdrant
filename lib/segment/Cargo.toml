@@ -41,14 +41,18 @@ anyhow = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
+async-trait = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
-fs-err = { workspace = true }
+fs-err = { workspace = true, features = ["tokio"] }
+futures = { workspace = true }
+futures-util = { workspace = true }
 integer-encoding = { workspace = true }
 tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
 itertools = { workspace = true }
+tokio = { workspace = true }
 uuid = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }

@@ -546,7 +546,11 @@ impl SegmentHolder {
 
             for point_id in points {
                 if let Some(version) = write_segment.point_version(point_id) {
-                    write_segment.delete_point(version, point_id, hw_counter)?;
+                    futures::executor::block_on(write_segment.delete_point(
+                        version,
+                        point_id,
+                        hw_counter,
+                    ))?;
                 }
             }
         }
@@ -682,23 +686,34 @@ impl SegmentHolder {
                             .lock()
                             .add_dependency(idx, appendable_idx, op_num);
 
-                        let mut all_vectors = write_segment.all_vectors(point_id, hw_counter)?;
-                        let mut payload = write_segment.payload(point_id, hw_counter)?;
+                        let mut all_vectors = futures::executor::block_on(
+                            write_segment.all_vectors(point_id, hw_counter),
+                        )?;
+                        let mut payload = futures::executor::block_on(
+                            write_segment.payload(point_id, hw_counter),
+                        )?;
 
                         point_cow_operation(point_id, &mut all_vectors, &mut payload);
 
-                        appendable_write_segment.upsert_point(
+                        futures::executor::block_on(appendable_write_segment.upsert_point(
                             op_num,
                             point_id,
                             all_vectors,
                             hw_counter,
-                        )?;
-                        appendable_write_segment
-                            .set_full_payload(op_num, point_id, &payload, hw_counter)?;
+                        ))?;
+                        futures::executor::block_on(appendable_write_segment.set_full_payload(
+                            op_num,
+                            point_id,
+                            &payload,
+                            hw_counter,
+                        ))?;
 
-                        // Keep the source of the CoW operation as the deferred point is invisible until indexing.
                         if !appendable_write_segment.point_is_deferred(point_id) {
-                            write_segment.delete_point(op_num, point_id, hw_counter)?;
+                            futures::executor::block_on(write_segment.delete_point(
+                                op_num,
+                                point_id,
+                                hw_counter,
+                            ))?;
                         }
 
                         Ok(true)
@@ -820,7 +835,12 @@ impl SegmentHolder {
 
         let payload_schema_lock = payload_index_schema.read();
         for (key, schema) in payload_schema_lock.schema.iter() {
-            segment.create_field_index(0, key, Some(schema), &hw_counter)?;
+            futures::executor::block_on(segment.create_field_index(
+                0,
+                key,
+                Some(schema),
+                &hw_counter,
+            ))?;
         }
 
         Ok(LockedSegment::new(segment))
@@ -896,7 +916,11 @@ impl SegmentHolder {
                     for &point_id in &points {
                         if let Some(point_version) = write_segment.point_version(point_id) {
                             removed_points += 1;
-                            write_segment.delete_point(point_version, point_id, &disposable_hw_counter)?; // Internal operation
+                            futures::executor::block_on(write_segment.delete_point(
+                                point_version,
+                                point_id,
+                                &disposable_hw_counter,
+                            ))?; // Internal operation
                         }
                     }
 

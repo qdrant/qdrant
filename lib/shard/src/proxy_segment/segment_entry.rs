@@ -1,3 +1,8 @@
+// `parking_lot` guards over the wrapped segment are intentionally held across
+// awaits: they keep the segment from being swapped or dropped mid-operation.
+// The proxy trait family is `?Send`, so this never crosses thread boundaries.
+#![allow(clippy::await_holding_lock)]
+
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
@@ -5,10 +10,11 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use async_trait::async_trait;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, TelemetryDetail};
-use segment::common::Flusher;
 use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
+use segment::common::AsyncFlusher;
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
@@ -28,6 +34,7 @@ use uuid::Uuid;
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
 
+#[async_trait(?Send)]
 impl ReadSegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(self.wrapped_segment.get().read().version(), self.version)
@@ -56,7 +63,7 @@ impl ReadSegmentEntry for ProxySegment {
         Some(wrapped_version)
     }
 
-    fn search_batch(
+    async fn search_batch(
         &self,
         vector_name: &VectorName,
         vectors: &[&QueryVector],
@@ -92,14 +99,50 @@ impl ReadSegmentEntry for ProxySegment {
         let do_update_filter = !self.deleted_points.is_empty();
 
         let wrapped_results = if do_update_filter {
-            // If we are wrapping a segment with deleted points,
-            // we can make this hack of replacing deleted_points of the wrapped_segment
-            // with our proxied deleted_points, do avoid additional filter creation
             if let Some(deleted_points) = self.deleted_mask.as_ref() {
                 let query_context_with_deleted =
                     query_context.fork().with_deleted_points(deleted_points);
 
-                self.wrapped_segment.get().read().search_batch(
+                let wrapped = self.wrapped_segment.get();
+                let guard = wrapped.read();
+                guard
+                    .search_batch(
+                        vector_name,
+                        vectors,
+                        with_payload,
+                        with_vector,
+                        filter.as_deref(),
+                        top,
+                        params,
+                        &query_context_with_deleted,
+                    )
+                    .await?
+            } else {
+                let wrapped_filter = Self::add_deleted_points_condition_to_filter(
+                    filter,
+                    self.deleted_points.keys().copied(),
+                );
+
+                let wrapped = self.wrapped_segment.get();
+                let guard = wrapped.read();
+                guard
+                    .search_batch(
+                        vector_name,
+                        vectors,
+                        with_payload,
+                        with_vector,
+                        Some(&wrapped_filter),
+                        top,
+                        params,
+                        query_context,
+                    )
+                    .await?
+            }
+        } else {
+            let wrapped = self.wrapped_segment.get();
+            let guard = wrapped.read();
+            guard
+                .search_batch(
                     vector_name,
                     vectors,
                     with_payload,
@@ -107,51 +150,22 @@ impl ReadSegmentEntry for ProxySegment {
                     filter.as_deref(),
                     top,
                     params,
-                    &query_context_with_deleted,
-                )?
-            } else {
-                let wrapped_filter = Self::add_deleted_points_condition_to_filter(
-                    filter,
-                    self.deleted_points.keys().copied(),
-                );
-
-                self.wrapped_segment.get().read().search_batch(
-                    vector_name,
-                    vectors,
-                    with_payload,
-                    with_vector,
-                    Some(&wrapped_filter),
-                    top,
-                    params,
                     query_context,
-                )?
-            }
-        } else {
-            self.wrapped_segment.get().read().search_batch(
-                vector_name,
-                vectors,
-                with_payload,
-                with_vector,
-                filter.as_deref(),
-                top,
-                params,
-                query_context,
-            )?
+                )
+                .await?
         };
         Ok(wrapped_results)
     }
 
-    fn rescore_with_formula(
+    async fn rescore_with_formula(
         &self,
         formula_ctx: Arc<FormulaContext>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>> {
         // Run rescore in wrapped segment
-        let wrapped_results = self
-            .wrapped_segment
-            .get()
-            .read()
-            .rescore_with_formula(formula_ctx, hw_counter)?;
+        let wrapped = self.wrapped_segment.get();
+        let guard = wrapped.read();
+        let wrapped_results = guard.rescore_with_formula(formula_ctx, hw_counter).await?;
 
         let result = {
             if self.deleted_points.is_empty() {
@@ -167,7 +181,7 @@ impl ReadSegmentEntry for ProxySegment {
         Ok(result)
     }
 
-    fn vector(
+    async fn vector(
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
@@ -185,43 +199,39 @@ impl ReadSegmentEntry for ProxySegment {
         if self.deleted_points.contains_key(&point_id) {
             Ok(None)
         } else {
-            self.wrapped_segment
-                .get()
-                .read()
-                .vector(vector_name, point_id, hw_counter)
+            let wrapped = self.wrapped_segment.get();
+            let guard = wrapped.read();
+            guard.vector(vector_name, point_id, hw_counter).await
         }
     }
 
-    fn all_vectors(
+    async fn all_vectors(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>> {
         let mut result = NamedVectors::default();
-        let wrapped = self.wrapped_segment.get();
-        let wrapped_guard = wrapped.read();
-        let config = wrapped_guard.config();
-
-        // Tip: self.vector already handles dropped vector names
-        let vector_names: Vec<_> = config
-            .vector_data
-            .keys()
-            .chain(config.sparse_vector_data.keys())
-            .cloned()
-            .collect();
-
-        // Must drop wrapped guard to prevent self-deadlock in `vector()` function below
-        drop(wrapped_guard);
+        let vector_names: Vec<_> = {
+            let wrapped = self.wrapped_segment.get();
+            let wrapped_guard = wrapped.read();
+            let config = wrapped_guard.config();
+            config
+                .vector_data
+                .keys()
+                .chain(config.sparse_vector_data.keys())
+                .cloned()
+                .collect()
+        };
 
         for vector_name in vector_names {
-            if let Some(vector) = self.vector(&vector_name, point_id, hw_counter)? {
+            if let Some(vector) = self.vector(&vector_name, point_id, hw_counter).await? {
                 result.insert(vector_name, vector);
             }
         }
         Ok(result)
     }
 
-    fn payload(
+    async fn payload(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
@@ -229,14 +239,13 @@ impl ReadSegmentEntry for ProxySegment {
         if self.deleted_points.contains_key(&point_id) {
             Ok(Payload::default())
         } else {
-            self.wrapped_segment
-                .get()
-                .read()
-                .payload(point_id, hw_counter)
+            let wrapped = self.wrapped_segment.get();
+            let guard = wrapped.read();
+            guard.payload(point_id, hw_counter).await
         }
     }
 
-    fn retrieve(
+    async fn retrieve(
         &self,
         point_ids: &[PointIdType],
         with_payload: &WithPayload,
@@ -245,8 +254,6 @@ impl ReadSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        // Strip any vector names that the proxy intends to delete or replace
-        // with a different schema before delegating to the wrapped segment.
         let with_vector = self
             .changed_vector_names
             .redact_with_vector(with_vector, &self.wrapped_config);
@@ -257,14 +264,18 @@ impl ReadSegmentEntry for ProxySegment {
             .copied()
             .filter(|id| !self.deleted_points.contains_key(id))
             .collect();
-        self.wrapped_segment.get().read().retrieve(
-            &filtered_point_ids,
-            with_payload,
-            with_vector,
-            hw_counter,
-            is_stopped,
-            deferred_behavior,
-        )
+        let wrapped = self.wrapped_segment.get();
+        let guard = wrapped.read();
+        guard
+            .retrieve(
+                &filtered_point_ids,
+                with_payload,
+                with_vector,
+                hw_counter,
+                is_stopped,
+                deferred_behavior,
+            )
+            .await
     }
 
     /// Not implemented for proxy
@@ -274,43 +285,49 @@ impl ReadSegmentEntry for ProxySegment {
         unimplemented!("call to get_points is not implemented for Proxy segment")
     }
 
-    fn read_filtered<'a>(
-        &'a self,
+    async fn read_filtered(
+        &self,
         offset: Option<PointIdType>,
         limit: Option<usize>,
-        filter: Option<&'a Filter>,
+        filter: Option<&Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
 
+        let wrapped = self.wrapped_segment.get();
+        let guard = wrapped.read();
         if self.deleted_points.is_empty() {
-            self.wrapped_segment.get().read().read_filtered(
-                offset,
-                limit,
-                filter.as_deref(),
-                is_stopped,
-                hw_counter,
-                deferred_behavior,
-            )
+            guard
+                .read_filtered(
+                    offset,
+                    limit,
+                    filter.as_deref(),
+                    is_stopped,
+                    hw_counter,
+                    deferred_behavior,
+                )
+                .await
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
                 self.deleted_points.keys().copied(),
             );
-            self.wrapped_segment.get().read().read_filtered(
-                offset,
-                limit,
-                Some(&wrapped_filter),
-                is_stopped,
-                hw_counter,
-                deferred_behavior,
-            )
+            guard
+                .read_filtered(
+                    offset,
+                    limit,
+                    Some(&wrapped_filter),
+                    is_stopped,
+                    hw_counter,
+                    deferred_behavior,
+                )
+                .await
         }
     }
 
-    fn read_ordered_filtered<'a>(
+    async fn read_ordered_filtered<'a>(
         &'a self,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
@@ -321,59 +338,61 @@ impl ReadSegmentEntry for ProxySegment {
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
 
+        let wrapped = self.wrapped_segment.get();
+        let guard = wrapped.read();
         let read_points = if self.deleted_points.is_empty() {
-            self.wrapped_segment.get().read().read_ordered_filtered(
-                limit,
-                filter.as_deref(),
-                order_by,
-                is_stopped,
-                hw_counter,
-                deferred_behavior,
-            )?
+            guard
+                .read_ordered_filtered(
+                    limit,
+                    filter.as_deref(),
+                    order_by,
+                    is_stopped,
+                    hw_counter,
+                    deferred_behavior,
+                )
+                .await?
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
                 self.deleted_points.keys().copied(),
             );
-            self.wrapped_segment.get().read().read_ordered_filtered(
-                limit,
-                Some(&wrapped_filter),
-                order_by,
-                is_stopped,
-                hw_counter,
-                deferred_behavior,
-            )?
+            guard
+                .read_ordered_filtered(
+                    limit,
+                    Some(&wrapped_filter),
+                    order_by,
+                    is_stopped,
+                    hw_counter,
+                    deferred_behavior,
+                )
+                .await?
         };
         Ok(read_points)
     }
 
-    fn read_random_filtered<'a>(
-        &'a self,
+    async fn read_random_filtered(
+        &self,
         limit: usize,
-        filter: Option<&'a Filter>,
+        filter: Option<&Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
         let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
 
+        let wrapped = self.wrapped_segment.get();
+        let guard = wrapped.read();
         if self.deleted_points.is_empty() {
-            self.wrapped_segment.get().read().read_random_filtered(
-                limit,
-                filter.as_deref(),
-                is_stopped,
-                hw_counter,
-            )
+            guard
+                .read_random_filtered(limit, filter.as_deref(), is_stopped, hw_counter)
+                .await
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
                 self.deleted_points.keys().copied(),
             );
-            self.wrapped_segment.get().read().read_random_filtered(
-                limit,
-                Some(&wrapped_filter),
-                is_stopped,
-                hw_counter,
-            )
+            guard
+                .read_random_filtered(limit, Some(&wrapped_filter), is_stopped, hw_counter)
+                .await
         }
     }
 
@@ -390,7 +409,7 @@ impl ReadSegmentEntry for ProxySegment {
         }
     }
 
-    fn unique_values(
+    async fn unique_values(
         &self,
         key: &JsonPath,
         filter: Option<&Filter>,
@@ -398,16 +417,15 @@ impl ReadSegmentEntry for ProxySegment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
         let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
-        let values = self.wrapped_segment.get().read().unique_values(
-            key,
-            filter.as_deref(),
-            is_stopped,
-            hw_counter,
-        )?;
+        let wrapped = self.wrapped_segment.get();
+        let guard = wrapped.read();
+        let values = guard
+            .unique_values(key, filter.as_deref(), is_stopped, hw_counter)
+            .await?;
         Ok(values)
     }
 
-    fn facet(
+    async fn facet(
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
@@ -418,24 +436,19 @@ impl ReadSegmentEntry for ProxySegment {
             .as_ref()
             .map(|f| self.changed_vector_names.redact_filter(f));
 
+        let wrapped = self.wrapped_segment.get();
+        let guard = wrapped.read();
         let hits = if self.deleted_points.is_empty() {
             match filter {
-                // No filter, or filter unchanged — use original request as-is.
-                None | Some(std::borrow::Cow::Borrowed(_)) => self
-                    .wrapped_segment
-                    .get()
-                    .read()
-                    .facet(request, is_stopped, hw_counter)?,
-                // Filter was redacted — build a new request with the owned filter.
+                None | Some(std::borrow::Cow::Borrowed(_)) => {
+                    guard.facet(request, is_stopped, hw_counter).await?
+                }
                 Some(std::borrow::Cow::Owned(f)) => {
                     let new_request = FacetParams {
                         filter: Some(f),
                         ..request.clone()
                     };
-                    self.wrapped_segment
-                        .get()
-                        .read()
-                        .facet(&new_request, is_stopped, hw_counter)?
+                    guard.facet(&new_request, is_stopped, hw_counter).await?
                 }
             }
         } else {
@@ -447,10 +460,7 @@ impl ReadSegmentEntry for ProxySegment {
                 filter: Some(wrapped_filter),
                 ..request.clone()
             };
-            self.wrapped_segment
-                .get()
-                .read()
-                .facet(&new_request, is_stopped, hw_counter)?
+            guard.facet(&new_request, is_stopped, hw_counter).await?
         };
 
         Ok(hits)
@@ -521,7 +531,7 @@ impl ReadSegmentEntry for ProxySegment {
         }
     }
 
-    fn estimate_point_count<'a>(
+    async fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
@@ -533,14 +543,12 @@ impl ReadSegmentEntry for ProxySegment {
             .len()
             .saturating_sub(self.deleted_deferred_count);
 
-        let (wrapped_segment_est, total_wrapped_size) = {
-            let wrapped_segment = self.wrapped_segment.get();
-            let wrapped_segment_guard = wrapped_segment.read();
-            (
-                wrapped_segment_guard.estimate_point_count(filter.as_deref(), hw_counter)?,
-                wrapped_segment_guard.available_point_count_without_deferred(),
-            )
-        };
+        let wrapped_segment = self.wrapped_segment.get();
+        let wrapped_segment_guard = wrapped_segment.read();
+        let total_wrapped_size = wrapped_segment_guard.available_point_count_without_deferred();
+        let wrapped_segment_est = wrapped_segment_guard
+            .estimate_point_count(filter.as_deref(), hw_counter)
+            .await?;
 
         let expected_deleted_count = if total_wrapped_size > 0 {
             (wrapped_segment_est.exp as f64
@@ -729,12 +737,13 @@ impl ReadSegmentEntry for ProxySegment {
     }
 }
 
+#[async_trait(?Send)]
 impl StorageSegmentEntry for ProxySegment {
     fn persistent_version(&self) -> SeqNumberType {
         self.wrapped_segment.get().read().persistent_version()
     }
 
-    fn flusher(&self, force: bool) -> Option<Flusher> {
+    fn flusher(&self, force: bool) -> Option<AsyncFlusher> {
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
         wrapped_segment_guard.flusher(force)
@@ -749,12 +758,13 @@ impl StorageSegmentEntry for ProxySegment {
     }
 }
 
+#[async_trait(?Send)]
 impl SegmentEntry for ProxySegment {
-    fn upsert_point(
+    async fn upsert_point<'b>(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        _vectors: NamedVectors,
+        _vectors: NamedVectors<'b>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
@@ -762,11 +772,11 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
-    fn update_vectors(
+    async fn update_vectors<'b>(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        _vectors: NamedVectors,
+        _vectors: NamedVectors<'b>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
@@ -774,19 +784,18 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
-    fn delete_vector(
+    async fn delete_vector(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
         _vector_name: &VectorName,
     ) -> OperationResult<bool> {
-        // Print current stack trace for easier debugging of unexpected calls
         Err(OperationError::service_error(format!(
             "Delete vector is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 
-    fn set_full_payload(
+    async fn set_full_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -798,7 +807,7 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
-    fn set_payload(
+    async fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -811,11 +820,11 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
-    fn delete_payload(
+    async fn delete_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        _key: PayloadKeyTypeRef,
+        _key: &JsonPath,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
@@ -823,7 +832,7 @@ impl SegmentEntry for ProxySegment {
         )))
     }
 
-    fn clear_payload(
+    async fn clear_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -835,8 +844,9 @@ impl SegmentEntry for ProxySegment {
     }
 }
 
+#[async_trait(?Send)]
 impl NonAppendableSegmentEntry for ProxySegment {
-    fn delete_point(
+    async fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -916,7 +926,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         Ok(was_deleted)
     }
 
-    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+    async fn delete_field_index(&mut self, op_num: u64, key: &JsonPath) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
         }
@@ -930,10 +940,10 @@ impl NonAppendableSegmentEntry for ProxySegment {
         Ok(true)
     }
 
-    fn delete_field_index_if_incompatible(
+    async fn delete_field_index_if_incompatible(
         &mut self,
         op_num: SeqNumberType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
         field_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
         if self.version() > op_num {
@@ -950,10 +960,10 @@ impl NonAppendableSegmentEntry for ProxySegment {
         Ok(true)
     }
 
-    fn build_field_index(
+    async fn build_field_index(
         &self,
         op_num: SeqNumberType,
-        _key: PayloadKeyTypeRef,
+        _key: &JsonPath,
         field_type: &PayloadFieldSchema,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildFieldIndexResult> {
@@ -967,7 +977,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         })
     }
 
-    fn apply_field_index(
+    async fn apply_field_index(
         &mut self,
         op_num: SeqNumberType,
         key: PayloadKeyType,
@@ -987,7 +997,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         Ok(true)
     }
 
-    fn create_vector_name(
+    async fn create_vector_name(
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,
@@ -1012,7 +1022,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         Ok(true)
     }
 
-    fn delete_vector_name(
+    async fn delete_vector_name(
         &mut self,
         op_num: SeqNumberType,
         vector_name: &VectorName,

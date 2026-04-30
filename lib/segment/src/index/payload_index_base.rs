@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use async_trait::async_trait;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
 use super::field_index::FieldIndex;
-use crate::common::Flusher;
+use crate::common::AsyncFlusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
@@ -24,14 +25,15 @@ pub enum BuildIndexResult {
     IncompatibleSchema,
 }
 
+#[async_trait(?Send)]
 pub trait PayloadIndex {
     /// Get indexed fields
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
     /// Build the index, if not built before, taking the caller by reference only
-    fn build_index(
+    async fn build_index(
         &self,
-        field: PayloadKeyTypeRef,
+        field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult>;
@@ -45,10 +47,10 @@ pub trait PayloadIndex {
     ) -> OperationResult<()>;
 
     /// Mark field as one which should be indexed
-    fn set_indexed(
+    async fn set_indexed(
         &mut self,
-        field: PayloadKeyTypeRef,
-        payload_schema: impl Into<PayloadFieldSchema>,
+        field: &JsonPath,
+        payload_schema: PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
@@ -111,7 +113,7 @@ pub trait PayloadIndex {
     ) -> OperationResult<()>;
 
     /// Overwrite payload for point_id. If payload already exists, replace it.
-    fn overwrite_payload(
+    async fn overwrite_payload(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -119,7 +121,7 @@ pub trait PayloadIndex {
     ) -> OperationResult<()>;
 
     /// Assign payload to a concrete point with a concrete payload value
-    fn set_payload(
+    async fn set_payload(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -128,36 +130,36 @@ pub trait PayloadIndex {
     ) -> OperationResult<()>;
 
     /// Get payload for point
-    fn get_payload(
+    async fn get_payload(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
     /// Get payload for point with potential optimization for sequential access.
-    fn get_payload_sequential(
+    async fn get_payload_sequential(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
     /// Delete payload by key
-    fn delete_payload(
+    async fn delete_payload(
         &mut self,
         point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>>;
 
     /// Drop all payload of the point
-    fn clear_payload(
+    async fn clear_payload(
         &mut self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>>;
 
     /// Return function that forces persistence of current storage state.
-    fn flusher(&self) -> Flusher;
+    fn flusher(&self) -> AsyncFlusher;
 
     fn files(&self) -> Vec<PathBuf>;
 

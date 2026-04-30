@@ -144,14 +144,14 @@ impl EdgeShard {
             .into_iter()
             .chain(appendable)
             .map(|segment| {
-                segment.get().read().read_filtered(
+                futures::executor::block_on(segment.get().read().read_filtered(
                     offset,
                     Some(limit),
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
                     DeferredBehavior::Exclude,
-                )
+                ))
             })
             .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
 
@@ -190,14 +190,14 @@ impl EdgeShard {
             .into_iter()
             .chain(appendable)
             .map(|segment| {
-                segment.get().read().read_ordered_filtered(
+                futures::executor::block_on(segment.get().read().read_ordered_filtered(
                     Some(limit),
                     filter,
                     order_by,
                     &AtomicBool::new(false),
                     &hw_counter,
                     DeferredBehavior::Exclude,
-                )
+                ))
             })
             .collect::<Result<_, _>>()?;
 
@@ -254,12 +254,12 @@ impl EdgeShard {
                 let segment = segment.read();
 
                 let point_count = segment.available_point_count_without_deferred();
-                let point_ids = segment.read_random_filtered(
+                let point_ids = futures::executor::block_on(segment.read_random_filtered(
                     limit,
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
-                )?;
+                ))?;
 
                 OperationResult::Ok((point_count, point_ids))
             })

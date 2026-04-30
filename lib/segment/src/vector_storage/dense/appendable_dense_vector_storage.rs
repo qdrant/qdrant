@@ -11,10 +11,10 @@ use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use fs_err as fs;
 
-use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
@@ -155,15 +155,13 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
         Ok(start_index..end_index)
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new({
-            let vectors_flusher = self.vectors.flusher();
-            let deleted_flusher = self.deleted.flusher();
-            move || {
-                vectors_flusher()?;
-                deleted_flusher()?;
-                Ok(())
-            }
+    fn flusher(&self) -> AsyncFlusher {
+        let vectors_flusher = self.vectors.flusher();
+        let deleted_flusher = self.deleted.flusher();
+        async_flusher_from_sync(move || {
+            vectors_flusher()?;
+            deleted_flusher()?;
+            Ok(())
         })
     }
 
@@ -323,7 +321,7 @@ mod tests {
             }
             storage.delete_vector(internal_id).unwrap();
         }
-        storage.flusher()().unwrap();
+        futures::executor::block_on(storage.flusher()()).unwrap();
 
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
         let found_files = find_storage_files(dir.path())

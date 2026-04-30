@@ -21,8 +21,8 @@ use super::multi_dense::volatile_multi_dense_vector_storage::VolatileMultiDenseV
 use super::sparse::empty_sparse_vector_storage::EmptySparseVectorStorage;
 use super::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use super::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::AsyncFlusher;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -122,7 +122,7 @@ pub trait VectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
 
-    fn flusher(&self) -> Flusher;
+    fn flusher(&self) -> AsyncFlusher;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -952,7 +952,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> AsyncFlusher {
         match self {
             VectorStorageEnum::DenseVolatile(v) => v.flusher(),
             #[cfg(test)]

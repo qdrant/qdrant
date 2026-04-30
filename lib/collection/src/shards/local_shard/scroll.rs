@@ -167,14 +167,14 @@ impl LocalShard {
             let cpu_utilization = hw_counter.cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let work = || {
-                    segment.get().read().read_filtered(
+                    futures::executor::block_on(segment.get().read().read_filtered(
                         offset,
                         Some(limit),
                         filter.as_ref(),
                         &is_stopped,
                         &hw_counter,
                         deferred_behavior,
-                    )
+                    ))
                 };
                 match cpu_utilization {
                     Some(cu) => cu.measure(work),
@@ -268,14 +268,14 @@ impl LocalShard {
             let cpu_utilization = hw_counter.cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
                 let work = || {
-                    segment.get().read().read_ordered_filtered(
+                    futures::executor::block_on(segment.get().read().read_ordered_filtered(
                         Some(limit),
                         filter.as_ref(),
                         &order_by,
                         &is_stopped,
                         &hw_counter,
                         deferred_behavior,
-                    )
+                    ))
                 };
                 match cpu_utilization {
                     Some(cu) => cu.measure(work),
@@ -383,12 +383,12 @@ impl LocalShard {
 
                     Ok((
                         read_segment.available_point_count_without_deferred(),
-                        read_segment.read_random_filtered(
+                        futures::executor::block_on(read_segment.read_random_filtered(
                             limit,
                             filter.as_ref(),
                             &is_stopped,
                             &hw_counter,
-                        )?,
+                        ))?,
                     ))
                 };
                 match cpu_utilization {

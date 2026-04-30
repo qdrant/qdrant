@@ -1,18 +1,28 @@
 use std::path::PathBuf;
 
+use async_trait::async_trait;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use crate::common::Flusher;
+use crate::common::AsyncFlusher;
 use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 use crate::types::{Filter, Payload};
 
-/// Trait for payload data storage. Should allow filter checks
-pub trait PayloadStorage {
+/// Trait for payload data storage. Should allow filter checks.
+///
+/// All I/O-touching methods are `async` so the storage can be polled cooperatively
+/// by the Tokio runtime instead of blocking a thread on disk access.
+///
+/// The futures returned by these methods are `!Send` because [`HardwareCounterCell`]
+/// uses interior mutability via [`Cell`](std::cell::Cell). Run them on a single-
+/// threaded executor (`tokio::runtime::Builder::new_current_thread()`,
+/// `tokio::task::LocalSet`, or a per-segment task that does not migrate threads).
+#[async_trait(?Send)]
+pub trait PayloadStorage: Send + Sync {
     /// Overwrite payload for point_id. If payload already exists, replace it
-    fn overwrite(
+    async fn overwrite(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -20,7 +30,7 @@ pub trait PayloadStorage {
     ) -> OperationResult<()>;
 
     /// Set payload for point_id. If payload already exists, merge it with existing
-    fn set(
+    async fn set(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -28,7 +38,7 @@ pub trait PayloadStorage {
     ) -> OperationResult<()>;
 
     /// Set payload to a point_id by key. If payload already exists, merge it with existing
-    fn set_by_key(
+    async fn set_by_key(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -36,20 +46,20 @@ pub trait PayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
-    fn get(
+    async fn get(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
-    fn get_sequential(
+    async fn get_sequential(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
     /// Delete payload by point_id and key
-    fn delete(
+    async fn delete(
         &mut self,
         point_id: PointOffsetType,
         key: &JsonPath,
@@ -57,7 +67,7 @@ pub trait PayloadStorage {
     ) -> OperationResult<Vec<Value>>;
 
     /// Clear all payload of the point
-    fn clear(
+    async fn clear(
         &mut self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
@@ -65,16 +75,20 @@ pub trait PayloadStorage {
 
     /// Completely delete payload storage, without keeping allocated memory. Pufff!
     #[cfg(test)]
-    fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
+    async fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
-    fn flusher(&self) -> Flusher;
+    ///
+    /// Invoke the returned closure and `.await` the resulting future on the
+    /// Tokio runtime to persist.
+    fn flusher(&self) -> AsyncFlusher;
 
     /// Iterate over all stored payload and apply the provided callback.
     /// Stop iteration if callback returns false or error.
     ///
-    /// Required for building payload index.
-    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    /// Required for building payload index. The callback is synchronous to keep
+    /// the hot loop tight; the async-ness here is at the storage I/O level.
+    async fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
 
@@ -104,5 +118,4 @@ pub trait FilterContext {
     fn check(&self, point_id: PointOffsetType) -> bool;
 }
 
-pub type PayloadStorageSS = dyn PayloadStorage + Sync + Send;
 pub type ConditionCheckerSS = dyn ConditionChecker + Sync + Send;

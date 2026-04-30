@@ -1,18 +1,20 @@
 use std::path::PathBuf;
 
+use async_trait::async_trait;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::types::Payload;
 
+#[async_trait(?Send)]
 impl PayloadStorage for InMemoryPayloadStorage {
-    fn overwrite(
+    async fn overwrite(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -22,7 +24,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn set(
+    async fn set(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -37,7 +39,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn set_by_key(
+    async fn set_by_key(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -55,7 +57,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn get(
+    async fn get(
         &self,
         point_id: PointOffsetType,
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
@@ -66,16 +68,16 @@ impl PayloadStorage for InMemoryPayloadStorage {
         }
     }
 
-    fn get_sequential(
+    async fn get_sequential(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         // In memory => No optimizations available.
-        self.get(point_id, hw_counter)
+        self.get(point_id, hw_counter).await
     }
 
-    fn delete(
+    async fn delete(
         &mut self,
         point_id: PointOffsetType,
         key: &JsonPath,
@@ -90,7 +92,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         }
     }
 
-    fn clear(
+    async fn clear(
         &mut self,
         point_id: PointOffsetType,
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
@@ -100,16 +102,16 @@ impl PayloadStorage for InMemoryPayloadStorage {
     }
 
     #[cfg(test)]
-    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+    async fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.payload = ahash::AHashMap::new();
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
+    fn flusher(&self) -> AsyncFlusher {
+        async_flusher_from_sync(|| Ok(()))
     }
 
-    fn iter<F>(&self, mut callback: F, _hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    async fn iter<F>(&self, mut callback: F, _hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
@@ -209,24 +211,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_wipe() {
+    #[tokio::test]
+    async fn test_wipe() {
         let mut storage = InMemoryPayloadStorage::default();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
-        storage.set(100, &payload, &hw_counter).unwrap();
-        storage.clear_all(&hw_counter).unwrap();
-        storage.set(100, &payload, &hw_counter).unwrap();
-        storage.clear_all(&hw_counter).unwrap();
-        storage.set(100, &payload, &hw_counter).unwrap();
-        assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.clear_all(&hw_counter).unwrap();
+        storage.set(100, &payload, &hw_counter).await.unwrap();
+        storage.clear_all(&hw_counter).await.unwrap();
+        storage.set(100, &payload, &hw_counter).await.unwrap();
+        storage.clear_all(&hw_counter).await.unwrap();
+        storage.set(100, &payload, &hw_counter).await.unwrap();
+        assert!(!storage.get(100, &hw_counter).await.unwrap().is_empty());
+        storage.clear_all(&hw_counter).await.unwrap();
     }
 
-    #[test]
-    fn test_assign_payload_from_serde_json() {
+    #[tokio::test]
+    async fn test_assign_payload_from_serde_json() {
         let data = r#"
         {
             "name": "John Doe",
@@ -253,8 +255,8 @@ mod tests {
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         let mut storage = InMemoryPayloadStorage::default();
-        storage.set(100, &payload, &hw_counter).unwrap();
-        let pload = storage.get(100, &hw_counter).unwrap();
+        storage.set(100, &payload, &hw_counter).await.unwrap();
+        let pload = storage.get(100, &hw_counter).await.unwrap();
         assert_eq!(pload, payload);
     }
 }

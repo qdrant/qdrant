@@ -449,14 +449,14 @@ impl SegmentsSearcher {
                 let all_points: BTreeSet<_> = segments
                     .into_iter()
                     .map(|segment| {
-                        segment.get().read().read_filtered(
+                        futures::executor::block_on(segment.get().read().read_filtered(
                             None,
                             None,
                             filter.as_ref(),
                             &is_stopped,
                             &hw_counter,
                             deferred_behavior,
-                        )
+                        ))
                     })
                     .process_results(|iter| iter.flatten().collect())?;
                 Ok(all_points)
@@ -502,10 +502,12 @@ impl SegmentsSearcher {
                         let cpu_utilization = hw_measurement_acc.cpu_utilization();
                         move || {
                             cpu_utilization.measure(|| {
-                                segment
-                                    .get()
-                                    .read()
-                                    .rescore_with_formula(arc_ctx, &hw_counter)
+                                futures::executor::block_on(
+                                    segment
+                                        .get()
+                                        .read()
+                                        .rescore_with_formula(arc_ctx, &hw_counter),
+                                )
                             })
                         }
                     });
@@ -724,7 +726,7 @@ fn execute_batch_search(
     };
 
     let vectors_batch = &vectors_batch.iter().collect_vec();
-    let res = read_segment.search_batch(
+    let res = futures::executor::block_on(read_segment.search_batch(
         search_params.vector_name,
         vectors_batch,
         &search_params.with_payload,
@@ -733,7 +735,7 @@ fn execute_batch_search(
         top,
         search_params.params,
         segment_query_context,
-    )?;
+    ))?;
 
     drop(read_segment);
 

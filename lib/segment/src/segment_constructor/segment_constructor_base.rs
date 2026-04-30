@@ -469,14 +469,15 @@ fn create_segment(
 
     let payload_index_path = get_payload_index_path(segment_path);
     let started = Instant::now();
-    let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
-        payload_storage.clone(),
-        id_tracker.clone(),
-        vector_storages.clone(),
-        &payload_index_path,
-        appendable_flag,
-        create,
-    )?);
+    let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> =
+        sp(futures::executor::block_on(StructPayloadIndex::open(
+            payload_storage.clone(),
+            id_tracker.clone(),
+            vector_storages.clone(),
+            &payload_index_path,
+            appendable_flag,
+            create,
+        ))?);
     log_load_timing(segment_path, "payload_index", started);
 
     let mut vector_data = HashMap::new();

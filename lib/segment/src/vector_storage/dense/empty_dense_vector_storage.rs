@@ -8,8 +8,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
@@ -140,8 +140,8 @@ impl VectorStorage for EmptyDenseVectorStorage {
         ))
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
+    fn flusher(&self) -> AsyncFlusher {
+        async_flusher_from_sync(|| Ok(()))
     }
 
     fn files(&self) -> Vec<PathBuf> {

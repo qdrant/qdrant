@@ -13,7 +13,7 @@ use common::universal_io::{
 use fs_err::File;
 use uuid::Uuid;
 
-use crate::common::Flusher;
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
@@ -512,15 +512,15 @@ impl IdTracker for ImmutableIdTracker {
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> AsyncFlusher {
         // Only flush deletions because mappings are immutable
-        self.deleted_wrapper.flusher()
+        async_flusher_from_sync(self.deleted_wrapper.flusher())
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> AsyncFlusher {
         let flusher = self.internal_to_version_wrapper.flusher();
-        Box::new(move || flusher().map_err(OperationError::from))
+        async_flusher_from_sync(move || flusher().map_err(OperationError::from))
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -680,8 +680,8 @@ pub(super) mod test {
                 }
             }
 
-            id_tracker.mapping_flusher()().unwrap();
-            id_tracker.versions_flusher()().unwrap();
+            futures::executor::block_on(id_tracker.mapping_flusher()()).unwrap();
+            futures::executor::block_on(id_tracker.versions_flusher()()).unwrap();
 
             (dropped_points, custom_version)
         };
@@ -777,8 +777,8 @@ pub(super) mod test {
                 .expect("Point to delete exists.");
             assert!(!id_tracker.is_deleted_point(intetrnal_id));
             id_tracker.drop(point_to_delete).unwrap();
-            id_tracker.mapping_flusher()().unwrap();
-            id_tracker.versions_flusher()().unwrap();
+            futures::executor::block_on(id_tracker.mapping_flusher()()).unwrap();
+            futures::executor::block_on(id_tracker.versions_flusher()()).unwrap();
             id_tracker.mappings
         };
 

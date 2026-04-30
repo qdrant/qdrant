@@ -308,7 +308,7 @@ fn load_segments(
             *config = Some(EdgeConfig::from_segment_config(segment_cfg));
         }
 
-        segment.check_consistency_and_repair().map_err(|err| {
+        futures::executor::block_on(segment.check_consistency_and_repair()).map_err(|err| {
             OperationError::service_error(format!(
                 "failed to repair segment {}: {err}",
                 segment_path.display(),

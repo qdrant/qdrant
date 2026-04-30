@@ -48,14 +48,14 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(NUM_VECTORS)));
     let payload_storage = InMemoryPayloadStorage::default();
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
-    let payload_index = StructPayloadIndex::open(
+    let payload_index = futures::executor::block_on(StructPayloadIndex::open(
         wrapped_payload_storage,
         id_tracker.clone(),
         std::collections::HashMap::new(),
         payload_dir.path(),
         true,
         true,
-    )
+    ))
     .unwrap();
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 

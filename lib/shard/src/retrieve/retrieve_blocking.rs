@@ -48,14 +48,14 @@ pub fn retrieve_blocking(
             *version_entry.or_default() = version;
         }
 
-        for (id, record) in segment.retrieve(
+        for (id, record) in futures::executor::block_on(segment.retrieve(
             &newer_version_points,
             with_payload,
             with_vector,
             &hw_counter,
             is_stopped,
             deferred_behavior,
-        )? {
+        ))? {
             // We expect all points to be found since we already checked their versions
             point_records.insert(id, RecordInternal::from(record));
             applied += 1;

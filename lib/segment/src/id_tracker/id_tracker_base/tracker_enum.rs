@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 
 use super::point_mappings_ref::PointMappingsRefEnum;
 use super::trait_def::{IdTracker, IdTrackerRead};
-use crate::common::Flusher;
+use crate::common::AsyncFlusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
@@ -165,7 +165,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> AsyncFlusher {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
@@ -173,7 +173,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> AsyncFlusher {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),

@@ -7,8 +7,8 @@ use rand::RngExt;
 #[cfg(test)]
 use rand::rngs::StdRng;
 
-use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -158,15 +158,15 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> AsyncFlusher {
         debug_assert!(false, "InMemoryIdTracker should not be flushed");
-        Box::new(|| Ok(()))
+        async_flusher_from_sync(|| Ok(()))
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> AsyncFlusher {
         debug_assert!(false, "InMemoryIdTracker should not be flushed");
-        Box::new(|| Ok(()))
+        async_flusher_from_sync(|| Ok(()))
     }
 
     fn files(&self) -> Vec<PathBuf> {

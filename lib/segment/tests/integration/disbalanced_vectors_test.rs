@@ -27,7 +27,7 @@ fn test_rebuild_with_removed_vectors() {
     let hw_counter = HardwareCounterCell::new();
 
     for i in 0..NUM_VECTORS_1 {
-        segment1
+        futures::executor::block_on(segment1
             .upsert_point(
                 1,
                 i.into(),
@@ -36,7 +36,7 @@ fn test_rebuild_with_removed_vectors() {
                     (VECTOR2_NAME.into(), vec![0., i as f32, 0., 0., 0., 0.]),
                 ]),
                 &hw_counter,
-            )
+            ))
             .unwrap();
     }
 
@@ -50,28 +50,28 @@ fn test_rebuild_with_removed_vectors() {
             ])
         };
 
-        segment2
-            .upsert_point(1, (NUM_VECTORS_1 + i).into(), vectors, &hw_counter)
+        futures::executor::block_on(segment2
+            .upsert_point(1, (NUM_VECTORS_1 + i).into(), vectors, &hw_counter))
             .unwrap();
     }
 
     for i in 0..NUM_VECTORS_2 {
         if i % 3 == 0 {
-            segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR1_NAME)
+            futures::executor::block_on(segment2
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR1_NAME))
                 .unwrap();
-            segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME)
+            futures::executor::block_on(segment2
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME))
                 .unwrap();
         }
         if i % 3 == 1 {
-            segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME)
+            futures::executor::block_on(segment2
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME))
                 .unwrap();
         }
         if i % 2 == 0 {
-            segment2
-                .delete_point(2, (NUM_VECTORS_1 + i).into(), &hw_counter)
+            futures::executor::block_on(segment2
+                .delete_point(2, (NUM_VECTORS_1 + i).into(), &hw_counter))
                 .unwrap();
         }
     }
@@ -83,7 +83,7 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = segment2.all_vectors(idx.into(), &hw_counter).unwrap();
+        let vec = futures::executor::block_on(segment2.all_vectors(idx.into(), &hw_counter)).unwrap();
         reference.push(vec);
     }
 
@@ -138,7 +138,7 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = merged_segment.all_vectors(idx.into(), &hw_counter).unwrap();
+        let vec = futures::executor::block_on(merged_segment.all_vectors(idx.into(), &hw_counter)).unwrap();
         merged_reference.push(vec);
     }
 

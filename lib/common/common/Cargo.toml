@@ -17,6 +17,7 @@ testing = []
 
 [dependencies]
 ahash = { workspace = true }
+async-trait = { workspace = true }
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
@@ -46,6 +47,8 @@ tar = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
 validator = { workspace = true }
 walkdir = { workspace = true }
 zerocopy = { workspace = true }

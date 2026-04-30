@@ -84,7 +84,7 @@ impl SegmentHolder {
 
         if sync {
             for flusher in flushers {
-                flusher()?;
+                futures::executor::block_on(flusher())?;
             }
             self.flush_dependency
                 .lock()
@@ -96,7 +96,7 @@ impl SegmentHolder {
                     .name("background_flush".to_string())
                     .spawn(move || {
                         for flusher in flushers {
-                            flusher()?;
+                            futures::executor::block_on(flusher())?;
                         }
                         flush_dependency
                             .lock()

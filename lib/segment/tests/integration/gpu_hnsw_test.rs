@@ -140,7 +140,7 @@ fn create_test_segment(
             .borrow_mut()
             .set_indexed(
                 &JsonPath::new(int_key),
-                PayloadSchemaType::Integer,
+                PayloadSchemaType::Integer.into(),
                 &hw_counter,
             )
             .unwrap();

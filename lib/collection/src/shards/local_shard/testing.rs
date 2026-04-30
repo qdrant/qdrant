@@ -9,7 +9,7 @@ impl LocalShard {
 
         for (_segment_id, segment) in segments.iter_original() {
             let segment = segment.read();
-            segment.id_tracker.borrow().mapping_flusher()().unwrap();
+            futures::executor::block_on(segment.id_tracker.borrow().mapping_flusher()()).unwrap();
         }
     }
 

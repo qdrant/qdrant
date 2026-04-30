@@ -411,23 +411,23 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let mut segment1 = build_segment_1(path);
-        segment1
+        futures::executor::block_on(segment1
             .create_field_index(
                 100,
                 &nested_key_path,
                 Some(&PayloadFieldSchema::FieldType(Keyword)),
                 &hw_counter,
-            )
+            ))
             .unwrap();
 
         let mut segment2 = build_segment_2(path);
-        segment2
+        futures::executor::block_on(segment2
             .create_field_index(
                 101,
                 &nested_key_path,
                 Some(&PayloadFieldSchema::FieldType(Keyword)),
                 &hw_counter,
-            )
+            ))
             .unwrap();
 
         let mut holder = SegmentHolder::default();

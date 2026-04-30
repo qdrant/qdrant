@@ -332,10 +332,12 @@ impl EdgeShard {
             .collect::<Vec<_>>();
 
         for segment in segments {
-            let rescored_result = segment
-                .get()
-                .read()
-                .rescore_with_formula(ctx.clone(), &hw_counter)?;
+            let rescored_result = futures::executor::block_on(
+                segment
+                    .get()
+                    .read()
+                    .rescore_with_formula(ctx.clone(), &hw_counter),
+            )?;
 
             rescored_results.push(rescored_result);
         }

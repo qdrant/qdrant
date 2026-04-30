@@ -338,28 +338,34 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         );
         match change {
             ProxyIndexChange::Create(schema, version) => {
-                optimized_segment.create_field_index(
+                futures::executor::block_on(optimized_segment.create_field_index(
                     *version,
                     field_name,
                     Some(schema),
                     hw_counter,
-                )?;
+                ))?;
             }
             ProxyIndexChange::Delete(version) => {
-                optimized_segment.delete_field_index(*version, field_name)?;
+                futures::executor::block_on(
+                    optimized_segment.delete_field_index(*version, field_name),
+                )?;
             }
             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                optimized_segment
-                    .delete_field_index_if_incompatible(*version, field_name, schema)?;
+                futures::executor::block_on(optimized_segment.delete_field_index_if_incompatible(
+                    *version, field_name, schema,
+                ))?;
             }
         }
         check_process_stopped(stopped)?;
     }
 
     for (point_id, versions) in deleted_points_snapshot {
-        optimized_segment
-            .delete_point(versions.operation_version, point_id, hw_counter)
-            .unwrap();
+        futures::executor::block_on(optimized_segment.delete_point(
+            versions.operation_version,
+            point_id,
+            hw_counter,
+        ))
+        .unwrap();
     }
 
     Ok(optimized_segment)
@@ -457,7 +463,9 @@ fn finish_optimization(
         );
         match intent {
             IntendedVector::Absent { version } => {
-                optimized_segment.delete_vector_name(*version, vector_name)?;
+                futures::executor::block_on(
+                    optimized_segment.delete_vector_name(*version, vector_name),
+                )?;
             }
             IntendedVector::Present {
                 config,
@@ -465,14 +473,15 @@ fn finish_optimization(
                 supersedes_wrapped,
             } => {
                 if *supersedes_wrapped {
-                    // The optimised segment was built from the wrapped data,
-                    // so it currently carries the *old* schema for this name.
-                    // `create_vector_name_impl` is idempotent and would
-                    // silently keep that old storage; clear it first so the
-                    // new schema actually takes effect.
-                    optimized_segment.delete_vector_name(*version, vector_name)?;
+                    futures::executor::block_on(
+                        optimized_segment.delete_vector_name(*version, vector_name),
+                    )?;
                 }
-                optimized_segment.create_vector_name(*version, vector_name, config)?;
+                futures::executor::block_on(optimized_segment.create_vector_name(
+                    *version,
+                    vector_name,
+                    config,
+                ))?;
             }
         }
         check_process_stopped(stopped)?;
@@ -480,27 +489,25 @@ fn finish_optimization(
 
     let index_changes = proxy_index_changes(&locked_proxies);
 
-    // Apply index changes before point deletions
-    // Point deletions bump the segment version, can cause index changes to be ignored
     for (field_name, change) in index_changes.iter_ordered() {
         match change {
-            // Warn: change version might be lower than the segment version,
-            // because we might already applied the change earlier in optimization.
-            // Applied optimizations are not removed from `proxy_index_changes`.
             ProxyIndexChange::Create(schema, version) => {
-                optimized_segment.create_field_index(
+                futures::executor::block_on(optimized_segment.create_field_index(
                     *version,
                     field_name,
                     Some(schema),
                     hw_counter,
-                )?;
+                ))?;
             }
             ProxyIndexChange::Delete(version) => {
-                optimized_segment.delete_field_index(*version, field_name)?;
+                futures::executor::block_on(
+                    optimized_segment.delete_field_index(*version, field_name),
+                )?;
             }
             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                optimized_segment
-                    .delete_field_index_if_incompatible(*version, field_name, schema)?;
+                futures::executor::block_on(optimized_segment.delete_field_index_if_incompatible(
+                    *version, field_name, schema,
+                ))?;
             }
         }
         check_process_stopped(stopped)?;
@@ -512,9 +519,12 @@ fn finish_optimization(
         .filter(|&(point_id, _)| !already_remove_points.contains_key(point_id));
 
     for (&point_id, &versions) in points_diff {
-        optimized_segment
-            .delete_point(versions.operation_version, point_id, hw_counter)
-            .unwrap();
+        futures::executor::block_on(optimized_segment.delete_point(
+            versions.operation_version,
+            point_id,
+            hw_counter,
+        ))
+        .unwrap();
     }
 
     // Replace proxy segments with new optimized segment

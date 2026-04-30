@@ -20,6 +20,7 @@ wal = { path = "../wal" }
 
 ahash = { workspace = true }
 fs-err = { workspace = true }
+futures = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 ordered-float = { workspace = true }

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use async_trait::async_trait;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -12,8 +13,8 @@ use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndex;
 use super::payload_config::PayloadFieldSchemaWithIndexType;
-use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
@@ -71,14 +72,15 @@ impl PlainPayloadIndex {
     }
 }
 
+#[async_trait(?Send)]
 impl PayloadIndex for PlainPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.config.indices.to_schemas()
     }
 
-    fn build_index(
+    async fn build_index(
         &self,
-        _field: PayloadKeyTypeRef,
+        _field: &JsonPath,
         _payload_schema: &PayloadFieldSchema,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult> {
@@ -112,14 +114,14 @@ impl PayloadIndex for PlainPayloadIndex {
         Ok(())
     }
 
-    fn set_indexed(
+    async fn set_indexed(
         &mut self,
-        field: PayloadKeyTypeRef,
-        payload_schema: impl Into<PayloadFieldSchema>,
+        field: &JsonPath,
+        payload_schema: PayloadFieldSchema,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // No need to build index, just set the field as indexed
-        self.apply_index(field.clone(), payload_schema.into(), vec![])
+        self.apply_index(field.clone(), payload_schema, vec![])
     }
 
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool> {
@@ -203,7 +205,7 @@ impl PayloadIndex for PlainPayloadIndex {
         Ok(())
     }
 
-    fn overwrite_payload(
+    async fn overwrite_payload(
         &mut self,
         _point_id: PointOffsetType,
         _payload: &Payload,
@@ -212,7 +214,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn set_payload(
+    async fn set_payload(
         &mut self,
         _point_id: PointOffsetType,
         _payload: &Payload,
@@ -222,7 +224,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn get_payload(
+    async fn get_payload(
         &self,
         _point_id: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
@@ -230,7 +232,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn get_payload_sequential(
+    async fn get_payload_sequential(
         &self,
         _point_id: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
@@ -238,16 +240,16 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn delete_payload(
+    async fn delete_payload(
         &mut self,
         _point_id: PointOffsetType,
-        _key: PayloadKeyTypeRef,
+        _key: &JsonPath,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
         unreachable!()
     }
 
-    fn clear_payload(
+    async fn clear_payload(
         &mut self,
         _point_id: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
@@ -255,8 +257,8 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn flusher(&self) -> Flusher {
-        unreachable!()
+    fn flusher(&self) -> AsyncFlusher {
+        async_flusher_from_sync(|| unreachable!())
     }
 
     fn files(&self) -> Vec<PathBuf> {

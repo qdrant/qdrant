@@ -76,13 +76,13 @@ fn hnsw_discover_precision() {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
 
-        segment
+        futures::executor::block_on(segment
             .upsert_point(
                 n as SeqNumberType,
                 idx,
                 only_default_vector(&vector),
                 &hw_counter,
-            )
+            ))
             .unwrap();
     }
 
@@ -193,27 +193,27 @@ fn filtered_hnsw_discover_precision() {
         let keyword_payload = get_random_keyword_of(num_payload_values, &mut rng);
         let payload = payload_json! {keyword_key: keyword_payload};
 
-        segment
+        futures::executor::block_on(segment
             .upsert_point(
                 n as SeqNumberType,
                 idx,
                 only_default_vector(&vector),
                 &hw_counter,
-            )
+            ))
             .unwrap();
-        segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+        futures::executor::block_on(segment
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
             .unwrap();
     }
 
     let payload_index_ptr = segment.payload_index.clone();
-    payload_index_ptr
+    futures::executor::block_on(payload_index_ptr
         .borrow_mut()
         .set_indexed(
             &JsonPath::new(keyword_key),
-            PayloadSchemaType::Keyword,
+            PayloadSchemaType::Keyword.into(),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     let hnsw_config = HnswConfig {

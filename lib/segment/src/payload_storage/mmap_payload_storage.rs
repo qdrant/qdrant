@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use async_trait::async_trait;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
@@ -8,11 +9,11 @@ use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
 use serde_json::Value;
 
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
-use crate::types::{Payload, PayloadKeyTypeRef};
+use crate::types::Payload;
 
 const STORAGE_PATH: &str = "payload_storage";
 
@@ -82,19 +83,23 @@ impl MmapPayloadStorage {
     }
 }
 
+#[async_trait(?Send)]
 impl PayloadStorage for MmapPayloadStorage {
-    fn overwrite(
+    async fn overwrite(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        // mmap is sync; we keep the body sync because page-fault driven I/O
+        // can't actually be awaited. The async signature lets callers compose
+        // this with truly-async storages on the Tokio runtime.
         self.storage
             .put_value(point_id, payload, hw_counter.ref_payload_io_write_counter())?;
         Ok(())
     }
 
-    fn set(
+    async fn set(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -120,7 +125,7 @@ impl PayloadStorage for MmapPayloadStorage {
         Ok(())
     }
 
-    fn set_by_key(
+    async fn set_by_key(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -149,7 +154,7 @@ impl PayloadStorage for MmapPayloadStorage {
         Ok(())
     }
 
-    fn get(
+    async fn get(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
@@ -160,7 +165,7 @@ impl PayloadStorage for MmapPayloadStorage {
         }
     }
 
-    fn get_sequential(
+    async fn get_sequential(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
@@ -171,10 +176,10 @@ impl PayloadStorage for MmapPayloadStorage {
         }
     }
 
-    fn delete(
+    async fn delete(
         &mut self,
         point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
+        key: &JsonPath,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
         match self.storage.get_value::<Random>(point_id, hw_counter)? {
@@ -193,7 +198,7 @@ impl PayloadStorage for MmapPayloadStorage {
         }
     }
 
-    fn clear(
+    async fn clear(
         &mut self,
         point_id: PointOffsetType,
         _: &HardwareCounterCell,
@@ -203,15 +208,15 @@ impl PayloadStorage for MmapPayloadStorage {
     }
 
     #[cfg(test)]
-    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+    async fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.storage.clear().map_err(|err| {
             OperationError::service_error(format!("Failed to clear mmap payload storage: {err}"))
         })
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> AsyncFlusher {
         let storage_flusher = self.storage.flusher();
-        Box::new(move || {
+        async_flusher_from_sync(move || {
             storage_flusher().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to flush mmap payload gridstore: {err}"
@@ -220,7 +225,7 @@ impl PayloadStorage for MmapPayloadStorage {
         })
     }
 
-    fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    async fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {

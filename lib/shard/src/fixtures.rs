@@ -54,16 +54,16 @@ pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: 
         let point_id: PointIdType = id_gen.unique();
         let payload_value = rnd.random_range(1..1_000);
         let payload: Payload = payload_json! {payload_key: vec![payload_value]};
-        segment
+        futures::executor::block_on(segment
             .upsert_point(
                 opnum,
                 point_id,
                 only_default_vector(&random_vector),
                 &hw_counter,
-            )
+            ))
             .unwrap();
-        segment
-            .set_payload(opnum, point_id, &payload, &None, &hw_counter)
+        futures::executor::block_on(segment
+            .set_payload(opnum, point_id, &payload, &None, &hw_counter))
             .unwrap();
     }
     segment
@@ -80,20 +80,20 @@ pub fn build_segment_1(path: &Path) -> Segment {
 
     let hw_counter = HardwareCounterCell::new();
 
-    segment1
-        .upsert_point(1, 1.into(), only_default_vector(&vec1), &hw_counter)
+    futures::executor::block_on(segment1
+        .upsert_point(1, 1.into(), only_default_vector(&vec1), &hw_counter))
         .unwrap();
-    segment1
-        .upsert_point(2, 2.into(), only_default_vector(&vec2), &hw_counter)
+    futures::executor::block_on(segment1
+        .upsert_point(2, 2.into(), only_default_vector(&vec2), &hw_counter))
         .unwrap();
-    segment1
-        .upsert_point(3, 3.into(), only_default_vector(&vec3), &hw_counter)
+    futures::executor::block_on(segment1
+        .upsert_point(3, 3.into(), only_default_vector(&vec3), &hw_counter))
         .unwrap();
-    segment1
-        .upsert_point(4, 4.into(), only_default_vector(&vec4), &hw_counter)
+    futures::executor::block_on(segment1
+        .upsert_point(4, 4.into(), only_default_vector(&vec4), &hw_counter))
         .unwrap();
-    segment1
-        .upsert_point(5, 5.into(), only_default_vector(&vec5), &hw_counter)
+    futures::executor::block_on(segment1
+        .upsert_point(5, 5.into(), only_default_vector(&vec5), &hw_counter))
         .unwrap();
 
     let payload_key = "color";
@@ -102,20 +102,20 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let payload_option2 = payload_json! {payload_key: vec!["red".to_owned(), "blue".to_owned()]};
     let payload_option3 = payload_json! {payload_key: vec!["blue".to_owned()]};
 
-    segment1
-        .set_payload(6, 1.into(), &payload_option1, &None, &hw_counter)
+    futures::executor::block_on(segment1
+        .set_payload(6, 1.into(), &payload_option1, &None, &hw_counter))
         .unwrap();
-    segment1
-        .set_payload(6, 2.into(), &payload_option1, &None, &hw_counter)
+    futures::executor::block_on(segment1
+        .set_payload(6, 2.into(), &payload_option1, &None, &hw_counter))
         .unwrap();
-    segment1
-        .set_payload(6, 3.into(), &payload_option3, &None, &hw_counter)
+    futures::executor::block_on(segment1
+        .set_payload(6, 3.into(), &payload_option3, &None, &hw_counter))
         .unwrap();
-    segment1
-        .set_payload(6, 4.into(), &payload_option2, &None, &hw_counter)
+    futures::executor::block_on(segment1
+        .set_payload(6, 4.into(), &payload_option2, &None, &hw_counter))
         .unwrap();
-    segment1
-        .set_payload(6, 5.into(), &payload_option2, &None, &hw_counter)
+    futures::executor::block_on(segment1
+        .set_payload(6, 5.into(), &payload_option2, &None, &hw_counter))
         .unwrap();
 
     segment1
@@ -135,27 +135,27 @@ pub fn build_segment_2(path: &Path) -> Segment {
 
     let hw_counter = HardwareCounterCell::new();
 
-    segment2
-        .upsert_point(7, 4.into(), only_default_vector(&vec4), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(7, 4.into(), only_default_vector(&vec4), &hw_counter))
         .unwrap();
-    segment2
-        .upsert_point(8, 5.into(), only_default_vector(&vec5), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(8, 5.into(), only_default_vector(&vec5), &hw_counter))
         .unwrap();
 
-    segment2
-        .upsert_point(11, 11.into(), only_default_vector(&vec11), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(11, 11.into(), only_default_vector(&vec11), &hw_counter))
         .unwrap();
-    segment2
-        .upsert_point(12, 12.into(), only_default_vector(&vec12), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(12, 12.into(), only_default_vector(&vec12), &hw_counter))
         .unwrap();
-    segment2
-        .upsert_point(13, 13.into(), only_default_vector(&vec13), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(13, 13.into(), only_default_vector(&vec13), &hw_counter))
         .unwrap();
-    segment2
-        .upsert_point(14, 14.into(), only_default_vector(&vec14), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(14, 14.into(), only_default_vector(&vec14), &hw_counter))
         .unwrap();
-    segment2
-        .upsert_point(15, 15.into(), only_default_vector(&vec15), &hw_counter)
+    futures::executor::block_on(segment2
+        .upsert_point(15, 15.into(), only_default_vector(&vec15), &hw_counter))
         .unwrap();
 
     segment2
@@ -236,20 +236,20 @@ pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-    segment
-        .upsert_point(1, 1.into(), only_default_vector(&vec1), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(1, 1.into(), only_default_vector(&vec1), &hw_counter))
         .unwrap();
-    segment
-        .upsert_point(2, 2.into(), only_default_vector(&vec2), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(2, 2.into(), only_default_vector(&vec2), &hw_counter))
         .unwrap();
-    segment
-        .upsert_point(3, 3.into(), only_default_vector(&vec3), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(3, 3.into(), only_default_vector(&vec3), &hw_counter))
         .unwrap();
-    segment
-        .upsert_point(4, 4.into(), only_default_vector(&vec4), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(4, 4.into(), only_default_vector(&vec4), &hw_counter))
         .unwrap();
-    segment
-        .upsert_point(5, 5.into(), only_default_vector(&vec5), &hw_counter)
+    futures::executor::block_on(segment
+        .upsert_point(5, 5.into(), only_default_vector(&vec5), &hw_counter))
         .unwrap();
 
     let payload_key = "color";
@@ -257,20 +257,20 @@ pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
     let payload_option2 = payload_json! {payload_key: vec!["red".to_owned(), "blue".to_owned()]};
     let payload_option3 = payload_json! {payload_key: vec!["blue".to_owned()]};
 
-    segment
-        .set_payload(6, 1.into(), &payload_option1, &None, &hw_counter)
+    futures::executor::block_on(segment
+        .set_payload(6, 1.into(), &payload_option1, &None, &hw_counter))
         .unwrap();
-    segment
-        .set_payload(6, 2.into(), &payload_option1, &None, &hw_counter)
+    futures::executor::block_on(segment
+        .set_payload(6, 2.into(), &payload_option1, &None, &hw_counter))
         .unwrap();
-    segment
-        .set_payload(6, 3.into(), &payload_option3, &None, &hw_counter)
+    futures::executor::block_on(segment
+        .set_payload(6, 3.into(), &payload_option3, &None, &hw_counter))
         .unwrap();
-    segment
-        .set_payload(6, 4.into(), &payload_option2, &None, &hw_counter)
+    futures::executor::block_on(segment
+        .set_payload(6, 4.into(), &payload_option2, &None, &hw_counter))
         .unwrap();
-    segment
-        .set_payload(6, 5.into(), &payload_option2, &None, &hw_counter)
+    futures::executor::block_on(segment
+        .set_payload(6, 5.into(), &payload_option2, &None, &hw_counter))
         .unwrap();
 
     // Validate which points are deferred

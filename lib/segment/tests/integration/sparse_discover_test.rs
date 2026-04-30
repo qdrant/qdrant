@@ -161,11 +161,11 @@ fn sparse_index_discover_test() {
         let (sparse_vector, dense_vector) = random_named_vector(&mut rnd, dim);
 
         let idx = n.into();
-        sparse_segment
-            .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter)
+        futures::executor::block_on(sparse_segment
+            .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter))
             .unwrap();
-        dense_segment
-            .upsert_point(n as SeqNumberType, idx, dense_vector, &hw_counter)
+        futures::executor::block_on(dense_segment
+            .upsert_point(n as SeqNumberType, idx, dense_vector, &hw_counter))
             .unwrap();
     }
 
@@ -283,8 +283,8 @@ fn sparse_index_hardware_measurement_test() {
         let (sparse_vector, _) = random_named_vector(&mut rnd, dim);
 
         let idx = n.into();
-        sparse_segment
-            .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter)
+        futures::executor::block_on(sparse_segment
+            .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter))
             .unwrap();
     }
     let payload_index_ptr = sparse_segment.payload_index.clone();

@@ -25,17 +25,21 @@ pub fn random_segment(path: &Path, num_points: usize) -> Segment {
         let vector = random_vector(&mut rnd_gen, dim);
         let payload = generate_diverse_payload(&mut rnd_gen);
 
-        segment
-            .upsert_point(
-                100,
-                (point_id as u64).into(),
-                NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into()),
-                &hw_counter,
-            )
-            .unwrap();
-        segment
-            .set_payload(100, (point_id as u64).into(), &payload, &None, &hw_counter)
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            100,
+            (point_id as u64).into(),
+            NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into()),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.set_payload(
+            100,
+            (point_id as u64).into(),
+            &payload,
+            &None,
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     segment

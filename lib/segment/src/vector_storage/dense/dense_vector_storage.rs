@@ -13,8 +13,8 @@ use common::universal_io::{MmapFile, UniversalRead};
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
 
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::{AsyncFlusher, async_flusher_from_sync};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::VectorRef;
@@ -331,13 +331,13 @@ where
         Ok(start_index..end_index)
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> AsyncFlusher {
         match &self.vectors {
             Some(mmap_store) => {
                 let mmap_flusher = mmap_store.flusher();
-                Box::new(move || mmap_flusher().map_err(OperationError::from))
+                async_flusher_from_sync(move || mmap_flusher().map_err(OperationError::from))
             }
-            None => Box::new(|| Ok(())),
+            None => async_flusher_from_sync(|| Ok(())),
         }
     }
 

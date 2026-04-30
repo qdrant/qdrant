@@ -109,8 +109,8 @@ fn make_segment(
     let mut segment = build_simple_segment(path, DIM, DISTANCE).unwrap();
     for n in sequence {
         let vector = only_default_vector(vectors[n]);
-        segment
-            .upsert_point(n as SeqNumberType, ids[n], vector, &hw_counter)
+        futures::executor::block_on(segment
+            .upsert_point(n as SeqNumberType, ids[n], vector, &hw_counter))
             .unwrap();
     }
 

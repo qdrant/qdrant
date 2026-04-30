@@ -122,49 +122,49 @@ fn test_byte_storage_hnsw(
 
         let hw_counter = HardwareCounterCell::new();
 
-        segment_float
+        futures::executor::block_on(segment_float
             .upsert_point(
                 n as SeqNumberType,
                 idx,
                 only_default_vector(&vector),
                 &hw_counter,
-            )
+            ))
             .unwrap();
-        segment_float
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+        futures::executor::block_on(segment_float
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
             .unwrap();
-        segment_byte
+        futures::executor::block_on(segment_byte
             .upsert_point(
                 n as SeqNumberType,
                 idx,
                 only_default_vector(&vector),
                 &hw_counter,
-            )
+            ))
             .unwrap();
-        segment_byte
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+        futures::executor::block_on(segment_byte
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
             .unwrap();
     }
 
     let hw_counter = HardwareCounterCell::new();
 
-    segment_float
+    futures::executor::block_on(segment_float
         .payload_index
         .borrow_mut()
         .set_indexed(
             &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
+            PayloadSchemaType::Integer.into(),
             &hw_counter,
-        )
+        ))
         .unwrap();
-    segment_byte
+    futures::executor::block_on(segment_byte
         .payload_index
         .borrow_mut()
         .set_indexed(
             &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
+            PayloadSchemaType::Integer.into(),
             &hw_counter,
-        )
+        ))
         .unwrap();
 
     let hnsw_config = HnswConfig {

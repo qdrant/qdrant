@@ -41,7 +41,11 @@ impl LocalShard {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
-                    read_segment.facet(&request, &is_stopped, &hw_counter)
+                    futures::executor::block_on(read_segment.facet(
+                        &request,
+                        &is_stopped,
+                        &hw_counter,
+                    ))
                 };
                 match cpu_utilization {
                     Some(cu) => cu.measure(work),
@@ -174,12 +178,12 @@ impl LocalShard {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
-                    read_segment.unique_values(
+                    futures::executor::block_on(read_segment.unique_values(
                         &request.key,
                         request.filter.as_ref(),
                         &is_stopped,
                         &hw_counter,
-                    )
+                    ))
                 };
 
                 match cpu_utilization {
