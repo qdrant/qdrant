@@ -22,8 +22,6 @@ use crate::operations::types::{CollectionError, CollectionResult};
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapshotsConfig {
     pub snapshots_storage: SnapshotsStorageConfig,
-    pub s3_config: Option<S3Config>,
-    pub gcs_config: Option<GCSConfig>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -31,8 +29,8 @@ pub struct SnapshotsConfig {
 pub enum SnapshotsStorageConfig {
     #[default]
     Local,
-    S3,
-    Gcs,
+    S3(S3Config),
+    Gcs(GCSConfig),
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
@@ -80,31 +78,29 @@ pub enum SnapshotStorageManager {
 
 impl SnapshotStorageManager {
     pub fn new(snapshots_config: &SnapshotsConfig) -> CollectionResult<Self> {
-        match snapshots_config.snapshots_storage {
+        match &snapshots_config.snapshots_storage {
             SnapshotsStorageConfig::Local => {
                 Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS))
             }
-            SnapshotsStorageConfig::S3 => {
-                let mut builder = AmazonS3Builder::from_env();
-                if let Some(s3_config) = &snapshots_config.s3_config {
-                    builder = builder.with_bucket_name(&s3_config.bucket);
+            SnapshotsStorageConfig::S3(s3_config) => {
+                let mut builder = AmazonS3Builder::from_env().with_bucket_name(&s3_config.bucket);
 
-                    if let Some(access_key) = &s3_config.access_key {
-                        builder = builder.with_access_key_id(access_key);
-                    }
-                    if let Some(secret_key) = &s3_config.secret_key {
-                        builder = builder.with_secret_access_key(secret_key);
-                    }
-                    if let Some(region) = &s3_config.region {
-                        builder = builder.with_region(region);
-                    }
-                    if let Some(endpoint_url) = &s3_config.endpoint_url {
-                        builder = builder.with_endpoint(endpoint_url);
-                        if endpoint_url.starts_with("http://") {
-                            builder = builder.with_allow_http(true);
-                        }
+                if let Some(access_key) = &s3_config.access_key {
+                    builder = builder.with_access_key_id(access_key);
+                }
+                if let Some(secret_key) = &s3_config.secret_key {
+                    builder = builder.with_secret_access_key(secret_key);
+                }
+                if let Some(region) = &s3_config.region {
+                    builder = builder.with_region(region);
+                }
+                if let Some(endpoint_url) = &s3_config.endpoint_url {
+                    builder = builder.with_endpoint(endpoint_url);
+                    if endpoint_url.starts_with("http://") {
+                        builder = builder.with_allow_http(true);
                     }
                 }
+
                 let client: Box<dyn object_store::ObjectStore> =
                     Box::new(builder.build().map_err(|e| {
                         CollectionError::service_error(format!("Failed to create S3 client: {e}"))
@@ -112,14 +108,14 @@ impl SnapshotStorageManager {
 
                 Ok(SnapshotStorageManager::S3(SnapshotStorageCloud { client }))
             }
-            SnapshotsStorageConfig::Gcs => {
-                let mut builder = GoogleCloudStorageBuilder::from_env();
-                if let Some(gcs_config) = &snapshots_config.gcs_config {
-                    builder = builder.with_bucket_name(&gcs_config.bucket);
-                    if let Some(service_account_key) = &gcs_config.service_account_key {
-                        builder = builder.with_service_account_key(service_account_key);
-                    }
+            SnapshotsStorageConfig::Gcs(gcs_config) => {
+                let mut builder =
+                    GoogleCloudStorageBuilder::from_env().with_bucket_name(&gcs_config.bucket);
+
+                if let Some(service_account_key) = &gcs_config.service_account_key {
+                    builder = builder.with_service_account_key(service_account_key);
                 }
+
                 let client: Box<dyn object_store::ObjectStore> =
                     Box::new(builder.build().map_err(|e| {
                         CollectionError::service_error(format!("Failed to create GCS client: {e}"))
@@ -481,13 +477,11 @@ impl SnapshotStorageCloud {
     }
 
     fn get_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
-        let absolute_snapshot_dir = snapshots_path;
-        absolute_snapshot_dir.join(snapshot_name)
+        snapshots_path.join(snapshot_name)
     }
 
     fn get_full_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
-        let absolute_snapshot_dir = snapshots_path;
-        absolute_snapshot_dir.join(snapshot_name)
+        snapshots_path.join(snapshot_name)
     }
 
     async fn get_snapshot_file(
