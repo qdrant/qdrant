@@ -33,10 +33,10 @@ where
     S: UniversalRead<T>,
     T: Copy + 'static,
 {
-    type ReadPipeline<'a, Meta>
-        = WrappedReadPipeline<'a, Self, S::ReadPipeline<'a, Meta>>
+    type ReadPipeline<'file, Meta>
+        = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, Meta>>
     where
-        Self: 'a;
+        Self: 'file;
 
     #[inline]
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -56,19 +56,25 @@ where
     }
 
     #[inline]
-    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
+    fn read_batch<'a, P, Meta>(
         &'a self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        P: AccessPattern,
+    {
         self.0.read_batch::<P, Meta>(ranges, callback)
     }
 
     #[inline]
-    fn read_iter<P: AccessPattern, Meta>(
+    fn read_iter<P, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>>
+    where
+        P: AccessPattern,
+    {
         self.0.read_iter::<P, Meta>(ranges)
     }
 
@@ -88,11 +94,12 @@ where
     }
 
     #[inline]
-    fn read_multi<'a, P: AccessPattern, Meta: 'a>(
+    fn read_multi<'a, P, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
     where
+        P: AccessPattern,
         Self: 'a,
     {
         let reads = reads
@@ -102,10 +109,11 @@ where
     }
 
     #[inline]
-    fn read_multi_iter<'a, P: AccessPattern, Meta>(
+    fn read_multi_iter<'a, P, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>>
     where
+        P: AccessPattern,
         Self: 'a,
     {
         let it = reads

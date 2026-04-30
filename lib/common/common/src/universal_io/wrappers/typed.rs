@@ -34,7 +34,10 @@ impl<S, T> TypedStorage<S, T> {
     }
 }
 
-impl<S: UniversalRead<T>, T: Copy + 'static> UniversalReadFileOps for TypedStorage<S, T> {
+impl<S, T> UniversalReadFileOps for TypedStorage<S, T>
+where
+    S: UniversalReadFileOps,
+{
     #[inline]
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
         S::list_files(prefix_path)
@@ -46,11 +49,15 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalReadFileOps for TypedStora
     }
 }
 
-impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S, T> {
-    type ReadPipeline<'a, Meta>
-        = WrappedReadPipeline<'a, Self, S::ReadPipeline<'a, Meta>>
+impl<S, T> UniversalRead<T> for TypedStorage<S, T>
+where
+    S: UniversalRead<T>,
+    T: Copy + 'static,
+{
+    type ReadPipeline<'file, Meta>
+        = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, Meta>>
     where
-        Self: 'a;
+        Self: 'file;
 
     #[inline]
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -71,19 +78,25 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     }
 
     #[inline]
-    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
+    fn read_batch<'a, P, Meta>(
         &'a self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        P: AccessPattern,
+    {
         self.inner.read_batch::<P, Meta>(ranges, callback)
     }
 
     #[inline]
-    fn read_iter<P: AccessPattern, Meta>(
+    fn read_iter<P, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>> {
+    ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>>
+    where
+        P: AccessPattern,
+    {
         self.inner.read_iter::<P, Meta>(ranges)
     }
 
@@ -103,11 +116,12 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     }
 
     #[inline]
-    fn read_multi<'a, P: AccessPattern, Meta: 'a>(
+    fn read_multi<'a, P, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
     where
+        P: AccessPattern,
         Self: 'a,
     {
         S::read_multi::<'a, P, Meta>(
@@ -119,10 +133,11 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     }
 
     #[inline]
-    fn read_multi_iter<'a, P: AccessPattern, Meta>(
+    fn read_multi_iter<'a, P, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>>
     where
+        P: AccessPattern,
         Self: 'a,
     {
         let reads = reads
@@ -136,7 +151,11 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S
     }
 }
 
-impl<S: UniversalWrite<T>, T: Copy + 'static> UniversalWrite<T> for TypedStorage<S, T> {
+impl<S, T> UniversalWrite<T> for TypedStorage<S, T>
+where
+    S: UniversalWrite<T>,
+    T: Copy + 'static,
+{
     #[inline]
     fn write(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()> {
         self.inner.write(byte_offset, data)

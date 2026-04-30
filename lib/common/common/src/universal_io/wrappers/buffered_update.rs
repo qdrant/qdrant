@@ -13,9 +13,10 @@ use crate::universal_io::{Flusher, UniversalIoError, UniversalWrite};
 ///
 /// WARN: this structure is expected to be write-only.
 #[derive(Debug)]
-pub struct SliceBufferedUpdateWrapper<S: UniversalWrite<T>, T: Copy>
+pub struct SliceBufferedUpdateWrapper<S, T>
 where
-    T: 'static,
+    S: UniversalWrite<T>,
+    T: Copy + 'static,
 {
     slice: Arc<RwLock<S>>,
     len: u64,
@@ -23,9 +24,10 @@ where
     is_alive_lock: IsAliveLock,
 }
 
-impl<S: UniversalWrite<T>, T: Copy> SliceBufferedUpdateWrapper<S, T>
+impl<S, T> SliceBufferedUpdateWrapper<S, T>
 where
-    T: 'static,
+    S: UniversalWrite<T>,
+    T: Copy + 'static,
 {
     pub fn new(slice_storage: S) -> Result<Self, UniversalIoError> {
         let len = slice_storage.len()?;
@@ -54,7 +56,7 @@ where
 impl<S, T> SliceBufferedUpdateWrapper<S, T>
 where
     S: UniversalWrite<T> + Send + Sync + 'static,
-    T: Sync + Send + Copy + Clone + PartialEq + 'static,
+    T: Copy + Clone + PartialEq + Sync + Send + 'static,
 {
     pub fn flusher(&self) -> Flusher {
         let updates = {

@@ -49,7 +49,10 @@ impl UniversalReadFileOps for IoUringFile {
     }
 }
 
-impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
+impl<T> UniversalRead<T> for IoUringFile
+where
+    T: bytemuck::Pod,
+{
     type ReadPipeline<'a, Meta> = IoUringPipeline<'a, T, Meta>;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -130,12 +133,16 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     }
 }
 
-pub struct IoUringPipeline<'a, T: bytemuck::Pod, Meta> {
-    runtime: IoUringRuntime<'a, T, Meta>,
+pub struct IoUringPipeline<'file, T, Meta>
+where
+    T: bytemuck::Pod,
+{
+    runtime: IoUringRuntime<'file, T, Meta>,
 }
 
-impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
-    for IoUringPipeline<'a, T, Meta>
+impl<'file, T, Meta> UniversalReadPipeline<'file, T, Meta> for IoUringPipeline<'file, T, Meta>
+where
+    T: bytemuck::Pod,
 {
     type File = IoUringFile;
 
@@ -150,7 +157,7 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
         self.runtime.in_progress + squeue.len() < IO_URING_QUEUE_LENGTH as _
     }
 
-    fn schedule<P>(&mut self, meta: Meta, file: &'a IoUringFile, range: ReadRange) -> Result<()>
+    fn schedule<P>(&mut self, meta: Meta, file: &'file IoUringFile, range: ReadRange) -> Result<()>
     where
         P: AccessPattern,
     {
@@ -168,7 +175,7 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(Meta, Cow<'a, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [T]>)>> {
         if self.runtime.completion_is_empty() {
             let has_pending = !self.runtime.io_uring.submission().is_empty();
             if !has_pending && self.runtime.in_progress == 0 {
@@ -186,7 +193,10 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
     }
 }
 
-impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
+impl<T> UniversalWrite<T> for IoUringFile
+where
+    T: bytemuck::Pod,
+{
     fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         let bytes = bytemuck::cast_slice(items);
         self.file.write_all_at(bytes, byte_offset)?;

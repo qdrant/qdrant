@@ -129,12 +129,13 @@ where
     }
 }
 
-pub struct MmapReadPipeline<'a, T, Meta> {
-    result: Option<(Meta, &'a [T])>,
+pub struct MmapReadPipeline<'file, T, Meta> {
+    result: Option<(Meta, &'file [T])>,
 }
 
-impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
-    for MmapReadPipeline<'a, T, Meta>
+impl<'file, T, Meta> UniversalReadPipeline<'file, T, Meta> for MmapReadPipeline<'file, T, Meta>
+where
+    T: bytemuck::Pod,
 {
     type File = MmapFile;
 
@@ -146,7 +147,7 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
         self.result.is_none()
     }
 
-    fn schedule<P>(&mut self, meta: Meta, file: &'a MmapFile, range: ReadRange) -> Result<()>
+    fn schedule<P>(&mut self, meta: Meta, file: &'file MmapFile, range: ReadRange) -> Result<()>
     where
         P: AccessPattern,
     {
@@ -157,7 +158,7 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(Meta, Cow<'a, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [T]>)>> {
         let result = self.result.take();
         Ok(result.map(|(meta, items)| (meta, Cow::Borrowed(items))))
     }

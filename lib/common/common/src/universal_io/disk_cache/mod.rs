@@ -66,7 +66,10 @@ impl<T> UniversalReadFileOps for CachedSlice<T> {
     }
 }
 
-impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
+impl<T> UniversalRead<T> for CachedSlice<T>
+where
+    T: bytemuck::Pod,
+{
     type ReadPipeline<'a, Meta>
         = DiskCacheReadPipeline<'a, T, Meta>
     where
@@ -122,12 +125,16 @@ impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
     }
 }
 
-pub struct DiskCacheReadPipeline<'a, T: bytemuck::Pod, Meta> {
-    result: Option<(Meta, Cow<'a, [T]>)>,
+pub struct DiskCacheReadPipeline<'file, T, Meta>
+where
+    T: bytemuck::Pod,
+{
+    result: Option<(Meta, Cow<'file, [T]>)>,
 }
 
-impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
-    for DiskCacheReadPipeline<'a, T, Meta>
+impl<'file, T, Meta> UniversalReadPipeline<'file, T, Meta> for DiskCacheReadPipeline<'file, T, Meta>
+where
+    T: bytemuck::Pod,
 {
     type File = CachedSlice<T>;
 
@@ -139,7 +146,12 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
         self.result.is_none()
     }
 
-    fn schedule<P>(&mut self, meta: Meta, file: &'a CachedSlice<T>, range: ReadRange) -> Result<()>
+    fn schedule<P>(
+        &mut self,
+        meta: Meta,
+        file: &'file CachedSlice<T>,
+        range: ReadRange,
+    ) -> Result<()>
     where
         P: AccessPattern,
     {
@@ -150,7 +162,7 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(Meta, Cow<'a, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [T]>)>> {
         Ok(self.result.take())
     }
 }
