@@ -32,17 +32,16 @@ fn test_point_exclusion() {
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
-    let res = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &query_vector,
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            1,
-            None,
-        ))
-        .unwrap();
+    let res = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &query_vector,
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        1,
+        None,
+    ))
+    .unwrap();
 
     let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
@@ -51,17 +50,16 @@ fn test_point_exclusion() {
 
     let frt = Filter::new_must_not(Condition::HasId(ids.into()));
 
-    let res = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &query_vector,
-            &WithPayload::default(),
-            &false.into(),
-            Some(&frt),
-            1,
-            None,
-        ))
-        .unwrap();
+    let res = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &query_vector,
+        &WithPayload::default(),
+        &false.into(),
+        Some(&frt),
+        1,
+        None,
+    ))
+    .unwrap();
 
     let best_match = res.first().expect("Non-empty result");
     assert_ne!(best_match.id, 3.into());
@@ -85,17 +83,16 @@ fn test_named_vector_search() {
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
-    let res = futures::executor::block_on(segment
-        .search(
-            "vector1",
-            &query_vector,
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            1,
-            None,
-        ))
-        .unwrap();
+    let res = futures::executor::block_on(segment.search(
+        "vector1",
+        &query_vector,
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        1,
+        None,
+    ))
+    .unwrap();
 
     let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
@@ -109,17 +106,16 @@ fn test_named_vector_search() {
         must_not: Some(vec![Condition::HasId(ids.into())]),
     };
 
-    let res = futures::executor::block_on(segment
-        .search(
-            "vector1",
-            &query_vector,
-            &WithPayload::default(),
-            &false.into(),
-            Some(&frt),
-            1,
-            None,
-        ))
-        .unwrap();
+    let res = futures::executor::block_on(segment.search(
+        "vector1",
+        &query_vector,
+        &WithPayload::default(),
+        &false.into(),
+        Some(&frt),
+        1,
+        None,
+    ))
+    .unwrap();
 
     let best_match = res.first().expect("Non-empty result");
     assert_ne!(best_match.id, 3.into());
@@ -140,30 +136,28 @@ fn test_missed_vector_name() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let exists = futures::executor::block_on(segment
-        .upsert_point(
-            7,
-            1.into(),
-            NamedVectors::from_pairs([
-                ("vector2".into(), vec![10.]),
-                ("vector3".into(), vec![5., 6., 7., 8.]),
-            ]),
-            &hw_counter,
-        ))
-        .unwrap();
+    let exists = futures::executor::block_on(segment.upsert_point(
+        7,
+        1.into(),
+        NamedVectors::from_pairs([
+            ("vector2".into(), vec![10.]),
+            ("vector3".into(), vec![5., 6., 7., 8.]),
+        ]),
+        &hw_counter,
+    ))
+    .unwrap();
     assert!(exists, "this partial vector should overwrite existing");
 
-    let exists = futures::executor::block_on(segment
-        .upsert_point(
-            8,
-            6.into(),
-            NamedVectors::from_pairs([
-                ("vector2".into(), vec![10.]),
-                ("vector3".into(), vec![5., 6., 7., 8.]),
-            ]),
-            &hw_counter,
-        ))
-        .unwrap();
+    let exists = futures::executor::block_on(segment.upsert_point(
+        8,
+        6.into(),
+        NamedVectors::from_pairs([
+            ("vector2".into(), vec![10.]),
+            ("vector3".into(), vec![5., 6., 7., 8.]),
+        ]),
+        &hw_counter,
+    ))
+    .unwrap();
     assert!(!exists, "this partial vector should not existing");
 }
 
@@ -210,17 +204,16 @@ fn ordered_deletion_test() {
     let segment = load_segment(&path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
-    let res = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &query_vector,
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            1,
-            None,
-        ))
-        .unwrap();
+    let res = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &query_vector,
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        1,
+        None,
+    ))
+    .unwrap();
     let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
 }
@@ -294,9 +287,13 @@ fn test_update_named_vector() {
 
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
-        futures::executor::block_on(segment
-            .upsert_point(i, i.into(), only_default_vector(vec), &hw_counter))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            i,
+            i.into(),
+            only_default_vector(vec),
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     let query_vector = random_vector(&mut rng, dim).into();
@@ -306,17 +303,16 @@ fn test_update_named_vector() {
         exact: true,
         ..Default::default()
     };
-    let nearest_upsert = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &query_vector,
-            &false.into(),
-            &true.into(),
-            None,
-            1,
-            Some(&search_params),
-        ))
-        .unwrap();
+    let nearest_upsert = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &query_vector,
+        &false.into(),
+        &true.into(),
+        None,
+        1,
+        Some(&search_params),
+    ))
+    .unwrap();
     let nearest_upsert = nearest_upsert.first().unwrap();
 
     let sqrt_distance = |v: &[f32]| -> f32 { v.iter().map(|x| x * x).sum::<f32>().sqrt() };
@@ -337,28 +333,26 @@ fn test_update_named_vector() {
     // update vector using the same values
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
-        futures::executor::block_on(segment
-            .update_vectors(
-                i + num_points as u64,
-                i.into(),
-                only_default_vector(vec),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment.update_vectors(
+            i + num_points as u64,
+            i.into(),
+            only_default_vector(vec),
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     // do search after update
-    let nearest_update = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &query_vector,
-            &false.into(),
-            &true.into(),
-            None,
-            1,
-            Some(&search_params),
-        ))
-        .unwrap();
+    let nearest_update = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &query_vector,
+        &false.into(),
+        &true.into(),
+        None,
+        1,
+        Some(&search_params),
+    ))
+    .unwrap();
     let nearest_update = nearest_update.first().unwrap();
 
     // check that nearest_upsert is normalized
@@ -385,15 +379,14 @@ fn test_plain_search_top_zero() {
     let segment = build_segment_1(dir.path());
     assert_eq!(segment.segment_type(), SegmentType::Plain);
 
-    futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &[1.0, 1.0, 1.0, 1.0].into(),
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            0,
-            None,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &[1.0, 1.0, 1.0, 1.0].into(),
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        0,
+        None,
+    ))
+    .unwrap();
 }

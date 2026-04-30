@@ -79,22 +79,20 @@ fn range_filtering(c: &mut Criterion) {
     .unwrap();
 
     // add numeric float index
-    futures::executor::block_on(index
-        .set_indexed(
-            &FLT_KEY.parse().unwrap(),
-            PayloadSchemaType::Float.into(),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &FLT_KEY.parse().unwrap(),
+        PayloadSchemaType::Float.into(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     // add numeric integer index
-    futures::executor::block_on(index
-        .set_indexed(
-            &INT_KEY.parse().unwrap(),
-            PayloadSchemaType::Integer.into(),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &INT_KEY.parse().unwrap(),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     // make sure all points are indexed
     assert_eq!(index.indexed_points(&FLT_KEY.parse().unwrap()), NUM_POINTS);

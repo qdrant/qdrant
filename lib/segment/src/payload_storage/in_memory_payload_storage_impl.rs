@@ -111,7 +111,11 @@ impl PayloadStorage for InMemoryPayloadStorage {
         async_flusher_from_sync(|| Ok(()))
     }
 
-    async fn iter<F>(&self, mut callback: F, _hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    async fn iter<F>(
+        &self,
+        mut callback: F,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {

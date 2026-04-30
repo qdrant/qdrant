@@ -95,14 +95,13 @@ impl TestSegments {
         let points_to_clear = 500;
 
         let mut opnum = 0;
-        futures::executor::block_on(struct_segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(INT_KEY_2),
-                Some(&Integer.into()),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(struct_segment.create_field_index(
+            opnum,
+            &JsonPath::new(INT_KEY_2),
+            Some(&Integer.into()),
+            &hw_counter,
+        ))
+        .unwrap();
 
         opnum += 1;
         for n in 0..num_points {
@@ -110,97 +109,106 @@ impl TestSegments {
             let vector = random_vector(&mut rng, DIM);
             let payload: Payload = generate_diverse_payload(&mut rng);
 
-            futures::executor::block_on(plain_segment
-                .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter))
-                .unwrap();
-            futures::executor::block_on(struct_segment
-                .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter))
-                .unwrap();
-            futures::executor::block_on(plain_segment
-                .set_full_payload(opnum, idx, &payload, &hw_counter))
-                .unwrap();
-            futures::executor::block_on(struct_segment
-                .set_full_payload(opnum, idx, &payload, &hw_counter))
-                .unwrap();
+            futures::executor::block_on(plain_segment.upsert_point(
+                opnum,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            ))
+            .unwrap();
+            futures::executor::block_on(struct_segment.upsert_point(
+                opnum,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            ))
+            .unwrap();
+            futures::executor::block_on(plain_segment.set_full_payload(
+                opnum,
+                idx,
+                &payload,
+                &hw_counter,
+            ))
+            .unwrap();
+            futures::executor::block_on(struct_segment.set_full_payload(
+                opnum,
+                idx,
+                &payload,
+                &hw_counter,
+            ))
+            .unwrap();
 
             opnum += 1;
         }
 
-        futures::executor::block_on(struct_segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(STR_KEY),
-                Some(&Keyword.into()),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(struct_segment.create_field_index(
+            opnum,
+            &JsonPath::new(STR_KEY),
+            Some(&Keyword.into()),
+            &hw_counter,
+        ))
+        .unwrap();
         let int_payload_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Integer);
-        futures::executor::block_on(struct_segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(INT_KEY),
-                Some(&int_payload_schema),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(INT_KEY_2),
-                Some(&FieldParams(PayloadSchemaParams::Integer(
-                    IntegerIndexParams {
-                        r#type: IntegerIndexType::Integer,
-                        lookup: Some(true),
-                        range: Some(false),
-                        is_principal: None,
-                        on_disk: None,
-                        enable_hnsw: None,
-                    },
-                ))),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(INT_KEY_3),
-                Some(&FieldParams(PayloadSchemaParams::Integer(
-                    IntegerIndexParams {
-                        r#type: IntegerIndexType::Integer,
-                        lookup: Some(false),
-                        range: Some(true),
-                        is_principal: None,
-                        on_disk: None,
-                        enable_hnsw: None,
-                    },
-                ))),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(GEO_KEY),
-                Some(&PayloadSchemaType::Geo.into()),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(TEXT_KEY),
-                Some(&PayloadSchemaType::Text.into()),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(FLICKING_KEY),
-                Some(&Integer.into()),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(struct_segment.create_field_index(
+            opnum,
+            &JsonPath::new(INT_KEY),
+            Some(&int_payload_schema),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.create_field_index(
+            opnum,
+            &JsonPath::new(INT_KEY_2),
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: Some(true),
+                    range: Some(false),
+                    is_principal: None,
+                    on_disk: None,
+                    enable_hnsw: None,
+                },
+            ))),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.create_field_index(
+            opnum,
+            &JsonPath::new(INT_KEY_3),
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: Some(false),
+                    range: Some(true),
+                    is_principal: None,
+                    on_disk: None,
+                    enable_hnsw: None,
+                },
+            ))),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.create_field_index(
+            opnum,
+            &JsonPath::new(GEO_KEY),
+            Some(&PayloadSchemaType::Geo.into()),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.create_field_index(
+            opnum,
+            &JsonPath::new(TEXT_KEY),
+            Some(&PayloadSchemaType::Text.into()),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.create_field_index(
+            opnum,
+            &JsonPath::new(FLICKING_KEY),
+            Some(&Integer.into()),
+            &hw_counter,
+        ))
+        .unwrap();
 
         // Make mmap segment after inserting the points, but before deleting some of them
         let mut mmap_segment =
@@ -209,29 +217,47 @@ impl TestSegments {
         for _ in 0..points_to_clear {
             opnum += 1;
             let idx_to_remove = rng.random_range(0..num_points);
-            futures::executor::block_on(plain_segment
-                .clear_payload(opnum, idx_to_remove.into(), &hw_counter))
-                .unwrap();
-            futures::executor::block_on(struct_segment
-                .clear_payload(opnum, idx_to_remove.into(), &hw_counter))
-                .unwrap();
-            futures::executor::block_on(mmap_segment
-                .clear_payload(opnum, idx_to_remove.into(), &hw_counter))
-                .unwrap();
+            futures::executor::block_on(plain_segment.clear_payload(
+                opnum,
+                idx_to_remove.into(),
+                &hw_counter,
+            ))
+            .unwrap();
+            futures::executor::block_on(struct_segment.clear_payload(
+                opnum,
+                idx_to_remove.into(),
+                &hw_counter,
+            ))
+            .unwrap();
+            futures::executor::block_on(mmap_segment.clear_payload(
+                opnum,
+                idx_to_remove.into(),
+                &hw_counter,
+            ))
+            .unwrap();
         }
 
         for _ in 0..points_to_delete {
             opnum += 1;
             let idx_to_remove = rng.random_range(0..num_points);
-            futures::executor::block_on(plain_segment
-                .delete_point(opnum, idx_to_remove.into(), &hw_counter))
-                .unwrap();
-            futures::executor::block_on(struct_segment
-                .delete_point(opnum, idx_to_remove.into(), &hw_counter))
-                .unwrap();
-            futures::executor::block_on(mmap_segment
-                .delete_point(opnum, idx_to_remove.into(), &hw_counter))
-                .unwrap();
+            futures::executor::block_on(plain_segment.delete_point(
+                opnum,
+                idx_to_remove.into(),
+                &hw_counter,
+            ))
+            .unwrap();
+            futures::executor::block_on(struct_segment.delete_point(
+                opnum,
+                idx_to_remove.into(),
+                &hw_counter,
+            ))
+            .unwrap();
+            futures::executor::block_on(mmap_segment.delete_point(
+                opnum,
+                idx_to_remove.into(),
+                &hw_counter,
+            ))
+            .unwrap();
         }
 
         for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
@@ -298,97 +324,91 @@ impl TestSegments {
         let mut segment = builder.build_for_test(path);
         let opnum = segment.version() + 1;
 
-        futures::executor::block_on(segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(STR_KEY),
-                Some(&FieldParams(PayloadSchemaParams::Keyword(
-                    KeywordIndexParams {
-                        r#type: KeywordIndexType::Keyword,
-                        is_tenant: None,
-                        on_disk: Some(true),
-                        enable_hnsw: None,
-                    },
-                ))),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(INT_KEY),
-                Some(&FieldParams(PayloadSchemaParams::Integer(
-                    IntegerIndexParams {
-                        r#type: IntegerIndexType::Integer,
-                        lookup: Some(true),
-                        range: Some(true),
-                        is_principal: None,
-                        on_disk: Some(true),
-                        enable_hnsw: None,
-                    },
-                ))),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(INT_KEY_2),
-                Some(&FieldParams(PayloadSchemaParams::Integer(
-                    IntegerIndexParams {
-                        r#type: IntegerIndexType::Integer,
-                        lookup: Some(true),
-                        range: Some(false),
-                        is_principal: None,
-                        on_disk: Some(true),
-                        enable_hnsw: None,
-                    },
-                ))),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(INT_KEY_3),
-                Some(&FieldParams(PayloadSchemaParams::Integer(
-                    IntegerIndexParams {
-                        r#type: IntegerIndexType::Integer,
-                        lookup: Some(false),
-                        range: Some(true),
-                        is_principal: None,
-                        on_disk: Some(true),
-                        enable_hnsw: None,
-                    },
-                ))),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(FLT_KEY),
-                Some(&FieldParams(PayloadSchemaParams::Float(FloatIndexParams {
-                    r#type: FloatIndexType::Float,
+        futures::executor::block_on(segment.create_field_index(
+            opnum,
+            &JsonPath::new(STR_KEY),
+            Some(&FieldParams(PayloadSchemaParams::Keyword(
+                KeywordIndexParams {
+                    r#type: KeywordIndexType::Keyword,
+                    is_tenant: None,
+                    on_disk: Some(true),
+                    enable_hnsw: None,
+                },
+            ))),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.create_field_index(
+            opnum,
+            &JsonPath::new(INT_KEY),
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: Some(true),
+                    range: Some(true),
                     is_principal: None,
                     on_disk: Some(true),
                     enable_hnsw: None,
-                }))),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .create_field_index(
-                opnum,
-                &JsonPath::new(TEXT_KEY),
-                Some(&FieldParams(PayloadSchemaParams::Text(TextIndexParams {
-                    r#type: TextIndexType::Text,
+                },
+            ))),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.create_field_index(
+            opnum,
+            &JsonPath::new(INT_KEY_2),
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: Some(true),
+                    range: Some(false),
+                    is_principal: None,
                     on_disk: Some(true),
-                    ..Default::default()
-                }))),
-                &hw_counter,
-            ))
-            .unwrap();
+                    enable_hnsw: None,
+                },
+            ))),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.create_field_index(
+            opnum,
+            &JsonPath::new(INT_KEY_3),
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: Some(false),
+                    range: Some(true),
+                    is_principal: None,
+                    on_disk: Some(true),
+                    enable_hnsw: None,
+                },
+            ))),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.create_field_index(
+            opnum,
+            &JsonPath::new(FLT_KEY),
+            Some(&FieldParams(PayloadSchemaParams::Float(FloatIndexParams {
+                r#type: FloatIndexType::Float,
+                is_principal: None,
+                on_disk: Some(true),
+                enable_hnsw: None,
+            }))),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.create_field_index(
+            opnum,
+            &JsonPath::new(TEXT_KEY),
+            Some(&FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+                r#type: TextIndexType::Text,
+                on_disk: Some(true),
+                ..Default::default()
+            }))),
+            &hw_counter,
+        ))
+        .unwrap();
 
         segment
     }
@@ -416,27 +436,29 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
     let hw_counter = HardwareCounterCell::new();
 
     let mut opnum = 0;
-    futures::executor::block_on(struct_segment
-        .create_field_index(opnum, &nested_str_key, Some(&Keyword.into()), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(struct_segment.create_field_index(
+        opnum,
+        &nested_str_key,
+        Some(&Keyword.into()),
+        &hw_counter,
+    ))
+    .unwrap();
 
-    futures::executor::block_on(struct_segment
-        .create_field_index(
-            opnum,
-            &nested_str_proj_key,
-            Some(&Keyword.into()),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(struct_segment.create_field_index(
+        opnum,
+        &nested_str_proj_key,
+        Some(&Keyword.into()),
+        &hw_counter,
+    ))
+    .unwrap();
 
-    futures::executor::block_on(struct_segment
-        .create_field_index(
-            opnum,
-            &deep_nested_str_proj_key,
-            Some(&Keyword.into()),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(struct_segment.create_field_index(
+        opnum,
+        &deep_nested_str_proj_key,
+        Some(&Keyword.into()),
+        &hw_counter,
+    ))
+    .unwrap();
 
     eprintln!("{deep_nested_str_proj_key}");
 
@@ -446,18 +468,34 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         let vector = random_vector(&mut rng, DIM);
         let payload: Payload = generate_diverse_nested_payload(&mut rng);
 
-        futures::executor::block_on(plain_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(plain_segment
-            .set_full_payload(opnum, idx, &payload, &hw_counter))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .set_full_payload(opnum, idx, &payload, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(plain_segment.upsert_point(
+            opnum,
+            idx,
+            only_default_vector(&vector),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.upsert_point(
+            opnum,
+            idx,
+            only_default_vector(&vector),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(plain_segment.set_full_payload(
+            opnum,
+            idx,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.set_full_payload(
+            opnum,
+            idx,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
 
         opnum += 1;
     }
@@ -465,23 +503,35 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
     for _ in 0..points_to_clear {
         opnum += 1;
         let idx_to_remove = rng.random_range(0..num_points);
-        futures::executor::block_on(plain_segment
-            .clear_payload(opnum, idx_to_remove.into(), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .clear_payload(opnum, idx_to_remove.into(), &hw_counter))
-            .unwrap();
+        futures::executor::block_on(plain_segment.clear_payload(
+            opnum,
+            idx_to_remove.into(),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.clear_payload(
+            opnum,
+            idx_to_remove.into(),
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     for _ in 0..points_to_delete {
         opnum += 1;
         let idx_to_remove = rng.random_range(0..num_points);
-        futures::executor::block_on(plain_segment
-            .delete_point(opnum, idx_to_remove.into(), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(struct_segment
-            .delete_point(opnum, idx_to_remove.into(), &hw_counter))
-            .unwrap();
+        futures::executor::block_on(plain_segment.delete_point(
+            opnum,
+            idx_to_remove.into(),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(struct_segment.delete_point(
+            opnum,
+            idx_to_remove.into(),
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     for (_field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
@@ -502,18 +552,16 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
 
     for _i in 0..ATTEMPTS {
         let query = random_vector(&mut rng, DIM).into();
-        let plain_result = futures::executor::block_on(test_segments
-            .plain_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query,
-                &WithPayload::default(),
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            ))
-            .unwrap();
+        let plain_result = futures::executor::block_on(test_segments.plain_segment.search(
+            DEFAULT_VECTOR_NAME,
+            &query,
+            &WithPayload::default(),
+            &false.into(),
+            Some(&query_filter),
+            5,
+            None,
+        ))
+        .unwrap();
 
         let hw_counter = HardwareCounterCell::new();
         let estimation = test_segments
@@ -535,18 +583,16 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
             "{estimation:#?}",
         );
 
-        let struct_result = futures::executor::block_on(test_segments
-            .struct_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query,
-                &WithPayload::default(),
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            ))
-            .unwrap();
+        let struct_result = futures::executor::block_on(test_segments.struct_segment.search(
+            DEFAULT_VECTOR_NAME,
+            &query,
+            &WithPayload::default(),
+            &false.into(),
+            Some(&query_filter),
+            5,
+            None,
+        ))
+        .unwrap();
 
         let estimation = test_segments
             .struct_segment
@@ -909,42 +955,36 @@ fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
         let query_vector = random_vector(&mut rng, DIM).into();
         let query_filter = random_filter(&mut rng, 3);
 
-        let plain_result = futures::executor::block_on(test_segments
-            .plain_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload::default(),
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            ))
-            .unwrap();
-        let struct_result = futures::executor::block_on(test_segments
-            .struct_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload::default(),
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            ))
-            .unwrap();
-        let mmap_result = futures::executor::block_on(test_segments
-            .mmap_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload::default(),
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            ))
-            .unwrap();
+        let plain_result = futures::executor::block_on(test_segments.plain_segment.search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &WithPayload::default(),
+            &false.into(),
+            Some(&query_filter),
+            5,
+            None,
+        ))
+        .unwrap();
+        let struct_result = futures::executor::block_on(test_segments.struct_segment.search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &WithPayload::default(),
+            &false.into(),
+            Some(&query_filter),
+            5,
+            None,
+        ))
+        .unwrap();
+        let mmap_result = futures::executor::block_on(test_segments.mmap_segment.search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &WithPayload::default(),
+            &false.into(),
+            Some(&query_filter),
+            5,
+            None,
+        ))
+        .unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -1122,34 +1162,32 @@ fn test_struct_payload_index_nested_fields() {
     for _i in 0..attempts {
         let query_vector = random_vector(&mut rng, DIM).into();
         let query_filter = random_nested_filter(&mut rng);
-        let plain_result = futures::executor::block_on(plain_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload {
-                    enable: true,
-                    payload_selector: None,
-                },
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            ))
-            .unwrap();
-        let struct_result = futures::executor::block_on(struct_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload {
-                    enable: true,
-                    payload_selector: None,
-                },
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            ))
-            .unwrap();
+        let plain_result = futures::executor::block_on(plain_segment.search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &WithPayload {
+                enable: true,
+                payload_selector: None,
+            },
+            &false.into(),
+            Some(&query_filter),
+            5,
+            None,
+        ))
+        .unwrap();
+        let struct_result = futures::executor::block_on(struct_segment.search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &WithPayload {
+                enable: true,
+                payload_selector: None,
+            },
+            &false.into(),
+            Some(&query_filter),
+            5,
+            None,
+        ))
+        .unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -1284,9 +1322,12 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
         ))
         .unwrap();
 
-        futures::executor::block_on(index
-            .set_indexed(&field, FieldType(PayloadSchemaType::Bool), &hw_counter))
-            .unwrap();
+        futures::executor::block_on(index.set_indexed(
+            &field,
+            FieldType(PayloadSchemaType::Bool),
+            &hw_counter,
+        ))
+        .unwrap();
 
         for field_index in index.field_indexes.get(&field).unwrap() {
             field_index.flusher()().unwrap();
@@ -1353,8 +1394,7 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
         ))
         .unwrap();
 
-        futures::executor::block_on(index
-            .set_indexed(&field, FieldType(Keyword), &hw_counter))
+        futures::executor::block_on(index.set_indexed(&field, FieldType(Keyword), &hw_counter))
             .unwrap();
 
         for field_index in index.field_indexes.get(&field).unwrap() {
@@ -1498,17 +1538,16 @@ fn validate_facet_result(
         )));
         let count_filter = Filter::merge_opts(Some(count_filter), filter.clone());
 
-        let exact = futures::executor::block_on(segment
-            .read_filtered(
-                None,
-                None,
-                count_filter.as_ref(),
-                &Default::default(),
-                &hw_counter,
-                DeferredBehavior::Exclude,
-            ))
-            .unwrap()
-            .len();
+        let exact = futures::executor::block_on(segment.read_filtered(
+            None,
+            None,
+            count_filter.as_ref(),
+            &Default::default(),
+            &hw_counter,
+            DeferredBehavior::Exclude,
+        ))
+        .unwrap()
+        .len();
 
         ensure!(*count == exact, "Facet value: {value:?}");
     }
@@ -1521,17 +1560,21 @@ fn test_struct_keyword_facet(test_segments: &TestSegments) -> Result<()> {
 
     // Plain segment should fail, as it does not have a keyword index
     assert!(
-        futures::executor::block_on(test_segments
-            .plain_segment
-            .facet(&request, &Default::default(), &Default::default()))
-            .is_err(),
+        futures::executor::block_on(test_segments.plain_segment.facet(
+            &request,
+            &Default::default(),
+            &Default::default()
+        ))
+        .is_err(),
     );
 
     // Struct segment
-    let facet_hits = futures::executor::block_on(test_segments
-        .struct_segment
-        .facet(&request, &Default::default(), &Default::default()))
-        .unwrap();
+    let facet_hits = futures::executor::block_on(test_segments.struct_segment.facet(
+        &request,
+        &Default::default(),
+        &Default::default(),
+    ))
+    .unwrap();
 
     validate_facet_result(&test_segments.struct_segment, facet_hits, None).context(here!())
 }
@@ -1539,10 +1582,12 @@ fn test_struct_keyword_facet(test_segments: &TestSegments) -> Result<()> {
 fn test_mmap_keyword_facet(test_segments: &TestSegments) -> Result<()> {
     let request = keyword_facet_request();
 
-    let facet_hits = futures::executor::block_on(test_segments
-        .mmap_segment
-        .facet(&request, &Default::default(), &Default::default()))
-        .unwrap();
+    let facet_hits = futures::executor::block_on(test_segments.mmap_segment.facet(
+        &request,
+        &Default::default(),
+        &Default::default(),
+    ))
+    .unwrap();
 
     validate_facet_result(&test_segments.mmap_segment, facet_hits, None).context(here!())
 }
@@ -1554,10 +1599,12 @@ fn test_struct_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()
         let filter = random_filter(&mut rand::rng(), 3);
         request.filter = Some(filter.clone());
 
-        let facet_hits = futures::executor::block_on(test_segments
-            .struct_segment
-            .facet(&request, &Default::default(), &Default::default()))
-            .unwrap();
+        let facet_hits = futures::executor::block_on(test_segments.struct_segment.facet(
+            &request,
+            &Default::default(),
+            &Default::default(),
+        ))
+        .unwrap();
 
         validate_facet_result(&test_segments.struct_segment, facet_hits, Some(filter))
             .context(here!())?
@@ -1572,10 +1619,12 @@ fn test_mmap_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()> 
         let filter = random_filter(&mut rand::rng(), 3);
         request.filter = Some(filter.clone());
 
-        let facet_hits = futures::executor::block_on(test_segments
-            .mmap_segment
-            .facet(&request, &Default::default(), &Default::default()))
-            .unwrap();
+        let facet_hits = futures::executor::block_on(test_segments.mmap_segment.facet(
+            &request,
+            &Default::default(),
+            &Default::default(),
+        ))
+        .unwrap();
 
         validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter))
             .context(here!())?

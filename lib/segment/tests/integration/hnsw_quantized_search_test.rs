@@ -101,26 +101,28 @@ fn hnsw_quantized_search_test(
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_test_vector(&mut rng, dim, distance);
-        futures::executor::block_on(segment
-            .upsert_point(op_num, idx, only_default_vector(&vector), &hw_counter))
-            .unwrap();
-        op_num += 1;
-    }
-
-    futures::executor::block_on(segment
-        .create_field_index(
+        futures::executor::block_on(segment.upsert_point(
             op_num,
-            &JsonPath::new(STR_KEY),
-            Some(&Keyword.into()),
+            idx,
+            only_default_vector(&vector),
             &hw_counter,
         ))
         .unwrap();
+        op_num += 1;
+    }
+
+    futures::executor::block_on(segment.create_field_index(
+        op_num,
+        &JsonPath::new(STR_KEY),
+        Some(&Keyword.into()),
+        &hw_counter,
+    ))
+    .unwrap();
     op_num += 1;
     for n in 0..payloads_count {
         let idx = n.into();
         let payload = payload_json! {STR_KEY: STR_KEY};
-        futures::executor::block_on(segment
-            .set_full_payload(op_num, idx, &payload, &hw_counter))
+        futures::executor::block_on(segment.set_full_payload(op_num, idx, &payload, &hw_counter))
             .unwrap();
         op_num += 1;
     }
@@ -206,9 +208,13 @@ fn hnsw_quantized_search_test(
         let zero_vector = vec![0.0; dim];
         for n in 0..num_vectors {
             let idx = n.into();
-            futures::executor::block_on(segment
-                .upsert_point(op_num, idx, only_default_vector(&zero_vector), &hw_counter))
-                .unwrap();
+            futures::executor::block_on(segment.upsert_point(
+                op_num,
+                idx,
+                only_default_vector(&zero_vector),
+                &hw_counter,
+            ))
+            .unwrap();
             op_num += 1;
         }
         check_rescoring(&query_vectors, &hnsw_index, None, ef, top);
@@ -796,26 +802,28 @@ fn build_quantized_hnsw_for_compare(
     let mut op_num: u64 = 0;
     for (n, vector) in vectors.iter().enumerate() {
         let idx = (n as u64).into();
-        futures::executor::block_on(segment
-            .upsert_point(op_num, idx, only_default_vector(vector), &hw_counter))
-            .unwrap();
-        op_num += 1;
-    }
-
-    futures::executor::block_on(segment
-        .create_field_index(
+        futures::executor::block_on(segment.upsert_point(
             op_num,
-            &JsonPath::new(STR_KEY),
-            Some(&Keyword.into()),
+            idx,
+            only_default_vector(vector),
             &hw_counter,
         ))
         .unwrap();
+        op_num += 1;
+    }
+
+    futures::executor::block_on(segment.create_field_index(
+        op_num,
+        &JsonPath::new(STR_KEY),
+        Some(&Keyword.into()),
+        &hw_counter,
+    ))
+    .unwrap();
     op_num += 1;
     for n in 0..payloads_count {
         let idx = n.into();
         let payload = payload_json! {STR_KEY: STR_KEY};
-        futures::executor::block_on(segment
-            .set_full_payload(op_num, idx, &payload, &hw_counter))
+        futures::executor::block_on(segment.set_full_payload(op_num, idx, &payload, &hw_counter))
             .unwrap();
         op_num += 1;
     }

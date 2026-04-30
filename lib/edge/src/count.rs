@@ -30,19 +30,15 @@ impl EdgeShard {
                 })
                 .process_results(|iter| iter.flatten().count())?
         } else {
-            let cardinality = segments
-                .map(|segment| {
-                    futures::executor::block_on(
-                        segment
-                            .get()
-                            .read()
-                            .estimate_point_count(
-                                filter.as_ref(),
-                                &HardwareCounterCell::disposable(),
-                            ),
-                    )
-                })
-                .process_results(|iter| iter.merge_independent())?;
+            let cardinality =
+                segments
+                    .map(|segment| {
+                        futures::executor::block_on(segment.get().read().estimate_point_count(
+                            filter.as_ref(),
+                            &HardwareCounterCell::disposable(),
+                        ))
+                    })
+                    .process_results(|iter| iter.merge_independent())?;
 
             cardinality.exp
         };

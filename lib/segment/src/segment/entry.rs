@@ -775,12 +775,14 @@ impl StorageSegmentEntry for Segment {
 
                 let flush_result: OperationResult<()> = async {
                     // Flush mapping first to prevent having orphan internal ids.
-                    id_tracker_mapping_flusher().await.map_err(|err| match err {
-                        OperationError::Cancelled { .. } => err,
-                        _ => OperationError::service_error(format!(
-                            "Failed to flush id_tracker mapping: {err}"
-                        )),
-                    })?;
+                    id_tracker_mapping_flusher()
+                        .await
+                        .map_err(|err| match err {
+                            OperationError::Cancelled { .. } => err,
+                            _ => OperationError::service_error(format!(
+                                "Failed to flush id_tracker mapping: {err}"
+                            )),
+                        })?;
                     for vector_storage_flusher in vector_storage_flushers {
                         vector_storage_flusher().await.map_err(|err| match err {
                             OperationError::Cancelled { .. } => err,
@@ -883,7 +885,9 @@ impl NonAppendableSegmentEntry for Segment {
                     op_num,
                     Some(internal_id),
                     async |segment: &mut Segment| {
-                        segment.delete_point_internal(internal_id, hw_counter).await?;
+                        segment
+                            .delete_point_internal(internal_id, hw_counter)
+                            .await?;
                         segment.version_tracker.set_payload(Some(op_num));
                         Ok((true, Some(internal_id)))
                     },
@@ -893,11 +897,7 @@ impl NonAppendableSegmentEntry for Segment {
         }
     }
 
-    async fn delete_field_index(
-        &mut self,
-        op_num: u64,
-        key: &JsonPath,
-    ) -> OperationResult<bool> {
+    async fn delete_field_index(&mut self, op_num: u64, key: &JsonPath) -> OperationResult<bool> {
         self.handle_segment_version_and_failure_async(op_num, async |segment: &mut Segment| {
             segment.payload_index.borrow_mut().drop_index(key)?;
             segment.version_tracker.set_payload_index_schema(key, None);
@@ -1029,8 +1029,12 @@ impl SegmentEntry for Segment {
             stored_internal_point,
             async |segment: &mut Segment| {
                 if let Some(existing_internal_id) = stored_internal_point {
-                    segment
-                        .replace_all_vectors(existing_internal_id, op_num, &vectors, hw_counter)?;
+                    segment.replace_all_vectors(
+                        existing_internal_id,
+                        op_num,
+                        &vectors,
+                        hw_counter,
+                    )?;
                     Ok((true, Some(existing_internal_id)))
                 } else {
                     let new_index =

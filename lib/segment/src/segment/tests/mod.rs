@@ -62,44 +62,50 @@ fn test_search_batch_equivalence_single() {
     let hw_counter = HardwareCounterCell::new();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-    futures::executor::block_on(segment
-        .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        100,
+        4.into(),
+        only_default_vector(&vec4),
+        &hw_counter,
+    ))
+    .unwrap();
     let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-    futures::executor::block_on(segment
-        .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        6.into(),
+        only_default_vector(&vec6),
+        &hw_counter,
+    ))
+    .unwrap();
     futures::executor::block_on(segment.delete_point(102, 1.into(), &hw_counter)).unwrap();
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
-    let search_result = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &query_vector,
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            10,
-            None,
-        ))
-        .unwrap();
+    let search_result = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &query_vector,
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        10,
+        None,
+    ))
+    .unwrap();
     eprintln!("search_result = {search_result:#?}");
 
     let query_context = QueryContext::default();
     let segment_query_context = query_context.get_segment_query_context();
 
-    let search_batch_result = futures::executor::block_on(segment
-        .search_batch(
-            DEFAULT_VECTOR_NAME,
-            &[&query_vector],
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            10,
-            None,
-            &segment_query_context,
-        ))
-        .unwrap();
+    let search_batch_result = futures::executor::block_on(segment.search_batch(
+        DEFAULT_VECTOR_NAME,
+        &[&query_vector],
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        10,
+        None,
+        &segment_query_context,
+    ))
+    .unwrap();
     eprintln!("search_batch_result = {search_batch_result:#?}");
 
     assert!(!search_result.is_empty());
@@ -125,14 +131,17 @@ fn test_from_filter_attributes() {
     let hw_counter = HardwareCounterCell::new();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
-    futures::executor::block_on(segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        0,
+        0.into(),
+        only_default_vector(&[1.0, 1.0]),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let payload: Payload = serde_json::from_str(data).unwrap();
 
-    futures::executor::block_on(segment
-        .set_full_payload(0, 0.into(), &payload, &hw_counter))
+    futures::executor::block_on(segment.set_full_payload(0, 0.into(), &payload, &hw_counter))
         .unwrap();
 
     let filter_valid_str = r#"
@@ -161,30 +170,28 @@ fn test_from_filter_attributes() {
         }"#;
 
     let filter_invalid: Filter = serde_json::from_str(filter_invalid_str).unwrap();
-    let results_with_valid_filter = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &[1.0, 1.0].into(),
-            &WithPayload::default(),
-            &false.into(),
-            Some(&filter_valid),
-            1,
-            None,
-        ))
-        .unwrap();
+    let results_with_valid_filter = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &[1.0, 1.0].into(),
+        &WithPayload::default(),
+        &false.into(),
+        Some(&filter_valid),
+        1,
+        None,
+    ))
+    .unwrap();
     assert_eq!(results_with_valid_filter.len(), 1);
     assert_eq!(results_with_valid_filter.first().unwrap().id, 0.into());
-    let results_with_invalid_filter = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &[1.0, 1.0].into(),
-            &WithPayload::default(),
-            &false.into(),
-            Some(&filter_invalid),
-            1,
-            None,
-        ))
-        .unwrap();
+    let results_with_invalid_filter = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &[1.0, 1.0].into(),
+        &WithPayload::default(),
+        &false.into(),
+        Some(&filter_invalid),
+        1,
+        None,
+    ))
+    .unwrap();
     assert!(results_with_invalid_filter.is_empty());
 }
 
@@ -212,18 +219,21 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 
     let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
 
-    futures::executor::block_on(segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        0,
+        0.into(),
+        only_default_vector(&[1.0, 1.0]),
+        &hw_counter,
+    ))
+    .unwrap();
 
-    futures::executor::block_on(segment
-        .set_full_payload(
-            1,
-            0.into(),
-            &serde_json::from_str(data).unwrap(),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment.set_full_payload(
+        1,
+        0.into(),
+        &serde_json::from_str(data).unwrap(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     // The segment snapshot is a part of a parent collection/shard snapshot.
@@ -299,11 +309,13 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 
     for id in segment.iter_points() {
         let vectors = futures::executor::block_on(segment.all_vectors(id, &hw_counter)).unwrap();
-        let restored_vectors = futures::executor::block_on(restored_segment.all_vectors(id, &hw_counter)).unwrap();
+        let restored_vectors =
+            futures::executor::block_on(restored_segment.all_vectors(id, &hw_counter)).unwrap();
         assert_eq!(vectors, restored_vectors);
 
         let payload = futures::executor::block_on(segment.payload(id, &hw_counter)).unwrap();
-        let restored_payload = futures::executor::block_on(restored_segment.payload(id, &hw_counter)).unwrap();
+        let restored_payload =
+            futures::executor::block_on(restored_segment.payload(id, &hw_counter)).unwrap();
         assert_eq!(payload, restored_payload);
     }
 }
@@ -319,37 +331,43 @@ fn test_check_consistency() {
     let hw_counter = HardwareCounterCell::new();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-    futures::executor::block_on(segment
-        .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        100,
+        4.into(),
+        only_default_vector(&vec4),
+        &hw_counter,
+    ))
+    .unwrap();
     let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-    futures::executor::block_on(segment
-        .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        6.into(),
+        only_default_vector(&vec6),
+        &hw_counter,
+    ))
+    .unwrap();
 
     // first pass on consistent data
     futures::executor::block_on(segment.check_consistency_and_repair()).unwrap();
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
-    let search_result = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &query_vector,
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            10,
-            None,
-        ))
-        .unwrap();
+    let search_result = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &query_vector,
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        10,
+        None,
+    ))
+    .unwrap();
 
     assert_eq!(search_result.len(), 2);
     assert_eq!(search_result[0].id, 6.into());
     assert_eq!(search_result[1].id, 4.into());
 
     assert!(
-        futures::executor::block_on(segment
-            .vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter))
+        futures::executor::block_on(segment.vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter))
             .is_ok()
     );
 
@@ -358,17 +376,16 @@ fn test_check_consistency() {
     // make id_tracker inconsistent
     segment.id_tracker.borrow_mut().drop(6.into()).unwrap();
 
-    let search_result = futures::executor::block_on(segment
-        .search(
-            DEFAULT_VECTOR_NAME,
-            &query_vector,
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            10,
-            None,
-        ))
-        .unwrap();
+    let search_result = futures::executor::block_on(segment.search(
+        DEFAULT_VECTOR_NAME,
+        &query_vector,
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        10,
+        None,
+    ))
+    .unwrap();
 
     // only one result because of inconsistent id_tracker
     assert_eq!(search_result.len(), 1);
@@ -413,9 +430,12 @@ fn test_point_vector_count() {
         &hw_counter,
     ))
     .unwrap();
-    futures::executor::block_on(
-        segment.upsert_point(101, 6.into(), only_default_vector(&[0.6]), &hw_counter),
-    )
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        6.into(),
+        only_default_vector(&[0.6]),
+        &hw_counter,
+    ))
     .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 2);
@@ -463,33 +483,30 @@ fn test_point_vector_count_multivec() {
         &hw_counter,
     ))
     .unwrap();
-    futures::executor::block_on(segment
-        .upsert_point(
-            101,
-            6.into(),
-            NamedVectors::from_pairs([
-                (VECTOR1_NAME.into(), vec![0.6]),
-                (VECTOR2_NAME.into(), vec![0.7]),
-            ]),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(segment
-        .upsert_point(
-            102,
-            8.into(),
-            NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0.0])]),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(segment
-        .upsert_point(
-            103,
-            10.into(),
-            NamedVectors::from_pairs([(VECTOR2_NAME.into(), vec![1.0])]),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        6.into(),
+        NamedVectors::from_pairs([
+            (VECTOR1_NAME.into(), vec![0.6]),
+            (VECTOR2_NAME.into(), vec![0.7]),
+        ]),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        102,
+        8.into(),
+        NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0.0])]),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        103,
+        10.into(),
+        NamedVectors::from_pairs([(VECTOR2_NAME.into(), vec![1.0])]),
+        &hw_counter,
+    ))
+    .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
@@ -561,17 +578,16 @@ fn test_vector_compatibility_checks() {
 
     // Insert one point for a reference internal ID
     let point_id = 4.into();
-    futures::executor::block_on(segment
-        .upsert_point(
-            100,
-            point_id,
-            NamedVectors::from_pairs([
-                (VECTOR1_NAME.into(), vec![0.1, 0.2, 0.3, 0.4]),
-                (VECTOR2_NAME.into(), vec![1.0, 0.9]),
-            ]),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        100,
+        point_id,
+        NamedVectors::from_pairs([
+            (VECTOR1_NAME.into(), vec![0.1, 0.2, 0.3, 0.4]),
+            (VECTOR2_NAME.into(), vec![1.0, 0.9]),
+        ]),
+        &hw_counter,
+    ))
+    .unwrap();
     let internal_id = segment.lookup_internal_id(point_id).unwrap();
 
     // A set of broken vectors
@@ -638,32 +654,35 @@ fn test_vector_compatibility_checks() {
         .unwrap();
         let query_context = QueryContext::default();
         let segment_query_context = query_context.get_segment_query_context();
-        futures::executor::block_on(segment
-            .search_batch(
-                vector_name,
-                &[&query_vector, &query_vector],
-                &WithPayload {
-                    enable: false,
-                    payload_selector: None,
-                },
-                &WithVector::Bool(true),
-                None,
-                1,
-                None,
-                &segment_query_context,
-            ))
-            .err()
-            .unwrap();
+        futures::executor::block_on(segment.search_batch(
+            vector_name,
+            &[&query_vector, &query_vector],
+            &WithPayload {
+                enable: false,
+                payload_selector: None,
+            },
+            &WithVector::Bool(true),
+            None,
+            1,
+            None,
+            &segment_query_context,
+        ))
+        .err()
+        .unwrap();
     }
 
     for vectors in wrong_vectors_multi {
         check_named_vectors(&vectors, &segment.segment_config)
             .err()
             .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(101, point_id, vectors.clone(), &hw_counter))
-            .err()
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            101,
+            point_id,
+            vectors.clone(),
+            &hw_counter,
+        ))
+        .err()
+        .unwrap();
         segment
             .update_vectors(internal_id, 0, vectors.clone(), &hw_counter)
             .err()
@@ -682,12 +701,10 @@ fn test_vector_compatibility_checks() {
         check_vector_name(wrong_name, &segment.segment_config)
             .err()
             .unwrap();
-        futures::executor::block_on(segment
-            .vector(wrong_name, point_id, &hw_counter))
+        futures::executor::block_on(segment.vector(wrong_name, point_id, &hw_counter))
             .err()
             .unwrap();
-        futures::executor::block_on(segment
-            .delete_vector(101, point_id, wrong_name))
+        futures::executor::block_on(segment.delete_vector(101, point_id, wrong_name))
             .err()
             .unwrap();
         segment.available_vector_count(wrong_name).err().unwrap();
@@ -716,14 +733,13 @@ fn test_handle_point_version() {
     let hw_counter = HardwareCounterCell::new();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
-    futures::executor::block_on(segment
-        .upsert_point(
-            100,
-            1.into(),
-            only_default_vector(&[1.1, 1.0, 0.0, 1.0]),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        100,
+        1.into(),
+        only_default_vector(&[1.1, 1.0, 0.0, 1.0]),
+        &hw_counter,
+    ))
+    .unwrap();
 
     // Do not handle operation on existing point when providing an old version
     let applied = segment
@@ -867,41 +883,42 @@ fn create_deferred_segment(
             .0
             .insert("is-deferred".to_string(), is_deferred.into());
 
-        futures::executor::block_on(segment
-            .set_full_payload(op_num_counter, point_id, &payload, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(segment.set_full_payload(
+            op_num_counter,
+            point_id,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
         op_num_counter += 1;
     }
 
-    futures::executor::block_on(segment
-        .create_field_index(
-            op_num_counter,
-            &JsonPath::new("color-indexed"),
-            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment.create_field_index(
+        op_num_counter,
+        &JsonPath::new("color-indexed"),
+        Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        &hw_counter,
+    ))
+    .unwrap();
 
     op_num_counter += 1;
 
-    futures::executor::block_on(segment
-        .create_field_index(
-            op_num_counter,
-            &JsonPath::new("number"),
-            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment.create_field_index(
+        op_num_counter,
+        &JsonPath::new("number"),
+        Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+        &hw_counter,
+    ))
+    .unwrap();
     op_num_counter += 1;
 
-    futures::executor::block_on(segment
-        .create_field_index(
-            op_num_counter,
-            &JsonPath::new("is-deferred"),
-            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment.create_field_index(
+        op_num_counter,
+        &JsonPath::new("is-deferred"),
+        Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)),
+        &hw_counter,
+    ))
+    .unwrap();
 
     // Now we should have deferred points
     assert_eq!(segment.has_deferred_points(), n_deferred > 0);
@@ -916,13 +933,12 @@ fn create_deferred_segment(
             "Point {i} should not be deferred"
         );
         // Check the `is-deferred` payload is correct.
-        let is_deferred_payload = futures::executor::block_on(
-            segment.payload_by_offset(i as u32 - 1, &hw_counter),
-        )
-            .unwrap()
-            .get_value(&JsonPath::new("is-deferred"))[0]
-            .as_bool()
-            .unwrap();
+        let is_deferred_payload =
+            futures::executor::block_on(segment.payload_by_offset(i as u32 - 1, &hw_counter))
+                .unwrap()
+                .get_value(&JsonPath::new("is-deferred"))[0]
+                .as_bool()
+                .unwrap();
         assert!(!is_deferred_payload);
     }
 
@@ -934,13 +950,12 @@ fn create_deferred_segment(
         );
 
         // Check the `is-deferred` payload is correct.
-        let is_deferred_payload = futures::executor::block_on(
-            segment.payload_by_offset(i as u32 - 1, &hw_counter),
-        )
-            .unwrap()
-            .get_value(&JsonPath::new("is-deferred"))[0]
-            .as_bool()
-            .unwrap();
+        let is_deferred_payload =
+            futures::executor::block_on(segment.payload_by_offset(i as u32 - 1, &hw_counter))
+                .unwrap()
+                .get_value(&JsonPath::new("is-deferred"))[0]
+                .as_bool()
+                .unwrap();
         assert!(is_deferred_payload);
     }
 
@@ -1041,9 +1056,9 @@ fn test_deferred_point_estimation_with_filter() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
-        let estimation = futures::executor::block_on(segment
-            .estimate_point_count(Some(&filter), &hw_counter))
-            .unwrap();
+        let estimation =
+            futures::executor::block_on(segment.estimate_point_count(Some(&filter), &hw_counter))
+                .unwrap();
 
         // We test with different amount of deferred points (including no deferred points) and expect the
         // cardinality to not change.
@@ -1053,9 +1068,10 @@ fn test_deferred_point_estimation_with_filter() {
         // For consistency we also test that the same cardinality is estimated if no deferred points exist.
         if n_deferred == 0 {
             assert_eq!(segment.deferred_internal_id(), None);
-            let estimation = futures::executor::block_on(segment
-                .estimate_point_count(Some(&filter), &hw_counter))
-                .unwrap();
+            let estimation = futures::executor::block_on(
+                segment.estimate_point_count(Some(&filter), &hw_counter),
+            )
+            .unwrap();
             assert_eq!(estimation.exp, 6);
             assert_eq!(estimation.max, 12);
         }
@@ -1071,17 +1087,16 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Search",
         |segment, filter| {
-            futures::executor::block_on(segment
-                .search(
-                    DEFAULT_VECTOR_NAME,
-                    &QueryVector::Nearest(VectorInternal::Dense(vec![0.1, 0.1, 0.2, 0.2, 0.3])),
-                    &WithPayload::default(),
-                    &WithVector::Bool(false),
-                    filter,
-                    usize::MAX,
-                    None,
-                ))
-                .unwrap()
+            futures::executor::block_on(segment.search(
+                DEFAULT_VECTOR_NAME,
+                &QueryVector::Nearest(VectorInternal::Dense(vec![0.1, 0.1, 0.2, 0.2, 0.3])),
+                &WithPayload::default(),
+                &WithVector::Bool(false),
+                filter,
+                usize::MAX,
+                None,
+            ))
+            .unwrap()
         },
         |i| i.id,
         true,
@@ -1092,16 +1107,15 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Read Filtered",
         |segment, filter| {
-            futures::executor::block_on(segment
-                .read_filtered(
-                    None,
-                    None,
-                    filter,
-                    &AtomicBool::new(false),
-                    &hw_counter,
-                    DeferredBehavior::Exclude,
-                ))
-                .unwrap()
+            futures::executor::block_on(segment.read_filtered(
+                None,
+                None,
+                filter,
+                &AtomicBool::new(false),
+                &hw_counter,
+                DeferredBehavior::Exclude,
+            ))
+            .unwrap()
         },
         |i| *i,
         true,
@@ -1112,20 +1126,19 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Read ordered filtered",
         |segment, filter| {
-            futures::executor::block_on(segment
-                .read_ordered_filtered(
-                    None,
-                    filter,
-                    &OrderBy {
-                        key: JsonPath::new("number"),
-                        direction: None,
-                        start_from: None,
-                    },
-                    &AtomicBool::new(false),
-                    &hw_counter,
-                    DeferredBehavior::Exclude,
-                ))
-                .unwrap()
+            futures::executor::block_on(segment.read_ordered_filtered(
+                None,
+                filter,
+                &OrderBy {
+                    key: JsonPath::new("number"),
+                    direction: None,
+                    start_from: None,
+                },
+                &AtomicBool::new(false),
+                &hw_counter,
+                DeferredBehavior::Exclude,
+            ))
+            .unwrap()
         },
         |i| i.1,
         true,
@@ -1136,9 +1149,13 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Read random filtered",
         |segment, filter| {
-            futures::executor::block_on(segment
-                .read_random_filtered(500, filter, &AtomicBool::new(false), &hw_counter))
-                .unwrap()
+            futures::executor::block_on(segment.read_random_filtered(
+                500,
+                filter,
+                &AtomicBool::new(false),
+                &hw_counter,
+            ))
+            .unwrap()
         },
         |i| *i,
         true,
@@ -1153,19 +1170,18 @@ fn test_deferred_point_read_operations() {
                 .map(|i| ExtendedPointId::NumId(i as u64))
                 .collect();
 
-            futures::executor::block_on(segment
-                .retrieve(
-                    &point_ids,
-                    &WithPayload::default(),
-                    &WithVector::Bool(false),
-                    &hw_counter,
-                    &AtomicBool::new(false),
-                    DeferredBehavior::Exclude,
-                ))
-                .unwrap()
-                .into_iter()
-                .map(|i| i.0)
-                .collect::<Vec<_>>()
+            futures::executor::block_on(segment.retrieve(
+                &point_ids,
+                &WithPayload::default(),
+                &WithVector::Bool(false),
+                &hw_counter,
+                &AtomicBool::new(false),
+                DeferredBehavior::Exclude,
+            ))
+            .unwrap()
+            .into_iter()
+            .map(|i| i.0)
+            .collect::<Vec<_>>()
         },
         |i| *i,
         false,
@@ -1205,20 +1221,19 @@ fn test_deferred_point_sparse() {
             assert_deferred_points_excluded(
                 &format!("Sparse search nearest; exact={exact}; sparse_vec_name={sparse_vec_name}"),
                 |segment, filter| {
-                    futures::executor::block_on(segment
-                        .search(
-                            sparse_vec_name,
-                            &sparse_nearest_vec,
-                            &WithPayload::default(),
-                            &WithVector::Bool(false),
-                            filter,
-                            500,
-                            Some(&SearchParams {
-                                exact,
-                                ..Default::default()
-                            }),
-                        ))
-                        .unwrap()
+                    futures::executor::block_on(segment.search(
+                        sparse_vec_name,
+                        &sparse_nearest_vec,
+                        &WithPayload::default(),
+                        &WithVector::Bool(false),
+                        filter,
+                        500,
+                        Some(&SearchParams {
+                            exact,
+                            ..Default::default()
+                        }),
+                    ))
+                    .unwrap()
                 },
                 |i| i.id,
                 true,
@@ -1231,20 +1246,19 @@ fn test_deferred_point_sparse() {
                     "Sparse search feedback; exact={exact}; sparse_vec_name={sparse_vec_name}"
                 ),
                 |segment, filter| {
-                    futures::executor::block_on(segment
-                        .search(
-                            sparse_vec_name,
-                            &sparse_feedback_query,
-                            &WithPayload::default(),
-                            &WithVector::Bool(false),
-                            filter,
-                            500,
-                            Some(&SearchParams {
-                                exact,
-                                ..Default::default()
-                            }),
-                        ))
-                        .unwrap()
+                    futures::executor::block_on(segment.search(
+                        sparse_vec_name,
+                        &sparse_feedback_query,
+                        &WithPayload::default(),
+                        &WithVector::Bool(false),
+                        filter,
+                        500,
+                        Some(&SearchParams {
+                            exact,
+                            ..Default::default()
+                        }),
+                    ))
+                    .unwrap()
                 },
                 |i| i.id,
                 true,
@@ -1286,17 +1300,23 @@ fn test_deferred_point_facets() {
                     exact,
                 };
 
-                let facet_res_deferred = futures::executor::block_on(segment
-                    .facet(&request, &AtomicBool::new(false), &hw_counter))
-                    .unwrap();
+                let facet_res_deferred = futures::executor::block_on(segment.facet(
+                    &request,
+                    &AtomicBool::new(false),
+                    &hw_counter,
+                ))
+                .unwrap();
 
                 let old_status = segment.deferred_point_status.take();
                 if n_deferred > 0 {
                     assert!(old_status.is_some());
                 }
-                let facet_res = futures::executor::block_on(segment
-                    .facet(&request, &AtomicBool::new(false), &hw_counter))
-                    .unwrap();
+                let facet_res = futures::executor::block_on(segment.facet(
+                    &request,
+                    &AtomicBool::new(false),
+                    &hw_counter,
+                ))
+                .unwrap();
                 segment.deferred_point_status = old_status;
 
                 let expected_deferred = if filter.is_some() {
@@ -1316,22 +1336,21 @@ fn test_deferred_point_facets() {
 
                 // Test that `unique_values()` excludes values from deferred points,
                 // if there is no *visible* point with that value.
-                let is_deferred_values = futures::executor::block_on(segment
-                    .unique_values(
-                        &JsonPath::new("is-deferred"),
-                        filter,
-                        &AtomicBool::new(false),
-                        &hw_counter,
-                    ))
-                    .unwrap()
-                    .into_iter()
-                    .map(|i| match i {
-                        FacetValue::Bool(b) => b,
-                        FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Uuid(_) => {
-                            unreachable!()
-                        }
-                    })
-                    .collect::<Vec<_>>();
+                let is_deferred_values = futures::executor::block_on(segment.unique_values(
+                    &JsonPath::new("is-deferred"),
+                    filter,
+                    &AtomicBool::new(false),
+                    &hw_counter,
+                ))
+                .unwrap()
+                .into_iter()
+                .map(|i| match i {
+                    FacetValue::Bool(b) => b,
+                    FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Uuid(_) => {
+                        unreachable!()
+                    }
+                })
+                .collect::<Vec<_>>();
 
                 // Only deferred points have a `true` value. Therefore they must be excluded in `unique_values`.
                 assert_eq!(is_deferred_values, vec![false]);

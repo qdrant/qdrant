@@ -225,7 +225,11 @@ impl PayloadStorage for MmapPayloadStorage {
         })
     }
 
-    async fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    async fn iter<F>(
+        &self,
+        mut callback: F,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {

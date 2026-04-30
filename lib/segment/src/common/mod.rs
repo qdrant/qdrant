@@ -12,10 +12,9 @@ pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;
 
-use std::sync::atomic::AtomicBool;
-
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::AtomicBool;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;

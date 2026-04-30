@@ -310,16 +310,13 @@ async fn test_new_segment_when_all_over_capacity() {
         for _ in 0..10 {
             let point_id: PointIdType = PointIdGenerator::default().unique();
             let random_vector: Vec<_> = (0..dim).map(|_| rnd.random()).collect();
-            futures::executor::block_on(segment
-                .get()
-                .write()
-                .upsert_point(
-                    101,
-                    point_id,
-                    only_default_vector(&random_vector),
-                    &hw_counter,
-                ))
-                .unwrap();
+            futures::executor::block_on(segment.get().write().upsert_point(
+                101,
+                point_id,
+                only_default_vector(&random_vector),
+                &hw_counter,
+            ))
+            .unwrap();
         }
     }
 

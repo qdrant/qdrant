@@ -546,11 +546,9 @@ impl SegmentHolder {
 
             for point_id in points {
                 if let Some(version) = write_segment.point_version(point_id) {
-                    futures::executor::block_on(write_segment.delete_point(
-                        version,
-                        point_id,
-                        hw_counter,
-                    ))?;
+                    futures::executor::block_on(
+                        write_segment.delete_point(version, point_id, hw_counter),
+                    )?;
                 }
             }
         }
@@ -701,19 +699,15 @@ impl SegmentHolder {
                             all_vectors,
                             hw_counter,
                         ))?;
-                        futures::executor::block_on(appendable_write_segment.set_full_payload(
-                            op_num,
-                            point_id,
-                            &payload,
-                            hw_counter,
-                        ))?;
+                        futures::executor::block_on(
+                            appendable_write_segment
+                                .set_full_payload(op_num, point_id, &payload, hw_counter),
+                        )?;
 
                         if !appendable_write_segment.point_is_deferred(point_id) {
-                            futures::executor::block_on(write_segment.delete_point(
-                                op_num,
-                                point_id,
-                                hw_counter,
-                            ))?;
+                            futures::executor::block_on(
+                                write_segment.delete_point(op_num, point_id, hw_counter),
+                            )?;
                         }
 
                         Ok(true)

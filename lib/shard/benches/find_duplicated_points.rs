@@ -35,9 +35,13 @@ pub fn duplicate_bench(c: &mut Criterion) {
             // Insert point into random segment with random version
             let version = rand.random_range(VERSION_RANGE);
             let segment = segments.choose_mut(&mut rand).unwrap();
-            futures::executor::block_on(segment
-                .upsert_point(version, point_id, vector.clone(), &hw_counter))
-                .unwrap();
+            futures::executor::block_on(segment.upsert_point(
+                version,
+                point_id,
+                vector.clone(),
+                &hw_counter,
+            ))
+            .unwrap();
 
             // Duplicate this point?
             rand.random_bool(DUPLICATE_CHANCE)

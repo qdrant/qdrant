@@ -65,9 +65,12 @@ fn test_filtering_context_consistency() {
 
     for (idx, payload) in nested_payloads().into_iter().enumerate() {
         points.insert(idx, payload.clone());
-        futures::executor::block_on(payload_storage
-            .set(idx as PointOffsetType, &payload, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(payload_storage.set(
+            idx as PointOffsetType,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
@@ -83,44 +86,42 @@ fn test_filtering_context_consistency() {
     ))
     .unwrap();
 
-    futures::executor::block_on(index
-        .set_indexed(&JsonPath::new("f"), PayloadSchemaType::Integer.into(), &hw_counter))
-        .unwrap();
-    futures::executor::block_on(index
-        .set_indexed(
-            &JsonPath::new("arr1[].a"),
-            PayloadSchemaType::Integer.into(),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(index
-        .set_indexed(
-            &JsonPath::new("arr1[].b"),
-            PayloadSchemaType::Integer.into(),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(index
-        .set_indexed(
-            &JsonPath::new("arr1[].c"),
-            PayloadSchemaType::Integer.into(),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(index
-        .set_indexed(
-            &JsonPath::new("arr1[].d"),
-            PayloadSchemaType::Integer.into(),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(index
-        .set_indexed(
-            &JsonPath::new("arr1[].text"),
-            PayloadSchemaType::Text.into(),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &JsonPath::new("f"),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &JsonPath::new("arr1[].a"),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &JsonPath::new("arr1[].b"),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &JsonPath::new("arr1[].c"),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &JsonPath::new("arr1[].d"),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &JsonPath::new("arr1[].text"),
+        PayloadSchemaType::Text.into(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     {
         let nested_condition_0 = Condition::new_nested(

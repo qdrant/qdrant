@@ -113,13 +113,12 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     ))
     .unwrap();
 
-    futures::executor::block_on(index
-        .set_indexed(
-            &BOOL_KEY.parse().unwrap(),
-            PayloadSchemaType::Keyword.into(),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(index.set_indexed(
+        &BOOL_KEY.parse().unwrap(),
+        PayloadSchemaType::Keyword.into(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let is_stopped = AtomicBool::new(false);
 

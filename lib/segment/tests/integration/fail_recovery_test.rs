@@ -17,12 +17,20 @@ fn test_insert_fail_recovery() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    futures::executor::block_on(segment
-        .upsert_point(1, 1.into(), only_default_vector(&vec1), &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment
-        .upsert_point(1, 2.into(), only_default_vector(&vec1), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        1,
+        1.into(),
+        only_default_vector(&vec1),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        1,
+        2.into(),
+        only_default_vector(&vec1),
+        &hw_counter,
+    ))
+    .unwrap();
 
     segment.error_status = Some(SegmentFailedState {
         version: 2,

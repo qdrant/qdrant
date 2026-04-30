@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+use async_trait::async_trait;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -14,16 +15,14 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::_serde_json::Value;
 
-use async_trait::async_trait;
-
 use super::field_index::facet_index::FacetIndexEnum;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
 use super::field_index::{FieldIndexBuilderTrait as _, ResolvedHasId};
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::AsyncFlusher;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::{
@@ -673,7 +672,9 @@ impl PayloadIndex for StructPayloadIndex {
                 Ok(BuildIndexResult::IncompatibleSchema)
             };
         }
-        let indexes = self.build_field_indexes(field, payload_schema, hw_counter).await?;
+        let indexes = self
+            .build_field_indexes(field, payload_schema, hw_counter)
+            .await?;
         Ok(BuildIndexResult::Built(indexes))
     }
 
@@ -953,10 +954,7 @@ impl PayloadIndex for StructPayloadIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
         self.clear_index_for_point(point_id)?;
-        self.payload
-            .borrow_mut()
-            .clear(point_id, hw_counter)
-            .await
+        self.payload.borrow_mut().clear(point_id, hw_counter).await
     }
 
     fn flusher(&self) -> AsyncFlusher {

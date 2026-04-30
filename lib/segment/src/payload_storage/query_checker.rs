@@ -278,12 +278,10 @@ impl ConditionChecker for SimpleConditionChecker {
                             s.payload_ptr(point_id).map(Into::into)
                         }
                         PayloadStorageEnum::MmapPayloadStorage(s) => {
-                            let payload = futures::executor::block_on(
-                                s.get(point_id, &hw_counter),
-                            )
-                            .unwrap_or_else(|err| {
-                                panic!("Payload storage is corrupted: {err}")
-                            });
+                            let payload = futures::executor::block_on(s.get(point_id, &hw_counter))
+                                .unwrap_or_else(|err| {
+                                    panic!("Payload storage is corrupted: {err}")
+                                });
                             Some(OwnedPayloadRef::from(payload))
                         }
                     };

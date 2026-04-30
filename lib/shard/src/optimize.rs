@@ -351,9 +351,10 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
                 )?;
             }
             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                futures::executor::block_on(optimized_segment.delete_field_index_if_incompatible(
-                    *version, field_name, schema,
-                ))?;
+                futures::executor::block_on(
+                    optimized_segment
+                        .delete_field_index_if_incompatible(*version, field_name, schema),
+                )?;
             }
         }
         check_process_stopped(stopped)?;
@@ -505,9 +506,10 @@ fn finish_optimization(
                 )?;
             }
             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                futures::executor::block_on(optimized_segment.delete_field_index_if_incompatible(
-                    *version, field_name, schema,
-                ))?;
+                futures::executor::block_on(
+                    optimized_segment
+                        .delete_field_index_if_incompatible(*version, field_name, schema),
+                )?;
             }
         }
         check_process_stopped(stopped)?;

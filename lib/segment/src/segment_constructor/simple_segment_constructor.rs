@@ -164,84 +164,124 @@ mod tests {
             Ok(_) => panic!("Operation with wrong vector should fail"),
         };
 
-        futures::executor::block_on(segment
-            .upsert_point(2, 1.into(), only_default_vector(&vec1), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(2, 2.into(), only_default_vector(&vec2), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(2, 3.into(), only_default_vector(&vec3), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(2, 4.into(), only_default_vector(&vec4), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(2, 5.into(), only_default_vector(&vec5), &hw_counter))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            2,
+            1.into(),
+            only_default_vector(&vec1),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            2,
+            2.into(),
+            only_default_vector(&vec2),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            2,
+            3.into(),
+            only_default_vector(&vec3),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            2,
+            4.into(),
+            only_default_vector(&vec4),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            2,
+            5.into(),
+            only_default_vector(&vec5),
+            &hw_counter,
+        ))
+        .unwrap();
 
-        futures::executor::block_on(segment
-            .set_payload(
-                3,
-                1.into(),
-                &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
-                &None,
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment.set_payload(
+            3,
+            1.into(),
+            &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
+            &None,
+            &hw_counter,
+        ))
+        .unwrap();
 
-        futures::executor::block_on(segment
-            .set_payload(
-                3,
-                2.into(),
-                &payload_json! {"color": vec!["red".to_owned(), "blue".to_owned()]},
-                &None,
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment.set_payload(
+            3,
+            2.into(),
+            &payload_json! {"color": vec!["red".to_owned(), "blue".to_owned()]},
+            &None,
+            &hw_counter,
+        ))
+        .unwrap();
 
-        futures::executor::block_on(segment
-            .set_payload(
-                3,
-                3.into(),
-                &payload_json! {"color": vec!["red".to_owned(), "yellow".to_owned()]},
-                &None,
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment.set_payload(
+            3,
+            3.into(),
+            &payload_json! {"color": vec!["red".to_owned(), "yellow".to_owned()]},
+            &None,
+            &hw_counter,
+        ))
+        .unwrap();
 
-        futures::executor::block_on(segment
-            .set_payload(
-                3,
-                4.into(),
-                &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
-                &None,
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment.set_payload(
+            3,
+            4.into(),
+            &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
+            &None,
+            &hw_counter,
+        ))
+        .unwrap();
 
         // Replace vectors
-        futures::executor::block_on(segment
-            .upsert_point(4, 1.into(), only_default_vector(&vec1), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(5, 2.into(), only_default_vector(&vec2), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(6, 3.into(), only_default_vector(&vec3), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(7, 4.into(), only_default_vector(&vec4), &hw_counter))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(8, 5.into(), only_default_vector(&vec5), &hw_counter))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            4,
+            1.into(),
+            only_default_vector(&vec1),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            5,
+            2.into(),
+            only_default_vector(&vec2),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            6,
+            3.into(),
+            only_default_vector(&vec3),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            7,
+            4.into(),
+            only_default_vector(&vec4),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            8,
+            5.into(),
+            only_default_vector(&vec5),
+            &hw_counter,
+        ))
+        .unwrap();
 
         assert_eq!(segment.version(), 8);
 
-        let declined = futures::executor::block_on(segment
-            .upsert_point(3, 5.into(), only_default_vector(&vec5), &hw_counter))
-            .unwrap();
+        let declined = futures::executor::block_on(segment.upsert_point(
+            3,
+            5.into(),
+            only_default_vector(&vec5),
+            &hw_counter,
+        ))
+        .unwrap();
 
         // Should not be processed due to operation number
         assert!(!declined);

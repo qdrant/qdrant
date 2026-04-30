@@ -323,14 +323,13 @@ fn make_segment(
     let mut segment = build_simple_segment(path, all_vectors[0].len(), distance).unwrap();
     for n in sequence {
         let vector = only_default_vector(all_vectors[n]);
-        futures::executor::block_on(segment
-            .upsert_point(
-                n as SeqNumberType,
-                ExtendedPointId::NumId(n as u64),
-                vector,
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            n as SeqNumberType,
+            ExtendedPointId::NumId(n as u64),
+            vector,
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     segment

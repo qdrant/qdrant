@@ -78,17 +78,20 @@ fn _test_filterable_hnsw(
         let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
-        futures::executor::block_on(segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            n as SeqNumberType,
+            idx,
+            only_default_vector(&vector),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.set_full_payload(
+            n as SeqNumberType,
+            idx,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     let payload_index_ptr = segment.payload_index.clone();
@@ -106,14 +109,12 @@ fn _test_filterable_hnsw(
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
 
-    futures::executor::block_on(payload_index_ptr
-        .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer.into(),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(payload_index_ptr.borrow_mut().set_indexed(
+        &JsonPath::new(int_key),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let mut blocks = Vec::new();
     borrowed_payload_index
@@ -268,17 +269,20 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
         let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
-        futures::executor::block_on(segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            n as SeqNumberType,
+            idx,
+            only_default_vector(&vector),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.set_full_payload(
+            n as SeqNumberType,
+            idx,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     let payload_index_ptr = segment.payload_index.clone();
@@ -296,14 +300,12 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
 
-    futures::executor::block_on(payload_index_ptr
-        .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer.into(),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(payload_index_ptr.borrow_mut().set_indexed(
+        &JsonPath::new(int_key),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let mut blocks = Vec::new();
     borrowed_payload_index

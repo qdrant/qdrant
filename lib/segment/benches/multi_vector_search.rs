@@ -96,9 +96,13 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
         let idx = (n as u64).into();
         let multi_vec = random_multi_vector(rng, VECTOR_DIM, NUM_VECTORS_PER_POINT);
         let named_vectors = only_default_multi_vector(&multi_vec);
-        futures::executor::block_on(segment
-            .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            n as SeqNumberType,
+            idx,
+            named_vectors,
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     // build HNSW index

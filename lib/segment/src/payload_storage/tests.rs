@@ -46,14 +46,13 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     let nested_payload = payload_json! {
         "layer2": true,
     };
-    futures::executor::block_on(storage
-        .set_by_key(
-            0,
-            &nested_payload,
-            &"layer1".try_into().unwrap(),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(storage.set_by_key(
+        0,
+        &nested_payload,
+        &"layer1".try_into().unwrap(),
+        &hw_counter,
+    ))
+    .unwrap();
     let stored = futures::executor::block_on(storage.get(0, &hw_counter)).unwrap();
 
     assert_eq!(

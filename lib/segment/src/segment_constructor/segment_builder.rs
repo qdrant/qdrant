@@ -405,7 +405,8 @@ impl SegmentBuilder {
                         self.id_tracker
                             .set_internal_version(new_internal_id, point_data.version)?;
                         futures::executor::block_on(
-                            self.payload_storage.clear(existing_internal_id, &hw_counter),
+                            self.payload_storage
+                                .clear(existing_internal_id, &hw_counter),
                         )?;
 
                         existing_internal_id

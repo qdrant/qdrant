@@ -325,9 +325,8 @@ fn upsert_with_payload(
     payload: Option<&Payload>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<bool> {
-    let mut res = futures::executor::block_on(
-        segment.upsert_point(op_num, point_id, vectors, hw_counter),
-    )?;
+    let mut res =
+        futures::executor::block_on(segment.upsert_point(op_num, point_id, vectors, hw_counter))?;
     if let Some(full_payload) = payload {
         res &= futures::executor::block_on(segment.set_full_payload(
             op_num,
@@ -336,8 +335,7 @@ fn upsert_with_payload(
             hw_counter,
         ))?;
     } else {
-        res &=
-            futures::executor::block_on(segment.clear_payload(op_num, point_id, hw_counter))?;
+        res &= futures::executor::block_on(segment.clear_payload(op_num, point_id, hw_counter))?;
     }
     debug_assert!(
         segment.has_point(point_id),
@@ -367,9 +365,8 @@ pub fn delete_points(
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
             for &id in batch {
-                if futures::executor::block_on(
-                    write_segment.delete_point(op_num, id, hw_counter),
-                )? {
+                if futures::executor::block_on(write_segment.delete_point(op_num, id, hw_counter))?
+                {
                     total_deleted_points += 1;
                 }
             }
@@ -647,12 +644,9 @@ fn update_vectors(
             batch,
             |id, write_segment| {
                 let vectors = points_map[&id].clone();
-                futures::executor::block_on(write_segment.update_vectors(
-                    op_num,
-                    id,
-                    vectors,
-                    hw_counter,
-                ))
+                futures::executor::block_on(
+                    write_segment.update_vectors(op_num, id, vectors, hw_counter),
+                )
             },
             |id, owned_vectors, _| {
                 for (vector_name, vector_ref) in points_map[&id].iter() {
@@ -685,9 +679,8 @@ pub fn delete_vectors(
             |id, write_segment| {
                 let mut res = true;
                 for name in vector_names {
-                    res &= futures::executor::block_on(
-                        write_segment.delete_vector(op_num, id, name),
-                    )?;
+                    res &=
+                        futures::executor::block_on(write_segment.delete_vector(op_num, id, name))?;
                 }
                 Ok(res)
             },
@@ -744,9 +737,9 @@ pub fn set_payload(
             op_num,
             chunk,
             |id, write_segment| {
-                futures::executor::block_on(write_segment.set_payload(
-                    op_num, id, payload, key, hw_counter,
-                ))
+                futures::executor::block_on(
+                    write_segment.set_payload(op_num, id, payload, key, hw_counter),
+                )
             },
             |_, _, old_payload| match key {
                 Some(key) => old_payload.merge_by_key(payload, key),
@@ -798,9 +791,9 @@ pub fn delete_payload(
             |id, write_segment| {
                 let mut res = true;
                 for key in keys {
-                    res &= futures::executor::block_on(write_segment.delete_payload(
-                        op_num, id, key, hw_counter,
-                    ))?;
+                    res &= futures::executor::block_on(
+                        write_segment.delete_payload(op_num, id, key, hw_counter),
+                    )?;
                 }
                 Ok(res)
             },
@@ -896,9 +889,9 @@ pub fn overwrite_payload(
             op_num,
             batch,
             |id, write_segment| {
-                futures::executor::block_on(write_segment.set_full_payload(
-                    op_num, id, payload, hw_counter,
-                ))
+                futures::executor::block_on(
+                    write_segment.set_full_payload(op_num, id, payload, hw_counter),
+                )
             },
             |_, _, old_payload| {
                 *old_payload = payload.clone();
@@ -1012,9 +1005,11 @@ pub fn process_vector_name_operation(
 
             segments.apply_segments(|write_segment| {
                 write_segment.with_upgraded(|segment| {
-                    futures::executor::block_on(
-                        segment.create_vector_name(op_num, vector_name, config),
-                    )
+                    futures::executor::block_on(segment.create_vector_name(
+                        op_num,
+                        vector_name,
+                        config,
+                    ))
                 })
             })
         }
@@ -1190,8 +1185,14 @@ mod test {
         ))
         .unwrap();
         let payload: segment::types::Payload = payload_json! {"city": city.to_owned()};
-        futures::executor::block_on(seg.set_payload(version, point_id.into(), &payload, &None, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(seg.set_payload(
+            version,
+            point_id.into(),
+            &payload,
+            &None,
+            &hw_counter,
+        ))
+        .unwrap();
         seg.appendable_flag = false;
         seg
     }
@@ -1215,8 +1216,14 @@ mod test {
         ))
         .unwrap();
         let payload: segment::types::Payload = payload_json! {"city": city.to_owned()};
-        futures::executor::block_on(seg.set_payload(version, point_id.into(), &payload, &None, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(seg.set_payload(
+            version,
+            point_id.into(),
+            &payload,
+            &None,
+            &hw_counter,
+        ))
+        .unwrap();
         assert!(
             seg.point_is_deferred(point_id.into()),
             "Point {point_id} should be deferred"

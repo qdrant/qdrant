@@ -123,45 +123,41 @@ fn test_apply_and_move_old_versions(
         &hw_counter,
     ))
     .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(
-            100,
-            456.into(),
-            segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(
-            100,
-            789.into(),
-            segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment1.upsert_point(
+        100,
+        456.into(),
+        segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        100,
+        789.into(),
+        segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+        &hw_counter,
+    ))
+    .unwrap();
 
     // Bump segment version of segment 1 and/or 2 to a high value
     // Here we insert a random point to achieve this, normally this could happen on restart if
     // segments are not all flushed at the same time
     if segment_1_high_version {
-        futures::executor::block_on(segment1
-            .upsert_point(
-                99999,
-                99999.into(),
-                segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment1.upsert_point(
+            99999,
+            99999.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        ))
+        .unwrap();
     }
     if segment_2_high_version {
-        futures::executor::block_on(segment2
-            .upsert_point(
-                99999,
-                99999.into(),
-                segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment2.upsert_point(
+            99999,
+            99999.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     // Segment 1 is non-appendable, segment 2 is appendable
@@ -219,18 +215,16 @@ fn test_cow_operation() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    futures::executor::block_on(segment2
-        .upsert_point(
-            100,
-            123.into(),
-            segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        100,
+        123.into(),
+        segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+        &hw_counter,
+    ))
+    .unwrap();
     let mut payload = Payload::default();
     payload.0.insert(PAYLOAD_KEY.to_string(), 42.into());
-    futures::executor::block_on(segment2
-        .set_full_payload(100, 123.into(), &payload, &hw_counter))
+    futures::executor::block_on(segment2.set_full_payload(100, 123.into(), &payload, &hw_counter))
         .unwrap();
     segment2.appendable_flag = false;
 
@@ -246,14 +240,16 @@ fn test_cow_operation() {
         let locked_segment_2 = holder.get(sid2).unwrap().get();
         let read_segment_2 = locked_segment_2.read();
         assert!(read_segment_2.has_point(123.into()));
-        let vector = futures::executor::block_on(read_segment_2
-            .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter))
-            .unwrap()
-            .unwrap();
+        let vector = futures::executor::block_on(read_segment_2.vector(
+            DEFAULT_VECTOR_NAME,
+            123.into(),
+            &hw_counter,
+        ))
+        .unwrap()
+        .unwrap();
         assert_ne!(vector, VectorInternal::Dense(vec![9.0; 4]));
         assert_eq!(
-            futures::executor::block_on(read_segment_2
-                .payload(123.into(), &hw_counter))
+            futures::executor::block_on(read_segment_2.payload(123.into(), &hw_counter))
                 .unwrap()
                 .get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
             &Value::from(42)
@@ -281,12 +277,16 @@ fn test_cow_operation() {
 
     assert!(read_segment_1.has_point(123.into()));
 
-    let new_vector = futures::executor::block_on(read_segment_1
-        .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter))
-        .unwrap()
-        .unwrap();
+    let new_vector = futures::executor::block_on(read_segment_1.vector(
+        DEFAULT_VECTOR_NAME,
+        123.into(),
+        &hw_counter,
+    ))
+    .unwrap()
+    .unwrap();
     assert_eq!(new_vector, VectorInternal::Dense(vec![9.0; 4]));
-    let new_payload_value = futures::executor::block_on(read_segment_1.payload(123.into(), &hw_counter)).unwrap();
+    let new_payload_value =
+        futures::executor::block_on(read_segment_1.payload(123.into(), &hw_counter)).unwrap();
     assert_eq!(
         new_payload_value.get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
         &Value::from(2)
@@ -302,19 +302,39 @@ fn test_points_deduplication() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    futures::executor::block_on(segment1
-        .set_payload(100, 1.into(), &payload_json! {}, &None, &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment1
-        .set_payload(100, 2.into(), &payload_json! {}, &None, &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment1.set_payload(
+        100,
+        1.into(),
+        &payload_json! {},
+        &None,
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment1.set_payload(
+        100,
+        2.into(),
+        &payload_json! {},
+        &None,
+        &hw_counter,
+    ))
+    .unwrap();
 
-    futures::executor::block_on(segment2
-        .set_payload(200, 4.into(), &payload_json! {}, &None, &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .set_payload(200, 5.into(), &payload_json! {}, &None, &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment2.set_payload(
+        200,
+        4.into(),
+        &payload_json! {},
+        &None,
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.set_payload(
+        200,
+        5.into(),
+        &payload_json! {},
+        &None,
+        &hw_counter,
+    ))
+    .unwrap();
 
     let mut holder = SegmentHolder::default();
 
@@ -348,39 +368,35 @@ fn test_points_deduplication_bug() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    futures::executor::block_on(segment1
-        .upsert_point(
-            2,
-            10.into(),
-            segment::data_types::vectors::only_default_vector(&[0.0; 4]),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(
-            3,
-            10.into(),
-            segment::data_types::vectors::only_default_vector(&[0.0; 4]),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment1.upsert_point(
+        2,
+        10.into(),
+        segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        3,
+        10.into(),
+        segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+        &hw_counter,
+    ))
+    .unwrap();
 
-    futures::executor::block_on(segment1
-        .upsert_point(
-            1,
-            11.into(),
-            segment::data_types::vectors::only_default_vector(&[0.0; 4]),
-            &hw_counter,
-        ))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(
-            2,
-            11.into(),
-            segment::data_types::vectors::only_default_vector(&[0.0; 4]),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment1.upsert_point(
+        1,
+        11.into(),
+        segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        2,
+        11.into(),
+        segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let mut holder = SegmentHolder::default();
 
@@ -449,9 +465,13 @@ fn test_points_deduplication_randomized() {
 
         for segment in &mut segments {
             let version = rand.random_range(1..10);
-            futures::executor::block_on(segment
-                .upsert_point(version, point_id, vector.clone(), &hw_counter))
-                .unwrap();
+            futures::executor::block_on(segment.upsert_point(
+                version,
+                point_id,
+                vector.clone(),
+                &hw_counter,
+            ))
+            .unwrap();
             max_version = version.max(max_version);
         }
 
@@ -516,32 +536,24 @@ fn test_find_points_to_update_and_delete() {
 
     // Segment 1: point 1 (v1), point 2 (v2), point 3 (v5), point 6 (v7)
     let mut segment1 = empty_segment(dir.path());
-    futures::executor::block_on(segment1
-        .upsert_point(1, 1.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(1, 1.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(2, 2.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(2, 2.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(5, 3.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(5, 3.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(7, 6.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(7, 6.into(), vec4.clone(), &hw_counter))
         .unwrap();
 
     // Segment 2: point 2 (v3), point 3 (v4), point 4 (v6), point 6 (v7)
     let mut segment2 = empty_segment(dir.path());
-    futures::executor::block_on(segment2
-        .upsert_point(3, 2.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment2.upsert_point(3, 2.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(4, 3.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment2.upsert_point(4, 3.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(6, 4.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment2.upsert_point(6, 4.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(7, 6.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment2.upsert_point(7, 6.into(), vec4.clone(), &hw_counter))
         .unwrap();
 
     let mut holder = SegmentHolder::default();
@@ -616,14 +628,11 @@ fn test_find_points_to_update_and_delete_with_deferred() {
 
     // Segment 1 (normal): points 3, 4, 5 at version 10
     let mut segment1 = empty_segment(dir.path());
-    futures::executor::block_on(segment1
-        .upsert_point(10, 3.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(10, 3.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(10, 4.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(10, 4.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(10, 5.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(10, 5.into(), vec4.clone(), &hw_counter))
         .unwrap();
 
     // Segment 2 (with deferred): points 1-5 at version 6
@@ -737,11 +746,9 @@ fn test_find_points_to_update_and_delete_with_deferred_winning() {
 
     // Segment 1 (normal): points 4, 5 at version 3 (lower than deferred v6)
     let mut segment1 = empty_segment(dir.path());
-    futures::executor::block_on(segment1
-        .upsert_point(3, 4.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(3, 4.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(3, 5.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(3, 5.into(), vec4.clone(), &hw_counter))
         .unwrap();
 
     // Segment 2 (with deferred): points 1-5 at version 6
@@ -812,8 +819,7 @@ fn test_find_points_to_update_and_delete_with_deferred_three_segments() {
 
     // Segment 1 (normal): point 4 at version 5 (older non-deferred)
     let mut segment1 = empty_segment(dir.path());
-    futures::executor::block_on(segment1
-        .upsert_point(5, 4.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(5, 4.into(), vec4.clone(), &hw_counter))
         .unwrap();
 
     // Segment 2 (with deferred): point 4 at version 6 (deferred)
@@ -821,8 +827,7 @@ fn test_find_points_to_update_and_delete_with_deferred_three_segments() {
 
     // Segment 3 (normal): point 4 at version 6 (non-deferred, same as deferred)
     let mut segment3 = empty_segment(dir.path());
-    futures::executor::block_on(segment3
-        .upsert_point(6, 4.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment3.upsert_point(6, 4.into(), vec4.clone(), &hw_counter))
         .unwrap();
 
     let mut holder = SegmentHolder::default();
@@ -876,17 +881,13 @@ fn test_points_deduplication_with_deferred() {
     // Segment 1 (normal, no deferred):
     //   Point 3 at v10, Point 4 at v10, Point 5 at v3, Point 6 at v8
     let mut segment1 = empty_segment(dir.path());
-    futures::executor::block_on(segment1
-        .upsert_point(10, 3.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(10, 3.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(10, 4.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(10, 4.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(3, 5.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(3, 5.into(), vec4.clone(), &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(8, 6.into(), vec4.clone(), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(8, 6.into(), vec4.clone(), &hw_counter))
         .unwrap();
 
     // Segment 2 (with deferred, internal IDs >= 3 are deferred):
@@ -894,8 +895,7 @@ fn test_points_deduplication_with_deferred() {
     //   All at version 6
     let mut segment2 = empty_segment_with_deferred(dir.path(), 3);
     for id in 1..=6u64 {
-        futures::executor::block_on(segment2
-            .upsert_point(6, id.into(), vec4.clone(), &hw_counter))
+        futures::executor::block_on(segment2.upsert_point(6, id.into(), vec4.clone(), &hw_counter))
             .unwrap();
     }
     // Verify deferred status
@@ -1039,9 +1039,13 @@ fn test_points_deduplication_with_deferred_randomized() {
 
         for &seg_idx in &segment_indices {
             let version = rng.random_range(1..20u64);
-            futures::executor::block_on(segments[seg_idx]
-                .upsert_point(version, point_id, vec4.clone(), &hw_counter))
-                .unwrap();
+            futures::executor::block_on(segments[seg_idx].upsert_point(
+                version,
+                point_id,
+                vec4.clone(),
+                &hw_counter,
+            ))
+            .unwrap();
             point_versions
                 .entry(id)
                 .or_default()
@@ -1235,13 +1239,11 @@ fn test_double_proxies() {
     assert_eq!(&points, &[1.into(), 2.into(), 3.into(), 4.into(), 5.into()]);
 
     // Writing to inner proxy segment
-    futures::executor::block_on(
-        inner_proxies[0]
-            .1
-            .get()
-            .write()
-            .delete_point(10, 1.into(), &hw_counter),
-    )
+    futures::executor::block_on(inner_proxies[0].1.get().write().delete_point(
+        10,
+        1.into(),
+        &hw_counter,
+    ))
     .unwrap();
 
     let (outer_proxies, outer_tmp_segment, outer_segments_lock) =
@@ -1260,7 +1262,8 @@ fn test_double_proxies() {
 
         if proxy_read.has_point(2.into()) {
             has_point = true;
-            let payload = futures::executor::block_on(proxy_read.payload(2.into(), &hw_counter)).unwrap();
+            let payload =
+                futures::executor::block_on(proxy_read.payload(2.into(), &hw_counter)).unwrap();
 
             assert!(
                 payload.0.get("color").is_some(),
@@ -1268,11 +1271,12 @@ fn test_double_proxies() {
             );
             drop(proxy_read);
 
-            futures::executor::block_on(proxy
-                .get()
-                .write()
-                .delete_point(11, 2.into(), &hw_counter))
-                .unwrap();
+            futures::executor::block_on(proxy.get().write().delete_point(
+                11,
+                2.into(),
+                &hw_counter,
+            ))
+            .unwrap();
 
             break;
         }
@@ -1340,9 +1344,13 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
 
     // Non-appendable segment with point 100 at version 10
     let mut non_appendable = empty_segment(dir.path());
-    futures::executor::block_on(non_appendable
-        .upsert_point(10, 100.into(), vec4.clone(), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(non_appendable.upsert_point(
+        10,
+        100.into(),
+        vec4.clone(),
+        &hw_counter,
+    ))
+    .unwrap();
     non_appendable.appendable_flag = false;
 
     let mut holder = SegmentHolder::default();
@@ -1396,9 +1404,13 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
 
     // Non-appendable segment with point 100 at version 10
     let mut non_appendable = empty_segment(dir.path());
-    futures::executor::block_on(non_appendable
-        .upsert_point(10, 100.into(), vec4.clone(), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(non_appendable.upsert_point(
+        10,
+        100.into(),
+        vec4.clone(),
+        &hw_counter,
+    ))
+    .unwrap();
     non_appendable.appendable_flag = false;
 
     let mut holder = SegmentHolder::default();

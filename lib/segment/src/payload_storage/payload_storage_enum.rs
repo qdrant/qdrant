@@ -64,9 +64,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => {
                 s.set(point_id, payload, hw_counter).await
             }
-            PayloadStorageEnum::MmapPayloadStorage(s) => {
-                s.set(point_id, payload, hw_counter).await
-            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload, hw_counter).await,
         }
     }
 
@@ -127,9 +125,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => {
                 s.delete(point_id, key, hw_counter).await
             }
-            PayloadStorageEnum::MmapPayloadStorage(s) => {
-                s.delete(point_id, key, hw_counter).await
-            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key, hw_counter).await,
         }
     }
 

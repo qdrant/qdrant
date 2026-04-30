@@ -23,8 +23,8 @@ use self::mappings_storage::{
 use self::versions_storage::{
     load_versions, reconcile_persisted_version_changes, store_version_changes, versions_path,
 };
-use crate::common::{AsyncFlusher, Flusher, async_flusher_from};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::{AsyncFlusher, Flusher, async_flusher_from};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};

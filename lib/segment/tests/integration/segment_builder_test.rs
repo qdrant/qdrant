@@ -113,14 +113,22 @@ fn test_building_new_defragmented_segment() {
     let payload_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
     let mut segment1 = build_segment_1(dir.path());
-    futures::executor::block_on(segment1
-        .create_field_index(7, &defragment_key, Some(&payload_schema), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment1.create_field_index(
+        7,
+        &defragment_key,
+        Some(&payload_schema),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let mut segment2 = build_segment_2(dir.path());
-    futures::executor::block_on(segment2
-        .create_field_index(17, &defragment_key, Some(&payload_schema), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment2.create_field_index(
+        17,
+        &defragment_key,
+        Some(&payload_schema),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let mut builder = SegmentBuilder::new(
         temp_dir.path(),
@@ -200,7 +208,8 @@ fn check_points_defragmented(
 
     for internal_id in id_tracker.point_mappings().iter_internal() {
         let external_id = id_tracker.external_id(internal_id).unwrap();
-        let payload = futures::executor::block_on(segment.payload(external_id, &hw_counter)).unwrap();
+        let payload =
+            futures::executor::block_on(segment.payload(external_id, &hw_counter)).unwrap();
         let values = payload.get_value(defragment_key);
 
         if values.is_empty() {
@@ -256,14 +265,13 @@ fn test_building_new_sparse_segment() {
 
     // Include overlapping with segment1 to check the
     let vec = SparseVector::new(vec![0, 1, 2, 3], vec![0.0, 0.0, 0.0, 0.0]).unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(
-            100,
-            3.into(),
-            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec)),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        100,
+        3.into(),
+        NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec)),
+        &hw_counter,
+    ))
+    .unwrap();
 
     builder
         .update(&[&segment1, &segment2, &segment2], &stopped, &hw_counter)
@@ -410,18 +418,35 @@ fn test_building_new_segment_bug_5614() {
     // Do this in a specific order so that:
     // - the latter segment has a higher point version
     // - the internal point IDs don't match across segments
-    futures::executor::block_on(segment1.upsert_point(123, 100.into(), vector_100_low, &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(123, 101.into(), vector_101_low, &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment1.upsert_point(
+        123,
+        100.into(),
+        vector_100_low,
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment1.upsert_point(
+        123,
+        101.into(),
+        vector_101_low,
+        &hw_counter,
+    ))
+    .unwrap();
 
-    futures::executor::block_on(segment2
-        .upsert_point(124, 101.into(), vector_101_high.clone(), &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(124, 100.into(), vector_100_high.clone(), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        124,
+        101.into(),
+        vector_101_high.clone(),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        124,
+        100.into(),
+        vector_100_high.clone(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     builder
         .update(&[&segment1, &segment2], &stopped, &hw_counter)
@@ -463,30 +488,27 @@ fn test_building_cancellation() {
     let hw_counter = HardwareCounterCell::new();
 
     for idx in 0..2000 {
-        futures::executor::block_on(baseline_segment
-            .upsert_point(
-                1,
-                idx.into(),
-                only_default_vector(&[0., 0., 0., 0.]),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .upsert_point(
-                1,
-                idx.into(),
-                only_default_vector(&[0., 0., 0., 0.]),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment_2
-            .upsert_point(
-                1,
-                idx.into(),
-                only_default_vector(&[0., 0., 0., 0.]),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(baseline_segment.upsert_point(
+            1,
+            idx.into(),
+            only_default_vector(&[0., 0., 0., 0.]),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            1,
+            idx.into(),
+            only_default_vector(&[0., 0., 0., 0.]),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment_2.upsert_point(
+            1,
+            idx.into(),
+            only_default_vector(&[0., 0., 0., 0.]),
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     // Get normal build time

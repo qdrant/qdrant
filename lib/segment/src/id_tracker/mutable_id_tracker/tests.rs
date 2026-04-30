@@ -478,8 +478,10 @@ fn make_mutable_tracker(path: &Path) -> MutableIdTracker {
             .unwrap()
     }
 
-    futures::executor::block_on(id_tracker.mapping_flusher()()).expect("failed to flush ID tracker mappings");
-    futures::executor::block_on(id_tracker.versions_flusher()()).expect("failed to flush ID tracker versions");
+    futures::executor::block_on(id_tracker.mapping_flusher()())
+        .expect("failed to flush ID tracker mappings");
+    futures::executor::block_on(id_tracker.versions_flusher()())
+        .expect("failed to flush ID tracker versions");
 
     id_tracker
 }

@@ -41,14 +41,13 @@ fn test_graph_connectivity() {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
 
-        futures::executor::block_on(segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            n as SeqNumberType,
+            idx,
+            only_default_vector(&vector),
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     let payload_index_ptr = segment.payload_index.clone();

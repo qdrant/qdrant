@@ -83,18 +83,15 @@ fn test_update_proxy_segments() {
         .read()
         .iter()
         .flat_map(|(_id, segment)| {
-            futures::executor::block_on(segment
-                .get()
-                .read()
-                .read_filtered(
-                    None,
-                    Some(100),
-                    None,
-                    &is_stopped,
-                    &hw_counter,
-                    DeferredBehavior::Exclude,
-                ))
-                .unwrap()
+            futures::executor::block_on(segment.get().read().read_filtered(
+                None,
+                Some(100),
+                None,
+                &is_stopped,
+                &hw_counter,
+                DeferredBehavior::Exclude,
+            ))
+            .unwrap()
         })
         .sorted()
         .collect_vec();
@@ -205,22 +202,20 @@ fn test_upsert_points_in_smallest_segment() {
 
     // Fill segment 1 and 2 to the capacity
     for point_id in 0..100 {
-        futures::executor::block_on(segment1
-            .upsert_point(
-                20,
-                point_id.into(),
-                only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment2
-            .upsert_point(
-                20,
-                (100 + point_id).into(),
-                only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-                &hw_counter,
-            ))
-            .unwrap();
+        futures::executor::block_on(segment1.upsert_point(
+            20,
+            point_id.into(),
+            only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        ))
+        .unwrap();
+        futures::executor::block_on(segment2.upsert_point(
+            20,
+            (100 + point_id).into(),
+            only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        ))
+        .unwrap();
     }
 
     let mut holder = SegmentHolder::default();
@@ -278,14 +273,13 @@ fn test_delete_all_point_versions() {
         &hw_counter,
     ))
     .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(
-            101,
-            point_id,
-            segment::data_types::vectors::only_default_vector(&new_vector),
-            &hw_counter,
-        ))
-        .unwrap();
+    futures::executor::block_on(segment2.upsert_point(
+        101,
+        point_id,
+        segment::data_types::vectors::only_default_vector(&new_vector),
+        &hw_counter,
+    ))
+    .unwrap();
 
     // Set up locked segment holder
     let mut holder = SegmentHolder::default();
@@ -379,30 +373,42 @@ fn test_proxy_shared_updates() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    futures::executor::block_on(segment1
-        .upsert_point(10, idx1, only_default_vector(&old_vec), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(
+        10,
+        idx1,
+        only_default_vector(&old_vec),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment1.set_payload(10, idx1, &old_payload, &None, &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .set_payload(10, idx1, &old_payload, &None, &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(20, idx2, only_default_vector(&new_vec), &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment1
-        .set_payload(20, idx2, &new_payload, &None, &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(
+        20,
+        idx2,
+        only_default_vector(&new_vec),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment1.set_payload(20, idx2, &new_payload, &None, &hw_counter))
         .unwrap();
 
-    futures::executor::block_on(segment2
-        .upsert_point(20, idx1, only_default_vector(&new_vec), &hw_counter))
+    futures::executor::block_on(segment2.upsert_point(
+        20,
+        idx1,
+        only_default_vector(&new_vec),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.set_payload(20, idx1, &new_payload, &None, &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment2
-        .set_payload(20, idx1, &new_payload, &None, &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(10, idx2, only_default_vector(&old_vec), &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .set_payload(10, idx2, &old_payload, &None, &hw_counter))
+    futures::executor::block_on(segment2.upsert_point(
+        10,
+        idx2,
+        only_default_vector(&old_vec),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.set_payload(10, idx2, &old_payload, &None, &hw_counter))
         .unwrap();
 
     let locked_segment_1 = LockedSegment::new(segment1);
@@ -516,30 +522,42 @@ fn test_proxy_shared_updates_same_version() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    futures::executor::block_on(segment1
-        .upsert_point(10, idx1, only_default_vector(&old_vec), &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(
+        10,
+        idx1,
+        only_default_vector(&old_vec),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment1.set_payload(10, idx1, &old_payload, &None, &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment1
-        .set_payload(10, idx1, &old_payload, &None, &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment1
-        .upsert_point(10, idx2, only_default_vector(&new_vec), &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment1
-        .set_payload(10, idx2, &new_payload, &None, &hw_counter))
+    futures::executor::block_on(segment1.upsert_point(
+        10,
+        idx2,
+        only_default_vector(&new_vec),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment1.set_payload(10, idx2, &new_payload, &None, &hw_counter))
         .unwrap();
 
-    futures::executor::block_on(segment2
-        .upsert_point(10, idx1, only_default_vector(&new_vec), &hw_counter))
+    futures::executor::block_on(segment2.upsert_point(
+        10,
+        idx1,
+        only_default_vector(&new_vec),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.set_payload(10, idx1, &new_payload, &None, &hw_counter))
         .unwrap();
-    futures::executor::block_on(segment2
-        .set_payload(10, idx1, &new_payload, &None, &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .upsert_point(10, idx2, only_default_vector(&old_vec), &hw_counter))
-        .unwrap();
-    futures::executor::block_on(segment2
-        .set_payload(10, idx2, &old_payload, &None, &hw_counter))
+    futures::executor::block_on(segment2.upsert_point(
+        10,
+        idx2,
+        only_default_vector(&old_vec),
+        &hw_counter,
+    ))
+    .unwrap();
+    futures::executor::block_on(segment2.set_payload(10, idx2, &old_payload, &None, &hw_counter))
         .unwrap();
 
     let locked_segment_1 = LockedSegment::new(segment1);

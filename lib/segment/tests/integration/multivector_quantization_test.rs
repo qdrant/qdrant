@@ -234,28 +234,28 @@ fn test_multivector_quantization_hnsw(
         let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
-        futures::executor::block_on(segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_multi_vector(&vector),
-                &hw_counter,
-            ))
-            .unwrap();
-        futures::executor::block_on(segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter))
-            .unwrap();
-    }
-
-    futures::executor::block_on(segment
-        .payload_index
-        .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer.into(),
+        futures::executor::block_on(segment.upsert_point(
+            n as SeqNumberType,
+            idx,
+            only_default_multi_vector(&vector),
             &hw_counter,
         ))
         .unwrap();
+        futures::executor::block_on(segment.set_full_payload(
+            n as SeqNumberType,
+            idx,
+            &payload,
+            &hw_counter,
+        ))
+        .unwrap();
+    }
+
+    futures::executor::block_on(segment.payload_index.borrow_mut().set_indexed(
+        &JsonPath::new(int_key),
+        PayloadSchemaType::Integer.into(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let quantization_config = match quantization_variant {
         QuantizationVariant::Scalar => ScalarQuantizationConfig {

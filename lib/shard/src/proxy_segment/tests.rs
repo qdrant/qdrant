@@ -56,23 +56,25 @@ fn test_search_batch_equivalence_single() {
     let hw_counter = HardwareCounterCell::new();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-    futures::executor::block_on(original_segment
-        .get()
-        .write()
-        .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(original_segment.get().write().upsert_point(
+        100,
+        4.into(),
+        only_default_vector(&vec4),
+        &hw_counter,
+    ))
+    .unwrap();
     let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-    futures::executor::block_on(original_segment
-        .get()
-        .write()
-        .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(original_segment.get().write().upsert_point(
+        101,
+        6.into(),
+        only_default_vector(&vec6),
+        &hw_counter,
+    ))
+    .unwrap();
 
     let mut proxy_segment = ProxySegment::new(original_segment);
 
-    futures::executor::block_on(proxy_segment
-        .delete_point(102, 1.into(), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(proxy_segment.delete_point(102, 1.into(), &hw_counter)).unwrap();
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
     let search_result = proxy_segment
@@ -93,18 +95,17 @@ fn test_search_batch_equivalence_single() {
     let query_context = QueryContext::new(10000, hardware_accumulator.clone());
     let segment_query_context = query_context.get_segment_query_context();
 
-    let search_batch_result = futures::executor::block_on(proxy_segment
-        .search_batch(
-            DEFAULT_VECTOR_NAME,
-            &[&query_vector],
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            10,
-            None,
-            &segment_query_context,
-        ))
-        .unwrap();
+    let search_batch_result = futures::executor::block_on(proxy_segment.search_batch(
+        DEFAULT_VECTOR_NAME,
+        &[&query_vector],
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        10,
+        None,
+        &segment_query_context,
+    ))
+    .unwrap();
 
     eprintln!("search_batch_result = {search_batch_result:#?}");
 
@@ -138,18 +139,17 @@ fn test_search_batch_equivalence_single_random() {
     let query_context = QueryContext::default();
     let segment_query_context = query_context.get_segment_query_context();
 
-    let search_batch_result = futures::executor::block_on(proxy_segment
-        .search_batch(
-            DEFAULT_VECTOR_NAME,
-            &[&query_vector],
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            10,
-            None,
-            &segment_query_context,
-        ))
-        .unwrap();
+    let search_batch_result = futures::executor::block_on(proxy_segment.search_batch(
+        DEFAULT_VECTOR_NAME,
+        &[&query_vector],
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        10,
+        None,
+        &segment_query_context,
+    ))
+    .unwrap();
 
     eprintln!("search_batch_result = {search_batch_result:#?}");
 
@@ -192,18 +192,17 @@ fn test_search_batch_equivalence_multi_random() {
     let query_context = QueryContext::default();
     let segment_query_context = query_context.get_segment_query_context();
 
-    let search_batch_result = futures::executor::block_on(proxy_segment
-        .search_batch(
-            DEFAULT_VECTOR_NAME,
-            query_vectors,
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            10,
-            None,
-            &segment_query_context,
-        ))
-        .unwrap();
+    let search_batch_result = futures::executor::block_on(proxy_segment.search_batch(
+        DEFAULT_VECTOR_NAME,
+        query_vectors,
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        10,
+        None,
+        &segment_query_context,
+    ))
+    .unwrap();
 
     eprintln!("search_batch_result = {search_batch_result:#?}");
 
@@ -227,23 +226,18 @@ fn test_read_filter() {
         "blue".to_string().into(),
     )));
 
-    let original_points = futures::executor::block_on(original_segment
-        .get()
-        .read()
-        .read_filtered(
-            None,
-            Some(100),
-            None,
-            &is_stopped,
-            &hw_counter,
-            DeferredBehavior::Exclude,
-        ))
-        .unwrap();
+    let original_points = futures::executor::block_on(original_segment.get().read().read_filtered(
+        None,
+        Some(100),
+        None,
+        &is_stopped,
+        &hw_counter,
+        DeferredBehavior::Exclude,
+    ))
+    .unwrap();
 
-    let original_points_filtered = futures::executor::block_on(original_segment
-        .get()
-        .read()
-        .read_filtered(
+    let original_points_filtered =
+        futures::executor::block_on(original_segment.get().read().read_filtered(
             None,
             Some(100),
             Some(&filter),
@@ -257,30 +251,26 @@ fn test_read_filter() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    futures::executor::block_on(proxy_segment
-        .delete_point(100, 2.into(), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(proxy_segment.delete_point(100, 2.into(), &hw_counter)).unwrap();
 
-    let proxy_res = futures::executor::block_on(proxy_segment
-        .read_filtered(
-            None,
-            Some(100),
-            None,
-            &is_stopped,
-            &hw_counter,
-            DeferredBehavior::Exclude,
-        ))
-        .unwrap();
-    let proxy_res_filtered = futures::executor::block_on(proxy_segment
-        .read_filtered(
-            None,
-            Some(100),
-            Some(&filter),
-            &is_stopped,
-            &hw_counter,
-            DeferredBehavior::Exclude,
-        ))
-        .unwrap();
+    let proxy_res = futures::executor::block_on(proxy_segment.read_filtered(
+        None,
+        Some(100),
+        None,
+        &is_stopped,
+        &hw_counter,
+        DeferredBehavior::Exclude,
+    ))
+    .unwrap();
+    let proxy_res_filtered = futures::executor::block_on(proxy_segment.read_filtered(
+        None,
+        Some(100),
+        Some(&filter),
+        &is_stopped,
+        &hw_counter,
+        DeferredBehavior::Exclude,
+    ))
+    .unwrap();
 
     assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
     assert_eq!(original_points.len() - 1, proxy_res.len());
@@ -313,16 +303,13 @@ fn test_sync_indexes() {
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
     let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
-    futures::executor::block_on(original_segment
-        .get()
-        .write()
-        .create_field_index(
-            10,
-            &"color".parse().unwrap(),
-            Some(&PayloadSchemaType::Keyword.into()),
-            &HardwareCounterCell::new(),
-        ))
-        .unwrap();
+    futures::executor::block_on(original_segment.get().write().create_field_index(
+        10,
+        &"color".parse().unwrap(),
+        Some(&PayloadSchemaType::Keyword.into()),
+        &HardwareCounterCell::new(),
+    ))
+    .unwrap();
 
     let proxy_segment = ProxySegment::new(original_segment.clone());
 
@@ -340,22 +327,21 @@ fn test_sync_indexes() {
             .contains_key(&"color".parse().unwrap()),
     );
 
-    futures::executor::block_on(original_segment
-        .get()
-        .write()
-        .create_field_index(
-            11,
-            &"location".parse().unwrap(),
-            Some(&PayloadSchemaType::Geo.into()),
-            &hw_cell,
-        ))
-        .unwrap();
+    futures::executor::block_on(original_segment.get().write().create_field_index(
+        11,
+        &"location".parse().unwrap(),
+        Some(&PayloadSchemaType::Geo.into()),
+        &hw_cell,
+    ))
+    .unwrap();
 
-    futures::executor::block_on(original_segment
-        .get()
-        .write()
-        .delete_field_index(12, &"color".parse().unwrap()))
-        .unwrap();
+    futures::executor::block_on(
+        original_segment
+            .get()
+            .write()
+            .delete_field_index(12, &"color".parse().unwrap()),
+    )
+    .unwrap();
 
     proxy_segment
         .replicate_field_indexes(0, &hw_cell, &write_segment)
@@ -461,28 +447,26 @@ fn test_point_vector_count_multivec() {
 
     let hw_cell = HardwareCounterCell::new();
 
-    futures::executor::block_on(original_segment
-        .upsert_point(
-            100,
-            4.into(),
-            NamedVectors::from_pairs([
-                (VECTOR1_NAME.into(), vec![0.4]),
-                (VECTOR2_NAME.into(), vec![0.5]),
-            ]),
-            &hw_cell,
-        ))
-        .unwrap();
-    futures::executor::block_on(original_segment
-        .upsert_point(
-            101,
-            6.into(),
-            NamedVectors::from_pairs([
-                (VECTOR1_NAME.into(), vec![0.6]),
-                (VECTOR2_NAME.into(), vec![0.7]),
-            ]),
-            &hw_cell,
-        ))
-        .unwrap();
+    futures::executor::block_on(original_segment.upsert_point(
+        100,
+        4.into(),
+        NamedVectors::from_pairs([
+            (VECTOR1_NAME.into(), vec![0.4]),
+            (VECTOR2_NAME.into(), vec![0.5]),
+        ]),
+        &hw_cell,
+    ))
+    .unwrap();
+    futures::executor::block_on(original_segment.upsert_point(
+        101,
+        6.into(),
+        NamedVectors::from_pairs([
+            (VECTOR1_NAME.into(), vec![0.6]),
+            (VECTOR2_NAME.into(), vec![0.7]),
+        ]),
+        &hw_cell,
+    ))
+    .unwrap();
 
     let original_segment = LockedSegment::new(original_segment);
 
@@ -519,9 +503,12 @@ fn test_proxy_segment_flush() {
 
     let flushed_version_1 = futures::executor::block_on(proxy_segment.flush(false)).unwrap();
 
-    futures::executor::block_on(proxy_segment
-        .delete_point(100, 2.into(), &HardwareCounterCell::new()))
-        .unwrap();
+    futures::executor::block_on(proxy_segment.delete_point(
+        100,
+        2.into(),
+        &HardwareCounterCell::new(),
+    ))
+    .unwrap();
 
     let flushed_version_2 = futures::executor::block_on(proxy_segment.flush(false)).unwrap();
 
@@ -566,9 +553,7 @@ fn test_proxy_deferred() {
 
     assert_eq!(proxy_segment.available_point_count_without_deferred(), 3);
 
-    futures::executor::block_on(proxy_segment
-        .delete_point(7, 5.into(), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(proxy_segment.delete_point(7, 5.into(), &hw_counter)).unwrap();
 
     assert_eq!(
         proxy_segment.size_info().num_deferred_points.unwrap(),

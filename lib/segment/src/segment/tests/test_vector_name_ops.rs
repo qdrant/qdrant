@@ -85,9 +85,13 @@ fn build_appendable_segment_with_data(path: &std::path::Path) -> Segment {
     for i in 0..NUM_POINTS {
         let vec = vec![(i + 1) as f32; DIM];
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.as_slice().into());
-        futures::executor::block_on(segment
-            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw))
-            .unwrap();
+        futures::executor::block_on(segment.upsert_point(
+            (i + 1) as u64,
+            (i as u64 + 1).into(),
+            vectors,
+            &hw,
+        ))
+        .unwrap();
     }
 
     assert_eq!(segment.available_point_count(), NUM_POINTS);
@@ -135,9 +139,12 @@ fn test_create_dense_vector_on_appendable_segment() {
 
     // Create a new dense vector
     let new_dim = 8;
-    let result = futures::executor::block_on(segment
-        .create_vector_name(100, "v2", &dense_vector_name_config(new_dim)))
-        .unwrap();
+    let result = futures::executor::block_on(segment.create_vector_name(
+        100,
+        "v2",
+        &dense_vector_name_config(new_dim),
+    ))
+    .unwrap();
     assert!(result);
 
     assert_eq!(segment.segment_config.vector_data["v2"].size, new_dim);
@@ -147,23 +154,27 @@ fn test_create_dense_vector_on_appendable_segment() {
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![9.0f32; DIM].into());
     vectors.insert("v2".to_owned(), vec![1.0f32; new_dim].into());
-    futures::executor::block_on(segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        (NUM_POINTS as u64 + 1).into(),
+        vectors,
+        &hw,
+    ))
+    .unwrap();
 
     assert_eq!(segment.available_point_count(), NUM_POINTS + 1);
 
     // The new point has both vectors
-    let all_vecs = futures::executor::block_on(segment
-        .all_vectors((NUM_POINTS as u64 + 1).into(), &hw))
-        .unwrap();
+    let all_vecs =
+        futures::executor::block_on(segment.all_vectors((NUM_POINTS as u64 + 1).into(), &hw))
+            .unwrap();
     assert!(all_vecs.contains_key(DEFAULT_VECTOR_NAME));
     assert!(all_vecs.contains_key("v2"));
 
     // Can read the new vector back
-    let v2_vec = futures::executor::block_on(segment
-        .vector("v2", (NUM_POINTS as u64 + 1).into(), &hw))
-        .unwrap();
+    let v2_vec =
+        futures::executor::block_on(segment.vector("v2", (NUM_POINTS as u64 + 1).into(), &hw))
+            .unwrap();
     assert!(v2_vec.is_some());
 }
 
@@ -173,9 +184,12 @@ fn test_create_sparse_vector_on_appendable_segment() {
     let mut segment = build_appendable_segment_with_data(dir.path());
     let hw = hw();
 
-    let result = futures::executor::block_on(segment
-        .create_vector_name(100, "sparse1", &sparse_vector_name_config()))
-        .unwrap();
+    let result = futures::executor::block_on(segment.create_vector_name(
+        100,
+        "sparse1",
+        &sparse_vector_name_config(),
+    ))
+    .unwrap();
     assert!(result);
     assert!(
         segment
@@ -189,14 +203,18 @@ fn test_create_sparse_vector_on_appendable_segment() {
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![7.0f32; DIM].into());
     vectors.insert("sparse1".to_owned(), sparse_vec.into());
-    futures::executor::block_on(segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        (NUM_POINTS as u64 + 1).into(),
+        vectors,
+        &hw,
+    ))
+    .unwrap();
 
     // Verify the sparse vector is retrievable
-    let all_vecs = futures::executor::block_on(segment
-        .all_vectors((NUM_POINTS as u64 + 1).into(), &hw))
-        .unwrap();
+    let all_vecs =
+        futures::executor::block_on(segment.all_vectors((NUM_POINTS as u64 + 1).into(), &hw))
+            .unwrap();
     assert!(all_vecs.contains_key("sparse1"));
 }
 
@@ -212,9 +230,12 @@ fn test_create_dense_vector_on_immutable_segment() {
 
     // Create a new dense vector on immutable segment -> empty placeholder
     let new_dim = 8;
-    let result = futures::executor::block_on(segment
-        .create_vector_name(100, "v2", &dense_vector_name_config(new_dim)))
-        .unwrap();
+    let result = futures::executor::block_on(segment.create_vector_name(
+        100,
+        "v2",
+        &dense_vector_name_config(new_dim),
+    ))
+    .unwrap();
     assert!(result);
     assert!(segment.segment_config.vector_data.contains_key("v2"));
 
@@ -233,7 +254,9 @@ fn test_create_dense_vector_on_immutable_segment() {
 
     // Original default vector is still readable for all points
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = futures::executor::block_on(segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw)).unwrap();
+        let default_vec =
+            futures::executor::block_on(segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw))
+                .unwrap();
         assert!(
             default_vec.is_some(),
             "point {i} should have default vector"
@@ -253,9 +276,12 @@ fn test_create_sparse_vector_on_immutable_segment() {
 
     // Create a sparse vector on immutable segment with MutableRam config.
     // The implementation should upgrade to a non-appendable index type (Mmap).
-    let result = futures::executor::block_on(segment
-        .create_vector_name(100, "sp", &sparse_vector_name_config()))
-        .unwrap();
+    let result = futures::executor::block_on(segment.create_vector_name(
+        100,
+        "sp",
+        &sparse_vector_name_config(),
+    ))
+    .unwrap();
     assert!(result);
     assert!(segment.segment_config.sparse_vector_data.contains_key("sp"));
 
@@ -283,7 +309,9 @@ fn test_create_sparse_vector_on_immutable_segment() {
 
     // Original default vector is still readable
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = futures::executor::block_on(segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw)).unwrap();
+        let default_vec =
+            futures::executor::block_on(segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw))
+                .unwrap();
         assert!(
             default_vec.is_some(),
             "point {i} should have default vector"
@@ -327,21 +355,28 @@ fn test_delete_dense_vector_with_data() {
 
     // Create vector and insert data
     let new_dim = 8;
-    futures::executor::block_on(segment
-        .create_vector_name(100, "to_delete", &dense_vector_name_config(new_dim)))
-        .unwrap();
+    futures::executor::block_on(segment.create_vector_name(
+        100,
+        "to_delete",
+        &dense_vector_name_config(new_dim),
+    ))
+    .unwrap();
 
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![5.0f32; DIM].into());
     vectors.insert("to_delete".to_owned(), vec![2.0f32; new_dim].into());
-    futures::executor::block_on(segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        (NUM_POINTS as u64 + 1).into(),
+        vectors,
+        &hw,
+    ))
+    .unwrap();
 
     // Confirm the new vector is there
-    let all_vecs = futures::executor::block_on(segment
-        .all_vectors((NUM_POINTS as u64 + 1).into(), &hw))
-        .unwrap();
+    let all_vecs =
+        futures::executor::block_on(segment.all_vectors((NUM_POINTS as u64 + 1).into(), &hw))
+            .unwrap();
     assert!(all_vecs.contains_key("to_delete"));
 
     // Delete the vector
@@ -353,7 +388,9 @@ fn test_delete_dense_vector_with_data() {
     // Original points and the default vector are still intact
     assert_eq!(segment.available_point_count(), NUM_POINTS + 1);
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = futures::executor::block_on(segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw)).unwrap();
+        let default_vec =
+            futures::executor::block_on(segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw))
+                .unwrap();
         assert!(default_vec.is_some());
     }
 }
@@ -364,23 +401,30 @@ fn test_delete_sparse_vector_with_data() {
     let mut segment = build_appendable_segment_with_data(dir.path());
     let hw = hw();
 
-    futures::executor::block_on(segment
-        .create_vector_name(100, "sp", &sparse_vector_name_config()))
-        .unwrap();
+    futures::executor::block_on(segment.create_vector_name(
+        100,
+        "sp",
+        &sparse_vector_name_config(),
+    ))
+    .unwrap();
 
     // Insert a point with sparse data
     let sparse_vec = SparseVector::new(vec![1, 3], vec![0.5, 0.8]).unwrap();
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![4.0f32; DIM].into());
     vectors.insert("sp".to_owned(), sparse_vec.into());
-    futures::executor::block_on(segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        (NUM_POINTS as u64 + 1).into(),
+        vectors,
+        &hw,
+    ))
+    .unwrap();
 
     // Verify data is there
-    let all_vecs = futures::executor::block_on(segment
-        .all_vectors((NUM_POINTS as u64 + 1).into(), &hw))
-        .unwrap();
+    let all_vecs =
+        futures::executor::block_on(segment.all_vectors((NUM_POINTS as u64 + 1).into(), &hw))
+            .unwrap();
     assert!(all_vecs.contains_key("sp"));
 
     // Delete
@@ -400,17 +444,24 @@ fn test_persistence_after_create_with_data() {
     let hw = hw();
 
     let new_dim = 6;
-    futures::executor::block_on(segment
-        .create_vector_name(100, "persisted", &dense_vector_name_config(new_dim)))
-        .unwrap();
+    futures::executor::block_on(segment.create_vector_name(
+        100,
+        "persisted",
+        &dense_vector_name_config(new_dim),
+    ))
+    .unwrap();
 
     // Insert data into the new vector
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![8.0f32; DIM].into());
     vectors.insert("persisted".to_owned(), vec![1.5f32; new_dim].into());
-    futures::executor::block_on(segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        (NUM_POINTS as u64 + 1).into(),
+        vectors,
+        &hw,
+    ))
+    .unwrap();
 
     // Save, drop, reload
     let segment_path = segment.data_path();
@@ -426,14 +477,18 @@ fn test_persistence_after_create_with_data() {
     assert_eq!(loaded.available_point_count(), NUM_POINTS + 1);
 
     // Data persisted - vector is readable
-    let vec = futures::executor::block_on(loaded
-        .vector("persisted", (NUM_POINTS as u64 + 1).into(), &hw))
-        .unwrap();
+    let vec = futures::executor::block_on(loaded.vector(
+        "persisted",
+        (NUM_POINTS as u64 + 1).into(),
+        &hw,
+    ))
+    .unwrap();
     assert!(vec.is_some());
 
     // Original data intact
     for i in 1..=NUM_POINTS as u64 {
-        let original = futures::executor::block_on(loaded.vector(DEFAULT_VECTOR_NAME, i.into(), &hw)).unwrap();
+        let original =
+            futures::executor::block_on(loaded.vector(DEFAULT_VECTOR_NAME, i.into(), &hw)).unwrap();
         assert!(
             original.is_some(),
             "point {i} should have default vector after reload"
@@ -448,17 +503,24 @@ fn test_persistence_after_delete_with_data() {
     let hw = hw();
 
     let new_dim = 8;
-    futures::executor::block_on(segment
-        .create_vector_name(100, "temp", &dense_vector_name_config(new_dim)))
-        .unwrap();
+    futures::executor::block_on(segment.create_vector_name(
+        100,
+        "temp",
+        &dense_vector_name_config(new_dim),
+    ))
+    .unwrap();
 
     // Insert data, then delete the vector
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![6.0f32; DIM].into());
     vectors.insert("temp".to_owned(), vec![2.0f32; new_dim].into());
-    futures::executor::block_on(segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw))
-        .unwrap();
+    futures::executor::block_on(segment.upsert_point(
+        101,
+        (NUM_POINTS as u64 + 1).into(),
+        vectors,
+        &hw,
+    ))
+    .unwrap();
 
     futures::executor::block_on(segment.delete_vector_name(102, "temp")).unwrap();
 
@@ -476,7 +538,8 @@ fn test_persistence_after_delete_with_data() {
 
     // Original data still intact
     for i in 1..=NUM_POINTS as u64 {
-        let original = futures::executor::block_on(loaded.vector(DEFAULT_VECTOR_NAME, i.into(), &hw)).unwrap();
+        let original =
+            futures::executor::block_on(loaded.vector(DEFAULT_VECTOR_NAME, i.into(), &hw)).unwrap();
         assert!(
             original.is_some(),
             "point {i} should have default vector after reload"

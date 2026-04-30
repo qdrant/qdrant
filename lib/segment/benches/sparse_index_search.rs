@@ -91,9 +91,13 @@ fn sparse_vector_index_search_benchmark_impl(
     // all points have the same payload
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {
-        futures::executor::block_on(payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter))
-            .unwrap();
+        futures::executor::block_on(payload_index.set_payload(
+            idx as PointOffsetType,
+            &payload,
+            &None,
+            &hw_counter,
+        ))
+        .unwrap();
     }
     drop(payload_index);
 
@@ -182,9 +186,12 @@ fn sparse_vector_index_search_benchmark_impl(
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
 
     // create payload field index
-    futures::executor::block_on(payload_index
-        .set_indexed(&field_name.parse().unwrap(), Keyword.into(), &hw_counter))
-        .unwrap();
+    futures::executor::block_on(payload_index.set_indexed(
+        &field_name.parse().unwrap(),
+        Keyword.into(),
+        &hw_counter,
+    ))
+    .unwrap();
 
     drop(payload_index);
 
