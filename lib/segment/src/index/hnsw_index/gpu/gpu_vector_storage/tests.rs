@@ -24,9 +24,7 @@ use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::{
     new_volatile_multi_dense_vector_storage_half,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
-use crate::vector_storage::{
-    DEFAULT_STOPPED, RawScorer, VectorStorage, new_raw_scorer_for_test,
-};
+use crate::vector_storage::{DEFAULT_STOPPED, RawScorer, VectorStorage, new_raw_scorer_for_test};
 
 #[derive(Debug, Clone, Copy)]
 enum TestElementType {
