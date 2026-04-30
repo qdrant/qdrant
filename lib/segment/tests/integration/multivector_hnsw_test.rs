@@ -17,6 +17,7 @@ use segment::entry::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
 use segment::id_tracker::IdTrackerRead;
+use segment::index::VectorIndexRead;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::json_path::JsonPath;
 use segment::payload_json;
@@ -26,7 +27,6 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, MultiVectorConfig,
     PayloadSchemaType, SeqNumberType,
 };
-use segment::index::VectorIndexRead;
 use segment::vector_storage::VectorStorage;
 use segment::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage_full;
 use tempfile::Builder;
