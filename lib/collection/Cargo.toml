@@ -94,8 +94,8 @@ urlencoding = { workspace = true }
 tracing = { workspace = true, optional = true }
 fs4 = { workspace = true }
 
-# AWS S3 support
-object_store = { version = "0.13.2", features = ["aws"] }
+# Cloud storage support (S3, GCS)
+object_store = { version = "0.13.2", features = ["aws", "gcp"] }
 
 
 [[bench]]
