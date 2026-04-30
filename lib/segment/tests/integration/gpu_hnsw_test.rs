@@ -19,7 +19,7 @@ use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use segment::index::hnsw_index::gpu::set_gpu_groups_count;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::{PayloadIndex, VectorIndex};
+use segment::index::{PayloadIndex, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;

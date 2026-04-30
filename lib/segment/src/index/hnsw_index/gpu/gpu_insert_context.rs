@@ -492,7 +492,7 @@ mod tests {
     use crate::index::hnsw_index::links_container::LinksContainer;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageRead};
 
     #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
     #[repr(C)]
