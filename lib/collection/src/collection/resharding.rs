@@ -79,6 +79,8 @@ impl Collection {
                     // the count after adding the shard). A replay converges to
                     // the same value instead of incrementing again.
                     ShardingMethod::Auto => {
+                        resharding_key
+                            .debug_assert_targets_last_shard(config.params.shard_number.get());
                         let new_shard_number = resharding_key
                             .shard_id
                             .checked_add(1)
@@ -213,6 +215,8 @@ impl Collection {
                     // replay converges to the same value instead of
                     // decrementing again.
                     ShardingMethod::Auto => {
+                        resharding_key
+                            .debug_assert_targets_last_shard(config.params.shard_number.get());
                         let new_shard_number = NonZeroU32::new(resharding_key.shard_id)
                             .expect("cannot have zero shards after finishing resharding down");
                         if config.params.shard_number != new_shard_number {
@@ -297,6 +301,8 @@ impl Collection {
                 // after removing the shard). A replay converges to the same
                 // value instead of decrementing again.
                 ShardingMethod::Auto => {
+                    resharding_key
+                        .debug_assert_targets_last_shard(config.params.shard_number.get());
                     let new_shard_number = NonZeroU32::new(resharding_key.shard_id)
                         .expect("cannot have zero shards after aborting resharding up");
                     if config.params.shard_number != new_shard_number {

@@ -98,6 +98,23 @@ pub struct ReshardKey {
     pub shard_key: Option<ShardKey>,
 }
 
+impl ReshardKey {
+    /// Pin the auto-sharding invariant that resharding always targets the
+    /// last shard id. `shard_number` must equal `shard_id` or `shard_id + 1`;
+    /// any other value would silently corrupt the count via the id-derived
+    /// `shard_number` update.
+    pub(crate) fn debug_assert_targets_last_shard(&self, shard_number: u32) {
+        let shard_id = self.shard_id;
+        debug_assert!(
+            shard_id
+                .checked_add(1)
+                .is_some_and(|next| shard_number == shard_id || shard_number == next),
+            "auto-sharding resharding must target the last shard id; \
+             shard_number={shard_number} shard_id={shard_id}",
+        );
+    }
+}
+
 impl fmt::Display for ReshardKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}/{}/{:?}", self.peer_id, self.shard_id, self.shard_key)
