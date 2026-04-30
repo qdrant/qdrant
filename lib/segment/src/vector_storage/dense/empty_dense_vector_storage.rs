@@ -88,7 +88,10 @@ impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
     }
 
     fn get_dense<P: AccessPattern>(&self, _key: PointOffsetType) -> Cow<'_, [VectorElementType]> {
-        debug_assert!(false, "get_dense called on EmptyDenseVectorStorage");
+        // All slots are deleted; downstream paths (e.g. optimization's
+        // `update_from`) still need a properly-sized placeholder per slot so
+        // the destination's index→offset layout stays aligned. The deletion
+        // flag from `is_deleted_vector` keeps the placeholder from being read.
         Cow::Owned(vec![0.0; self.dim])
     }
 }
@@ -111,7 +114,7 @@ impl VectorStorage for EmptyDenseVectorStorage {
     }
 
     fn get_vector<P: AccessPattern>(&self, _key: PointOffsetType) -> CowVector<'_> {
-        debug_assert!(false, "get_vector called on EmptyDenseVectorStorage");
+        // See `get_dense` for why we return a sized placeholder rather than asserting.
         CowVector::from(vec![0.0; self.dim])
     }
 

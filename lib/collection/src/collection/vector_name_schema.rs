@@ -37,6 +37,11 @@ impl Collection {
         self.update_all_local(operation, WaitUntil::from(false), hw_acc, true)
             .await?;
 
+        // Refresh shard optimizers so the cached `SegmentOptimizerConfig` picks up the
+        // new vector schema. Otherwise optimization-built destination segments use the
+        // stale dim and panic on dim mismatch when copying from sources with the new dim.
+        self.recreate_optimizers_blocking().await?;
+
         Ok(())
     }
 
@@ -58,6 +63,11 @@ impl Collection {
             true, // Delete even in dead shards
         )
         .await?;
+
+        // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the
+        // removed vector. Without this, optimization keeps allocating storage for it
+        // using the old config.
+        self.recreate_optimizers_blocking().await?;
 
         Ok(())
     }
