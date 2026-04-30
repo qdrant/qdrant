@@ -45,7 +45,10 @@ impl VectorStatsBuilder {
         }
     }
 
-    pub fn add<T: Copy + Into<f64>>(&mut self, vector: &[T]) {
+    pub fn add<T: Copy>(&mut self, vector: &[T])
+    where
+        f64: From<T>,
+    {
         debug_assert_eq!(
             vector.len(),
             self.stats.elements_stats.len(),
@@ -60,7 +63,7 @@ impl VectorStatsBuilder {
             .zip(self.means.iter_mut())
             .zip(self.m2.iter_mut())
         {
-            let value_f64: f64 = value.into();
+            let value_f64 = f64::from(value);
             let value_f32 = value_f64 as f32;
             if value_f32 < element_stats.min {
                 element_stats.min = value_f32;
@@ -98,7 +101,8 @@ impl VectorStatsBuilder {
 impl VectorStats {
     pub fn build<T>(data: impl Iterator<Item = impl AsRef<[T]>>, dim: usize) -> Self
     where
-        T: Copy + Into<f64>,
+        T: Copy,
+        f64: From<T>,
     {
         let mut builder = VectorStatsBuilder::new(dim);
         for vector in data {

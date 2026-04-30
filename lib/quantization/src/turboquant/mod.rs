@@ -165,7 +165,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                     bits,
                     mode,
                     error_correction: None,
-                });
+                })
+                .map_err(|e| {
+                    EncodingError::EncodingError(format!(
+                        "Failed to construct pre-quantizer for TQ+ stats pass: {e}",
+                    ))
+                })?;
                 let padded_dim = pre_quantizer.padded_dim;
                 let mut buf = vec![0.0f64; padded_dim];
                 let mut stats_builder = crate::vector_stats::VectorStatsBuilder::new(padded_dim);
@@ -181,8 +186,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                 let mut shift = vec![0.0f32; padded_dim];
                 let mut scale = vec![1.0f32; padded_dim];
                 for (i, s) in stats.elements_stats.iter().enumerate() {
+                    // Always recenter — even constant-but-biased coordinates
+                    // benefit from `shift = -mean` (so the codebook sees them
+                    // at 0). Only the variance reciprocal needs the EPSILON
+                    // guard against division blow-up on truly zero-variance
+                    // coords.
+                    shift[i] = -s.mean;
                     if s.stddev > f32::EPSILON {
-                        shift[i] = -s.mean;
                         scale[i] = s.stddev.recip();
                     }
                 }
@@ -200,7 +210,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             }),
         };
 
-        let quantizer = TurboQuantizer::new_from_metadata(&metadata);
+        let quantizer = TurboQuantizer::new_from_metadata(&metadata).map_err(|e| {
+            EncodingError::EncodingError(format!(
+                "Failed to construct quantizer from metadata: {e}",
+            ))
+        })?;
         let mut buf = vec![0.0f64; quantizer.padded_dim];
 
         for vector in data {
@@ -255,7 +269,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
 
-        let quantizer = TurboQuantizer::new_from_metadata(&metadata);
+        let quantizer = TurboQuantizer::new_from_metadata(&metadata)?;
 
         let result = Self {
             encoded_vectors,

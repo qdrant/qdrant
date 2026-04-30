@@ -40,11 +40,33 @@ pub struct ErrorCorrection {
 }
 
 impl ErrorCorrection {
-    pub fn new_from_metadata(metadata: &ErrorCorrectionMetadata) -> Self {
-        Self::new(metadata.shift.clone(), metadata.scale.clone())
+    /// Reconstruct from persisted metadata, validating that `shift` and
+    /// `scale` have the expected length. Returns an error if the metadata
+    /// has been truncated or otherwise corrupted.
+    pub fn new_from_metadata(
+        metadata: &ErrorCorrectionMetadata,
+        padded_dim: usize,
+    ) -> std::io::Result<Self> {
+        if metadata.shift.len() != padded_dim || metadata.scale.len() != padded_dim {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "ErrorCorrection metadata length mismatch: shift={}, scale={}, expected={}",
+                    metadata.shift.len(),
+                    metadata.scale.len(),
+                    padded_dim,
+                ),
+            ));
+        }
+        Ok(Self::new(metadata.shift.clone(), metadata.scale.clone()))
     }
 
     pub(super) fn new(shift: Vec<f32>, scale: Vec<f32>) -> Self {
+        debug_assert_eq!(
+            shift.len(),
+            scale.len(),
+            "ErrorCorrection shift/scale length mismatch",
+        );
         let mm_const = shift.iter().map(|&s| s * s).sum();
         let d_prime_sq = scale
             .iter()
@@ -88,18 +110,23 @@ impl TurboQuantizer {
         }
     }
 
-    /// Initialize a new TurboQuantizer from metadata.
-    pub fn new_from_metadata(metadata: &Metadata) -> Self {
-        Self::new(
+    /// Initialize a new TurboQuantizer from metadata. Returns `Err` if the
+    /// persisted `ErrorCorrection` shift/scale lengths don't match the
+    /// expected `padded_dim`.
+    pub fn new_from_metadata(metadata: &Metadata) -> std::io::Result<Self> {
+        let padded_dim = Self::padded_dim(metadata.vector_parameters.dim, metadata.bits);
+        let error_correction = metadata
+            .error_correction
+            .as_ref()
+            .map(|m| ErrorCorrection::new_from_metadata(m, padded_dim))
+            .transpose()?;
+        Ok(Self::new(
             metadata.vector_parameters.dim,
             metadata.bits,
             metadata.mode,
             metadata.vector_parameters.distance_type,
-            metadata
-                .error_correction
-                .as_ref()
-                .map(ErrorCorrection::new_from_metadata),
-        )
+            error_correction,
+        ))
     }
 
     /// Pad, rotate, and length-rescale `vec` into `buf`. After this call `buf`
@@ -246,8 +273,13 @@ impl TurboQuantizer {
     }
 
     pub fn dequantize(&self, quantized: &[u8]) -> Vec<f64> {
-        let (unpacked, extras) = self.unpack_vector(quantized);
+        let (unpacked_iter, extras) = self.unpack_vector(quantized);
         let scaling_factor = f64::from(extras.scaling_factor());
+        // Materialize the unpacked centroids once. `unpack_vector` returns a
+        // streaming `BitReader` iterator and used to be invoked twice (here
+        // and in the `cn_quant` recompute below) — bit-unpacking the same
+        // bytes twice for every dequantize call.
+        let unpacked: Vec<f64> = unpacked_iter.collect();
 
         // Stored field is `l2/cn_quant` (`l2 == 1.0` for Cosine).
         // To recover the original l2 length, we need to `* cn_quant` measured
@@ -256,22 +288,16 @@ impl TurboQuantizer {
         let recovered_l2 = match self.distance {
             DistanceType::Dot | DistanceType::Cosine => {
                 let cn_quant = match &self.error_correction {
-                    Some(ec) => self
-                        .unpack_vector(quantized)
-                        .0
+                    Some(ec) => unpacked
+                        .iter()
                         .enumerate()
-                        .map(|(i, x)| {
+                        .map(|(i, &x)| {
                             let r = x / f64::from(ec.scale[i]) - f64::from(ec.shift[i]);
                             r * r
                         })
                         .sum::<f64>()
                         .sqrt(),
-                    None => self
-                        .unpack_vector(quantized)
-                        .0
-                        .map(|x| x * x)
-                        .sum::<f64>()
-                        .sqrt(),
+                    None => unpacked.iter().map(|&x| x * x).sum::<f64>().sqrt(),
                 };
                 scaling_factor * cn_quant
             }
@@ -347,17 +373,18 @@ impl TurboQuantizer {
 
     /// TQ+ symmetric-scoring slow path.
     ///
-    /// For 1-bit storage we use llama's unweighted form `Σ c_a · c_b` (raw
-    /// centroid dot, no `D'²`, no `xm` fold-in). The "math-correct" weighted
-    /// form `Σ c_a c_b D'_i² + xm_a + xm_b − ⟨M, M⟩` recovers
-    /// `⟨rescaled_a, rescaled_b⟩` exactly, but for 1-bit + anisotropic data
-    /// (dbpedia-openai) the per-coord `D'²` amplifies the large quantization
-    /// error of the ±c codebook on high-`D'` coords, corrupting the HNSW
-    /// graph that `score_internal` is used to build.
+    /// **Bits1 / Bits1_5**: plain `Σ c_a · c_b` — no `D'²` weighting, no
+    /// `xm`/`mm` fold-in. Matches llama-turbo-quant's 1-bit symmetric path.
+    /// This computes `⟨X⁺_a, X⁺_b⟩` (centered+normalized space), not the
+    /// rescaled-space dot. Mathematically a different quantity, but for
+    /// HNSW ranking it's stable: no `D'⁴` variance amplification on
+    /// anisotropic coords. Adding `xm + xm − ⟨M, M⟩` *without* `D'²`
+    /// scrambles scales (centroid dot is in `X⁺`-space units, `xm`/`mm`
+    /// are in `X`-space units) and destroys ranking entirely.
     ///
-    /// For Bits2/Bits4 the codebook is fine-grained enough that quantization
-    /// noise per coord is small relative to signal, so the math-correct
-    /// weighted form remains the better choice.
+    /// **Bits2 / Bits4**: full math-correct form `Σ c_a c_b D'_i² + xm_a
+    /// + xm_b − ⟨M, M⟩`. Codebooks are fine-grained enough that the
+    /// quantization noise stays small even after `D'⁴` amplification.
     fn score_symmetric_ec(
         &self,
         data_v1: &[u8],
