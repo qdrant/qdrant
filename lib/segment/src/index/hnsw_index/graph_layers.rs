@@ -738,7 +738,7 @@ mod tests {
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
-    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorageRead};
 
     fn search_in_graph(
         query: &[VectorElementType],

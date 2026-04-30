@@ -11,7 +11,7 @@ use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,
 };
 use segment::types::{Distance, HnswGlobalConfig};
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::VectorStorageRead;
 use tempfile::Builder;
 
 #[test]

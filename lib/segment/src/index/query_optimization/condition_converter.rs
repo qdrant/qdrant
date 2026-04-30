@@ -22,7 +22,7 @@ use crate::types::{
     Condition, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon,
     GeoRadius, IntPayloadType, OwnedPayloadRef, PayloadContainer, Range, RangeInterface,
 };
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorageRead;
 
 mod match_converter;
 

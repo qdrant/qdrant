@@ -69,7 +69,7 @@ use crate::types::{
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoverQuery;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
+use crate::vector_storage::{VectorStorageEnum, VectorStorageRead, new_raw_scorer};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";

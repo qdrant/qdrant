@@ -16,7 +16,7 @@ use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsu
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
-    RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
+    RawScorer, VectorStorageEnum, VectorStorageRead, check_deleted_condition, new_raw_scorer,
 };
 
 /// Scorers composition:

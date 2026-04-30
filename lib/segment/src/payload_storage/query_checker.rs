@@ -19,7 +19,7 @@ use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, MinShould,
     OwnedPayloadRef, Payload, PayloadContainer, PayloadKeyType, VectorNameBuf,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
 where

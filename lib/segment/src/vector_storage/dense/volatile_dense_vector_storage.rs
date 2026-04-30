@@ -15,7 +15,7 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
-    DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
 /// In-memory vector storage that is volatile
@@ -85,7 +85,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorSto
     }
 }
 
-impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage<T> {
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -114,6 +114,20 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
     }
 
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted.get_bit(key as usize).unwrap_or(false)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.as_bitslice()
+    }
+}
+
+impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
@@ -156,17 +170,5 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         Ok(is_deleted)
-    }
-
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get_bit(key as usize).unwrap_or(false)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.as_bitslice()
     }
 }

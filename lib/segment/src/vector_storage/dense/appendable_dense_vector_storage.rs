@@ -21,7 +21,7 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
-    DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
+    DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -93,7 +93,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
     }
 }
 
-impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorStorage<T> {
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -123,6 +123,20 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
     }
 
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted.get(key)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.get_bitslice()
+    }
+}
+
+impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStorage<T> {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
@@ -179,18 +193,6 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         Ok(self.set_deleted(key, true))
-    }
-
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.get_bitslice()
     }
 }
 

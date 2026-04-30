@@ -19,7 +19,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
-use crate::vector_storage::{SparseVectorStorage, VectorStorage};
+use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageRead};
 
 const DELETED_DIRNAME: &str = "deleted";
 const STORAGE_DIRNAME: &str = "store";
@@ -216,7 +216,7 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
     }
 }
 
-impl VectorStorage for MmapSparseVectorStorage {
+impl VectorStorageRead for MmapSparseVectorStorage {
     fn distance(&self) -> crate::types::Distance {
         super::SPARSE_VECTOR_DISTANCE
     }
@@ -248,6 +248,20 @@ impl VectorStorage for MmapSparseVectorStorage {
         }
     }
 
+    fn is_deleted_vector(&self, key: common::types::PointOffsetType) -> bool {
+        self.deleted.get(key)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.get_bitslice()
+    }
+}
+
+impl VectorStorage for MmapSparseVectorStorage {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
@@ -320,18 +334,6 @@ impl VectorStorage for MmapSparseVectorStorage {
         self.update_stored(key, None, &hw_counter)?;
 
         Ok(was_deleted)
-    }
-
-    fn is_deleted_vector(&self, key: common::types::PointOffsetType) -> bool {
-        self.deleted.get(key)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.get_bitslice()
     }
 }
 

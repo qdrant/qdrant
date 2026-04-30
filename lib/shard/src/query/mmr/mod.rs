@@ -15,7 +15,9 @@ use segment::types::{Distance, MultiVectorConfig, ScoredPoint};
 use segment::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use segment::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use segment::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
-use segment::vector_storage::{VectorStorage as _, VectorStorageEnum, new_raw_scorer};
+use segment::vector_storage::{
+    VectorStorage as _, VectorStorageEnum, VectorStorageRead as _, new_raw_scorer,
+};
 
 use self::lazy_matrix::LazyMatrix;
 use super::MmrInternal;

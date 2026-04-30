@@ -19,7 +19,7 @@ use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage_full;
 use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use crate::vector_storage::{
-    DEFAULT_STOPPED, MultiVectorStorage, VectorStorage, VectorStorageEnum,
+    DEFAULT_STOPPED, MultiVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
 #[derive(Clone, Copy)]

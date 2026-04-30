@@ -20,7 +20,7 @@ use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
     Distance, HnswGlobalConfig, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
-use crate::vector_storage::VectorStorage as _;
+use crate::vector_storage::VectorStorageRead as _;
 
 const DIM: usize = 4;
 const NUM_POINTS: usize = 5;

@@ -21,7 +21,7 @@ mod tests {
         Distance, HnswConfig, HnswGlobalConfig, PayloadContainer, PayloadSchemaType,
         QuantizationConfig, VectorName,
     };
-    use segment::vector_storage::VectorStorage;
+    use segment::vector_storage::{VectorStorage, VectorStorageRead};
     use serde_json::Value;
     use shard::locked_segment::LockedSegment;
     use shard::operations::optimization::OptimizerThresholds;

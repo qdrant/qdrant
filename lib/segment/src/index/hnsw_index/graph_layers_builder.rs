@@ -611,7 +611,7 @@ mod tests {
     use crate::index::hnsw_index::graph_links::{GraphLinksFormat, normalize_links};
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::types::Distance;
-    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorageRead as _};
 
     const M: usize = 8;
 

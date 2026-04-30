@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use super::VectorStorage as _;
+use super::{VectorStorage as _, VectorStorageRead as _};
 use super::vector_storage_base::VectorStorageEnum;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;

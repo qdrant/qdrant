@@ -53,7 +53,7 @@ use crate::types::{
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {

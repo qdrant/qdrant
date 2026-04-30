@@ -14,7 +14,7 @@ use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
-use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![

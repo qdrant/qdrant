@@ -14,7 +14,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
-use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 /// Placeholder sparse vector storage that contains no data.
 ///
@@ -72,7 +72,7 @@ impl SparseVectorStorage for EmptySparseVectorStorage {
     }
 }
 
-impl VectorStorage for EmptySparseVectorStorage {
+impl VectorStorageRead for EmptySparseVectorStorage {
     fn distance(&self) -> Distance {
         SPARSE_VECTOR_DISTANCE
     }
@@ -98,6 +98,20 @@ impl VectorStorage for EmptySparseVectorStorage {
         None
     }
 
+    fn is_deleted_vector(&self, _key: PointOffsetType) -> bool {
+        true
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.num_points
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted_bitvec.as_bitslice()
+    }
+}
+
+impl VectorStorage for EmptySparseVectorStorage {
     fn insert_vector(
         &mut self,
         _key: PointOffsetType,
@@ -129,18 +143,6 @@ impl VectorStorage for EmptySparseVectorStorage {
 
     fn delete_vector(&mut self, _key: PointOffsetType) -> OperationResult<bool> {
         Ok(false) // Already deleted
-    }
-
-    fn is_deleted_vector(&self, _key: PointOffsetType) -> bool {
-        true
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.num_points
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted_bitvec.as_bitslice()
     }
 }
 

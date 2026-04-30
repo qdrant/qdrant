@@ -9,7 +9,7 @@ use segment::entry::ReadSegmentEntry;
 use segment::index::VectorIndex;
 use segment::segment::Segment;
 use segment::types::HnswGlobalConfig;
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::VectorStorageRead;
 
 use super::config::SegmentOptimizerConfig;
 use super::segment_optimizer::{OptimizationPlanner, SegmentOptimizer};

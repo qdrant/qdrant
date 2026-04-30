@@ -29,7 +29,7 @@ use crate::types::{
     SnapshotFormat, VectorName,
 };
 use crate::utils;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorageRead;
 
 impl Segment {
     /// Replace vectors in-place

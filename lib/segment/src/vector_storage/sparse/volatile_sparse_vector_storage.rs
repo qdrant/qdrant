@@ -13,7 +13,7 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 
@@ -131,7 +131,7 @@ impl SparseVectorStorage for VolatileSparseVectorStorage {
     }
 }
 
-impl VectorStorage for VolatileSparseVectorStorage {
+impl VectorStorageRead for VolatileSparseVectorStorage {
     fn distance(&self) -> Distance {
         SPARSE_VECTOR_DISTANCE
     }
@@ -164,6 +164,20 @@ impl VectorStorage for VolatileSparseVectorStorage {
         }
     }
 
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted.get_bit(key as usize).unwrap_or(false)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.as_bitslice()
+    }
+}
+
+impl VectorStorage for VolatileSparseVectorStorage {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
@@ -211,17 +225,5 @@ impl VectorStorage for VolatileSparseVectorStorage {
             self.update_stored(key, true, old_vector.as_ref());
         }
         Ok(is_deleted)
-    }
-
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get_bit(key as usize).unwrap_or(false)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.as_bitslice()
     }
 }

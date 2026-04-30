@@ -46,8 +46,8 @@ use crate::vector_storage::quantized::quantized_ram_storage::{
     QuantizedRamStorage, QuantizedRamStorageBuilder,
 };
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, RawScorer, RawScorerImpl, VectorStorage,
-    VectorStorageEnum,
+    DenseVectorStorage, MultiVectorStorage, RawScorer, RawScorerImpl, VectorStorageEnum,
+    VectorStorageRead,
 };
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";

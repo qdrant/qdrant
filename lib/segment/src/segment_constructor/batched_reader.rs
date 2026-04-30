@@ -9,7 +9,7 @@ use common::types::PointOffsetType;
 
 use crate::data_types::named_vectors::CowVector;
 use crate::types::CompactExtendedPointId;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 const BATCH_SIZE: usize = 256;
 

@@ -15,7 +15,7 @@ use crate::types::Distance;
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage_with_uring;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-use crate::vector_storage::vector_storage_base::VectorStorage;
+use crate::vector_storage::vector_storage_base::{VectorStorage, VectorStorageRead};
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {

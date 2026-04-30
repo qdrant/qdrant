@@ -22,7 +22,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 const VECTORS_PATH: &str = "matrix.dat";
 const DELETED_PATH: &str = "deleted.dat";
@@ -210,7 +210,7 @@ where
     }
 }
 
-impl<T, S> VectorStorage for DenseVectorStorageImpl<T, S>
+impl<T, S> VectorStorageRead for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
     S: UniversalRead<T>,
@@ -266,6 +266,24 @@ where
             .map(|vector| T::slice_to_float_cow(vector).into())
     }
 
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.vectors.as_ref().unwrap().is_deleted_vector(key)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.vectors.as_ref().unwrap().deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.vectors.as_ref().unwrap().deleted_vector_bitslice()
+    }
+}
+
+impl<T, S> VectorStorage for DenseVectorStorageImpl<T, S>
+where
+    T: PrimitiveVectorElement,
+    S: UniversalRead<T>,
+{
     fn insert_vector(
         &mut self,
         _key: PointOffsetType,
@@ -353,18 +371,6 @@ where
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         Ok(self.vectors.as_mut().unwrap().delete(key))
-    }
-
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.vectors.as_ref().unwrap().is_deleted_vector(key)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.vectors.as_ref().unwrap().deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.vectors.as_ref().unwrap().deleted_vector_bitslice()
     }
 }
 

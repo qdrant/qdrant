@@ -21,7 +21,7 @@ use crate::index::sparse_index::sparse_vector_index::{
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 /// Prepares a sparse vector index with a given iterator of sparse vectors
 pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(

@@ -57,10 +57,15 @@ impl VectorOffset for VectorOffsetType {
     }
 }
 
-/// Trait for vector storage
-/// El - type of vector element, expected numerical type
-/// Storage operates with internal IDs (`PointOffsetType`), which always starts with zero and have no skips
-pub trait VectorStorage {
+/// Read-only trait for vector storage.
+///
+/// Defines all read operations on vector storage. Search and retrieval logic
+/// only requires this trait, which makes it possible to implement read-only
+/// segments without duplicating storage code.
+///
+/// Storage operates with internal IDs (`PointOffsetType`), which always starts
+/// with zero and have no skips.
+pub trait VectorStorageRead {
     fn distance(&self) -> Distance;
 
     fn datatype(&self) -> VectorStorageDatatype;
@@ -74,11 +79,11 @@ pub trait VectorStorage {
 
     /// Get the number of available vectors, considering deleted points and vectors
     ///
-    /// This uses [`VectorStorage::total_vector_count`] and [`VectorStorage::deleted_vector_count`] internally.
+    /// This uses [`VectorStorageRead::total_vector_count`] and [`VectorStorageRead::deleted_vector_count`] internally.
     ///
     /// # Warning
     ///
-    /// This number may not always be accurate. See warning in [`VectorStorage::deleted_vector_count`] documentation.
+    /// This number may not always be accurate. See warning in [`VectorStorageRead::deleted_vector_count`] documentation.
     fn available_vector_count(&self) -> usize {
         self.total_vector_count()
             .saturating_sub(self.deleted_vector_count())
@@ -103,6 +108,37 @@ pub trait VectorStorage {
     /// Get the vector by the given key if it exists
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>>;
 
+    /// Check whether the vector at the given key is flagged as deleted
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool;
+
+    /// Get the number of deleted vectors, considering deleted points and vectors
+    ///
+    /// Vectors may be deleted at two levels, as point or as vector. Deleted points should
+    /// propagate to deleting the vectors. That means that the deleted vector count includes the
+    /// number of deleted points as well.
+    ///
+    /// This includes any vectors that were deleted at creation.
+    ///
+    /// # Warning
+    ///
+    /// In some very exceptional cases it is possible for this count not to include some deleted
+    /// points. That may happen when flushing a segment to disk fails. This should be recovered
+    /// when loading/recovering the segment, but that isn't guaranteed. You should therefore use
+    /// the deleted count with care.
+    fn deleted_vector_count(&self) -> usize;
+
+    /// Get [`BitSlice`] representation for deleted vectors with deletion flags
+    ///
+    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
+    /// vectors in this segment.
+    fn deleted_vector_bitslice(&self) -> &BitSlice;
+}
+
+/// Trait for vector storage with mutating operations.
+///
+/// El - type of vector element, expected numerical type
+/// Storage operates with internal IDs (`PointOffsetType`), which always starts with zero and have no skips
+pub trait VectorStorage: VectorStorageRead {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
@@ -134,34 +170,9 @@ pub trait VectorStorage {
     ///
     /// Returns true if the vector was not deleted before and is now deleted
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool>;
-
-    /// Check whether the vector at the given key is flagged as deleted
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool;
-
-    /// Get the number of deleted vectors, considering deleted points and vectors
-    ///
-    /// Vectors may be deleted at two levels, as point or as vector. Deleted points should
-    /// propagate to deleting the vectors. That means that the deleted vector count includes the
-    /// number of deleted points as well.
-    ///
-    /// This includes any vectors that were deleted at creation.
-    ///
-    /// # Warning
-    ///
-    /// In some very exceptional cases it is possible for this count not to include some deleted
-    /// points. That may happen when flushing a segment to disk fails. This should be recovered
-    /// when loading/recovering the segment, but that isn't guaranteed. You should therefore use
-    /// the deleted count with care.
-    fn deleted_vector_count(&self) -> usize;
-
-    /// Get [`BitSlice`] representation for deleted vectors with deletion flags
-    ///
-    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
-    /// vectors in this segment.
-    fn deleted_vector_bitslice(&self) -> &BitSlice;
 }
 
-pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
+pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
     fn vector_dim(&self) -> usize;
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]>;
@@ -200,7 +211,7 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     }
 }
 
-pub trait SparseVectorStorage: VectorStorage {
+pub trait SparseVectorStorage: VectorStorageRead {
     fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector>;
     fn get_sparse_opt<P: AccessPattern>(
         &self,
@@ -216,7 +227,7 @@ pub trait SparseVectorStorage: VectorStorage {
         F: FnMut(usize, SparseVector);
 }
 
-pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
+pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
     fn vector_dim(&self) -> usize;
 
     fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> CowMultiVector<'_, T>;
@@ -584,7 +595,7 @@ impl VectorStorageEnum {
     }
 }
 
-impl VectorStorage for VectorStorageEnum {
+impl VectorStorageRead for VectorStorageEnum {
     fn distance(&self) -> Distance {
         match self {
             VectorStorageEnum::DenseVolatile(v) => v.distance(),
@@ -847,6 +858,116 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        match self {
+            VectorStorageEnum::DenseVolatile(v) => v.is_deleted_vector(key),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => v.is_deleted_vector(key),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::DenseMemmap(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::DenseMemmapByte(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.is_deleted_vector(key),
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => v.is_deleted_vector(key),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => v.is_deleted_vector(key),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => v.is_deleted_vector(key),
+
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::SparseVolatile(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::SparseMmap(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::MultiDenseVolatile(v) => v.is_deleted_vector(key),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.is_deleted_vector(key),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::EmptyDense(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::EmptySparse(v) => v.is_deleted_vector(key),
+        }
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::DenseVolatile(v) => v.deleted_vector_count(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => v.deleted_vector_count(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => v.deleted_vector_count(),
+            VectorStorageEnum::DenseMemmap(v) => v.deleted_vector_count(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.deleted_vector_count(),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.deleted_vector_count(),
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => v.deleted_vector_count(),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => v.deleted_vector_count(),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => v.deleted_vector_count(),
+
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_count(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.deleted_vector_count(),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.deleted_vector_count(),
+            VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_count(),
+            VectorStorageEnum::SparseMmap(v) => v.deleted_vector_count(),
+            VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_count(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.deleted_vector_count(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.deleted_vector_count(),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.deleted_vector_count(),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.deleted_vector_count(),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.deleted_vector_count(),
+            VectorStorageEnum::EmptyDense(v) => v.deleted_vector_count(),
+            VectorStorageEnum::EmptySparse(v) => v.deleted_vector_count(),
+        }
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        match self {
+            VectorStorageEnum::DenseVolatile(v) => v.deleted_vector_bitslice(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => v.deleted_vector_bitslice(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::DenseMemmap(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.deleted_vector_bitslice(),
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => v.deleted_vector_bitslice(),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => v.deleted_vector_bitslice(),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => v.deleted_vector_bitslice(),
+
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::SparseMmap(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_bitslice(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.deleted_vector_bitslice(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::EmptyDense(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::EmptySparse(v) => v.deleted_vector_bitslice(),
+        }
+    }
+}
+
+impl VectorStorage for VectorStorageEnum {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
@@ -1093,114 +1214,6 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.delete_vector(key),
             VectorStorageEnum::EmptyDense(v) => v.delete_vector(key),
             VectorStorageEnum::EmptySparse(v) => v.delete_vector(key),
-        }
-    }
-
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.is_deleted_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.is_deleted_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseMemmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseMemmapByte(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.is_deleted_vector(key),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.is_deleted_vector(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.is_deleted_vector(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.is_deleted_vector(key),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::SparseVolatile(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::SparseMmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.is_deleted_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.is_deleted_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::EmptyDense(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::EmptySparse(v) => v.is_deleted_vector(key),
-        }
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.deleted_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.deleted_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseMemmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.deleted_vector_count(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.deleted_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.deleted_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.deleted_vector_count(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_count(),
-            VectorStorageEnum::SparseMmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.deleted_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::EmptyDense(v) => v.deleted_vector_count(),
-            VectorStorageEnum::EmptySparse(v) => v.deleted_vector_count(),
-        }
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.deleted_vector_bitslice(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.deleted_vector_bitslice(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseMemmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.deleted_vector_bitslice(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.deleted_vector_bitslice(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.deleted_vector_bitslice(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.deleted_vector_bitslice(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::SparseMmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_bitslice(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.deleted_vector_bitslice(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::EmptyDense(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::EmptySparse(v) => v.deleted_vector_bitslice(),
         }
     }
 }

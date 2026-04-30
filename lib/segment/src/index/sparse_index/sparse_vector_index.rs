@@ -37,7 +37,9 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, check_deleted_condition};
+use crate::vector_storage::{
+    VectorStorage, VectorStorageEnum, VectorStorageRead, check_deleted_condition,
+};
 
 /// Whether to use the new compressed format.
 pub const USE_COMPRESSED: bool = true;

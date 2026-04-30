@@ -29,7 +29,7 @@ use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_de
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
-use crate::vector_storage::vector_storage_base::VectorStorage;
+use crate::vector_storage::vector_storage_base::{VectorStorage, VectorStorageRead};
 
 const DIMS: usize = 128;
 const NUM_POINTS: usize = 600;

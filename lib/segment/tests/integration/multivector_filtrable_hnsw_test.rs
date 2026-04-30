@@ -22,7 +22,7 @@ use segment::types::{
     PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
     VectorStorageType,
 };
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::VectorStorageRead;
 use tempfile::Builder;
 
 /// Check all cases with single vector per multi and several vectors per multi

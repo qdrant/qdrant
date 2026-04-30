@@ -41,7 +41,7 @@ use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, Payload,
     PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, VectorNameBuf,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]

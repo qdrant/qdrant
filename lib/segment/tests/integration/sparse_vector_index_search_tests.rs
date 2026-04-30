@@ -32,7 +32,7 @@ use segment::types::{
     SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType, VectorName,
     VectorStorageDatatype,
 };
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::{VectorStorage, VectorStorageRead};
 use segment::{fixture_for_all_indices, payload_json};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
