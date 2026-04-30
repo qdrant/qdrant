@@ -210,6 +210,49 @@ jobs:
 
           ./tests/shard-snapshot-api.sh test-all
 
+  test-shard-snapshot-api-gcs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start fake-gcs-server
+        # service containers can't take entrypoint args, so run it manually.
+        # -scheme http because STORAGE_EMULATOR_HOST uses plain http.
+        run: |
+          docker run -d --name fake-gcs -p 4443:4443 \
+            fsouza/fake-gcs-server -scheme http -port 4443
+          timeout 30 bash -c \
+            'until curl -sf http://127.0.0.1:4443/storage/v1/b; do sleep 1; done'
+      - name: Setup test bucket
+        run: |
+          curl -s -X POST "http://127.0.0.1:4443/storage/v1/b" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"test-bucket"}'
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: integration-tests
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dependencies
+        run: sudo apt-get install clang jq
+      - name: Build
+        run: cargo build --bin qdrant --features "rocksdb staging" --locked
+      - name: Run Shard Snapshot API Tests (gcs)
+        shell: bash
+        run: |
+          export STORAGE_EMULATOR_HOST=http://127.0.0.1:4443
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE=gcs
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__GCS_CONFIG__BUCKET=test-bucket
+
+          cargo run --features "rocksdb staging" &
+          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
+          sleep 10
+
+          ./tests/shard-snapshot-api.sh test-all
+
   e2e-tests:
     runs-on: ubuntu-latest
 
