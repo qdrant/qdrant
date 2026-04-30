@@ -14,7 +14,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::{PayloadIndex, VectorIndexRead};
+use segment::index::{PayloadIndex, PayloadIndexRead, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;

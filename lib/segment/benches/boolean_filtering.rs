@@ -11,8 +11,8 @@ use segment::fixtures::payload_context_fixture::{
     create_struct_payload_index,
 };
 use segment::fixtures::payload_fixtures::BOOL_KEY;
-use segment::index::PayloadIndex;
 use segment::index::struct_payload_index::StructPayloadIndex;
+use segment::index::{PayloadIndex, PayloadIndexRead};
 use segment::types::{Condition, FieldCondition, Filter, Match, PayloadSchemaType, ValueVariants};
 use tempfile::Builder;
 

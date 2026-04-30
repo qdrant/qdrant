@@ -13,7 +13,7 @@ use segment::fixtures::payload_context_fixture::{
     create_plain_payload_index, create_struct_payload_index,
 };
 use segment::fixtures::payload_fixtures::{random_match_any_filter, random_must_filter};
-use segment::index::PayloadIndex;
+use segment::index::PayloadIndexRead;
 use tempfile::Builder;
 
 const NUM_POINTS: usize = 100000;
