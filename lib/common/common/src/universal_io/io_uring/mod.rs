@@ -179,20 +179,22 @@ where
     }
 
     fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [T]>)>> {
-        if self.runtime.completion_is_empty() {
-            let has_pending = !self.runtime.io_uring.submission().is_empty();
-            if !has_pending && self.runtime.in_progress == 0 {
-                return Ok(None);
-            }
+        let next = self.runtime.completed().next();
+
+        let enqueued = self.runtime.enqueued();
+
+        if next.is_some() && enqueued > 0 {
+            self.runtime.submit_and_wait(0)?;
+        } else if next.is_none() && enqueued + self.runtime.in_progress > 0 {
             self.runtime.submit_and_wait(1)?;
         }
 
-        Ok(self
-            .runtime
-            .completed()
-            .next()
-            .transpose()?
-            .map(|(meta, resp)| (meta, Cow::Owned(resp.expect_read()))))
+        let Some(result) = next.or_else(|| self.runtime.completed().next()) else {
+            return Ok(None);
+        };
+
+        let (meta, resp) = result?;
+        Ok(Some((meta, Cow::Owned(resp.expect_read()))))
     }
 }
 
