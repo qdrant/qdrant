@@ -9,7 +9,7 @@ use crate::universal_io::file_ops::UniversalReadFileOps;
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 #[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
-    type ReadPipeline<'a, P: AccessPattern, Meta>: UniversalReadPipeline<'a, T, Self, Meta>
+    type ReadPipeline<'a, P: AccessPattern, Meta>: UniversalReadPipeline<'a, T, Meta, File = Self>
     where
         Self: 'a;
 
@@ -110,8 +110,8 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }
 
-pub trait UniversalReadPipeline<'a, T: Copy + 'static, S, Meta>: Sized {
-    type File;
+pub trait UniversalReadPipeline<'a, T: Copy + 'static, Meta>: Sized {
+    type File: 'a;
 
     fn new() -> Result<Self>;
 
@@ -124,7 +124,7 @@ pub trait UniversalReadPipeline<'a, T: Copy + 'static, S, Meta>: Sized {
     ///
     /// Should be called only when [`UniversalReadPipeline::can_schedule()`] is
     /// `true`. Returns [`UniversalIoError::QueueIsFull`] otherwise.
-    fn schedule(&mut self, meta: Meta, file: &'a S, range: ReadRange) -> Result<()>;
+    fn schedule(&mut self, meta: Meta, file: &'a Self::File, range: ReadRange) -> Result<()>;
 
     /// Block until any of the scheduled operations is completed and consume its
     /// result.

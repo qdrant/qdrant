@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::marker::PhantomData;
 
 use bytemuck::TransparentWrapper;
 
@@ -7,17 +8,21 @@ use crate::universal_io::read::UniversalReadPipeline;
 use crate::universal_io::{ReadRange, Result, UniversalRead};
 
 /// Default implementation of [`UniversalReadPipeline`] for wrappers.
-pub struct WrappedReadPipeline<'a, T, S, P, Meta>(S::ReadPipeline<'a, P, Meta>)
+pub struct WrappedReadPipeline<'a, T, Outer, S, P, Meta>
 where
     T: Copy + 'static,
     S: UniversalRead<T> + 'a,
-    P: AccessPattern;
+    P: AccessPattern,
+{
+    inner: S::ReadPipeline<'a, P, Meta>,
+    _phantom: PhantomData<Outer>,
+}
 
-impl<'a, T, Outer, S, P, Meta> UniversalReadPipeline<'a, T, Outer, Meta>
-    for WrappedReadPipeline<'a, T, S, P, Meta>
+impl<'a, T, Outer, S, P, Meta> UniversalReadPipeline<'a, T, Meta>
+    for WrappedReadPipeline<'a, T, Outer, S, P, Meta>
 where
     T: Copy + 'static,
-    Outer: UniversalRead<T> + TransparentWrapper<S>,
+    Outer: UniversalRead<T> + TransparentWrapper<S> + 'a,
     S: UniversalRead<T>,
     P: AccessPattern,
 {
@@ -25,21 +30,24 @@ where
 
     #[inline]
     fn new() -> Result<Self> {
-        Ok(Self(UniversalReadPipeline::new()?))
+        Ok(Self {
+            inner: UniversalReadPipeline::new()?,
+            _phantom: PhantomData,
+        })
     }
 
     #[inline]
     fn can_schedule(&mut self) -> bool {
-        self.0.can_schedule()
+        self.inner.can_schedule()
     }
 
     #[inline]
     fn schedule(&mut self, meta: Meta, file: &'a Outer, range: ReadRange) -> Result<()> {
-        self.0.schedule(meta, Outer::peel_ref(file), range)
+        self.inner.schedule(meta, Outer::peel_ref(file), range)
     }
 
     #[inline]
     fn wait(&mut self) -> Result<Option<(Meta, Cow<'a, [T]>)>> {
-        self.0.wait()
+        self.inner.wait()
     }
 }

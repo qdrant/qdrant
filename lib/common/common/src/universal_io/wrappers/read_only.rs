@@ -34,7 +34,7 @@ where
     T: Copy + 'static,
 {
     type ReadPipeline<'a, P: AccessPattern, Meta>
-        = WrappedReadPipeline<'a, T, S, P, Meta>
+        = WrappedReadPipeline<'a, T, Self, S, P, Meta>
     where
         Self: 'a;
 

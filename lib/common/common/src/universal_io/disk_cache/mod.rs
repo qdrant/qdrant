@@ -126,7 +126,7 @@ pub struct DiskCacheReadPipeline<'a, T: bytemuck::Pod, Meta> {
     result: Option<(Meta, Cow<'a, [T]>)>,
 }
 
-impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, CachedSlice<T>, Meta>
+impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
     for DiskCacheReadPipeline<'a, T, Meta>
 {
     type File = CachedSlice<T>;

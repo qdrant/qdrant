@@ -135,7 +135,7 @@ pub struct MmapReadPipeline<'a, T, P, Meta> {
     _phantom: PhantomData<P>,
 }
 
-impl<'a, T: bytemuck::Pod, P: AccessPattern, Meta> UniversalReadPipeline<'a, T, MmapFile, Meta>
+impl<'a, T: bytemuck::Pod, P: AccessPattern, Meta> UniversalReadPipeline<'a, T, Meta>
     for MmapReadPipeline<'a, T, P, Meta>
 {
     type File = MmapFile;
