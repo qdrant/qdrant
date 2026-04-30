@@ -48,7 +48,7 @@ impl<S: UniversalRead<T>, T: Copy + 'static> UniversalReadFileOps for TypedStora
 
 impl<S: UniversalRead<T>, T: Copy + 'static> UniversalRead<T> for TypedStorage<S, T> {
     type ReadPipeline<'a, Meta>
-        = WrappedReadPipeline<'a, T, Self, S, Meta>
+        = WrappedReadPipeline<'a, Self, S::ReadPipeline<'a, Meta>>
     where
         Self: 'a;
 

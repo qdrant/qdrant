@@ -5,33 +5,31 @@ use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::read::UniversalReadPipeline;
-use crate::universal_io::{ReadRange, Result, UniversalRead};
+use crate::universal_io::{ReadRange, Result};
 
 /// Default implementation of [`UniversalReadPipeline`] for wrappers.
-pub struct WrappedReadPipeline<'a, T, Outer, S, Meta>
-where
-    T: Copy + 'static,
-    S: UniversalRead<T> + 'a,
-{
-    inner: S::ReadPipeline<'a, Meta>,
-    _phantom: PhantomData<Outer>,
+pub struct WrappedReadPipeline<'a, File, Inner> {
+    inner: Inner,
+    _phantom: PhantomData<&'a File>,
 }
 
-impl<'a, T, Outer, S, Meta> UniversalReadPipeline<'a, T, Meta>
-    for WrappedReadPipeline<'a, T, Outer, S, Meta>
+impl<'a, File, Inner, T, Meta> UniversalReadPipeline<'a, T, Meta>
+    for WrappedReadPipeline<'a, File, Inner>
 where
+    File: TransparentWrapper<Inner::File>,
+    Inner: UniversalReadPipeline<'a, T, Meta>,
     T: Copy + 'static,
-    Outer: UniversalRead<T> + TransparentWrapper<S> + 'a,
-    S: UniversalRead<T>,
 {
-    type File = Outer;
+    type File = File;
 
     #[inline]
     fn new() -> Result<Self> {
-        Ok(Self {
+        let wrapper = Self {
             inner: UniversalReadPipeline::new()?,
             _phantom: PhantomData,
-        })
+        };
+
+        Ok(wrapper)
     }
 
     #[inline]
@@ -40,11 +38,11 @@ where
     }
 
     #[inline]
-    fn schedule<P>(&mut self, meta: Meta, file: &'a Outer, range: ReadRange) -> Result<()>
+    fn schedule<P>(&mut self, meta: Meta, file: &'a File, range: ReadRange) -> Result<()>
     where
         P: AccessPattern,
     {
-        self.inner.schedule::<P>(meta, Outer::peel_ref(file), range)
+        self.inner.schedule::<P>(meta, File::peel_ref(file), range)
     }
 
     #[inline]
