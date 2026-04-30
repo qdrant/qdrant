@@ -394,6 +394,191 @@ pub unsafe fn score_2bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
     }
 }
 
+// ------------------------------------------------------------------
+// score_2bit_internal_weighted — TQ+ symmetric path with per-coord
+// `D'²` weighting. Same structure as the 4-bit weighted kernel: i16
+// weights (i16-capped from u16 storage) → `madd_epi16` pair-sum →
+// widen to i64 for accumulation.
+//
+// Per-coord product bound (2-bit codebook):
+//   |c_a · c_b · w| ≤ 127·127·32 766 ≈ 5.28e8
+//   madd pair sum: ≤ 2 · 5.28e8 ≈ 1.06e9 < i32::MAX ✓
+// Same i32 → i64 widening pattern as the 4-bit path.
+// ------------------------------------------------------------------
+
+/// SSE4.1 + SSSE3 weighted variant of [`super::score_2bit_internal`].
+///
+/// # Safety
+/// CPU must support `ssse3` and `sse4.1`.
+#[target_feature(enable = "sse4.1,ssse3")]
+pub unsafe fn score_2bit_internal_weighted_sse(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+    use core::arch::x86_64::*;
+
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "score_2bit_internal_weighted_sse: vector length mismatch ({} vs {})",
+        a.len(),
+        b.len(),
+    );
+    assert_eq!(
+        weights.len(),
+        4 * a.len(),
+        "score_2bit_internal_weighted_sse: weights length {} != 4 · a.len() {}",
+        weights.len(),
+        4 * a.len(),
+    );
+
+    unsafe {
+        let shift = _mm_set1_epi8(-128_i8);
+        let mut acc = _mm_setzero_si128(); // 2 i64 lanes
+
+        // 4 bytes from each source = 16 coords per iter.
+        let n_full = a.len() / 4;
+        for i in 0..n_full {
+            let c_a_u8 = unpack_16_codes_sse(a.as_ptr().add(i * 4));
+            let c_b_u8 = unpack_16_codes_sse(b.as_ptr().add(i * 4));
+            let c_a = _mm_xor_si128(c_a_u8, shift);
+            let c_b = _mm_xor_si128(c_b_u8, shift);
+
+            let c_a_lo = _mm_cvtepi8_epi16(c_a);
+            let c_a_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_a, 8));
+            let c_b_lo = _mm_cvtepi8_epi16(c_b);
+            let c_b_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_b, 8));
+
+            let prod_lo = _mm_mullo_epi16(c_a_lo, c_b_lo);
+            let prod_hi = _mm_mullo_epi16(c_a_hi, c_b_hi);
+
+            let w_lo = _mm_loadu_si128(weights.as_ptr().add(16 * i).cast::<__m128i>());
+            let w_hi = _mm_loadu_si128(weights.as_ptr().add(16 * i + 8).cast::<__m128i>());
+
+            let pw_lo = _mm_madd_epi16(prod_lo, w_lo);
+            let pw_hi = _mm_madd_epi16(prod_hi, w_hi);
+            let pw = _mm_add_epi32(pw_lo, pw_hi);
+
+            let pw_lo_i64 = _mm_cvtepi32_epi64(pw);
+            let pw_hi_i64 = _mm_cvtepi32_epi64(_mm_srli_si128(pw, 8));
+            acc = _mm_add_epi64(acc, pw_lo_i64);
+            acc = _mm_add_epi64(acc, pw_hi_i64);
+        }
+
+        let mut tmp = [0i64; 2];
+        _mm_storeu_si128(tmp.as_mut_ptr().cast::<__m128i>(), acc);
+        let simd_sum = tmp[0] + tmp[1];
+
+        let simd_bytes = n_full * 4;
+        let tail = super::score_2bit_internal_weighted_scalar(
+            &a[simd_bytes..],
+            &b[simd_bytes..],
+            &weights[4 * simd_bytes..],
+        );
+        simd_sum + tail
+    }
+}
+
+/// AVX2 weighted variant of [`super::score_2bit_internal`]. 32 coords per
+/// iteration (two 16-coord SSE chunks fed through one ymm madd).
+///
+/// # Safety
+/// CPU must support `avx2`, `ssse3`, `sse4.1`.
+#[target_feature(enable = "avx2,sse4.1,ssse3")]
+pub unsafe fn score_2bit_internal_weighted_avx2(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+    use core::arch::x86_64::*;
+
+    assert_eq!(a.len(), b.len());
+    assert_eq!(weights.len(), 4 * a.len());
+
+    unsafe {
+        let shift256 = _mm256_set1_epi8(-128_i8);
+        let mut acc = _mm256_setzero_si256(); // 4 i64 lanes
+
+        let n_chunks = a.len() / 4;
+        let n_pairs = n_chunks / 2;
+
+        // Process pairs of 4-byte chunks (32 coords) per iteration.
+        for p in 0..n_pairs {
+            let off_0 = 4 * (2 * p);
+            let off_1 = 4 * (2 * p + 1);
+            let c_a = _mm256_set_m128i(
+                unpack_16_codes_sse(a.as_ptr().add(off_1)),
+                unpack_16_codes_sse(a.as_ptr().add(off_0)),
+            );
+            let c_b = _mm256_set_m128i(
+                unpack_16_codes_sse(b.as_ptr().add(off_1)),
+                unpack_16_codes_sse(b.as_ptr().add(off_0)),
+            );
+            let c_a = _mm256_xor_si256(c_a, shift256);
+            let c_b = _mm256_xor_si256(c_b, shift256);
+
+            let c_a_lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(c_a));
+            let c_a_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(c_a, 1));
+            let c_b_lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(c_b));
+            let c_b_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(c_b, 1));
+
+            let prod_lo = _mm256_mullo_epi16(c_a_lo, c_b_lo);
+            let prod_hi = _mm256_mullo_epi16(c_a_hi, c_b_hi);
+
+            // Weights are laid out in coord order; for AVX2's interleaved
+            // pair-of-chunks layout we load `[chunk_0_weights, chunk_1_weights]`.
+            // Coords for (off_0, off_1) span weight indices `[16·(2p)..16·(2p+2)]`.
+            let w_lo = _mm256_loadu_si256(weights.as_ptr().add(16 * (2 * p)).cast::<__m256i>());
+            let w_hi =
+                _mm256_loadu_si256(weights.as_ptr().add(16 * (2 * p) + 16).cast::<__m256i>());
+
+            let pw_lo = _mm256_madd_epi16(prod_lo, w_lo);
+            let pw_hi = _mm256_madd_epi16(prod_hi, w_hi);
+            let pw = _mm256_add_epi32(pw_lo, pw_hi);
+
+            let pw_lo_i64 = _mm256_cvtepi32_epi64(_mm256_castsi256_si128(pw));
+            let pw_hi_i64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(pw, 1));
+            acc = _mm256_add_epi64(acc, pw_lo_i64);
+            acc = _mm256_add_epi64(acc, pw_hi_i64);
+        }
+
+        // Hsum 4 i64 lanes.
+        let acc_lo = _mm256_castsi256_si128(acc);
+        let acc_hi = _mm256_extracti128_si256(acc, 1);
+        let summed = _mm_add_epi64(acc_lo, acc_hi);
+        let mut tmp = [0i64; 2];
+        _mm_storeu_si128(tmp.as_mut_ptr().cast::<__m128i>(), summed);
+        let mut simd_sum = tmp[0] + tmp[1];
+
+        // Trailing single chunk if `n_chunks` is odd.
+        if n_chunks % 2 == 1 {
+            let off = 4 * (2 * n_pairs);
+            let w_off = 16 * (2 * n_pairs);
+            let shift = _mm_set1_epi8(-128_i8);
+            let c_a = _mm_xor_si128(unpack_16_codes_sse(a.as_ptr().add(off)), shift);
+            let c_b = _mm_xor_si128(unpack_16_codes_sse(b.as_ptr().add(off)), shift);
+            let c_a_lo = _mm_cvtepi8_epi16(c_a);
+            let c_a_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_a, 8));
+            let c_b_lo = _mm_cvtepi8_epi16(c_b);
+            let c_b_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_b, 8));
+            let prod_lo = _mm_mullo_epi16(c_a_lo, c_b_lo);
+            let prod_hi = _mm_mullo_epi16(c_a_hi, c_b_hi);
+            let w_lo = _mm_loadu_si128(weights.as_ptr().add(w_off).cast::<__m128i>());
+            let w_hi = _mm_loadu_si128(weights.as_ptr().add(w_off + 8).cast::<__m128i>());
+            let pw = _mm_add_epi32(_mm_madd_epi16(prod_lo, w_lo), _mm_madd_epi16(prod_hi, w_hi));
+            let pw_lo_i64 = _mm_cvtepi32_epi64(pw);
+            let pw_hi_i64 = _mm_cvtepi32_epi64(_mm_srli_si128(pw, 8));
+            let mut t = [0i64; 2];
+            _mm_storeu_si128(
+                t.as_mut_ptr().cast::<__m128i>(),
+                _mm_add_epi64(pw_lo_i64, pw_hi_i64),
+            );
+            simd_sum += t[0] + t[1];
+        }
+
+        let simd_bytes = n_chunks * 4;
+        let tail = super::score_2bit_internal_weighted_scalar(
+            &a[simd_bytes..],
+            &b[simd_bytes..],
+            &weights[4 * simd_bytes..],
+        );
+        simd_sum + tail
+    }
+}
+
 /// AVX-512 + VNNI implementation — uses `VPDPWSSD` for fused i16×i16 MAC.
 ///
 /// # Safety
@@ -477,8 +662,19 @@ mod tests {
 
     use super::super::super::shared::pack_codes;
     use super::super::shared::{PARITY_DIMS, random_inputs};
-    use super::super::{Query2bitSimd, score_2bit_internal_scalar};
+    use super::super::{
+        Query2bitSimd, score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
+    };
     use super::*;
+
+    /// Build deterministic i16-capped weights of length `4 · vec_bytes` for
+    /// parity tests of the 2-bit weighted kernel.
+    fn random_weights(rng: &mut StdRng, vec_bytes: usize) -> Vec<u16> {
+        use rand::RngExt;
+        (0..4 * vec_bytes)
+            .map(|_| rng.random_range(0..=i16::MAX as u16))
+            .collect()
+    }
 
     #[test]
     fn test_sse_matches_scalar() {
@@ -608,6 +804,72 @@ mod tests {
                 got.to_bits(),
                 "score avx512 mismatch at dim {dim}",
             );
+        }
+    }
+
+    /// Parity for the 2-bit weighted kernel: every x86 backend must match
+    /// the scalar reference bit-exactly across our matryoshka corner-case dims.
+    #[test]
+    fn test_score_weighted_sse_matches_scalar() {
+        if !std::is_x86_feature_detected!("ssse3") || !std::is_x86_feature_detected!("sse4.1") {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(0xBEEF);
+        for &dim in PARITY_DIMS {
+            let (_, vec_a) = random_inputs(&mut rng, dim);
+            let (_, vec_b) = random_inputs(&mut rng, dim);
+            let weights = random_weights(&mut rng, vec_a.len());
+            let scalar = score_2bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
+            let sse = unsafe { score_2bit_internal_weighted_sse(&vec_a, &vec_b, &weights) };
+            assert_eq!(
+                scalar, sse,
+                "weighted: scalar {scalar} != sse {sse} at dim {dim}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_score_weighted_avx2_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(0xBEEF);
+        for &dim in PARITY_DIMS {
+            let (_, vec_a) = random_inputs(&mut rng, dim);
+            let (_, vec_b) = random_inputs(&mut rng, dim);
+            let weights = random_weights(&mut rng, vec_a.len());
+            let scalar = score_2bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
+            let avx2 = unsafe { score_2bit_internal_weighted_avx2(&vec_a, &vec_b, &weights) };
+            assert_eq!(
+                scalar, avx2,
+                "weighted: scalar {scalar} != avx2 {avx2} at dim {dim}"
+            );
+        }
+    }
+
+    /// Saturation-safety for the 2-bit weighted kernel at 64K dims: every
+    /// x86 backend must match the i64 scalar reference under worst-case
+    /// inputs (max-magnitude codebook + max-magnitude i16 weight).
+    #[test]
+    fn test_score_weighted_saturation_safety_64k() {
+        let dim = 65_536;
+        let indices: Vec<u8> = vec![3; dim];
+        let vec_a = pack_codes(&indices, 2);
+        let vec_b = pack_codes(&indices, 2);
+        let max_weight: u16 = i16::MAX as u16;
+        let weights: Vec<u16> = vec![max_weight; dim];
+
+        let scalar = score_2bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
+
+        unsafe {
+            if std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1") {
+                let sse = score_2bit_internal_weighted_sse(&vec_a, &vec_b, &weights);
+                assert_eq!(scalar, sse, "weighted score sse disagrees at dim={dim}");
+            }
+            if std::is_x86_feature_detected!("avx2") {
+                let avx2 = score_2bit_internal_weighted_avx2(&vec_a, &vec_b, &weights);
+                assert_eq!(scalar, avx2, "weighted score avx2 disagrees at dim={dim}");
+            }
         }
     }
 

@@ -441,6 +441,72 @@ pub(super) fn score_4bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
     acc
 }
 
+/// Weighted variant of [`score_4bit_internal`]: returns `Σ_j c[a[j]] · c[b[j]]
+/// · weights[j]` in centroid-float space. `weights` is u16-quantized `D'_j²`
+/// from TQ+ error correction; the caller divides the integer sum by
+/// `weight_scale · CODEBOOK_SCALE²` to recover the true f32 dot.
+///
+/// Each input byte holds two 4-bit indices (low nibble = even lane, high
+/// nibble = odd lane). `weights.len()` must equal `2 · a.len()`.
+///
+/// # Panics
+/// Panics if `a` and `b` have different lengths or if `weights` has the
+/// wrong length.
+pub fn score_4bit_internal_weighted(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "score_4bit_internal_weighted: vector length mismatch ({} vs {})",
+        a.len(),
+        b.len(),
+    );
+    assert_eq!(
+        weights.len(),
+        2 * a.len(),
+        "score_4bit_internal_weighted: weights length {} != 2 · a.len() {}",
+        weights.len(),
+        2 * a.len(),
+    );
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("avx2") {
+            return unsafe { x64::score_4bit_internal_weighted_avx2(a, b, weights) };
+        }
+        if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+            return unsafe { x64::score_4bit_internal_weighted_sse(a, b, weights) };
+        }
+    }
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        return unsafe { arm::score_4bit_internal_weighted_neon(a, b, weights) };
+    }
+    #[allow(unreachable_code)]
+    score_4bit_internal_weighted_scalar(a, b, weights)
+}
+
+/// Scalar reference for [`score_4bit_internal_weighted`].
+#[inline]
+pub fn score_4bit_internal_weighted_scalar(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+    let mut acc: i64 = 0;
+    for (i, (&byte_a, &byte_b)) in a.iter().zip(b.iter()).enumerate() {
+        let a_lo = byte_a & 0x0F;
+        let a_hi = byte_a >> 4;
+        let b_lo = byte_b & 0x0F;
+        let b_hi = byte_b >> 4;
+        let p_lo = codebook_signed_i64(a_lo) * codebook_signed_i64(b_lo);
+        let p_hi = codebook_signed_i64(a_hi) * codebook_signed_i64(b_hi);
+        acc += p_lo * i64::from(weights[2 * i]);
+        acc += p_hi * i64::from(weights[2 * i + 1]);
+    }
+    acc
+}
+
+/// Square of the codebook scale — the integer sum from
+/// [`score_4bit_internal_weighted`] is divided by `weight_scale ·
+/// CODEBOOK_SCALE_SQ` to get the f32 weighted dot.
+pub const CODEBOOK_SCALE_SQ: f32 = CODEBOOK_SCALE * CODEBOOK_SCALE;
+
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 mod arm;
 
@@ -448,9 +514,14 @@ mod arm;
 mod x64;
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-pub use arm::{score_4bit_internal_neon, score_4bit_internal_neon_sdot};
+pub use arm::{
+    score_4bit_internal_neon, score_4bit_internal_neon_sdot, score_4bit_internal_weighted_neon,
+};
 #[cfg(target_arch = "x86_64")]
-pub use x64::{score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse};
+pub use x64::{
+    score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
+    score_4bit_internal_weighted_avx2, score_4bit_internal_weighted_sse,
+};
 
 /// 4-bit-specific test helpers.  Bit-width-agnostic helpers (`pack_codes`,
 /// `sample_normal_vec`, `encode_to_nearest_centroid`) live in
@@ -676,6 +747,100 @@ mod tests {
             assert!(
                 (truth as f32 - score).abs() < 2.0,
                 "score {score} too far from centroid-product truth {truth}",
+            );
+        }
+    }
+
+    /// Saturation-safety at 64K dims: every centroid index at max (`15`),
+    /// every weight at `i16::MAX`. `weights[i]` is u16-typed but SIMD
+    /// reinterprets the bytes as signed i16 (`madd_epi16` / `vmull_s16`),
+    /// so the contract caps quantized values at `i16::MAX`. This is the
+    /// worst-case integer load the weighted kernel can see, and the i64
+    /// accumulator must absorb it.
+    ///
+    /// Per-coord product:
+    ///   `c_signed² × weight = 127² × 32 767 = 16 129 × 32 767 ≈ 5.28e8`
+    /// (fits i32 with ~4× headroom). Total over 65 536 coords:
+    /// `≈ 3.46e13` — fits i64 (~2.7e5× headroom; signed i64 max ≈ 9.2e18).
+    #[test]
+    fn test_score_4bit_internal_weighted_saturation_safety_64k() {
+        let dim = 65_536;
+        let indices: Vec<u8> = vec![15; dim]; // max-magnitude centroid
+        let vec_a = pack_codes(&indices, 4);
+        let vec_b = pack_codes(&indices, 4);
+        let max_weight: u16 = i16::MAX as u16;
+        let weights: Vec<u16> = vec![max_weight; dim];
+
+        let raw_int = super::score_4bit_internal_weighted(&vec_a, &vec_b, &weights);
+
+        // Worst-case integer ground truth: every coord contributes
+        // `c_signed² × max_weight`, summed over `dim`. Any SIMD i32-lane
+        // accumulator overflow would manifest here as a wrap-around.
+        let c_max_signed = super::codebook_signed_i64(15);
+        let per_coord = c_max_signed * c_max_signed * i64::from(max_weight);
+        let expected = per_coord * dim as i64;
+        assert_eq!(
+            raw_int, expected,
+            "i64 sum overflow / mismatch at dim={dim} (per-coord={per_coord}, expected={expected}, got={raw_int})",
+        );
+    }
+
+    /// `score_4bit_internal_weighted` should recover `Σ c[a[j]] · c[b[j]] ·
+    /// D'_j²` up to:
+    ///   1. the i8 codebook quantization step (≈ 0.022 per centroid), and
+    ///   2. the i16 weight quantization step (relative ≤ 1/(i16::MAX-1)).
+    ///
+    /// Reconstruction is `int_sum / (weight_scale · CODEBOOK_SCALE²)`.
+    #[test]
+    fn test_score_4bit_internal_weighted_matches_reference() {
+        use rand::RngExt;
+
+        let mut rng = StdRng::seed_from_u64(0xCAFE);
+        let centroids = TQBits::Bits4.get_centroids();
+        let dim = 256;
+        let n_trials = 32;
+
+        for _ in 0..n_trials {
+            let raw_a = sample_normal_vec(&mut rng, dim);
+            let raw_b = sample_normal_vec(&mut rng, dim);
+            let idx_a = encode_to_nearest_centroid(centroids, &raw_a);
+            let idx_b = encode_to_nearest_centroid(centroids, &raw_b);
+
+            // Random weights in [0, 4) f32, quantized to u16 storage but
+            // i16-capped — matches `ErrorCorrection::new` (SIMD reads
+            // weights as signed i16, so values must stay in `[0, i16::MAX]`).
+            let weights_f32: Vec<f32> = (0..dim).map(|_| rng.random_range(0.0..4.0)).collect();
+            let max_w = weights_f32.iter().copied().fold(0.0f32, f32::max);
+            const QUANT_CAP: i16 = i16::MAX - 1;
+            let weight_scale = f32::from(QUANT_CAP) / max_w;
+            let weights_u16: Vec<u16> = weights_f32
+                .iter()
+                .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as u16)
+                .collect();
+
+            let truth: f64 = idx_a
+                .iter()
+                .zip(idx_b.iter())
+                .zip(weights_f32.iter())
+                .map(|((&ia, &ib), &w)| {
+                    f64::from(centroids[ia as usize])
+                        * f64::from(centroids[ib as usize])
+                        * f64::from(w)
+                })
+                .sum();
+            let raw_int = super::score_4bit_internal_weighted(
+                &pack_codes(&idx_a, 4),
+                &pack_codes(&idx_b, 4),
+                &weights_u16,
+            );
+            let score = raw_int as f32 / (weight_scale * super::CODEBOOK_SCALE_SQ);
+
+            // Per-coord error budget ≈ |c|² · max_w / 65534 + 2·|c|·Δc·w.
+            // For dim=256 with weights up to 4 and centroids up to ~2.7 the
+            // RMS bound is ≲ √d · 0.5 ≈ 8 — generous slack at 16.
+            assert!(
+                (truth as f32 - score).abs() < 16.0,
+                "weighted score {score} too far from reference {truth}",
             );
         }
     }

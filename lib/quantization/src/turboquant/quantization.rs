@@ -2,8 +2,9 @@ use crate::DistanceType;
 use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
 use crate::turboquant::simd::{
-    Query1bitSimd, Query2bitSimd, Query4bitSimd, score_1bit_internal, score_2bit_internal,
-    score_4bit_internal,
+    CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query2bitSimd, Query4bitSimd,
+    score_1bit_internal, score_2bit_internal, score_2bit_internal_weighted, score_4bit_internal,
+    score_4bit_internal_weighted,
 };
 use crate::turboquant::{
     EncodedQueryTQ, EncodedQueryTQData, ErrorCorrectionMetadata, Metadata, TQBits, TQMode,
@@ -30,10 +31,19 @@ pub struct TurboQuantizer {
 pub struct ErrorCorrection {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
-    /// `D'_i² = 1 / scale_i²` per coordinate. Used in the symmetric TQ+
-    /// scoring path's per-coord-weighted dot. Recomputed from `scale` rather
-    /// than persisted — `scale` is the single source of truth.
-    pub(super) d_prime_sq: Vec<f32>,
+    /// Unsigned 16-bit quantized `D'_i² = 1 / scale_i²` per coordinate, used
+    /// by the SIMD weighted-dot path of `score_symmetric_ec` for Bits2/Bits4.
+    /// `D'²_f32 ≈ d_prime_sq_u16[i] / weight_scale`. Values are clamped to
+    /// `[0, i16::MAX − 1]` so SIMD kernels can safely interpret them as
+    /// signed `i16` and use `_mm256_madd_epi16` / `vmlal_s16`. Recomputed
+    /// from `scale` rather than persisted — `scale` is the single source of
+    /// truth.
+    pub(super) d_prime_sq_u16: Vec<u16>,
+    /// `(i16::MAX − 1) / max(D'²)` — quantization scale. The 1-bit cap
+    /// (vs. full u16) costs ~3e-5 relative precision but lets SIMD use
+    /// signed `i16` multiply-adds. `1.0` if all `D'²` are effectively zero
+    /// (degenerate quantizer).
+    pub(super) weight_scale: f32,
     /// `⟨M, M⟩ = Σ shift²` global constant. Used in symmetric TQ+ scoring to
     /// cancel the double-counted `⟨M, M⟩` from `xm_a + xm_b`.
     pub(super) mm_const: f32,
@@ -68,7 +78,13 @@ impl ErrorCorrection {
             "ErrorCorrection shift/scale length mismatch",
         );
         let mm_const = shift.iter().map(|&s| s * s).sum();
-        let d_prime_sq = scale
+
+        // Build f32 D'² per coord, then quantize to u16 with a single global
+        // scale chosen from the largest D'². Per-coord precision lower bound:
+        // `1/weight_scale = max(D'²)/65534`; relative error on the smallest
+        // coord is `(min/max)·(1/65534)` — overwhelmingly tighter than f32
+        // precision in this dynamic range.
+        let d_prime_sq_f32: Vec<f32> = scale
             .iter()
             .map(|&s| {
                 if s.abs() > f32::EPSILON {
@@ -78,10 +94,26 @@ impl ErrorCorrection {
                 }
             })
             .collect();
+        let max_d_prime_sq = d_prime_sq_f32.iter().copied().fold(0.0f32, f32::max);
+        // Cap quantized values to `i16::MAX − 1` so SIMD kernels can
+        // interpret the storage as signed `i16` without sign flips. See
+        // `d_prime_sq_u16` field doc for the full rationale.
+        const QUANT_CAP: i16 = i16::MAX - 1;
+        let weight_scale = if max_d_prime_sq > f32::EPSILON {
+            f32::from(QUANT_CAP) / max_d_prime_sq
+        } else {
+            1.0
+        };
+        let d_prime_sq_u16: Vec<u16> = d_prime_sq_f32
+            .iter()
+            .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as u16)
+            .collect();
+
         ErrorCorrection {
             shift,
             scale,
-            d_prime_sq,
+            d_prime_sq_u16,
+            weight_scale,
             mm_const,
         }
     }
@@ -393,37 +425,31 @@ impl TurboQuantizer {
         extra_v2: &TqVectorExtras<'_>,
         ec: &ErrorCorrection,
     ) -> f32 {
-        let centroids = self.bits.get_centroids();
-        let bit_size = self.bits.bit_size();
-        let mut reader1 = common::bitpacking::BitReader::new(data_v1);
-        reader1.set_bits(bit_size);
-        let mut reader2 = common::bitpacking::BitReader::new(data_v2);
-        reader2.set_bits(bit_size);
-
-        match self.bits {
+        // Bits2 / Bits4: integer SIMD-amenable weighted dot. The kernel
+        // returns `Σ c_a_int · c_b_int · weights_u16` as i64; we divide back
+        // by `weight_scale · CODEBOOK_SCALE²` to recover the f32 centroid dot.
+        let (raw_int, codebook_scale_sq) = match self.bits {
+            TQBits::Bits2 => (
+                score_2bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_u16),
+                CODEBOOK_SCALE_SQ_2BIT,
+            ),
+            TQBits::Bits4 => (
+                score_4bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_u16),
+                CODEBOOK_SCALE_SQ_4BIT,
+            ),
             TQBits::Bits1 | TQBits::Bits1_5 => {
-                let mut sum: f32 = 0.0;
-                for _ in 0..self.padded_dim {
-                    let idx1: u8 = reader1.read();
-                    let idx2: u8 = reader2.read();
-                    sum += centroids[idx1 as usize] * centroids[idx2 as usize];
-                }
-                sum
+                // 1-bit TQ+ ignores `D'²` weighting and `xm`/`mm` corrections (see
+                // doc comment above `score_symmetric_ec`), so the score reduces to
+                // the plain centroid dot — exactly what `score_1bit_internal`
+                // computes via SIMD XOR-popcount. Reuse it.
+                return score_1bit_internal(data_v1, data_v2);
             }
-            TQBits::Bits2 | TQBits::Bits4 => {
-                let mut weighted: f32 = 0.0;
-                for i in 0..self.padded_dim {
-                    let idx1: u8 = reader1.read();
-                    let idx2: u8 = reader2.read();
-                    let c1 = centroids[idx1 as usize];
-                    let c2 = centroids[idx2 as usize];
-                    weighted += c1 * c2 * ec.d_prime_sq[i];
-                }
-                let xm_a = extra_v1.ec_correction();
-                let xm_b = extra_v2.ec_correction();
-                weighted + xm_a + xm_b - ec.mm_const
-            }
-        }
+        };
+        let weighted = raw_int as f32 / (ec.weight_scale * codebook_scale_sq);
+
+        let xm_a = extra_v1.ec_correction();
+        let xm_b = extra_v2.ec_correction();
+        weighted + xm_a + xm_b - ec.mm_const
     }
 
     /// Precompute the Hadamard rotation of `query` and hand it to the

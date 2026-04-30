@@ -323,6 +323,75 @@ pub unsafe fn score_2bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
     }
 }
 
+// ------------------------------------------------------------------
+// score_2bit_internal_weighted — TQ+ symmetric path. Same overflow
+// pattern as the 4-bit NEON weighted kernel (i64 acc via `vpaddlq_s32`
+// to avoid i32 saturation at large dim).
+// ------------------------------------------------------------------
+
+/// NEON weighted variant of [`super::score_2bit_internal`]. 16 coords per
+/// iteration; products go through `vmull_s8` then per-pair multiply by
+/// i16 weights (i16-capped from u16 storage) via `vmull_s16`, pair-summed
+/// into an i64 accumulator.
+///
+/// # Safety
+/// CPU must support `neon`.
+#[target_feature(enable = "neon")]
+pub unsafe fn score_2bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+    use core::arch::aarch64::*;
+
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "score_2bit_internal_weighted_neon: vector length mismatch ({} vs {})",
+        a.len(),
+        b.len(),
+    );
+    assert_eq!(
+        weights.len(),
+        4 * a.len(),
+        "score_2bit_internal_weighted_neon: weights length {} != 4 · a.len() {}",
+        weights.len(),
+        4 * a.len(),
+    );
+
+    unsafe {
+        let mut acc = vdupq_n_s64(0);
+
+        // 4 bytes per source = 16 coords per iter.
+        let n_full = a.len() / 4;
+        for i in 0..n_full {
+            let c_a = unpack_16_codes(a.as_ptr().add(i * 4));
+            let c_b = unpack_16_codes(b.as_ptr().add(i * 4));
+
+            let prod_lo = vmull_s8(vget_low_s8(c_a), vget_low_s8(c_b));
+            let prod_hi = vmull_high_s8(c_a, c_b);
+
+            let w_lo = vld1q_s16(weights.as_ptr().add(16 * i).cast::<i16>());
+            let w_hi = vld1q_s16(weights.as_ptr().add(16 * i + 8).cast::<i16>());
+
+            let pw_a = vmull_s16(vget_low_s16(prod_lo), vget_low_s16(w_lo));
+            let pw_b = vmull_high_s16(prod_lo, w_lo);
+            let pw_c = vmull_s16(vget_low_s16(prod_hi), vget_low_s16(w_hi));
+            let pw_d = vmull_high_s16(prod_hi, w_hi);
+
+            acc = vaddq_s64(acc, vpaddlq_s32(pw_a));
+            acc = vaddq_s64(acc, vpaddlq_s32(pw_b));
+            acc = vaddq_s64(acc, vpaddlq_s32(pw_c));
+            acc = vaddq_s64(acc, vpaddlq_s32(pw_d));
+        }
+
+        let simd_sum = vaddvq_s64(acc);
+        let simd_bytes = n_full * 4;
+        let tail = super::score_2bit_internal_weighted_scalar(
+            &a[simd_bytes..],
+            &b[simd_bytes..],
+            &weights[4 * simd_bytes..],
+        );
+        simd_sum + tail
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng as _;
@@ -330,8 +399,21 @@ mod tests {
 
     use super::super::super::shared::pack_codes;
     use super::super::shared::{PARITY_DIMS, random_inputs};
-    use super::super::{Query2bitSimd, score_2bit_internal_scalar};
-    use super::{score_2bit_internal_neon, score_2bit_internal_neon_sdot};
+    use super::super::{
+        Query2bitSimd, score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
+    };
+    use super::{
+        score_2bit_internal_neon, score_2bit_internal_neon_sdot, score_2bit_internal_weighted_neon,
+    };
+
+    /// Build deterministic i16-capped weights of length `4 · vec_bytes` for
+    /// parity tests of the 2-bit weighted kernel.
+    fn random_weights(rng: &mut StdRng, vec_bytes: usize) -> Vec<u16> {
+        use rand::RngExt;
+        (0..4 * vec_bytes)
+            .map(|_| rng.random_range(0..=i16::MAX as u16))
+            .collect()
+    }
 
     #[test]
     fn test_neon_matches_scalar() {
@@ -396,6 +478,42 @@ mod tests {
                 let sdot = unsafe { score_2bit_internal_neon_sdot(&vec_a, &vec_b) };
                 assert_eq!(scalar, sdot, "score sdot parity fail at dim {dim}");
             }
+        }
+    }
+
+    /// Parity for the 2-bit weighted kernel: NEON must match the scalar
+    /// reference bit-exactly across our matryoshka corner-case dims.
+    #[test]
+    fn test_score_weighted_neon_matches_scalar() {
+        let mut rng = StdRng::seed_from_u64(0xBEEF);
+        for &dim in PARITY_DIMS {
+            let (_, vec_a) = random_inputs(&mut rng, dim);
+            let (_, vec_b) = random_inputs(&mut rng, dim);
+            let weights = random_weights(&mut rng, vec_a.len());
+            let scalar = score_2bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
+            let neon = unsafe { score_2bit_internal_weighted_neon(&vec_a, &vec_b, &weights) };
+            assert_eq!(
+                scalar, neon,
+                "weighted: scalar {scalar} != neon {neon} at dim {dim}"
+            );
+        }
+    }
+
+    /// Saturation-safety for the 2-bit weighted NEON kernel at 64K dims:
+    /// must match i64 scalar reference under worst-case inputs.
+    #[test]
+    fn test_score_weighted_saturation_safety_64k() {
+        let dim = 65_536;
+        let indices: Vec<u8> = vec![3; dim];
+        let vec_a = pack_codes(&indices, 2);
+        let vec_b = pack_codes(&indices, 2);
+        let max_weight: u16 = i16::MAX as u16;
+        let weights: Vec<u16> = vec![max_weight; dim];
+
+        let scalar = score_2bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
+        unsafe {
+            let neon = score_2bit_internal_weighted_neon(&vec_a, &vec_b, &weights);
+            assert_eq!(scalar, neon, "weighted score neon overflow at dim={dim}");
         }
     }
 
