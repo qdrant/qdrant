@@ -97,7 +97,7 @@ fn basic_read_returns_remote_bytes() {
 }
 
 #[test]
-fn read_spanning_multiple_blocks_is_stitched() {
+fn read_spanning_multiple_blocks_is_contiguous() {
     let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
     let file = scn.open();
 

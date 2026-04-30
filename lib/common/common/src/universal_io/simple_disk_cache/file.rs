@@ -12,6 +12,7 @@ use super::BLOCK_SIZE;
 use super::config::DiskCacheConfig;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::{AdviceSetting, Madviseable};
+use crate::universal_io::pipeline::DiskCachePipeline;
 use crate::universal_io::{
     OpenOptions, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps
 };
@@ -22,13 +23,12 @@ use crate::universal_io::{
 /// this type implements [`UniversalRead`] only, but not [`UniversalWrite`].
 #[derive(Debug)]
 pub struct DiskCache<R> {
-    remote: R,
-    len_bytes: u64,
+    pub(super) remote: R,
     /// Open options for when it gets initialized
     open_options: OpenOptions,
     /// Path to the local mmap file
     local_path: PathBuf,
-    local: OnceLock<LocalState>,
+    pub(super) local: OnceLock<LocalState>,
     /// Prevents concurrent initialization of `local` across threads.
     ///
     /// TODO: Switch to [`OnceLock::get_or_try_init`][1] once it stabilizes
@@ -38,99 +38,46 @@ pub struct DiskCache<R> {
 }
 
 #[derive(Debug)]
-struct LocalState {
-    mmap: MmapRaw,
+pub(super) struct LocalState {
+    pub mmap: MmapRaw,
     /// Bitmask to know which blocks are have been fetched
-    fetched: Mutex<RoaringBitmap>,
+    pub fetched: Mutex<RoaringBitmap>,
 }
 
 impl LocalState {
     /// # Safety
-    /// `byte_range` must have been populated via [`DiskCache::ensure_byte_ranges`] first.
-    unsafe fn read_mmap_bytes(&self, byte_range: Range<u64>) -> &[u8] {
+    /// `byte_range` must have been populated first, caller must ensure `self.fetched` references the
+    /// blocks for the byte range.
+    pub(super) unsafe fn read_mmap_bytes(&self, byte_range: Range<u64>) -> &[u8] {
         let bytes = unsafe { std::slice::from_raw_parts(self.mmap.as_ptr(), self.mmap.len()) };
         &bytes[byte_range.start as usize..byte_range.end as usize]
     }
-}
 
-impl<R: UniversalReadFileOps> UniversalReadFileOps for DiskCache<R> {
-    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        R::list_files(prefix_path)
-    }
-
-    fn exists(path: &Path) -> Result<bool> {
-        R::exists(path)
-    }
-}
-
-impl<R, T> UniversalRead<T> for DiskCache<R>
-where
-    R: UniversalRead<u8>,
-    T: bytemuck::Pod,
-{
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        let config = DiskCacheConfig::global().ok_or_else(|| {
-            UniversalIoError::uninitialized(
-                "DiskCacheConfig must be initialized via `DiskCacheConfig::initialize_global` \
-                 before opening an DiskCache",
-            )
-        })?;
-        Self::open_with_config(config, path, options)
-    }
-
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let byte_range = self.compute_byte_range::<T>(range)?;
-        if byte_range.is_empty() {
-            return Ok(Cow::Borrowed(&[]));
+    /// # Safety
+    /// `DiskCache` is only used in immutable files. Since `blocks_range` can include already-fetched
+    /// data, it is possible that some sections get overwritten; however, it should be the same data,
+    /// so it is fine.
+    ///
+    /// Assumes the bytes slice covers the entirety of `blocks_range`.
+    pub(super) unsafe fn write_mmap_bytes(&self, bytes: &[u8], blocks_range: Range<u32>) {
+        let mut fetched = self.fetched.lock();
+        if fetched.contains_range(blocks_range.clone()) {
+            return;
         }
 
-        let state = self.local_state()?;
-        self.ensure_byte_ranges(state, std::iter::once(byte_range.clone()))?;
+        let byte_offset = blocks_range.start as usize * BLOCK_SIZE;
 
-        // SAFETY: `ensure_byte_ranges` above populated `byte_range`.
-        let bytes = unsafe { state.read_mmap_bytes(byte_range) };
-        Ok(Cow::Borrowed(bytemuck::cast_slice(bytes)))
-    }
+        let max_len = self.mmap.len().saturating_sub(byte_offset);
+        assert!(bytes.len() == max_len.min(blocks_range.len() * BLOCK_SIZE));
 
-    fn read_batch<'a, P: AccessPattern, Meta: 'a>(
-        &'a self,
-        ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
-        mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
-    ) -> Result<()> {
-        for (meta, range) in ranges {
-            let cow = self.read::<P>(range)?;
-            callback(meta, cow.as_ref())?;
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                self.mmap.as_mut_ptr().add(byte_offset),
+                bytes.len(),
+            );
         }
-        Ok(())
-    }
-
-    fn len(&self) -> Result<u64> {
-        let t_size = size_of::<T>() as u64;
-        debug_assert!(t_size > 0, "zero-sized types are not supported");
-        Ok(self.len_bytes / t_size)
-    }
-
-    fn populate(&self) -> Result<()> {
-        if self.len_bytes == 0 {
-            return Ok(());
-        }
-        if crate::low_memory::low_memory_mode().skip_populate() {
-            return Ok(());
-        }
-        let state = self.local_state()?;
-        self.ensure_byte_ranges(state, std::iter::once(0..self.len_bytes))?;
-        Ok(())
-    }
-
-    fn clear_ram_cache(&self) -> Result<()> {
-        if let Some(state) = self.local.get() {
-            state.mmap.clear_cache();
-        }
-        Ok(())
-    }
-
-    fn kind() -> UniversalKind {
-        UniversalKind::SimpleDiskCache
+        fetched.insert_range(blocks_range);
     }
 }
 
@@ -159,11 +106,9 @@ impl<R: UniversalRead<u8>> DiskCache<R> {
         };
 
         let remote = R::open(remote_path, remote_options)?;
-        let len_bytes = UniversalRead::<u8>::len(&remote)?;
 
         Ok(Self {
             remote,
-            len_bytes,
             open_options: options,
             local_path,
             local: OnceLock::new(),
@@ -172,7 +117,7 @@ impl<R: UniversalRead<u8>> DiskCache<R> {
     }
 
     /// Return the cached [`LocalState`], initializing it on first call.
-    fn local_state(&self) -> Result<&LocalState> {
+    pub(super) fn local_state(&self) -> Result<&LocalState> {
         if let Some(state) = self.local.get() {
             return Ok(state);
         }
@@ -210,7 +155,9 @@ impl<R: UniversalRead<u8>> DiskCache<R> {
             .create(true)
             .truncate(true)
             .open(&self.local_path)?;
-        file.set_len(self.len_bytes)?;
+
+        let remote_len = self.remote.len()?;
+        file.set_len(remote_len)?;
         let mmap = MmapRaw::map_raw(&file)?;
 
         mmap.madvise(advice.unwrap_or(AdviceSetting::Global).resolve())?;
@@ -220,112 +167,95 @@ impl<R: UniversalRead<u8>> DiskCache<R> {
             fetched: Mutex::new(RoaringBitmap::new()),
         })
     }
+}
 
-    /// Validate a typed [`ReadRange`] and return its byte bounds
-    /// `[start, end)`. Zero-length ranges produce `[offset, offset)`.
-    fn compute_byte_range<T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Range<u64>> {
-        let ReadRange {
-            byte_offset,
-            length,
-        } = range;
-        if length == 0 {
-            return Ok(byte_offset..byte_offset);
-        }
-        let t_size = size_of::<T>() as u64;
-        let byte_len = length
-            .checked_mul(t_size)
-            .ok_or_else(|| out_of_bounds::<T>(byte_offset, u64::MAX, self.len_bytes))?;
-        let byte_end = byte_offset
-            .checked_add(byte_len)
-            .ok_or_else(|| out_of_bounds::<T>(byte_offset, u64::MAX, self.len_bytes))?;
-        if byte_end > self.len_bytes {
-            return Err(out_of_bounds::<T>(byte_offset, byte_end, self.len_bytes));
-        }
-        Ok(byte_offset..byte_end)
+impl<R: UniversalReadFileOps> UniversalReadFileOps for DiskCache<R> {
+    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
+        R::list_files(prefix_path)
     }
 
-    // TODO: Fine-grained locking. `state.fetched` is currently held
-    // across the whole remote fetch. An atomic bitvec should enable
-    // cached reads to be handed out while other threads are handling misses.
-    //
-    /// Ensure every byte in the union of `byte_ranges` is present in
-    /// the local mmap.
-    fn ensure_byte_ranges(
-        &self,
-        state: &LocalState,
-        byte_ranges: impl IntoIterator<Item = Range<u64>>,
-    ) -> Result<()> {
-        let mut fetched = state.fetched.lock();
-
-        // Union of all block indices touched by the input.
-        let mut wanted = RoaringBitmap::new();
-        for br in byte_ranges {
-            if br.is_empty() {
-                continue;
-            }
-            let first = br.start / BLOCK_SIZE as u64;
-            let last = (br.end - 1) / BLOCK_SIZE as u64;
-            let first = u32::try_from(first).expect("file larger than 70 TiB is not supported");
-            let last = u32::try_from(last).expect("file larger than 70 TiB is not supported");
-            wanted.insert_range(first..=last);
-        }
-
-        let to_fetch = wanted - &*fetched;
-        if to_fetch.is_empty() {
-            return Ok(());
-        }
-
-        // Emit one BLOCK_SIZE-capped range per missing block. Backends
-        // that benefit from coalescing (e.g. high-latency object
-        // stores) can merge contiguous ranges inside their own
-        // `read_batch`; backends that benefit from keeping them
-        // separate (e.g. io_uring, where queue depth is the source of
-        // parallelism) can submit them individually.
-        let len_bytes = self.len_bytes;
-        let ranges = to_fetch.iter().map(|block| {
-            let byte_offset = u64::from(block) * BLOCK_SIZE as u64;
-            let length = (BLOCK_SIZE as u64).min(len_bytes - byte_offset);
-            (
-                block,
-                ReadRange {
-                    byte_offset,
-                    length,
-                },
-            )
-        });
-
-        self.remote
-            .read_batch::<Sequential, _>(ranges, |block, bytes| {
-                let byte_offset = u64::from(block) * BLOCK_SIZE as u64;
-                debug_assert_eq!(
-                    bytes.len() as u64,
-                    (BLOCK_SIZE as u64).min(len_bytes - byte_offset),
-                );
-
-                // SAFETY: `[byte_offset, byte_offset + bytes.len())` lies
-                // within the mmap. This block was not in `fetched`, so
-                // no prior writer touched it; `state.fetched` is held
-                // for the whole batch, excluding concurrent writers.
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        bytes.as_ptr(),
-                        state.mmap.as_mut_ptr().add(byte_offset as usize),
-                        bytes.len(),
-                    );
-                }
-                fetched.insert(block);
-                Ok(())
-            })?;
-
-        Ok(())
+    fn exists(path: &Path) -> Result<bool> {
+        R::exists(path)
     }
 }
 
-fn out_of_bounds<T>(start: u64, end: u64, len_bytes: u64) -> UniversalIoError {
-    let t_size = size_of::<T>().max(1) as u64;
-    UniversalIoError::OutOfBounds {
-        start,
-        end,
-        elements: (len_bytes / t_size) as usize,
+impl<R, T> UniversalRead<T> for DiskCache<R>
+where
+    R: UniversalRead<u8>,
+    T: bytemuck::Pod,
+{
+    type ReadPipeline<'a, Meta>
+        = DiskCachePipeline<'a, T, Meta, R>
+    where
+        R: 'a;
+
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
+        let config = DiskCacheConfig::global().ok_or_else(|| {
+            UniversalIoError::uninitialized(
+                "DiskCacheConfig must be initialized via `DiskCacheConfig::initialize_global` \
+                 before opening an DiskCache",
+            )
+        })?;
+        Self::open_with_config(config, path, options)
     }
+
+    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+        let (_, read) = self
+            .read_iter::<P, _>(std::iter::once(((), range)))?
+            .next()
+            .expect("there's exactly one read")?;
+
+        Ok(read)
+    }
+
+    fn len(&self) -> Result<u64> {
+        let t_size = size_of::<T>();
+        debug_assert!(t_size > 0, "zero-sized types are not supported");
+
+        let bytes_len = if let Some(local) = self.local.get() {
+            local.mmap.len() as u64
+        } else {
+            self.remote.len()?
+        };
+
+        Ok(bytes_len / t_size as u64)
+    }
+
+    fn populate(&self) -> Result<()> {
+        if crate::low_memory::low_memory_mode().skip_populate() {
+            return Ok(());
+        }
+
+        let remote_len = self.remote.len()?;
+        if remote_len == 0 {
+            return Ok(());
+        }
+
+        let one_byte_per_block = (0..remote_len as usize)
+            .step_by(BLOCK_SIZE)
+            .map(|byte_offset| ((), ReadRange::one(byte_offset as u64)));
+
+        for result in UniversalRead::<u8>::read_iter::<Sequential, ()>(self, one_byte_per_block)? {
+            result?;
+        }
+
+        Ok(())
+    }
+
+    fn clear_ram_cache(&self) -> Result<()> {
+        if let Some(state) = self.local.get() {
+            state.mmap.clear_cache();
+        }
+        Ok(())
+    }
+
+    fn kind() -> UniversalKind {
+        UniversalKind::SimpleDiskCache
+    }
+}
+
+pub(super) fn to_block_range(range: Range<u64>) -> Range<u32> {
+    let start = (range.start / BLOCK_SIZE as u64) as u32;
+    let end = range.end.div_ceil(BLOCK_SIZE as u64) as u32;
+    start..end
 }

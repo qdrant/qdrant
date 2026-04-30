@@ -1,6 +1,7 @@
 mod config;
 mod file;
 
+pub mod pipeline;
 #[cfg(test)]
 mod tests;
 
