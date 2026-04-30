@@ -150,7 +150,10 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
         self.runtime.in_progress + squeue.len() < IO_URING_QUEUE_LENGTH as _
     }
 
-    fn schedule(&mut self, meta: Meta, file: &'a IoUringFile, range: ReadRange) -> Result<()> {
+    fn schedule<P>(&mut self, meta: Meta, file: &'a IoUringFile, range: ReadRange) -> Result<()>
+    where
+        P: AccessPattern,
+    {
         let mut squeue = self.runtime.io_uring.submission();
         if self.runtime.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
             return Err(UniversalIoError::QueueIsFull);

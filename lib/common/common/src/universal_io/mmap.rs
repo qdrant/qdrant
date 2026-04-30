@@ -151,11 +151,14 @@ impl<'a, T: bytemuck::Pod, P: AccessPattern, Meta> UniversalReadPipeline<'a, T, 
         self.result.is_none()
     }
 
-    fn schedule(&mut self, meta: Meta, file: &'a MmapFile, range: ReadRange) -> Result<()> {
+    fn schedule<P1>(&mut self, meta: Meta, file: &'a MmapFile, range: ReadRange) -> Result<()>
+    where
+        P1: AccessPattern,
+    {
         if self.result.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
-        self.result = Some((meta, read(file.as_bytes::<P>(), range)?));
+        self.result = Some((meta, read(file.as_bytes::<P1>(), range)?));
         Ok(())
     }
 

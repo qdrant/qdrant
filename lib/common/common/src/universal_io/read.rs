@@ -96,7 +96,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
                 && let Some(read) = reads.next()
             {
                 let (meta, file, range) = read;
-                if let Err(err) = pipeline.schedule(meta, file, range) {
+                if let Err(err) = pipeline.schedule::<P>(meta, file, range) {
                     return Some(Err(err));
                 }
             }
@@ -124,7 +124,9 @@ pub trait UniversalReadPipeline<'a, T: Copy + 'static, Meta>: Sized {
     ///
     /// Should be called only when [`UniversalReadPipeline::can_schedule()`] is
     /// `true`. Returns [`UniversalIoError::QueueIsFull`] otherwise.
-    fn schedule(&mut self, meta: Meta, file: &'a Self::File, range: ReadRange) -> Result<()>;
+    fn schedule<P>(&mut self, meta: Meta, file: &'a Self::File, range: ReadRange) -> Result<()>
+    where
+        P: AccessPattern;
 
     /// Block until any of the scheduled operations is completed and consume its
     /// result.

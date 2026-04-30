@@ -42,8 +42,12 @@ where
     }
 
     #[inline]
-    fn schedule(&mut self, meta: Meta, file: &'a Outer, range: ReadRange) -> Result<()> {
-        self.inner.schedule(meta, Outer::peel_ref(file), range)
+    fn schedule<P1>(&mut self, meta: Meta, file: &'a Outer, range: ReadRange) -> Result<()>
+    where
+        P1: AccessPattern,
+    {
+        self.inner
+            .schedule::<P1>(meta, Outer::peel_ref(file), range)
     }
 
     #[inline]

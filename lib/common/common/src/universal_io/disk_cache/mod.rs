@@ -139,7 +139,10 @@ impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
         self.result.is_none()
     }
 
-    fn schedule(&mut self, meta: Meta, file: &'a CachedSlice<T>, range: ReadRange) -> Result<()> {
+    fn schedule<P>(&mut self, meta: Meta, file: &'a CachedSlice<T>, range: ReadRange) -> Result<()>
+    where
+        P: AccessPattern,
+    {
         if self.result.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
