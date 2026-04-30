@@ -19,7 +19,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
-use crate::index::{PayloadIndex, VectorIndex, VectorIndexRead};
+use crate::index::{PayloadIndexRead, VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;

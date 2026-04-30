@@ -17,7 +17,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
-use crate::index::{BuildIndexResult, PayloadIndex};
+use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
@@ -71,70 +71,9 @@ impl PlainPayloadIndex {
     }
 }
 
-impl PayloadIndex for PlainPayloadIndex {
+impl PayloadIndexRead for PlainPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.config.indices.to_schemas()
-    }
-
-    fn build_index(
-        &self,
-        _field: PayloadKeyTypeRef,
-        _payload_schema: &PayloadFieldSchema,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<BuildIndexResult> {
-        Ok(BuildIndexResult::AlreadyBuilt) // No index to build
-    }
-
-    fn apply_index(
-        &mut self,
-        field: PayloadKeyType,
-        payload_schema: PayloadFieldSchema,
-        field_index: Vec<FieldIndex>,
-    ) -> OperationResult<()> {
-        let new_schema = PayloadFieldSchemaWithIndexType::new(
-            payload_schema,
-            field_index
-                .iter()
-                .map(|i| i.get_full_index_type())
-                .collect(),
-        );
-
-        let prev_schema = self.config.indices.insert(field, new_schema.clone());
-
-        if let Some(prev_schema) = prev_schema {
-            // the field is already present with the same schema, no need to save the config
-            if prev_schema == new_schema {
-                return Ok(());
-            }
-        }
-        self.save_config()?;
-
-        Ok(())
-    }
-
-    fn set_indexed(
-        &mut self,
-        field: PayloadKeyTypeRef,
-        payload_schema: impl Into<PayloadFieldSchema>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        // No need to build index, just set the field as indexed
-        self.apply_index(field.clone(), payload_schema.into(), vec![])
-    }
-
-    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool> {
-        let is_removed = self.config.indices.remove(field).is_some();
-        self.save_config()?;
-        Ok(is_removed)
-    }
-
-    fn drop_index_if_incompatible(
-        &mut self,
-        field: PayloadKeyTypeRef,
-        _new_payload_schema: &PayloadFieldSchema,
-    ) -> OperationResult<bool> {
-        // Just always drop the index, as we don't have any indexes
-        self.drop_index(field)
     }
 
     fn estimate_cardinality(
@@ -203,6 +142,85 @@ impl PayloadIndex for PlainPayloadIndex {
         Ok(())
     }
 
+    fn get_payload(
+        &self,
+        _point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        unreachable!()
+    }
+
+    fn get_payload_sequential(
+        &self,
+        _point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        unreachable!()
+    }
+}
+
+impl PayloadIndex for PlainPayloadIndex {
+    fn build_index(
+        &self,
+        _field: PayloadKeyTypeRef,
+        _payload_schema: &PayloadFieldSchema,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BuildIndexResult> {
+        Ok(BuildIndexResult::AlreadyBuilt) // No index to build
+    }
+
+    fn apply_index(
+        &mut self,
+        field: PayloadKeyType,
+        payload_schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
+    ) -> OperationResult<()> {
+        let new_schema = PayloadFieldSchemaWithIndexType::new(
+            payload_schema,
+            field_index
+                .iter()
+                .map(|i| i.get_full_index_type())
+                .collect(),
+        );
+
+        let prev_schema = self.config.indices.insert(field, new_schema.clone());
+
+        if let Some(prev_schema) = prev_schema {
+            // the field is already present with the same schema, no need to save the config
+            if prev_schema == new_schema {
+                return Ok(());
+            }
+        }
+        self.save_config()?;
+
+        Ok(())
+    }
+
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_schema: impl Into<PayloadFieldSchema>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // No need to build index, just set the field as indexed
+        self.apply_index(field.clone(), payload_schema.into(), vec![])
+    }
+
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool> {
+        let is_removed = self.config.indices.remove(field).is_some();
+        self.save_config()?;
+        Ok(is_removed)
+    }
+
+    fn drop_index_if_incompatible(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        _new_payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<bool> {
+        // Just always drop the index, as we don't have any indexes
+        self.drop_index(field)
+    }
+
     fn overwrite_payload(
         &mut self,
         _point_id: PointOffsetType,
@@ -219,22 +237,6 @@ impl PayloadIndex for PlainPayloadIndex {
         _key: &Option<JsonPath>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        unreachable!()
-    }
-
-    fn get_payload(
-        &self,
-        _point_id: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        unreachable!()
-    }
-
-    fn get_payload_sequential(
-        &self,
-        _point_id: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
         unreachable!()
     }
 

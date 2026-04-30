@@ -33,7 +33,7 @@ use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, VectorIndex, VectorIndexRead};
+use crate::index::{PayloadIndexRead, VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;

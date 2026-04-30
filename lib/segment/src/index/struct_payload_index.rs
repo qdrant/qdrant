@@ -32,7 +32,7 @@ use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
-use crate::index::{BuildIndexResult, PayloadIndex};
+use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
@@ -645,11 +645,114 @@ impl StructPayloadIndex {
     }
 }
 
-impl PayloadIndex for StructPayloadIndex {
+impl PayloadIndexRead for StructPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.config.indices.to_schemas()
     }
 
+    fn estimate_cardinality(
+        &self,
+        query: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<CardinalityEstimation> {
+        let available_points = self.available_point_count();
+        let estimator =
+            |condition: &Condition| self.condition_cardinality(condition, None, hw_counter);
+        estimate_filter(&estimator, query, available_points)
+    }
+
+    fn estimate_nested_cardinality(
+        &self,
+        query: &Filter,
+        nested_path: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<CardinalityEstimation> {
+        let available_points = self.available_point_count();
+        let estimator = |condition: &Condition| {
+            self.condition_cardinality(condition, Some(nested_path), hw_counter)
+        };
+        estimate_filter(&estimator, query, available_points)
+    }
+
+    fn query_points(
+        &self,
+        filter: &Filter,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        // Assume query is already estimated to be small enough so we can iterate over all matched ids
+        let query_cardinality = self.estimate_cardinality(filter, hw_counter)?;
+        let id_tracker = self.id_tracker.borrow();
+        let point_mappings = id_tracker.point_mappings();
+        let result = self
+            .iter_filtered_points(
+                filter,
+                &id_tracker,
+                &point_mappings,
+                &query_cardinality,
+                hw_counter,
+                is_stopped,
+                deferred_internal_id,
+            )?
+            .collect();
+        Ok(result)
+    }
+
+    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {
+        self.field_indexes.get(field).map_or(0, |indexes| {
+            // Assume that multiple field indexes are applied to the same data type,
+            // so the points indexed with those indexes are the same.
+            // We will return minimal number as a worst case, to highlight possible errors in the index early.
+            indexes
+                .iter()
+                .map(|index| index.count_indexed_points())
+                .min()
+                .unwrap_or(0)
+        })
+    }
+
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Box<dyn FilterContext + 'a>> {
+        Ok(Box::new(self.struct_filtered_context(filter, hw_counter)?))
+    }
+
+    fn for_each_payload_block(
+        &self,
+        field: PayloadKeyTypeRef,
+        threshold: usize,
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        if let Some(indexes) = self.field_indexes.get(field) {
+            let field_clone = field.to_owned();
+            indexes.iter().try_for_each(|field_index| {
+                field_index.for_each_payload_block(threshold, field_clone.clone(), f)
+            })?;
+        }
+        Ok(())
+    }
+
+    fn get_payload(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        self.payload.borrow().get(point_id, hw_counter)
+    }
+
+    fn get_payload_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        self.payload.borrow().get_sequential(point_id, hw_counter)
+    }
+}
+
+impl PayloadIndex for StructPayloadIndex {
     fn build_index(
         &self,
         field: PayloadKeyTypeRef,
@@ -756,91 +859,6 @@ impl PayloadIndex for StructPayloadIndex {
         self.drop_index(field)
     }
 
-    fn estimate_cardinality(
-        &self,
-        query: &Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation> {
-        let available_points = self.available_point_count();
-        let estimator =
-            |condition: &Condition| self.condition_cardinality(condition, None, hw_counter);
-        estimate_filter(&estimator, query, available_points)
-    }
-
-    fn estimate_nested_cardinality(
-        &self,
-        query: &Filter,
-        nested_path: &JsonPath,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation> {
-        let available_points = self.available_point_count();
-        let estimator = |condition: &Condition| {
-            self.condition_cardinality(condition, Some(nested_path), hw_counter)
-        };
-        estimate_filter(&estimator, query, available_points)
-    }
-
-    fn query_points(
-        &self,
-        filter: &Filter,
-        hw_counter: &HardwareCounterCell,
-        is_stopped: &AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> OperationResult<Vec<PointOffsetType>> {
-        // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let query_cardinality = self.estimate_cardinality(filter, hw_counter)?;
-        let id_tracker = self.id_tracker.borrow();
-        let point_mappings = id_tracker.point_mappings();
-        let result = self
-            .iter_filtered_points(
-                filter,
-                &id_tracker,
-                &point_mappings,
-                &query_cardinality,
-                hw_counter,
-                is_stopped,
-                deferred_internal_id,
-            )?
-            .collect();
-        Ok(result)
-    }
-
-    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {
-        self.field_indexes.get(field).map_or(0, |indexes| {
-            // Assume that multiple field indexes are applied to the same data type,
-            // so the points indexed with those indexes are the same.
-            // We will return minimal number as a worst case, to highlight possible errors in the index early.
-            indexes
-                .iter()
-                .map(|index| index.count_indexed_points())
-                .min()
-                .unwrap_or(0)
-        })
-    }
-
-    fn filter_context<'a>(
-        &'a self,
-        filter: &'a Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Box<dyn FilterContext + 'a>> {
-        Ok(Box::new(self.struct_filtered_context(filter, hw_counter)?))
-    }
-
-    fn for_each_payload_block(
-        &self,
-        field: PayloadKeyTypeRef,
-        threshold: usize,
-        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        if let Some(indexes) = self.field_indexes.get(field) {
-            let field_clone = field.to_owned();
-            indexes.iter().try_for_each(|field_index| {
-                field_index.for_each_payload_block(threshold, field_clone.clone(), f)
-            })?;
-        }
-        Ok(())
-    }
-
     fn overwrite_payload(
         &mut self,
         point_id: PointOffsetType,
@@ -900,22 +918,6 @@ impl PayloadIndex for StructPayloadIndex {
             }
         }
         Ok(())
-    }
-
-    fn get_payload(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        self.payload.borrow().get(point_id, hw_counter)
-    }
-
-    fn get_payload_sequential(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        self.payload.borrow().get_sequential(point_id, hw_counter)
     }
 
     fn delete_payload(

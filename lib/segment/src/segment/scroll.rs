@@ -8,7 +8,7 @@ use super::Segment;
 use crate::common::operation_error::OperationResult;
 use crate::entry::ReadSegmentEntry;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::PayloadIndex;
+use crate::index::PayloadIndexRead;
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::types::{Filter, PointIdType};
 

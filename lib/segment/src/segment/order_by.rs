@@ -10,7 +10,7 @@ use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::id_tracker::IdTrackerRead;
-use crate::index::PayloadIndex;
+use crate::index::PayloadIndexRead;
 use crate::index::field_index::numeric_index::StreamRange;
 use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use crate::types::{Filter, PointIdType};

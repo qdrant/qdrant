@@ -57,7 +57,7 @@ use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
-use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum, VectorIndexRead};
+use crate::index::{PayloadIndexRead, VectorIndex, VectorIndexEnum, VectorIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
 use crate::segment_constructor::VectorIndexBuildArgs;

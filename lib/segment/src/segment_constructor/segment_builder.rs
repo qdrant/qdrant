@@ -38,7 +38,7 @@ use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerRead, for_each_unique
 use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, VectorIndexEnum};
+use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndexEnum};
 use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::{Segment, SegmentVersion};

@@ -7,7 +7,7 @@ use rand::seq::{IteratorRandom, SliceRandom};
 use super::Segment;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::PayloadIndex;
+use crate::index::PayloadIndexRead;
 use crate::types::{Filter, PointIdType};
 
 impl Segment {

@@ -24,43 +24,14 @@ pub enum BuildIndexResult {
     IncompatibleSchema,
 }
 
-pub trait PayloadIndex {
+/// Read-only trait for payload index.
+///
+/// Defines all read operations on the payload index. Search and retrieval logic
+/// only requires this trait, which makes it possible to implement read-only
+/// segments without duplicating index code.
+pub trait PayloadIndexRead {
     /// Get indexed fields
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
-
-    /// Build the index, if not built before, taking the caller by reference only
-    fn build_index(
-        &self,
-        field: PayloadKeyTypeRef,
-        payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<BuildIndexResult>;
-
-    /// Apply already built indexes
-    fn apply_index(
-        &mut self,
-        field: PayloadKeyType,
-        payload_schema: PayloadFieldSchema,
-        field_index: Vec<FieldIndex>,
-    ) -> OperationResult<()>;
-
-    /// Mark field as one which should be indexed
-    fn set_indexed(
-        &mut self,
-        field: PayloadKeyTypeRef,
-        payload_schema: impl Into<PayloadFieldSchema>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()>;
-
-    /// Remove index
-    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool>;
-
-    /// Remove index if incompatible with new payload schema
-    fn drop_index_if_incompatible(
-        &mut self,
-        field: PayloadKeyTypeRef,
-        new_payload_schema: &PayloadFieldSchema,
-    ) -> OperationResult<bool>;
 
     /// Estimate amount of points (min, max) which satisfies filtering condition.
     ///
@@ -110,6 +81,57 @@ pub trait PayloadIndex {
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()>;
 
+    /// Get payload for point
+    fn get_payload(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    /// Get payload for point with potential optimization for sequential access.
+    fn get_payload_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+}
+
+/// Trait for payload index with mutating operations.
+pub trait PayloadIndex: PayloadIndexRead {
+    /// Build the index, if not built before, taking the caller by reference only
+    fn build_index(
+        &self,
+        field: PayloadKeyTypeRef,
+        payload_schema: &PayloadFieldSchema,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BuildIndexResult>;
+
+    /// Apply already built indexes
+    fn apply_index(
+        &mut self,
+        field: PayloadKeyType,
+        payload_schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
+    ) -> OperationResult<()>;
+
+    /// Mark field as one which should be indexed
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_schema: impl Into<PayloadFieldSchema>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
+
+    /// Remove index
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool>;
+
+    /// Remove index if incompatible with new payload schema
+    fn drop_index_if_incompatible(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        new_payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<bool>;
+
     /// Overwrite payload for point_id. If payload already exists, replace it.
     fn overwrite_payload(
         &mut self,
@@ -126,20 +148,6 @@ pub trait PayloadIndex {
         key: &Option<JsonPath>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
-
-    /// Get payload for point
-    fn get_payload(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
-
-    /// Get payload for point with potential optimization for sequential access.
-    fn get_payload_sequential(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
 
     /// Delete payload by key
     fn delete_payload(
