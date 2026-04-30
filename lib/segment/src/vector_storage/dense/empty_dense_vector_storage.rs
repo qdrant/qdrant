@@ -13,7 +13,9 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead};
+use crate::vector_storage::{
+    DenseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
+};
 
 /// Placeholder vector storage that contains no data.
 ///

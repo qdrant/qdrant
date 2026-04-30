@@ -14,7 +14,9 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
-use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead};
+use crate::vector_storage::{
+    SparseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
+};
 
 /// Placeholder sparse vector storage that contains no data.
 ///

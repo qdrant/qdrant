@@ -22,7 +22,9 @@ use crate::types::{Distance, VectorStorageDatatype};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead};
+use crate::vector_storage::{
+    DenseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
+};
 
 const VECTORS_PATH: &str = "matrix.dat";
 const DELETED_PATH: &str = "deleted.dat";

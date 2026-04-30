@@ -13,7 +13,9 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead};
+use crate::vector_storage::{
+    SparseVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageRead,
+};
 
 pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 
