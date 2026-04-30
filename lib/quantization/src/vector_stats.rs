@@ -49,7 +49,11 @@ impl VectorStatsBuilder {
     where
         f64: From<T>,
     {
-        debug_assert_eq!(
+        // `assert_eq!` rather than `debug_assert_eq!` — a length mismatch
+        // here would silently zip-truncate in release builds, partially
+        // updating the Welford aggregates and corrupting them without ever
+        // surfacing the error.
+        assert_eq!(
             vector.len(),
             self.stats.elements_stats.len(),
             "Vector length does not match the expected dimension"
