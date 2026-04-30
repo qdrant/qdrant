@@ -10,6 +10,7 @@ impl Segment {
 
         let view = SegmentReadView {
             id_tracker: id_tracker.deref(),
+            segment_config: &self.segment_config,
         };
 
         f(view)
