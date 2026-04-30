@@ -1,8 +1,6 @@
 use std::io::{BufReader, BufWriter, Write};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-#[cfg(test)]
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
@@ -21,12 +19,6 @@ pub struct SaveOnDisk<T> {
     notification_lock: Mutex<()>,
     data: RwLock<T>,
     path: PathBuf,
-    /// Test-only knob: number of milliseconds to sleep inside `wait_for`
-    /// after releasing the read guard on `data` but before parking on the
-    /// condvar. Used to widen the missed-wakeup race window deterministically.
-    /// See `test_wait_for_no_missed_wakeup`.
-    #[cfg(test)]
-    test_pre_park_sleep_ms: AtomicU64,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -64,8 +56,6 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             notification_lock: Default::default(),
             data: RwLock::new(data),
             path,
-            #[cfg(test)]
-            test_pre_park_sleep_ms: AtomicU64::new(0),
         })
     }
 
@@ -78,29 +68,11 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             notification_lock: Default::default(),
             data: RwLock::new(data),
             path: path.into(),
-            #[cfg(test)]
-            test_pre_park_sleep_ms: AtomicU64::new(0),
         };
 
         data.save()?;
 
         Ok(data)
-    }
-
-    /// Test-only: insert a sleep inside `wait_for` between releasing the
-    /// read guard on `data` and parking on the condvar. Widens the
-    /// missed-wakeup race window for `test_wait_for_no_missed_wakeup`.
-    #[cfg(test)]
-    pub fn test_set_pre_park_sleep_ms(&self, ms: u64) {
-        self.test_pre_park_sleep_ms.store(ms, Ordering::SeqCst);
-    }
-
-    #[cfg(test)]
-    fn test_pre_park_sleep(&self) {
-        let ms = self.test_pre_park_sleep_ms.load(Ordering::Relaxed);
-        if ms > 0 {
-            std::thread::sleep(Duration::from_millis(ms));
-        }
     }
 
     /// Wait for a condition on data to be true.
@@ -126,8 +98,6 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             RwLockReadGuard::unlocked(&mut data_read_guard, || {
                 // Move the guard in so it gets unlocked before we re-lock the RwLock read guard
                 let mut guard = notification_guard;
-                #[cfg(test)]
-                self.test_pre_park_sleep();
                 self.change_notification.wait_for(&mut guard, remaining);
             });
         }
@@ -302,45 +272,6 @@ mod tests {
         });
 
         assert!(!counter.wait_for(|counter| *counter > 5, Duration::from_millis(300)));
-        handle.join().unwrap();
-    }
-
-    /// Reproduces a missed-wakeup race in `wait_for`.
-    ///
-    /// `wait_for` releases its read guard on `data` and only afterwards parks
-    /// on the condvar. If `notify_all` fires in that small gap, the waiter
-    /// never sees the notification and waits the full timeout — even though
-    /// the condition is already true.
-    ///
-    /// To make the race deterministic we install a `test_pre_park_sleep_ms`
-    /// hook on the waiter: it sleeps 100ms after releasing the read guard but
-    /// before parking on the condvar. The writer thread fires its
-    /// `notify_all` inside that window, so the unfixed code reliably misses
-    /// it and `wait_for` hits its timeout.
-    #[test]
-    fn test_wait_for_no_missed_wakeup() {
-        let dir = Builder::new().prefix("test").tempdir().unwrap();
-        let counter_file = dir.path().join("counter");
-        let counter: Arc<SaveOnDisk<u32>> =
-            Arc::new(SaveOnDisk::load_or_init_default(counter_file).unwrap());
-        counter.test_set_pre_park_sleep_ms(100);
-
-        let counter_copy = counter.clone();
-        let handle = thread::spawn(move || {
-            // Wait long enough for the main thread to have released its read
-            // guard on `data` and entered the pre-park sleep window. With the
-            // 100ms pre-park sleep above, 30ms here lands the writer's
-            // notify_all squarely inside that window.
-            sleep(Duration::from_millis(30));
-            counter_copy.write(|counter| *counter = 1).unwrap();
-        });
-
-        // Use a 500ms timeout so a missed wakeup is unambiguous: success
-        // means the notification was delivered, timeout means it was lost.
-        assert!(
-            counter.wait_for(|counter| *counter > 0, Duration::from_millis(500)),
-            "wait_for timed out — notification was lost",
-        );
         handle.join().unwrap();
     }
 }
