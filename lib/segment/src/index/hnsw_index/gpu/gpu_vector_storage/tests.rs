@@ -13,7 +13,7 @@ use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilder;
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
-    ScalarQuantizationConfig,
+    ScalarQuantizationConfig, TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
 };
 use crate::vector_storage::dense::volatile_dense_vector_storage::{
     new_volatile_dense_byte_vector_storage, new_volatile_dense_half_vector_storage,
@@ -498,6 +498,103 @@ fn test_gpu_vector_storage_without_half(
         true, // force half precision
         true, // skip half support
         precision,
+    );
+}
+
+#[rstest]
+#[case::dense_f32(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057,
+    false // skip_half_support
+)]
+#[case::dense_f32_no_half(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057,
+    true
+)]
+#[case::multi_f32(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float32),
+    67,
+    2057,
+    false
+)]
+#[case::multi_f32_no_half(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float32),
+    67,
+    2057,
+    true
+)]
+fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
+    #[case] distance: Distance,
+    #[case] storage_type: TestStorageType,
+    #[case] dim: usize,
+    #[case] num_vectors: usize,
+    #[case] skip_half_support: bool,
+) {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Trace)
+        .try_init();
+
+    // TurboQuant is not supported on GPU: `GpuVectorStorage::new` returns `Ok(None)` from
+    // `new_quantized` for any TQ variant and falls back to building from the unquantized
+    // storage with `force_half_precision = true` hardcoded. This test pins that fallback by
+    // checking that the resulting GPU storage's element type is half precision (or f32 if the
+    // device has no f16 support) — never `Uint8`, which is what SQ/PQ/BQ on GPU produce.
+    let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
+    let storage = create_vector_storage(storage_type, num_vectors, dim, distance);
+
+    let tq_config = QuantizationConfig::Turbo(TurboQuantization {
+        turbo: TurboQuantQuantizationConfig {
+            always_ram: Some(true),
+            plus: None,
+            bits: Some(TurboQuantBitSize::Bits4),
+        },
+    });
+    let tq_vectors = QuantizedVectors::create(
+        &storage,
+        &tq_config,
+        QuantizedVectorsStorageType::Immutable,
+        dir.path(),
+        1,
+        &DEFAULT_STOPPED,
+    )
+    .unwrap();
+
+    let instance = gpu::GPU_TEST_INSTANCE.clone();
+    let device = gpu::Device::new_with_params(
+        instance.clone(),
+        &instance.physical_devices()[0],
+        0,
+        skip_half_support,
+    )
+    .unwrap();
+
+    // `force_half_precision = false` from the caller — any half precision in the result must
+    // come from the TQ fallback inside `new`, not from this argument.
+    let gpu_via_tq = GpuVectorStorage::new(
+        device.clone(),
+        &storage,
+        Some(&tq_vectors),
+        false,
+        &DEFAULT_STOPPED,
+    )
+    .unwrap();
+
+    let expected = if device.has_half_precision() {
+        VectorStorageDatatype::Float16
+    } else {
+        VectorStorageDatatype::Float32
+    };
+    assert_eq!(
+        gpu_via_tq.element_type, expected,
+        "TurboQuant on GPU did not pick the half-precision float type",
     );
 }
 
