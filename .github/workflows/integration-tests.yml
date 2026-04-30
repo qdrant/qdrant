@@ -215,7 +215,7 @@ jobs:
             'until curl -sf http://127.0.0.1:4443/storage/v1/b; do sleep 1; done'
       - name: Setup test bucket
         run: |
-          curl -s -X POST "http://127.0.0.1:4443/storage/v1/b" \
+          curl -fsS -X POST "http://127.0.0.1:4443/storage/v1/b" \
             -H "Content-Type: application/json" \
             -d '{"name":"test-bucket"}'
       - name: Install minimal stable

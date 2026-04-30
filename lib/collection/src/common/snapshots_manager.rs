@@ -44,7 +44,7 @@ pub struct S3Config {
     pub endpoint_url: Option<String>,
 }
 
-#[derive(Clone, Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct GCSConfig {
     pub bucket: String,
     /// Service account key as a JSON string.
@@ -52,6 +52,18 @@ pub struct GCSConfig {
     /// (ADC), which works out of the box on GKE and when `GOOGLE_APPLICATION_CREDENTIALS`
     /// is set in the environment.
     pub service_account_key: Option<String>,
+}
+
+impl std::fmt::Debug for GCSConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GCSConfig")
+            .field("bucket", &self.bucket)
+            .field(
+                "service_account_key",
+                &self.service_account_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 pub struct SnapshotStorageCloud {
