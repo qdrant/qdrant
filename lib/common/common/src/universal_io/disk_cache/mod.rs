@@ -158,6 +158,7 @@ where
         if self.result.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
+
         self.result = Some((meta, file.read::<Random>(range)?));
         Ok(())
     }

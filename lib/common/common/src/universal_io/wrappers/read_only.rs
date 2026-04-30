@@ -105,6 +105,7 @@ where
         let reads = reads
             .into_iter()
             .map(|(meta, file, range)| (meta, &file.0, range));
+
         S::read_multi::<P, _>(reads, callback)
     }
 
@@ -119,6 +120,7 @@ where
         let it = reads
             .into_iter()
             .map(|(meta, file, range)| (meta, &file.0, range));
+
         S::read_multi_iter::<P, _>(it)
     }
 

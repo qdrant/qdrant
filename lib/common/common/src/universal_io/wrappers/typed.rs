@@ -124,12 +124,11 @@ where
         P: AccessPattern,
         Self: 'a,
     {
-        S::read_multi::<'a, P, Meta>(
-            reads
-                .into_iter()
-                .map(|(meta, file, range)| (meta, &file.inner, range)),
-            callback,
-        )
+        let reads = reads
+            .into_iter()
+            .map(|(meta, file, range)| (meta, &file.inner, range));
+
+        S::read_multi::<'a, P, Meta>(reads, callback)
     }
 
     #[inline]
@@ -143,6 +142,7 @@ where
         let reads = reads
             .into_iter()
             .map(|(meta, file, range)| (meta, &file.inner, range));
+
         S::read_multi_iter::<P, _>(reads)
     }
 

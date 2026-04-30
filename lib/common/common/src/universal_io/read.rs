@@ -26,11 +26,12 @@ where
     /// Implementations may override this to avoid the two accesses that would result from
     /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
     fn read_whole(&self) -> Result<Cow<'_, [T]>> {
-        let n = self.len()?;
-        self.read::<Sequential>(ReadRange {
+        let range = ReadRange {
             byte_offset: 0,
-            length: n,
-        })
+            length: self.len()?,
+        };
+
+        self.read::<Sequential>(range)
     }
 
     fn read_batch<P, Meta>(
@@ -45,6 +46,7 @@ where
             let (meta, data) = record?;
             callback(meta, &data)?;
         }
+
         Ok(())
     }
 
@@ -60,6 +62,7 @@ where
         let reads = ranges
             .into_iter()
             .map(move |(meta, range)| (meta, self, range));
+
         Self::read_multi_iter::<P, Meta>(reads)
     }
 
@@ -88,6 +91,7 @@ where
             let (meta, items) = record?;
             callback(meta, &items)?;
         }
+
         Ok(())
     }
 
@@ -102,17 +106,21 @@ where
     {
         let mut pipeline = Self::ReadPipeline::<'a, Meta>::new()?;
         let mut reads = reads.into_iter();
+
         let iter = std::iter::from_fn(move || {
             while pipeline.can_schedule()
                 && let Some(read) = reads.next()
             {
                 let (meta, file, range) = read;
+
                 if let Err(err) = pipeline.schedule::<P>(meta, file, range) {
                     return Some(Err(err));
                 }
             }
+
             pipeline.wait().transpose()
         });
+
         Ok(iter)
     }
 

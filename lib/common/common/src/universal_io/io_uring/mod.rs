@@ -20,7 +20,6 @@ use self::pool::*;
 use self::runtime::*;
 use super::*;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::read::UniversalReadPipeline;
 
 #[derive(Debug)]
 pub struct IoUringFile {
@@ -162,16 +161,20 @@ where
         P: AccessPattern,
     {
         let mut squeue = self.runtime.io_uring.submission();
+
         if self.runtime.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
             return Err(UniversalIoError::QueueIsFull);
         }
+
         let entry = self
             .runtime
             .state
             .read(meta, file.fd(), range, file.direct_io);
+
         unsafe {
             squeue.push(&entry).expect("submission queue is not full");
         }
+
         Ok(())
     }
 

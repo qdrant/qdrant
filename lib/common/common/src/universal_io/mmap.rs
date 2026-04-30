@@ -154,6 +154,7 @@ where
         if self.result.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
+
         self.result = Some((meta, read(file.as_bytes::<P>(), range)?));
         Ok(())
     }
