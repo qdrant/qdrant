@@ -8,7 +8,6 @@ use crate::turboquant::simd::{
 use crate::turboquant::{
     EncodedQueryTQ, EncodedQueryTQData, ErrorCorrectionMetadata, Metadata, TQBits, TQMode,
 };
-use crate::vector_stats::VectorStats;
 
 /// Quantize vectors using TurboQuant.
 pub struct TurboQuantizer {
@@ -43,25 +42,6 @@ pub struct ErrorCorrection {
 impl ErrorCorrection {
     pub fn new_from_metadata(metadata: &ErrorCorrectionMetadata) -> Self {
         Self::new(metadata.shift.clone(), metadata.scale.clone())
-    }
-
-    /// Build from already-computed per-coordinate stats. `shift = -mean` and
-    /// `scale = 1 / stddev` so that `apply` maps each coordinate to ~N(0, 1),
-    /// matching the precomputed Lloyd-Max codebook.
-    pub fn from_stats(stats: &VectorStats) -> Self {
-        let shift: Vec<f32> = stats.elements_stats.iter().map(|s| -s.mean).collect();
-        let scale: Vec<f32> = stats
-            .elements_stats
-            .iter()
-            .map(|s| {
-                if s.stddev > f32::EPSILON {
-                    s.stddev.recip()
-                } else {
-                    1.0
-                }
-            })
-            .collect();
-        Self::new(shift, scale)
     }
 
     pub(super) fn new(shift: Vec<f32>, scale: Vec<f32>) -> Self {
