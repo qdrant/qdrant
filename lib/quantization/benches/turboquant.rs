@@ -22,7 +22,7 @@ fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
         mode: TQMode::Normal,
         error_correction: None,
     };
-    TurboQuantizer::new_from_metadata(&metadata)
+    TurboQuantizer::new_from_metadata(&metadata).expect("metadata is hand-constructed")
 }
 
 fn random_vector(dim: usize, rng: &mut StdRng) -> Vec<f32> {
