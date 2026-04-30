@@ -12,7 +12,7 @@ use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_multi_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_multi_vector;
-use segment::index::VectorIndex;
+use segment::index::VectorIndexRead;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::segment_constructor::{VectorIndexBuildArgs, build_segment};

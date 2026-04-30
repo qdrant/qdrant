@@ -33,7 +33,7 @@ use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, VectorIndex};
+use crate::index::{PayloadIndex, VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;
@@ -565,7 +565,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     }
 }
 
-impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedIndex> {
+impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInvertedIndex> {
     fn search(
         &self,
         vectors: &[&QueryVector],
@@ -614,6 +614,16 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         self.searches_telemetry.get_telemetry_data(detail)
     }
 
+    fn indexed_vector_count(&self) -> usize {
+        self.inverted_index.vector_count()
+    }
+
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+        self.inverted_index.total_sparse_vectors_size()
+    }
+}
+
+impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedIndex> {
     fn files(&self) -> Vec<PathBuf> {
         let config_file = SparseIndexConfig::get_config_path(&self.path);
         if !config_file.exists() {
@@ -645,14 +655,6 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         immutable_files.push(config_file);
         immutable_files.extend_from_slice(&TInvertedIndex::immutable_files(&self.path));
         immutable_files
-    }
-
-    fn indexed_vector_count(&self) -> usize {
-        self.inverted_index.vector_count()
-    }
-
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
-        self.inverted_index.total_sparse_vectors_size()
     }
 
     fn update_vector(

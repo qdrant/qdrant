@@ -15,7 +15,7 @@ mod tests {
     use itertools::Itertools;
     use segment::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry as _};
     use segment::id_tracker::IdTrackerRead;
-    use segment::index::VectorIndex;
+    use segment::index::VectorIndexRead;
     use segment::payload_json;
     use segment::types::{
         Distance, HnswConfig, HnswGlobalConfig, PayloadContainer, PayloadSchemaType,

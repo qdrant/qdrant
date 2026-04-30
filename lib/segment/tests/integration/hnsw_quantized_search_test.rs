@@ -16,7 +16,7 @@ use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_defaul
 use segment::entry::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::{VectorIndex, VectorIndexEnum};
+use segment::index::{VectorIndexEnum, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;

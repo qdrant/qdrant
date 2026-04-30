@@ -21,8 +21,12 @@ use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 
-/// Trait for vector searching
-pub trait VectorIndex {
+/// Read-only trait for vector index.
+///
+/// Defines all read operations on a vector index. Search and retrieval logic
+/// only requires this trait, which makes it possible to implement read-only
+/// segments without duplicating index code.
+pub trait VectorIndexRead {
     /// Return list of Ids with fitting
     fn search(
         &self,
@@ -35,17 +39,20 @@ pub trait VectorIndex {
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry;
 
-    fn files(&self) -> Vec<PathBuf>;
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new()
-    }
-
     /// The number of indexed vectors, currently accessible
     fn indexed_vector_count(&self) -> usize;
 
     /// Total size of all searchable vectors in bytes.
     fn size_of_searchable_vectors_in_bytes(&self) -> usize;
+}
+
+/// Trait for vector index with mutating operations.
+pub trait VectorIndex: VectorIndexRead {
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
 
     /// Update index for a single vector
     ///
@@ -192,7 +199,7 @@ impl VectorIndexEnum {
     }
 }
 
-impl VectorIndex for VectorIndexEnum {
+impl VectorIndexRead for VectorIndexEnum {
     fn search(
         &self,
         vectors: &[&QueryVector],
@@ -260,38 +267,6 @@ impl VectorIndex for VectorIndexEnum {
         }
     }
 
-    fn files(&self) -> Vec<PathBuf> {
-        match self {
-            VectorIndexEnum::Plain(index) => index.files(),
-            VectorIndexEnum::Hnsw(index) => index.files(),
-            VectorIndexEnum::SparseRam(index) => index.files(),
-            VectorIndexEnum::SparseImmutableRam(index) => index.files(),
-            VectorIndexEnum::SparseMmap(index) => index.files(),
-            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.files(),
-            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.files(),
-            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.files(),
-            VectorIndexEnum::SparseCompressedMmapF32(index) => index.files(),
-            VectorIndexEnum::SparseCompressedMmapF16(index) => index.files(),
-            VectorIndexEnum::SparseCompressedMmapU8(index) => index.files(),
-        }
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        match self {
-            VectorIndexEnum::Plain(index) => index.immutable_files(),
-            VectorIndexEnum::Hnsw(index) => index.immutable_files(),
-            VectorIndexEnum::SparseRam(index) => index.immutable_files(),
-            VectorIndexEnum::SparseImmutableRam(index) => index.immutable_files(),
-            VectorIndexEnum::SparseMmap(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedMmapF32(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedMmapF16(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedMmapU8(index) => index.immutable_files(),
-        }
-    }
-
     fn indexed_vector_count(&self) -> usize {
         match self {
             Self::Plain(index) => index.indexed_vector_count(),
@@ -327,6 +302,40 @@ impl VectorIndex for VectorIndexEnum {
             Self::SparseCompressedMmapF32(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedMmapF16(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedMmapU8(index) => index.size_of_searchable_vectors_in_bytes(),
+        }
+    }
+}
+
+impl VectorIndex for VectorIndexEnum {
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            VectorIndexEnum::Plain(index) => index.files(),
+            VectorIndexEnum::Hnsw(index) => index.files(),
+            VectorIndexEnum::SparseRam(index) => index.files(),
+            VectorIndexEnum::SparseImmutableRam(index) => index.files(),
+            VectorIndexEnum::SparseMmap(index) => index.files(),
+            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.files(),
+            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.files(),
+            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.files(),
+            VectorIndexEnum::SparseCompressedMmapF32(index) => index.files(),
+            VectorIndexEnum::SparseCompressedMmapF16(index) => index.files(),
+            VectorIndexEnum::SparseCompressedMmapU8(index) => index.files(),
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            VectorIndexEnum::Plain(index) => index.immutable_files(),
+            VectorIndexEnum::Hnsw(index) => index.immutable_files(),
+            VectorIndexEnum::SparseRam(index) => index.immutable_files(),
+            VectorIndexEnum::SparseImmutableRam(index) => index.immutable_files(),
+            VectorIndexEnum::SparseMmap(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedMmapF32(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedMmapF16(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedMmapU8(index) => index.immutable_files(),
         }
     }
 

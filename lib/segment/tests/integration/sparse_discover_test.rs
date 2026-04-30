@@ -12,7 +12,7 @@ use segment::data_types::query_context::{QueryContext, VectorQueryContext};
 use segment::data_types::vectors::{QueryVector, VectorElementType, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
-use segment::index::VectorIndex;
+use segment::index::VectorIndexRead;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use segment::segment_constructor::{build_segment, create_sparse_vector_index_test};

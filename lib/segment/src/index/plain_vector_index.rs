@@ -19,7 +19,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
-use crate::index::{PayloadIndex, VectorIndex};
+use crate::index::{PayloadIndex, VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -80,7 +80,7 @@ impl PlainVectorIndex {
     }
 }
 
-impl VectorIndex for PlainVectorIndex {
+impl VectorIndexRead for PlainVectorIndex {
     fn search(
         &self,
         query_vectors: &[&QueryVector],
@@ -185,10 +185,6 @@ impl VectorIndex for PlainVectorIndex {
         }
     }
 
-    fn files(&self) -> Vec<PathBuf> {
-        vec![]
-    }
-
     fn indexed_vector_count(&self) -> usize {
         0
     }
@@ -197,6 +193,12 @@ impl VectorIndex for PlainVectorIndex {
         self.vector_storage
             .borrow()
             .size_of_available_vectors_in_bytes()
+    }
+}
+
+impl VectorIndex for PlainVectorIndex {
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 
     fn update_vector(

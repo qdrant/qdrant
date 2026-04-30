@@ -13,7 +13,7 @@ use sparse::index::inverted_index::InvertedIndex;
 
 use crate::common::operation_error::OperationResult;
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
-use crate::index::VectorIndex;
+use crate::index::VectorIndexRead;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,

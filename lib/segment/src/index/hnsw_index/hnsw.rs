@@ -57,7 +57,7 @@ use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
-use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
+use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum, VectorIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
 use crate::segment_constructor::VectorIndexBuildArgs;
@@ -1427,7 +1427,7 @@ impl HNSWIndex {
     }
 }
 
-impl VectorIndex for HNSWIndex {
+impl VectorIndexRead for HNSWIndex {
     fn search(
         &self,
         vectors: &[&QueryVector],
@@ -1593,19 +1593,6 @@ impl VectorIndex for HNSWIndex {
         }
     }
 
-    fn files(&self) -> Vec<PathBuf> {
-        let mut files = self.graph.files(&self.path);
-        let config_path = HnswGraphConfig::get_config_path(&self.path);
-        if config_path.exists() {
-            files.push(config_path);
-        }
-        files
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        self.files() // All HNSW index files are immutable 😎
-    }
-
     fn indexed_vector_count(&self) -> usize {
         self.config
             .indexed_vector_count
@@ -1617,6 +1604,21 @@ impl VectorIndex for HNSWIndex {
         self.vector_storage
             .borrow()
             .size_of_available_vectors_in_bytes()
+    }
+}
+
+impl VectorIndex for HNSWIndex {
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.graph.files(&self.path);
+        let config_path = HnswGraphConfig::get_config_path(&self.path);
+        if config_path.exists() {
+            files.push(config_path);
+        }
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.files() // All HNSW index files are immutable 😎
     }
 
     fn update_vector(

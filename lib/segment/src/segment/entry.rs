@@ -30,7 +30,7 @@ use crate::entry::entry_point::{
 use crate::id_tracker::{IdTracker, IdTrackerRead, PointMappingsGuard};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::query_estimator::adjust_for_deferred_points;
-use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
+use crate::index::{BuildIndexResult, PayloadIndex, VectorIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
 use crate::telemetry::SegmentTelemetry;

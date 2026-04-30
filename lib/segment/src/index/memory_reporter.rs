@@ -1,5 +1,5 @@
 use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent, MemoryReporter};
-use crate::index::vector_index_base::{VectorIndex as _, VectorIndexEnum};
+use crate::index::vector_index_base::{VectorIndex as _, VectorIndexEnum, VectorIndexRead as _};
 
 impl MemoryReporter for VectorIndexEnum {
     fn memory_usage(&self) -> ComponentMemoryUsage {

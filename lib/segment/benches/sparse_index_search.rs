@@ -13,7 +13,7 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
-use segment::index::{PayloadIndex, VectorIndex};
+use segment::index::{PayloadIndex, VectorIndexRead};
 use segment::payload_json;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{Condition, FieldCondition, Filter};

@@ -21,7 +21,7 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
-use segment::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
+use segment::index::{PayloadIndex, VectorIndex, VectorIndexEnum, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
