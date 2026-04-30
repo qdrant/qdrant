@@ -8,23 +8,21 @@ use crate::universal_io::read::UniversalReadPipeline;
 use crate::universal_io::{ReadRange, Result, UniversalRead};
 
 /// Default implementation of [`UniversalReadPipeline`] for wrappers.
-pub struct WrappedReadPipeline<'a, T, Outer, S, P, Meta>
+pub struct WrappedReadPipeline<'a, T, Outer, S, Meta>
 where
     T: Copy + 'static,
     S: UniversalRead<T> + 'a,
-    P: AccessPattern,
 {
-    inner: S::ReadPipeline<'a, P, Meta>,
+    inner: S::ReadPipeline<'a, Meta>,
     _phantom: PhantomData<Outer>,
 }
 
-impl<'a, T, Outer, S, P, Meta> UniversalReadPipeline<'a, T, Meta>
-    for WrappedReadPipeline<'a, T, Outer, S, P, Meta>
+impl<'a, T, Outer, S, Meta> UniversalReadPipeline<'a, T, Meta>
+    for WrappedReadPipeline<'a, T, Outer, S, Meta>
 where
     T: Copy + 'static,
     Outer: UniversalRead<T> + TransparentWrapper<S> + 'a,
     S: UniversalRead<T>,
-    P: AccessPattern,
 {
     type File = Outer;
 
@@ -42,12 +40,11 @@ where
     }
 
     #[inline]
-    fn schedule<P1>(&mut self, meta: Meta, file: &'a Outer, range: ReadRange) -> Result<()>
+    fn schedule<P>(&mut self, meta: Meta, file: &'a Outer, range: ReadRange) -> Result<()>
     where
-        P1: AccessPattern,
+        P: AccessPattern,
     {
-        self.inner
-            .schedule::<P1>(meta, Outer::peel_ref(file), range)
+        self.inner.schedule::<P>(meta, Outer::peel_ref(file), range)
     }
 
     #[inline]

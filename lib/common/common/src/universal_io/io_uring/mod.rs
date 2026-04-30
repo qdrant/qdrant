@@ -50,7 +50,7 @@ impl UniversalReadFileOps for IoUringFile {
 }
 
 impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
-    type ReadPipeline<'a, P: AccessPattern, Meta> = IoUringPipeline<'a, T, Meta>;
+    type ReadPipeline<'a, Meta> = IoUringPipeline<'a, T, Meta>;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         // Check that io_uring is supported on this system.

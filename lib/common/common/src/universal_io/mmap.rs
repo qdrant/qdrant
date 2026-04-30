@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{fs, slice};
@@ -48,7 +47,7 @@ impl<T> UniversalRead<T> for MmapFile
 where
     T: bytemuck::Pod,
 {
-    type ReadPipeline<'a, P: AccessPattern, Meta> = MmapReadPipeline<'a, T, P, Meta>;
+    type ReadPipeline<'a, Meta> = MmapReadPipeline<'a, T, Meta>;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
@@ -130,35 +129,31 @@ where
     }
 }
 
-pub struct MmapReadPipeline<'a, T, P, Meta> {
+pub struct MmapReadPipeline<'a, T, Meta> {
     result: Option<(Meta, &'a [T])>,
-    _phantom: PhantomData<P>,
 }
 
-impl<'a, T: bytemuck::Pod, P: AccessPattern, Meta> UniversalReadPipeline<'a, T, Meta>
-    for MmapReadPipeline<'a, T, P, Meta>
+impl<'a, T: bytemuck::Pod, Meta> UniversalReadPipeline<'a, T, Meta>
+    for MmapReadPipeline<'a, T, Meta>
 {
     type File = MmapFile;
 
     fn new() -> Result<Self> {
-        Ok(Self {
-            result: None,
-            _phantom: PhantomData,
-        })
+        Ok(Self { result: None })
     }
 
     fn can_schedule(&mut self) -> bool {
         self.result.is_none()
     }
 
-    fn schedule<P1>(&mut self, meta: Meta, file: &'a MmapFile, range: ReadRange) -> Result<()>
+    fn schedule<P>(&mut self, meta: Meta, file: &'a MmapFile, range: ReadRange) -> Result<()>
     where
-        P1: AccessPattern,
+        P: AccessPattern,
     {
         if self.result.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
-        self.result = Some((meta, read(file.as_bytes::<P1>(), range)?));
+        self.result = Some((meta, read(file.as_bytes::<P>(), range)?));
         Ok(())
     }
 

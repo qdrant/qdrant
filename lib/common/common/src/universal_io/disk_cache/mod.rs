@@ -67,7 +67,7 @@ impl<T> UniversalReadFileOps for CachedSlice<T> {
 }
 
 impl<T: bytemuck::Pod> UniversalRead<T> for CachedSlice<T> {
-    type ReadPipeline<'a, P: AccessPattern, Meta>
+    type ReadPipeline<'a, Meta>
         = DiskCacheReadPipeline<'a, T, Meta>
     where
         Self: 'a;

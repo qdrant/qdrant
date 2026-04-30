@@ -9,7 +9,7 @@ use crate::universal_io::file_ops::UniversalReadFileOps;
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 #[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
-    type ReadPipeline<'a, P: AccessPattern, Meta>: UniversalReadPipeline<'a, T, Meta, File = Self>
+    type ReadPipeline<'a, Meta>: UniversalReadPipeline<'a, T, Meta, File = Self>
     where
         Self: 'a;
 
@@ -89,7 +89,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     where
         Self: 'a,
     {
-        let mut pipeline = Self::ReadPipeline::<'a, P, Meta>::new()?;
+        let mut pipeline = Self::ReadPipeline::<'a, Meta>::new()?;
         let mut reads = reads.into_iter();
         let iter = std::iter::from_fn(move || {
             while pipeline.can_schedule()
