@@ -345,10 +345,19 @@ impl TurboQuantizer {
         }
     }
 
-    /// TQ+ symmetric-scoring slow path. Decodes both packed vectors into
-    /// centroids, takes a per-coord-weighted dot with `D'_i²`, and folds in
-    /// the precomputed `xm_a + xm_b − ⟨M, M⟩` so the caller can apply the
-    /// usual `* v1_scale * v2_scale` formulas as if EC weren't there.
+    /// TQ+ symmetric-scoring slow path.
+    ///
+    /// For 1-bit storage we use llama's unweighted form `Σ c_a · c_b` (raw
+    /// centroid dot, no `D'²`, no `xm` fold-in). The "math-correct" weighted
+    /// form `Σ c_a c_b D'_i² + xm_a + xm_b − ⟨M, M⟩` recovers
+    /// `⟨rescaled_a, rescaled_b⟩` exactly, but for 1-bit + anisotropic data
+    /// (dbpedia-openai) the per-coord `D'²` amplifies the large quantization
+    /// error of the ±c codebook on high-`D'` coords, corrupting the HNSW
+    /// graph that `score_internal` is used to build.
+    ///
+    /// For Bits2/Bits4 the codebook is fine-grained enough that quantization
+    /// noise per coord is small relative to signal, so the math-correct
+    /// weighted form remains the better choice.
     fn score_symmetric_ec(
         &self,
         data_v1: &[u8],
@@ -364,18 +373,30 @@ impl TurboQuantizer {
         let mut reader2 = common::bitpacking::BitReader::new(data_v2);
         reader2.set_bits(bit_size);
 
-        let mut weighted: f32 = 0.0;
-        for i in 0..self.padded_dim {
-            let idx1: u8 = reader1.read();
-            let idx2: u8 = reader2.read();
-            let c1 = centroids[idx1 as usize];
-            let c2 = centroids[idx2 as usize];
-            weighted += c1 * c2 * ec.d_prime_sq[i];
+        match self.bits {
+            TQBits::Bits1 | TQBits::Bits1_5 => {
+                let mut sum: f32 = 0.0;
+                for _ in 0..self.padded_dim {
+                    let idx1: u8 = reader1.read();
+                    let idx2: u8 = reader2.read();
+                    sum += centroids[idx1 as usize] * centroids[idx2 as usize];
+                }
+                sum
+            }
+            TQBits::Bits2 | TQBits::Bits4 => {
+                let mut weighted: f32 = 0.0;
+                for i in 0..self.padded_dim {
+                    let idx1: u8 = reader1.read();
+                    let idx2: u8 = reader2.read();
+                    let c1 = centroids[idx1 as usize];
+                    let c2 = centroids[idx2 as usize];
+                    weighted += c1 * c2 * ec.d_prime_sq[i];
+                }
+                let xm_a = extra_v1.ec_correction();
+                let xm_b = extra_v2.ec_correction();
+                weighted + xm_a + xm_b - ec.mm_const
+            }
         }
-
-        let xm_a = extra_v1.ec_correction();
-        let xm_b = extra_v2.ec_correction();
-        weighted + xm_a + xm_b - ec.mm_const
     }
 
     /// Precompute the Hadamard rotation of `query` and hand it to the
