@@ -183,29 +183,24 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
         f"got {visible_count}/{total_points}"
     )
 
-    # stream_records uses wait=true internally on the last batch, which would
-    # hang with disabled optimizers — enable them before the transfer. Doing it
-    # this way also exercises the wait=true blocking behaviour: with optimizers
-    # disabled the server blocks forever on deferred points, the client times
-    # out, and the subsequent config update cancels the hung server-side worker.
-    #
-    # For snapshot we deliberately keep optimizers disabled so deferred state is
-    # preserved on the wire — otherwise the optimizer races ahead and indexes
-    # the segment before it's captured. We also skip the wait=true probe here:
-    # the hung server-side update_local would hold local.read(), and the
-    # subsequent snapshot transfer's queue_proxify_local needs local.write(),
-    # which deadlocks when the hung request is never cancelled.
-    if transfer_method == "stream_records":
-        try:
-            requests.put(
-                f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
-                json={"points": make_points(total_points + 1, 1)},
-                timeout=5,
-            )
-            raise AssertionError("Expected timeout for wait=true with optimizers disabled")
-        except requests.exceptions.ReadTimeout:
-            pass  # Expected: server blocks forever, client times out
+    # With optimizers disabled, wait=true hangs because deferred points
+    # can never be resolved without optimizers running. The client times out.
+    try:
+        requests.put(
+            f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+            json={"points": make_points(total_points + 1, 1)},
+            timeout=5,
+        )
+        raise AssertionError("Expected timeout for wait=true with optimizers disabled")
+    except requests.exceptions.ReadTimeout:
+        pass  # Expected: server blocks forever, client times out
 
+    # stream_records uses wait=true internally on the last batch, which would
+    # hang with disabled optimizers — enable them before the transfer.
+    # For snapshot we keep optimizers disabled so deferred state is preserved
+    # on the wire; otherwise the optimizer races ahead and indexes the segment
+    # before it's captured, defeating the point of this test.
+    if transfer_method == "stream_records":
         update_collection_config(source_uri, {
             "optimizers_config": {"max_optimization_threads": "auto"},
         })
