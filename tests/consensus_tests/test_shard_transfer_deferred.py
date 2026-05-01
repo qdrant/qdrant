@@ -292,6 +292,103 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
     )
 
 
+def test_shard_transfer_with_hung_deferred_wait_does_not_deadlock(tmp_path: pathlib.Path):
+    """Reproducer: a hung wait=true update on deferred points must not deadlock
+    a subsequent shard transfer.
+
+    Bug:
+    - update_local (replica_set/update.rs) holds local.read() across
+      local.get().update(...).await.
+    - With prevent_unoptimized=true and max_optimization_threads=0,
+      wait_for_deferred_points_ready (update_worker.rs) loops on tokio::select
+      over cancel.cancelled() and optimization_finished_receiver.changed().
+      The optimization_worker hits limit==0 and `continue`s without firing
+      optimization_finished_sender (optimization_worker.rs:171-174), so neither
+      branch of the select ever fires.
+    - actix-web does not cancel the response future on client disconnect, so
+      the handler keeps running and the local.read() guard stays alive after
+      the client times out.
+    - The subsequent snapshot transfer's queue_proxify_local needs
+      local.write(); tokio::sync::RwLock is write-preferring, so the queued
+      writer blocks new readers, including is_local() calls on the same
+      consensus apply path -> the apply never returns, the consensus
+      broadcast never fires, POST /cluster times out.
+
+    This test asserts the symptom: POST /cluster returns within a sane
+    deadline. Once the engine bug is fixed (e.g. wait_for_deferred_points_ready
+    polling feedback closure, or the optimizer firing optimization_finished
+    even when skipping), this test will pass without any workarounds in the
+    test code itself.
+    """
+    assert_project_root()
+
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+
+    create_deferred_collection(peer_api_uris[0])
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+
+    total_points = 500
+
+    source_idx, target_idx = None, None
+    for i, uri in enumerate(peer_api_uris):
+        info = get_collection_cluster_info(uri, COLLECTION_NAME)
+        if len(info["local_shards"]) > 0:
+            source_idx = i
+        else:
+            target_idx = i
+    assert source_idx is not None and target_idx is not None
+
+    source_uri = peer_api_uris[source_idx]
+    target_uri = peer_api_uris[target_idx]
+
+    # Create deferred points
+    upsert_points(source_uri, start_id=1, count=total_points, wait=False)
+    time.sleep(3)
+
+    # Trigger the hung wait=true. Client times out at 5s; server-side
+    # wait_for_deferred_points_ready remains parked, holding local.read()
+    # through update_local.
+    try:
+        requests.put(
+            f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+            json={"points": make_points(total_points + 1, 1)},
+            timeout=5,
+        )
+        raise AssertionError("Expected timeout for wait=true with optimizers disabled")
+    except requests.exceptions.ReadTimeout:
+        pass
+
+    # Now request a snapshot transfer. With the bug present the apply path
+    # deadlocks against the held local.read() and the request fails with
+    # "Waiting for consensus operation commit failed". Without the bug it
+    # should return promptly.
+    src_info = get_collection_cluster_info(source_uri, COLLECTION_NAME)
+    dst_info = get_collection_cluster_info(target_uri, COLLECTION_NAME)
+    from_peer_id = src_info["peer_id"]
+    to_peer_id = dst_info["peer_id"]
+    shard_id = src_info["local_shards"][0]["shard_id"]
+
+    r = requests.post(
+        f"{source_uri}/collections/{COLLECTION_NAME}/cluster",
+        json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "snapshot",
+            }
+        },
+        timeout=15,
+    )
+    assert_http_ok(r), (
+        "Snapshot transfer apply deadlocked behind a hung deferred wait. "
+        "See test docstring for the lock-ordering chain."
+    )
+
+
 def test_shard_wal_delta_transfer_includes_deferred_points(tmp_path: pathlib.Path):
     """WAL delta transfer must include deferred points in the diff.
 
