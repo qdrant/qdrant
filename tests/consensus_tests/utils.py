@@ -654,7 +654,14 @@ def check_some_replicas_not_active(peer_api_uri: str, collection_name: str) -> b
 def check_collection_cluster(peer_url, collection_name):
     res = requests.get(f"{peer_url}/collections/{collection_name}/cluster", timeout=10)
     assert_http_ok(res)
-    return res.json()["result"]['local_shards'][0]
+    local_shards = res.json()["result"]['local_shards']
+    # During snapshot shard transfer recovery the existing local shard is
+    # temporarily taken before the snapshot is installed, so `local_shards` may
+    # be empty for a brief window. Report it as a non-Active state so callers
+    # poll again instead of crashing with IndexError.
+    if not local_shards:
+        return {'state': 'Absent', 'points_count': 0}
+    return local_shards[0]
 
 
 def check_strict_mode_enabled(peer_api_uri: str, collection_name: str) -> bool:
