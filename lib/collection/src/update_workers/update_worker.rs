@@ -159,7 +159,7 @@ impl UpdateWorkers {
                     }
 
                     if wait_for_deferred && prevent_unoptimized {
-                        if let Some(feedback) = sender {
+                        if let Some(mut feedback) = sender {
                             // Detach the deferred-points wait so only the originating
                             // client waits — the update queue keeps draining.
                             let segments = segments.clone();
@@ -173,7 +173,7 @@ impl UpdateWorkers {
                                     &optimize_sender,
                                     &mut optimization_finished_receiver,
                                     &cancel,
-                                    Some(&feedback),
+                                    &mut feedback,
                                 )
                                 .await
                                 {
@@ -243,18 +243,9 @@ impl UpdateWorkers {
         optimize_sender: &Sender<OptimizerSignal>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
         cancel: &CancellationToken,
-        feedback_sender: Option<&oneshot::Sender<CollectionResult<InternalUpdateResult>>>,
+        feedback_sender: &mut oneshot::Sender<CollectionResult<InternalUpdateResult>>,
     ) -> CollectionResult<()> {
         loop {
-            // If the caller dropped their receiver (e.g. client timeout),
-            // stop waiting since there is no one left to report to.
-            if feedback_sender.is_some_and(|s| s.is_closed()) {
-                log::debug!("wait_for_deferred_points_ready: caller no longer waiting");
-                return Err(CollectionError::cancelled(
-                    "Deferred points wait interrupted: caller timed out",
-                ));
-            }
-
             let locked_segments = segments.clone();
             let has_deferred_points =
                 AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
@@ -278,8 +269,11 @@ impl UpdateWorkers {
             let _ = optimize_sender.try_send(OptimizerSignal::Nop);
 
             // Wait for the optimizer to check conditions or complete an optimization.
-            // Also check cancellation so we don't block forever if the update handler
-            // is restarted (e.g. config change via consensus).
+            // Also wake up if the update handler is restarted (e.g. config change via
+            // consensus) or the caller's receiver is dropped (e.g. update_local's
+            // outer timeout fired). Without the `closed()` branch, this select would
+            // park forever under max_optimization_threads=0 (the optimizer skips
+            // without notifying), leaking the detached task.
             log::debug!("waiting for optimization to allow updates");
             tokio::select! {
                 biased;
@@ -287,6 +281,12 @@ impl UpdateWorkers {
                     log::debug!("wait_for_deferred_points_ready: update worker cancelled");
                     return Err(CollectionError::cancelled(
                         "Deferred points wait interrupted: update worker restarted"
+                    ));
+                }
+                _ = feedback_sender.closed() => {
+                    log::debug!("wait_for_deferred_points_ready: caller no longer waiting");
+                    return Err(CollectionError::cancelled(
+                        "Deferred points wait interrupted: caller timed out",
                     ));
                 }
                 result = optimization_finished_receiver.changed() => {
