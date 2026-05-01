@@ -209,9 +209,9 @@ impl SnapshotStorageManager {
                 SnapshotStorageLocalFS::get_snapshot_path(snapshots_path, snapshot_name)
             }
             SnapshotStorageManager::S3(_storage_impl)
-            | SnapshotStorageManager::Gcs(_storage_impl) => Ok(
-                SnapshotStorageCloud::get_snapshot_path(snapshots_path, snapshot_name),
-            ),
+            | SnapshotStorageManager::Gcs(_storage_impl) => {
+                SnapshotStorageCloud::get_snapshot_path(snapshots_path, snapshot_name)
+            }
         }
     }
 
@@ -225,9 +225,9 @@ impl SnapshotStorageManager {
                 SnapshotStorageLocalFS::get_full_snapshot_path(snapshots_path, snapshot_name)
             }
             SnapshotStorageManager::S3(_storage_impl)
-            | SnapshotStorageManager::Gcs(_storage_impl) => Ok(
-                SnapshotStorageCloud::get_full_snapshot_path(snapshots_path, snapshot_name),
-            ),
+            | SnapshotStorageManager::Gcs(_storage_impl) => {
+                SnapshotStorageCloud::get_full_snapshot_path(snapshots_path, snapshot_name)
+            }
         }
     }
 
@@ -484,12 +484,37 @@ impl SnapshotStorageCloud {
         Ok(())
     }
 
-    fn get_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
-        snapshots_path.join(snapshot_name)
+    fn get_snapshot_path(
+        snapshots_path: &Path,
+        snapshot_name: &str,
+    ) -> CollectionResult<PathBuf> {
+        Self::validate_snapshot_name(snapshot_name)?;
+        Ok(snapshots_path.join(snapshot_name))
     }
 
-    fn get_full_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
-        snapshots_path.join(snapshot_name)
+    fn get_full_snapshot_path(
+        snapshots_path: &Path,
+        snapshot_name: &str,
+    ) -> CollectionResult<PathBuf> {
+        Self::validate_snapshot_name(snapshot_name)?;
+        Ok(snapshots_path.join(snapshot_name))
+    }
+
+    fn validate_snapshot_name(snapshot_name: &str) -> CollectionResult<()> {
+        use std::path::Component;
+        if snapshot_name.is_empty()
+            || Path::new(snapshot_name).components().any(|c| {
+                matches!(
+                    c,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            })
+        {
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {snapshot_name}"
+            )));
+        }
+        Ok(())
     }
 
     async fn get_snapshot_file(
