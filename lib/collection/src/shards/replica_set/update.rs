@@ -9,7 +9,7 @@ use tokio::sync::oneshot;
 use tokio::task::yield_now;
 use tokio_util::task::AbortOnDropHandle;
 
-use super::{ShardReplicaSet, clock_set};
+use super::{RemoteShard, ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
@@ -319,17 +319,25 @@ impl ShardReplicaSet {
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
         // between nodes, so this method is not cancel safe.
 
-        let remotes = self.remotes.read().await;
+        // Snapshot the remote shards into owned values, then drop the read guard so
+        // we don't hold `remotes.read()` across the long update await. Holding it
+        // would deadlock with `add_remote`'s `remotes.write()` on the consensus
+        // apply path (e.g. when starting a shard transfer concurrently with a
+        // wait=true update that's parked on a deferred-points wait).
+        let (updatable_remote_shards, total_remotes) = {
+            let remotes = self.remotes.read().await;
+            let updatable: Vec<RemoteShard> = remotes
+                .iter()
+                .filter(|rs| self.is_peer_updatable(rs.peer_id))
+                .cloned()
+                .collect();
+            (updatable, remotes.len())
+        };
+
         let local = self.local.read().await;
-        let replica_count = usize::from(local.is_some()) + remotes.len();
+        let replica_count = usize::from(local.is_some()) + total_remotes;
 
         let this_peer_id = self.this_peer_id();
-
-        // Target all remote peers that can receive updates
-        let updatable_remote_shards: Vec<_> = remotes
-            .iter()
-            .filter(|rs| self.is_peer_updatable(rs.peer_id))
-            .collect();
 
         // Local is defined and can receive updates
         let local_is_updatable = local.is_some() && self.is_peer_updatable(this_peer_id);
@@ -382,11 +390,12 @@ impl ShardReplicaSet {
 
             let hw_acc = hw_measurement_acc.clone();
             let remote_update = async move {
+                let peer_id = remote.peer_id;
                 remote
                     .update(operation, wait, timeout, hw_acc)
                     .await
-                    .map(|ok| (remote.peer_id, ok))
-                    .map_err(|err| (remote.peer_id, err))
+                    .map(|ok| (peer_id, ok))
+                    .map_err(|err| (peer_id, err))
             };
 
             update_futures.push(remote_update.right_future());
@@ -404,7 +413,6 @@ impl ShardReplicaSet {
         };
 
         drop(local);
-        drop(remotes);
 
         let write_consistency_factor = self
             .collection_config
