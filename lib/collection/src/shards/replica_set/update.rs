@@ -13,6 +13,7 @@ use super::{RemoteShard, ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+use crate::shards::local_shard::shard_ops::await_update_result;
 use crate::shards::replica_set::clock_set::ClockGuard;
 use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use crate::shards::shard::{PeerId, Shard};
@@ -48,7 +49,7 @@ impl ShardReplicaSet {
 
         let local = self.local.read().await;
 
-        let Some(local) = local.deref() else {
+        let Some(shard) = local.deref() else {
             return Ok(None);
         };
 
@@ -61,74 +62,80 @@ impl ShardReplicaSet {
             hw_measurement = HwMeasurementAcc::disposable();
         }
 
-        let result = match state {
-            ReplicaState::Active => {
-                // Rate limit update operations on Active replica
-                self.check_operation_write_rate_limiter(&hw_measurement, local, &operation)
-                    .await?;
-                local
-                    .get()
-                    .update(operation, wait, timeout, hw_measurement)
-                    .await
-            }
-
-            // Force apply the operation no matter the state
-            _ if force => {
-                local
-                    .get()
-                    .update(operation, wait, timeout, hw_measurement)
-                    .await
-            }
-
-            ReplicaState::Partial
+        // Decide whether to apply the operation in the current replica state.
+        // `force` and a force-tagged clock both bypass the recovery-state guard.
+        let accepts_operation = match state {
+            ReplicaState::Active
+            | ReplicaState::Partial
             | ReplicaState::Initializing
+            | ReplicaState::Listener
             | ReplicaState::Resharding
             | ReplicaState::ReshardingScaleDown
-            | ReplicaState::ActiveRead => {
-                local
-                    .get()
-                    .update(operation, wait, timeout, hw_measurement)
-                    .await
-            }
-
-            ReplicaState::Listener => {
-                local
-                    .get()
-                    .update(operation, WaitUntil::Wal, None, hw_measurement)
-                    .await
-            }
-
-            ReplicaState::PartialSnapshot | ReplicaState::Recovery
-                if operation.clock_tag.is_some_and(|tag| tag.force) =>
-            {
-                local
-                    .get()
-                    .update(operation, wait, timeout, hw_measurement)
-                    .await
-            }
-
+            | ReplicaState::ActiveRead => true,
+            // Recovery states only accept updates with an explicit force flag.
             ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
-                if log::log_enabled!(log::Level::Debug) {
-                    if let Some(ids) = operation.operation.point_ids() {
-                        log::debug!(
-                            "Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state",
-                        );
-                    } else {
-                        log::debug!(
-                            "Operation {operation:?} rejected on this peer, force flag required in recovery state",
-                        );
-                    }
-                }
-
-                return Ok(None);
+                force || operation.clock_tag.is_some_and(|tag| tag.force)
             }
+            // Dead/ManualRecovery only accept updates when the caller forces.
+            ReplicaState::Dead | ReplicaState::ManualRecovery => force,
+        };
 
-            ReplicaState::Dead | ReplicaState::ManualRecovery => {
-                return Ok(None);
+        if !accepts_operation {
+            if matches!(
+                state,
+                ReplicaState::PartialSnapshot | ReplicaState::Recovery
+            ) && log::log_enabled!(log::Level::Debug)
+            {
+                if let Some(ids) = operation.operation.point_ids() {
+                    log::debug!(
+                        "Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state",
+                    );
+                } else {
+                    log::debug!(
+                        "Operation {operation:?} rejected on this peer, force flag required in recovery state",
+                    );
+                }
+            }
+            return Ok(None);
+        }
+
+        // Listener replicas only durably ack to WAL; everything else honours
+        // the caller-supplied wait/timeout. `force` overrides this — the
+        // caller takes responsibility for choosing the wait semantics.
+        let (effective_wait, effective_timeout) = if state.is_listener() {
+            (WaitUntil::Wal, None)
+        } else {
+            (wait, timeout)
+        };
+
+        // Rate limit update operations on Active replica.
+        if state.is_write_rate_limitable() {
+            self.check_operation_write_rate_limiter(&hw_measurement, shard, &operation)
+                .await?;
+        }
+
+        // For a plain `Shard::Local`, submit the operation while the read
+        // guard is held (brief), then drop the guard before awaiting
+        // completion. Holding the guard across a deferred-points wait would
+        // deadlock concurrent shard transfers that need `local.write()`.
+        // Proxy variants are transient and keep the inline-await path.
+        let result = match shard {
+            Shard::Local(local_shard) => {
+                let outcome = local_shard
+                    .submit_update(operation, effective_wait, hw_measurement)
+                    .await?;
+                drop(local);
+                await_update_result(outcome, effective_timeout).await?
+            }
+            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
+                shard
+                    .get()
+                    .update(operation, effective_wait, effective_timeout, hw_measurement)
+                    .await?
             }
         };
 
-        result.map(Some)
+        Ok(Some(result))
     }
 
     /// # Cancel safety
