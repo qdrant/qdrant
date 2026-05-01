@@ -5,7 +5,7 @@ use fs_err as fs;
 use fs_err::tokio as tokio_fs;
 use object_store::ObjectStoreExt;
 use object_store::aws::AmazonS3Builder;
-use object_store::gcp::GoogleCloudStorageBuilder;
+use object_store::gcp::{GoogleCloudStorageBuilder, GoogleConfigKey};
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -115,6 +115,14 @@ impl SnapshotStorageManager {
                 if let Some(service_account_key) = &gcs_config.service_account_key {
                     builder = builder.with_service_account_key(service_account_key);
                 }
+
+                // When STORAGE_EMULATOR_HOST is set we are talking to a local emulator
+                // (e.g. fake-gcs-server). The emulator doesn't validate auth tokens, so
+                // skip credential fetching and request signing entirely.
+                if std::env::var("STORAGE_EMULATOR_HOST").is_ok() {
+                    builder = builder.with_config(GoogleConfigKey::SkipSignature, "true");
+                }
+
 
                 let client: Box<dyn object_store::ObjectStore> =
                     Box::new(builder.build().map_err(|e| {
