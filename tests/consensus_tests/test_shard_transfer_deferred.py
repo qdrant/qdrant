@@ -195,13 +195,15 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
     except requests.exceptions.ReadTimeout:
         pass  # Expected: server blocks forever, client times out
 
-    # This must happen before the transfer because stream_records uses wait=true
-    # internally on the last batch, which would hang with disabled optimizers.
-    # For snapshot, the update worker must also not be blocked on deferred points
-    # for the snapshot to proceed.
-    update_collection_config(source_uri, {
-        "optimizers_config": {"max_optimization_threads": "auto"},
-    })
+    # stream_records uses wait=true internally on the last batch, which would
+    # hang with disabled optimizers — enable them before the transfer.
+    # For snapshot we keep optimizers disabled so deferred state is preserved
+    # on the wire; otherwise the optimizer races ahead and indexes the segment
+    # before it's captured, defeating the point of this test.
+    if transfer_method == "stream_records":
+        update_collection_config(source_uri, {
+            "optimizers_config": {"max_optimization_threads": "auto"},
+        })
 
     src_info = get_collection_cluster_info(source_uri, COLLECTION_NAME)
     dst_info = get_collection_cluster_info(target_uri, COLLECTION_NAME)
@@ -233,12 +235,8 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
     )
 
     # Verify deferred points were transferred: target should have hidden points.
-    # For snapshot, the target gets a raw segment copy preserving deferred state.
-    # The optimizer is enabled before the transfer (required to unblock the plunger
-    # and for stream_records' internal wait=true), so the exact visible count may
-    # differ from the pre-optimizer measurement due to the optimizer racing with
-    # the snapshot. The key invariant is that the target still has deferred points
-    # (not all points are visible yet).
+    # For snapshot, the target gets a raw segment copy preserving deferred state,
+    # so visible count on target should match source's pre-optimizer visible count.
     # For stream_records, points are re-inserted on the target and may not be deferred.
     target_visible = scroll_all(target_uri)
     target_visible_count = len(target_visible)
@@ -247,15 +245,17 @@ def test_shard_transfer_includes_deferred_points(tmp_path: pathlib.Path, transfe
             f"Snapshot transfer should preserve deferred state (not all points visible): "
             f"target visible={target_visible_count}, total={total_points}"
         )
-        assert target_visible_count >= visible_count, (
-            f"Target should have at least as many visible points as source had before optimizer: "
-            f"target visible={target_visible_count}, source visible={visible_count}"
-        )
-    else:
-        assert target_visible_count >= visible_count, (
-            f"Target should have at least as many visible points as source: "
-            f"target={target_visible_count}, source={visible_count}"
-        )
+    assert target_visible_count >= visible_count, (
+        f"Target should have at least as many visible points as source had before optimizer: "
+        f"target visible={target_visible_count}, source visible={visible_count}"
+    )
+
+    # Now enable optimizers (for snapshot — already enabled for stream_records)
+    # so the trigger_upsert_wait_true below can resolve deferred points.
+    if transfer_method == "snapshot":
+        update_collection_config(source_uri, {
+            "optimizers_config": {"max_optimization_threads": "auto"},
+        })
 
     # Trigger optimization with wait=true to ensure deferred points are resolved
     trigger_upsert_wait_true(source_uri, total_points)
