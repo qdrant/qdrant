@@ -33,13 +33,25 @@ pub enum SnapshotsStorageConfig {
     Gcs(GCSConfig),
 }
 
-#[derive(Clone, Deserialize, Debug, Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct S3Config {
     pub bucket: String,
     pub region: Option<String>,
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub endpoint_url: Option<String>,
+}
+
+impl std::fmt::Debug for S3Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("S3Config")
+            .field("bucket", &self.bucket)
+            .field("region", &self.region)
+            .field("access_key", &self.access_key.as_ref().map(|_| "<redacted>"))
+            .field("secret_key", &self.secret_key.as_ref().map(|_| "<redacted>"))
+            .field("endpoint_url", &self.endpoint_url)
+            .finish()
+    }
 }
 
 #[derive(Clone, Deserialize, Default)]
