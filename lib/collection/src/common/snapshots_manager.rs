@@ -117,12 +117,13 @@ impl SnapshotStorageManager {
                 }
 
                 // When STORAGE_EMULATOR_HOST is set we are talking to a local emulator
-                // (e.g. fake-gcs-server). The emulator doesn't validate auth tokens, so
-                // skip credential fetching and request signing entirely.
-                if std::env::var("STORAGE_EMULATOR_HOST").is_ok() {
-                    builder = builder.with_config(GoogleConfigKey::SkipSignature, "true");
+                // (e.g. fake-gcs-server). The emulator does not validate auth tokens and
+                // serves requests at a custom base URL instead of storage.googleapis.com.
+                if let Ok(emulator_host) = std::env::var("STORAGE_EMULATOR_HOST") {
+                    builder = builder
+                        .with_config(GoogleConfigKey::SkipSignature, "true")
+                        .with_config(GoogleConfigKey::BaseUrl, emulator_host);
                 }
-
 
                 let client: Box<dyn object_store::ObjectStore> =
                     Box::new(builder.build().map_err(|e| {
@@ -484,10 +485,7 @@ impl SnapshotStorageCloud {
         Ok(())
     }
 
-    fn get_snapshot_path(
-        snapshots_path: &Path,
-        snapshot_name: &str,
-    ) -> CollectionResult<PathBuf> {
+    fn get_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> CollectionResult<PathBuf> {
         Self::validate_snapshot_name(snapshot_name)?;
         Ok(snapshots_path.join(snapshot_name))
     }
