@@ -1,15 +1,15 @@
 mod segment_ops;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use std::collections::HashMap;
 
-use crate::common::operation_error::OperationResult;
-use crate::data_types::query_context::SegmentQueryContext;
-use crate::data_types::vectors::{QueryVector, VectorInternal};
-use crate::id_tracker::IdTrackerRead;
-use crate::types::{
-    Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, VectorName, WithPayload,
-    WithVector,
-};
+use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use crate::index::PayloadIndexRead;
+use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::payload_storage::PayloadStorageRead;
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::segment::vector_data_read::VectorDataRead;
+use crate::segment::{DeferredPointStatus, VectorData};
+use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
 
 /// This structure serves as a generic representation of data
 /// necessary for all read operations on a segment.
@@ -17,43 +17,55 @@ use crate::types::{
 /// The motivation for this is to unify the read code between
 /// regular `Segment` and `ReadOnlySegment`.
 #[allow(unused, dead_code)]
-pub struct SegmentReadView<'segment, TIdTracker: IdTrackerRead> {
-    pub(crate) id_tracker: &'segment TIdTracker,
-    pub(crate) segment_config: &'segment crate::types::SegmentConfig,
+pub struct SegmentReadView<'s, TIdTracker, TPayloadIndex, TPayloadStorage, TVectorData>
+where
+    TIdTracker: IdTrackerRead,
+    TPayloadIndex: PayloadIndexRead,
+    TPayloadStorage: PayloadStorageRead,
+    TVectorData: VectorDataRead,
+{
+    pub(crate) id_tracker: &'s TIdTracker,
+    pub(crate) payload_index: &'s TPayloadIndex,
+    pub(crate) payload_storage: &'s TPayloadStorage,
+    pub(crate) vector_data: &'s HashMap<VectorNameBuf, TVectorData>,
+    pub(crate) segment_config: &'s SegmentConfig,
+    pub(crate) deferred_point_status: Option<&'s DeferredPointStatus>,
+    pub(crate) appendable_flag: bool,
 }
 
+/// Concrete `SegmentReadView` instantiation that wraps a regular [`Segment`].
+///
+/// [`Segment`]: crate::segment::Segment
+pub type SegmentReadViewFor<'s> =
+    SegmentReadView<'s, IdTrackerEnum, StructPayloadIndex, PayloadStorageEnum, VectorData>;
+
 #[allow(unused, dead_code)]
-impl<'s, TIdTracker: IdTrackerRead> SegmentReadView<'s, TIdTracker> {
+impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
+where
+    TIdT: IdTrackerRead,
+    TPI: PayloadIndexRead,
+    TPS: PayloadStorageRead,
+    TVD: VectorDataRead,
+{
     pub fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
         self.id_tracker
             .internal_id(point_id)
             .and_then(|internal_id| self.id_tracker.internal_version(internal_id))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn search_batch(
+    pub fn read_range(
         &self,
-        vector_name: &VectorName,
-        query_vectors: &[&QueryVector],
-        with_payload: &WithPayload,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
-        query_context: &SegmentQueryContext,
-    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        todo!()
-    }
-
-    fn vector(
-        &self,
-        vector_name: &VectorName,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<VectorInternal>> {
-        let internal_id = self.lookup_internal_id(point_id)?;
-        todo!()
-        // let vector_opt = self.vector_by_offset(vector_name, internal_id, hw_counter)?;
-        // Ok(vector_opt)
+        from: Option<PointIdType>,
+        to: Option<PointIdType>,
+    ) -> Vec<PointIdType> {
+        let iterator = self
+            .id_tracker
+            .point_mappings()
+            .iter_from(from)
+            .map(|x| x.0);
+        match to {
+            None => iterator.collect(),
+            Some(to_id) => iterator.take_while(|x| *x < to_id).collect(),
+        }
     }
 }

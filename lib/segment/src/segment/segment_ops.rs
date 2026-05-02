@@ -362,13 +362,7 @@ impl Segment {
         &self,
         point_id: PointIdType,
     ) -> OperationResult<PointOffsetType> {
-        let internal_id_opt = self.id_tracker.borrow().internal_id(point_id);
-        match internal_id_opt {
-            Some(internal_id) => Ok(internal_id),
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
-        }
+        self.with_view(|view| view.lookup_internal_id(point_id))
     }
 
     pub(super) fn get_state(&self) -> SegmentState {
