@@ -599,53 +599,23 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        if let Some(deferred_from) = self.deferred_internal_id()
-            && let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id)
-        {
-            return self.is_appendable() && internal_id >= deferred_from;
-        };
-        false
+        self.with_view(|view| view.point_is_deferred(point_id))
     }
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let Some(deferred_from) = self.deferred_internal_id() else {
-            return vec![];
-        };
-        if self.deferred_point_count() == 0 {
-            return vec![];
-        }
-
-        let id_tracker = self.id_tracker.borrow();
-        id_tracker
-            .point_mappings()
-            .iter_internal()
-            .skip_while(|&internal_id| internal_id < deferred_from)
-            .filter_map(|internal_id| id_tracker.external_id(internal_id))
-            .collect()
+        self.with_view(|view| view.deferred_point_ids())
     }
 
     fn available_point_count_without_deferred(&self) -> usize {
-        self.id_tracker
-            .borrow()
-            .available_point_count()
-            .saturating_sub(self.deferred_point_count())
+        self.with_view(|view| view.available_point_count_without_deferred())
     }
 
     fn has_deferred_points(&self) -> bool {
-        self.deferred_internal_id()
-            .is_some_and(|deferred_from| self.total_point_count() > deferred_from as usize)
+        self.with_view(|view| view.has_deferred_points())
     }
 
     fn deferred_point_count(&self) -> usize {
-        match self.deferred_internal_id() {
-            Some(internal_id) => self
-                .id_tracker
-                .borrow()
-                .total_point_count()
-                .saturating_sub(internal_id as usize)
-                .saturating_sub(self.deferred_deleted_count().unwrap_or_default()),
-            None => 0,
-        }
+        self.with_view(|view| view.deferred_point_count())
     }
 }
 
