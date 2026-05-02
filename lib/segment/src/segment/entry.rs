@@ -137,9 +137,7 @@ impl ReadSegmentEntry for Segment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        let internal_id = self.lookup_internal_id(point_id)?;
-        let vector_opt = self.vector_by_offset(vector_name, internal_id, hw_counter)?;
-        Ok(vector_opt)
+        self.with_view(|view| view.vector(vector_name, point_id, hw_counter))
     }
 
     fn all_vectors(
@@ -208,15 +206,17 @@ impl ReadSegmentEntry for Segment {
         match with_vector {
             WithVector::Bool(true) => {
                 for vector_name in self.vector_data.keys() {
-                    self.read_vectors(
-                        vector_name,
-                        point_ids,
-                        hw_counter,
-                        is_stopped,
-                        |point_id, vec| {
-                            update_record_vector(vector_name, point_id, vec);
-                        },
-                    )?;
+                    self.with_view(|view| {
+                        view.read_vectors(
+                            vector_name,
+                            point_ids,
+                            hw_counter,
+                            is_stopped,
+                            |point_id, vec| {
+                                update_record_vector(vector_name, point_id, vec);
+                            },
+                        )
+                    })?;
                 }
             }
             WithVector::Bool(false) => {
@@ -230,15 +230,17 @@ impl ReadSegmentEntry for Segment {
             }
             WithVector::Selector(selector) => {
                 for vector_name in selector {
-                    self.read_vectors(
-                        vector_name,
-                        point_ids,
-                        hw_counter,
-                        is_stopped,
-                        |point_id, vec| {
-                            update_record_vector(vector_name, point_id, vec);
-                        },
-                    )?;
+                    self.with_view(|view| {
+                        view.read_vectors(
+                            vector_name,
+                            point_ids,
+                            hw_counter,
+                            is_stopped,
+                            |point_id, vec| {
+                                update_record_vector(vector_name, point_id, vec);
+                            },
+                        )
+                    })?;
                 }
             }
         }
@@ -379,16 +381,7 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
-        check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data = self
-            .vector_data
-            .get(vector_name)
-            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let size = vector_data
-            .vector_index
-            .borrow()
-            .size_of_searchable_vectors_in_bytes();
-        Ok(size)
+        self.with_view(|view| view.available_vectors_size_in_bytes(vector_name))
     }
 
     fn estimate_point_count<'a>(
