@@ -17,7 +17,6 @@ mod as_view;
 mod read_view;
 #[cfg(test)]
 mod tests;
-mod vectors;
 
 use std::collections::HashMap;
 use std::fmt;
