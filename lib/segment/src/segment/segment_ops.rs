@@ -19,7 +19,6 @@ use crate::common::operation_error::{
 };
 use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::VectorInternal;
 use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
 use crate::id_tracker::{IdTracker, IdTrackerRead};
@@ -387,72 +386,6 @@ impl Segment {
                 err
             ))
         })
-    }
-
-    /// Retrieve vector by internal ID
-    ///
-    /// Returns None if the vector does not exists or deleted
-    #[inline]
-    pub(super) fn vector_by_offset(
-        &self,
-        vector_name: &VectorName,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<VectorInternal>> {
-        let mut result = None;
-        self.vectors_by_offsets(
-            vector_name,
-            std::iter::once(point_offset),
-            hw_counter,
-            |_, vector_internal| {
-                result = Some(vector_internal);
-            },
-        )?;
-        Ok(result)
-    }
-
-    /// Retrieve multiple vectors by internal ID
-    pub(super) fn vectors_by_offsets(
-        &self,
-        vector_name: &VectorName,
-        point_offsets: impl IntoIterator<Item = PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
-        mut callback: impl FnMut(PointOffsetType, VectorInternal),
-    ) -> OperationResult<()> {
-        check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data = &self
-            .vector_data
-            .get(vector_name)
-            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let vector_storage = vector_data.vector_storage.borrow();
-        let total_vectors = vector_storage.total_vector_count();
-
-        let id_tracker = self.id_tracker.borrow();
-        let non_deleted_offsets = point_offsets.into_iter().filter(|&point_offset| {
-            if total_vectors <= point_offset as usize {
-                debug_assert!(
-                    false,
-                    "Vector storage is inconsistent, total_vector_count: {total_vectors}, point_offset: {point_offset}, external_id: {:?}",
-                    id_tracker.external_id(point_offset),
-                );
-                return false;
-            }
-
-            let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
-            let is_point_deleted = id_tracker.is_deleted_point(point_offset);
-            !is_vector_deleted && !is_point_deleted
-        });
-
-        vector_storage.read_vectors::<Random>(non_deleted_offsets, |point_offset, cow_vector| {
-            if vector_storage.is_on_disk() {
-                hw_counter
-                    .vector_io_read()
-                    .incr_delta(cow_vector.estimate_size_in_bytes());
-            }
-            callback(point_offset, cow_vector.to_owned());
-        });
-
-        Ok(())
     }
 
     /// Retrieve payload by internal ID

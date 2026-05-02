@@ -1,5 +1,6 @@
 mod deferred;
 mod segment_ops;
+mod vectors;
 
 use std::collections::HashMap;
 
