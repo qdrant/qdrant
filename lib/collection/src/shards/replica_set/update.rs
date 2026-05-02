@@ -401,55 +401,54 @@ impl ShardReplicaSet {
         // completion. Holding the guard across a deferred-points wait would
         // deadlock concurrent shard transfers that need `local.write()`.
         // Proxy variants are transient and keep the inline-await path.
-        let all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>> = match local
-            .deref()
-        {
-            Some(Shard::Local(local_shard)) if local_is_updatable => {
-                let outcome = local_shard
-                    .submit_update(operation, local_wait, hw_measurement_acc)
-                    .await?;
-                drop(local);
+        let all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>> =
+            match local.deref() {
+                Some(Shard::Local(local_shard)) if local_is_updatable => {
+                    let outcome = local_shard
+                        .submit_update(operation, local_wait, hw_measurement_acc)
+                        .await?;
+                    drop(local);
 
-                let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
-                let local_update = async move {
-                    await_update_result(outcome, timeout)
-                        .await
-                        .map(|ok| (this_peer_id, ok))
-                        .map_err(|err| (this_peer_id, err))
-                };
-                update_futures.push(local_update.left_future());
-                update_futures.extend(remote_futures.into_iter().map(|f| f.right_future()));
-
-                run_update_futures(update_futures, update_concurrency).await
-            }
-            None
-            | Some(Shard::Local(_))
-            | Some(Shard::Proxy(_))
-            | Some(Shard::ForwardProxy(_))
-            | Some(Shard::QueueProxy(_))
-            | Some(Shard::Dummy(_)) => {
-                let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
-
-                if let Some(shard) = local.deref()
-                    && local_is_updatable
-                {
+                    let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
                     let local_update = async move {
-                        shard
-                            .get()
-                            .update(operation, local_wait, timeout, hw_measurement_acc)
+                        await_update_result(outcome, timeout)
                             .await
                             .map(|ok| (this_peer_id, ok))
                             .map_err(|err| (this_peer_id, err))
                     };
                     update_futures.push(local_update.left_future());
-                }
-                update_futures.extend(remote_futures.into_iter().map(|f| f.right_future()));
+                    update_futures.extend(remote_futures.into_iter().map(|f| f.right_future()));
 
-                let res = run_update_futures(update_futures, update_concurrency).await;
-                drop(local);
-                res
-            }
-        };
+                    run_update_futures(update_futures, update_concurrency).await
+                }
+                None
+                | Some(Shard::Local(_))
+                | Some(Shard::Proxy(_))
+                | Some(Shard::ForwardProxy(_))
+                | Some(Shard::QueueProxy(_))
+                | Some(Shard::Dummy(_)) => {
+                    let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
+
+                    if let Some(shard) = local.deref()
+                        && local_is_updatable
+                    {
+                        let local_update = async move {
+                            shard
+                                .get()
+                                .update(operation, local_wait, timeout, hw_measurement_acc)
+                                .await
+                                .map(|ok| (this_peer_id, ok))
+                                .map_err(|err| (this_peer_id, err))
+                        };
+                        update_futures.push(local_update.left_future());
+                    }
+                    update_futures.extend(remote_futures.into_iter().map(|f| f.right_future()));
+
+                    let res = run_update_futures(update_futures, update_concurrency).await;
+                    drop(local);
+                    res
+                }
+            };
 
         let write_consistency_factor = self
             .collection_config
