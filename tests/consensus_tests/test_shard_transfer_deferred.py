@@ -110,13 +110,17 @@ def trigger_upsert_wait_true(source_uri, total_points):
     The config change (enabling optimizers) propagates through Raft and restarts
     the update workers, cancelling the old worker's deferred wait loop. Retries
     handle the transition period where the old worker may return wait_timeout.
+
+    A `timeout` query parameter is set so the server reports per-shard
+    wait_timeout in the response body (HTTP 200) instead of converting it
+    into a top-level 408 error — see point_ops.rs `is_user_timeout`.
     """
     for attempt in range(10):
         try:
             r = requests.put(
-                f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+                f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true&timeout=10",
                 json={"points": make_points(total_points + 1, 1)},
-                timeout=30,
+                timeout=60,
             )
         except requests.exceptions.ReadTimeout:
             # Server still processing, retry — the update is durably applied regardless
