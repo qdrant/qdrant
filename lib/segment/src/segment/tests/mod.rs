@@ -381,7 +381,7 @@ fn test_check_consistency() {
 
     // but querying by internal id still works
     matches!(
-        segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter),
+        segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter)),
         Ok(Some(_))
     );
 
@@ -390,7 +390,7 @@ fn test_check_consistency() {
 
     // querying by internal id now consistent
     matches!(
-        segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter),
+        segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter)),
         Ok(None)
     );
 }
@@ -689,7 +689,7 @@ fn test_vector_compatibility_checks() {
             .unwrap();
         segment.available_vector_count(wrong_name).err().unwrap();
         segment
-            .vector_by_offset(wrong_name, internal_id, &hw_counter)
+            .with_view(|v| v.vector_by_offset(wrong_name, internal_id, &hw_counter))
             .err()
             .unwrap();
     }
