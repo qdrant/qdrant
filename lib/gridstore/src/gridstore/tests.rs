@@ -337,6 +337,9 @@ fn test_behave_like_hashmap(
 ) {
     use ahash::AHashMap;
 
+    #[cfg(target_os = "windows")]
+    let operation_count = 10_000;
+    #[cfg(not(target_os = "windows"))]
     let operation_count = 50_000;
     let max_point_offset = 10_000u32;
 

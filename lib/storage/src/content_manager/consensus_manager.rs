@@ -1324,7 +1324,15 @@ mod tests {
         }
     }
 
+    // Each proptest case creates a persistent WAL on disk, which is very slow on Windows.
+    #[cfg(target_os = "windows")]
+    const PROPTEST_CASES: u32 = 10;
+    #[cfg(not(target_os = "windows"))]
+    const PROPTEST_CASES: u32 = 256;
+
     proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(PROPTEST_CASES))]
+
         #[test]
         fn check_first_and_last_indexes(entries in gen_entries(0, 100)) {
             let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();

@@ -1010,8 +1010,19 @@ fn test_dense_deferred_points() {
 fn test_dense_deferred_point_segment_combinations() {
     init_logger();
 
-    for dim in [2, 17, 50] {
-        for n_deferred in [0, 1, 5, 14] {
+    // Reduce test matrix on Windows where segment creation is extremely slow due to IO.
+    #[cfg(target_os = "windows")]
+    let dims = [2, 50];
+    #[cfg(not(target_os = "windows"))]
+    let dims = [2, 17, 50];
+
+    #[cfg(target_os = "windows")]
+    let deferred_counts = [0, 1, 14];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts = [0, 1, 5, 14];
+
+    for dim in dims {
+        for n_deferred in deferred_counts {
             for n_vectors in [1, 5, 14] {
                 let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
                 create_deferred_segment(&dir, dim, n_vectors, n_deferred);
@@ -1032,7 +1043,13 @@ fn test_deferred_point_estimation_with_filter() {
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
 
-    for n_deferred in [0, 3, 10, 20, 100] {
+    // On Windows, reduce iteration count since each segment creation is very IO-heavy.
+    #[cfg(target_os = "windows")]
+    let deferred_counts: &[usize] = &[0, 10, 100];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts: &[usize] = &[0, 3, 10, 20, 100];
+
+    for &n_deferred in deferred_counts {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
@@ -1261,8 +1278,13 @@ fn test_deferred_point_facets() {
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
 
-    // Test different amount of deferred points.
-    for n_deferred in [0, 1, 10, 300] {
+    // On Windows, reduce iteration count since each segment creation is very IO-heavy.
+    #[cfg(target_os = "windows")]
+    let deferred_counts: &[usize] = &[0, 10];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts: &[usize] = &[0, 1, 10, 300];
+
+    for &n_deferred in deferred_counts {
         // Test both exact and estimated.
         for exact in [false, true] {
             for filter in [None, Some(&filter_field)] {
@@ -1405,8 +1427,13 @@ fn assert_deferred_points_excluded<F, R, T>(
         vec![&filter_case_1]
     };
 
-    // Test different amount of deferred points.
-    for n_deferred in [0, 1, 10, 300] {
+    // On Windows, reduce iteration count since each segment creation is very IO-heavy.
+    #[cfg(target_os = "windows")]
+    let deferred_counts: &[usize] = &[0, 10];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts: &[usize] = &[0, 1, 10, 300];
+
+    for &n_deferred in deferred_counts {
         // Test with different types of filters.
         for (filter_set_id, filter_set) in set_of_filters.iter().enumerate() {
             log::debug!("  => deferred points = {n_deferred}; filter-set ID = {filter_set_id}",);
@@ -1427,7 +1454,7 @@ fn assert_deferred_points_excluded<F, R, T>(
 
             // Disable deferred points and search again.
             if need_rebuilt_segment {
-                // Don't run this on windows because this test is already extremely slow (~100s).
+                // Don't run this on windows because this test is already extremely slow.
                 // Recreating the segment here would double that time.
                 if cfg!(target_os = "windows") {
                     drop(segment);
@@ -1457,7 +1484,13 @@ fn assert_deferred_points_excluded<F, R, T>(
 fn test_deleted_deferred_point_count() {
     let hw_counter = HardwareCounterCell::new();
 
-    for n_deferred in [0, 1, 10, 300] {
+    // On Windows, reduce iteration count since each segment creation is very IO-heavy.
+    #[cfg(target_os = "windows")]
+    let deferred_counts: &[usize] = &[0, 10];
+    #[cfg(not(target_os = "windows"))]
+    let deferred_counts: &[usize] = &[0, 1, 10, 300];
+
+    for &n_deferred in deferred_counts {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 

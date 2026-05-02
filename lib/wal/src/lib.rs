@@ -627,7 +627,7 @@ mod test {
 
     /// Windows has very slow IO
     #[cfg(target_os = "windows")]
-    const QC_TESTS: u64 = 10;
+    const QC_TESTS: u64 = 3;
 
     #[cfg(not(target_os = "windows"))]
     const QC_TESTS: u64 = 50;
