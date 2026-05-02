@@ -1,3 +1,4 @@
+mod deferred;
 mod segment_ops;
 
 use std::collections::HashMap;
