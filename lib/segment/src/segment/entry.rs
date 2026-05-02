@@ -265,14 +265,6 @@ impl ReadSegmentEntry for Segment {
         Ok(records)
     }
 
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        let mappings =
-            PointMappingsGuard::new(self.id_tracker.borrow(), |guard| guard.point_mappings());
-        Box::new(IterPointsIterator::new(mappings, |mappings| {
-            mappings.borrow_dependent().iter_external()
-        }))
-    }
-
     fn read_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
@@ -564,10 +556,6 @@ impl ReadSegmentEntry for Segment {
         self.payload_index.borrow().indexed_fields()
     }
 
-    fn check_error(&self) -> Option<SegmentFailedState> {
-        self.error_status.clone()
-    }
-
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
         self.vector_data.keys().cloned().collect()
     }
@@ -670,6 +658,18 @@ impl ReadSegmentEntry for Segment {
 }
 
 impl StorageSegmentEntry for Segment {
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+        let mappings =
+            PointMappingsGuard::new(self.id_tracker.borrow(), |guard| guard.point_mappings());
+        Box::new(IterPointsIterator::new(mappings, |mappings| {
+            mappings.borrow_dependent().iter_external()
+        }))
+    }
+
+    fn check_error(&self) -> Option<SegmentFailedState> {
+        self.error_status.clone()
+    }
+
     fn persistent_version(&self) -> SeqNumberType {
         (*self.persisted_version.lock()).unwrap_or(0)
     }

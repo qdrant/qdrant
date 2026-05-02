@@ -7,6 +7,7 @@ mod sampling;
 mod scroll;
 mod search;
 mod segment_ops;
+pub mod vector_data_read;
 mod vector_name_ops;
 mod version_tracker;
 

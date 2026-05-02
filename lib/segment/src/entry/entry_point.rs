@@ -101,9 +101,6 @@ pub trait ReadSegmentEntry: SnapshotEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
-    /// Iterator over all points in segment in ascending order.
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
-
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     ///
     /// Cancelled by `is_stopped` flag.
@@ -236,9 +233,6 @@ pub trait ReadSegmentEntry: SnapshotEntry {
     /// Get indexed fields
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
-    /// Checks if segment errored during last operations
-    fn check_error(&self) -> Option<SegmentFailedState>;
-
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
 
@@ -265,6 +259,12 @@ pub trait ReadSegmentEntry: SnapshotEntry {
 
 /// Segment with storage.
 pub trait StorageSegmentEntry: ReadSegmentEntry {
+    /// Iterator over all points in segment in ascending order.
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
+
+    /// Checks if segment errored during last operations
+    fn check_error(&self) -> Option<SegmentFailedState>;
+
     /// Get current persistent version of the segment
     fn persistent_version(&self) -> SeqNumberType;
 

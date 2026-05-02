@@ -267,13 +267,6 @@ impl ReadSegmentEntry for ProxySegment {
         )
     }
 
-    /// Not implemented for proxy
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        // get_points is not available for Proxy implementation
-        // Due to internal locks it is almost impossible to return iterator with proper owning, lifetimes, e.t.c.
-        unimplemented!("call to get_points is not implemented for Proxy segment")
-    }
-
     fn read_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
@@ -679,10 +672,6 @@ impl ReadSegmentEntry for ProxySegment {
         indexed_fields
     }
 
-    fn check_error(&self) -> Option<SegmentFailedState> {
-        self.wrapped_segment.get().read().check_error()
-    }
-
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
         self.wrapped_segment.get().read().vector_names()
     }
@@ -730,6 +719,17 @@ impl ReadSegmentEntry for ProxySegment {
 }
 
 impl StorageSegmentEntry for ProxySegment {
+    /// Not implemented for proxy
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+        // get_points is not available for Proxy implementation
+        // Due to internal locks it is almost impossible to return iterator with proper owning, lifetimes, e.t.c.
+        unimplemented!("call to get_points is not implemented for Proxy segment")
+    }
+
+    fn check_error(&self) -> Option<SegmentFailedState> {
+        self.wrapped_segment.get().read().check_error()
+    }
+
     fn persistent_version(&self) -> SeqNumberType {
         self.wrapped_segment.get().read().persistent_version()
     }
