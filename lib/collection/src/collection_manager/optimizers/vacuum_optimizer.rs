@@ -13,7 +13,7 @@ mod tests {
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
-    use segment::entry::{NonAppendableSegmentEntry as _, StorageSegmentEntry as _};
+    use segment::entry::NonAppendableSegmentEntry as _;
     use segment::id_tracker::IdTrackerRead;
     use segment::index::VectorIndexRead;
     use segment::payload_json;
@@ -100,13 +100,13 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let original_segment_path = match segment {
-            LockedSegment::Original(s) => s.read().segment_path.clone(),
+        let original_segment = match segment {
+            LockedSegment::Original(s) => s,
             LockedSegment::Proxy(_) => panic!("Not expected"),
         };
+        let original_segment_path = original_segment.read().segment_path.clone();
 
-        let segment_points_to_delete = segment
-            .get()
+        let segment_points_to_delete = original_segment
             .read()
             .iter_points()
             .enumerate()
@@ -121,16 +121,14 @@ mod tests {
                 .unwrap();
         }
 
-        let segment_points_to_assign1 = segment
-            .get()
+        let segment_points_to_assign1 = original_segment
             .read()
             .iter_points()
             .enumerate()
             .filter_map(|(i, point_id)| (i % 20 == 0).then_some(point_id))
             .collect_vec();
 
-        let segment_points_to_assign2 = segment
-            .get()
+        let segment_points_to_assign2 = original_segment
             .read()
             .iter_points()
             .enumerate()

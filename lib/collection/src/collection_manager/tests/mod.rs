@@ -173,9 +173,12 @@ fn test_move_points_to_copy_on_write() {
 
     // Copy-on-write segment should contain all 3 points
 
-    let cow_segment = segments_write.get(sid2).unwrap();
+    let cow_segment = match segments_write.get(sid2).unwrap() {
+        shard::locked_segment::LockedSegment::Original(segment) => segment.clone(),
+        shard::locked_segment::LockedSegment::Proxy(_) => panic!("cow segment must be Original"),
+    };
 
-    let cow_segment_read = cow_segment.get().read();
+    let cow_segment_read = cow_segment.read();
 
     let cow_points: HashSet<_> = cow_segment_read.iter_points().collect();
 

@@ -8,7 +8,6 @@ use fs_err::File;
 use rstest::rstest;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use segment::entry::StorageSegmentEntry as _;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::entry::snapshot_entry::SnapshotEntry as _;
 use segment::json_path::JsonPath;

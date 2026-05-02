@@ -259,9 +259,6 @@ pub trait ReadSegmentEntry: SnapshotEntry {
 
 /// Segment with storage.
 pub trait StorageSegmentEntry: ReadSegmentEntry {
-    /// Iterator over all points in segment in ascending order.
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
-
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;
 

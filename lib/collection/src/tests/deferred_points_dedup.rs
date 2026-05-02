@@ -6,6 +6,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use rand::rng;
 use segment::data_types::vectors::VectorStructInternal;
+use segment::entry::ReadSegmentEntry as _;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Distance, Filter, PointIdType};
 use tempfile::{Builder, TempDir};
@@ -149,8 +150,13 @@ fn assert_no_duplicate_point_ids(shard: &LocalShard) {
     > = std::collections::HashMap::new();
 
     for (seg_id, segment) in holder.iter() {
-        let seg = segment.get();
-        let seg_read = seg.read();
+        let original = match segment {
+            shard::locked_segment::LockedSegment::Original(segment) => segment,
+            shard::locked_segment::LockedSegment::Proxy(_) => {
+                panic!("test does not expect proxy segments")
+            }
+        };
+        let seg_read = original.read();
         for pid in seg_read.iter_points() {
             let is_deferred = seg_read.point_is_deferred(pid);
             point_occurrences

@@ -657,15 +657,18 @@ impl ReadSegmentEntry for Segment {
     }
 }
 
-impl StorageSegmentEntry for Segment {
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+impl Segment {
+    /// Iterator over all points in segment in ascending order.
+    pub fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
         let mappings =
             PointMappingsGuard::new(self.id_tracker.borrow(), |guard| guard.point_mappings());
         Box::new(IterPointsIterator::new(mappings, |mappings| {
             mappings.borrow_dependent().iter_external()
         }))
     }
+}
 
+impl StorageSegmentEntry for Segment {
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.error_status.clone()
     }
