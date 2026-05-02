@@ -46,8 +46,9 @@ where
     }
 
     pub fn has_deferred_points(&self) -> bool {
-        self.deferred_internal_id()
-            .is_some_and(|deferred_from| self.id_tracker.total_point_count() > deferred_from as usize)
+        self.deferred_internal_id().is_some_and(|deferred_from| {
+            self.id_tracker.total_point_count() > deferred_from as usize
+        })
     }
 
     pub fn point_is_deferred(&self, point_id: PointIdType) -> bool {
