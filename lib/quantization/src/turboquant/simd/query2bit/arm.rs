@@ -331,13 +331,12 @@ pub unsafe fn score_2bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
 
 /// NEON weighted variant of [`super::score_2bit_internal`]. 16 coords per
 /// iteration; products go through `vmull_s8` then per-pair multiply by
-/// i16 weights (i16-capped from u16 storage) via `vmull_s16`, pair-summed
-/// into an i64 accumulator.
+/// i16 weights via `vmull_s16`, pair-summed into an i64 accumulator.
 ///
 /// # Safety
 /// CPU must support `neon`.
 #[target_feature(enable = "neon")]
-pub unsafe fn score_2bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+pub unsafe fn score_2bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
     use core::arch::aarch64::*;
 
     assert_eq!(
@@ -367,8 +366,8 @@ pub unsafe fn score_2bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[u
             let prod_lo = vmull_s8(vget_low_s8(c_a), vget_low_s8(c_b));
             let prod_hi = vmull_high_s8(c_a, c_b);
 
-            let w_lo = vld1q_s16(weights.as_ptr().add(16 * i).cast::<i16>());
-            let w_hi = vld1q_s16(weights.as_ptr().add(16 * i + 8).cast::<i16>());
+            let w_lo = vld1q_s16(weights.as_ptr().add(16 * i));
+            let w_hi = vld1q_s16(weights.as_ptr().add(16 * i + 8));
 
             let pw_a = vmull_s16(vget_low_s16(prod_lo), vget_low_s16(w_lo));
             let pw_b = vmull_high_s16(prod_lo, w_lo);
@@ -406,12 +405,12 @@ mod tests {
         score_2bit_internal_neon, score_2bit_internal_neon_sdot, score_2bit_internal_weighted_neon,
     };
 
-    /// Build deterministic i16-capped weights of length `4 · vec_bytes` for
-    /// parity tests of the 2-bit weighted kernel.
-    fn random_weights(rng: &mut StdRng, vec_bytes: usize) -> Vec<u16> {
+    /// Build deterministic non-negative i16 weights of length `4 · vec_bytes`
+    /// for parity tests of the 2-bit weighted kernel.
+    fn random_weights(rng: &mut StdRng, vec_bytes: usize) -> Vec<i16> {
         use rand::RngExt;
         (0..4 * vec_bytes)
-            .map(|_| rng.random_range(0..=i16::MAX as u16))
+            .map(|_| rng.random_range(0..=i16::MAX))
             .collect()
     }
 
@@ -507,8 +506,8 @@ mod tests {
         let indices: Vec<u8> = vec![3; dim];
         let vec_a = pack_codes(&indices, 2);
         let vec_b = pack_codes(&indices, 2);
-        let max_weight: u16 = i16::MAX as u16;
-        let weights: Vec<u16> = vec![max_weight; dim];
+        let max_weight: i16 = i16::MAX;
+        let weights: Vec<i16> = vec![max_weight; dim];
 
         let scalar = score_2bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
         unsafe {

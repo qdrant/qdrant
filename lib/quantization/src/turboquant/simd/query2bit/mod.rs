@@ -366,9 +366,12 @@ pub(super) fn score_2bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
 }
 
 /// Weighted variant of [`score_2bit_internal`]: returns `Σ_j c[a[j]] · c[b[j]]
-/// · weights[j]` in centroid-float space. `weights` is u16-quantized `D'_j²`
-/// from TQ+ error correction; the caller divides the integer sum by
-/// `weight_scale · CODEBOOK_SCALE²` to recover the true f32 dot.
+/// · weights[j]` in centroid-float space. `weights` is i16-quantized `D'_j²`
+/// from TQ+ error correction (non-negative, capped at `i16::MAX − 1`); the
+/// caller divides the integer sum by `weight_scale · CODEBOOK_SCALE²` to
+/// recover the true f32 dot. The `i16` element type encodes the SIMD
+/// invariant directly — every backend can multiply via `vmull_s16` /
+/// `madd_epi16` without re-checking the high bit.
 ///
 /// Each input byte holds four 2-bit indices (lanes 0..=3 from LSB). `weights
 /// .len()` must equal `4 · a.len()`.
@@ -376,7 +379,7 @@ pub(super) fn score_2bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
 /// # Panics
 /// Panics if `a` and `b` have different lengths or if `weights` has the
 /// wrong length.
-pub fn score_2bit_internal_weighted(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+pub fn score_2bit_internal_weighted(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
     assert_eq!(
         a.len(),
         b.len(),
@@ -414,7 +417,7 @@ pub fn score_2bit_internal_weighted(a: &[u8], b: &[u8], weights: &[u16]) -> i64 
 
 /// Scalar reference for [`score_2bit_internal_weighted`].
 #[inline]
-pub fn score_2bit_internal_weighted_scalar(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+pub fn score_2bit_internal_weighted_scalar(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
     let mut acc: i64 = 0;
     for (i, (&byte_a, &byte_b)) in a.iter().zip(b.iter()).enumerate() {
         for k in 0..4 {
@@ -588,9 +591,8 @@ mod tests {
 
     /// Saturation-safety at 64K dims: every centroid index at max (`3`),
     /// every weight at `i16::MAX`. Same worst-case shape as the 4-bit
-    /// counterpart — `weights[i]` is u16-typed but SIMD reinterprets the
-    /// bytes as signed i16, so the contract caps quantized values at
-    /// `i16::MAX`. The i64 accumulator must hold the load.
+    /// counterpart — `weights[i]` is `i16` (the storage type is the
+    /// SIMD-load contract). The i64 accumulator must hold the load.
     ///
     /// Per-coord product:
     ///   `c_signed² × weight = 127² × 32 767 ≈ 5.28e8` (fits i32 with ~4× headroom).
@@ -601,8 +603,8 @@ mod tests {
         let indices: Vec<u8> = vec![3; dim]; // max-magnitude centroid
         let vec_a = pack_codes(&indices, 2);
         let vec_b = pack_codes(&indices, 2);
-        let max_weight: u16 = i16::MAX as u16;
-        let weights: Vec<u16> = vec![max_weight; dim];
+        let max_weight: i16 = i16::MAX;
+        let weights: Vec<i16> = vec![max_weight; dim];
 
         let raw_int = super::score_2bit_internal_weighted(&vec_a, &vec_b, &weights);
 
@@ -617,7 +619,8 @@ mod tests {
 
     /// `score_2bit_internal_weighted` should recover `Σ c[a[j]] · c[b[j]] ·
     /// D'_j²` after dividing by `weight_scale · CODEBOOK_SCALE²`.
-    /// Weights are u16-stored but i16-capped to match the SIMD contract.
+    /// Weights are quantized into the `i16` storage form the SIMD kernels
+    /// consume directly.
     #[test]
     fn test_score_2bit_internal_weighted_matches_reference() {
         use rand::RngExt;
@@ -637,9 +640,9 @@ mod tests {
             let max_w = weights_f32.iter().copied().fold(0.0f32, f32::max);
             const QUANT_CAP: i16 = i16::MAX - 1;
             let weight_scale = f32::from(QUANT_CAP) / max_w;
-            let weights_u16: Vec<u16> = weights_f32
+            let weights_i16: Vec<i16> = weights_f32
                 .iter()
-                .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as u16)
+                .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as i16)
                 .collect();
 
             let truth: f64 = idx_a
@@ -655,7 +658,7 @@ mod tests {
             let raw_int = super::score_2bit_internal_weighted(
                 &pack_codes(&idx_a, 2),
                 &pack_codes(&idx_b, 2),
-                &weights_u16,
+                &weights_i16,
             );
             let score = raw_int as f32 / (weight_scale * super::CODEBOOK_SCALE_SQ);
 

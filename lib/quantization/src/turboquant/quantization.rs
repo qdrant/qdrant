@@ -31,14 +31,14 @@ pub struct TurboQuantizer {
 pub struct ErrorCorrection {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
-    /// Unsigned 16-bit quantized `D'_i² = 1 / scale_i²` per coordinate, used
+    /// Signed 16-bit quantized `D'_i² = 1 / scale_i²` per coordinate, used
     /// by the SIMD weighted-dot path of `score_symmetric_ec` for Bits2/Bits4.
-    /// `D'²_f32 ≈ d_prime_sq_u16[i] / weight_scale`. Values are clamped to
-    /// `[0, i16::MAX − 1]` so SIMD kernels can safely interpret them as
-    /// signed `i16` and use `_mm256_madd_epi16` / `vmlal_s16`. Recomputed
-    /// from `scale` rather than persisted — `scale` is the single source of
-    /// truth.
-    pub(super) d_prime_sq_u16: Vec<u16>,
+    /// `D'²_f32 ≈ d_prime_sq_i16[i] / weight_scale`. Values are non-negative
+    /// and clamped to `[0, i16::MAX − 1]` so SIMD kernels can use
+    /// `_mm256_madd_epi16` / `vmlal_s16` directly — the `i16` element type
+    /// makes that contract a type-system invariant. Recomputed from `scale`
+    /// rather than persisted — `scale` is the single source of truth.
+    pub(super) d_prime_sq_i16: Vec<i16>,
     /// `(i16::MAX − 1) / max(D'²)` — quantization scale. The 1-bit cap
     /// (vs. full u16) costs ~3e-5 relative precision but lets SIMD use
     /// signed `i16` multiply-adds. `1.0` if all `D'²` are effectively zero
@@ -96,23 +96,23 @@ impl ErrorCorrection {
             .collect();
         let max_d_prime_sq = d_prime_sq_f32.iter().copied().fold(0.0f32, f32::max);
         // Cap quantized values to `i16::MAX − 1` so SIMD kernels can
-        // interpret the storage as signed `i16` without sign flips. See
-        // `d_prime_sq_u16` field doc for the full rationale.
+        // multiply them as signed `i16` without sign flips. See
+        // `d_prime_sq_i16` field doc for the full rationale.
         const QUANT_CAP: i16 = i16::MAX - 1;
         let weight_scale = if max_d_prime_sq > f32::EPSILON {
             f32::from(QUANT_CAP) / max_d_prime_sq
         } else {
             1.0
         };
-        let d_prime_sq_u16: Vec<u16> = d_prime_sq_f32
+        let d_prime_sq_i16: Vec<i16> = d_prime_sq_f32
             .iter()
-            .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as u16)
+            .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as i16)
             .collect();
 
         ErrorCorrection {
             shift,
             scale,
-            d_prime_sq_u16,
+            d_prime_sq_i16,
             weight_scale,
             mm_const,
         }
@@ -426,15 +426,15 @@ impl TurboQuantizer {
         ec: &ErrorCorrection,
     ) -> f32 {
         // Bits2 / Bits4: integer SIMD-amenable weighted dot. The kernel
-        // returns `Σ c_a_int · c_b_int · weights_u16` as i64; we divide back
+        // returns `Σ c_a_int · c_b_int · weights_i16` as i64; we divide back
         // by `weight_scale · CODEBOOK_SCALE²` to recover the f32 centroid dot.
         let (raw_int, codebook_scale_sq) = match self.bits {
             TQBits::Bits2 => (
-                score_2bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_u16),
+                score_2bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
                 CODEBOOK_SCALE_SQ_2BIT,
             ),
             TQBits::Bits4 => (
-                score_4bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_u16),
+                score_4bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
                 CODEBOOK_SCALE_SQ_4BIT,
             ),
             TQBits::Bits1 | TQBits::Bits1_5 => {

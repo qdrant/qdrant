@@ -352,11 +352,12 @@ pub unsafe fn score_4bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
 
 // ------------------------------------------------------------------
 // score_4bit_internal_weighted — TQ+ symmetric path with per-coord
-// `D'²` weighting. `weights[i]` is u16-quantized but i16-capped (see
-// `ErrorCorrection::d_prime_sq_u16` doc), so we treat the loaded bytes
-// as i16. Same overflow story as the x64 path: per-coord product up
-// to ~5.28e8, sum at dim=64 K reaches ~1.7e10 — must accumulate into
-// i64 lanes. We pair-sum i32 → i64 every iteration via `vpaddlq_s32`.
+// `D'²` weighting. `weights[i]` is `i16` (non-negative, capped at
+// `i16::MAX − 1` — see `ErrorCorrection::d_prime_sq_i16` doc), which
+// matches the SIMD load directly. Same overflow story as the x64
+// path: per-coord product up to ~5.28e8, sum at dim=64 K reaches
+// ~1.7e10 — must accumulate into i64 lanes. We pair-sum i32 → i64
+// every iteration via `vpaddlq_s32`.
 // ------------------------------------------------------------------
 
 /// NEON weighted variant of [`super::score_4bit_internal`]. 16 coords per
@@ -367,7 +368,7 @@ pub unsafe fn score_4bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
 /// # Safety
 /// CPU must support `neon`.
 #[target_feature(enable = "neon")]
-pub unsafe fn score_4bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[u16]) -> i64 {
+pub unsafe fn score_4bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
     use core::arch::aarch64::*;
 
     assert_eq!(
@@ -411,8 +412,8 @@ pub unsafe fn score_4bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[u
             let prod_hi = vmull_high_s8(c_a, c_b); // i16×8
 
             // Load 16 i16 weights = 2 q regs.
-            let w_lo = vld1q_s16(weights.as_ptr().add(16 * i).cast::<i16>());
-            let w_hi = vld1q_s16(weights.as_ptr().add(16 * i + 8).cast::<i16>());
+            let w_lo = vld1q_s16(weights.as_ptr().add(16 * i));
+            let w_hi = vld1q_s16(weights.as_ptr().add(16 * i + 8));
 
             // Multiply each i16 pair → i32. Each `vmull_s16` produces 4 i32 from
             // the low 4 i16 lanes; `vmull_high_s16` does the upper 4.
@@ -453,12 +454,12 @@ mod tests {
         score_4bit_internal_neon, score_4bit_internal_neon_sdot, score_4bit_internal_weighted_neon,
     };
 
-    /// Build deterministic i16-capped weights of length `2 · vec_bytes` for
-    /// parity tests of the weighted kernel.
-    fn random_weights(rng: &mut StdRng, vec_bytes: usize) -> Vec<u16> {
+    /// Build deterministic non-negative i16 weights of length `2 · vec_bytes`
+    /// for parity tests of the weighted kernel.
+    fn random_weights(rng: &mut StdRng, vec_bytes: usize) -> Vec<i16> {
         use rand::RngExt;
         (0..2 * vec_bytes)
-            .map(|_| rng.random_range(0..=i16::MAX as u16))
+            .map(|_| rng.random_range(0..=i16::MAX))
             .collect()
     }
 
@@ -568,8 +569,8 @@ mod tests {
         let indices: Vec<u8> = vec![15; dim];
         let vec_a = pack_codes(&indices, 4);
         let vec_b = pack_codes(&indices, 4);
-        let max_weight: u16 = i16::MAX as u16;
-        let weights: Vec<u16> = vec![max_weight; dim];
+        let max_weight: i16 = i16::MAX;
+        let weights: Vec<i16> = vec![max_weight; dim];
 
         let scalar = score_4bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
         unsafe {
