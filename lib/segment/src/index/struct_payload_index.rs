@@ -32,8 +32,8 @@ use crate::index::field_index::{
 use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
+use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use crate::index::query_optimization::rescore_formula::{FormulaScorer, FormulaScorerRead};
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
@@ -635,7 +635,7 @@ impl PayloadIndexRead for StructPayloadIndex {
         parsed_formula: &'q ParsedFormula,
         prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
         hw_counter: &'q HardwareCounterCell,
-    ) -> OperationResult<impl FormulaScorerRead + 'q> {
+    ) -> OperationResult<FormulaScorer<'q>> {
         let ParsedFormula {
             payload_vars,
             conditions,
