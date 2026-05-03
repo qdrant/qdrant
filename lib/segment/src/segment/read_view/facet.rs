@@ -9,7 +9,7 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
-use crate::index::field_index::FacetIndexRead;
+use crate::index::field_index::FacetIndex;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
@@ -168,11 +168,15 @@ where
                 values.extend(iter.map(|v| v.to_owned()));
             })?;
         } else {
-            facet_index.for_each_value(hw_counter, self.deferred_internal_id(), |value_ref| {
-                check_process_stopped(is_stopped)?;
-                values.insert(value_ref.to_owned());
-                Ok(())
-            })?;
+            facet_index.for_each_visible_value(
+                hw_counter,
+                self.deferred_internal_id(),
+                |value_ref| {
+                    check_process_stopped(is_stopped)?;
+                    values.insert(value_ref.to_owned());
+                    Ok(())
+                },
+            )?;
         };
 
         Ok(values)
