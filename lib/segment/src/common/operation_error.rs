@@ -49,8 +49,11 @@ pub enum OperationError {
     InconsistentStorage { description: String },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Out of disk: {description}")]
+    OutOfDisk { description: String },
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
+
     #[error("Timeout error: {description}")]
     Timeout { description: String },
     #[error("Validation failed: {description}")]
@@ -211,10 +214,14 @@ impl From<IoError> for OperationError {
                     free: free_memory,
                 }
             }
+            ErrorKind::StorageFull => OperationError::OutOfDisk {
+                description: format!("IO Error: {err}"),
+            },
             _ => OperationError::service_error(format!("IO Error: {err}")),
         }
     }
 }
+
 
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
@@ -268,13 +275,12 @@ impl From<GridstoreError> for OperationError {
             GridstoreError::FlushCancelled => Self::Cancelled {
                 description: "Gridstore flushing was cancelled".to_string(),
             },
-            GridstoreError::Io(_) | GridstoreError::Mmap(_) | GridstoreError::SerdeJson(_) => {
+            GridstoreError::Io(io_err) => Self::from(io_err),
+            GridstoreError::Mmap(_) | GridstoreError::SerdeJson(_) => {
                 Self::service_error(err.to_string())
             }
             GridstoreError::ValidationError { message } => Self::validation_error(message),
-            GridstoreError::UniversalIo(err) => {
-                Self::service_error(format!("Gridstore IO error: {err}"))
-            }
+            GridstoreError::UniversalIo(universal_io_err) => Self::from(universal_io_err),
             GridstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
         }
     }

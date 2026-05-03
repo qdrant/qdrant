@@ -931,8 +931,11 @@ pub enum CollectionError {
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Out of disk: {description}")]
+    OutOfDisk { description: String },
     #[error("Timeout error: {description}")]
     Timeout { description: String },
+
     #[error("Precondition failed: {description}")]
     PreConditionFailed { description: String },
     #[error("Object Store error: {what}")]
@@ -1092,8 +1095,10 @@ impl CollectionError {
             Self::StrictMode { .. } => false,
             Self::InferenceError { .. } => false,
             Self::RateLimitExceeded { .. } => false,
+            Self::OutOfDisk { .. } => false,
         }
     }
+
 
     pub fn is_pre_condition_failed(&self) -> bool {
         matches!(self, Self::PreConditionFailed { .. })
@@ -1155,7 +1160,9 @@ impl From<OperationError> for CollectionError {
             OperationError::OutOfMemory { description, free } => {
                 Self::OutOfMemory { description, free }
             }
+            OperationError::OutOfDisk { description } => Self::OutOfDisk { description },
             OperationError::Timeout { description } => Self::Timeout { description },
+
             OperationError::InconsistentStorage { .. } => Self::ServiceError {
                 error: format!("{err}"),
                 backtrace: None,
@@ -1234,6 +1241,11 @@ impl From<JsonError> for CollectionError {
 
 impl From<std::io::Error> for CollectionError {
     fn from(err: std::io::Error) -> Self {
+        if err.kind() == std::io::ErrorKind::StorageFull {
+            return CollectionError::OutOfDisk {
+                description: format!("{err}"),
+            };
+        }
         CollectionError::ServiceError {
             error: format!("File IO error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),

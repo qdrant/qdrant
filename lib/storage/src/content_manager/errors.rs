@@ -36,8 +36,11 @@ pub enum StorageError {
     Forbidden { description: String },
     #[error("Pre-condition failure: {description}")]
     PreconditionFailed { description: String }, // system is not in the state to perform the operation
+    #[error("Out of disk: {description}")]
+    OutOfDisk { description: String },
     #[error("{description}")]
     InferenceError { description: String },
+
     #[error("Rate limiting exceeded: {description}")]
     RateLimitExceeded {
         description: String,
@@ -167,7 +170,11 @@ impl StorageError {
             CollectionError::PreConditionFailed { .. } => StorageError::PreconditionFailed {
                 description: overriding_description,
             },
+            CollectionError::OutOfDisk { .. } => StorageError::OutOfDisk {
+                description: overriding_description.clone(),
+            },
             CollectionError::ObjectStoreError { .. } => StorageError::ServiceError {
+
                 description: overriding_description,
                 backtrace: None,
             },
@@ -229,7 +236,12 @@ impl From<CollectionError> for StorageError {
             CollectionError::PreConditionFailed { .. } => StorageError::PreconditionFailed {
                 description: format!("{err}"),
             },
+            CollectionError::OutOfDisk { ref description } => StorageError::OutOfDisk {
+                description: description.clone(),
+            },
             CollectionError::ObjectStoreError { .. } => StorageError::ServiceError {
+
+
                 description: format!("{err}"),
                 backtrace: None,
             },
@@ -253,9 +265,16 @@ impl From<CollectionError> for StorageError {
 
 impl From<IoError> for StorageError {
     fn from(err: IoError) -> Self {
-        StorageError::service_error(format!("{err}"))
+        if err.kind() == std::io::ErrorKind::StorageFull {
+            StorageError::OutOfDisk {
+                description: format!("{err}"),
+            }
+        } else {
+            StorageError::service_error(format!("{err}"))
+        }
     }
 }
+
 
 impl From<FileStorageError> for StorageError {
     fn from(err: FileStorageError) -> Self {
@@ -356,12 +375,20 @@ impl From<raft::Error> for StorageError {
 
 impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
     fn from(err: atomicwrites::Error<E>) -> Self {
+        if let atomicwrites::Error::Internal(ref io_err) = err {
+            if io_err.kind() == std::io::ErrorKind::StorageFull {
+                return StorageError::OutOfDisk {
+                    description: format!("{err}"),
+                };
+            }
+        }
         StorageError::ServiceError {
             description: format!("Failed to write file: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
+
 
 impl From<tonic::transport::Error> for StorageError {
     fn from(err: tonic::transport::Error) -> Self {

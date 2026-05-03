@@ -20,6 +20,9 @@ use crate::settings::ServiceConfig;
 pub mod claims;
 pub mod jwt_parser;
 
+#[cfg(test)]
+mod repro_test;
+
 // Re-export Auth and AuthType from storage crate.
 pub use storage::rbac::AuthType;
 pub use storage::rbac::auth::Auth;

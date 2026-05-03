@@ -190,14 +190,36 @@ where
 }
 
 fn log_service_error(err: &StorageError) {
-    if let StorageError::ServiceError { backtrace, .. } = err {
-        log::error!("Error processing request: {err}");
+    match err {
+        StorageError::ServiceError { backtrace, .. } => {
+            log::error!("Error processing request: {err}");
 
-        if let Some(backtrace) = backtrace {
-            log::trace!("Backtrace: {backtrace}");
+            if let Some(backtrace) = backtrace {
+                log::trace!("Backtrace: {backtrace}");
+            }
+        }
+        StorageError::OutOfDisk { .. } => {
+            log::warn!("Error processing request: {err}");
+        }
+        StorageError::BadInput { .. }
+        | StorageError::AlreadyExists { .. }
+        | StorageError::NotFound { .. }
+        | StorageError::BadRequest { .. }
+        | StorageError::Locked { .. }
+        | StorageError::Timeout { .. }
+        | StorageError::ChecksumMismatch { .. }
+        | StorageError::Forbidden { .. }
+        | StorageError::PreconditionFailed { .. }
+        | StorageError::InferenceError { .. }
+        | StorageError::RateLimitExceeded { .. }
+        | StorageError::ShardUnavailable { .. }
+        | StorageError::EmptyPartialSnapshot { .. } => {
+            log::trace!("Error processing request: {err}");
         }
     }
 }
+
+
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
@@ -234,6 +256,12 @@ impl HttpError {
             StorageError::InferenceError { .. } => {}
             StorageError::ShardUnavailable { .. } => {}
             StorageError::EmptyPartialSnapshot { .. } => {}
+            StorageError::OutOfDisk { .. } => {
+                headers.insert(
+                    header::HeaderName::from_static("x-qdrant-error"),
+                    header::HeaderValue::from_static("out-of-disk"),
+                );
+            }
         }
         headers
     }
@@ -256,6 +284,7 @@ impl ResponseError for HttpError {
             StorageError::RateLimitExceeded { .. } => http::StatusCode::TOO_MANY_REQUESTS,
             StorageError::ShardUnavailable { .. } => http::StatusCode::SERVICE_UNAVAILABLE,
             StorageError::EmptyPartialSnapshot { .. } => http::StatusCode::NOT_MODIFIED,
+            StorageError::OutOfDisk { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

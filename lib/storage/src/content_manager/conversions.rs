@@ -51,7 +51,13 @@ impl From<StorageError> for Status {
             }
             StorageError::ShardUnavailable { .. } => tonic::Code::Unavailable,
             StorageError::EmptyPartialSnapshot { .. } => tonic::Code::FailedPrecondition,
+            StorageError::OutOfDisk { .. } => {
+                metadata_headers.insert("x-qdrant-error", "out-of-disk".to_string());
+                tonic::Code::ResourceExhausted
+            }
         };
+
+
         let mut status = Status::new(error_code, format!("{error}"));
         // add metadata headers
         for (header_key, header_value) in metadata_headers {
