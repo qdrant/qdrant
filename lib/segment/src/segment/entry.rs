@@ -81,32 +81,7 @@ impl ReadSegmentEntry for Segment {
         ctx: Arc<FormulaContext>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let FormulaContext {
-            formula,
-            prefetches_results,
-            limit,
-            score_threshold,
-            is_stopped,
-        } = &*ctx;
-
-        let internal_results = self.do_rescore_with_formula(
-            formula,
-            prefetches_results,
-            *limit,
-            *score_threshold,
-            is_stopped,
-            hw_counter,
-        )?;
-
-        self.with_view(|view| {
-            view.process_search_result(
-                internal_results,
-                &false.into(),
-                &false.into(),
-                hw_counter,
-                is_stopped,
-            )
-        })
+        self.with_view(|view| view.rescore_with_formula(ctx, hw_counter))
     }
 
     fn vector(
