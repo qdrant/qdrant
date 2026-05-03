@@ -14,11 +14,11 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
-    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+    pub(super) fn deferred_internal_id(&self) -> Option<PointOffsetType> {
         self.deferred_point_status.map(|s| s.deferred_internal_id)
     }
 
-    fn deferred_deleted_count(&self) -> Option<usize> {
+    pub(super) fn deferred_deleted_count(&self) -> Option<usize> {
         self.deferred_point_status.map(|s| s.deferred_deleted_count)
     }
 
