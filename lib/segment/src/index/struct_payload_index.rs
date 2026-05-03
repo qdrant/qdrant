@@ -25,7 +25,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
+    CardinalityEstimation, FieldIndex, NumericFieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
 use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::query_estimator::estimate_filter;
@@ -482,91 +482,6 @@ impl StructPayloadIndex {
             .unwrap_or(false)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn iter_filtered_points<'a>(
-        &'a self,
-        filter: &'a Filter,
-        id_tracker: &'a IdTrackerEnum,
-        point_mappings: &'a PointMappingsRefEnum,
-        query_cardinality: &'a CardinalityEstimation,
-        hw_counter: &'a HardwareCounterCell,
-        is_stopped: &'a AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
-        if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
-
-            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
-            // Worst case: query expected to return few matches, but index can't be used
-            let matched_points = full_scan_iterator
-                .stop_if(is_stopped)
-                .filter(move |i| struct_filtered_context.check(*i));
-
-            Ok(EitherVariant::A(matched_points))
-        } else {
-            // CPU-optimized strategy here: points are made unique before applying other filters.
-            let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
-
-            // If even one iterator is None, we should replace the whole thing with
-            // an iterator over all ids.
-            let primary_clause_iterators: OperationResult<Option<Vec<_>>> = query_cardinality
-                .primary_clauses
-                .iter()
-                .map(|clause| self.query_field(clause, hw_counter))
-                .collect();
-
-            if let Some(primary_iterators) = primary_clause_iterators? {
-                let all_conditions_are_primary = filter
-                    .iter_conditions()
-                    .all(|condition| query_cardinality.is_primary(condition));
-
-                let joined_primary_iterator = primary_iterators
-                    .into_iter()
-                    // Filter out deferred points.
-                    // This iterator (and each primary iterator too) can yield items in non sorted order, depending on the type of index and primary condition.
-                    .flatten()
-                    .filter(move |&internal_id| {
-                        internal_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
-                    })
-                    .stop_if(is_stopped);
-
-                return Ok(if all_conditions_are_primary {
-                    // All conditions are primary clauses,
-                    // We can avoid post-filtering
-                    let iter = joined_primary_iterator
-                        .filter(move |&id| !visited_list.check_and_update_visited(id));
-                    EitherVariant::B(iter)
-                } else {
-                    // Some conditions are primary clauses, some are not
-                    let struct_filtered_context =
-                        self.struct_filtered_context(filter, hw_counter)?;
-                    let iter = joined_primary_iterator.filter(move |&id| {
-                        !visited_list.check_and_update_visited(id)
-                            && struct_filtered_context.check(id)
-                    });
-                    EitherVariant::C(iter)
-                });
-            }
-
-            // We can't use primary conditions, so we fall back to iterating over all ids
-            // and applying full filter.
-            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
-
-            let id_tracker_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
-
-            let iter = id_tracker_iterator
-                .stop_if(is_stopped)
-                .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
-                    i.cpu_counter()
-                })
-                .filter(move |&id| {
-                    !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
-                });
-
-            Ok(EitherVariant::D(iter))
-        }
-    }
-
     /// Select which type of PayloadIndex to use for the field
     fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector<'_> {
         let is_on_disk = payload_schema.is_on_disk();
@@ -688,7 +603,7 @@ impl PayloadIndexRead for StructPayloadIndex {
         let result = self
             .iter_filtered_points(
                 filter,
-                &id_tracker,
+                &*id_tracker,
                 &point_mappings,
                 &query_cardinality,
                 hw_counter,
@@ -697,6 +612,96 @@ impl PayloadIndexRead for StructPayloadIndex {
             )?
             .collect();
         Ok(result)
+    }
+
+    fn numeric_index_for(&self, key: &PayloadKeyType) -> Option<NumericFieldIndex<'_>> {
+        self.field_indexes
+            .get(key)
+            .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
+    }
+
+    fn iter_filtered_points<'a, I: IdTrackerRead>(
+        &'a self,
+        filter: &'a Filter,
+        id_tracker: &'a I,
+        point_mappings: &'a PointMappingsRefEnum<'a>,
+        query_cardinality: &'a CardinalityEstimation,
+        hw_counter: &'a HardwareCounterCell,
+        is_stopped: &'a AtomicBool,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
+        if query_cardinality.primary_clauses.is_empty() {
+            let full_scan_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
+
+            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
+            // Worst case: query expected to return few matches, but index can't be used
+            let matched_points = full_scan_iterator
+                .stop_if(is_stopped)
+                .filter(move |i| struct_filtered_context.check(*i));
+
+            Ok(EitherVariant::A(matched_points))
+        } else {
+            // CPU-optimized strategy here: points are made unique before applying other filters.
+            let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
+
+            // If even one iterator is None, we should replace the whole thing with
+            // an iterator over all ids.
+            let primary_clause_iterators: OperationResult<Option<Vec<_>>> = query_cardinality
+                .primary_clauses
+                .iter()
+                .map(|clause| self.query_field(clause, hw_counter))
+                .collect();
+
+            if let Some(primary_iterators) = primary_clause_iterators? {
+                let all_conditions_are_primary = filter
+                    .iter_conditions()
+                    .all(|condition| query_cardinality.is_primary(condition));
+
+                let joined_primary_iterator = primary_iterators
+                    .into_iter()
+                    // Filter out deferred points.
+                    // This iterator (and each primary iterator too) can yield items in non sorted order, depending on the type of index and primary condition.
+                    .flatten()
+                    .filter(move |&internal_id| {
+                        internal_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+                    })
+                    .stop_if(is_stopped);
+
+                return Ok(if all_conditions_are_primary {
+                    // All conditions are primary clauses,
+                    // We can avoid post-filtering
+                    let iter = joined_primary_iterator
+                        .filter(move |&id| !visited_list.check_and_update_visited(id));
+                    EitherVariant::B(iter)
+                } else {
+                    // Some conditions are primary clauses, some are not
+                    let struct_filtered_context =
+                        self.struct_filtered_context(filter, hw_counter)?;
+                    let iter = joined_primary_iterator.filter(move |&id| {
+                        !visited_list.check_and_update_visited(id)
+                            && struct_filtered_context.check(id)
+                    });
+                    EitherVariant::C(iter)
+                });
+            }
+
+            // We can't use primary conditions, so we fall back to iterating over all ids
+            // and applying full filter.
+            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
+
+            let id_tracker_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
+
+            let iter = id_tracker_iterator
+                .stop_if(is_stopped)
+                .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
+                    i.cpu_counter()
+                })
+                .filter(move |&id| {
+                    !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
+                });
+
+            Ok(EitherVariant::D(iter))
+        }
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {
