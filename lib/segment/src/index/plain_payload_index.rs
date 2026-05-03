@@ -15,8 +15,10 @@ use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
+use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::{
-    CardinalityEstimation, NumericFieldIndex, NumericFieldIndexRead, PayloadBlockCondition,
+    CardinalityEstimation, FacetIndexRead, NumericFieldIndex, NumericFieldIndexRead,
+    PayloadBlockCondition,
 };
 use crate::index::payload_config::PayloadConfig;
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
@@ -163,6 +165,11 @@ impl PayloadIndexRead for PlainPayloadIndex {
     fn numeric_index_for(&self, _key: &PayloadKeyType) -> Option<impl NumericFieldIndexRead + '_> {
         // Plain index has no field indexes; the type tag is just a placeholder.
         None::<NumericFieldIndex<'_>>
+    }
+
+    fn facet_index_for(&self, _key: &JsonPath) -> Option<impl FacetIndexRead + '_> {
+        // Plain index has no field indexes; the type tag is just a placeholder.
+        None::<FacetIndexEnum<'_>>
     }
 
     fn iter_filtered_points<'a, I: IdTrackerRead>(
