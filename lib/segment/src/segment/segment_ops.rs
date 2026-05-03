@@ -24,8 +24,8 @@ use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
 use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndex};
 use crate::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
-    SnapshotFormat, VectorName,
+    PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType, SnapshotFormat,
+    VectorName,
 };
 use crate::utils;
 use crate::vector_storage::VectorStorageRead;
@@ -357,13 +357,6 @@ impl Segment {
         BitVec::from(self.id_tracker.borrow().deleted_point_bitslice())
     }
 
-    pub(super) fn lookup_internal_id(
-        &self,
-        point_id: PointIdType,
-    ) -> OperationResult<PointOffsetType> {
-        self.with_view(|view| view.lookup_internal_id(point_id))
-    }
-
     pub(super) fn get_state(&self) -> SegmentState {
         SegmentState {
             initial_version: self.initial_version,
@@ -386,18 +379,6 @@ impl Segment {
                 err
             ))
         })
-    }
-
-    /// Retrieve payload by internal ID
-    #[inline]
-    pub(super) fn payload_by_offset(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        self.payload_index
-            .borrow()
-            .get_payload(point_offset, hw_counter)
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
