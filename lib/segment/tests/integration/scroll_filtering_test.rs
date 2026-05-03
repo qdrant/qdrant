@@ -28,14 +28,16 @@ fn test_filtering_context_consistency() {
 
         let random_offset = rng.random_range(0..10);
 
-        let read_by_index_res = segment.filtered_read_by_index(
-            Some(random_offset.into()),
-            Some(10),
-            &filter,
-            &is_stopped,
-            &hw_counter,
-            DeferredBehavior::Exclude,
-        );
+        let read_by_index_res = segment.with_view(|view| {
+            view.filtered_read_by_index(
+                Some(random_offset.into()),
+                Some(10),
+                &filter,
+                &is_stopped,
+                &hw_counter,
+                DeferredBehavior::Exclude,
+            )
+        });
         let read_by_stream_res = segment.with_view(|view| {
             view.filtered_read_by_id_stream(
                 Some(random_offset.into()),
