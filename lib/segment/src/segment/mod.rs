@@ -1,5 +1,4 @@
 mod entry;
-mod facet;
 mod formula_rescore;
 pub mod memory;
 mod search;
