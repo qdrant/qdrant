@@ -21,16 +21,6 @@ use crate::types::{DateTimePayloadType, GeoPoint};
 const DEFAULT_SCORE: PreciseScore = 0.0;
 const DEFAULT_DECAY_TARGET: PreciseScore = 0.0;
 
-/// Read-only abstraction over a formula scorer.
-///
-/// Implemented by the appendable [`FormulaScorer`] today; a future
-/// `ReadOnlySegment` will provide its own concrete scorer with the same
-/// `score(point_id)` shape so the rescore-with-formula code path can be
-/// shared.
-pub trait FormulaScorerRead {
-    fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType>;
-}
-
 /// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
     /// The formula to evaluate
@@ -85,9 +75,9 @@ impl<'a> FormulaScorer<'a> {
     }
 }
 
-impl FormulaScorerRead for FormulaScorer<'_> {
+impl FormulaScorer<'_> {
     /// Evaluate the formula for the given point
-    fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
+    pub fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         self.eval_expression(&self.formula, point_id)
             .and_then(|score| {
                 let score_f32 = score as f32;
@@ -99,9 +89,7 @@ impl FormulaScorerRead for FormulaScorer<'_> {
                 Ok(score_f32)
             })
     }
-}
 
-impl FormulaScorer<'_> {
     /// Evaluate the expression recursively
     fn eval_expression(
         &self,
