@@ -729,3 +729,40 @@ impl<'a> NumericFieldIndex<'a> {
         }
     }
 }
+
+/// Read-only abstraction over a per-key numeric index.
+///
+/// Implemented by the appendable [`NumericFieldIndex`] today; a future
+/// `ReadOnlySegment` will provide its own concrete numeric-index type with
+/// the same shape, so order-by reads can share one implementation.
+///
+/// Returned iterators borrow from `&self` — callers hold them within the
+/// scope of the borrow.
+pub trait NumericFieldIndexRead {
+    fn get_ordering_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Box<dyn Iterator<Item = OrderValue> + '_>;
+
+    fn stream_range(
+        &self,
+        range: &RangeInterface,
+    ) -> OperationResult<Box<dyn DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + '_>>;
+}
+
+impl<'a> NumericFieldIndexRead for NumericFieldIndex<'a> {
+    fn get_ordering_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Box<dyn Iterator<Item = OrderValue> + '_> {
+        NumericFieldIndex::get_ordering_values(self, idx)
+    }
+
+    fn stream_range(
+        &self,
+        range: &RangeInterface,
+    ) -> OperationResult<Box<dyn DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + '_>>
+    {
+        StreamRange::stream_range(self, range)
+    }
+}

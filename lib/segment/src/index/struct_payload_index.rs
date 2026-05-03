@@ -25,7 +25,8 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndex, NumericFieldIndex, PayloadBlockCondition, PrimaryCondition,
+    CardinalityEstimation, FieldIndex, NumericFieldIndexRead, PayloadBlockCondition,
+    PrimaryCondition,
 };
 use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::query_estimator::estimate_filter;
@@ -614,7 +615,7 @@ impl PayloadIndexRead for StructPayloadIndex {
         Ok(result)
     }
 
-    fn numeric_index_for(&self, key: &PayloadKeyType) -> Option<NumericFieldIndex<'_>> {
+    fn numeric_index_for(&self, key: &PayloadKeyType) -> Option<impl NumericFieldIndexRead + '_> {
         self.field_indexes
             .get(key)
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
