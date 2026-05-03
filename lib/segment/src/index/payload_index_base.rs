@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::field_index::{FieldIndex, NumericFieldIndex};
+use super::field_index::{FieldIndex, NumericFieldIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
@@ -76,7 +76,9 @@ pub trait PayloadIndexRead {
     /// Look up a numeric index for the given payload key, if one exists.
     ///
     /// Used by ordered reads to stream values from the index in sort order.
-    fn numeric_index_for(&self, key: &PayloadKeyType) -> Option<NumericFieldIndex<'_>>;
+    /// The concrete numeric-index type is opaque so each implementation can
+    /// expose its own internal representation.
+    fn numeric_index_for(&self, key: &PayloadKeyType) -> Option<impl NumericFieldIndexRead + '_>;
 
     /// Iterate point offsets that match the filter.
     ///
