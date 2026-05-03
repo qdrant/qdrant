@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -5,6 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
+use sparse::common::types::DimId;
 
 use super::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::common::BYTES_IN_KB;
@@ -193,6 +195,14 @@ impl VectorIndexRead for PlainVectorIndex {
         self.vector_storage
             .borrow()
             .size_of_available_vectors_in_bytes()
+    }
+
+    fn fill_idf_statistics(
+        &self,
+        _idf: &mut HashMap<DimId, usize>,
+        _hw_counter: &HardwareCounterCell,
+    ) {
+        // Plain (dense) index doesn't track IDF.
     }
 }
 
