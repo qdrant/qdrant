@@ -931,7 +931,7 @@ pub enum CollectionError {
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
-    #[error("Out of disk, {description}")]
+    #[error("Out of disk: {description}")]
     OutOfDisk { description: String },
     #[error("Timeout error: {description}")]
     Timeout { description: String },
@@ -1241,6 +1241,11 @@ impl From<JsonError> for CollectionError {
 
 impl From<std::io::Error> for CollectionError {
     fn from(err: std::io::Error) -> Self {
+        if err.kind() == std::io::ErrorKind::StorageFull {
+            return CollectionError::OutOfDisk {
+                description: format!("{err}"),
+            };
+        }
         CollectionError::ServiceError {
             error: format!("File IO error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),

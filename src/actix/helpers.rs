@@ -256,7 +256,12 @@ impl HttpError {
             StorageError::InferenceError { .. } => {}
             StorageError::ShardUnavailable { .. } => {}
             StorageError::EmptyPartialSnapshot { .. } => {}
-            StorageError::OutOfDisk { .. } => {}
+            StorageError::OutOfDisk { .. } => {
+                headers.insert(
+                    header::HeaderName::from_static("x-qdrant-error"),
+                    header::HeaderValue::from_static("out-of-disk"),
+                );
+            }
         }
         headers
     }
@@ -282,7 +287,6 @@ impl ResponseError for HttpError {
             StorageError::OutOfDisk { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
-
 }
 
 impl From<StorageError> for HttpError {

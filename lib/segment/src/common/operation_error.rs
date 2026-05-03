@@ -275,13 +275,12 @@ impl From<GridstoreError> for OperationError {
             GridstoreError::FlushCancelled => Self::Cancelled {
                 description: "Gridstore flushing was cancelled".to_string(),
             },
-            GridstoreError::Io(_) | GridstoreError::Mmap(_) | GridstoreError::SerdeJson(_) => {
+            GridstoreError::Io(io_err) => Self::from(io_err),
+            GridstoreError::Mmap(_) | GridstoreError::SerdeJson(_) => {
                 Self::service_error(err.to_string())
             }
             GridstoreError::ValidationError { message } => Self::validation_error(message),
-            GridstoreError::UniversalIo(err) => {
-                Self::service_error(format!("Gridstore IO error: {err}"))
-            }
+            GridstoreError::UniversalIo(universal_io_err) => Self::from(universal_io_err),
             GridstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
         }
     }
