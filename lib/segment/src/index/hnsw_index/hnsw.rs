@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,6 +21,7 @@ use parking_lot::Mutex;
 use rand::Rng;
 use rayon::ThreadPool;
 use rayon::prelude::*;
+use sparse::common::types::DimId;
 
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
@@ -1604,6 +1606,14 @@ impl VectorIndexRead for HNSWIndex {
         self.vector_storage
             .borrow()
             .size_of_available_vectors_in_bytes()
+    }
+
+    fn fill_idf_statistics(
+        &self,
+        _idf: &mut HashMap<DimId, usize>,
+        _hw_counter: &HardwareCounterCell,
+    ) {
+        // HNSW (dense) index doesn't track IDF.
     }
 }
 
