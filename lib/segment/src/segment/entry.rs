@@ -29,7 +29,6 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::{IdTracker, IdTrackerRead, PointMappingsGuard};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
-use crate::index::query_estimator::adjust_for_deferred_points;
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead, VectorIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
@@ -159,8 +158,7 @@ impl ReadSegmentEntry for Segment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        let internal_id = self.lookup_internal_id(point_id)?;
-        self.payload_by_offset(internal_id, hw_counter)
+        self.with_view(|view| view.payload(point_id, hw_counter))
     }
 
     fn retrieve(
@@ -389,25 +387,7 @@ impl ReadSegmentEntry for Segment {
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        Ok(match filter {
-            None => {
-                let available = self.available_point_count_without_deferred();
-                CardinalityEstimation {
-                    primary_clauses: vec![],
-                    min: available,
-                    exp: available,
-                    max: available,
-                }
-            }
-            Some(filter) => {
-                let payload_index = self.payload_index.borrow();
-                let cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
-
-                let total_points = self.id_tracker.borrow().available_point_count();
-                let available_points = self.available_point_count_without_deferred();
-                adjust_for_deferred_points(cardinality, available_points, total_points)
-            }
-        })
+        self.with_view(|view| view.estimate_point_count(filter, hw_counter))
     }
 
     fn unique_values(
