@@ -310,37 +310,16 @@ impl ReadSegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
-        match filter {
-            None => self.filtered_read_by_value_stream(
-                order_by,
+        self.with_view(|view| {
+            view.read_ordered_filtered(
                 limit,
-                None,
+                filter,
+                order_by,
                 is_stopped,
                 hw_counter,
                 deferred_behavior,
-            ),
-            Some(filter) => {
-                if self.with_view(|view| view.should_pre_filter(filter, limit, hw_counter))? {
-                    self.filtered_read_by_index_ordered(
-                        order_by,
-                        limit,
-                        filter,
-                        is_stopped,
-                        hw_counter,
-                        deferred_behavior,
-                    )
-                } else {
-                    self.filtered_read_by_value_stream(
-                        order_by,
-                        limit,
-                        Some(filter),
-                        is_stopped,
-                        hw_counter,
-                        deferred_behavior,
-                    )
-                }
-            }
-        }
+            )
+        })
     }
 
     fn read_random_filtered(
