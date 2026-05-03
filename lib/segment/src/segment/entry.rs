@@ -353,7 +353,7 @@ impl ReadSegmentEntry for Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<std::collections::BTreeSet<FacetValue>> {
-        self.facet_values(key, filter, is_stopped, hw_counter)
+        self.with_view(|view| view.facet_values(key, filter, is_stopped, hw_counter))
     }
 
     fn facet(
@@ -362,7 +362,7 @@ impl ReadSegmentEntry for Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        self.approximate_facet(request, is_stopped, hw_counter)
+        self.with_view(|view| view.approximate_facet(request, is_stopped, hw_counter))
     }
 
     fn segment_uuid(&self) -> Uuid {
