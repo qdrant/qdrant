@@ -8,7 +8,7 @@ use common::types::{PointOffsetType, ScoreType};
 use serde_json::Value;
 
 use super::field_index::{FacetIndex, FieldIndex, NumericFieldIndexRead};
-use super::query_optimization::rescore_formula::FormulaScorerRead;
+use super::query_optimization::rescore_formula::FormulaScorer;
 use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -97,7 +97,7 @@ pub trait PayloadIndexRead {
         parsed_formula: &'q ParsedFormula,
         prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
         hw_counter: &'q HardwareCounterCell,
-    ) -> OperationResult<impl FormulaScorerRead + 'q>;
+    ) -> OperationResult<FormulaScorer<'q>>;
 
     /// Iterate point offsets that match the filter.
     ///
