@@ -272,9 +272,11 @@ impl ReadSegmentEntry for Segment {
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         match filter {
-            None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),
+            None => {
+                Ok(self.with_view(|view| view.read_by_id_stream(offset, limit, deferred_behavior)))
+            }
             Some(condition) => {
-                if self.should_pre_filter(condition, limit, hw_counter)? {
+                if self.with_view(|view| view.should_pre_filter(condition, limit, hw_counter))? {
                     self.filtered_read_by_index(
                         offset,
                         limit,
@@ -284,14 +286,16 @@ impl ReadSegmentEntry for Segment {
                         deferred_behavior,
                     )
                 } else {
-                    self.filtered_read_by_id_stream(
-                        offset,
-                        limit,
-                        condition,
-                        is_stopped,
-                        hw_counter,
-                        deferred_behavior,
-                    )
+                    self.with_view(|view| {
+                        view.filtered_read_by_id_stream(
+                            offset,
+                            limit,
+                            condition,
+                            is_stopped,
+                            hw_counter,
+                            deferred_behavior,
+                        )
+                    })
                 }
             }
         }
@@ -316,7 +320,7 @@ impl ReadSegmentEntry for Segment {
                 deferred_behavior,
             ),
             Some(filter) => {
-                if self.should_pre_filter(filter, limit, hw_counter)? {
+                if self.with_view(|view| view.should_pre_filter(filter, limit, hw_counter))? {
                     self.filtered_read_by_index_ordered(
                         order_by,
                         limit,
@@ -349,7 +353,9 @@ impl ReadSegmentEntry for Segment {
         match filter {
             None => Ok(self.read_by_random_id(limit)),
             Some(condition) => {
-                if self.should_pre_filter(condition, Some(limit), hw_counter)? {
+                if self
+                    .with_view(|view| view.should_pre_filter(condition, Some(limit), hw_counter))?
+                {
                     self.filtered_read_by_index_shuffled(limit, condition, is_stopped, hw_counter)
                 } else {
                     self.filtered_read_by_random_stream(limit, condition, is_stopped, hw_counter)

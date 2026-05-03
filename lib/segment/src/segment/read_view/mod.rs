@@ -1,5 +1,6 @@
 mod deferred;
 mod payload;
+mod scroll;
 mod segment_ops;
 mod vectors;
 
