@@ -2,7 +2,6 @@ mod entry;
 mod facet;
 mod formula_rescore;
 pub mod memory;
-mod order_by;
 mod sampling;
 mod scroll;
 mod search;
