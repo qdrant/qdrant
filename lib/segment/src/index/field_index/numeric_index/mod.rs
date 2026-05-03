@@ -15,6 +15,7 @@ use std::str::FromStr;
 use chrono::DateTime;
 use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::either_variant::EitherVariant;
 use common::types::PointOffsetType;
 use gridstore::Blob;
 use mmap_numeric_index::MmapNumericIndex;
@@ -56,51 +57,6 @@ pub trait StreamRange<T> {
         &self,
         range: &RangeInterface,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
-}
-
-/// 4-way enum used to unify the iterator types returned by
-/// [`NumericIndexInner::stream_range`] without resorting to `Box<dyn _>`.
-pub enum NumericRangeIter<E, M, I, MM> {
-    Empty(E),
-    Mutable(M),
-    Immutable(I),
-    Mmap(MM),
-}
-
-impl<T, E, M, I, MM> Iterator for NumericRangeIter<E, M, I, MM>
-where
-    E: Iterator<Item = T>,
-    M: Iterator<Item = T>,
-    I: Iterator<Item = T>,
-    MM: Iterator<Item = T>,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<T> {
-        match self {
-            NumericRangeIter::Empty(it) => it.next(),
-            NumericRangeIter::Mutable(it) => it.next(),
-            NumericRangeIter::Immutable(it) => it.next(),
-            NumericRangeIter::Mmap(it) => it.next(),
-        }
-    }
-}
-
-impl<T, E, M, I, MM> DoubleEndedIterator for NumericRangeIter<E, M, I, MM>
-where
-    E: DoubleEndedIterator<Item = T>,
-    M: DoubleEndedIterator<Item = T>,
-    I: DoubleEndedIterator<Item = T>,
-    MM: DoubleEndedIterator<Item = T>,
-{
-    fn next_back(&mut self) -> Option<T> {
-        match self {
-            NumericRangeIter::Empty(it) => it.next_back(),
-            NumericRangeIter::Mutable(it) => it.next_back(),
-            NumericRangeIter::Immutable(it) => it.next_back(),
-            NumericRangeIter::Mmap(it) => it.next_back(),
-        }
-    }
 }
 
 pub trait Encodable: Copy + Serialize + DeserializeOwned + 'static {
@@ -1210,18 +1166,18 @@ where
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Ok(NumericRangeIter::Empty(std::iter::empty()));
+            return Ok(EitherVariant::A(std::iter::empty()));
         }
 
         Ok(match self {
             NumericIndexInner::Mutable(index) => {
-                NumericRangeIter::Mutable(index.orderable_values_range(start_bound, end_bound))
+                EitherVariant::B(index.orderable_values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
-                NumericRangeIter::Immutable(index.orderable_values_range(start_bound, end_bound))
+                EitherVariant::C(index.orderable_values_range(start_bound, end_bound))
             }
             NumericIndexInner::Mmap(index) => {
-                NumericRangeIter::Mmap(index.orderable_values_range(start_bound, end_bound)?)
+                EitherVariant::D(index.orderable_values_range(start_bound, end_bound)?)
             }
         })
     }
