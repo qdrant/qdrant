@@ -11,17 +11,13 @@ use uuid::Uuid;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
-use crate::common::{
-    Flusher, check_named_vectors, check_query_vectors, check_stopped, check_vector_name,
-};
+use crate::common::{Flusher, check_named_vectors, check_vector_name};
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
-use crate::data_types::query_context::{
-    FormulaContext, QueryContext, QueryIdfStats, SegmentQueryContext,
-};
-use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
+use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::{
@@ -66,37 +62,18 @@ impl ReadSegmentEntry for Segment {
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
-        let vector_data = &self
-            .vector_data
-            .get(vector_name)
-            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let vector_query_context =
-            query_context.get_vector_context(vector_name, self.deferred_internal_id());
-        let internal_results = vector_data.vector_index.borrow().search(
-            query_vectors,
-            filter,
-            top,
-            params,
-            &vector_query_context,
-        )?;
-
-        check_stopped(&vector_query_context.is_stopped())?;
-
-        let hw_counter = vector_query_context.hardware_counter();
-
-        internal_results
-            .into_iter()
-            .map(|internal_result| {
-                self.process_search_result(
-                    internal_result,
-                    with_payload,
-                    with_vector,
-                    &hw_counter,
-                    &vector_query_context.is_stopped(),
-                )
-            })
-            .collect()
+        self.with_view(|view| {
+            view.search_batch(
+                vector_name,
+                query_vectors,
+                with_payload,
+                with_vector,
+                filter,
+                top,
+                params,
+                query_context,
+            )
+        })
     }
 
     fn rescore_with_formula(
@@ -121,13 +98,15 @@ impl ReadSegmentEntry for Segment {
             hw_counter,
         )?;
 
-        self.process_search_result(
-            internal_results,
-            &false.into(),
-            &false.into(),
-            hw_counter,
-            is_stopped,
-        )
+        self.with_view(|view| {
+            view.process_search_result(
+                internal_results,
+                &false.into(),
+                &false.into(),
+                hw_counter,
+                is_stopped,
+            )
+        })
     }
 
     fn vector(
@@ -170,96 +149,16 @@ impl ReadSegmentEntry for Segment {
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        let mut records = AHashMap::with_capacity(point_ids.len());
-
-        // Filter out deferred points. This is done in two stages to prevent cloning `point_ids` and iterating more that needed
-        // but still satisfy rusts ownership constraints.
-        let behavior_allows_filtering = !deferred_behavior.include_all_points();
-        let filter_deferred = self.has_deferred_points() && behavior_allows_filtering;
-        let filtered_point_ids = filter_deferred.then(|| {
-            point_ids
-                .iter()
-                .filter(|&&point_id| !self.point_is_deferred(point_id))
-                .copied()
-                .collect::<Vec<_>>()
-        });
-
-        // Stage two: Select the correct slice and shadow `point_ids`.
-        let point_ids = filtered_point_ids.as_deref().unwrap_or(point_ids);
-
-        let mut update_record_vector =
-            |vector_name: &VectorNameBuf,
-             point_id: PointIdType,
-             vector_internal: VectorInternal| {
-                let point_record = records
-                    .entry(point_id)
-                    .or_insert_with(|| SegmentRecord::empty(point_id));
-
-                point_record
-                    .vectors
-                    .get_or_insert_with(NamedVectorsOwned::default)
-                    .push((vector_name.clone(), vector_internal));
-            };
-
-        match with_vector {
-            WithVector::Bool(true) => {
-                for vector_name in self.vector_data.keys() {
-                    self.with_view(|view| {
-                        view.read_vectors(
-                            vector_name,
-                            point_ids,
-                            hw_counter,
-                            is_stopped,
-                            |point_id, vec| {
-                                update_record_vector(vector_name, point_id, vec);
-                            },
-                        )
-                    })?;
-                }
-            }
-            WithVector::Bool(false) => {
-                // Do not display empty `vectors: {}` if disabled
-                for &point_id in point_ids {
-                    let point_record = records
-                        .entry(point_id)
-                        .or_insert_with(|| SegmentRecord::empty(point_id));
-                    point_record.vectors = None;
-                }
-            }
-            WithVector::Selector(selector) => {
-                for vector_name in selector {
-                    self.with_view(|view| {
-                        view.read_vectors(
-                            vector_name,
-                            point_ids,
-                            hw_counter,
-                            is_stopped,
-                            |point_id, vec| {
-                                update_record_vector(vector_name, point_id, vec);
-                            },
-                        )
-                    })?;
-                }
-            }
-        }
-
-        for &point_id in point_ids {
-            let payload = if with_payload.enable {
-                if let Some(selector) = &with_payload.payload_selector {
-                    Some(selector.process(self.payload(point_id, hw_counter)?))
-                } else {
-                    Some(self.payload(point_id, hw_counter)?)
-                }
-            } else {
-                None
-            };
-            let point_record = records
-                .entry(point_id)
-                .or_insert_with(|| SegmentRecord::empty(point_id));
-            point_record.payload = payload;
-        }
-
-        Ok(records)
+        self.with_view(|view| {
+            view.retrieve(
+                point_ids,
+                with_payload,
+                with_vector,
+                hw_counter,
+                is_stopped,
+                deferred_behavior,
+            )
+        })
     }
 
     fn read_filtered<'a>(
@@ -501,30 +400,7 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) {
-        query_context.add_available_point_count(self.available_point_count_without_deferred());
-        let hw_acc = query_context.hardware_usage_accumulator();
-        let hw_counter = hw_acc.get_counter_cell();
-
-        let QueryIdfStats {
-            idf,
-            indexed_vectors,
-        } = query_context.mut_idf_stats();
-
-        for (vector_name, idf) in idf.iter_mut() {
-            if let Some(vector_data) = self.vector_data.get(vector_name) {
-                let vector_index = vector_data.vector_index.borrow();
-
-                let indexed_vector_count = vector_index.indexed_vectors();
-
-                if let Some(count) = indexed_vectors.get_mut(vector_name) {
-                    *count += indexed_vector_count;
-                } else {
-                    indexed_vectors.insert(vector_name.clone(), indexed_vector_count);
-                }
-
-                vector_index.fill_idf_statistics(idf, &hw_counter);
-            }
-        }
+        self.with_view(|view| view.fill_query_context(query_context));
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {
