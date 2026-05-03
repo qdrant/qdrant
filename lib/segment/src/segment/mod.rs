@@ -1,5 +1,4 @@
 mod entry;
-mod formula_rescore;
 pub mod memory;
 mod search;
 mod segment_ops;
