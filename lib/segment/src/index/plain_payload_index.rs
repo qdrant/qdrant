@@ -3,17 +3,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 use fs_err as fs;
 use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndex;
 use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::{
@@ -21,6 +22,8 @@ use crate::index::field_index::{
     PayloadBlockCondition,
 };
 use crate::index::payload_config::PayloadConfig;
+use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
+use crate::index::query_optimization::rescore_formula::{FormulaScorer, FormulaScorerRead};
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
@@ -170,6 +173,17 @@ impl PayloadIndexRead for PlainPayloadIndex {
     fn facet_index_for(&self, _key: &JsonPath) -> Option<impl FacetIndex + '_> {
         // Plain index has no field indexes; the type tag is just a placeholder.
         None::<FacetIndexEnum<'_>>
+    }
+
+    fn formula_scorer<'q>(
+        &'q self,
+        _parsed_formula: &'q ParsedFormula,
+        _prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
+        _hw_counter: &'q HardwareCounterCell,
+    ) -> OperationResult<impl FormulaScorerRead + 'q> {
+        Err::<FormulaScorer<'q>, _>(OperationError::service_error(
+            "Formula scoring is not supported by PlainPayloadIndex",
+        ))
     }
 
     fn iter_filtered_points<'a, I: IdTrackerRead>(

@@ -2,11 +2,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 use serde_json::Value;
 
 use super::field_index::{FacetIndex, FieldIndex, NumericFieldIndexRead};
+use super::query_optimization::rescore_formula::FormulaScorerRead;
+use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
@@ -85,6 +88,16 @@ pub trait PayloadIndexRead {
     /// Used by faceting to enumerate values and per-value point sets. The
     /// concrete facet-index type is opaque per implementation.
     fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndex + '_>;
+
+    /// Build a per-query formula scorer that evaluates the given parsed
+    /// formula against this index's payload, using the prefetch scores as
+    /// extra inputs.
+    fn formula_scorer<'q>(
+        &'q self,
+        parsed_formula: &'q ParsedFormula,
+        prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
+        hw_counter: &'q HardwareCounterCell,
+    ) -> OperationResult<impl FormulaScorerRead + 'q>;
 
     /// Iterate point offsets that match the filter.
     ///
