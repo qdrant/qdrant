@@ -25,8 +25,8 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndex, NumericFieldIndexRead, PayloadBlockCondition,
-    PrimaryCondition,
+    CardinalityEstimation, FacetIndexRead, FieldIndex, NumericFieldIndexRead,
+    PayloadBlockCondition, PrimaryCondition,
 };
 use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::query_estimator::estimate_filter;
@@ -619,6 +619,12 @@ impl PayloadIndexRead for StructPayloadIndex {
         self.field_indexes
             .get(key)
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
+    }
+
+    fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndexRead + '_> {
+        self.field_indexes
+            .get(key)
+            .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))
     }
 
     fn iter_filtered_points<'a, I: IdTrackerRead>(
