@@ -271,34 +271,16 @@ impl ReadSegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
-        match filter {
-            None => {
-                Ok(self.with_view(|view| view.read_by_id_stream(offset, limit, deferred_behavior)))
-            }
-            Some(condition) => {
-                if self.with_view(|view| view.should_pre_filter(condition, limit, hw_counter))? {
-                    self.filtered_read_by_index(
-                        offset,
-                        limit,
-                        condition,
-                        is_stopped,
-                        hw_counter,
-                        deferred_behavior,
-                    )
-                } else {
-                    self.with_view(|view| {
-                        view.filtered_read_by_id_stream(
-                            offset,
-                            limit,
-                            condition,
-                            is_stopped,
-                            hw_counter,
-                            deferred_behavior,
-                        )
-                    })
-                }
-            }
-        }
+        self.with_view(|view| {
+            view.read_filtered(
+                offset,
+                limit,
+                filter,
+                is_stopped,
+                hw_counter,
+                deferred_behavior,
+            )
+        })
     }
 
     fn read_ordered_filtered<'a>(
