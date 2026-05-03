@@ -546,23 +546,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             }
         }
     }
-
-    // Update statistics for idf-dot similarity
-    pub fn fill_idf_statistics(
-        &self,
-        idf: &mut HashMap<DimId, usize>,
-        hw_counter: &HardwareCounterCell,
-    ) {
-        for (dim_id, count) in idf.iter_mut() {
-            if let Some(remapped_dim_id) = self.indices_tracker.remap_index(*dim_id)
-                && let Some(posting_list_len) = self
-                    .inverted_index
-                    .posting_list_len(&remapped_dim_id, hw_counter)
-            {
-                *count += posting_list_len
-            }
-        }
-    }
 }
 
 impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInvertedIndex> {
@@ -620,6 +603,23 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
 
     fn size_of_searchable_vectors_in_bytes(&self) -> usize {
         self.inverted_index.total_sparse_vectors_size()
+    }
+
+    /// Update statistics for idf-dot similarity.
+    fn fill_idf_statistics(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        hw_counter: &HardwareCounterCell,
+    ) {
+        for (dim_id, count) in idf.iter_mut() {
+            if let Some(remapped_dim_id) = self.indices_tracker.remap_index(*dim_id)
+                && let Some(posting_list_len) = self
+                    .inverted_index
+                    .posting_list_len(&remapped_dim_id, hw_counter)
+            {
+                *count += posting_list_len
+            }
+        }
     }
 }
 
