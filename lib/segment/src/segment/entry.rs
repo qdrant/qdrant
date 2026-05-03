@@ -311,18 +311,7 @@ impl ReadSegmentEntry for Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
-        match filter {
-            None => Ok(self.read_by_random_id(limit)),
-            Some(condition) => {
-                if self
-                    .with_view(|view| view.should_pre_filter(condition, Some(limit), hw_counter))?
-                {
-                    self.filtered_read_by_index_shuffled(limit, condition, is_stopped, hw_counter)
-                } else {
-                    self.filtered_read_by_random_stream(limit, condition, is_stopped, hw_counter)
-                }
-            }
-        }
+        self.with_view(|view| view.read_random_filtered(limit, filter, is_stopped, hw_counter))
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
