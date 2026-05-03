@@ -25,6 +25,7 @@ mod stored_point_to_values;
 mod tests;
 mod utils;
 
+pub use facet_index::FacetIndexRead;
 pub use field_index_base::*;
 
 use crate::utils::maybe_arc::MaybeArc;
