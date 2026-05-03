@@ -1,4 +1,5 @@
 mod deferred;
+mod facet;
 mod order_by;
 mod payload;
 mod sampling;
