@@ -44,6 +44,16 @@ pub trait VectorIndexRead {
 
     /// Total size of all searchable vectors in bytes.
     fn size_of_searchable_vectors_in_bytes(&self) -> usize;
+
+    /// Augment the IDF stats for the given dimensions.
+    ///
+    /// Default is a no-op: only sparse-vector indexes track IDF.
+    fn fill_idf_statistics(
+        &self,
+        _idf: &mut HashMap<DimId, usize>,
+        _hw_counter: &HardwareCounterCell,
+    ) {
+    }
 }
 
 /// Trait for vector index with mutating operations.
@@ -156,47 +166,6 @@ impl VectorIndexEnum {
         };
         Ok(())
     }
-
-    pub fn fill_idf_statistics(
-        &self,
-        idf: &mut HashMap<DimId, usize>,
-        hw_counter: &HardwareCounterCell,
-    ) {
-        match self {
-            Self::Plain(_) | Self::Hnsw(_) => (),
-            Self::SparseRam(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseMmap(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.fill_idf_statistics(idf, hw_counter)
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.fill_idf_statistics(idf, hw_counter)
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.fill_idf_statistics(idf, hw_counter)
-            }
-            Self::SparseCompressedMmapF32(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseCompressedMmapF16(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseCompressedMmapU8(index) => index.fill_idf_statistics(idf, hw_counter),
-        }
-    }
-
-    pub fn indexed_vectors(&self) -> usize {
-        match self {
-            Self::Plain(index) => index.indexed_vector_count(),
-            Self::Hnsw(index) => index.indexed_vector_count(),
-            Self::SparseRam(index) => index.inverted_index().vector_count(),
-            Self::SparseImmutableRam(index) => index.inverted_index().vector_count(),
-            Self::SparseMmap(index) => index.inverted_index().vector_count(),
-            Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().vector_count(),
-            Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().vector_count(),
-            Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().vector_count(),
-            Self::SparseCompressedMmapF32(index) => index.inverted_index().vector_count(),
-            Self::SparseCompressedMmapF16(index) => index.inverted_index().vector_count(),
-            Self::SparseCompressedMmapU8(index) => index.inverted_index().vector_count(),
-        }
-    }
 }
 
 impl VectorIndexRead for VectorIndexEnum {
@@ -302,6 +271,31 @@ impl VectorIndexRead for VectorIndexEnum {
             Self::SparseCompressedMmapF32(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedMmapF16(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedMmapU8(index) => index.size_of_searchable_vectors_in_bytes(),
+        }
+    }
+
+    fn fill_idf_statistics(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        hw_counter: &HardwareCounterCell,
+    ) {
+        match self {
+            Self::Plain(_) | Self::Hnsw(_) => (),
+            Self::SparseRam(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseMmap(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.fill_idf_statistics(idf, hw_counter)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.fill_idf_statistics(idf, hw_counter)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.fill_idf_statistics(idf, hw_counter)
+            }
+            Self::SparseCompressedMmapF32(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedMmapF16(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedMmapU8(index) => index.fill_idf_statistics(idf, hw_counter),
         }
     }
 }
