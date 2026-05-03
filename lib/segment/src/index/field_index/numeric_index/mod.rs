@@ -55,7 +55,52 @@ pub trait StreamRange<T> {
     fn stream_range(
         &self,
         range: &RangeInterface,
-    ) -> OperationResult<Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>>;
+    ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
+}
+
+/// 4-way enum used to unify the iterator types returned by
+/// [`NumericIndexInner::stream_range`] without resorting to `Box<dyn _>`.
+pub enum NumericRangeIter<E, M, I, MM> {
+    Empty(E),
+    Mutable(M),
+    Immutable(I),
+    Mmap(MM),
+}
+
+impl<T, E, M, I, MM> Iterator for NumericRangeIter<E, M, I, MM>
+where
+    E: Iterator<Item = T>,
+    M: Iterator<Item = T>,
+    I: Iterator<Item = T>,
+    MM: Iterator<Item = T>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        match self {
+            NumericRangeIter::Empty(it) => it.next(),
+            NumericRangeIter::Mutable(it) => it.next(),
+            NumericRangeIter::Immutable(it) => it.next(),
+            NumericRangeIter::Mmap(it) => it.next(),
+        }
+    }
+}
+
+impl<T, E, M, I, MM> DoubleEndedIterator for NumericRangeIter<E, M, I, MM>
+where
+    E: DoubleEndedIterator<Item = T>,
+    M: DoubleEndedIterator<Item = T>,
+    I: DoubleEndedIterator<Item = T>,
+    MM: DoubleEndedIterator<Item = T>,
+{
+    fn next_back(&mut self) -> Option<T> {
+        match self {
+            NumericRangeIter::Empty(it) => it.next_back(),
+            NumericRangeIter::Mutable(it) => it.next_back(),
+            NumericRangeIter::Immutable(it) => it.next_back(),
+            NumericRangeIter::Mmap(it) => it.next_back(),
+        }
+    }
 }
 
 pub trait Encodable: Copy + Serialize + DeserializeOwned + 'static {
@@ -1153,7 +1198,7 @@ where
     fn stream_range(
         &self,
         range: &RangeInterface,
-    ) -> OperationResult<Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>> {
+    ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
             RangeInterface::DateTime(datetime_range) => {
@@ -1165,18 +1210,18 @@ where
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Ok(Box::new(std::iter::empty()));
+            return Ok(NumericRangeIter::Empty(std::iter::empty()));
         }
 
         Ok(match self {
             NumericIndexInner::Mutable(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound))
+                NumericRangeIter::Mutable(index.orderable_values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound))
+                NumericRangeIter::Immutable(index.orderable_values_range(start_bound, end_bound))
             }
             NumericIndexInner::Mmap(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound)?)
+                NumericRangeIter::Mmap(index.orderable_values_range(start_bound, end_bound)?)
             }
         })
     }
