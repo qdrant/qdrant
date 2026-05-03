@@ -49,8 +49,11 @@ pub enum OperationError {
     InconsistentStorage { description: String },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Out of disk: {description}")]
+    OutOfDisk { description: String },
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
+
     #[error("Timeout error: {description}")]
     Timeout { description: String },
     #[error("Validation failed: {description}")]
@@ -211,10 +214,14 @@ impl From<IoError> for OperationError {
                     free: free_memory,
                 }
             }
+            ErrorKind::StorageFull => OperationError::OutOfDisk {
+                description: format!("IO Error: {err}"),
+            },
             _ => OperationError::service_error(format!("IO Error: {err}")),
         }
     }
 }
+
 
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {

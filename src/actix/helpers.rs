@@ -190,14 +190,21 @@ where
 }
 
 fn log_service_error(err: &StorageError) {
-    if let StorageError::ServiceError { backtrace, .. } = err {
-        log::error!("Error processing request: {err}");
+    match err {
+        StorageError::ServiceError { backtrace, .. } => {
+            log::error!("Error processing request: {err}");
 
-        if let Some(backtrace) = backtrace {
-            log::trace!("Backtrace: {backtrace}");
+            if let Some(backtrace) = backtrace {
+                log::trace!("Backtrace: {backtrace}");
+            }
         }
+        StorageError::OutOfDisk { .. } => {
+            log::warn!("Error processing request: {err}");
+        }
+        _ => {}
     }
 }
+
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
@@ -234,6 +241,7 @@ impl HttpError {
             StorageError::InferenceError { .. } => {}
             StorageError::ShardUnavailable { .. } => {}
             StorageError::EmptyPartialSnapshot { .. } => {}
+            StorageError::OutOfDisk { .. } => {}
         }
         headers
     }
@@ -256,8 +264,10 @@ impl ResponseError for HttpError {
             StorageError::RateLimitExceeded { .. } => http::StatusCode::TOO_MANY_REQUESTS,
             StorageError::ShardUnavailable { .. } => http::StatusCode::SERVICE_UNAVAILABLE,
             StorageError::EmptyPartialSnapshot { .. } => http::StatusCode::NOT_MODIFIED,
+            StorageError::OutOfDisk { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
+
 }
 
 impl From<StorageError> for HttpError {
