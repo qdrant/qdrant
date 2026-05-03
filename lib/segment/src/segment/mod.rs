@@ -2,7 +2,6 @@ mod entry;
 mod facet;
 mod formula_rescore;
 pub mod memory;
-mod sampling;
 mod search;
 mod segment_ops;
 pub mod vector_data_read;
