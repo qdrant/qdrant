@@ -21,6 +21,16 @@ use crate::types::{DateTimePayloadType, GeoPoint};
 const DEFAULT_SCORE: PreciseScore = 0.0;
 const DEFAULT_DECAY_TARGET: PreciseScore = 0.0;
 
+/// Read-only abstraction over a formula scorer.
+///
+/// Implemented by the appendable [`FormulaScorer`] today; a future
+/// `ReadOnlySegment` will provide its own concrete scorer with the same
+/// `score(point_id)` shape so the rescore-with-formula code path can be
+/// shared.
+pub trait FormulaScorerRead {
+    fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType>;
+}
+
 /// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
     /// The formula to evaluate
@@ -57,46 +67,27 @@ impl FriendlyName for DateTimePayloadType {
     }
 }
 
-impl StructPayloadIndex {
-    pub fn formula_scorer<'s, 'q>(
-        &'s self,
-        parsed_formula: &'q ParsedFormula,
-        prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
-        hw_counter: &'q HardwareCounterCell,
-    ) -> OperationResult<FormulaScorer<'q>>
-    where
-        's: 'q,
-    {
-        let ParsedFormula {
-            payload_vars,
-            conditions,
-            defaults,
+impl<'a> FormulaScorer<'a> {
+    pub(crate) fn new(
+        formula: ParsedExpression,
+        prefetches_scores: &'a [AHashMap<PointOffsetType, ScoreType>],
+        payload_retrievers: HashMap<JsonPath, VariableRetrieverFn<'a>>,
+        condition_checkers: Vec<OptimizedCondition<'a>>,
+        defaults: HashMap<VariableId, Value>,
+    ) -> Self {
+        FormulaScorer {
             formula,
-        } = parsed_formula;
-
-        let payload_retrievers = self.retrievers_map(payload_vars.clone(), hw_counter);
-
-        let payload_provider = PayloadProvider::new(self.payload.clone());
-        let total = self.available_point_count();
-        let condition_checkers = self
-            .convert_conditions(conditions, payload_provider, total, hw_counter)?
-            .into_iter()
-            .map(|(checker, _estimation)| checker)
-            .collect();
-
-        Ok(FormulaScorer {
-            formula: formula.clone(),
             prefetches_scores,
             payload_retrievers,
             condition_checkers,
-            defaults: defaults.clone(),
-        })
+            defaults,
+        }
     }
 }
 
-impl FormulaScorer<'_> {
+impl FormulaScorerRead for FormulaScorer<'_> {
     /// Evaluate the formula for the given point
-    pub fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
+    fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         self.eval_expression(&self.formula, point_id)
             .and_then(|score| {
                 let score_f32 = score as f32;
@@ -108,7 +99,9 @@ impl FormulaScorer<'_> {
                 Ok(score_f32)
             })
     }
+}
 
+impl FormulaScorer<'_> {
     /// Evaluate the expression recursively
     fn eval_expression(
         &self,
