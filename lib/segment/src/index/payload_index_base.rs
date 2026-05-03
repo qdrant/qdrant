@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::field_index::{FacetIndexRead, FieldIndex, NumericFieldIndexRead};
+use super::field_index::{FacetIndex, FieldIndex, NumericFieldIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
@@ -84,7 +84,7 @@ pub trait PayloadIndexRead {
     ///
     /// Used by faceting to enumerate values and per-value point sets. The
     /// concrete facet-index type is opaque per implementation.
-    fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndexRead + '_>;
+    fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndex + '_>;
 
     /// Iterate point offsets that match the filter.
     ///
