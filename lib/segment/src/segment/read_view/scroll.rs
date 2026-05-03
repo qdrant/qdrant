@@ -10,6 +10,7 @@ use crate::index::PayloadIndexRead;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
+use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::types::{Filter, PointIdType};
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
@@ -68,6 +69,49 @@ where
             .collect()
     }
 
+    pub fn filtered_read_by_index(
+        &self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        condition: &Filter,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<Vec<PointIdType>> {
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
+
+        let cardinality_estimation = self
+            .payload_index
+            .estimate_cardinality(condition, hw_counter)?;
+        let point_mappings = self.id_tracker.point_mappings();
+
+        let ids_iterator = self
+            .payload_index
+            .iter_filtered_points(
+                condition,
+                self.id_tracker,
+                &point_mappings,
+                &cardinality_estimation,
+                hw_counter,
+                is_stopped,
+                effective_deferred_id,
+            )?
+            .filter_map(|internal_id| {
+                let external_id = self.id_tracker.external_id(internal_id)?;
+                match offset {
+                    Some(offset) if external_id < offset => None,
+                    _ => Some(external_id),
+                }
+            });
+
+        let mut page = match limit {
+            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
+            None => ids_iterator.collect(),
+        };
+        page.sort_unstable();
+        Ok(page)
+    }
+
     pub fn filtered_read_by_id_stream(
         &self,
         offset: Option<PointIdType>,
@@ -89,5 +133,40 @@ where
             .map(|(external_id, _)| external_id)
             .take(limit.unwrap_or(usize::MAX))
             .collect())
+    }
+
+    pub fn read_filtered<'a>(
+        &'a self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<Vec<PointIdType>> {
+        match filter {
+            None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),
+            Some(condition) => {
+                if self.should_pre_filter(condition, limit, hw_counter)? {
+                    self.filtered_read_by_index(
+                        offset,
+                        limit,
+                        condition,
+                        is_stopped,
+                        hw_counter,
+                        deferred_behavior,
+                    )
+                } else {
+                    self.filtered_read_by_id_stream(
+                        offset,
+                        limit,
+                        condition,
+                        is_stopped,
+                        hw_counter,
+                        deferred_behavior,
+                    )
+                }
+            }
+        }
     }
 }
