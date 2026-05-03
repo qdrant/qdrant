@@ -10,7 +10,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
-use crate::index::field_index::numeric_index::StreamRange;
+use crate::index::field_index::NumericFieldIndexRead;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
