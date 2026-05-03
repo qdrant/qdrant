@@ -11,7 +11,6 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::FormulaContext;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
-use crate::index::query_optimization::rescore_formula::FormulaScorerRead;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;

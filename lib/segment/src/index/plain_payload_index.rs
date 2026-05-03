@@ -22,8 +22,8 @@ use crate::index::field_index::{
     PayloadBlockCondition,
 };
 use crate::index::payload_config::PayloadConfig;
+use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use crate::index::query_optimization::rescore_formula::{FormulaScorer, FormulaScorerRead};
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
@@ -180,8 +180,8 @@ impl PayloadIndexRead for PlainPayloadIndex {
         _parsed_formula: &'q ParsedFormula,
         _prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
         _hw_counter: &'q HardwareCounterCell,
-    ) -> OperationResult<impl FormulaScorerRead + 'q> {
-        Err::<FormulaScorer<'q>, _>(OperationError::service_error(
+    ) -> OperationResult<FormulaScorer<'q>> {
+        Err(OperationError::service_error(
             "Formula scoring is not supported by PlainPayloadIndex",
         ))
     }
