@@ -1615,6 +1615,10 @@ impl VectorIndexRead for HNSWIndex {
     ) {
         // HNSW (dense) index doesn't track IDF.
     }
+
+    fn is_index(&self) -> bool {
+        true
+    }
 }
 
 impl VectorIndex for HNSWIndex {
