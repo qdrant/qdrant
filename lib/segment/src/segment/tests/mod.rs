@@ -353,7 +353,9 @@ fn test_check_consistency() {
             .is_ok()
     );
 
-    let internal_id = segment.lookup_internal_id(6.into()).unwrap();
+    let internal_id = segment
+        .with_view(|v| v.lookup_internal_id(6.into()))
+        .unwrap();
 
     // make id_tracker inconsistent
     segment.id_tracker.borrow_mut().drop(6.into()).unwrap();
@@ -515,7 +517,9 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 5);
 
     // Replace vector 'a' for point 8, counts should remain the same
-    let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
+    let internal_8 = segment
+        .with_view(|v| v.lookup_internal_id(8.into()))
+        .unwrap();
     segment
         .replace_all_vectors(
             internal_8,
@@ -568,7 +572,9 @@ fn test_vector_compatibility_checks() {
             &hw_counter,
         )
         .unwrap();
-    let internal_id = segment.lookup_internal_id(point_id).unwrap();
+    let internal_id = segment
+        .with_view(|v| v.lookup_internal_id(point_id))
+        .unwrap();
 
     // A set of broken vectors
     let wrong_vectors_single = [
@@ -914,7 +920,7 @@ fn create_deferred_segment(
         );
         // Check the `is-deferred` payload is correct.
         let is_deferred_payload = segment
-            .payload_by_offset(i as u32 - 1, &hw_counter)
+            .with_view(|v| v.payload_by_offset(i as u32 - 1, &hw_counter))
             .unwrap()
             .get_value(&JsonPath::new("is-deferred"))[0]
             .as_bool()
@@ -931,7 +937,7 @@ fn create_deferred_segment(
 
         // Check the `is-deferred` payload is correct.
         let is_deferred_payload = segment
-            .payload_by_offset(i as u32 - 1, &hw_counter)
+            .with_view(|v| v.payload_by_offset(i as u32 - 1, &hw_counter))
             .unwrap()
             .get_value(&JsonPath::new("is-deferred"))[0]
             .as_bool()
