@@ -6,9 +6,10 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::field_index::FieldIndex;
+use super::field_index::{FieldIndex, NumericFieldIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
@@ -71,6 +72,28 @@ pub trait PayloadIndexRead {
         filter: &'a Filter,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn FilterContext + 'a>>;
+
+    /// Look up a numeric index for the given payload key, if one exists.
+    ///
+    /// Used by ordered reads to stream values from the index in sort order.
+    fn numeric_index_for(&self, key: &PayloadKeyType) -> Option<NumericFieldIndex<'_>>;
+
+    /// Iterate point offsets that match the filter.
+    ///
+    /// Generic over `I: IdTrackerRead` so callers pass their concrete tracker
+    /// without dynamic dispatch; the iterator return uses RPITIT so each impl
+    /// keeps its own zero-cost concrete chain.
+    #[allow(clippy::too_many_arguments)]
+    fn iter_filtered_points<'a, I: IdTrackerRead>(
+        &'a self,
+        filter: &'a Filter,
+        id_tracker: &'a I,
+        point_mappings: &'a PointMappingsRefEnum<'a>,
+        query_cardinality: &'a CardinalityEstimation,
+        hw_counter: &'a HardwareCounterCell,
+        is_stopped: &'a AtomicBool,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
