@@ -15,7 +15,7 @@ pub type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> MultiValue<Val
 
 impl StructPayloadIndex {
     /// Prepares optimized functions to extract each of the variables, given a point id.
-    pub(super) fn retrievers_map<'a, 'q>(
+    pub(crate) fn retrievers_map<'a, 'q>(
         &'a self,
         variables: HashSet<JsonPath>,
         hw_counter: &'q HardwareCounterCell,
