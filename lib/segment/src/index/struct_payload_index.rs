@@ -4,13 +4,14 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::defaults::log_load_timing;
 use common::either_variant::EitherVariant;
 use common::iterator_ext::IteratorExt;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 use fs_err as fs;
 use schemars::_serde_json::Value;
 
@@ -31,6 +32,8 @@ use crate::index::field_index::{
 use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
+use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
+use crate::index::query_optimization::rescore_formula::{FormulaScorer, FormulaScorerRead};
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
@@ -625,6 +628,38 @@ impl PayloadIndexRead for StructPayloadIndex {
         self.field_indexes
             .get(key)
             .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))
+    }
+
+    fn formula_scorer<'q>(
+        &'q self,
+        parsed_formula: &'q ParsedFormula,
+        prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
+        hw_counter: &'q HardwareCounterCell,
+    ) -> OperationResult<impl FormulaScorerRead + 'q> {
+        let ParsedFormula {
+            payload_vars,
+            conditions,
+            defaults,
+            formula,
+        } = parsed_formula;
+
+        let payload_retrievers = self.retrievers_map(payload_vars.clone(), hw_counter);
+
+        let payload_provider = PayloadProvider::new(self.payload.clone());
+        let total = self.available_point_count();
+        let condition_checkers = self
+            .convert_conditions(conditions, payload_provider, total, hw_counter)?
+            .into_iter()
+            .map(|(checker, _estimation)| checker)
+            .collect();
+
+        Ok(FormulaScorer::new(
+            formula.clone(),
+            prefetches_scores,
+            payload_retrievers,
+            condition_checkers,
+            defaults.clone(),
+        ))
     }
 
     fn iter_filtered_points<'a, I: IdTrackerRead>(
