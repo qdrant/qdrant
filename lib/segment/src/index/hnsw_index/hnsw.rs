@@ -1313,7 +1313,7 @@ impl HNSWIndex {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let filtered_points = payload_index.iter_filtered_points(
             filter,
-            &id_tracker,
+            &*id_tracker,
             &point_mappings,
             &query_cardinality,
             hw_counter,
