@@ -201,9 +201,24 @@ fn log_service_error(err: &StorageError) {
         StorageError::OutOfDisk { .. } => {
             log::warn!("Error processing request: {err}");
         }
-        _ => {}
+        StorageError::BadInput { .. }
+        | StorageError::AlreadyExists { .. }
+        | StorageError::NotFound { .. }
+        | StorageError::BadRequest { .. }
+        | StorageError::Locked { .. }
+        | StorageError::Timeout { .. }
+        | StorageError::ChecksumMismatch { .. }
+        | StorageError::Forbidden { .. }
+        | StorageError::PreconditionFailed { .. }
+        | StorageError::InferenceError { .. }
+        | StorageError::RateLimitExceeded { .. }
+        | StorageError::ShardUnavailable { .. }
+        | StorageError::EmptyPartialSnapshot { .. } => {
+            log::trace!("Error processing request: {err}");
+        }
     }
 }
+
 
 
 #[derive(Clone, Debug, thiserror::Error)]

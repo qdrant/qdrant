@@ -375,12 +375,20 @@ impl From<raft::Error> for StorageError {
 
 impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
     fn from(err: atomicwrites::Error<E>) -> Self {
+        if let atomicwrites::Error::Internal(ref io_err) = err {
+            if io_err.kind() == std::io::ErrorKind::StorageFull {
+                return StorageError::OutOfDisk {
+                    description: format!("{err}"),
+                };
+            }
+        }
         StorageError::ServiceError {
             description: format!("Failed to write file: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
+
 
 impl From<tonic::transport::Error> for StorageError {
     fn from(err: tonic::transport::Error) -> Self {
