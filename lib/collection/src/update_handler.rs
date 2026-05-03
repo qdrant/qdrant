@@ -346,8 +346,9 @@ impl UpdateHandler {
                                         tracker_handle
                                             .update(TrackerStatus::Error(error.to_string()));
 
-                                        panic!("Optimization error: {error}");
+                                        false
                                     }
+
                                 },
                             }
                         }

@@ -32,18 +32,24 @@ where
 }
 
 pub fn process_response_error(err: StorageError, timing: Instant) -> HttpResponse {
-    if let StorageError::ServiceError {
-        description,
-        backtrace,
-    } = &err
-    {
-        log::warn!("error processing request: {}", description);
-        if let Some(backtrace) = backtrace {
-            log::trace!("backtrace: {}", backtrace);
+    match &err {
+        StorageError::ServiceError {
+            description,
+            backtrace,
+        } => {
+            log::warn!("error processing request: {}", description);
+            if let Some(backtrace) = backtrace {
+                log::trace!("backtrace: {}", backtrace);
+            }
         }
+        StorageError::OutOfDisk { description } => {
+            log::warn!("error processing request: {}", description);
+        }
+        _ => {}
     }
 
     let error: HttpError = err.into();
+
 
     HttpResponse::build(error.status_code()).json(ApiResponse::<()> {
         result: None,
@@ -158,9 +164,12 @@ impl ResponseError for HttpError {
             StorageError::ChecksumMismatch { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::Forbidden { .. } => http::StatusCode::FORBIDDEN,
             StorageError::PreconditionFailed { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
+            StorageError::OutOfDisk { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
+
+
 
 impl From<StorageError> for HttpError {
     fn from(err: StorageError) -> Self {

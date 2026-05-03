@@ -938,8 +938,11 @@ pub enum CollectionError {
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Out of disk, {description}")]
+    OutOfDisk { description: String },
     #[error("Timeout error: {description}")]
     Timeout { description: String },
+
     #[error("Precondition failed: {description}")]
     PreConditionFailed { description: String },
 }
@@ -1080,7 +1083,9 @@ impl From<OperationError> for CollectionError {
             OperationError::OutOfMemory { description, free } => {
                 Self::OutOfMemory { description, free }
             }
+            OperationError::OutOfDisk { description } => Self::OutOfDisk { description },
             OperationError::InconsistentStorage { .. } => Self::ServiceError {
+
                 error: format!("{err}"),
                 backtrace: None,
             },
