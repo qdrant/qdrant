@@ -47,13 +47,14 @@ pub trait VectorIndexRead {
 
     /// Augment the IDF stats for the given dimensions.
     ///
-    /// Default is a no-op: only sparse-vector indexes track IDF.
+    /// Most indexes don't track IDF and should provide an empty body. Sparse-
+    /// vector indexes are the only ones that contribute. No default is provided
+    /// on purpose so a new index implementation cannot silently skip this.
     fn fill_idf_statistics(
         &self,
-        _idf: &mut HashMap<DimId, usize>,
-        _hw_counter: &HardwareCounterCell,
-    ) {
-    }
+        idf: &mut HashMap<DimId, usize>,
+        hw_counter: &HardwareCounterCell,
+    );
 }
 
 /// Trait for vector index with mutating operations.
