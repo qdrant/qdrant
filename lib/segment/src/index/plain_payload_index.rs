@@ -17,7 +17,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::{
-    CardinalityEstimation, FacetIndexRead, NumericFieldIndex, NumericFieldIndexRead,
+    CardinalityEstimation, FacetIndex, NumericFieldIndex, NumericFieldIndexRead,
     PayloadBlockCondition,
 };
 use crate::index::payload_config::PayloadConfig;
@@ -167,7 +167,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
         None::<NumericFieldIndex<'_>>
     }
 
-    fn facet_index_for(&self, _key: &JsonPath) -> Option<impl FacetIndexRead + '_> {
+    fn facet_index_for(&self, _key: &JsonPath) -> Option<impl FacetIndex + '_> {
         // Plain index has no field indexes; the type tag is just a placeholder.
         None::<FacetIndexEnum<'_>>
     }
