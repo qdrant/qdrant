@@ -7,7 +7,7 @@ use common::bitvec::BitSlice;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, StoredStruct, UniversalWrite};
+use common::universal_io::{OpenOptions, StoredStruct, UniversalWrite};
 use fs_err as fs;
 use itertools::Either;
 
@@ -61,7 +61,7 @@ fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
 /// [1]: super::roaring_flags::RoaringFlags
 /// [2]: super::bitvec_flags::BitvecFlags
 /// [3]: super::buffered_dynamic_flags::BufferedDynamicFlags
-pub struct DynamicStoredFlags<S = MmapFile> {
+pub struct DynamicStoredFlags<S> {
     /// On-disk BitSlice for flags
     flags: StoredBitSlice<S>,
     status: StoredStruct<S, DynamicFlagsStatus>,

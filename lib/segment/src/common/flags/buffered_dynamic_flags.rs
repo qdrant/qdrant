@@ -4,7 +4,6 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 
@@ -17,7 +16,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 ///
 /// Changes are buffered until explicitly flushed.
 #[derive(Debug)]
-pub(crate) struct BufferedDynamicFlags<S = MmapFile> {
+pub(crate) struct BufferedDynamicFlags<S> {
     /// Persisted flags.
     storage: Arc<Mutex<DynamicStoredFlags<S>>>,
 

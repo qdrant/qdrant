@@ -7,6 +7,7 @@ use roaring::RoaringBitmap;
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
 use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
+use crate::common::flags::dynamic_stored_flags::UioDynamicFlags;
 use crate::common::operation_error::OperationResult;
 
 /// A buffered, growable, and persistent bitslice with fast in-memory roaring bitmap.
@@ -16,9 +17,9 @@ use crate::common::operation_error::OperationResult;
 /// Changes are buffered until explicitly flushed.
 ///
 /// [1]: super::bitvec_flags::BitvecFlags
-pub struct RoaringFlags {
+pub struct RoaringFlags<S = MmapFile> {
     /// Buffered persisted flags.
-    storage: BufferedDynamicFlags,
+    storage: BufferedDynamicFlags<S>,
 
     /// In-memory bitmap of true flags.
     // Potential optimization: add a secondary bitmap for false values for faster iter_falses implementation.
@@ -28,8 +29,11 @@ pub struct RoaringFlags {
     len: usize,
 }
 
-impl RoaringFlags {
-    pub fn new(dynamic_flags: DynamicStoredFlags<MmapFile>) -> OperationResult<Self> {
+impl<S> RoaringFlags<S>
+where
+    S: UioDynamicFlags,
+{
+    pub fn new(dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
         // load flags into memory
         let bitmap = RoaringBitmap::from_sorted_iter(dynamic_flags.iter_trues()?)
             .expect("iter_trues iterates in sorted order");

@@ -7,6 +7,7 @@ use common::universal_io::MmapFile;
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
 use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
+use crate::common::flags::dynamic_stored_flags::UioDynamicFlags;
 use crate::common::operation_error::OperationResult;
 
 /// A buffered, growable, and persistent bitslice with a separate in-memory bitvec.
@@ -17,9 +18,9 @@ use crate::common::operation_error::OperationResult;
 ///
 /// [1]: super::roaring_flags::RoaringFlags
 #[derive(Debug)]
-pub struct BitvecFlags {
+pub struct BitvecFlags<S = MmapFile> {
     /// Buffered persisted flags.
-    storage: BufferedDynamicFlags,
+    storage: BufferedDynamicFlags<S>,
 
     /// In-memory bitvec of true and false flags.
     bitvec: BitVec,
@@ -28,8 +29,11 @@ pub struct BitvecFlags {
     len: usize,
 }
 
-impl BitvecFlags {
-    pub fn new(dynamic_flags: DynamicStoredFlags<MmapFile>) -> OperationResult<Self> {
+impl<S> BitvecFlags<S>
+where
+    S: UioDynamicFlags,
+{
+    pub fn new(dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
         // load flags into memory
         let bitvec = BitVec::from_bitslice(&*dynamic_flags.get_bitslice()?);
 
