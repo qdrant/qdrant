@@ -1,14 +1,16 @@
 //! Compares the scalar Walsh–Hadamard Transform
 //! (`quantization::turboquant::rotation::in_place_walsh_hadamard_transform`)
-//! against the AVX2 variants in `quantization::turboquant::hadamard_simd`:
-//! `wht_avx2` (h=1,2 fused) and the
-//! 4×-unrolled `wht_avx2_radix16_4x`. Bit-equality between SIMD and scalar is
+//! against the SIMD variants in `quantization::turboquant::hadamard_simd`:
+//! AVX2 (`wht_avx2`, `wht_avx2_radix16_4x`) on x86_64 and NEON (`wht_neon`,
+//! `wht_neon_radix16_4x`) on aarch64. Bit-equality between SIMD and scalar is
 //! covered by unit tests in `hadamard_simd::tests` — this bench only measures
 //! throughput.
 
 use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+#[cfg(target_arch = "aarch64")]
+use quantization::turboquant::hadamard_simd::simd_arm::{wht_neon, wht_neon_radix16_4x};
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::hadamard_simd::simd_x86::{wht_avx2, wht_avx2_radix16_4x};
 use quantization::turboquant::rotation::in_place_walsh_hadamard_transform;
@@ -71,5 +73,39 @@ fn bench_wht_avx2(_c: &mut Criterion) {
     eprintln!("skipping wht_avx2: not on x86_64");
 }
 
-criterion_group!(benches, bench_wht_scalar, bench_wht_avx2);
+#[cfg(target_arch = "aarch64")]
+fn bench_wht_neon(c: &mut Criterion) {
+    if !std::arch::is_aarch64_feature_detected!("neon") {
+        eprintln!("skipping wht_neon: CPU does not support NEON");
+        return;
+    }
+
+    let mut group = c.benchmark_group("wht_neon");
+    for &n in SIZES {
+        let input = make_input(n);
+        group.bench_with_input(BenchmarkId::new("baseline", n), &n, |b, _| {
+            b.iter_batched(
+                || input.clone(),
+                |mut data| unsafe { wht_neon(black_box(&mut data)) },
+                BatchSize::SmallInput,
+            );
+        });
+
+        group.bench_with_input(BenchmarkId::new("radix16_4x", n), &n, |b, _| {
+            b.iter_batched(
+                || input.clone(),
+                |mut data| unsafe { wht_neon_radix16_4x(black_box(&mut data)) },
+                BatchSize::SmallInput,
+            );
+        });
+    }
+    group.finish();
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn bench_wht_neon(_c: &mut Criterion) {
+    eprintln!("skipping wht_neon: not on aarch64");
+}
+
+criterion_group!(benches, bench_wht_scalar, bench_wht_avx2, bench_wht_neon);
 criterion_main!(benches);
