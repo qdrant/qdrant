@@ -16,6 +16,7 @@ use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 pub enum BuildIndexResult {
@@ -88,6 +89,9 @@ pub trait PayloadIndexRead {
     /// Used by faceting to enumerate values and per-value point sets. The
     /// concrete facet-index type is opaque per implementation.
     fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndex + '_>;
+
+    /// Per-field-index telemetry data.
+    fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry>;
 
     /// Build a per-query formula scorer that evaluates the given parsed
     /// formula against this index's payload, using the prefetch scores as
