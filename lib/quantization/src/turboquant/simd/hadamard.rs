@@ -557,7 +557,7 @@ pub mod simd_arm {
 /// Scalar WHT used as the `n < 8` fallback inside the SIMD routines and
 /// as the cross-platform fallback in [`super::wht_dispatch`]. Mirrors
 /// the reference implementation in `rotation.rs`.
-pub(super) fn scalar_wht(x: &mut [f64]) {
+pub(in crate::turboquant) fn scalar_wht(x: &mut [f64]) {
     let n = x.len();
     let mut h = 1;
     while h < n {
@@ -633,6 +633,7 @@ mod tests {
     /// supported backend is available — tests that depend on a SIMD path
     /// should skip in that case.
     #[allow(unused_mut)]
+    #[allow(clippy::type_complexity)]
     fn simd_variants() -> Vec<(&'static str, fn(&mut [f64]))> {
         let mut v: Vec<(&'static str, fn(&mut [f64]))> = Vec::new();
 

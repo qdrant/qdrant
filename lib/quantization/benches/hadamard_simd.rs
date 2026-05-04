@@ -11,9 +11,9 @@ use std::hint::black_box;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 #[cfg(target_arch = "aarch64")]
 use quantization::turboquant::hadamard_simd::simd_arm::{wht_neon, wht_neon_radix16_4x};
-#[cfg(target_arch = "x86_64")]
-use quantization::turboquant::hadamard_simd::simd_x86::{wht_avx2, wht_avx2_radix16_4x};
 use quantization::turboquant::rotation::in_place_walsh_hadamard_transform;
+#[cfg(target_arch = "x86_64")]
+use quantization::turboquant::simd::hadamard::simd_x86::{wht_avx2, wht_avx2_radix16_4x};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 

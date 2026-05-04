@@ -19,6 +19,7 @@
 //!
 //! On any other target the scalar reference kernels in each module take over.
 
+pub mod hadamard;
 pub mod query1bit;
 pub mod query2bit;
 pub mod query4bit;

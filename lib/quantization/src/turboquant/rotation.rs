@@ -1,5 +1,5 @@
-use crate::turboquant::hadamard_simd;
 use crate::turboquant::permutation::Permutation;
+use crate::turboquant::simd;
 
 const N_PERMUTATIONS: usize = 3;
 
@@ -77,7 +77,7 @@ impl HadamardRotation {
         for (&size, &norm) in self.chunk_sizes.iter().zip(&self.chunk_norms) {
             let chunk = &mut buf[offset..offset + size];
             // in_place_walsh_hadamard_transform(chunk);
-            hadamard_simd::wht_dispatch(chunk);
+            simd::hadamard::wht_dispatch(chunk);
             for v in chunk.iter_mut() {
                 *v *= norm;
             }
