@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
 use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
 
@@ -42,6 +43,48 @@ impl TQBits {
             // 1.5 bits is implemented as 1 bit with x1.5 dimension padding
             TQBits::Bits1_5 => 1,
             TQBits::Bits1 => 1,
+        }
+    }
+
+    /// Per-coord reservoir size for the TQ+ pre-pass quantile estimator,
+    /// scaled to the extremity of the target probability for this codebook.
+    ///
+    /// The TQ+ anchor probability is `p_outer = Φ(c_outer)` where
+    /// `c_outer` is the outermost centroid magnitude. The variance of an
+    /// order-statistic estimator at quantile `p` over a sample of size
+    /// `R` is `p(1-p) / (R · f(F⁻¹(p))²)` where `f` is the source PDF.
+    /// For N(0, 1)-like post-rotation data this gives:
+    ///
+    /// | Bits | p_outer | f(F⁻¹) | R    | σ     | rel. error |
+    /// |------|---------|--------|------|-------|------------|
+    /// | 1    | 0.787   | 0.290  | 2048 | 0.031 | 3.9%       |
+    /// | 1.5  | 0.787   | 0.290  | 2048 | 0.031 | 3.9%       |
+    /// | 2    | 0.934   | 0.128  | 4096 | 0.030 | 2.0%       |
+    /// | 4    | 0.997   | 0.010  | 8192 | 0.063 | 2.3%       |
+    ///
+    /// We pick `R` per codebook so the absolute σ stays roughly flat
+    /// (~0.03–0.06 in N(0, 1) units) instead of forcing the highest-bit
+    /// budget on every codebook. Bits1/Bits1_5 sit at a moderate quantile
+    /// where `R = 2048` is plenty; Bits4 needs `R = 8192` because its
+    /// anchor sits in the deep tail.
+    ///
+    /// Resident-memory impact (per-coord reservoir = `R × f64`, multiplied
+    /// by `padded_dim`): for `dim = 1536` we get
+    ///
+    /// |       | R    | reservoir total |
+    /// |-------|------|-----------------|
+    /// | Bits1 | 2048 | 24 MB           |
+    /// | Bits2 | 4096 | 48 MB           |
+    /// | Bits4 | 8192 | 96 MB           |
+    ///
+    /// Time impact: finalize is `O(R · N_markers)` per coord — halving R
+    /// halves finalize wall-time on a given codebook.
+    #[inline]
+    pub(crate) fn reservoir_size(&self) -> usize {
+        match self {
+            TQBits::Bits1 | TQBits::Bits1_5 => 2_048,
+            TQBits::Bits2 => 4_096,
+            TQBits::Bits4 => 8_192,
         }
     }
 }
@@ -120,6 +163,21 @@ pub struct ErrorCorrectionMetadata {
     pub scale: Vec<f32>,
 }
 
+/// Standard normal CDF Φ(x) = (1 + erf(x/√2)) / 2 via the Abramowitz & Stegun
+/// 7.1.26 rational approximation (max error ≈ 1.5e-7). Used once per encode to
+/// turn `c_outer` into the symmetric quantile probability for the TQ+ pre-pass.
+fn phi(x: f64) -> f64 {
+    let z = x / std::f64::consts::SQRT_2;
+    let a = z.abs();
+    let t = 1.0 / (1.0 + 0.3275911 * a);
+    let poly = t
+        * (0.254829592
+            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    let erf = 1.0 - poly * (-a * a).exp();
+    let erf = if z >= 0.0 { erf } else { -erf };
+    0.5 * (1.0 + erf)
+}
+
 impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
@@ -134,16 +192,18 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     /// * `count` - number of vectors in `data` iterator
     /// * `bits` - bits for quantization
     /// * `mode` - quantization mode
+    /// * `num_threads` - max threads to use for the TQ+ quantile pre-pass
     /// * `meta_path` - optional path to save metadata, if `None`, metadata will not be saved
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
-        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send + 'a,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
-        _count: usize,
+        count: usize,
         bits: TQBits,
         mode: TQMode,
+        num_threads: usize,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
@@ -153,10 +213,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         // pulls the rotated, length-rescaled coordinates onto the Lloyd-Max
         // N(0, 1) codebook before quantization.
         //
-        // Shift uses per-coordinate mean. Median is more robust on skewed
-        // distributions and is a recall improvement worth landing — but
-        // separately. This first PR is the mean-based form so the diff stays
-        // focused on the rest of the integration.
+        // Per-coord shift/scale are derived from the empirical quantiles at
+        // probabilities `Phi(±c_outer)`, where `c_outer` is the outermost
+        // codebook centroid magnitude. For ideally-N(0, 1) data the empirical
+        // quantile at `Phi(c_outer)` equals `c_outer`, so shift/scale collapse
+        // to `(0, 1)`. For anisotropic data the quantile-anchored fit avoids
+        // the bias of mean/stddev under heavy-tailed or skewed coords.
         let error_correction = match mode {
             TQMode::Normal => None,
             TQMode::Plus => {
@@ -172,28 +234,57 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                     ))
                 })?;
                 let padded_dim = pre_quantizer.padded_dim;
-                let mut buf = vec![0.0f64; padded_dim];
-                let mut stats_builder = crate::vector_stats::VectorStatsBuilder::new(padded_dim);
-                for vector in data.clone() {
-                    if stopped.load(Ordering::Relaxed) {
-                        return Err(EncodingError::Stopped);
-                    }
-                    pre_quantizer.preprocess_into(vector.as_ref(), &mut buf);
-                    stats_builder.add(buf.as_slice());
-                }
-                let stats = stats_builder.build();
+
+                // Use the outermost centroid magnitude as the per-coord
+                // anchor: for symmetric N(0, 1) Lloyd-Max codebooks this
+                // pins the highest-magnitude bucket onto its design value.
+                let centroids = bits.get_centroids();
+                let c_outer = centroids
+                    .iter()
+                    .copied()
+                    .fold(0.0_f32, |acc, c| acc.max(c.abs()));
+                let p_outer = phi(f64::from(c_outer));
+                // `find_interval_per_coordinate` interprets `quantile` as the
+                // symmetric interval `[(1-q)/2, 1-(1-q)/2]`, so 2·p_outer − 1
+                // gives us the `[1-p_outer, p_outer]` pair we want.
+                let quantile_param = ((2.0 * p_outer - 1.0) as f32).clamp(0.0, 0.999_99);
+
+                // Fused producer/consumer pipeline: pulls raw vectors
+                // straight from `data`, runs Hadamard rotation +
+                // length rescale + f64→f32 narrowing in-place into a
+                // pooled chunk buffer (only 2 buffer allocations across
+                // the whole pre-pass), and feeds the result into
+                // per-coord reservoirs concurrently. Skips the previous
+                // `ChunkedParallelRotate` adapter entirely — there is
+                // no intermediate `Vec<Vec<f32>>` materialization, no
+                // per-vector clone, and no separate pre-allocated f64
+                // scratch per vector.
+                let pre_quantizer_ref = &pre_quantizer;
+                let intervals = find_quantile_interval_per_coordinate_with_preprocess(
+                    data.clone(),
+                    vector_parameters.dim,
+                    padded_dim,
+                    count,
+                    quantile_param,
+                    num_threads,
+                    bits.reservoir_size(),
+                    move |raw, scratch| {
+                        pre_quantizer_ref.preprocess_into(raw, scratch);
+                    },
+                    stopped,
+                )?;
 
                 let mut shift = vec![0.0f32; padded_dim];
                 let mut scale = vec![1.0f32; padded_dim];
-                for (i, s) in stats.elements_stats.iter().enumerate() {
-                    // Always recenter — even constant-but-biased coordinates
-                    // benefit from `shift = -mean` (so the codebook sees them
-                    // at 0). Only the variance reciprocal needs the EPSILON
-                    // guard against division blow-up on truly zero-variance
-                    // coords.
-                    shift[i] = -s.mean;
-                    if s.stddev > f32::EPSILON {
-                        scale[i] = s.stddev.recip();
+                for (i, &(q_lo, q_hi)) in intervals.iter().enumerate() {
+                    // shift recenters the q_lo/q_hi pair around 0, scale
+                    // stretches it onto [-c_outer, c_outer]. EPSILON guard
+                    // protects against zero-variance coords (would otherwise
+                    // produce inf scale and corrupt the codebook).
+                    shift[i] = -(q_lo + q_hi) / 2.0;
+                    let denom = q_hi - q_lo;
+                    if denom > f32::EPSILON {
+                        scale[i] = (2.0 * c_outer) / denom;
                     }
                 }
                 Some(ErrorCorrection::new(shift, scale))

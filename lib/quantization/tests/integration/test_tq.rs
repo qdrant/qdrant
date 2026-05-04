@@ -132,6 +132,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -189,6 +190,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -243,6 +245,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -297,6 +300,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -356,6 +360,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -410,6 +415,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -473,6 +479,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -529,6 +536,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -582,6 +590,7 @@ mod tests {
                 VECTORS_COUNT,
                 bits,
                 mode,
+                1,
                 None,
                 &AtomicBool::new(false),
             )
@@ -639,6 +648,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -693,6 +703,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -747,6 +758,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -801,6 +813,7 @@ mod tests {
                     VECTORS_COUNT,
                     bits,
                     mode,
+                    1,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -867,6 +880,7 @@ mod tests {
                 n,
                 bits,
                 mode,
+                1,
                 None,
                 &AtomicBool::new(false),
             )

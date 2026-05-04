@@ -5904,6 +5904,7 @@ dependencies = [
  "common",
  "criterion",
  "fs-err",
+ "log",
  "num-traits",
  "num_threads",
  "ordered-float 5.3.0",

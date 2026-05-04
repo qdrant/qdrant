@@ -797,6 +797,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 on_disk_vector_storage,
+                max_threads,
                 stopped,
             )?,
         };
@@ -938,6 +939,7 @@ impl QuantizedVectors {
                 multi_vector_config,
                 path,
                 on_disk_vector_storage,
+                max_threads,
                 stopped,
             )?,
         };
@@ -985,12 +987,19 @@ impl QuantizedVectors {
             return Ok(None);
         }
 
+        // Auto-create path runs at segment-load time, with no `permit`
+        // context to size the thread budget. The previous hardcoded `1`
+        // showed up as `threads=1` in the TQ+ pre-pass log even on
+        // already-populated collections; using the host CPU count keeps
+        // the pre-pass parallel without over-subscribing rayon's global
+        // pool (which is also bounded by host CPU count).
+        let max_threads = common::cpu::get_num_cpus();
         let quantized_vectors = Self::create(
             vector_storage,
             quantization_config,
             QuantizedVectorsStorageType::Mutable,
             path,
-            1,
+            max_threads,
             stopped,
         )?;
         Ok(Some(quantized_vectors))
@@ -2023,13 +2032,14 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     fn create_turbo<'a>(
-        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send + 'a,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         turbo_config: &TurboQuantQuantizationConfig,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         on_disk_vector_storage: bool,
+        max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
@@ -2059,6 +2069,7 @@ impl QuantizedVectors {
                         vectors_count,
                         bits,
                         mode,
+                        max_threads,
                         Some(meta_path.as_path()),
                         stopped,
                     )?,
@@ -2077,6 +2088,7 @@ impl QuantizedVectors {
                     vectors_count,
                     bits,
                     mode,
+                    max_threads,
                     Some(meta_path.as_path()),
                     stopped,
                 )?))
@@ -2094,6 +2106,7 @@ impl QuantizedVectors {
                     vectors_count,
                     bits,
                     mode,
+                    max_threads,
                     Some(meta_path.as_path()),
                     stopped,
                 )?))
@@ -2103,7 +2116,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     fn create_turbo_multi<'a>(
-        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send + 'a,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
@@ -2113,6 +2126,7 @@ impl QuantizedVectors {
         multi_vector_config: MultiVectorConfig,
         path: &Path,
         on_disk_vector_storage: bool,
+        max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
@@ -2142,6 +2156,7 @@ impl QuantizedVectors {
                     inner_vectors_count,
                     bits,
                     mode,
+                    max_threads,
                     Some(meta_path.as_path()),
                     stopped,
                 )?;
@@ -2169,6 +2184,7 @@ impl QuantizedVectors {
                     inner_vectors_count,
                     bits,
                     mode,
+                    max_threads,
                     Some(meta_path.as_path()),
                     stopped,
                 )?;
@@ -2195,6 +2211,7 @@ impl QuantizedVectors {
                     inner_vectors_count,
                     bits,
                     mode,
+                    max_threads,
                     Some(meta_path.as_path()),
                     stopped,
                 )?;
