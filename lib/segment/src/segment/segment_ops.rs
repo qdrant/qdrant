@@ -603,12 +603,6 @@ impl Segment {
             .as_ref()
             .map(|i| i.deferred_internal_id)
     }
-
-    pub(crate) fn deferred_deleted_count(&self) -> Option<usize> {
-        self.deferred_point_status
-            .as_ref()
-            .map(|i| i.deferred_deleted_count)
-    }
 }
 
 fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
