@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
 use roaring::RoaringBitmap;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
@@ -17,7 +16,7 @@ use crate::common::operation_error::OperationResult;
 /// Changes are buffered until explicitly flushed.
 ///
 /// [1]: super::bitvec_flags::BitvecFlags
-pub struct RoaringFlags<S = MmapFile> {
+pub struct RoaringFlags<S> {
     /// Buffered persisted flags.
     storage: BufferedDynamicFlags<S>,
 

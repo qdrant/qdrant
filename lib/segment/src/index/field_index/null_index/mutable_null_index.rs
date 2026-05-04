@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 use serde_json::Value;
 
@@ -25,15 +26,15 @@ const IS_NULL_DIRNAME: &str = "is_null";
 /// and buffers updates before persisting them to DynamicMmapFlags.
 pub struct MutableNullIndex {
     base_dir: PathBuf,
-    storage: Storage,
+    storage: Storage<MmapFile>,
     total_point_count: usize,
 }
 
-struct Storage {
+struct Storage<S> {
     /// Points which have at least one value
-    has_values_flags: RoaringFlags,
+    has_values_flags: RoaringFlags<S>,
     /// Points which have null values
-    is_null_flags: RoaringFlags,
+    is_null_flags: RoaringFlags<S>,
 }
 
 impl MutableNullIndex {
