@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use roaring::RoaringBitmap;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
@@ -28,18 +29,18 @@ pub struct RoaringFlags {
 }
 
 impl RoaringFlags {
-    pub fn new(mmap_flags: DynamicStoredFlags) -> OperationResult<Self> {
+    pub fn new(dynamic_flags: DynamicStoredFlags<MmapFile>) -> OperationResult<Self> {
         // load flags into memory
-        let bitmap = RoaringBitmap::from_sorted_iter(mmap_flags.iter_trues()?)
+        let bitmap = RoaringBitmap::from_sorted_iter(dynamic_flags.iter_trues()?)
             .expect("iter_trues iterates in sorted order");
 
-        if let Err(err) = mmap_flags.clear_cache() {
+        if let Err(err) = dynamic_flags.clear_cache() {
             log::warn!("Failed to clear bitslice cache: {err}");
         }
 
         Ok(Self {
-            len: mmap_flags.len(),
-            storage: BufferedDynamicFlags::new(mmap_flags),
+            len: dynamic_flags.len(),
+            storage: BufferedDynamicFlags::new(dynamic_flags),
             bitmap,
         })
     }

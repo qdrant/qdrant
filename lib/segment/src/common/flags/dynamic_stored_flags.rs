@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
-use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
+use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, StoredStruct};
+use common::universal_io::{OpenOptions, StoredStruct, UniversalWrite};
 use fs_err as fs;
 use itertools::Either;
 
@@ -30,7 +30,7 @@ fn status_file(directory: &Path) -> PathBuf {
 
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
-struct DynamicFlagsStatus {
+pub struct DynamicFlagsStatus {
     /// Amount of flags (bits)
     len: usize,
 
@@ -58,14 +58,14 @@ fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
 /// [1]: super::roaring_flags::RoaringFlags
 /// [2]: super::bitvec_flags::BitvecFlags
 /// [3]: super::buffered_dynamic_flags::BufferedDynamicFlags
-pub struct DynamicStoredFlags {
+pub struct DynamicStoredFlags<S> {
     /// On-disk BitSlice for flags
-    flags: StoredBitSlice<MmapFile>,
-    status: StoredStruct<MmapFile, DynamicFlagsStatus>,
+    flags: StoredBitSlice<S>,
+    status: StoredStruct<S, DynamicFlagsStatus>,
     directory: PathBuf,
 }
 
-impl fmt::Debug for DynamicStoredFlags {
+impl<S: fmt::Debug> fmt::Debug for DynamicStoredFlags<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DynamicMmapFlags")
             .field("flags", &self.flags)
@@ -82,7 +82,10 @@ fn file_size_for(num_flags: usize) -> usize {
     max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two())
 }
 
-impl DynamicStoredFlags {
+impl<S> DynamicStoredFlags<S>
+where
+    S: UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static,
+{
     pub fn len(&self) -> usize {
         self.status.len
     }
@@ -95,7 +98,7 @@ impl DynamicStoredFlags {
         fs::create_dir_all(directory)?;
         let status_path = ensure_status_file(directory)?;
 
-        let mut status: StoredStruct<MmapFile, DynamicFlagsStatus> = StoredStruct::open(
+        let mut status: StoredStruct<S, DynamicFlagsStatus> = StoredStruct::open(
             &status_path,
             OpenOptions {
                 writeable: true,
@@ -130,7 +133,7 @@ impl DynamicStoredFlags {
         num_flags: usize,
         directory: &Path,
         populate: bool,
-    ) -> OperationResult<MmapBitSlice> {
+    ) -> OperationResult<StoredBitSlice<S>> {
         let capacity_bytes = file_size_for(num_flags);
         let path = directory.join(FLAGS_FILE);
 
@@ -149,7 +152,7 @@ impl DynamicStoredFlags {
             advice: Some(AdviceSetting::Global),
             ..Default::default()
         };
-        let flags = MmapBitSlice::open(&path, options)?;
+        let flags = StoredBitSlice::open(&path, options)?;
         Ok(flags)
     }
 
@@ -301,6 +304,7 @@ impl DynamicStoredFlags {
 mod tests {
     use std::iter;
 
+    use common::universal_io::MmapFile;
     use rand::prelude::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -316,7 +320,8 @@ mod tests {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         {
-            let mut dynamic_flags = DynamicStoredFlags::open(dir.path(), false).unwrap();
+            let mut dynamic_flags =
+                DynamicStoredFlags::<MmapFile>::open(dir.path(), false).unwrap();
             dynamic_flags.set_len(num_flags).unwrap();
             random_flags
                 .iter()
@@ -335,7 +340,7 @@ mod tests {
         }
 
         {
-            let dynamic_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let dynamic_flags = DynamicStoredFlags::<MmapFile>::open(dir.path(), true).unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
                 assert_eq!(dynamic_flags.get(i).unwrap(), *flag);
@@ -351,7 +356,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Create randomized dynamic mmap flags to test counting
-        let mut dynamic_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+        let mut dynamic_flags = DynamicStoredFlags::<MmapFile>::open(dir.path(), true).unwrap();
         dynamic_flags.set_len(num_flags).unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags
