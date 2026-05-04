@@ -17,13 +17,13 @@ use crate::types::{Filter, Payload};
 pub trait PayloadStorageRead {
     fn get(
         &self,
-        point_id: PointOffsetType,
+        point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
     fn get_sequential(
         &self,
-        point_id: PointOffsetType,
+        point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 

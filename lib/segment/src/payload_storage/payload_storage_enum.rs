@@ -36,25 +36,27 @@ impl From<MmapPayloadStorage> for PayloadStorageEnum {
 impl PayloadStorageRead for PayloadStorageEnum {
     fn get(
         &self,
-        point_id: PointOffsetType,
+        point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_offset, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_offset, hw_counter),
         }
     }
 
     fn get_sequential(
         &self,
-        point_id: PointOffsetType,
+        point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.get_sequential(point_offset, hw_counter)
+            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_offset, hw_counter),
         }
     }
 

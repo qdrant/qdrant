@@ -85,10 +85,10 @@ impl MmapPayloadStorage {
 impl PayloadStorageRead for MmapPayloadStorage {
     fn get(
         &self,
-        point_id: PointOffsetType,
+        point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        match self.storage.get_value::<Random>(point_id, hw_counter)? {
+        match self.storage.get_value::<Random>(point_offset, hw_counter)? {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
@@ -96,10 +96,13 @@ impl PayloadStorageRead for MmapPayloadStorage {
 
     fn get_sequential(
         &self,
-        point_id: PointOffsetType,
+        point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        match self.storage.get_value::<Sequential>(point_id, hw_counter)? {
+        match self
+            .storage
+            .get_value::<Sequential>(point_offset, hw_counter)?
+        {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
