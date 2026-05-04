@@ -5,6 +5,9 @@ mod versions_storage;
 #[cfg(test)]
 pub(super) mod tests;
 
+#[allow(dead_code)]
+mod read_only;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
