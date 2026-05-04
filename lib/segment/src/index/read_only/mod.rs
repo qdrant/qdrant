@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use half::f16;
 pub use hnsw_index_read::ReadOnlyHNSWIndex;
-pub use plain_vector_index_read::{ReadOnlyPlainVectorIndex, new_read_only_plain_vector_index};
+pub use plain_vector_index_read::ReadOnlyPlainVectorIndex;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
