@@ -5,6 +5,9 @@ mod versions_storage;
 #[cfg(test)]
 pub(super) mod tests;
 
+#[allow(dead_code)]
+pub mod read_only;
+
 use std::io::{BufReader, BufWriter, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};

@@ -1,4 +1,4 @@
-mod id_tracker_read;
+pub mod id_tracker_read;
 
 use std::path::PathBuf;
 
