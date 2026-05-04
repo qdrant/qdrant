@@ -78,8 +78,8 @@ where
     }
 
     #[inline]
-    fn read_batch<'a, P, Meta>(
-        &'a self,
+    fn read_batch<P, Meta>(
+        &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
