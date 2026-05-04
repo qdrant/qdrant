@@ -88,10 +88,18 @@ where
         }
         let point_to_values = ImmutablePointToValues::new(point_to_values);
 
-        // Create flattened values-to-points mapping
+        // Create flattened values-to-points mapping. Skip values whose live
+        // points are all deleted in the backing mmap (e.g., points the
+        // id-tracker has deleted at runtime, applied at open time by
+        // `MmapMapIndex::open`). This mirrors the runtime invariant in
+        // `remove_idx_from_value_list`: `value_to_points` only ever contains
+        // entries with `count > 0`.
         let mut value_to_points_container = Vec::with_capacity(values_count);
         for (value, points) in mapping() {
             let points = points.into_iter().collect::<Vec<_>>();
+            if points.is_empty() {
+                continue;
+            }
             let container_len = value_to_points_container.len() as u32;
             let range = container_len..container_len + points.len() as u32;
             value_to_points.insert(
