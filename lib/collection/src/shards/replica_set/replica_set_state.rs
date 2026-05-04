@@ -279,4 +279,39 @@ impl ReplicaState {
             | ReplicaState::ActiveRead => false,
         }
     }
+
+    pub fn is_listener(self) -> bool {
+        match self {
+            ReplicaState::Listener => true,
+            ReplicaState::Active
+            | ReplicaState::Dead
+            | ReplicaState::Partial
+            | ReplicaState::Initializing
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding
+            | ReplicaState::ReshardingScaleDown
+            | ReplicaState::ActiveRead
+            | ReplicaState::ManualRecovery => false,
+        }
+    }
+
+    /// Does write rate limiting applicable for this state?
+    /// E.g. during resharding we expect more internal ops, so
+    /// we can't write rate limit the shard.
+    pub fn is_write_rate_limitable(self) -> bool {
+        match self {
+            ReplicaState::Active => true,
+            ReplicaState::Dead
+            | ReplicaState::Partial
+            | ReplicaState::Initializing
+            | ReplicaState::Listener
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding
+            | ReplicaState::ReshardingScaleDown
+            | ReplicaState::ActiveRead
+            | ReplicaState::ManualRecovery => false,
+        }
+    }
 }

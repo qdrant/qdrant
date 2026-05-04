@@ -1084,16 +1084,10 @@ impl ShardReplicaSet {
             .collect()
     }
 
-    /// Check whether a peer is registered as `active`.
-    /// Unknown peers are not active.
-    fn peer_is_active(&self, peer_id: PeerId) -> bool {
-        // This is used *exclusively* during `execute_*_read_operation`, and so it *should* consider
-        // `ReshardingScaleDown` replicas
-        let is_active = self
-            .peer_state(peer_id)
-            .is_some_and(ReplicaState::is_active);
-
-        is_active && !self.is_locally_disabled(peer_id)
+    /// Check if peer is suitable for rate limiting
+    fn peer_is_write_rate_limitable(&self, peer_id: PeerId) -> bool {
+        self.peer_state(peer_id)
+            .is_some_and(ReplicaState::is_write_rate_limitable)
     }
 
     fn peer_is_readable(&self, peer_id: PeerId) -> bool {

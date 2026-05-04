@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::num::NonZeroUsize;
 use std::ops::Deref as _;
 use std::time::Duration;
 
@@ -9,10 +11,11 @@ use tokio::sync::oneshot;
 use tokio::task::yield_now;
 use tokio_util::task::AbortOnDropHandle;
 
-use super::{ShardReplicaSet, clock_set};
+use super::{RemoteShard, ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+use crate::shards::local_shard::shard_ops::await_update_result;
 use crate::shards::replica_set::clock_set::ClockGuard;
 use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use crate::shards::shard::{PeerId, Shard};
@@ -48,7 +51,7 @@ impl ShardReplicaSet {
 
         let local = self.local.read().await;
 
-        let Some(local) = local.deref() else {
+        let Some(shard) = local.deref() else {
             return Ok(None);
         };
 
@@ -61,74 +64,79 @@ impl ShardReplicaSet {
             hw_measurement = HwMeasurementAcc::disposable();
         }
 
-        let result = match state {
-            ReplicaState::Active => {
-                // Rate limit update operations on Active replica
-                self.check_operation_write_rate_limiter(&hw_measurement, local, &operation)
-                    .await?;
-                local
-                    .get()
-                    .update(operation, wait, timeout, hw_measurement)
-                    .await
-            }
-
-            // Force apply the operation no matter the state
-            _ if force => {
-                local
-                    .get()
-                    .update(operation, wait, timeout, hw_measurement)
-                    .await
-            }
-
-            ReplicaState::Partial
+        // Decide whether to apply the operation in the current replica state.
+        // `force` and a force-tagged clock both bypass the recovery-state guard.
+        let accepts_operation = match state {
+            ReplicaState::Active
+            | ReplicaState::Partial
             | ReplicaState::Initializing
+            | ReplicaState::Listener
             | ReplicaState::Resharding
             | ReplicaState::ReshardingScaleDown
-            | ReplicaState::ActiveRead => {
-                local
-                    .get()
-                    .update(operation, wait, timeout, hw_measurement)
-                    .await
-            }
-
-            ReplicaState::Listener => {
-                local
-                    .get()
-                    .update(operation, WaitUntil::Wal, None, hw_measurement)
-                    .await
-            }
-
-            ReplicaState::PartialSnapshot | ReplicaState::Recovery
-                if operation.clock_tag.is_some_and(|tag| tag.force) =>
-            {
-                local
-                    .get()
-                    .update(operation, wait, timeout, hw_measurement)
-                    .await
-            }
-
+            | ReplicaState::ActiveRead => true,
+            // Recovery states only accept updates with an explicit force flag.
             ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
-                if log::log_enabled!(log::Level::Debug) {
-                    if let Some(ids) = operation.operation.point_ids() {
-                        log::debug!(
-                            "Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state",
-                        );
-                    } else {
-                        log::debug!(
-                            "Operation {operation:?} rejected on this peer, force flag required in recovery state",
-                        );
-                    }
-                }
-
-                return Ok(None);
+                force || operation.clock_tag.is_some_and(|tag| tag.force)
             }
+            // Dead/ManualRecovery only accept updates when the caller forces.
+            ReplicaState::Dead | ReplicaState::ManualRecovery => force,
+        };
 
-            ReplicaState::Dead | ReplicaState::ManualRecovery => {
-                return Ok(None);
+        if !accepts_operation {
+            if matches!(
+                state,
+                ReplicaState::PartialSnapshot | ReplicaState::Recovery
+            ) && log::log_enabled!(log::Level::Debug)
+            {
+                if let Some(ids) = operation.operation.point_ids() {
+                    log::debug!(
+                        "Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state",
+                    );
+                } else {
+                    log::debug!(
+                        "Operation {operation:?} rejected on this peer, force flag required in recovery state",
+                    );
+                }
+            }
+            return Ok(None);
+        }
+
+        // Listener replicas only durably ack to WAL; everything else honours
+        // the caller-supplied wait/timeout.
+        let (effective_wait, effective_timeout) = if state.is_listener() {
+            (WaitUntil::Wal, None)
+        } else {
+            (wait, timeout)
+        };
+
+        // Rate limit update operations on Active replica.
+        if state.is_write_rate_limitable() {
+            self.check_operation_write_rate_limiter(&hw_measurement, shard, &operation)
+                .await?;
+        }
+
+        // For a plain `Shard::Local`, submit the operation while the read
+        // guard is held (brief), then drop the guard before awaiting
+        // completion. Holding the guard across a deferred-points wait would
+        // deadlock concurrent shard transfers that need `local.write()`.
+        // Proxy variants are transient and keep the inline-await path.
+        let result = match shard {
+            Shard::Local(local_shard) => {
+                let outcome = local_shard
+                    .submit_update(operation, effective_wait, hw_measurement)
+                    .await?;
+                drop(local);
+                await_update_result(outcome, effective_timeout).await?
+            }
+            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
+                shard
+                    .get()
+                    .update(operation, effective_wait, effective_timeout, hw_measurement)
+                    .await?
             }
         };
 
-        result.map(Some)
+        Ok(Some(result))
     }
 
     /// # Cancel safety
@@ -319,17 +327,25 @@ impl ShardReplicaSet {
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
         // between nodes, so this method is not cancel safe.
 
-        let remotes = self.remotes.read().await;
+        // Snapshot the remote shards into owned values, then drop the read guard so
+        // we don't hold `remotes.read()` across the long update await. Holding it
+        // would deadlock with `add_remote`'s `remotes.write()` on the consensus
+        // apply path (e.g. when starting a shard transfer concurrently with a
+        // wait=true update that's parked on a deferred-points wait).
+        let (updatable_remote_shards, total_remotes) = {
+            let remotes = self.remotes.read().await;
+            let updatable: Vec<RemoteShard> = remotes
+                .iter()
+                .filter(|rs| self.is_peer_updatable(rs.peer_id))
+                .cloned()
+                .collect();
+            (updatable, remotes.len())
+        };
+
         let local = self.local.read().await;
-        let replica_count = usize::from(local.is_some()) + remotes.len();
+        let replica_count = usize::from(local.is_some()) + total_remotes;
 
         let this_peer_id = self.this_peer_id();
-
-        // Target all remote peers that can receive updates
-        let updatable_remote_shards: Vec<_> = remotes
-            .iter()
-            .filter(|rs| self.is_peer_updatable(rs.peer_id))
-            .collect();
 
         // Local is defined and can receive updates
         let local_is_updatable = local.is_some() && self.is_peer_updatable(this_peer_id);
@@ -344,67 +360,94 @@ impl ShardReplicaSet {
         let current_clock_tick = clock.tick_once();
         let clock_tag = ClockTag::new(this_peer_id, clock.id() as _, current_clock_tick);
         let operation = OperationWithClockTag::new(operation, Some(clock_tag));
+        let is_listener = self
+            .peer_state(this_peer_id)
+            .is_some_and(ReplicaState::is_listener);
 
-        let mut update_futures = Vec::with_capacity(updatable_remote_shards.len() + 1);
+        let local_wait = if is_listener { WaitUntil::Wal } else { wait };
 
-        if let Some(local) = local.deref()
-            && self.is_peer_updatable(this_peer_id)
+        // Rate-limit local writes on Active replica, while we still hold the read guard.
+        if local_is_updatable
+            && self.peer_is_write_rate_limitable(this_peer_id)
+            && let Some(shard) = local.deref()
         {
-            let local_wait = if self.peer_state(this_peer_id) == Some(ReplicaState::Listener) {
-                WaitUntil::Wal
-            } else {
-                wait
-            };
-
-            if self.peer_is_active(this_peer_id) {
-                // Check write rate limiter before proceeding if replica active
-                self.check_operation_write_rate_limiter(&hw_measurement_acc, local, &operation)
-                    .await?;
-            }
-
-            let operation = operation.clone();
-
-            let hw_acc = hw_measurement_acc.clone();
-            let local_update = async move {
-                local
-                    .get()
-                    .update(operation, local_wait, timeout, hw_acc)
-                    .await
-                    .map(|ok| (this_peer_id, ok))
-                    .map_err(|err| (this_peer_id, err))
-            };
-
-            update_futures.push(local_update.left_future());
+            self.check_operation_write_rate_limiter(&hw_measurement_acc, shard, &operation)
+                .await?;
         }
 
-        for remote in updatable_remote_shards {
-            let operation = operation.clone();
+        let update_concurrency = self.shared_storage_config.update_concurrency;
 
-            let hw_acc = hw_measurement_acc.clone();
-            let remote_update = async move {
-                remote
-                    .update(operation, wait, timeout, hw_acc)
-                    .await
-                    .map(|ok| (remote.peer_id, ok))
-                    .map_err(|err| (remote.peer_id, err))
+        // Build remote update futures up front; they're identical between the
+        // two local-dispatch paths and don't borrow from the local read guard.
+        let remote_futures: Vec<_> = updatable_remote_shards
+            .into_iter()
+            .map(|remote| {
+                let operation = operation.clone();
+                let hw_acc = hw_measurement_acc.clone();
+                async move {
+                    let peer_id = remote.peer_id;
+                    remote
+                        .update(operation, wait, timeout, hw_acc)
+                        .await
+                        .map(|ok| (peer_id, ok))
+                        .map_err(|err| (peer_id, err))
+                }
+            })
+            .collect();
+
+        // For a plain `Shard::Local`, submit the operation while the read
+        // guard is held (brief), then drop the guard before awaiting
+        // completion. Holding the guard across a deferred-points wait would
+        // deadlock concurrent shard transfers that need `local.write()`.
+        // Proxy variants are transient and keep the inline-await path.
+        let all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>> =
+            match local.deref() {
+                Some(Shard::Local(local_shard)) if local_is_updatable => {
+                    let outcome = local_shard
+                        .submit_update(operation, local_wait, hw_measurement_acc)
+                        .await?;
+                    drop(local);
+
+                    let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
+                    let local_update = async move {
+                        await_update_result(outcome, timeout)
+                            .await
+                            .map(|ok| (this_peer_id, ok))
+                            .map_err(|err| (this_peer_id, err))
+                    };
+                    update_futures.push(local_update.left_future());
+                    update_futures.extend(remote_futures.into_iter().map(|f| f.right_future()));
+
+                    run_update_futures(update_futures, update_concurrency).await
+                }
+                None
+                | Some(Shard::Local(_))
+                | Some(Shard::Proxy(_))
+                | Some(Shard::ForwardProxy(_))
+                | Some(Shard::QueueProxy(_))
+                | Some(Shard::Dummy(_)) => {
+                    let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
+
+                    if let Some(shard) = local.deref()
+                        && local_is_updatable
+                    {
+                        let local_update = async move {
+                            shard
+                                .get()
+                                .update(operation, local_wait, timeout, hw_measurement_acc)
+                                .await
+                                .map(|ok| (this_peer_id, ok))
+                                .map_err(|err| (this_peer_id, err))
+                        };
+                        update_futures.push(local_update.left_future());
+                    }
+                    update_futures.extend(remote_futures.into_iter().map(|f| f.right_future()));
+
+                    let res = run_update_futures(update_futures, update_concurrency).await;
+                    drop(local);
+                    res
+                }
             };
-
-            update_futures.push(remote_update.right_future());
-        }
-
-        let all_res: Vec<Result<_, _>> = match self.shared_storage_config.update_concurrency {
-            Some(concurrency) => {
-                futures::stream::iter(update_futures)
-                    .buffer_unordered(concurrency.get())
-                    .collect()
-                    .await
-            }
-
-            None => FuturesUnordered::from_iter(update_futures).collect().await,
-        };
-
-        drop(local);
-        drop(remotes);
 
         let write_consistency_factor = self
             .collection_config
@@ -788,6 +831,25 @@ impl ShardReplicaSet {
             Some(local) => local.plunge_async().await.map(Some),
             None => Ok(None),
         }
+    }
+}
+
+/// Drive a batch of update futures, optionally limiting concurrency.
+async fn run_update_futures<F>(
+    update_futures: Vec<F>,
+    update_concurrency: Option<NonZeroUsize>,
+) -> Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>>
+where
+    F: Future<Output = Result<(PeerId, UpdateResult), (PeerId, CollectionError)>>,
+{
+    match update_concurrency {
+        Some(concurrency) => {
+            futures::stream::iter(update_futures)
+                .buffer_unordered(concurrency.get())
+                .collect()
+                .await
+        }
+        None => FuturesUnordered::from_iter(update_futures).collect().await,
     }
 }
 
