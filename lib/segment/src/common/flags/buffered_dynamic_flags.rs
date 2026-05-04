@@ -10,15 +10,16 @@ use parking_lot::{Mutex, RwLock};
 
 use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
+use crate::common::flags::dynamic_stored_flags::UioDynamicFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
 /// Changes are buffered until explicitly flushed.
 #[derive(Debug)]
-pub(crate) struct BufferedDynamicFlags {
+pub(crate) struct BufferedDynamicFlags<S = MmapFile> {
     /// Persisted flags.
-    storage: Arc<Mutex<DynamicStoredFlags<MmapFile>>>,
+    storage: Arc<Mutex<DynamicStoredFlags<S>>>,
 
     /// Pending changes to the storage flags.
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
@@ -27,12 +28,15 @@ pub(crate) struct BufferedDynamicFlags {
     is_alive_flush_lock: IsAliveLock,
 }
 
-impl BufferedDynamicFlags {
-    pub fn new(mmap_flags: DynamicStoredFlags<MmapFile>) -> Self {
+impl<S> BufferedDynamicFlags<S>
+where
+    S: UioDynamicFlags,
+{
+    pub fn new(dynamic_flags: DynamicStoredFlags<S>) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
         let is_alive_flush_lock = IsAliveLock::new();
         Self {
-            storage: Arc::new(Mutex::new(mmap_flags)),
+            storage: Arc::new(Mutex::new(dynamic_flags)),
             buffer,
             is_alive_flush_lock,
         }

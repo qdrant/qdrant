@@ -7,7 +7,7 @@ use common::bitvec::BitSlice;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, StoredStruct, UniversalWrite};
+use common::universal_io::{MmapFile, OpenOptions, StoredStruct, UniversalWrite};
 use fs_err as fs;
 use itertools::Either;
 
@@ -27,6 +27,9 @@ const STATUS_FILE_NAME: &str = "status.dat";
 fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
+
+pub trait UioDynamicFlags: UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static {}
+impl<T> UioDynamicFlags for T where T: UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static {}
 
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -58,7 +61,7 @@ fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
 /// [1]: super::roaring_flags::RoaringFlags
 /// [2]: super::bitvec_flags::BitvecFlags
 /// [3]: super::buffered_dynamic_flags::BufferedDynamicFlags
-pub struct DynamicStoredFlags<S> {
+pub struct DynamicStoredFlags<S = MmapFile> {
     /// On-disk BitSlice for flags
     flags: StoredBitSlice<S>,
     status: StoredStruct<S, DynamicFlagsStatus>,
@@ -84,7 +87,7 @@ fn file_size_for(num_flags: usize) -> usize {
 
 impl<S> DynamicStoredFlags<S>
 where
-    S: UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static,
+    S: UioDynamicFlags,
 {
     pub fn len(&self) -> usize {
         self.status.len
