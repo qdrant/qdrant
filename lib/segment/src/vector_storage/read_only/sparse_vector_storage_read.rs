@@ -95,9 +95,7 @@ impl VectorStorageRead for ReadOnlySparseVectorStorage {
 }
 
 /// Open a sparse mmap vector storage as read-only.
-pub fn open_read_only_sparse_vector_storage(
-    path: &Path,
-) -> OperationResult<VectorStorageReadEnum> {
+pub fn open_read_only_sparse_vector_storage(path: &Path) -> OperationResult<VectorStorageReadEnum> {
     let storage = ReadOnlySparseVectorStorage::open(path)?;
     Ok(VectorStorageReadEnum::Sparse(Box::new(storage)))
 }

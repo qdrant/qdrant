@@ -119,13 +119,17 @@ pub fn open_read_only_appendable_dense_vector_storage(
             let storage = ReadOnlyAppendableDenseVectorStorage::<VectorElementTypeByte>::open(
                 path, dim, distance, madvise, populate,
             )?;
-            Ok(VectorStorageReadEnum::DenseAppendableByte(Box::new(storage)))
+            Ok(VectorStorageReadEnum::DenseAppendableByte(Box::new(
+                storage,
+            )))
         }
         VectorStorageDatatype::Float16 => {
             let storage = ReadOnlyAppendableDenseVectorStorage::<VectorElementTypeHalf>::open(
                 path, dim, distance, madvise, populate,
             )?;
-            Ok(VectorStorageReadEnum::DenseAppendableHalf(Box::new(storage)))
+            Ok(VectorStorageReadEnum::DenseAppendableHalf(Box::new(
+                storage,
+            )))
         }
     }
 }
