@@ -30,7 +30,7 @@ fn status_file(directory: &Path) -> PathBuf {
 }
 
 #[repr(C)]
-struct DynamicMmapStatus {
+struct DynamicFlagsStatus {
     /// Amount of flags (bits)
     len: usize,
 
@@ -42,7 +42,7 @@ struct DynamicMmapStatus {
 fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
     let status_file = status_file(directory);
     if !status_file.exists() {
-        let length = std::mem::size_of::<DynamicMmapStatus>();
+        let length = std::mem::size_of::<DynamicFlagsStatus>();
         create_and_ensure_length(&status_file, length)?;
     }
     Ok(open_write_mmap(&status_file, AdviceSetting::Global, false)?)
@@ -50,14 +50,18 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
 
 /// Mutable persisted bitslice. This uses no buffering for updates.
 ///
-/// For buffered variants, check [`RoaringFlags`][1] or [`BitvecFlags`][2]
+/// For buffered variants, check
+/// - [`RoaringFlags`][1] - with a RoaringBitmap for reads
+/// - [`BitvecFlags`][2] - with a BitVec for reads
+/// - [`BufferedDynamicFlags`][3] - no reads, only buffered persistance
 ///
 /// [1]: super::roaring_flags::RoaringFlags
 /// [2]: super::bitvec_flags::BitvecFlags
+/// [3]: super::buffered_dynamic_flags::BufferedDynamicFlags
 pub struct DynamicMmapFlags {
     /// On-disk BitSlice for flags
     flags: StoredBitSlice<MmapFile>,
-    status: MmapType<DynamicMmapStatus>,
+    status: MmapType<DynamicFlagsStatus>,
     directory: PathBuf,
 }
 
@@ -90,7 +94,7 @@ impl DynamicMmapFlags {
     pub fn open(directory: &Path, populate: bool) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = ensure_status_file(directory)?;
-        let mut status: MmapType<DynamicMmapStatus> = unsafe { MmapType::try_from(status_mmap)? };
+        let mut status: MmapType<DynamicFlagsStatus> = unsafe { MmapType::try_from(status_mmap)? };
 
         if status.current_file_id != 0 {
             // Migrate
