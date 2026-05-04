@@ -55,6 +55,11 @@ pub trait VectorIndexRead {
         idf: &mut HashMap<DimId, usize>,
         hw_counter: &HardwareCounterCell,
     );
+
+    /// Whether this is a "real" index rather than a plain (full-scan) one.
+    ///
+    /// Used by reporting code to decide whether to count vectors as indexed.
+    fn is_index(&self) -> bool;
 }
 
 /// Trait for vector index with mutating operations.
@@ -100,22 +105,6 @@ pub enum VectorIndexEnum {
 }
 
 impl VectorIndexEnum {
-    pub fn is_index(&self) -> bool {
-        match self {
-            Self::Plain(_) => false,
-            Self::Hnsw(_) => true,
-            Self::SparseRam(_) => true,
-            Self::SparseImmutableRam(_) => true,
-            Self::SparseMmap(_) => true,
-            Self::SparseCompressedImmutableRamF32(_) => true,
-            Self::SparseCompressedImmutableRamF16(_) => true,
-            Self::SparseCompressedImmutableRamU8(_) => true,
-            Self::SparseCompressedMmapF32(_) => true,
-            Self::SparseCompressedMmapF16(_) => true,
-            Self::SparseCompressedMmapU8(_) => true,
-        }
-    }
-
     /// Returns true if underlying storage is configured to be stored on disk without
     /// actively holding data in RAM
     pub fn is_on_disk(&self) -> bool {
@@ -272,6 +261,22 @@ impl VectorIndexRead for VectorIndexEnum {
             Self::SparseCompressedMmapF32(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedMmapF16(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedMmapU8(index) => index.size_of_searchable_vectors_in_bytes(),
+        }
+    }
+
+    fn is_index(&self) -> bool {
+        match self {
+            Self::Plain(_) => false,
+            Self::Hnsw(_) => true,
+            Self::SparseRam(_) => true,
+            Self::SparseImmutableRam(_) => true,
+            Self::SparseMmap(_) => true,
+            Self::SparseCompressedImmutableRamF32(_) => true,
+            Self::SparseCompressedImmutableRamF16(_) => true,
+            Self::SparseCompressedImmutableRamU8(_) => true,
+            Self::SparseCompressedMmapF32(_) => true,
+            Self::SparseCompressedMmapF16(_) => true,
+            Self::SparseCompressedMmapU8(_) => true,
         }
     }
 

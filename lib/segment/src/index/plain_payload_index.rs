@@ -27,6 +27,7 @@ use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFor
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
@@ -173,6 +174,11 @@ impl PayloadIndexRead for PlainPayloadIndex {
     fn facet_index_for(&self, _key: &JsonPath) -> Option<impl FacetIndex + '_> {
         // Plain index has no field indexes; the type tag is just a placeholder.
         None::<FacetIndexEnum<'_>>
+    }
+
+    fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
+        // Plain index has no field indexes to report telemetry for.
+        Vec::new()
     }
 
     fn formula_scorer<'q>(
