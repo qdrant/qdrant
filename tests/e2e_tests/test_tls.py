@@ -21,18 +21,23 @@ class TestTLS:
         }
 
     @pytest.fixture(scope="class")
-    def tls_cluster(self, docker_client, qdrant_image, test_data_dir):
+    def tls_cluster(self, docker_client, qdrant_image, test_data_dir, tls_certs):
         """
         Class-scoped fixture for TLS cluster using the extracted compose function.
         """
-        config = {"compose_file": "tls-compose.yaml", "wait_for_ready": False}
+        config = {
+            "compose_file": "tls-compose.yaml",
+            "readiness": {
+                "scheme": "https",
+                "verify": str(tls_certs["ca_cert"]),
+                "cert": (str(tls_certs["client_cert"]), str(tls_certs["client_key"])),
+                "include_grpc": True,
+            },
+        }
         cluster = run_docker_compose(docker_client, qdrant_image, test_data_dir, config)
 
         # Should have 2 containers
         assert len(cluster) == 2
-
-        # Wait for cluster to stabilize
-        time.sleep(15)
 
         try:
             yield cluster
