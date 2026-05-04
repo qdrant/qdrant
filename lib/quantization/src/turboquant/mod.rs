@@ -1,4 +1,5 @@
 pub(crate) mod encoding;
+pub mod hadamard_simd;
 pub mod lloyd_max;
 mod permutation;
 pub mod quantization;
