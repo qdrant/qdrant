@@ -621,6 +621,10 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
             }
         }
     }
+
+    fn is_index(&self) -> bool {
+        true
+    }
 }
 
 impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedIndex> {
