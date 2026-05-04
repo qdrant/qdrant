@@ -1,17 +1,17 @@
 //! Compares the scalar Walsh–Hadamard Transform
 //! (`quantization::turboquant::rotation::in_place_walsh_hadamard_transform`)
-//! against the SIMD variants in `quantization::turboquant::hadamard_simd`:
+//! against the SIMD variants in `quantization::turboquant::simd::hadamard`:
 //! AVX2 (`wht_avx2`, `wht_avx2_radix16_4x`) on x86_64 and NEON (`wht_neon`,
 //! `wht_neon_radix16_4x`) on aarch64. Bit-equality between SIMD and scalar is
-//! covered by unit tests in `hadamard_simd::tests` — this bench only measures
+//! covered by unit tests in `simd::hadamard::tests` — this bench only measures
 //! throughput.
 
 use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-#[cfg(target_arch = "aarch64")]
-use quantization::turboquant::hadamard_simd::simd_arm::{wht_neon, wht_neon_radix16_4x};
 use quantization::turboquant::rotation::in_place_walsh_hadamard_transform;
+#[cfg(target_arch = "aarch64")]
+use quantization::turboquant::simd::hadamard::simd_arm::{wht_neon, wht_neon_radix16_4x};
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::hadamard::simd_x86::{wht_avx2, wht_avx2_radix16_4x};
 use rand::prelude::StdRng;
