@@ -13,7 +13,7 @@ use fs_err as fs;
 
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -515,7 +515,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
     let offsets = ChunkedVectors::open(&offsets_path, 1, madvise, Some(populate))?;
 
-    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?)?;
+    let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
     let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapMultiDenseVectorStorage {

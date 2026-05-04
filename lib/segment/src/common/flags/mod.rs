@@ -8,5 +8,5 @@
 
 pub mod bitvec_flags;
 mod buffered_dynamic_flags;
-pub mod dynamic_mmap_flags;
+pub mod dynamic_stored_flags;
 pub mod roaring_flags;

@@ -7,7 +7,7 @@ use fs_err as fs;
 use serde_json::Value;
 
 use crate::common::Flusher;
-use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
@@ -97,11 +97,11 @@ impl MutableNullIndex {
         })?;
 
         let has_values_path = path.join(HAS_VALUES_DIRNAME);
-        let has_values_mmap = DynamicMmapFlags::open(&has_values_path, false)?;
+        let has_values_mmap = DynamicStoredFlags::open(&has_values_path, false)?;
         let has_values_flags = RoaringFlags::new(has_values_mmap)?;
 
         let is_null_path = path.join(IS_NULL_DIRNAME);
-        let is_null_mmap = DynamicMmapFlags::open(&is_null_path, false)?;
+        let is_null_mmap = DynamicStoredFlags::open(&is_null_path, false)?;
         let is_null_flags = RoaringFlags::new(is_null_mmap)?;
 
         let storage = Storage {

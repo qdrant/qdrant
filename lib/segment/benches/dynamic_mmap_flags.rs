@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
-use segment::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+use segment::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use segment::common::operation_error::check_process_stopped;
 use tempfile::tempdir;
 
@@ -20,7 +20,7 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
     let stopped = AtomicBool::new(false);
 
     // Build dynamic mmap flags with random deletions
-    let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
+    let mut dynamic_flags = DynamicStoredFlags::open(dir.path(), false).unwrap();
     dynamic_flags.set_len(FLAG_COUNT).unwrap();
     dynamic_flags
         .set_ascending_bits(

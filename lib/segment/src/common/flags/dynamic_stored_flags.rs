@@ -58,14 +58,14 @@ fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
 /// [1]: super::roaring_flags::RoaringFlags
 /// [2]: super::bitvec_flags::BitvecFlags
 /// [3]: super::buffered_dynamic_flags::BufferedDynamicFlags
-pub struct DynamicMmapFlags {
+pub struct DynamicStoredFlags {
     /// On-disk BitSlice for flags
     flags: StoredBitSlice<MmapFile>,
     status: StoredStruct<MmapFile, DynamicFlagsStatus>,
     directory: PathBuf,
 }
 
-impl fmt::Debug for DynamicMmapFlags {
+impl fmt::Debug for DynamicStoredFlags {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DynamicMmapFlags")
             .field("flags", &self.flags)
@@ -82,7 +82,7 @@ fn file_size_for(num_flags: usize) -> usize {
     max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two())
 }
 
-impl DynamicMmapFlags {
+impl DynamicStoredFlags {
     pub fn len(&self) -> usize {
         self.status.len
     }
@@ -316,7 +316,7 @@ mod tests {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         {
-            let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
+            let mut dynamic_flags = DynamicStoredFlags::open(dir.path(), false).unwrap();
             dynamic_flags.set_len(num_flags).unwrap();
             random_flags
                 .iter()
@@ -335,7 +335,7 @@ mod tests {
         }
 
         {
-            let dynamic_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
+            let dynamic_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
                 assert_eq!(dynamic_flags.get(i).unwrap(), *flag);
@@ -351,7 +351,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Create randomized dynamic mmap flags to test counting
-        let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
+        let mut dynamic_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
         dynamic_flags.set_len(num_flags).unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags

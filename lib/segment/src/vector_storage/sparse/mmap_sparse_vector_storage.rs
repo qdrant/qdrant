@@ -13,7 +13,7 @@ use gridstore::config::{Compression, StorageOptions};
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
@@ -65,7 +65,7 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?)?;
+        let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
 
         let deleted_count = deleted.count_trues();
         let next_point_offset = deleted
@@ -106,7 +106,7 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?)?;
+        let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
 
         Ok(Self {
             storage,

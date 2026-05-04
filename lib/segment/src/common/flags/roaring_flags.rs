@@ -4,7 +4,7 @@ use common::types::PointOffsetType;
 use roaring::RoaringBitmap;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
-use super::dynamic_mmap_flags::DynamicMmapFlags;
+use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 
@@ -28,7 +28,7 @@ pub struct RoaringFlags {
 }
 
 impl RoaringFlags {
-    pub fn new(mmap_flags: DynamicMmapFlags) -> OperationResult<Self> {
+    pub fn new(mmap_flags: DynamicStoredFlags) -> OperationResult<Self> {
         // load flags into memory
         let bitmap = RoaringBitmap::from_sorted_iter(mmap_flags.iter_trues()?)
             .expect("iter_trues iterates in sorted order");
@@ -139,7 +139,7 @@ impl RoaringFlags {
 mod tests {
     use common::types::PointOffsetType;
 
-    use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+    use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
     use crate::common::flags::roaring_flags::RoaringFlags;
 
     #[test]
@@ -151,7 +151,7 @@ mod tests {
 
         // Create and update flags
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
+            let mmap_flags = DynamicStoredFlags::open(dir.path(), false).unwrap();
             let mut roaring_flags = RoaringFlags::new(mmap_flags).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
@@ -171,7 +171,7 @@ mod tests {
 
         // Verify bitmap consistency after reload
         {
-            let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
             let roaring_flags = RoaringFlags::new(mmap_flags).unwrap();
 
             // Verify iteration consistency after reload

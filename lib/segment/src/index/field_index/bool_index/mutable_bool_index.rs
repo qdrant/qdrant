@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use roaring::RoaringBitmap;
 
-use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
@@ -69,12 +69,12 @@ impl MutableBoolIndex {
 
         // Trues bitslice
         let trues_path = path.join(TRUES_DIRNAME);
-        let trues_slice = DynamicMmapFlags::open(&trues_path, false)?;
+        let trues_slice = DynamicStoredFlags::open(&trues_path, false)?;
         let trues_flags = RoaringFlags::new(trues_slice)?;
 
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
-        let falses_slice = DynamicMmapFlags::open(&falses_path, false)?;
+        let falses_slice = DynamicStoredFlags::open(&falses_path, false)?;
         let falses_flags = RoaringFlags::new(falses_slice)?;
 
         let trues_count = trues_flags.count_trues();
