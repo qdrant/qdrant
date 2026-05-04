@@ -102,8 +102,7 @@ impl ShardReplicaSet {
         }
 
         // Listener replicas only durably ack to WAL; everything else honours
-        // the caller-supplied wait/timeout. `force` overrides this — the
-        // caller takes responsibility for choosing the wait semantics.
+        // the caller-supplied wait/timeout.
         let (effective_wait, effective_timeout) = if state.is_listener() {
             (WaitUntil::Wal, None)
         } else {
