@@ -303,11 +303,18 @@ where
     }
 }
 
+#[duplicate::duplicate_item(
+    tests_mod       S               cfg_predicate;
+    [tests_mmap]    [MmapFile]      [cfg(all())];
+    [tests_uring]   [IoUringFile]   [cfg(target_os = "linux")];
+)]
+#[cfg_predicate]
 #[cfg(test)]
-mod tests {
+mod tests_mod {
     use std::iter;
 
-    use common::universal_io::MmapFile;
+    #[cfg_predicate]
+    use common::universal_io::S;
     use rand::prelude::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -324,7 +331,7 @@ mod tests {
 
         {
             let mut dynamic_flags =
-                DynamicStoredFlags::<MmapFile>::open(dir.path(), false).unwrap();
+                DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
             dynamic_flags.set_len(num_flags).unwrap();
             random_flags
                 .iter()
@@ -343,7 +350,7 @@ mod tests {
         }
 
         {
-            let dynamic_flags = DynamicStoredFlags::<MmapFile>::open(dir.path(), true).unwrap();
+            let dynamic_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
                 assert_eq!(dynamic_flags.get(i).unwrap(), *flag);
@@ -359,7 +366,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Create randomized dynamic mmap flags to test counting
-        let mut dynamic_flags = DynamicStoredFlags::<MmapFile>::open(dir.path(), true).unwrap();
+        let mut dynamic_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
         dynamic_flags.set_len(num_flags).unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags

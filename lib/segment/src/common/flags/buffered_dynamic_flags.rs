@@ -130,11 +130,19 @@ fn reconcile_persisted_buffer(
         .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
 }
 
+#[duplicate::duplicate_item(
+    tests_mod       S               cfg_predicate;
+    [tests_mmap]    [MmapFile]      [cfg(all())];
+    [tests_uring]   [IoUringFile]   [cfg(target_os = "linux")];
+)]
+#[cfg_predicate]
 #[cfg(test)]
-mod tests {
+mod tests_mod {
 
     use common::types::PointOffsetType;
-    use common::universal_io::MmapFile;
+
+    #[cfg_predicate]
+    use common::universal_io::S;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
 
@@ -150,7 +158,7 @@ mod tests {
 
         // Start with smaller flags
         {
-            let mut mmap_flags = DynamicStoredFlags::<MmapFile>::open(dir.path(), false).unwrap();
+            let mut mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
             mmap_flags.set_len(3).unwrap();
             mmap_flags.set(0, true).unwrap();
             mmap_flags.set(2, true).unwrap();
@@ -159,7 +167,7 @@ mod tests {
 
         // Grow and update with BufferedDynamicFlags
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             let flags = buffered_flags.storage.lock();
@@ -186,7 +194,7 @@ mod tests {
 
         // Verify growth persisted
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             assert_eq!(mmap_flags.len(), 9);
 
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
@@ -215,7 +223,7 @@ mod tests {
 
         // Create initial flags
         {
-            let mut mmap_flags = DynamicStoredFlags::<MmapFile>::open(dir.path(), false).unwrap();
+            let mut mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
             mmap_flags.set_len(num_flags).unwrap();
 
             for (i, &value) in initial_flags.iter().enumerate() {
@@ -238,7 +246,7 @@ mod tests {
 
         // Apply updates and flush
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             // Verify initial state loaded correctly
@@ -260,7 +268,7 @@ mod tests {
 
         // Verify persistence
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             // Calculate expected final state
@@ -292,7 +300,7 @@ mod tests {
 
         // Initial empty state
         {
-            let mmap_flags = DynamicStoredFlags::<MmapFile>::open(dir.path(), false).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
             mmap_flags.flusher()().unwrap();
         }
 
@@ -307,7 +315,7 @@ mod tests {
         for (cycle_num, updates) in cycles.iter().enumerate() {
             // Apply updates and flush
             {
-                let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+                let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
                 let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
                 // The flusher will handle length expansion as needed
@@ -323,7 +331,7 @@ mod tests {
 
             // Verify state after each cycle
             {
-                let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+                let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
                 let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
                 for (i, &expected) in expected_state.iter().enumerate() {
@@ -352,7 +360,7 @@ mod tests {
 
         // Test with single true flag
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), false).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             buffered_flags.buffer_set(0, true);
@@ -363,7 +371,7 @@ mod tests {
 
         // Verify single flag persisted
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             let flags = buffered_flags.storage.lock();
@@ -387,7 +395,7 @@ mod tests {
 
         // Test with very sparse indices (large gaps)
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), false).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             // Set flags at sparse indices
@@ -402,7 +410,7 @@ mod tests {
 
         // Verify sparse indices persisted correctly
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             let flags = buffered_flags.storage.lock();
@@ -435,7 +443,7 @@ mod tests {
 
         // Create initial state
         {
-            let mut mmap_flags = DynamicStoredFlags::<MmapFile>::open(dir.path(), false).unwrap();
+            let mut mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
             mmap_flags.set_len(10).unwrap();
             for i in 0..10 {
                 mmap_flags.set(i, i % 2 == 0).unwrap(); // Even indices true
@@ -445,7 +453,7 @@ mod tests {
 
         // Test overwriting existing flags multiple times
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             // Initial state: [true, false, true, false, true, false, true, false, true, false]
@@ -472,7 +480,7 @@ mod tests {
 
         // Verify final state (all false) persisted
         {
-            let mmap_flags = DynamicStoredFlags::open(dir.path(), true).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(dir.path(), true).unwrap();
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
             let flags = buffered_flags.storage.lock();
