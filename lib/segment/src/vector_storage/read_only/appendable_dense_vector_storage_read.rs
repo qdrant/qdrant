@@ -1,20 +1,13 @@
 use std::borrow::Cow;
-use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
-use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 
-use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::dense::appendable_dense_vector_storage::{
-    AppendableMmapDenseVectorStorage, open_appendable_memmap_vector_storage_impl_read_only,
-};
-use crate::vector_storage::read_only::VectorStorageReadEnum;
+use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::{DenseVectorStorage, VectorStorageRead};
 
 /// Read-only newtype wrapper around [`AppendableMmapDenseVectorStorage`].
@@ -23,21 +16,6 @@ use crate::vector_storage::{DenseVectorStorage, VectorStorageRead};
 pub struct ReadOnlyAppendableDenseVectorStorage<T: PrimitiveVectorElement>(
     AppendableMmapDenseVectorStorage<T>,
 );
-
-impl<T: PrimitiveVectorElement> ReadOnlyAppendableDenseVectorStorage<T> {
-    pub fn open(
-        path: &Path,
-        dim: usize,
-        distance: Distance,
-        madvise: AdviceSetting,
-        populate: bool,
-    ) -> OperationResult<Self> {
-        let storage = open_appendable_memmap_vector_storage_impl_read_only::<T>(
-            path, dim, distance, madvise, populate,
-        )?;
-        Ok(Self(storage))
-    }
-}
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for ReadOnlyAppendableDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
@@ -96,40 +74,5 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for ReadOnlyAppendableDenseVec
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.0.deleted_vector_bitslice()
-    }
-}
-
-/// Open an appendable mmap dense vector storage as read-only.
-pub fn open_read_only_appendable_dense_vector_storage(
-    storage_element_type: VectorStorageDatatype,
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    madvise: AdviceSetting,
-    populate: bool,
-) -> OperationResult<VectorStorageReadEnum> {
-    match storage_element_type {
-        VectorStorageDatatype::Float32 => {
-            let storage = ReadOnlyAppendableDenseVectorStorage::<VectorElementType>::open(
-                path, dim, distance, madvise, populate,
-            )?;
-            Ok(VectorStorageReadEnum::DenseAppendable(Box::new(storage)))
-        }
-        VectorStorageDatatype::Uint8 => {
-            let storage = ReadOnlyAppendableDenseVectorStorage::<VectorElementTypeByte>::open(
-                path, dim, distance, madvise, populate,
-            )?;
-            Ok(VectorStorageReadEnum::DenseAppendableByte(Box::new(
-                storage,
-            )))
-        }
-        VectorStorageDatatype::Float16 => {
-            let storage = ReadOnlyAppendableDenseVectorStorage::<VectorElementTypeHalf>::open(
-                path, dim, distance, madvise, populate,
-            )?;
-            Ok(VectorStorageReadEnum::DenseAppendableHalf(Box::new(
-                storage,
-            )))
-        }
     }
 }

@@ -14,7 +14,7 @@ use fs_err as fs;
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
@@ -254,44 +254,6 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
 
-    let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
-    let deleted_count = deleted.count_trues();
-
-    Ok(AppendableMmapDenseVectorStorage {
-        vectors,
-        deleted,
-        distance,
-        deleted_count,
-        _phantom: Default::default(),
-    })
-}
-
-/// Open an existing appendable mmap dense vector storage without creating any
-/// files or directories. Fails if the storage layout is missing.
-pub fn open_appendable_memmap_vector_storage_impl_read_only<T: PrimitiveVectorElement>(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    madvise: AdviceSetting,
-    populate: bool,
-) -> OperationResult<AppendableMmapDenseVectorStorage<T>> {
-    let vectors_path = path.join(VECTORS_DIR_PATH);
-    let deleted_path = path.join(DELETED_DIR_PATH);
-
-    if !vectors_path.exists() {
-        return Err(OperationError::service_error(format!(
-            "Appendable dense vector storage 'vectors' dir not found at {}",
-            vectors_path.display(),
-        )));
-    }
-    if !deleted_path.exists() {
-        return Err(OperationError::service_error(format!(
-            "Appendable dense vector storage 'deleted' dir not found at {}",
-            deleted_path.display(),
-        )));
-    }
-
-    let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
     let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
     let deleted_count = deleted.count_trues();
 

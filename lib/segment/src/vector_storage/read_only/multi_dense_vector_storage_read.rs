@@ -9,15 +9,12 @@ use common::types::PointOffsetType;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{
-    TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
-};
+use crate::data_types::vectors::TypedMultiDenseVectorRef;
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     AppendableMmapMultiDenseVectorStorage,
     open_appendable_memmap_multi_vector_storage_impl_read_only,
 };
-use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::{MultiVectorStorage, VectorStorageRead};
 
 /// Read-only newtype wrapper around [`AppendableMmapMultiDenseVectorStorage`].
@@ -127,52 +124,5 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for ReadOnlyMultiDenseVectorSt
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.0.deleted_vector_bitslice()
-    }
-}
-
-/// Open an appendable mmap multi-dense vector storage as read-only.
-pub fn open_read_only_multi_dense_vector_storage(
-    storage_element_type: VectorStorageDatatype,
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-    madvise: AdviceSetting,
-    populate: bool,
-) -> OperationResult<VectorStorageReadEnum> {
-    match storage_element_type {
-        VectorStorageDatatype::Float32 => {
-            let storage = ReadOnlyMultiDenseVectorStorage::<VectorElementType>::open(
-                path,
-                dim,
-                distance,
-                multi_vector_config,
-                madvise,
-                populate,
-            )?;
-            Ok(VectorStorageReadEnum::MultiDense(Box::new(storage)))
-        }
-        VectorStorageDatatype::Uint8 => {
-            let storage = ReadOnlyMultiDenseVectorStorage::<VectorElementTypeByte>::open(
-                path,
-                dim,
-                distance,
-                multi_vector_config,
-                madvise,
-                populate,
-            )?;
-            Ok(VectorStorageReadEnum::MultiDenseByte(Box::new(storage)))
-        }
-        VectorStorageDatatype::Float16 => {
-            let storage = ReadOnlyMultiDenseVectorStorage::<VectorElementTypeHalf>::open(
-                path,
-                dim,
-                distance,
-                multi_vector_config,
-                madvise,
-                populate,
-            )?;
-            Ok(VectorStorageReadEnum::MultiDenseHalf(Box::new(storage)))
-        }
     }
 }

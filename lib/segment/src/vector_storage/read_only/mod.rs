@@ -2,23 +2,15 @@ mod appendable_dense_vector_storage_read;
 mod dense_vector_storage_read;
 mod multi_dense_vector_storage_read;
 mod sparse_vector_storage_read;
-pub use appendable_dense_vector_storage_read::{
-    ReadOnlyAppendableDenseVectorStorage, open_read_only_appendable_dense_vector_storage,
-};
+pub use appendable_dense_vector_storage_read::ReadOnlyAppendableDenseVectorStorage;
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
-pub use dense_vector_storage_read::{
-    ReadOnlyDenseVectorStorage, open_read_only_dense_vector_storage,
-};
-pub use multi_dense_vector_storage_read::{
-    ReadOnlyMultiDenseVectorStorage, open_read_only_multi_dense_vector_storage,
-};
-pub use sparse_vector_storage_read::{
-    ReadOnlySparseVectorStorage, open_read_only_sparse_vector_storage,
-};
+pub use dense_vector_storage_read::ReadOnlyDenseVectorStorage;
+pub use multi_dense_vector_storage_read::ReadOnlyMultiDenseVectorStorage;
+pub use sparse_vector_storage_read::ReadOnlySparseVectorStorage;
 
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};

@@ -189,48 +189,6 @@ where
     Ok(storage)
 }
 
-/// Open an existing dense vector storage without creating any files or directories.
-///
-/// Fails with a service error if the storage files are missing. This is the
-/// read-only counterpart of [`open_dense_vector_storage_impl`].
-pub fn open_dense_vector_storage_impl_read_only<T, S>(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    populate: bool,
-) -> OperationResult<DenseVectorStorageImpl<T, S>>
-where
-    T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
-{
-    let vectors_path = path.join(VECTORS_PATH);
-    let deleted_path = path.join(DELETED_PATH);
-
-    if !vectors_path.exists() {
-        return Err(OperationError::service_error(format!(
-            "Vector storage data file not found at {}",
-            vectors_path.display(),
-        )));
-    }
-    if !deleted_path.exists() {
-        return Err(OperationError::service_error(format!(
-            "Vector storage deleted bitvec not found at {}",
-            deleted_path.display(),
-        )));
-    }
-
-    let vectors = ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, populate)?;
-    let storage = DenseVectorStorageImpl {
-        vectors_path,
-        deleted_path,
-        vectors: Some(vectors),
-        distance,
-        populated: populate,
-    };
-
-    Ok(storage)
-}
-
 impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,

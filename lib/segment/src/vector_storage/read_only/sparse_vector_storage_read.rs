@@ -8,7 +8,6 @@ use sparse::common::sparse_vector::SparseVector;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::{SparseVectorStorage, VectorStorageRead};
 
@@ -92,10 +91,4 @@ impl VectorStorageRead for ReadOnlySparseVectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.0.deleted_vector_bitslice()
     }
-}
-
-/// Open a sparse mmap vector storage as read-only.
-pub fn open_read_only_sparse_vector_storage(path: &Path) -> OperationResult<VectorStorageReadEnum> {
-    let storage = ReadOnlySparseVectorStorage::open(path)?;
-    Ok(VectorStorageReadEnum::Sparse(Box::new(storage)))
 }
