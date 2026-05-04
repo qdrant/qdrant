@@ -204,6 +204,10 @@ impl VectorIndexRead for PlainVectorIndex {
     ) {
         // Plain (dense) index doesn't track IDF.
     }
+
+    fn is_index(&self) -> bool {
+        false
+    }
 }
 
 impl VectorIndex for PlainVectorIndex {

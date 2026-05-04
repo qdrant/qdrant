@@ -1,6 +1,7 @@
 mod deferred;
 mod facet;
 mod formula_rescore;
+mod info;
 mod order_by;
 mod payload;
 mod sampling;
