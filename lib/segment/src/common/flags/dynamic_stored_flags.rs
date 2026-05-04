@@ -28,8 +28,14 @@ fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
-pub trait UioDynamicFlags: UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static {}
-impl<T> UioDynamicFlags for T where T: UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static {}
+pub trait UioDynamicFlags:
+    UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static
+{
+}
+impl<T> UioDynamicFlags for T where
+    T: UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static
+{
+}
 
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -330,8 +336,7 @@ mod tests_mod {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         {
-            let mut dynamic_flags =
-                DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
+            let mut dynamic_flags = DynamicStoredFlags::<S>::open(dir.path(), false).unwrap();
             dynamic_flags.set_len(num_flags).unwrap();
             random_flags
                 .iter()
