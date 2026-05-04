@@ -139,7 +139,6 @@ fn reconcile_persisted_buffer(
 mod tests_mod {
 
     use common::types::PointOffsetType;
-
     #[cfg_predicate]
     use common::universal_io::S;
     use rand::rngs::StdRng;

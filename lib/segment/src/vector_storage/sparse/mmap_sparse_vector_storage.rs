@@ -7,6 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use fs_err as fs;
 use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
@@ -32,7 +33,7 @@ pub struct MmapSparseVectorStorage {
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
     /// depend on its length.
-    deleted: BitvecFlags,
+    deleted: BitvecFlags<MmapFile>,
     /// Current number of deleted vectors.
     deleted_count: usize,
     /// Maximum point offset in the storage + 1. This also means the total amount of point offsets

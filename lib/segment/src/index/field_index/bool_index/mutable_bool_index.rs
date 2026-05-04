@@ -8,7 +8,7 @@ use common::universal_io::MmapFile;
 use fs_err as fs;
 use roaring::RoaringBitmap;
 
-use crate::common::flags::dynamic_stored_flags::{DynamicStoredFlags};
+use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{

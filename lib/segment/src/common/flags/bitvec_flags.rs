@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
 use super::dynamic_stored_flags::DynamicStoredFlags;
@@ -18,7 +17,7 @@ use crate::common::operation_error::OperationResult;
 ///
 /// [1]: super::roaring_flags::RoaringFlags
 #[derive(Debug)]
-pub struct BitvecFlags<S = MmapFile> {
+pub struct BitvecFlags<S> {
     /// Buffered persisted flags.
     storage: BufferedDynamicFlags<S>,
 

@@ -61,7 +61,7 @@ pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
     /// depend on its length.
-    deleted: BitvecFlags,
+    deleted: BitvecFlags<MmapFile>,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     deleted_count: usize,
