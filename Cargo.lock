@@ -1337,7 +1337,7 @@ dependencies = [
  "env_logger",
  "fnv",
  "fs-err",
- "fs4 1.0.2",
+ "fs4 1.1.0",
  "fs_extra",
  "futures",
  "hashring",
@@ -2649,9 +2649,9 @@ dependencies = [
 
 [[package]]
 name = "fs4"
-version = "1.0.2"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f8fa43de52e33bb8fc545448eb07d6e6248971c5d6b4947937e9395f6ff339d"
+checksum = "7e72ed92b67c146290f88e9c89d60ca163ea417a446f61ffd7b72df3e7f1dfd5"
 dependencies = [
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -7297,7 +7297,7 @@ dependencies = [
  "common",
  "criterion",
  "fs-err",
- "fs4 1.0.2",
+ "fs4 1.1.0",
  "indexmap 2.14.0",
  "itertools 0.14.0",
  "log",
@@ -8694,7 +8694,7 @@ dependencies = [
  "docopt",
  "env_logger",
  "fs-err",
- "fs4 1.0.2",
+ "fs4 1.1.0",
  "hdrhistogram",
  "log",
  "memmap2 0.9.10",
