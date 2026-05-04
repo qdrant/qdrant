@@ -4,13 +4,12 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::mmap::{AdviceSetting, MmapType, create_and_ensure_length, open_write_mmap};
+use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions};
+use common::universal_io::{MmapFile, OpenOptions, StoredStruct};
 use fs_err as fs;
 use itertools::Either;
-use memmap2::MmapMut;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -29,6 +28,7 @@ fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct DynamicFlagsStatus {
     /// Amount of flags (bits)
@@ -39,13 +39,13 @@ struct DynamicFlagsStatus {
     current_file_id: usize,
 }
 
-fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
+fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
     let status_file = status_file(directory);
     if !status_file.exists() {
         let length = std::mem::size_of::<DynamicFlagsStatus>();
         create_and_ensure_length(&status_file, length)?;
     }
-    Ok(open_write_mmap(&status_file, AdviceSetting::Global, false)?)
+    Ok(status_file)
 }
 
 /// Mutable persisted bitslice. This uses no buffering for updates.
@@ -61,7 +61,7 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
 pub struct DynamicMmapFlags {
     /// On-disk BitSlice for flags
     flags: StoredBitSlice<MmapFile>,
-    status: MmapType<DynamicFlagsStatus>,
+    status: StoredStruct<MmapFile, DynamicFlagsStatus>,
     directory: PathBuf,
 }
 
@@ -93,8 +93,19 @@ impl DynamicMmapFlags {
 
     pub fn open(directory: &Path, populate: bool) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
-        let status_mmap = ensure_status_file(directory)?;
-        let mut status: MmapType<DynamicFlagsStatus> = unsafe { MmapType::try_from(status_mmap)? };
+        let status_path = ensure_status_file(directory)?;
+
+        let mut status: StoredStruct<MmapFile, DynamicFlagsStatus> = StoredStruct::open(
+            &status_path,
+            OpenOptions {
+                writeable: true,
+                need_sequential: false,
+                disk_parallel: None,
+                populate: Some(false),
+                advice: None,
+                prevent_caching: None,
+            },
+        )?;
 
         if status.current_file_id != 0 {
             // Migrate
