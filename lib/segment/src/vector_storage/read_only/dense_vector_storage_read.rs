@@ -3,8 +3,6 @@ use std::borrow::Cow;
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
-#[cfg(target_os = "linux")]
-use common::universal_io::IoUringFile;
 use common::universal_io::{MmapFile, UniversalRead};
 
 use crate::data_types::named_vectors::CowVector;
