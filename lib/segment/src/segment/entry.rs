@@ -25,16 +25,15 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::{IdTracker, IdTrackerRead, PointMappingsGuard};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
-use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead, VectorIndexRead};
+use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
-use crate::payload_storage::PayloadStorageRead;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
-    PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentType, SeqNumberType, VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    VectorName, VectorNameBuf, WithPayload, WithVector,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageRead};
+use crate::vector_storage::VectorStorage;
 
 /// This is a basic implementation of the trait, meaning that it implements the _actual_ operations with data and not
 /// any kind of proxy or wrapping.
@@ -248,96 +247,13 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn size_info(&self) -> SegmentInfo {
-        let num_vectors = self
-            .vector_data
-            .values()
-            .map(|data| data.vector_storage.borrow().available_vector_count())
-            .sum();
-
-        let mut total_average_vectors_size_bytes: usize = 0;
-
-        let vector_data_info: HashMap<_, _> = self
-            .vector_data
-            .iter()
-            .map(|(key, vector_data)| {
-                let vector_storage = vector_data.vector_storage.borrow();
-                let num_vectors = vector_storage.available_vector_count();
-                let vector_index = vector_data.vector_index.borrow();
-                let is_indexed = vector_index.is_index();
-
-                let average_vector_size_bytes = vector_index
-                    .size_of_searchable_vectors_in_bytes()
-                    .checked_div(num_vectors)
-                    .unwrap_or(0);
-                total_average_vectors_size_bytes += average_vector_size_bytes;
-
-                let vector_data_info = VectorDataInfo {
-                    num_vectors,
-                    num_indexed_vectors: if is_indexed {
-                        vector_index.indexed_vector_count()
-                    } else {
-                        0
-                    },
-                    num_deleted_vectors: vector_storage.deleted_vector_count(),
-                };
-                (key.clone(), vector_data_info)
-            })
-            .collect();
-
-        let num_indexed_vectors = if self.segment_type == SegmentType::Indexed {
-            self.vector_data
-                .values()
-                .map(|data| data.vector_index.borrow().indexed_vector_count())
-                .sum()
-        } else {
-            0
-        };
-
-        let vectors_size_bytes = total_average_vectors_size_bytes * self.available_point_count();
-
-        // Unwrap and default to 0 here because the RocksDB storage is the only faillible one, and we will remove it eventually.
-        let payloads_size_bytes = self
-            .payload_storage
-            .borrow()
-            .get_storage_size_bytes()
-            .unwrap_or(0);
-
-        SegmentInfo {
-            uuid: self.segment_uuid(),
-            segment_type: self.segment_type,
-            num_vectors,
-            num_indexed_vectors,
-            num_points: self.available_point_count(),
-            num_deferred_points: Some(self.deferred_point_count()),
-            num_deleted_deferred_points: Some(self.deferred_deleted_count().unwrap_or_default()),
-            num_deleted_vectors: self.deleted_point_count(),
-            vectors_size_bytes,  // Considers vector storage, but not indices
-            payloads_size_bytes, // Considers payload storage, but not indices
-            ram_usage_bytes: 0,  // ToDo: Implement
-            disk_usage_bytes: 0, // ToDo: Implement
-            is_appendable: self.appendable_flag,
-            index_schema: HashMap::new(),
-            vector_data: vector_data_info,
-            deferred_internal_id: self.deferred_internal_id(),
-        }
+        self.with_view(|view| {
+            view.build_size_info(self.uuid, self.segment_type, self.appendable_flag)
+        })
     }
 
     fn info(&self) -> SegmentInfo {
-        let payload_index = self.payload_index.borrow();
-        let schema = payload_index
-            .indexed_fields()
-            .into_iter()
-            .map(|(key, index_schema)| {
-                let points_count = payload_index.indexed_points(&key);
-                let index_info = PayloadIndexInfo::new(index_schema, points_count);
-                (key, index_info)
-            })
-            .collect();
-
-        let mut info = self.size_info();
-        info.index_schema = schema;
-
-        info
+        self.with_view(|view| view.build_info(self.uuid, self.segment_type, self.appendable_flag))
     }
 
     fn config(&self) -> &SegmentConfig {
@@ -356,22 +272,15 @@ impl ReadSegmentEntry for Segment {
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
-        let vector_index_searches: Vec<_> = self
-            .vector_data
-            .iter()
-            .map(|(k, v)| {
-                let mut telemetry = v.vector_index.borrow().get_telemetry_data(detail);
-                telemetry.index_name = Some(k.clone());
-                telemetry
-            })
-            .collect();
-
-        SegmentTelemetry {
-            info: self.info(),
-            config: self.config().clone(),
-            vector_index_searches,
-            payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
-        }
+        self.with_view(|view| {
+            view.build_telemetry(
+                self.uuid,
+                self.segment_type,
+                self.appendable_flag,
+                &self.segment_config,
+                detail,
+            )
+        })
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) {

@@ -453,18 +453,6 @@ impl StructPayloadIndex {
         })
     }
 
-    pub fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
-        self.field_indexes
-            .iter()
-            .flat_map(|(name, field)| -> Vec<PayloadIndexTelemetry> {
-                field
-                    .iter()
-                    .map(|field| field.get_telemetry_data().set_name(name.to_string()))
-                    .collect()
-            })
-            .collect()
-    }
-
     fn clear_index_for_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
         for (_, field_indexes) in self.field_indexes.iter_mut() {
             for index in field_indexes {
@@ -622,6 +610,18 @@ impl PayloadIndexRead for StructPayloadIndex {
         self.field_indexes
             .get(key)
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
+    }
+
+    fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
+        self.field_indexes
+            .iter()
+            .flat_map(|(name, field)| -> Vec<PayloadIndexTelemetry> {
+                field
+                    .iter()
+                    .map(|field| field.get_telemetry_data().set_name(name.to_string()))
+                    .collect()
+            })
+            .collect()
     }
 
     fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndex + '_> {
