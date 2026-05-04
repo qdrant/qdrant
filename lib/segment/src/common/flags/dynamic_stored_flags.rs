@@ -53,7 +53,7 @@ fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
 /// For buffered variants, check
 /// - [`RoaringFlags`][1] - with a RoaringBitmap for reads
 /// - [`BitvecFlags`][2] - with a BitVec for reads
-/// - [`BufferedDynamicFlags`][3] - no reads, only buffered persistance
+/// - [`BufferedDynamicFlags`][3] - no reads, only buffered persistence
 ///
 /// [1]: super::roaring_flags::RoaringFlags
 /// [2]: super::bitvec_flags::BitvecFlags
