@@ -1968,7 +1968,7 @@
     }
   },
   "externalDocs": {
-    "description": "Find out more about Qdrant aplications and demo",
+    "description": "Find out more about Qdrant applications and demo",
     "url": "https://qdrant.tech/documentation/"
   },
   "info": {

@@ -1737,7 +1737,7 @@
     }
   },
   "externalDocs": {
-    "description": "Find out more about Qdrant aplications and demo",
+    "description": "Find out more about Qdrant applications and demo",
     "url": "demo.qdrant.tech"
   },
   "info": {
