@@ -1,12 +1,13 @@
-use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
-use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::dense::dense_vector_storage::DenseVectorStorageImpl;
-use crate::vector_storage::VectorStorageRead;
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalReadFamily;
+
+use crate::data_types::named_vectors::CowVector;
+use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::types::{Distance, VectorStorageDatatype};
+use crate::vector_storage::VectorStorageRead;
+use crate::vector_storage::dense::dense_vector_storage::DenseVectorStorageImpl;
 
 /// Read-only counterpart of [`super::super::VectorStorageEnum`].
 ///
@@ -16,7 +17,6 @@ pub enum VectorStorageReadEnum<S: UniversalReadFamily> {
     Dense(Box<DenseVectorStorageImpl<VectorElementType, S::Read<VectorElementType>>>),
     DenseByte(Box<DenseVectorStorageImpl<VectorElementTypeByte, S::Read<VectorElementTypeByte>>>),
     DenseHalf(Box<DenseVectorStorageImpl<VectorElementTypeHalf, S::Read<VectorElementTypeHalf>>>),
-
     // DenseAppendable(Box<ReadOnlyAppendableDenseVectorStorage<VectorElementType>>),
     // DenseAppendableByte(Box<ReadOnlyAppendableDenseVectorStorage<VectorElementTypeByte>>),
     // DenseAppendableHalf(Box<ReadOnlyAppendableDenseVectorStorage<VectorElementTypeHalf>>),
