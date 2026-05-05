@@ -23,6 +23,7 @@ bincode = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
+duplicate = "2.0.1"
 fs-err = { workspace = true }
 fs_extra = { workspace = true }
 itertools = { workspace = true }

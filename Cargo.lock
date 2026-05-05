@@ -1438,6 +1438,7 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
+ "duplicate",
  "fs-err",
  "fs_extra",
  "io-uring",
