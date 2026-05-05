@@ -14,6 +14,7 @@ partial-apply window and forcing the entry to replay.
 
 import json
 import pathlib
+import shutil
 
 import requests
 
@@ -28,10 +29,22 @@ from .utils import (
     wait_collection_exists_and_active_on_all_peers,
     wait_for,
     wait_for_collection_resharding_operations_count,
+    wait_for_collection_shard_transfers_count,
     wait_for_peer_online,
 )
 
 COLLECTION = "test_resharding_set_replica_dead_replay"
+
+
+def _all_replicas(info):
+    for local in info["local_shards"]:
+        yield {**local, "peer_id": info["peer_id"]}
+    for remote in info["remote_shards"]:
+        yield remote
+
+
+def _peer_for_shard(info, shard_id):
+    return next(r["peer_id"] for r in _all_replicas(info) if r["shard_id"] == shard_id)
 
 
 def test_set_replica_dead_replay_clears_resharding_state(tmp_path: pathlib.Path):
@@ -39,14 +52,17 @@ def test_set_replica_dead_replay_clears_resharding_state(tmp_path: pathlib.Path)
 
     target_idx = 2
     target_dir = peer_dirs[target_idx]
-    target_peer_id = get_cluster_info(peer_uris[target_idx])["peer_id"]
+    peer_ids = [get_cluster_info(uri)["peer_id"] for uri in peer_uris]
+    target_peer_id = peer_ids[target_idx]
 
-    # Initial 2 shards on peer 0 / peer 1 (RF=1). Resharding up will add shard 2
-    # on peer 2 (target), placing it in `Resharding` replica state. We need a
-    # non-target peer to hold the shards that don't move, so updates can be
-    # accepted and routed; we need the new shard's only replica to be on a peer
-    # we can kill so that updates to it fail and trigger
-    # `SetShardReplicaState(Resharding -> Dead)`.
+    # 2 shards (RF=1). Resharding up will add shard 2 on the target peer in
+    # `Resharding` state. We then drive a resharding-stream-records transfer
+    # from shard 0 to shard 2 on a *non-target* peer so shard 2 gets a
+    # second `Resharding` replica there. Without that second replica, the
+    # failure-detection path's "last active peer" guard
+    # (`add_locally_disabled` -> `active_or_resharding_peers`) refuses to
+    # propose `SetShardReplicaState(Dead)` because target holds the only
+    # resharding replica, and the bug we're testing never gets exercised.
     create_collection(peer_uris[0], collection=COLLECTION, shard_number=2, replication_factor=1)
     wait_collection_exists_and_active_on_all_peers(COLLECTION, peer_uris)
 
@@ -72,19 +88,59 @@ def test_set_replica_dead_replay_clears_resharding_state(tmp_path: pathlib.Path)
         == "Resharding"
     )
 
-    # Snapshot the on-disk state of the resharding key. We'll forge it back in
-    # later to simulate `ensure_replica_with_state` persisted the new replica
-    # state but local `abort_resharding` didn't run before the crash.
-    initial_resharding_state = json.loads(resharding_state.read_text())
-    assert initial_resharding_state is not None, "resharding_state.json must hold Some(...)"
+    # Drive a resharding-stream-records transfer from an existing shard
+    # (Active, validation accepts it) to shard 2 on a non-target peer. This
+    # creates shard 2 on the receiver with `Resharding` state so shard 2
+    # ends up with two resharding replicas. Pick a transfer source on a peer
+    # that isn't the target — auto-distribution may put shard 0 on the target
+    # peer.
+    info = get_collection_cluster_info(peer_uris[0], COLLECTION)
+    source_idx = source_peer_id = source_shard = None
+    for r in _all_replicas(info):
+        replica_peer = r["peer_id"]
+        replica_idx = peer_ids.index(replica_peer)
+        if replica_idx == target_idx:
+            continue
+        source_idx = replica_idx
+        source_peer_id = replica_peer
+        source_shard = r["shard_id"]
+        break
+    assert source_idx is not None, "no non-target peer holds an existing shard"
+    extra_idx = next(i for i in range(3) if i != target_idx and i != source_idx)
+    extra_peer_id = peer_ids[extra_idx]
+    driver_uri = peer_uris[source_idx]
+
+    resp = requests.post(
+        f"{peer_uris[0]}/collections/{COLLECTION}/cluster",
+        json={
+            "replicate_shard": {
+                "from_peer_id": source_peer_id,
+                "to_peer_id": extra_peer_id,
+                "shard_id": source_shard,
+                "to_shard_id": 2,
+                "method": "resharding_stream_records",
+            }
+        },
+    )
+    assert_http_ok(resp)
+    wait_for_collection_shard_transfers_count(peer_uris[0], COLLECTION, 0)
 
     # Capture the commit just before we trigger the buggy entry. The replay
     # window starts at commit_before + 1.
     commit_before_set = json.loads(raft_state.read_text())["state"]["hard_state"]["commit"]
 
-    # Kill target peer to force update failures on shard 2 (its only replica is
-    # `Resharding` on target). The first update routed to shard 2 will fail and
-    # the failure handler proposes `SetShardReplicaState(Resharding -> Dead)`.
+    # Snapshot target's full collection directory before the deactivation so
+    # we can restore it after the natural catchup has dropped shard 2 (which
+    # is the correct behavior of `abort_resharding` for resharding-up). We
+    # restore the snapshot below to set up the partial-apply forge.
+    collection_dir = target_dir / "storage" / "collections" / COLLECTION
+    snapshot_dir = tmp_path / "target_collection_snapshot"
+    shutil.copytree(collection_dir, snapshot_dir)
+
+    # Kill target peer. Updates to shard 2 will fail on target's Resharding
+    # replica; the second peer's Resharding replica keeps the shard "live"
+    # in active_or_resharding_peers so the failure handler is permitted to
+    # propose `SetShardReplicaState(Resharding -> Dead)` for target.
     p = processes.pop(target_idx)
     restart_port = p.p2p_port
     p.kill()
@@ -93,7 +149,7 @@ def test_set_replica_dead_replay_clears_resharding_state(tmp_path: pathlib.Path)
     # deactivation. Use weak ordering with `fail_on_error=False` since some
     # writes targeting shard 2 are expected to fail while target is down.
     upsert_random_points(
-        peer_uris[0],
+        driver_uri,
         num=200,
         collection_name=COLLECTION,
         fail_on_error=False,
@@ -102,44 +158,54 @@ def test_set_replica_dead_replay_clears_resharding_state(tmp_path: pathlib.Path)
 
     # Wait for the running peers to apply `SetShardReplicaState(Dead)` and the
     # local `abort_resharding` to clear the resharding state on them.
-    for uri in [peer_uris[0], peer_uris[1]]:
+    running_uris = [uri for idx, uri in enumerate(peer_uris) if idx != target_idx]
+    for uri in running_uris:
         wait_for_collection_resharding_operations_count(uri, COLLECTION, 0)
 
-    # Restart target so it catches up via raft. The natural apply flow does
-    # NOT trigger the bug — `current_state` is captured as `Resharding` before
-    # `ensure_replica_with_state` runs, so the local `abort_resharding`
-    # side-effect fires and resharding_state converges to None on this peer.
+    # Restart target so it catches up via raft. With the fix, the natural
+    # apply on target also fires the local abort_resharding side-effect, so
+    # state converges and shard 2 is dropped on target. We need to wait for
+    # this so target's hard_state.commit advances past the SetShardReplicaState
+    # entry — that gives us a valid range to set apply_progress_queue over
+    # for the replay below.
     peer_uris[target_idx] = start_peer(
         target_dir, f"peer_catchup_{target_idx}.log", bootstrap_uri, port=restart_port
     )
     catchup_uri = peer_uris[target_idx]
     wait_for_peer_online(catchup_uri)
     wait_for_collection_resharding_operations_count(catchup_uri, COLLECTION, 0)
-
-    # Sanity-check the persisted state on target: replica = Dead, no resharding.
     assert json.loads(resharding_state.read_text()) is None
-    assert (
-        json.loads(new_replica_state.read_text())["peers"].get(str(target_peer_id)) == "Dead"
-    )
 
-    # Now forge the partial-apply state. Kill again, restore resharding_state.json
-    # to the active resharding (as it would look mid-apply between the durable
-    # replica_state.write and the local abort_resharding), and reset
-    # apply_progress_queue to force `SetShardReplicaState(Resharding -> Dead)`
-    # to replay. Replica state stays Dead — that's the trap: it makes
-    # `current_state` read back as Dead on replay.
+    # Capture target's advanced commit, then kill again.
+    commit_after_apply = json.loads(raft_state.read_text())["state"]["hard_state"]["commit"]
+    raft_state_blob = json.loads(raft_state.read_text())
     p = processes.pop(target_idx)
     restart_port = p.p2p_port
     p.kill()
 
-    resharding_state.write_text(json.dumps(initial_resharding_state))
+    # Restore the pre-deactivation collection snapshot. This puts back shard 2's
+    # directory, replica_state.json (showing target=Resharding), config.json
+    # (shard_number=3), and resharding_state.json (Some). Then forge the
+    # partial-apply state on top: target's replica becomes Dead — as it would
+    # be if `ensure_replica_with_state` had persisted before the crash, while
+    # the local abort_resharding side-effect didn't run.
+    shutil.rmtree(collection_dir)
+    shutil.copytree(snapshot_dir, collection_dir)
 
-    state = json.loads(raft_state.read_text())
-    state["apply_progress_queue"] = [
+    repl_state = json.loads(new_replica_state.read_text())
+    repl_state["peers"][str(target_peer_id)] = "Dead"
+    new_replica_state.write_text(json.dumps(repl_state))
+
+    # Reset apply_progress_queue to replay every entry from before the
+    # SetShardReplicaState through the post-catchup commit. The earlier
+    # raft state (from before kill) had a smaller commit than what the
+    # cluster has now, so reuse the post-catchup commit value to keep the
+    # cluster's view consistent.
+    raft_state_blob["apply_progress_queue"] = [
         commit_before_set + 1,
-        state["state"]["hard_state"]["commit"],
+        commit_after_apply,
     ]
-    raft_state.write_text(json.dumps(state))
+    raft_state.write_text(json.dumps(raft_state_blob))
 
     # Restart and watch the replay.
     peer_uris[target_idx] = start_peer(

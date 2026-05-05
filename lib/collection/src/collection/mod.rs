@@ -415,6 +415,25 @@ impl Collection {
 
         let current_state = replica_set.peer_state(peer_id);
 
+        // Idempotent re-apply detection. After a partial-apply crash, the
+        // entry replays and `current_state` may read back as `new_state` (if
+        // the persist already happened) — so the `from_state != current_state`
+        // and `is_last_source_of_truth` checks would falsely reject. Both
+        // checks describe the *pre-apply* state and are unnecessary when the
+        // state change has already been made; we fall through so the replay
+        // can re-run the resharding side-effects below.
+        let idempotent_replay = current_state == Some(new_state);
+
+        // Replays after a partial `abort_resharding` (Down direction) read
+        // `current_state` back as `Active` because the abort's first step
+        // reverts `ReshardingScaleDown -> Active`. In that case the entry's
+        // `from_state` was a resharding state, so the same replay must be
+        // allowed to proceed and re-run the now-idempotent abort.
+        let from_was_resharding = from_state
+            .as_ref()
+            .is_some_and(ReplicaState::is_resharding);
+        let allow_state_drift = idempotent_replay || from_was_resharding;
+
         // Validation:
         //
         // 1. Check that peer exists in the cluster (peer might *not* exist, if it was removed from
@@ -436,7 +455,7 @@ impl Collection {
         }
 
         // 2. Check that `from_state` matches current state
-        if from_state.is_some() && current_state != from_state {
+        if !allow_state_drift && from_state.is_some() && current_state != from_state {
             return Err(CollectionError::bad_input(format!(
                 "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected {from_state:?}"
             )));
@@ -445,24 +464,42 @@ impl Collection {
         // 3. Do not deactivate the last active replica
         //
         // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
-        if replica_set.is_last_source_of_truth_replica(peer_id) && !new_state.is_active() {
+        if !allow_state_drift
+            && replica_set.is_last_source_of_truth_replica(peer_id)
+            && !new_state.is_active()
+        {
             return Err(CollectionError::bad_input(format!(
                 "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
             )));
         }
 
-        // Update replica status
-        replica_set
-            .ensure_replica_with_state(peer_id, new_state)
-            .await?;
-
-        if new_state == ReplicaState::Dead {
-            let resharding_state = shard_holder.resharding_state.read().clone();
-
+        // Compute resharding-related decisions from durable state BEFORE we
+        // mutate anything. We need:
+        //
+        // - `was_resharding`: should this deactivation also abort the active
+        //   resharding? Combine `current_state` (for first applies and replays
+        //   that crashed before the abort) with `from_state` (which survives
+        //   in the consensus log entry across replays that crashed *after*
+        //   `abort_resharding` reverted `ReshardingScaleDown -> Active`).
+        //
+        // - `related_transfers`: transfers that need to be aborted because
+        //   the deactivated replica was source/target. Captured under the
+        //   read lock; evaluated against the in-memory transfer set, which
+        //   stays stable across the abort below (transfer aborts inside
+        //   abort_resharding remove entries; we tolerate that and skip
+        //   re-aborting in the loop).
+        let resharding_state = shard_holder.resharding_state.read().clone();
+        let was_resharding = current_state
+            .as_ref()
+            .is_some_and(ReplicaState::is_resharding)
+            || from_was_resharding;
+        let should_abort_resharding =
+            new_state == ReplicaState::Dead && was_resharding && resharding_state.is_some();
+        let related_transfers = if new_state == ReplicaState::Dead {
             let all_nodes_fixed_cancellation = self
                 .channel_service
                 .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
-            let related_transfers = if all_nodes_fixed_cancellation {
+            if all_nodes_fixed_cancellation {
                 shard_holder.get_related_transfers(peer_id, shard_id)
             } else {
                 // This is the old buggy logic, but we have to keep it
@@ -471,41 +508,56 @@ impl Collection {
                     transfer.shard_id == shard_id
                         && (transfer.from == peer_id || transfer.to == peer_id)
                 })
-            };
-
-            // Functions below lock `shard_holder`!
-            drop(shard_holder);
-
-            let mut abort_resharding_result = CollectionResult::Ok(());
-
-            // Abort resharding, if resharding shard is marked as `Dead`.
-            //
-            // This branch should only be triggered, if resharding is currently at `MigratingPoints`
-            // stage, because target shard should be marked as `Active`, when all resharding transfers
-            // are successfully completed, and so the check *right above* this one would be triggered.
-            //
-            // So, if resharding reached `ReadHashRingCommitted`, this branch *won't* be triggered,
-            // and resharding *won't* be cancelled. The update request should *fail* with "failed to
-            // update all replicas of a shard" error.
-            //
-            // If resharding reached `ReadHashRingCommitted`, and this branch is triggered *somehow*,
-            // then `Collection::abort_resharding` call should return an error, so no special handling
-            // is needed.
-            let is_resharding = current_state
-                .as_ref()
-                .is_some_and(ReplicaState::is_resharding);
-            if is_resharding && let Some(state) = resharding_state {
-                abort_resharding_result = self.abort_resharding(state.key(), false).await;
             }
+        } else {
+            Vec::new()
+        };
 
+        // Drop the read guard before any of the side-effect calls below —
+        // `abort_resharding` and `abort_shard_transfer_and_resharding` both
+        // grab the `shards_holder` lock internally.
+        drop(shard_holder);
+
+        // Run resharding side-effects FIRST, before persisting the replica
+        // state. This makes every replay path converge:
+        //
+        // - Crash before/during abort: replay re-enters here, gate stays
+        //   true (current_state still resharding-ish on disk, or from_state
+        //   in the WAL entry), and the idempotent abort completes whatever
+        //   the prior attempt skipped.
+        // - Crash after abort but before the replica persist: replay sees
+        //   `current_state = Active` (Down) or `shard not found` (Up). The
+        //   `from_was_resharding` validation skip lets the entry proceed; the
+        //   gate fires again via `from_state` and the abort runs idempotently
+        //   (no-op now) before we reach the persist.
+        //
+        // For Up direction, `abort_resharding` drops the shard entirely; we
+        // detect that below and skip the persist — the replica is gone, so
+        // marking it Dead is moot.
+        if should_abort_resharding {
+            // unwrap: should_abort_resharding implies resharding_state is Some
+            let key = resharding_state.unwrap().key();
+            self.abort_resharding(key, false).await?;
+        }
+
+        // Persist replica state. Re-acquire the shard holder and re-fetch the
+        // replica set: for Up direction, `abort_resharding` above dropped the
+        // shard, so `get_shard` now returns `None`. Skip the persist in that
+        // case — the replica no longer exists on this peer.
+        let shard_holder = self.shards_holder.read().await;
+        if let Some(replica_set) = shard_holder.get_shard(shard_id) {
+            replica_set
+                .ensure_replica_with_state(peer_id, new_state)
+                .await?;
+        }
+        drop(shard_holder);
+
+        if new_state == ReplicaState::Dead {
             // Terminate transfer if source or target replicas are now dead
             for transfer in related_transfers {
                 self.abort_shard_transfer_and_resharding(transfer.key(), None)
                     .await?;
             }
-
-            // Propagate resharding errors now
-            abort_resharding_result?;
         }
 
         // If not initialized yet, we need to check if it was initialized by this call

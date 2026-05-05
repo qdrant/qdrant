@@ -19,6 +19,7 @@ transfer first to land a replica in `ReshardingScaleDown`.
 
 import json
 import pathlib
+import time
 
 import requests
 
@@ -66,6 +67,11 @@ def test_set_replica_dead_replay_clears_resharding_state_down(tmp_path: pathlib.
         collection=COLLECTION,
         shard_number=2,
         replication_factor=2,
+        # write_consistency_factor=2 forces upserts to wait for both replicas
+        # of each shard. Once we kill the target, fan-out to its replica
+        # times out — the request fails synchronously and the failure handler
+        # proposes `SetShardReplicaState(ReshardingScaleDown -> Dead)`.
+        write_consistency_factor=2,
     )
     wait_collection_exists_and_active_on_all_peers(COLLECTION, peer_uris)
 
@@ -171,10 +177,10 @@ def test_set_replica_dead_replay_clears_resharding_state_down(tmp_path: pathlib.
     restart_port = p.p2p_port
     p.kill()
 
-    # Drive enough updates to land at least one on the surviving shard
-    # (shard 0) and trigger the deactivation. Use weak ordering with
-    # `fail_on_error=False` since some background fan-outs to the dead
-    # target are expected to fail.
+    # Drive updates to trigger the deactivation. With
+    # write_consistency_factor=2, the upsert waits for both replicas of each
+    # shard, so when target is dead the request fails synchronously and
+    # the failure handler observes the failed remote ack.
     upsert_random_points(
         driver_uri,
         num=200,
@@ -211,7 +217,29 @@ def test_set_replica_dead_replay_clears_resharding_state_down(tmp_path: pathlib.
     restart_port = p.p2p_port
     p.kill()
 
+    # Pause to let the killed process fully release WAL file locks before
+    # the next start. SIGKILL + wait() returns when the process exits, but
+    # background runtimes (e.g. transfer tasks the peer was driving) and
+    # the OS lock state may take a few seconds to clean up; without this
+    # pause the next peer hits `Can't open consensus WAL: WouldBlock`.
+    time.sleep(5)
+
+    # Forge resharding_state back to active.
     resharding_state.write_text(json.dumps(initial_resharding_state))
+
+    # Forge target's replica state for the surviving shard to Dead. After
+    # the natural catchup, the cluster's automatic recovery flow may have
+    # transitioned target's replica from Dead through Recovery/Partial back
+    # toward Active. For the replay to exercise the bug, we need
+    # `current_state == Dead` so the idempotent_replay path is taken; if
+    # we left current_state as whatever the recovery flow produced
+    # (typically Active), the from_state validation would mismatch
+    # (`from_state=Some(ReshardingScaleDown)` vs `current_state=Some(Active)`),
+    # the entry would error with BadInput, and apply_entries would swallow
+    # the error without ever reaching the abort_resharding side-effect.
+    repl_state = json.loads(surviving_replica_state.read_text())
+    repl_state["peers"][str(target_peer_id)] = "Dead"
+    surviving_replica_state.write_text(json.dumps(repl_state))
 
     state = json.loads(raft_state.read_text())
     state["apply_progress_queue"] = [
