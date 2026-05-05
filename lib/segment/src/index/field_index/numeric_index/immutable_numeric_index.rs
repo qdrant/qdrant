@@ -25,6 +25,8 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + StoredValue + Defa
     point_to_values: ImmutablePointToValues<T>,
     // Backing storage, source of state, persists deletions
     storage: Storage<T>,
+    /// Snapshot of approximate RAM usage at construction time.
+    /// Not refreshed on `remove_point`.
     cached_ram_usage_bytes: usize,
 }
 
@@ -72,16 +74,18 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
             deleted,
             deleted_count: _,
         } = self;
-        data.capacity() * std::mem::size_of::<Point<T>>()
-            + deleted.capacity().div_ceil(u8::BITS as usize)
+        data.capacity() * size_of::<Point<T>>() + deleted.capacity().div_ceil(u8::BITS as usize)
     }
 
     fn from_btree_set(map: BTreeSet<Point<T>>) -> Self {
-        Self {
+        let result = Self {
             deleted: BitVec::repeat(false, map.len()),
             data: map.into_iter().collect(),
             deleted_count: 0,
-        }
+        };
+        // Invariant relied on by the iterators (see `next` / `next_back`).
+        debug_assert_eq!(result.deleted.len(), result.data.len());
+        result
     }
 
     fn len(&self) -> usize {
@@ -181,7 +185,14 @@ impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> Immutable
 where
     Vec<T>: Blob,
 {
-    /// Open and load immutable numeric index from mmap storage
+    /// Open and load immutable numeric index from mmap storage.
+    ///
+    /// NOTE: returns `Self` (infallible) while sibling
+    /// `ImmutableMapIndex::open_mmap` / `ImmutableGeoMapIndex::open_mmap` /
+    /// `ImmutableFullTextIndex::open_mmap` return `OperationResult<Self>`.
+    /// Numeric's body has no fallible reads to propagate (`from_mmap` is
+    /// infallible; `clear_cache` errors are warn-and-continue, matching the
+    /// other variants).
     pub(super) fn open_mmap(index: MmapNumericIndex<T>) -> Self {
         // Load in-memory index from mmap storage
         let InMemoryNumericIndex {
@@ -257,11 +268,8 @@ where
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        Some(Box::new(
-            self.point_to_values
-                .get_values(idx)
-                .map(|iter| iter.copied())?,
-        ))
+        let iter = self.point_to_values.get_values(idx)?;
+        Some(Box::new(iter.copied()))
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
@@ -318,7 +326,7 @@ where
                 removed_count += 1;
             }
             if removed_count > 0 {
-                self.points_count -= 1;
+                self.points_count = self.points_count.saturating_sub(1);
             }
         }
         self.point_to_values.remove_point(idx);

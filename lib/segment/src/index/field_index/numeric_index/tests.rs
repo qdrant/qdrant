@@ -843,3 +843,63 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
         HwMeasurementAcc::new(),
     );
 }
+
+/// Reopen an immutable numeric index with an id-tracker deletion bitslice and
+/// verify the deleted points are excluded from counts and queries. Locks the
+/// open-time deletion path that the milestone-49 fix exposed in the map index
+/// loader (see `immutable_map_index.rs:99-102`); cf. the integration test in
+/// `lib/segment/src/segment/tests/test_immutable_payload_index_files.rs`.
+#[test]
+fn test_remove_reopen() {
+    use crate::index::field_index::PayloadFieldIndex;
+
+    let hw_acc = HwMeasurementAcc::new();
+    let hw_counter = hw_acc.get_counter_cell();
+    let (temp_dir, mut builder) = get_index_builder(IndexType::Mmap);
+    let values = [10.0_f64, 20.0, 30.0, 40.0];
+    for (idx, val) in values.iter().enumerate() {
+        builder
+            .add_point(idx as PointOffsetType, &[&Value::from(*val)], &hw_counter)
+            .unwrap();
+    }
+    // Persist on-disk state, then drop so the upcoming reopen sees only the
+    // files (no in-memory state holding handles).
+    let built = builder.finalize().unwrap();
+    drop(built);
+
+    // Reopen as immutable (RamMmap) with points 1 and 3 marked deleted by
+    // the id-tracker. The immutable open path must observe these deletions
+    // through the deleted bitslice argument.
+    let deleted = deleted_with(&[1, 3]);
+    let index = open_index_from_disk(temp_dir.path(), IndexType::RamMmap, &deleted);
+
+    // Deletions reflected in the indexed-point count.
+    assert_eq!(index.inner().count_indexed_points(), 2);
+
+    // Range query covering all four original values returns only the live
+    // ones; deleted points must be filtered out by the immutable index.
+    let range = Range {
+        lt: None,
+        gt: None,
+        gte: Some(OrderedFloat(0.0)),
+        lte: Some(OrderedFloat(100.0)),
+    };
+    let mut hits: Vec<_> = index
+        .inner()
+        .filter(
+            &FieldCondition::new_range(JsonPath::new("unused"), range),
+            &hw_counter,
+        )
+        .unwrap()
+        .unwrap()
+        .collect();
+    hits.sort();
+    assert_eq!(hits, vec![0, 2]);
+
+    // Per-point queries: deleted points report no values; live points still
+    // see their original value.
+    assert_eq!(index.values_count(0), 1);
+    assert_eq!(index.values_count(1), 0);
+    assert_eq!(index.values_count(2), 1);
+    assert_eq!(index.values_count(3), 0);
+}
