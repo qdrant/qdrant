@@ -987,13 +987,12 @@ impl QuantizedVectors {
             return Ok(None);
         }
 
-        // Auto-create path runs at segment-load time, with no `permit`
-        // context to size the thread budget. The previous hardcoded `1`
-        // showed up as `threads=1` in the TQ+ pre-pass log even on
-        // already-populated collections; using the host CPU count keeps
-        // the pre-pass parallel without over-subscribing rayon's global
-        // pool (which is also bounded by host CPU count).
-        let max_threads = common::cpu::get_num_cpus();
+        // Auto-create only initializes an empty quantized container for
+        // a fresh appendable segment — `count == 0` short-circuits the
+        // pre-pass, so the thread budget here is irrelevant. Any
+        // re-quantization with actual data goes through
+        // `SegmentBuilder::build` under a permit-bounded `max_threads`.
+        let max_threads = 1;
         let quantized_vectors = Self::create(
             vector_storage,
             quantization_config,
