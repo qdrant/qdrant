@@ -1,1 +1,1 @@
-mod chucked_vector_storage;
+pub mod chucked_vector_storage;
