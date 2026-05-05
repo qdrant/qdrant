@@ -28,6 +28,8 @@ pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
     values_count: usize,
     // Backing storage, source of state, persists deletions
     storage: Storage<N>,
+    /// Snapshot of approximate RAM usage at construction time.
+    /// Not refreshed on `remove_point`.
     cached_ram_usage_bytes: usize,
 }
 
@@ -46,7 +48,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    /// Open and load immutable numeric index from mmap storage
+    /// Open and load immutable map index from mmap storage
     pub(super) fn open_mmap(index: MmapMapIndex<N>) -> Self {
         // Construct intermediate values to points map from backing storage
         let mapping = || {
@@ -151,7 +153,8 @@ where
 
     /// Return mutable slice of a container which holds point_ids for given value.
     ///
-    /// The returned slice is sorted and does contain deleted values.
+    /// The returned slice is sorted. Positions may correspond to point IDs
+    /// also marked in `deleted_value_to_points_container`; callers must filter.
     /// The returned offset is the start of the range in the container.
     fn get_mut_point_ids_slice<'a>(
         value_to_points: &HashMap<<N as MapIndexKey>::Owned, ContainerSegment>,
@@ -264,7 +267,7 @@ where
             }
 
             if removed_values_count > 0 {
-                self.indexed_points -= 1;
+                self.indexed_points = self.indexed_points.saturating_sub(1);
             }
             self.values_count = self.values_count.saturating_sub(removed_values_count);
         }
@@ -421,7 +424,6 @@ where
         }
     }
 
-    /// Approximate RAM usage in bytes for in-memory structures.
     /// Approximate RAM usage in bytes (cached at construction).
     pub fn ram_usage_bytes(&self) -> usize {
         self.cached_ram_usage_bytes
@@ -439,15 +441,14 @@ where
             cached_ram_usage_bytes: _,
         } = self;
 
-        let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
+        let hashmap_entry_overhead = size_of::<u64>() + size_of::<usize>();
         let vtp_base_bytes: usize = value_to_points.capacity()
-            * (std::mem::size_of::<<N as MapIndexKey>::Owned>()
-                + std::mem::size_of::<ContainerSegment>()
+            * (size_of::<<N as MapIndexKey>::Owned>()
+                + size_of::<ContainerSegment>()
                 + hashmap_entry_overhead);
         // Account for heap-allocated key data (e.g., long strings)
         let vtp_heap_bytes: usize = value_to_points.keys().map(|k| N::owned_heap_bytes(k)).sum();
-        let container_bytes =
-            value_to_points_container.capacity() * std::mem::size_of::<PointOffsetType>();
+        let container_bytes = value_to_points_container.capacity() * size_of::<PointOffsetType>();
         let deleted_bytes = deleted_value_to_points_container
             .capacity()
             .div_ceil(u8::BITS as usize);
