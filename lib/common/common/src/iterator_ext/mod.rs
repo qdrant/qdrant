@@ -59,6 +59,20 @@ pub trait IteratorExt: Iterator {
             std::hint::black_box(p);
         });
     }
+
+    /// [`Iterator::any()`] but for fallible predicates.
+    fn try_any<F, E>(&mut self, mut f: F) -> Result<bool, E>
+    where
+        F: FnMut(Self::Item) -> Result<bool, E>,
+        Self: Sized,
+    {
+        self.find_map(|item| match f(item) {
+            Ok(true) => Some(Ok(true)),
+            Ok(false) => None,
+            Err(e) => Some(Err(e)),
+        })
+        .unwrap_or(Ok(false))
+    }
 }
 
 impl<I: Iterator> IteratorExt for I {}
@@ -127,4 +141,27 @@ pub fn check_exact_size_iterator_len<I: ExactSizeIterator>(mut iter: I) {
     }
     assert!(iter.next().is_none());
     assert_eq!(iter.len(), 0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_any() {
+        let is_even = |n: i32| match n {
+            n if n < 0 => Err("negative"),
+            n => Ok(n % 2 == 0),
+        };
+
+        assert_eq!([1, 3, 4, 5].into_iter().try_any(is_even), Ok(true));
+        assert_eq!([1, 3, 5, 7].into_iter().try_any(is_even), Ok(false));
+        assert_eq!(std::iter::empty().try_any(is_even), Ok(false));
+        assert_eq!([1, 3, -1, 4].into_iter().try_any(is_even), Err("negative"));
+
+        // Short-circuits on first `Ok(true)` without evaluating the rest.
+        let mut iter = [1, 2, 3, -1].into_iter();
+        assert_eq!(iter.try_any(is_even), Ok(true));
+        assert_eq!(iter.next(), Some(3));
+    }
 }
