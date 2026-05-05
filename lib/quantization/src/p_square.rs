@@ -532,10 +532,11 @@ mod tests {
     const COUNT: usize = 10_000;
 
     /// SIMD parity for `update_desired_positions`: bit-for-bit identical
-    /// output between the platform-specific path and the scalar reference
-    /// across a span of representative inputs. FMA reordering is preserved
-    /// because both paths use the same `1.0 + a * b` shape (no associativity
-    /// rearrangement), so we can assert exact equality.
+    /// output between the platform-specific path and a scalar reference
+    /// using `f64::mul_add`. NEON `vfmaq_f64` and AVX2 `_mm256_fmadd_pd`
+    /// both perform a single-rounded fused multiply-add, so the reference
+    /// must use `mul_add` (single rounding) rather than `1.0 + a * b`
+    /// (two roundings) to compare bit-equal.
     #[test]
     fn test_update_desired_positions_simd_parity() {
         let mut rng = StdRng::seed_from_u64(0xC0FFEE);
@@ -546,10 +547,9 @@ mod tests {
             let mut got = [0.0f64; 7];
             super::update_desired_positions::<7>(&mut got, &target_probabilities, count_minus_one);
 
-            let mut expected = [0.0f64; 7];
-            for i in 0..7 {
-                expected[i] = 1.0 + target_probabilities[i] * count_minus_one;
-            }
+            let expected: [f64; 7] = std::array::from_fn(|i| {
+                f64::mul_add(target_probabilities[i], count_minus_one, 1.0)
+            });
 
             assert_eq!(
                 got, expected,

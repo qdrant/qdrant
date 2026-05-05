@@ -197,7 +197,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
-        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send + 'a,
+        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + 'a,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         count: usize,

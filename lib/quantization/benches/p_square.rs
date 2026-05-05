@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use quantization::p_square::P2Quantile;
-use quantization::quantile::find_interval_per_coordinate;
+use quantization::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 
 fn p_square(c: &mut Criterion) {
     let mut group = c.benchmark_group("p_square");
@@ -61,12 +61,19 @@ fn p_square_vectors(c: &mut Criterion) {
     group.bench_function("p_square_vectors", |b| {
         b.iter(|| {
             black_box(
-                find_interval_per_coordinate(
+                find_quantile_interval_per_coordinate_with_preprocess(
                     data.iter(),
+                    dim,
                     dim,
                     count,
                     quantile,
                     4,
+                    8_192,
+                    |raw, scratch| {
+                        for (s, &v) in scratch.iter_mut().zip(raw.iter()) {
+                            *s = f64::from(v);
+                        }
+                    },
                     &std::sync::atomic::AtomicBool::new(false),
                 )
                 .unwrap(),

@@ -2032,7 +2032,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     fn create_turbo<'a>(
-        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send + 'a,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         turbo_config: &TurboQuantQuantizationConfig,
@@ -2116,7 +2116,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     fn create_turbo_multi<'a>(
-        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send + 'a,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
