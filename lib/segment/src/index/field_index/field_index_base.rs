@@ -173,8 +173,8 @@ impl FieldIndex {
         condition: &FieldCondition,
         payload_value: &Value,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<bool> {
-        match self {
+    ) -> OperationResult<Option<bool>> {
+        Ok(match self {
             FieldIndex::IntIndex(_) => None,
             FieldIndex::DatetimeIndex(_) => None,
             FieldIndex::IntMapIndex(_) => None,
@@ -182,19 +182,19 @@ impl FieldIndex {
             FieldIndex::FloatIndex(_) => None,
             FieldIndex::GeoIndex(_) => None,
             FieldIndex::BoolIndex(_) => None,
-            FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
-                Some(Match::Text(MatchText { text })) => Some(
-                    full_text_index.check_payload_match::<false>(payload_value, text, hw_counter),
-                ),
-                Some(Match::Phrase(MatchPhrase { phrase })) => Some(
-                    full_text_index.check_payload_match::<true>(payload_value, phrase, hw_counter),
-                ),
+            FieldIndex::FullTextIndex(index) => match &condition.r#match {
+                Some(Match::Text(MatchText { text })) => {
+                    Some(index.check_payload_match::<false>(payload_value, text, hw_counter)?)
+                }
+                Some(Match::Phrase(MatchPhrase { phrase })) => {
+                    Some(index.check_payload_match::<true>(payload_value, phrase, hw_counter)?)
+                }
                 _ => None,
             },
             FieldIndex::UuidIndex(_) => None,
             FieldIndex::UuidMapIndex(_) => None,
             FieldIndex::NullIndex(_) => None,
-        }
+        })
     }
 
     fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {

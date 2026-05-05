@@ -14,7 +14,7 @@ use crate::data_types::index::TextIndexParams;
 use crate::fixtures::payload_fixtures::random_full_text_payload;
 use crate::index::field_index::field_index_base::PayloadFieldIndex;
 use crate::index::field_index::full_text_index::inverted_index::{
-    Document, InvertedIndex, ParsedQuery, TokenId, TokenSet,
+    Document, ParsedQuery, TokenId, TokenSet,
 };
 use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::full_text_index::mutable_text_index::MutableFullTextIndex;
@@ -223,38 +223,29 @@ fn build_random_index(
     (index, temp_dir, db)
 }
 
-/// Tries to parse a query. If there is an unknown id to a token, returns `None`
-pub fn to_parsed_query(
-    query: &[String],
-    is_phrase: bool,
-    token_to_id: impl Fn(&str) -> Option<TokenId>,
-) -> Option<ParsedQuery> {
-    let tokens = query.iter().map(|token| token_to_id(token.as_str()));
-
-    let parsed = match is_phrase {
-        false => ParsedQuery::AllTokens(tokens.collect::<Option<TokenSet>>()?),
-        true => ParsedQuery::Phrase(tokens.collect::<Option<Document>>()?),
-    };
-
-    Some(parsed)
-}
-
 pub fn parse_query(query: &[String], is_phrase: bool, index: &FullTextIndex) -> ParsedQuery {
     let hw_counter = HardwareCounterCell::disposable();
-    match index {
-        FullTextIndex::Mutable(index) => {
-            let token_to_id = |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
-            to_parsed_query(query, is_phrase, token_to_id).unwrap()
-        }
-        FullTextIndex::Immutable(index) => {
-            let token_to_id = |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
-            to_parsed_query(query, is_phrase, token_to_id).unwrap()
-        }
-        FullTextIndex::Mmap(index) => {
-            let token_to_id = |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
-            to_parsed_query(query, is_phrase, token_to_id).unwrap()
-        }
+    let tokens = resolve_tokens(index, query, &hw_counter).into_iter();
+    match is_phrase {
+        false => ParsedQuery::AllTokens(tokens.collect::<Option<TokenSet>>().unwrap()),
+        true => ParsedQuery::Phrase(tokens.collect::<Option<Document>>().unwrap()),
     }
+}
+
+fn resolve_tokens<S: AsRef<str>>(
+    index: &FullTextIndex,
+    tokens: &[S],
+    hw_counter: &HardwareCounterCell,
+) -> Vec<Option<TokenId>> {
+    let mut ids = vec![None; tokens.len()];
+    index
+        .for_each_token_id(
+            tokens.iter().map(|s| s.as_ref()).enumerate(),
+            hw_counter,
+            |i, id| ids[i] = id,
+        )
+        .unwrap();
+    ids
 }
 
 #[rstest]
@@ -330,14 +321,11 @@ fn test_congruence(
             );
         }
 
-        assert_eq!(
-            index_a.get_token("doesnotexist", &hw_counter),
-            index_b.get_token("doesnotexist", &hw_counter),
-        );
-        assert!(
-            index_a.get_token(&keywords[0], &hw_counter).is_some()
-                == index_b.get_token(&keywords[0], &hw_counter).is_some(),
-        );
+        let probe_tokens = ["doesnotexist", keywords[0].as_str()];
+        let probe_a = resolve_tokens(index_a, &probe_tokens, &hw_counter);
+        let probe_b = resolve_tokens(index_b, &probe_tokens, &hw_counter);
+        assert_eq!(probe_a[0], probe_b[0]);
+        assert_eq!(probe_a[1].is_some(), probe_b[1].is_some());
 
         for query_range in [0..1, 2..4, 5..9, 0..10] {
             let keywords = &keywords[query_range];

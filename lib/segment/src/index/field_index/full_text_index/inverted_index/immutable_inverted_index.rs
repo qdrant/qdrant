@@ -347,8 +347,14 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.points_count
     }
 
-    fn get_token_id(&self, token: &str, _: &HardwareCounterCell) -> Option<TokenId> {
-        self.vocab.get(token).copied()
+    fn for_each_token_id<'a, Meta>(
+        &self,
+        tokens: impl Iterator<Item = (Meta, &'a str)>,
+        _: &HardwareCounterCell,
+        mut f: impl FnMut(Meta, Option<TokenId>),
+    ) -> OperationResult<()> {
+        tokens.for_each(|(meta, token)| f(meta, self.vocab.get(token).copied()));
+        Ok(())
     }
 }
 

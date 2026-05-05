@@ -276,12 +276,17 @@ fn get_match_text_checker(
                 TextQueryType::TextAny => full_text_index.parse_text_any_query(&text, &hw_counter),
             };
 
-            let Some(parsed_query) = query_opt else {
-                return Some(Box::new(|_| false));
+            let parsed_query = match query_opt {
+                Ok(Some(query)) => query,
+                Ok(None) => return Some(Box::new(|_| false)),
+                Err(_) => {
+                    // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
+                    return Some(Box::new(|_| false));
+                }
             };
 
             Some(Box::new(move |point_id: PointOffsetType| {
-                // FIXME: don't silently ignore errors. Log error? Update ConditionCheckerFn?
+                // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
                 full_text_index
                     .check_match(&parsed_query, point_id)
                     .unwrap_or(false)

@@ -10,7 +10,6 @@ mod postings_iterator;
 use std::cmp::min;
 use std::collections::HashMap;
 
-use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -71,14 +70,6 @@ impl TokenSet {
             return false;
         }
         subset.0.iter().any(|token| self.contains(token))
-    }
-}
-
-impl From<AHashSet<TokenId>> for TokenSet {
-    fn from(tokens: AHashSet<TokenId>) -> Self {
-        let sorted_unique = tokens.into_iter().sorted_unstable().collect();
-
-        Self(sorted_unique)
     }
 }
 
@@ -399,7 +390,13 @@ pub trait InvertedIndex {
 
     fn points_count(&self) -> usize;
 
-    fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId>;
+    /// Resolve token -> token_id and call the closure for each token_id.
+    fn for_each_token_id<'a, Meta>(
+        &self,
+        tokens: impl Iterator<Item = (Meta, &'a str)>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(Meta, Option<TokenId>),
+    ) -> OperationResult<()>;
 }
 
 #[cfg(test)]
@@ -434,26 +431,35 @@ mod tests {
     }
 
     /// Tries to parse a query. If there is an unknown id to a token, returns `None`
-    fn to_parsed_query(
-        query: Vec<String>,
-        token_to_id: impl Fn(String) -> Option<TokenId>,
-    ) -> Option<ParsedQuery> {
-        let tokens = query
-            .into_iter()
-            .map(token_to_id)
-            .collect::<Option<TokenSet>>()?;
+    fn to_parsed_query(token_ids: &[Option<TokenId>]) -> Option<ParsedQuery> {
+        let tokens = token_ids.iter().copied().collect::<Option<TokenSet>>()?;
         Some(ParsedQuery::AllTokens(tokens))
     }
 
-    fn to_parsed_query_any(
-        query: Vec<String>,
-        token_to_id: impl Fn(String) -> Option<TokenId>,
-    ) -> Option<ParsedQuery> {
-        let tokens = query
-            .into_iter()
-            .map(token_to_id)
-            .collect::<Option<TokenSet>>()?;
+    fn to_parsed_query_any(token_ids: &[Option<TokenId>]) -> Option<ParsedQuery> {
+        let tokens = token_ids.iter().copied().collect::<Option<TokenSet>>()?;
         Some(ParsedQuery::AnyTokens(tokens))
+    }
+
+    fn parse_all<I: InvertedIndex>(
+        queries: &[Vec<String>],
+        index: &I,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<Option<ParsedQuery>> {
+        queries
+            .iter()
+            .flat_map(|query| {
+                let mut ids = vec![None; query.len()];
+                index
+                    .for_each_token_id(
+                        query.iter().map(String::as_str).enumerate(),
+                        hw_counter,
+                        |i, id| ids[i] = id,
+                    )
+                    .unwrap();
+                [to_parsed_query(&ids), to_parsed_query_any(&ids)]
+            })
+            .collect()
     }
 
     fn mutable_inverted_index(
@@ -557,10 +563,15 @@ mod tests {
         let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
 
         // Check same vocabulary
-        for (token, token_id) in &immutable.vocab {
-            assert_eq!(mmap.get_token_id(token, &hw_counter), Some(*token_id));
-            assert_eq!(imm_mmap.get_token_id(token, &hw_counter), Some(*token_id));
-        }
+        let assert_same_id = |expected: TokenId, actual: Option<TokenId>| {
+            assert_eq!(actual, Some(expected));
+        };
+        let vocab_iter = || immutable.vocab.iter().map(|(t, id)| (*id, t.as_str()));
+        mmap.for_each_token_id(vocab_iter(), &hw_counter, assert_same_id)
+            .unwrap();
+        imm_mmap
+            .for_each_token_id(vocab_iter(), &hw_counter, assert_same_id)
+            .unwrap();
 
         // Check same postings
         for token_id in 0..immutable.postings.len() as TokenId {
@@ -630,43 +641,9 @@ mod tests {
 
         let queries: Vec<_> = (0..100).map(|_| generate_query()).collect();
 
-        let mut_parsed_queries: Vec<_> = queries
-            .iter()
-            .cloned()
-            .flat_map(|query| {
-                vec![
-                    to_parsed_query(query.clone(), |token| mut_index.vocab.get(&token).copied()),
-                    to_parsed_query_any(query, |token| mut_index.vocab.get(&token).copied()),
-                ]
-            })
-            .collect();
-        let mmap_parsed_queries: Vec<_> = queries
-            .iter()
-            .cloned()
-            .flat_map(|query| {
-                vec![
-                    to_parsed_query(query.clone(), |token| {
-                        mmap_index.get_token_id(&token, &hw_counter)
-                    }),
-                    to_parsed_query_any(query, |token| {
-                        mmap_index.get_token_id(&token, &hw_counter)
-                    }),
-                ]
-            })
-            .collect();
-        let imm_mmap_parsed_queries: Vec<_> = queries
-            .into_iter()
-            .flat_map(|query| {
-                vec![
-                    to_parsed_query(query.clone(), |token| {
-                        imm_mmap_index.get_token_id(&token, &hw_counter)
-                    }),
-                    to_parsed_query_any(query, |token| {
-                        imm_mmap_index.get_token_id(&token, &hw_counter)
-                    }),
-                ]
-            })
-            .collect();
+        let mut_parsed_queries = parse_all(&queries, &mut_index, &hw_counter);
+        let mmap_parsed_queries = parse_all(&queries, &mmap_index, &hw_counter);
+        let imm_mmap_parsed_queries = parse_all(&queries, &imm_mmap_index, &hw_counter);
 
         check_query_congruence(
             &mut_parsed_queries,

@@ -51,6 +51,7 @@ impl StructPayloadIndex {
                             point_id,
                             |payload| {
                                 check_field_condition(field_condition, &payload, field_indexes, &hw)
+                                    .unwrap(/* TODO(uio): handle errors */)
                             },
                             &hw,
                         )

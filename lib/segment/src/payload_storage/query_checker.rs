@@ -9,6 +9,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::{IndexesMap, check_is_empty, check_is_null};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndex;
@@ -130,7 +131,8 @@ where
             get_payload().deref(),
             field_indexes,
             hw_counter,
-        ),
+        )
+        .unwrap(/* TODO(uio): handle errors */),
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
         Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
         Condition::HasId(has_id) => id_tracker
@@ -189,7 +191,7 @@ pub fn check_field_condition<R>(
     payload: &impl PayloadContainer,
     field_indexes: &HashMap<PayloadKeyType, R>,
     hw_counter: &HardwareCounterCell,
-) -> bool
+) -> OperationResult<bool>
 where
     R: AsRef<Vec<FieldIndex>>,
 {
@@ -197,7 +199,7 @@ where
     let field_indexes = field_indexes.get(&field_condition.key);
 
     if field_values.is_empty() {
-        return field_condition.check_empty();
+        return Ok(field_condition.check_empty());
     }
 
     // This covers a case, when a field index affects the result of the condition.
@@ -206,11 +208,11 @@ where
             let mut index_checked = false;
             for index in field_indexes.as_ref() {
                 if let Some(index_check_res) =
-                    index.special_check_condition(field_condition, p, hw_counter)
+                    index.special_check_condition(field_condition, p, hw_counter)?
                 {
                     if index_check_res {
                         // If at least one object matches the condition, we can return true
-                        return true;
+                        return Ok(true);
                     }
                     index_checked = true;
                     // If index check of the condition returned something, we don't need to check
@@ -222,14 +224,14 @@ where
                 // If none of the indexes returned anything, we need to check the condition
                 // against the payload
                 if field_condition.check(p) {
-                    return true;
+                    return Ok(true);
                 }
             }
         }
-        false
+        Ok(false)
     } else {
         // Fallback to regular condition check if there are no indexes for the field
-        field_values.into_iter().any(|p| field_condition.check(p))
+        Ok(field_values.into_iter().any(|p| field_condition.check(p)))
     }
 }
 

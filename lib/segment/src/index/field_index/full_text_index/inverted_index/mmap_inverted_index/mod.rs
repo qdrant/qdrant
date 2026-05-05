@@ -614,19 +614,27 @@ impl InvertedIndex for MmapInvertedIndex {
         self.active_points_count
     }
 
-    fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
-        if self.is_on_disk {
-            hw_counter.payload_index_io_read_counter().incr_delta(
-                READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
-            );
-        }
+    fn for_each_token_id<'a, Meta>(
+        &self,
+        mut tokens: impl Iterator<Item = (Meta, &'a str)>,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(Meta, Option<TokenId>),
+    ) -> OperationResult<()> {
+        tokens.try_for_each(|(meta, token)| {
+            if self.is_on_disk {
+                hw_counter.payload_index_io_read_counter().incr_delta(
+                    READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
+                );
+            }
 
-        self.storage
-            .vocab
-            .get(token)
-            .ok()
-            .flatten()
-            .and_then(<[TokenId]>::first)
-            .copied()
+            let token_id = self
+                .storage
+                .vocab
+                .get(token.as_ref())?
+                .and_then(<[TokenId]>::first)
+                .copied();
+            f(meta, token_id);
+            Ok(())
+        })
     }
 }
