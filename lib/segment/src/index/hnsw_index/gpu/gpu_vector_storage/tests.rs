@@ -553,7 +553,7 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
     let tq_config = QuantizationConfig::Turbo(TurboQuantization {
         turbo: TurboQuantQuantizationConfig {
             always_ram: Some(true),
-            plus: None,
+            data_fit: None,
             bits: Some(TurboQuantBitSize::Bits4),
         },
     });
