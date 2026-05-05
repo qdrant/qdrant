@@ -46,8 +46,9 @@ impl TQBits {
         }
     }
 
-    /// Per-coord reservoir size for the TQ+ pre-pass quantile estimator,
-    /// scaled to the extremity of the target probability for this codebook.
+    /// Number of input vectors the TQ+ pre-pass uniformly samples and
+    /// streams into the per-coord P-square estimators, scaled to the
+    /// extremity of the target probability for this codebook.
     ///
     /// The TQ+ anchor probability is `p_outer = Φ(c_outer)` where
     /// `c_outer` is the outermost centroid magnitude. The variance of an
@@ -68,19 +69,12 @@ impl TQBits {
     /// where `R = 2048` is plenty; Bits4 needs `R = 8192` because its
     /// anchor sits in the deep tail.
     ///
-    /// Resident-memory impact (per-coord reservoir = `R × f64`, multiplied
-    /// by `padded_dim`): for `dim = 1536` we get
-    ///
-    /// |       | R    | reservoir total |
-    /// |-------|------|-----------------|
-    /// | Bits1 | 2048 | 24 MB           |
-    /// | Bits2 | 4096 | 48 MB           |
-    /// | Bits4 | 8192 | 96 MB           |
-    ///
-    /// Time impact: finalize is `O(R · N_markers)` per coord — halving R
-    /// halves finalize wall-time on a given codebook.
+    /// Memory: the pre-pass holds two P-square estimators per coord plus
+    /// a `BATCH_SIZE × padded_dim` rotation scratch — total ≈ 400 KB at
+    /// `padded_dim = 1536`, **independent of `R`**. Wall-time scales
+    /// roughly linearly in `R`.
     #[inline]
-    pub(crate) fn reservoir_size(&self) -> usize {
+    pub(crate) fn sample_size(&self) -> usize {
         match self {
             TQBits::Bits1 | TQBits::Bits1_5 => 2_048,
             TQBits::Bits2 => 4_096,
@@ -249,16 +243,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                 // gives us the `[1-p_outer, p_outer]` pair we want.
                 let quantile_param = ((2.0 * p_outer - 1.0) as f32).clamp(0.0, 0.999_99);
 
-                // Fused producer/consumer pipeline: pulls raw vectors
-                // straight from `data`, runs Hadamard rotation +
-                // length rescale + f64→f32 narrowing in-place into a
-                // pooled chunk buffer (only 2 buffer allocations across
-                // the whole pre-pass), and feeds the result into
-                // per-coord reservoirs concurrently. Skips the previous
-                // `ChunkedParallelRotate` adapter entirely — there is
-                // no intermediate `Vec<Vec<f32>>` materialization, no
-                // per-vector clone, and no separate pre-allocated f64
-                // scratch per vector.
+                // Streaming pre-pass: uniformly samples `bits.sample_size()`
+                // input vectors, runs Hadamard rotation + length rescale +
+                // f64→f32 narrowing on the fly, and pushes each rotated
+                // value straight into the per-coord P-square estimators —
+                // no reservoir, no intermediate `Vec<Vec<f32>>`, only a
+                // small fixed-size batch scratch (~192 KB at padded_dim=1536).
                 let pre_quantizer_ref = &pre_quantizer;
                 let intervals = find_quantile_interval_per_coordinate_with_preprocess(
                     data.clone(),
@@ -267,7 +257,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                     count,
                     quantile_param,
                     num_threads,
-                    bits.reservoir_size(),
+                    bits.sample_size(),
                     move |raw, scratch| {
                         pre_quantizer_ref.preprocess_into(raw, scratch);
                     },

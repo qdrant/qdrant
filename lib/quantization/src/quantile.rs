@@ -1,5 +1,4 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
 
 use permutation_iterator::Permutor;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -90,45 +89,42 @@ pub(crate) fn find_quantile_interval<'a>(
 /// case in segment storage — `nth(k)` advances the underlying `Range`
 /// counter in O(1) and **does not invoke the closure for skipped
 /// indices**. So we pay one `get_dense` (and one Hadamard rotation, and
-/// one reservoir slot write) only for the `R = sample_size` vectors we
-/// actually sampled, not for all `count` of them.
+/// one P-square push per coord) only for the `R = sample_size` vectors
+/// we actually sampled, not for all `count` of them.
 ///
 /// **Why sampling is sound here.** The variance of the per-coord
 /// quantile estimator at probability `p` over `R` independent samples
 /// is `p(1-p) / (R · f(F⁻¹(p))²)`. It depends on `R` only — reading
-/// every one of `count` vectors and feeding them into a length-R
-/// reservoir gives the same `R`-sample variance, just at much higher
-/// I/O and compute cost. Vector-level uniform sampling produces an
-/// equivalent estimator at a fraction of the work.
+/// every one of `count` vectors gives no extra accuracy beyond an
+/// `R`-sized i.i.d. sample, just at much higher I/O and compute cost.
 ///
-/// **Pipeline shape.**
+/// **Pipeline shape.** Streaming, batched into `BATCH_SIZE` vectors at
+/// a time:
 ///
 /// ```text
 ///   1. Sort R random indices.
-///   2. Sequential read via iter.nth(skip):
-///        for each sampled vector → copy raw_dim f32s into a slot of
-///        a contiguous `sample_buf`.
-///   3. Parallel rotation + narrow:
-///        sample_buf.par_chunks_mut(slot_size).for_each_init(...) runs
-///        `preprocess(slot[..raw_dim], scratch)` on each slot and
-///        narrows the f64 result back into the same slot's first
-///        `padded_dim` f32s.
-///   4. Parallel P-square per coord:
-///        for each `d` in 0..padded_dim, run min/max P-square over the
-///        column `sample_buf[k * slot_size + d]` for `k = 0..R`.
+///   2. For each batch of up to BATCH_SIZE indices:
+///        a. Sequential read+preprocess: iter.nth(skip) → preprocess
+///           writes padded_dim f64s into row b of `batch_scratch`.
+///        b. Parallel coord-chunk push: each rayon work item handles a
+///           contiguous slice of coords and pushes all batch values for
+///           those coords into both per-coord P-square estimators.
+///   3. Finalize: pair up the per-coord estimators and read out
+///      `(p_lo, p_hi)`.
 /// ```
 ///
-/// No producer/consumer threading, no channels, no reservoirs. Single
-/// `Vec<f32>` of size `R × slot_size`; one `Vec<f64>` per rayon worker
-/// of size `padded_dim` for rotation scratch.
+/// No reservoir, no intermediate `Vec<Vec<f32>>`. The only working
+/// buffer is `BATCH_SIZE × padded_dim × f64` (~192 KB at
+/// padded_dim=1536) plus `2 × padded_dim × P2Quantile` (~200 KB) — both
+/// independent of `R`.
 ///
 /// `preprocess(raw, scratch)` must write exactly `padded_dim` finite
-/// values into `scratch`. Concurrency: `preprocess` runs on rayon
-/// workers, so it must be `Send + Sync`.
+/// values into `scratch`. It runs on the main thread, so it does not
+/// need `Send`/`Sync`.
 ///
 /// `sample_size` controls how many random vectors are actually read
 /// and processed. The caller picks this based on how extreme the
-/// target quantile is — see `TQBits::reservoir_size` for the per-bits
+/// target quantile is — see `TQBits::sample_size` for the per-bits
 /// table used in TQ+.
 #[allow(clippy::too_many_arguments)]
 pub fn find_quantile_interval_per_coordinate_with_preprocess<'a, F>(
@@ -153,20 +149,8 @@ where
     // contract of returning a `padded_dim`-wide vector of zero pairs so
     // downstream `shift = 0`, `scale = 1` and EC is identity.
     if count == 0 {
-        let started = Instant::now();
-        log::info!(
-            "find_quantile_interval_per_coordinate_with_preprocess: raw_dim={raw_dim} padded_dim={padded_dim} count=0 sampled=0 quantile={quantile} threads={} total={:.3?}",
-            num_threads.max(1),
-            started.elapsed(),
-        );
         return Ok(vec![(0.0, 0.0); padded_dim]);
     }
-
-    let started = Instant::now();
-    log::debug!(
-        "find_quantile_interval_per_coordinate_with_preprocess: starting (raw_dim={raw_dim}, padded_dim={padded_dim}, count={count}, quantile={quantile}, threads={}, sample={sample_size})",
-        num_threads.max(1),
-    );
 
     let min_quantile = (1.0 - f64::from(quantile)) / 2.0;
     let max_quantile = 1.0 - min_quantile;
@@ -202,12 +186,12 @@ where
         .collect::<Result<_, _>>()?;
 
     let pool = rayon::ThreadPoolBuilder::new()
-        .thread_name(|idx| format!("reservoir-{idx}"))
+        .thread_name(|idx| format!("tq-prepass-{idx}"))
         .num_threads(num_threads.max(1))
         .build()
         .map_err(|e| {
             EncodingError::EncodingError(format!(
-                "Failed reservoir estimation while thread pool init: {e}"
+                "Failed quantile pre-pass while thread pool init: {e}"
             ))
         })?;
 
@@ -285,13 +269,6 @@ where
         .into_iter()
         .map(|(min_q, max_q)| (min_q.estimate() as f32, max_q.estimate() as f32))
         .collect();
-
-    let elapsed = started.elapsed();
-    log::info!(
-        "find_quantile_interval_per_coordinate_with_preprocess: raw_dim={raw_dim} padded_dim={padded_dim} count={count} sampled={actual_sample} quantile={quantile} threads={} total={:.3?}",
-        num_threads.max(1),
-        elapsed,
-    );
 
     Ok(intervals)
 }
