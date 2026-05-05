@@ -475,7 +475,7 @@ fn adjust_step<const N: usize>(
         h_par = cur_h + (a + b) * dsign / denom;
     }
 
-    // If parabolic result is within neighbors, use it; otherwise linear
+    // If parabolic result is within neighbors, use it; otherwise linear.
     heights[i] = if h_par > prev_h && h_par < next_h && h_par.is_finite() {
         h_par
     } else if dsign > 0.0 {
