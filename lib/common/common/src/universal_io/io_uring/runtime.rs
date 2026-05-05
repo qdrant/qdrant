@@ -307,8 +307,9 @@ where
 
                 // We need to return a `T`-aligned Vec
 
-                // TODO(perf): if T's alignment matches a page size, we can cast the buffer and return
-                // without a second allocation.
+                // TODO(perf): Currently, we are allocating 2 Vecs: a page-aligned vec, and then the `T`-aligned one.
+                //             In theory we can use `opcode::ReadFixed` to use preregistered buffers so that we only
+                //             allocate one extra buffer per read. Not done for now since it complicates implementation.
 
                 //
                 // buffer_bytes
