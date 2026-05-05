@@ -429,9 +429,7 @@ impl Collection {
         // reverts `ReshardingScaleDown -> Active`. In that case the entry's
         // `from_state` was a resharding state, so the same replay must be
         // allowed to proceed and re-run the now-idempotent abort.
-        let from_was_resharding = from_state
-            .as_ref()
-            .is_some_and(ReplicaState::is_resharding);
+        let from_was_resharding = from_state.as_ref().is_some_and(ReplicaState::is_resharding);
         let allow_state_drift = idempotent_replay || from_was_resharding;
 
         // Validation:
