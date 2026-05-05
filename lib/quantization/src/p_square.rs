@@ -533,12 +533,40 @@ mod tests {
 
     /// SIMD parity for `update_desired_positions`: bit-for-bit identical
     /// output between the platform-specific path and a scalar reference
-    /// using `f64::mul_add`. NEON `vfmaq_f64` and AVX2 `_mm256_fmadd_pd`
-    /// both perform a single-rounded fused multiply-add, so the reference
-    /// must use `mul_add` (single rounding) rather than `1.0 + a * b`
-    /// (two roundings) to compare bit-equal.
+    /// computed with the **same shape** the dispatcher would have used.
+    ///
+    /// NEON `vfmaq_f64` and AVX2 `_mm256_fmadd_pd` perform a single-
+    /// rounded fused multiply-add (matches `f64::mul_add`); the scalar
+    /// fallback in `update_desired_scalar` does `1.0 + a * b` (two
+    /// roundings, not necessarily equal to `mul_add`). The reference
+    /// here mirrors the dispatch in `update_desired_positions` so the
+    /// test stays bit-equal on every supported target — including
+    /// non-aarch64 / non-FMA-x86_64 paths where the implementation
+    /// itself uses `1.0 + a * b`.
     #[test]
     fn test_update_desired_positions_simd_parity() {
+        // Mirrors the cfg/runtime dispatch in `update_desired_positions`.
+        // A `true` return means the implementation went through a
+        // hardware FMA (single-rounded), so the reference uses
+        // `mul_add`. A `false` return means it went through the scalar
+        // `1.0 + a * b` form.
+        fn impl_uses_fma() -> bool {
+            #[cfg(target_arch = "aarch64")]
+            {
+                true
+            }
+            #[cfg(target_arch = "x86_64")]
+            {
+                std::arch::is_x86_feature_detected!("avx2")
+                    && std::arch::is_x86_feature_detected!("fma")
+            }
+            #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+            {
+                false
+            }
+        }
+
+        let fused = impl_uses_fma();
         let mut rng = StdRng::seed_from_u64(0xC0FFEE);
         for _ in 0..256 {
             let target_probabilities: [f64; 7] = std::array::from_fn(|_| rng.random::<f64>());
@@ -548,7 +576,11 @@ mod tests {
             super::update_desired_positions::<7>(&mut got, &target_probabilities, count_minus_one);
 
             let expected: [f64; 7] = std::array::from_fn(|i| {
-                f64::mul_add(target_probabilities[i], count_minus_one, 1.0)
+                if fused {
+                    f64::mul_add(target_probabilities[i], count_minus_one, 1.0)
+                } else {
+                    1.0 + target_probabilities[i] * count_minus_one
+                }
             });
 
             assert_eq!(

@@ -238,7 +238,16 @@ where
                 ))
             })?;
             let v_ref = v.as_ref();
-            debug_assert_eq!(v_ref.len(), raw_dim, "input vector dim mismatch");
+            // A short vector would leave part of `row` untouched when
+            // `preprocess` only writes to the first `v_ref.len()` slots,
+            // and the leftover f64s from the previous batch would land
+            // in the P-square estimators. Bail out with a real error.
+            if v_ref.len() != raw_dim {
+                return Err(EncodingError::EncodingError(format!(
+                    "input vector dim mismatch at sampled index {idx}: expected {raw_dim}, got {}",
+                    v_ref.len(),
+                )));
+            }
             let row = &mut batch_scratch[filled * padded_dim..(filled + 1) * padded_dim];
             preprocess(v_ref, row);
             cursor = idx + 1;
