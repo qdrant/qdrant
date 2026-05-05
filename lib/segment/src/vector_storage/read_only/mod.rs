@@ -39,25 +39,9 @@ pub enum VectorStorageReadEnum<S: UniversalReadFamily> {
         >,
     ),
     //
-    MultiDenseChunked(
-        Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementType, S::Read<VectorElementType>>>,
-    ),
-    MultiDenseChunkedByte(
-        Box<
-            ReadOnlyChunkedMultiDenseVectorStorage<
-                VectorElementTypeByte,
-                S::Read<VectorElementTypeByte>,
-            >,
-        >,
-    ),
-    MultiDenseChunkedHalf(
-        Box<
-            ReadOnlyChunkedMultiDenseVectorStorage<
-                VectorElementTypeHalf,
-                S::Read<VectorElementTypeHalf>,
-            >,
-        >,
-    ),
+    MultiDenseChunked(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementType, S>>),
+    MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
+    MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
     //
     // Sparse(Box<ReadOnlySparseVectorStorage>),
 }

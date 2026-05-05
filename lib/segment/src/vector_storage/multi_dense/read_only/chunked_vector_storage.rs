@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use common::bitvec::{BitSlice, BitVec};
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalRead};
+use common::universal_io::UniversalReadFamily;
 
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -14,9 +14,10 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
 use crate::vector_storage::{VectorOffset, VectorOffsetType, VectorStorageRead};
 
 #[derive(Debug)]
-pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead<T>> {
-    vectors: ChunkedVectorsRead<T, S>,
-    offsets: ChunkedVectorsRead<MultivectorMmapOffset, MmapFile>,
+pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalReadFamily>
+{
+    vectors: ChunkedVectorsRead<T, S::Read<T>>,
+    offsets: ChunkedVectorsRead<MultivectorMmapOffset, S::Read<MultivectorMmapOffset>>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -26,7 +27,7 @@ pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: 
     deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<T>> VectorStorageRead
+impl<T: PrimitiveVectorElement, S: UniversalReadFamily> VectorStorageRead
     for ReadOnlyChunkedMultiDenseVectorStorage<T, S>
 {
     fn distance(&self) -> Distance {
