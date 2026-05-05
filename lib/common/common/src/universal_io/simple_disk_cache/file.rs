@@ -21,6 +21,9 @@ use crate::universal_io::{
 ///
 /// The remote is assumed to be immutable for the lifetime of the file;
 /// this type implements [`UniversalRead`] only, but not [`UniversalWrite`].
+///
+/// WARN: There should be only a single instance of DiskCache per path.
+/// Initializing multiple instances will not reuse the same mmap and can cause UB.
 #[derive(Debug)]
 pub struct DiskCache<R> {
     pub(super) remote: R,
@@ -40,7 +43,7 @@ pub struct DiskCache<R> {
 #[derive(Debug)]
 pub(super) struct LocalState {
     pub mmap: MmapRaw,
-    /// Bitmask to know which blocks are have been fetched
+    /// Bitmask to know which blocks have been fetched so far.
     pub fetched: Mutex<RoaringBitmap>,
 }
 
@@ -88,10 +91,13 @@ impl<R: UniversalRead<u8>> DiskCache<R> {
         path: impl AsRef<Path>,
         options: OpenOptions,
     ) -> Result<Self> {
-        debug_assert!(
-            !options.writeable,
-            "DiskCache only supports immutable files",
-        );
+        if options.writeable {
+            return Err(UniversalIoError::Uninitialized {
+                description:
+                    "DiskCache only supports immutable files, writeable option is not allowed"
+                        .to_string(),
+            });
+        }
 
         let remote_path = path.as_ref();
         let local_path = config.local_path_for(remote_path)?;
