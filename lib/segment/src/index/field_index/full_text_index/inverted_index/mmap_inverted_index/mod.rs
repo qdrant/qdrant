@@ -216,12 +216,14 @@ impl MmapInvertedIndex {
         }))
     }
 
-    pub(super) fn iter_vocab(&self) -> impl Iterator<Item = (&str, &TokenId)> + '_ {
-        // unwrap safety: we know that each token points to a token id.
-        self.storage
-            .vocab
-            .iter()
-            .map(|(k, v)| (k, v.first().unwrap()))
+    pub(super) fn for_each_vocab(
+        &self,
+        mut f: impl FnMut(&str, TokenId) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.storage.vocab.iter().try_for_each(|(k, v)| {
+            // unwrap safety: we know that each token points to a token id.
+            f(k, *v.first().unwrap())
+        })
     }
 
     /// Returns whether the point id is valid and active.
@@ -549,17 +551,16 @@ impl InvertedIndex for MmapInvertedIndex {
         self.storage.postings.posting_len(token_id)
     }
 
-    fn vocab_with_postings_len_iter(
+    fn for_each_vocab_with_postings_len(
         &self,
-    ) -> impl Iterator<Item = OperationResult<(&str, usize)>> + '_ {
-        self.iter_vocab().filter_map(move |(token, &token_id)| {
-            // Surface read errors as iterator items; drop tokens with no
-            // posting list silently (same as the in-memory variants).
-            match self.storage.postings.posting_len(token_id) {
-                Ok(Some(posting_len)) => Some(Ok((token, posting_len))),
-                Ok(None) => None,
-                Err(err) => Some(Err(err)),
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_vocab(|token, token_id| {
+            // Drop tokens with no posting list silently (same as the in-memory variants).
+            if let Some(posting_len) = self.storage.postings.posting_len(token_id)? {
+                f(token, posting_len)?;
             }
+            Ok(())
         })
     }
 
