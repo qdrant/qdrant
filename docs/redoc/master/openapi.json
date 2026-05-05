@@ -7766,10 +7766,6 @@
             "type": "boolean",
             "nullable": true
           },
-          "plus": {
-            "type": "boolean",
-            "nullable": true
-          },
           "bits": {
             "anyOf": [
               {

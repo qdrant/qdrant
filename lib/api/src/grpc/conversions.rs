@@ -1366,13 +1366,17 @@ impl From<segment::types::TurboQuantization> for TurboQuantization {
         let segment::types::TurboQuantization { turbo } = value;
         let segment::types::TurboQuantQuantizationConfig {
             always_ram,
-            plus,
+            data_fit,
             bits,
         } = turbo;
+
+        // Only show this value in API if it's explicitly disabled.
+        let data_fit = data_fit.filter(|i| !*i);
+
         TurboQuantization {
             always_ram,
             bits: bits.map(|b| i32::from(TurboQuantBitSize::from(b))),
-            plus,
+            data_fit,
         }
     }
 }
@@ -1384,13 +1388,18 @@ impl TryFrom<TurboQuantization> for segment::types::TurboQuantization {
         let TurboQuantization {
             always_ram,
             bits,
-            plus,
+            data_fit,
         } = value;
         let bits = bits.map(turbo_quant_bit_size_from_i32).transpose()?;
+
+        // Only consider this value in API if it's explicitly disabled.
+        // It's default value is `true`, meaning that None and Some(true) are equivalent.
+        let data_fit = data_fit.filter(|i| !*i);
+
         Ok(segment::types::TurboQuantization {
             turbo: segment::types::TurboQuantQuantizationConfig {
                 always_ram,
-                plus,
+                data_fit,
                 bits,
             },
         })

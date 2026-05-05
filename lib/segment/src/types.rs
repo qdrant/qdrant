@@ -877,13 +877,18 @@ pub struct TurboQuantQuantizationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
 
-    // TODO(turbo): Remove before release
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plus: Option<bool>,
+    #[serde(skip_serializing_if = "tq_data_fit_is_not_some_false")]
+    #[schemars(skip)]
+    pub data_fit: Option<bool>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bits: Option<TurboQuantBitSize>,
+}
+
+// Only serialize `plus` if it's explicitly disabled. It's enabled by default.
+fn tq_data_fit_is_not_some_false(value: &Option<bool>) -> bool {
+    *value != Some(false)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
