@@ -10,6 +10,7 @@ use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::dense::dense_vector_storage::DenseVectorStorageImpl;
 use crate::vector_storage::dense::read_only::chucked_vector_storage::ReadOnlyChunkedDenseVectorStorage;
 use crate::vector_storage::multi_dense::read_only::chunked_vector_storage::ReadOnlyChunkedMultiDenseVectorStorage;
+use crate::vector_storage::sparse::read_only::sparse_vector_storage::ReadOnlySparseVectorStorage;
 
 /// Read-only counterpart of [`super::super::VectorStorageEnum`].
 ///
@@ -38,12 +39,10 @@ pub enum VectorStorageReadEnum<S: UniversalReadFamily> {
             >,
         >,
     ),
-    //
     MultiDenseChunked(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementType, S>>),
     MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
     MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
-    //
-    // Sparse(Box<ReadOnlySparseVectorStorage>),
+    Sparse(Box<ReadOnlySparseVectorStorage>),
 }
 
 impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
@@ -58,6 +57,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.distance(),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.distance(),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.distance(),
+            VectorStorageReadEnum::Sparse(s) => s.distance(),
         }
     }
 
@@ -72,6 +72,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.datatype(),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.datatype(),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.datatype(),
+            VectorStorageReadEnum::Sparse(s) => s.datatype(),
         }
     }
 
@@ -86,6 +87,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.is_on_disk(),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.is_on_disk(),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.is_on_disk(),
+            VectorStorageReadEnum::Sparse(s) => s.is_on_disk(),
         }
     }
 
@@ -100,6 +102,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.total_vector_count(),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.total_vector_count(),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.total_vector_count(),
+            VectorStorageReadEnum::Sparse(s) => s.total_vector_count(),
         }
     }
 
@@ -114,6 +117,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.get_vector::<P>(key),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.get_vector::<P>(key),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.get_vector::<P>(key),
+            VectorStorageReadEnum::Sparse(s) => s.get_vector::<P>(key),
         }
     }
 
@@ -132,6 +136,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.read_vectors::<P>(keys, callback),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.read_vectors::<P>(keys, callback),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.read_vectors::<P>(keys, callback),
+            VectorStorageReadEnum::Sparse(s) => s.read_vectors::<P>(keys, callback),
         }
     }
 
@@ -146,6 +151,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.get_vector_opt::<P>(key),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.get_vector_opt::<P>(key),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.get_vector_opt::<P>(key),
+            VectorStorageReadEnum::Sparse(s) => s.get_vector_opt::<P>(key),
         }
     }
 
@@ -160,6 +166,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.is_deleted_vector(key),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.is_deleted_vector(key),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.is_deleted_vector(key),
+            VectorStorageReadEnum::Sparse(s) => s.is_deleted_vector(key),
         }
     }
 
@@ -174,6 +181,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.deleted_vector_count(),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.deleted_vector_count(),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.deleted_vector_count(),
+            VectorStorageReadEnum::Sparse(s) => s.deleted_vector_count(),
         }
     }
 
@@ -188,6 +196,7 @@ impl<S: UniversalReadFamily> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::MultiDenseChunked(s) => s.deleted_vector_bitslice(),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.deleted_vector_bitslice(),
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.deleted_vector_bitslice(),
+            VectorStorageReadEnum::Sparse(s) => s.deleted_vector_bitslice(),
         }
     }
 }
