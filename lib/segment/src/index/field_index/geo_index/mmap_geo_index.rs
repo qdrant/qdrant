@@ -231,7 +231,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
                     .point_to_values
                     .len()
                     .div_ceil(u8::BITS as usize)
-                    .next_multiple_of(size_of::<usize>()),
+                    .next_multiple_of(size_of::<u64>()),
             )?;
             let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
             deleted.set_ascending_bits_batch(
