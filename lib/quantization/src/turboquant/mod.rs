@@ -264,16 +264,28 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                     stopped,
                 )?;
 
+                // Minimum quantile-interval width below which we skip EC
+                // for that coordinate (leave `scale = 1`). `f32::EPSILON`
+                // would only catch *exactly* zero variance — a coord with
+                // `denom = 1e-5` (real σ ≈ 1e-5 in N(0, 1) units, i.e.
+                // effectively constant but with floating-point jitter)
+                // would still go through and produce `scale ≈ 2·c_outer / 1e-5`
+                // ≈ 1.6e5, amplifying numeric noise enough to dominate the
+                // codebook for that axis. `1e-3` corresponds to a per-coord
+                // σ < ~3e-4 in N(0, 1) units, which is well below anything
+                // the codebook can usefully resolve, and bounds the worst-
+                // case `scale` at ~5.5e3 even for Bits4.
+                const MIN_QUANTILE_WIDTH: f32 = 1e-3;
                 let mut shift = vec![0.0f32; padded_dim];
                 let mut scale = vec![1.0f32; padded_dim];
                 for (i, &(q_lo, q_hi)) in intervals.iter().enumerate() {
                     // shift recenters the q_lo/q_hi pair around 0, scale
-                    // stretches it onto [-c_outer, c_outer]. EPSILON guard
-                    // protects against zero-variance coords (would otherwise
-                    // produce inf scale and corrupt the codebook).
+                    // stretches it onto [-c_outer, c_outer]. The width
+                    // floor protects near-constant coords from blowing
+                    // `scale` up to where quantization noise dominates.
                     shift[i] = -(q_lo + q_hi) / 2.0;
                     let denom = q_hi - q_lo;
-                    if denom > f32::EPSILON {
+                    if denom > MIN_QUANTILE_WIDTH {
                         scale[i] = (2.0 * c_outer) / denom;
                     }
                 }
