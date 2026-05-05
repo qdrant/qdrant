@@ -529,55 +529,6 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     })
 }
 
-/// Open an existing appendable mmap multi-dense vector storage without creating
-/// any files or directories. Fails if the storage layout is missing.
-pub fn open_appendable_memmap_multi_vector_storage_impl_read_only<T: PrimitiveVectorElement>(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-    madvise: AdviceSetting,
-    populate: bool,
-) -> OperationResult<AppendableMmapMultiDenseVectorStorage<T>> {
-    let vectors_path = path.join(VECTORS_DIR_PATH);
-    let offsets_path = path.join(OFFSETS_DIR_PATH);
-    let deleted_path = path.join(DELETED_DIR_PATH);
-
-    if !vectors_path.exists() {
-        return Err(OperationError::service_error(format!(
-            "Multi-dense vector storage 'vectors' dir not found at {}",
-            vectors_path.display(),
-        )));
-    }
-    if !offsets_path.exists() {
-        return Err(OperationError::service_error(format!(
-            "Multi-dense vector storage 'offsets' dir not found at {}",
-            offsets_path.display(),
-        )));
-    }
-    if !deleted_path.exists() {
-        return Err(OperationError::service_error(format!(
-            "Multi-dense vector storage 'deleted' dir not found at {}",
-            deleted_path.display(),
-        )));
-    }
-
-    let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
-    let offsets = ChunkedVectors::open(&offsets_path, 1, madvise, Some(populate))?;
-    let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
-    let deleted_count = deleted.count_trues();
-
-    Ok(AppendableMmapMultiDenseVectorStorage {
-        vectors,
-        offsets,
-        deleted,
-        distance,
-        multi_vector_config,
-        deleted_count,
-        _phantom: Default::default(),
-    })
-}
-
 /// Find files related to this dense vector storage
 #[cfg(test)]
 pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<Vec<PathBuf>> {

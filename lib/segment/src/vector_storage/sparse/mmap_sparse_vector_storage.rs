@@ -50,28 +50,6 @@ impl MmapSparseVectorStorage {
         Self::create(path)
     }
 
-    /// Open an existing mmap sparse vector storage without creating any files
-    /// or directories. Fails if the storage layout is missing.
-    pub fn open_read_only(path: &Path) -> OperationResult<Self> {
-        let storage_dir = path.join(STORAGE_DIRNAME);
-        let deleted_dir = path.join(DELETED_DIRNAME);
-
-        if !storage_dir.exists() {
-            return Err(OperationError::service_error(format!(
-                "Sparse vector storage dir not found at {}",
-                storage_dir.display(),
-            )));
-        }
-        if !deleted_dir.exists() {
-            return Err(OperationError::service_error(format!(
-                "Sparse vector storage 'deleted' dir not found at {}",
-                deleted_dir.display(),
-            )));
-        }
-
-        Self::open(path)
-    }
-
     fn open(path: &Path) -> OperationResult<Self> {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);

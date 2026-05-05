@@ -1,6 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 pub mod disk_cache;
 pub mod error;
+pub mod family;
 pub mod file_ops;
 #[cfg(target_os = "linux")]
 pub mod io_uring;
@@ -15,6 +16,7 @@ use std::path::Path;
 use serde::de::DeserializeOwned;
 
 pub use self::error::UniversalIoError;
+pub use self::family::UniversalReadFamily;
 pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::*;
