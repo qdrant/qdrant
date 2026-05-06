@@ -48,15 +48,6 @@ pub struct DynamicFlagsStatus {
     current_file_id: usize,
 }
 
-fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
-    let status_file = status_file(directory);
-    if !status_file.exists() {
-        let length = std::mem::size_of::<DynamicFlagsStatus>();
-        create_and_ensure_length(&status_file, length)?;
-    }
-    Ok(status_file)
-}
-
 /// Mutable persisted bitslice. This uses no buffering for updates.
 ///
 /// For buffered variants, check
@@ -103,9 +94,19 @@ where
         self.status.len == 0
     }
 
+    fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
+        let status_file = status_file(directory);
+        if !S::exists(&status_file)? {
+            let length = std::mem::size_of::<DynamicFlagsStatus>();
+            //TODO(uio): migrate when UniversalWriteFileOps is available
+            create_and_ensure_length(&status_file, length)?;
+        }
+        Ok(status_file)
+    }
+
     pub fn open(directory: &Path, populate: bool) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
-        let status_path = ensure_status_file(directory)?;
+        let status_path = Self::ensure_status_file(directory)?;
 
         let mut status: StoredStruct<S, DynamicFlagsStatus> = StoredStruct::open(
             &status_path,
