@@ -138,6 +138,7 @@ mod tests {
                     mode,
                     num_threads,
                     None,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -196,6 +197,7 @@ mod tests {
                     mode,
                     1,
                     None,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -251,6 +253,7 @@ mod tests {
                     mode,
                     1,
                     None,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -305,6 +308,7 @@ mod tests {
                     bits,
                     mode,
                     1,
+                    None,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -366,6 +370,7 @@ mod tests {
                     mode,
                     1,
                     None,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -420,6 +425,7 @@ mod tests {
                     bits,
                     mode,
                     1,
+                    None,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -485,6 +491,7 @@ mod tests {
                     mode,
                     1,
                     None,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -542,6 +549,7 @@ mod tests {
                     mode,
                     1,
                     None,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -595,6 +603,7 @@ mod tests {
                 bits,
                 mode,
                 1,
+                None,
                 None,
                 &AtomicBool::new(false),
             )
@@ -654,6 +663,7 @@ mod tests {
                     mode,
                     1,
                     None,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -708,6 +718,7 @@ mod tests {
                     bits,
                     mode,
                     1,
+                    None,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -764,6 +775,7 @@ mod tests {
                     mode,
                     1,
                     None,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap();
@@ -818,6 +830,7 @@ mod tests {
                     bits,
                     mode,
                     1,
+                    None,
                     None,
                     &AtomicBool::new(false),
                 )
@@ -885,6 +898,7 @@ mod tests {
                 bits,
                 mode,
                 1,
+                None,
                 None,
                 &AtomicBool::new(false),
             )

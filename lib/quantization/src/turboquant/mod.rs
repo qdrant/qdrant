@@ -151,7 +151,7 @@ pub struct Metadata {
 /// On-disk form of TQ+'s [`ErrorCorrection`]. Stores only `shift` and `scale`
 /// — derived caches like `D'_i²` and `⟨M, M⟩` are recomputed at load time so
 /// `shift` / `scale` remain the single source of truth.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ErrorCorrectionMetadata {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
@@ -187,6 +187,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     /// * `bits` - bits for quantization
     /// * `mode` - quantization mode
     /// * `num_threads` - max threads to use for the TQ+ quantile pre-pass
+    /// * `donor_ec` - optional pre-trained EC to adopt instead of running the
+    ///   pre-pass over `data`. Used when a sibling segment already trained an
+    ///   EC and this segment hasn't received enough data to train its own
+    ///   (notably: the auto-create path for fresh appendable segments, where
+    ///   `count == 0` would otherwise yield a no-op EC). Ignored for
+    ///   [`TQMode::Normal`].
     /// * `meta_path` - optional path to save metadata, if `None`, metadata will not be saved
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     #[allow(clippy::too_many_arguments)]
@@ -198,6 +204,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         bits: TQBits,
         mode: TQMode,
         num_threads: usize,
+        donor_ec: Option<ErrorCorrectionMetadata>,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
@@ -213,8 +220,37 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         // quantile at `Phi(c_outer)` equals `c_outer`, so shift/scale collapse
         // to `(0, 1)`. For anisotropic data the quantile-anchored fit avoids
         // the bias of mean/stddev under heavy-tailed or skewed coords.
+        //
+        // When `donor_ec` is supplied we skip the pre-pass entirely and adopt
+        // its `shift`/`scale` — the donor was trained on a representative
+        // sample of the same distribution (typically a sibling indexed
+        // segment in the same collection), and reusing it keeps cross-segment
+        // score scaling consistent.
         let error_correction = match mode {
             TQMode::Normal => None,
+            TQMode::Plus if donor_ec.is_some() => {
+                let donor = donor_ec.unwrap();
+                let pre_quantizer = TurboQuantizer::new_from_metadata(&Metadata {
+                    vector_parameters: *vector_parameters,
+                    bits,
+                    mode,
+                    error_correction: None,
+                })
+                .map_err(|e| {
+                    EncodingError::EncodingError(format!(
+                        "Failed to construct pre-quantizer for donor-EC validation: {e}",
+                    ))
+                })?;
+                let padded_dim = pre_quantizer.padded_dim;
+                if donor.shift.len() != padded_dim || donor.scale.len() != padded_dim {
+                    return Err(EncodingError::EncodingError(format!(
+                        "donor EC dim mismatch: donor shift/scale len={}/{}, expected {padded_dim}",
+                        donor.shift.len(),
+                        donor.scale.len(),
+                    )));
+                }
+                Some(ErrorCorrection::new(donor.shift, donor.scale))
+            }
             TQMode::Plus => {
                 let pre_quantizer = TurboQuantizer::new_from_metadata(&Metadata {
                     vector_parameters: *vector_parameters,

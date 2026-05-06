@@ -132,6 +132,7 @@ fn hnsw_quantized_search_test(
             QuantizedVectorsStorageType::Immutable,
             quantized_data_path,
             4,
+            None,
             &stopped,
         )
         .unwrap();
@@ -827,6 +828,7 @@ fn build_quantized_hnsw_for_compare(
             QuantizedVectorsStorageType::Immutable,
             quantized_dir.path(),
             4,
+            None,
             stopped,
         )
         .unwrap();

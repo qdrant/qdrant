@@ -313,6 +313,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                 QuantizedVectorsStorageType::Immutable,
                 quantized_data_path,
                 4,
+                None,
                 &stopped,
             )
             .unwrap();

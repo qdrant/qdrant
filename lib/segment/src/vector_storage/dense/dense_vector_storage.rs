@@ -845,6 +845,7 @@ mod tests {
             QuantizedVectorsStorageType::Immutable,
             dir.path(),
             1,
+            None,
             &stopped,
         )
         .unwrap();

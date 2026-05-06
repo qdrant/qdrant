@@ -563,6 +563,7 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
         QuantizedVectorsStorageType::Immutable,
         dir.path(),
         1,
+        None,
         &DEFAULT_STOPPED,
     )
     .unwrap();
@@ -796,6 +797,7 @@ fn test_gpu_vector_storage_impl(
             QuantizedVectorsStorageType::Immutable,
             dir.path(),
             1,
+            None,
             &DEFAULT_STOPPED,
         )
         .unwrap()

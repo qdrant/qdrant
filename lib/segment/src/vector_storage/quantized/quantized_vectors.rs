@@ -463,6 +463,66 @@ impl QuantizedVectors {
         path.join(QUANTIZED_META_PATH)
     }
 
+    /// Look for a sibling segment in the same collection that has already
+    /// trained a TQ+ EC, and return its `shift`/`scale` so an empty
+    /// appendable segment can adopt them.
+    ///
+    /// `path` is this segment's per-vector quantization root, i.e.
+    /// `<segments_root>/<segment_uuid>/<vector_storage_basename>`. We walk
+    /// `<segments_root>/*/<vector_storage_basename>/quantized.meta.json`
+    /// (skipping our own segment) and return the first metadata file that
+    /// parses as TQ+ with non-trivial EC. The basename match is essential —
+    /// EC dimensionality is per-named-vector, not per-collection.
+    ///
+    /// Best-effort: any I/O or parse error short-circuits this sibling and
+    /// the scan continues. Returns `None` if no usable donor is found, in
+    /// which case the caller falls back to the existing "no-op EC" path.
+    fn find_sibling_donor_ec(
+        path: &Path,
+    ) -> Option<quantization::turboquant::ErrorCorrectionMetadata> {
+        let segment_dir = path.parent()?;
+        let segments_root = segment_dir.parent()?;
+        let basename = path.file_name()?;
+
+        let entries = fs_err::read_dir(segments_root).ok()?;
+        for entry in entries.flatten() {
+            let sibling_segment = entry.path();
+            if sibling_segment == segment_dir {
+                continue;
+            }
+            if !sibling_segment.is_dir() {
+                continue;
+            }
+            let sibling_meta = sibling_segment.join(basename).join(QUANTIZED_META_PATH);
+            if !sibling_meta.exists() {
+                continue;
+            }
+            let Ok(contents) = fs_err::read_to_string(&sibling_meta) else {
+                continue;
+            };
+            let Ok(metadata) =
+                serde_json::from_str::<quantization::turboquant::Metadata>(&contents)
+            else {
+                continue;
+            };
+            if !matches!(metadata.mode, TQMode::Plus) {
+                continue;
+            }
+            let Some(ec) = metadata.error_correction else {
+                continue;
+            };
+            // Reject a no-op EC — it would produce the same recall hole we're
+            // trying to avoid. Detect it as "all shifts zero AND all scales
+            // exactly 1.0", which is what the empty pre-pass produces.
+            let trivial = ec.shift.iter().all(|&s| s == 0.0) && ec.scale.iter().all(|&s| s == 1.0);
+            if trivial {
+                continue;
+            }
+            return Some(ec);
+        }
+        None
+    }
+
     fn get_offsets_path(path: &Path, storage_type: QuantizedVectorsStorageType) -> PathBuf {
         match storage_type {
             QuantizedVectorsStorageType::Immutable => path.join(QUANTIZED_OFFSETS_PATH),
@@ -538,6 +598,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
+        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         match vector_storage {
@@ -547,6 +608,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             #[cfg(test)]
@@ -556,6 +618,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             #[cfg(test)]
@@ -565,6 +628,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::DenseMemmap(v) => Self::create_impl(
@@ -573,6 +637,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::DenseMemmapByte(v) => Self::create_impl(
@@ -581,6 +646,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::DenseMemmapHalf(v) => Self::create_impl(
@@ -589,6 +655,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             #[cfg(target_os = "linux")]
@@ -598,6 +665,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             #[cfg(target_os = "linux")]
@@ -607,6 +675,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             #[cfg(target_os = "linux")]
@@ -616,6 +685,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::DenseAppendableMemmap(v) => Self::create_impl(
@@ -624,6 +694,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => Self::create_impl(
@@ -632,6 +703,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => Self::create_impl(
@@ -640,6 +712,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),
@@ -650,6 +723,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             #[cfg(test)]
@@ -659,6 +733,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             #[cfg(test)]
@@ -668,6 +743,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => Self::create_multi_impl(
@@ -676,6 +752,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Self::create_multi_impl(
@@ -684,6 +761,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Self::create_multi_impl(
@@ -692,6 +770,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::EmptyDense(v) => Self::create_impl(
@@ -700,12 +779,14 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                donor_ec.clone(),
                 stopped,
             ),
             VectorStorageEnum::EmptySparse(_) => Err(OperationError::WrongSparse),
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_impl<
         TElement: PrimitiveVectorElement,
         TVectorStorage: DenseVectorStorage<TElement> + Send + Sync,
@@ -715,6 +796,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
+        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
@@ -798,6 +880,7 @@ impl QuantizedVectors {
                 path,
                 on_disk_vector_storage,
                 max_threads,
+                donor_ec,
                 stopped,
             )?,
         };
@@ -820,6 +903,7 @@ impl QuantizedVectors {
         Ok(quantized_vectors)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_multi_impl<
         TElement: PrimitiveVectorElement + 'static,
         TVectorStorage: MultiVectorStorage<TElement> + Send + Sync,
@@ -829,6 +913,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
+        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
@@ -940,6 +1025,7 @@ impl QuantizedVectors {
                 path,
                 on_disk_vector_storage,
                 max_threads,
+                donor_ec,
                 stopped,
             )?,
         };
@@ -993,12 +1079,27 @@ impl QuantizedVectors {
         // re-quantization with actual data goes through
         // `SegmentBuilder::build` under a permit-bounded `max_threads`.
         let max_threads = 1;
+
+        // For TQ+, an empty segment can't train its own EC. If a sibling
+        // segment in the same collection has already trained one (typically
+        // the indexed segment built from the first batch of data), reuse its
+        // `shift`/`scale`. Without this, the appendable encodes vectors with
+        // a no-op EC while the indexed segment uses a trained EC; their
+        // score distributions then differ enough that cross-segment top-K
+        // merging suffers heavy recall loss for 1-bit storage.
+        let donor_ec = if matches!(quantization_config, QuantizationConfig::Turbo(_)) {
+            Self::find_sibling_donor_ec(path)
+        } else {
+            None
+        };
+
         let quantized_vectors = Self::create(
             vector_storage,
             quantization_config,
             QuantizedVectorsStorageType::Mutable,
             path,
             max_threads,
+            donor_ec,
             stopped,
         )?;
         Ok(Some(quantized_vectors))
@@ -2039,6 +2140,7 @@ impl QuantizedVectors {
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
+        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
@@ -2069,6 +2171,7 @@ impl QuantizedVectors {
                         bits,
                         mode,
                         max_threads,
+                        donor_ec,
                         Some(meta_path.as_path()),
                         stopped,
                     )?,
@@ -2088,6 +2191,7 @@ impl QuantizedVectors {
                     bits,
                     mode,
                     max_threads,
+                    donor_ec,
                     Some(meta_path.as_path()),
                     stopped,
                 )?))
@@ -2106,6 +2210,7 @@ impl QuantizedVectors {
                     bits,
                     mode,
                     max_threads,
+                    donor_ec,
                     Some(meta_path.as_path()),
                     stopped,
                 )?))
@@ -2126,6 +2231,7 @@ impl QuantizedVectors {
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
+        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
@@ -2156,6 +2262,7 @@ impl QuantizedVectors {
                     bits,
                     mode,
                     max_threads,
+                    donor_ec.clone(),
                     Some(meta_path.as_path()),
                     stopped,
                 )?;
@@ -2184,6 +2291,7 @@ impl QuantizedVectors {
                     bits,
                     mode,
                     max_threads,
+                    donor_ec.clone(),
                     Some(meta_path.as_path()),
                     stopped,
                 )?;
@@ -2211,6 +2319,7 @@ impl QuantizedVectors {
                     bits,
                     mode,
                     max_threads,
+                    donor_ec,
                     Some(meta_path.as_path()),
                     stopped,
                 )?;

@@ -334,6 +334,7 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         QuantizedVectorsStorageType::Immutable,
         dir.path(),
         1,
+        None,
         &stopped,
     )
     .unwrap();

@@ -286,6 +286,7 @@ fn test_multivector_quantization_hnsw(
                 QuantizedVectorsStorageType::Immutable,
                 quantized_data_path,
                 4,
+                None,
                 &stopped,
             )
             .unwrap();

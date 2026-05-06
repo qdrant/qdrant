@@ -773,6 +773,7 @@ impl SegmentBuilder {
                     quantized_storage_type,
                     &vector_storage_path,
                     max_threads,
+                    None,
                     stopped,
                 )?;
 
