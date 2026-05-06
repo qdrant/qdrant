@@ -20,8 +20,8 @@
 </p>
 
 **Qdrant** (read: _quadrant_) is a vector similarity search engine and vector database.
-It provides a production-ready service with a convenient API to store, search, and manage points—vectors with an additional payload
-Qdrant is tailored to extended filtering support. It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications.
+It provides a production-ready service with a convenient API to store, search, and manage points—vectors with an additional payload.
+Qdrant is tailored for extended filtering support, making it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications.
 
 Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load. See [benchmarks](https://qdrant.tech/benchmarks/).
 
@@ -49,7 +49,7 @@ To experience the full power of Qdrant locally, run the container with this comm
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
-This starts an insecure deployment without authentication, open to all network interfaces. Please refer to [secure your instance](https://qdrant.tech/documentation/security/#secure-your-instance).
+Note that this starts an insecure deployment without authentication, open to all network interfaces. Please refer to [secure your instance](https://qdrant.tech/documentation/security/#secure-your-instance).
 
 Now you can connect to the server with any [client](#clients). For example, using Python:
 
@@ -75,16 +75,14 @@ Qdrant offers the following client libraries to help you integrate it into your 
 
 ### Qdrant Edge
 
-[Qdrant Edge](https://qdrant.tech/documentation/edge/) is a lightweight version of Qdrant designed for edge devices and resource-constrained environments. It offers the same powerful vector search capabilities as the full version but with a smaller footprint, making it ideal for applications that require low latency and offline functionality.
+[Qdrant Edge](https://qdrant.tech/documentation/edge/) is a lightweight version of Qdrant designed for edge devices and resource-constrained environments. Unlike Qdrant Server, which uses a client-server architecture, Qdrant Edge runs inside the application process. Data is stored and queried locally and can be synchronized with a Qdrant server. It offers the same powerful vector search capabilities as the client-server version but with a smaller footprint, making it ideal for applications that require low latency and offline functionality.
 
-Unlike Qdrant Server, which uses a client-server architecture, Qdrant Edge runs inside the application process. Data is stored and queried locally and can be synchronized with a Qdrant server.
-
-### Where do I go from here?
+### Where Do I Go from Here?
 
 - [Quick Start Guide](https://qdrant.tech/documentation/quickstart/)
 - Detailed [Documentation](https://qdrant.tech/documentation/)
 - Take the [Qdrant Essentials course](https://qdrant.tech/course/essentials/)
-- [Tutorial](https://qdrant.tech/documentation/tutorials-basics/search-beginners/) to create a semantic search engine with Qdrant
+- Follow [this tutorial](https://qdrant.tech/documentation/tutorials-basics/search-beginners/) to create a semantic search engine with Qdrant
 
 ## Demo Projects
 
@@ -96,7 +94,7 @@ Unlock the power of semantic embeddings with Qdrant, transcending keyword-based 
 
 There's more to discovery than text search, especially when it comes to food. People often choose meals based on appearance rather than descriptions and ingredients. Let Qdrant help your users find their next delicious meal using visual search, even if they don't know the dish's name. [Check it out!](https://qdrant.to/food-discovery)
 
-### Master Extreme Classification - E-commerce Product Categorization 📺
+### Master Extreme Classification - E-Commerce Product Categorization 📺
 
 Enter the cutting-edge realm of extreme classification, an emerging machine learning field tackling multi-class and multi-label problems with millions of labels. Harness the potential of similarity learning models, and see how a pre-trained transformer model and Qdrant can revolutionize e-commerce product categorization. [Play with it online!](https://qdrant.to/extreme-classification-demo)
 
@@ -111,7 +109,7 @@ You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant
 
 ### gRPC
 
-For faster production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/interfaces/#grpc-interface).
+For faster, production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/interfaces/#grpc-interface).
 
 ## Features
 
@@ -137,19 +135,22 @@ Scale horizontally with sharding and replication, and update or resize collectio
 
 ### Highlighted Features
 
-* **Multitenancy** - scalable partitioning of data for multi-user environments.
-* **Observability** - comprehensive logging, metrics, and tracing for monitoring and debugging.
-* **Web UI** - a user interface for managing collections, monitoring performance, and visualizing data.
+* **Faceting** - aggregate search results by payload values.
+* **Recommendation** - use positive and negative examples to find similar points.
+* **Discovery** - constrain search to a specific region of the vector space.
 * **Search Relevance Tuning** - tools for adjusting search results, such as Maximal Marginal Relevance (MMR) and the Relevance Feedback Query.
+* **Multitenancy** - scalable partitioning of data for multi-user environments.
+* **Web UI** - a user interface for managing collections, monitoring performance, and visualizing data.
+* **Observability** - comprehensive logging, metrics, and tracing for monitoring and debugging.
 * **Query Planning and Payload Indexes** - leverages stored payload information to optimize query execution strategy.
 * **SIMD Hardware Acceleration** - utilizes modern CPU x86-x64 and Neon architectures to deliver better performance.
 * **GPU Support** - for accelerated indexing.
-* **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on a network-attached storage.
+* **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on network-attached storage.
 * **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages.
 
 # Integrations
 
-Qdrant integrates with the tools you're already using across every stage of your AI stack. You can connect to embedding providers, AI application frameworks, and data pipeline tools, as well as observability platforms for monitoring and tracing your vector search in production. No-code and low-code automation platforms are supported too. Refer to the full [Ecosystem page](https://qdrant.tech/documentation/ecosystem/) for the complete list.
+Qdrant integrates with the tools you're already using across every stage of your AI stack. You can connect to embedding providers, AI application frameworks, and data pipeline tools, as well as observability platforms for monitoring and tracing your vector search in production. No-code and low-code automation platforms are supported too. Refer to the [Ecosystem page](https://qdrant.tech/documentation/ecosystem/) for the complete list.
 
 ## Contributing
 
@@ -161,8 +162,8 @@ We are happy to receive your contributions! Before opening a pull request, pleas
 ## Contacts
 
 - Have questions? Join our [Discord channel](https://qdrant.to/discord) or mention [@qdrant_engine on X](https://qdrant.to/twitter)
-- Want to stay in touch with latest releases? Subscribe to our [Newsletters](https://qdrant.tech/subscribe/)
-- Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/), need something personalised? We're at [info@qdrant.tech](mailto:info@qdrant.tech)
+- Want to stay in touch with the latest releases? Subscribe to our [Newsletters](https://qdrant.tech/subscribe/)
+- Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/). Need something personalized? We're at [info@qdrant.tech](mailto:info@qdrant.tech)
 
 ## License
 
