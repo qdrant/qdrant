@@ -227,6 +227,13 @@ impl From<NamedVectors> for Vectors {
     }
 }
 
+impl NamedVectors {
+    pub fn add_vector(mut self, name: impl Into<String>, vector: impl Into<Vector>) -> Self {
+        self.0.insert(name.into(), vector.into());
+        self
+    }
+}
+
 impl From<HashMap<String, Vector>> for NamedVectors {
     fn from(map: HashMap<String, Vector>) -> Self {
         Self(map)
@@ -241,5 +248,31 @@ impl<T: Into<String>, V: Into<Vector>> From<Vec<(T, V)>> for NamedVectors {
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn named_vectors_add_vector_builds_map() {
+        let named = NamedVectors::default()
+            .add_vector("text", vec![1.0, 2.0])
+            .add_vector("image", Vector::new_dense(vec![3.0, 4.0]));
+
+        assert_eq!(named.0.len(), 2);
+        assert_eq!(named.0["text"], Vector::new_dense(vec![1.0, 2.0]));
+        assert_eq!(named.0["image"], Vector::new_dense(vec![3.0, 4.0]));
+    }
+
+    #[test]
+    fn named_vectors_add_vector_overwrites_same_name() {
+        let named = NamedVectors::default()
+            .add_vector("text", vec![1.0, 2.0])
+            .add_vector("text", vec![9.0, 9.0]);
+
+        assert_eq!(named.0.len(), 1);
+        assert_eq!(named.0["text"], Vector::new_dense(vec![9.0, 9.0]));
     }
 }
