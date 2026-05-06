@@ -28,14 +28,8 @@ fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
-pub trait UioDynamicFlags:
-    UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static
-{
-}
-impl<T> UioDynamicFlags for T where
-    T: UniversalWrite<DynamicFlagsStatus> + UniversalWrite<u64> + Send + 'static
-{
-}
+pub trait UioDynamicFlags: UniversalWrite + Send + 'static {}
+impl<T> UioDynamicFlags for T where T: UniversalWrite + Send + 'static {}
 
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]

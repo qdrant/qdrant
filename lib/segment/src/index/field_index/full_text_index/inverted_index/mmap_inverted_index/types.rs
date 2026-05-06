@@ -20,7 +20,18 @@ impl ZerocopyPostingValue for () {}
 
 impl ZerocopyPostingValue for Positions {}
 
-#[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    FromBytes,
+    Immutable,
+    IntoBytes,
+    KnownLayout,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 #[repr(C)]
 pub(in crate::index::field_index::full_text_index) struct PostingsHeader {
     /// Number of posting lists. One posting list per term
@@ -30,7 +41,18 @@ pub(in crate::index::field_index::full_text_index) struct PostingsHeader {
 
 /// This data structure should contain all the necessary information to
 /// construct `PostingListView<V>` from the mmap file.
-#[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    FromBytes,
+    Immutable,
+    IntoBytes,
+    KnownLayout,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 #[repr(C)]
 pub(in crate::index::field_index::full_text_index) struct PostingListHeader {
     /// Offset in bytes from the start of the mmap file

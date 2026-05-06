@@ -49,22 +49,40 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
     /// guarantees correct alignment for any `T`.
     pub fn get_range(&self, range: Range<usize>) -> io::Result<Cow<'_, [T]>> {
         let t_size = size_of::<T>();
-        debug_assert!(t_size != 0, "cannot use zero-sized type");
+        let byte_range = range.start * t_size..range.end * t_size;
+        self.read_byte_range_as::<T>(byte_range)
+    }
 
-        let total_elements = range.end - range.start;
-        if total_elements == 0 {
+    /// Read a byte range and reinterpret it as a slice of `T2`.
+    ///
+    /// The byte range must be aligned with `size_of::<T2>()`. Single-block
+    /// reads return a zero-copy borrow when possible; multi-block reads
+    /// allocate a `Vec<T2>` for correct alignment.
+    pub(crate) fn read_byte_range_as<T2: bytemuck::Pod>(
+        &self,
+        byte_range: Range<usize>,
+    ) -> io::Result<Cow<'_, [T2]>> {
+        let t2_size = size_of::<T2>();
+        debug_assert!(t2_size != 0, "cannot use zero-sized type");
+        debug_assert_eq!(
+            (byte_range.end - byte_range.start) % t2_size,
+            0,
+            "byte range length must be a multiple of size_of::<T2>()",
+        );
+
+        if byte_range.is_empty() {
             return Ok(Cow::Borrowed(&[]));
         }
 
-        let byte_range = range.start * t_size..range.end * t_size;
+        let total_elements = (byte_range.end - byte_range.start) / t2_size;
         let mut blocks_iter = self.blocks_for(byte_range);
 
         // TODO(perf): if blocks are consecutive in the big cache file, we can still return without allocating.
         if blocks_iter.len() == 1 {
             let req = blocks_iter.next().expect("We just checked len() == 1");
             let result = self.controller.get_from_cache(req, |bytes| {
-                let mut vec_t = vec![T::zeroed(); bytes.len() / t_size];
-                bytemuck::cast_slice_mut::<T, u8>(&mut vec_t).copy_from_slice(bytes);
+                let mut vec_t = vec![T2::zeroed(); bytes.len() / t2_size];
+                bytemuck::cast_slice_mut::<T2, u8>(&mut vec_t).copy_from_slice(bytes);
                 vec_t
             })?;
 
@@ -74,9 +92,9 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
             });
         }
 
-        // Multi-block: allocate Vec<T> directly for correct alignment.
-        let mut result = vec![T::zeroed(); total_elements];
-        let result_bytes = bytemuck::cast_slice_mut::<T, u8>(&mut result);
+        // Multi-block: allocate Vec<T2> directly for correct alignment.
+        let mut result = vec![T2::zeroed(); total_elements];
+        let result_bytes = bytemuck::cast_slice_mut::<T2, u8>(&mut result);
         let mut copied = 0;
         let mut copy_block = |slice: &[u8]| {
             let end = copied + slice.len();
@@ -143,6 +161,10 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
     #[expect(clippy::len_without_is_empty)] // Doesn't make sense to cache 0-length files
     pub fn len(&self) -> usize {
         self.len_bytes / size_of::<T>()
+    }
+
+    pub(crate) fn byte_len(&self) -> usize {
+        self.len_bytes
     }
 
     /// Returns the block descriptor for the provided bytes range.

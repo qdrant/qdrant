@@ -15,8 +15,8 @@ use crate::universal_io::{Flusher, UniversalIoError, UniversalWrite};
 #[derive(Debug)]
 pub struct SliceBufferedUpdateWrapper<S, T>
 where
-    S: UniversalWrite<T>,
-    T: Copy + 'static,
+    S: UniversalWrite,
+    T: bytemuck::Pod,
 {
     slice: Arc<RwLock<S>>,
     len: u64,
@@ -26,11 +26,11 @@ where
 
 impl<S, T> SliceBufferedUpdateWrapper<S, T>
 where
-    S: UniversalWrite<T>,
-    T: Copy + 'static,
+    S: UniversalWrite,
+    T: bytemuck::Pod,
 {
     pub fn new(slice_storage: S) -> Result<Self, UniversalIoError> {
-        let len = slice_storage.len()?;
+        let len = slice_storage.len::<T>()?;
         Ok(Self {
             slice: Arc::new(RwLock::new(slice_storage)),
             len,
@@ -55,8 +55,8 @@ where
 
 impl<S, T> SliceBufferedUpdateWrapper<S, T>
 where
-    S: UniversalWrite<T> + Send + Sync + 'static,
-    T: Copy + Clone + PartialEq + Sync + Send + 'static,
+    S: UniversalWrite + Send + Sync + 'static,
+    T: bytemuck::Pod + PartialEq + Sync + Send,
 {
     pub fn flusher(&self) -> Flusher {
         let updates = {
@@ -99,7 +99,7 @@ where
                     .expect("`chunk.len()` is sourced from the same slice as `remaining_values`");
                 (byte_start, chunk_values)
             });
-            slice_guard.write_batch(it)?;
+            slice_guard.write_batch::<T>(it)?;
 
             slice_guard.flusher()()?;
 

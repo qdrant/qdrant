@@ -68,8 +68,8 @@ pub(crate) fn read_multi_vector<'a, T, P, So, Sv>(
 where
     T: PrimitiveVectorElement,
     P: AccessPattern,
-    So: UniversalRead<MultivectorMmapOffset>,
-    Sv: UniversalRead<T>,
+    So: UniversalRead,
+    Sv: UniversalRead,
 {
     let mmap_offset = *offsets
         .get::<P>(key as VectorOffsetType)?

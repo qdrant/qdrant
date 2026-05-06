@@ -31,7 +31,7 @@ impl<S> Pages<S> {
     }
 }
 
-impl<S: UniversalRead<u8>> Pages<S> {
+impl<S: UniversalRead> Pages<S> {
     pub fn new(base_path: PathBuf) -> Self {
         Self {
             base_path,
@@ -213,7 +213,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
             vec![MaybeUninit::uninit(); pointer.length as _]
         };
 
-        for result in S::read_multi_iter::<P, _>(reads)? {
+        for result in S::read_multi_iter::<u8, P, _>(reads)? {
             let (offset, bytes) = result?;
 
             if pages == 1 {
@@ -282,7 +282,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
                 })
             });
 
-        let chunks = S::read_multi_iter::<P, _>(reads).map_err(GridstoreError::from)?;
+        let chunks = S::read_multi_iter::<u8, P, _>(reads).map_err(GridstoreError::from)?;
 
         // Multi-page values need buffering since chunks for the same value may
         // arrive interleaved with chunks for other values. Single-page reads
@@ -384,7 +384,7 @@ impl<S: UniversalRead<u8>> Pages<S> {
     }
 }
 
-impl<S: UniversalWrite<u8>> Pages<S> {
+impl<S: UniversalWrite> Pages<S> {
     pub fn write_to_pages(
         &mut self,
         pointer: ValuePointer,
@@ -398,7 +398,7 @@ impl<S: UniversalWrite<u8>> Pages<S> {
             });
 
         // Execute writes (mutable borrow of self.pages)
-        S::write_multi(self.pages.as_mut_slice(), writes)?;
+        S::write_multi::<u8>(self.pages.as_mut_slice(), writes)?;
 
         Ok(())
     }

@@ -68,7 +68,7 @@ impl StoredValue for str {
 /// This structure is immutable.
 /// It's used in mmap field indices like `MmapMapIndex`, `MmapNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
-pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead<u8>> {
+pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
     file_name: PathBuf,
     store: ReadOnly<S>,
     header: Header,
@@ -79,14 +79,35 @@ pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead<u8>> {
 pub const MMAP_PTV_ACCESS_OVERHEAD: usize = size_of::<MmapRange>();
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    FromBytes,
+    Immutable,
+    IntoBytes,
+    KnownLayout,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 struct MmapRange {
     start: u64,
     count: u64,
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    FromBytes,
+    Immutable,
+    IntoBytes,
+    KnownLayout,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 struct Header {
     ranges_start: u64,
     points_count: u64,
@@ -95,7 +116,7 @@ struct Header {
 impl<T, S> StoredPointToValues<T, S>
 where
     T: StoredValue + ?Sized,
-    S: UniversalRead<u8>,
+    S: UniversalRead,
 {
     pub fn from_iter<'a>(
         path: &Path,
@@ -124,8 +145,7 @@ where
             ranges_start: PADDING_SIZE as u64,
             points_count: points_count as u64,
         };
-        header
-            .write_to_prefix(mmap.as_mut())
+        IntoBytes::write_to_prefix(&header, mmap.as_mut())
             .map_err(|_| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
 
         // counter for values offset
@@ -152,7 +172,7 @@ where
                 header.ranges_start as usize
                     + point_id as usize * std::mem::size_of::<MmapRange>()..,
             )
-            .and_then(|bytes| range.write_to_prefix(bytes).ok())
+            .and_then(|bytes| IntoBytes::write_to_prefix(&range, bytes).ok())
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
         }
 
@@ -176,13 +196,10 @@ where
 
         let store = ReadOnly::open(&file_name, open_options)?;
 
-        let header_bytes = store.read::<Random>(ReadRange {
+        let header = store.read::<Header, Random>(ReadRange {
             byte_offset: 0,
-            length: std::mem::size_of::<Header>() as u64,
-        })?;
-
-        let (header, _) = Header::read_from_prefix(&header_bytes)
-            .map_err(|_| OperationError::inconsistent_storage(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
+            length: 1,
+        })?[0];
 
         Ok(Self {
             file_name,
@@ -241,7 +258,7 @@ where
             return Ok(None);
         };
 
-        let bytes = self.store.read::<Random>(bytes_range)?;
+        let bytes = self.store.read::<u8, Random>(bytes_range)?;
         let count = self.get_values_count(point_id)?.unwrap_or(0);
 
         let iter = ValuesIter::new(bytes, count);
@@ -275,13 +292,11 @@ where
             let range_offset = (self.header.ranges_start as usize)
                 + (point_id as usize) * std::mem::size_of::<MmapRange>();
 
-            let bytes = self.store.read::<Random>(ReadRange {
+            let range = self.store.read::<MmapRange, Random>(ReadRange {
                 byte_offset: range_offset as u64,
-                length: std::mem::size_of::<MmapRange>() as u64,
-            })?;
-            Ok(MmapRange::read_from_prefix(&bytes)
-                .ok()
-                .map(|(range, _)| range))
+                length: 1,
+            })?[0];
+            Ok(Some(range))
         } else {
             Ok(None)
         }
@@ -297,7 +312,7 @@ where
             Some(end) => end,
             None => {
                 // if there is no next point, then use end of file
-                self.store.len()?
+                self.store.len::<u8>()?
             }
         };
 

@@ -1,5 +1,5 @@
-//! Storage-agnostic bitslice backed by any [`UniversalRead<u64>`] /
-//! [`UniversalWrite<u64>`] backend.
+//! Storage-agnostic bitslice backed by any [`UniversalRead`] /
+//! [`UniversalWrite`] backend, fixed to the `u64` element type.
 //!
 //! Provides [`BitSliceStorage`], a wrapper that interprets the underlying
 //! `u64`-element storage as a sequence of bits, supporting both read and write
@@ -15,7 +15,8 @@ use itertools::Itertools;
 use crate::bitvec::BitVec;
 use crate::generic_consts::Random;
 use crate::universal_io::{
-    Flusher, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalWrite,
+    Flusher, OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalWrite,
 };
 
 /// Number of bits per `BitStore` element.
@@ -29,21 +30,21 @@ pub type MmapBitSlice = StoredBitSlice<crate::universal_io::MmapFile>;
 
 /// A storage-agnostic bitslice that supports both reading and writing bits.
 ///
-/// Wraps any [`UniversalRead<u64>`] / [`UniversalWrite<u64>`] backend and
-/// interprets the underlying `u64` elements as a sequence of bits.
-/// Bit-level operations are translated to element-level reads and writes
-/// on the backend.
+/// Wraps any [`UniversalRead`] / [`UniversalWrite`] backend, fixed to the
+/// `u64` element type, and interprets the underlying `u64` elements as a
+/// sequence of bits. Bit-level operations are translated to element-level
+/// reads and writes on the backend.
 #[derive(Debug)]
 pub struct StoredBitSlice<S> {
-    storage: S,
+    storage: TypedStorage<S, BitStore>,
     /// Total number of `BitStore` elements in the underlying storage.
     element_len: u64,
 }
 
-impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
+impl<S: UniversalRead> StoredBitSlice<S> {
     /// Open a bitslice storage from the given path using backend `S`.
     pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        let storage = S::open(path, options)?;
+        let storage = TypedStorage::<S, BitStore>::open(path, options)?;
         let element_len = storage.len()?;
         Ok(Self {
             storage,
@@ -171,7 +172,7 @@ impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
     }
 }
 
-impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
+impl<S: UniversalWrite> StoredBitSlice<S> {
     /// Set multiple individual bits in a batch.
     ///
     /// Each `(bit_index, value)` pair sets a single bit. Bits within the same

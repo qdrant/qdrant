@@ -28,15 +28,15 @@ where
     }
 }
 
-impl<S, T> UniversalRead<T> for ReadOnly<S>
+impl<S> UniversalRead for ReadOnly<S>
 where
-    S: UniversalRead<T>,
-    T: Copy + 'static,
+    S: UniversalRead,
 {
-    type ReadPipeline<'file, Meta>
-        = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, Meta>>
+    type ReadPipeline<'file, T, Meta>
+        = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, T, Meta>>
     where
-        Self: 'file;
+        Self: 'file,
+        T: bytemuck::Pod;
 
     #[inline]
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -46,41 +46,53 @@ where
     }
 
     #[inline]
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        self.0.read::<P>(range)
+    fn read<T, P>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>
+    where
+        T: bytemuck::Pod,
+        P: AccessPattern,
+    {
+        self.0.read::<T, P>(range)
     }
 
     #[inline]
-    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
-        self.0.read_whole()
+    fn read_whole<T>(&self) -> Result<Cow<'_, [T]>>
+    where
+        T: bytemuck::Pod,
+    {
+        self.0.read_whole::<T>()
     }
 
     #[inline]
-    fn read_batch<P, Meta>(
+    fn read_batch<T, P, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
     where
+        T: bytemuck::Pod,
         P: AccessPattern,
     {
-        self.0.read_batch::<P, Meta>(ranges, callback)
+        self.0.read_batch::<T, P, Meta>(ranges, callback)
     }
 
     #[inline]
-    fn read_iter<P, Meta>(
+    fn read_iter<T, P, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>>
     where
+        T: bytemuck::Pod,
         P: AccessPattern,
     {
-        self.0.read_iter::<P, Meta>(ranges)
+        self.0.read_iter::<T, P, Meta>(ranges)
     }
 
     #[inline]
-    fn len(&self) -> Result<u64> {
-        self.0.len()
+    fn len<T>(&self) -> Result<u64>
+    where
+        T: bytemuck::Pod,
+    {
+        self.0.len::<T>()
     }
 
     #[inline]
@@ -94,11 +106,12 @@ where
     }
 
     #[inline]
-    fn read_multi<'a, P, Meta>(
+    fn read_multi<'a, T, P, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
     where
+        T: bytemuck::Pod,
         P: AccessPattern,
         Self: 'a,
     {
@@ -106,14 +119,15 @@ where
             .into_iter()
             .map(|(meta, file, range)| (meta, &file.0, range));
 
-        S::read_multi::<P, _>(reads, callback)
+        S::read_multi::<T, P, _>(reads, callback)
     }
 
     #[inline]
-    fn read_multi_iter<'a, P, Meta>(
+    fn read_multi_iter<'a, T, P, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>>
     where
+        T: bytemuck::Pod,
         P: AccessPattern,
         Self: 'a,
     {
@@ -121,7 +135,7 @@ where
             .into_iter()
             .map(|(meta, file, range)| (meta, &file.0, range));
 
-        S::read_multi_iter::<P, _>(it)
+        S::read_multi_iter::<T, P, _>(it)
     }
 
     fn kind() -> UniversalKind {

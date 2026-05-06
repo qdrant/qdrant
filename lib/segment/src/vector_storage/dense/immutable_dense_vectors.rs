@@ -29,11 +29,11 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 pub struct ImmutableDenseVectors<T, S = MmapFile>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     pub dim: usize,
     pub num_vectors: usize,
-    /// Vector data storage, providing read access via [`UniversalRead<T>`].
+    /// Vector data storage, providing read access via [`UniversalRead`].
     storage: TypedStorage<ReadOnly<S>, T>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
@@ -41,7 +41,7 @@ where
     pub deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S> {
+impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,

@@ -66,14 +66,15 @@ impl<T> UniversalReadFileOps for CachedSlice<T> {
     }
 }
 
-impl<T> UniversalRead<T> for CachedSlice<T>
+impl<T> UniversalRead for CachedSlice<T>
 where
     T: bytemuck::Pod,
 {
-    type ReadPipeline<'a, Meta>
-        = DiskCacheReadPipeline<'a, T, Meta>
+    type ReadPipeline<'a, U, Meta>
+        = DiskCacheReadPipeline<'a, T, U, Meta>
     where
-        Self: 'a;
+        Self: 'a,
+        U: bytemuck::Pod;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let Some(controller) = CacheController::global() else {
@@ -97,18 +98,22 @@ where
         Ok(CachedSlice::open(controller, path.as_ref())?)
     }
 
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let elem_start = usize::try_from(range.byte_offset).expect("range.start is within usize")
-            / size_of::<T>();
-        let elem_length = usize::try_from(range.length).expect("range.length is within usize");
-
-        let range = elem_start..elem_start + elem_length;
-
-        Ok(self.get_range(range)?)
+    fn read<U, P>(&self, range: ReadRange) -> Result<Cow<'_, [U]>>
+    where
+        U: bytemuck::Pod,
+        P: AccessPattern,
+    {
+        let byte_start = usize::try_from(range.byte_offset).expect("range.start is within usize");
+        let byte_length =
+            usize::try_from(range.length).expect("range.length is within usize") * size_of::<U>();
+        Ok(self.read_byte_range_as::<U>(byte_start..byte_start + byte_length)?)
     }
 
-    fn len(&self) -> Result<u64> {
-        Ok(Self::len(self) as u64)
+    fn len<U>(&self) -> Result<u64>
+    where
+        U: bytemuck::Pod,
+    {
+        Ok((self.byte_len() / size_of::<U>()) as u64)
     }
 
     fn populate(&self) -> Result<()> {
@@ -125,21 +130,28 @@ where
     }
 }
 
-pub struct DiskCacheReadPipeline<'file, T, Meta>
+pub struct DiskCacheReadPipeline<'file, T, U, Meta>
 where
     T: bytemuck::Pod,
+    U: bytemuck::Pod,
 {
-    result: Option<(Meta, Cow<'file, [T]>)>,
+    result: Option<(Meta, Cow<'file, [U]>)>,
+    _phantom: std::marker::PhantomData<&'file CachedSlice<T>>,
 }
 
-impl<'file, T, Meta> UniversalReadPipeline<'file, T, Meta> for DiskCacheReadPipeline<'file, T, Meta>
+impl<'file, T, U, Meta> UniversalReadPipeline<'file, U, Meta>
+    for DiskCacheReadPipeline<'file, T, U, Meta>
 where
     T: bytemuck::Pod,
+    U: bytemuck::Pod,
 {
     type File = CachedSlice<T>;
 
     fn new() -> Result<Self> {
-        Ok(Self { result: None })
+        Ok(Self {
+            result: None,
+            _phantom: std::marker::PhantomData,
+        })
     }
 
     fn can_schedule(&mut self) -> bool {
@@ -159,11 +171,11 @@ where
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        self.result = Some((meta, file.read::<Random>(range)?));
+        self.result = Some((meta, file.read::<U, Random>(range)?));
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [U]>)>> {
         Ok(self.result.take())
     }
 }

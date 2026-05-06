@@ -48,21 +48,8 @@ pub(super) struct PointKeyValue {
 }
 
 /// An alias to set of traits required by [`StoredGeoMapIndex`].
-#[expect(private_bounds)]
-pub trait StoredGeoMapIndexStorage:
-    UniversalRead<u8>
-    + UniversalRead<Counts>
-    + UniversalRead<PointKeyValue>
-    + UniversalRead<PointOffsetType>
-{
-}
-impl<T> StoredGeoMapIndexStorage for T where
-    T: UniversalRead<u8>
-        + UniversalRead<Counts>
-        + UniversalRead<PointKeyValue>
-        + UniversalRead<PointOffsetType>
-{
-}
+pub trait StoredGeoMapIndexStorage: UniversalRead {}
+impl<T> StoredGeoMapIndexStorage for T where T: UniversalRead {}
 
 ///
 ///   points_map
@@ -286,9 +273,10 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
             prevent_caching: None,
         };
 
-        let counts_per_hash = UniversalRead::open(&counts_per_hash_path, open_options)?;
-        let points_map = UniversalRead::open(&points_map_path, open_options)?;
-        let points_map_ids = UniversalRead::open(&points_map_ids_path, open_options)?;
+        let counts_per_hash = TypedStorage::<S, Counts>::open(&counts_per_hash_path, open_options)?;
+        let points_map = TypedStorage::<S, PointKeyValue>::open(&points_map_path, open_options)?;
+        let points_map_ids =
+            TypedStorage::<S, PointOffsetType>::open(&points_map_ids_path, open_options)?;
         let point_to_values = StoredPointToValues::open(path, true)?;
 
         let mut deleted = deleted_points.to_owned();

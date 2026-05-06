@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
-use common::universal_io::{Flusher, OpenOptions, UniversalWrite};
+use common::universal_io::{Flusher, OpenOptions, TypedStorage, UniversalWrite};
 use itertools::Itertools;
 
 use super::{RegionId, StorageConfig};
@@ -83,10 +83,10 @@ fn gaps_file_path(dir: &Path) -> PathBuf {
 pub(super) struct BitmaskGaps<S> {
     path: PathBuf,
     config: StorageConfig,
-    slice_store: S,
+    slice_store: TypedStorage<S, RegionGaps>,
 }
 
-impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
+impl<S: UniversalWrite> BitmaskGaps<S> {
     pub fn path(&self) -> PathBuf {
         self.path.clone()
     }
@@ -110,7 +110,7 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
             advice: None,
             prevent_caching: None,
         };
-        let mut slice_store = S::open(&path, options)?;
+        let mut slice_store = TypedStorage::<S, RegionGaps>::open(&path, options)?;
 
         debug_assert_eq!(slice_store.len()? as usize, data.len());
 
@@ -133,7 +133,7 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
             advice: Some(AdviceSetting::Advice(Advice::Normal)),
             prevent_caching: None,
         };
-        let slice_store = S::open(&path, options)?;
+        let slice_store = TypedStorage::<S, RegionGaps>::open(&path, options)?;
 
         Ok(Self {
             path,
@@ -168,7 +168,7 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
             advice: Some(AdviceSetting::Advice(Advice::Normal)),
             prevent_caching: None,
         };
-        self.slice_store = S::open(&self.path, options)?;
+        self.slice_store = TypedStorage::<S, RegionGaps>::open(&self.path, options)?;
 
         debug_assert_eq!(self.len()? - prev_len, data.len());
 

@@ -39,7 +39,7 @@ const DELETED_PATH: &str = "deleted.dat";
 pub struct DenseVectorStorageImpl<T, S = MmapFile>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
@@ -51,7 +51,7 @@ where
 impl<T, S> DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
@@ -170,7 +170,7 @@ fn open_dense_vector_storage_impl<T, S>(
 ) -> OperationResult<DenseVectorStorageImpl<T, S>>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     fs::create_dir_all(path)?;
 
@@ -192,7 +192,7 @@ where
 impl<T, S> DenseVectorStorage<T> for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     fn vector_dim(&self) -> usize {
         self.vectors.as_ref().unwrap().dim
@@ -215,7 +215,7 @@ where
 impl<T, S> VectorStorageRead for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     fn distance(&self) -> Distance {
         self.distance
@@ -284,7 +284,7 @@ where
 impl<T, S> VectorStorage for DenseVectorStorageImpl<T, S>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     fn insert_vector(
         &mut self,
