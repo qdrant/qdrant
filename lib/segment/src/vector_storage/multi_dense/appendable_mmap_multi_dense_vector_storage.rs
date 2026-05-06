@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, UniversalRead};
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -21,7 +21,7 @@ use crate::data_types::vectors::{
     TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::chunked_vectors::{ChunkedVectors, ChunkedVectorsRead};
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_full,
     open_appendable_memmap_vector_storage_half,
@@ -51,6 +51,42 @@ impl VectorOffset for MultivectorMmapOffset {
     fn multi_vector_count(self) -> usize {
         self.count as _
     }
+}
+
+/// Resolve the multi-vector at `key` from a pair of chunked stores: the
+/// `offsets` store maps `key` to a [`MultivectorMmapOffset`], which is then
+/// used to fetch the flattened element slice from `vectors`.
+///
+/// Shared by the appendable and read-only storage variants — both back the
+/// same on-disk layout, so they only differ in the writability of the chunked
+/// stores.
+pub(crate) fn read_multi_vector<'a, T, P, So, Sv>(
+    offsets: &'a ChunkedVectorsRead<MultivectorMmapOffset, So>,
+    vectors: &'a ChunkedVectorsRead<T, Sv>,
+    key: PointOffsetType,
+) -> Option<CowMultiVector<'a, T>>
+where
+    T: PrimitiveVectorElement,
+    P: AccessPattern,
+    So: UniversalRead<MultivectorMmapOffset>,
+    Sv: UniversalRead<T>,
+{
+    let mmap_offset = *offsets
+        .get::<P>(key as VectorOffsetType)?
+        .first()
+        .expect("mmap_offset must not be empty");
+    let flattened =
+        vectors.get_many::<P>(mmap_offset.offset(), mmap_offset.multi_vector_count())?;
+    Some(match flattened {
+        Cow::Borrowed(slice) => CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
+            flattened_vectors: slice,
+            dim: vectors.dim(),
+        }),
+        Cow::Owned(vec) => CowMultiVector::Owned(TypedMultiDenseVector {
+            flattened_vectors: vec,
+            dim: vectors.dim(),
+        }),
+    })
 }
 
 #[derive(Debug)]
@@ -132,25 +168,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         &self,
         key: PointOffsetType,
     ) -> Option<CowMultiVector<'_, T>> {
-        self.offsets
-            .get::<P>(key as VectorOffsetType)
-            .and_then(|mmap_offset| {
-                let mmap_offset = mmap_offset.first().expect("mmap_offset must not be empty");
-                self.vectors.get_many::<P>(
-                    mmap_offset.offset as VectorOffsetType,
-                    mmap_offset.count as usize,
-                )
-            })
-            .map(|flattened_vectors| match flattened_vectors {
-                Cow::Borrowed(slice) => CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
-                    flattened_vectors: slice,
-                    dim: self.vectors.dim(),
-                }),
-                Cow::Owned(vec) => CowMultiVector::Owned(TypedMultiDenseVector {
-                    flattened_vectors: vec,
-                    dim: self.vectors.dim(),
-                }),
-            })
+        read_multi_vector::<T, P, _, _>(&self.offsets, &self.vectors, key)
     }
 
     fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
