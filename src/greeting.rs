@@ -124,6 +124,13 @@ pub fn welcome(settings: &Settings) {
         paint_green("Access web UI at", true_color),
         paint_blue(&ui_link, true_color).underline()
     );
+
+    println!(
+        "{} {}",
+        paint_green("Agentic Skills:", true_color),
+        paint_blue("https://skills.qdrant.tech/", true_color).underline()
+    );
+
     println!();
 }
 
