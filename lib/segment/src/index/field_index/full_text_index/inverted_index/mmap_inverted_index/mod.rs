@@ -6,7 +6,7 @@ use common::bitvec::{BitSlice, BitSliceExt, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::mmap::{self, Advice, AdviceSetting, MmapSlice, create_and_ensure_length};
-use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
+use common::persisted_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, OpenOptions};
@@ -105,7 +105,7 @@ impl MmapInvertedIndex {
 
         // Currently MmapHashMap maps str -> [u32], but we only need to map str -> u32.
         // TODO: Consider making another mmap structure for this case.
-        MmapHashMap::<str, TokenId>::create(
+        serialize_hashmap::<str, TokenId>(
             &vocab_path,
             vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
         )?;

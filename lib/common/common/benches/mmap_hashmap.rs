@@ -1,4 +1,5 @@
-use common::mmap_hashmap::{MmapHashMap, gen_ident, gen_map};
+use common::persisted_hashmap::fixtures::{gen_ident, gen_map};
+use common::persisted_hashmap::{MmapHashMap, serialize_hashmap};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -12,7 +13,7 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
     let mut keys = map.keys().cloned().collect::<Vec<_>>();
     keys.sort_unstable();
 
-    MmapHashMap::<str, u32>::create(
+    serialize_hashmap::<str, u32>(
         &mmap_path,
         map.iter().map(|(k, v)| (k.as_str(), v.iter().copied())),
     )

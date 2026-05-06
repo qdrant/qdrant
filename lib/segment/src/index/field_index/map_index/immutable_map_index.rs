@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 use common::bitvec::{BitSliceExt, BitVec};
-use common::mmap_hashmap::Key;
+use common::persisted_hashmap::Key;
 use common::types::PointOffsetType;
 use gridstore::Blob;
 

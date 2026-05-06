@@ -9,7 +9,7 @@ use std::str::FromStr;
 use ahash::HashMap;
 use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::Key;
+use common::persisted_hashmap::Key;
 use common::types::PointOffsetType;
 use ecow::EcoString;
 use gridstore::Blob;
