@@ -79,6 +79,19 @@ Qdrant offers the following client libraries to help you integrate it into your 
 
 [Qdrant Edge](https://qdrant.tech/documentation/edge/) is a lightweight version of Qdrant designed for edge devices and resource-constrained environments. Unlike Qdrant Server, which uses a client-server architecture, Qdrant Edge runs inside the application process. Data is stored and queried locally and can be synchronized with a Qdrant server. It offers the same powerful vector search capabilities as the client-server version but with a smaller footprint, making it ideal for applications that require low latency and offline functionality.
 
+To get started with Qdrant Edge from Python or Rust, initialize an instance of EdgeShard, which exposes methods to manage data, query it, and restore snapshots. For example:
+
+```python
+from qdrant_edge import Distance, EdgeConfig, EdgeVectorParams, EdgeShard, Point, UpdateOperation
+
+shard = EdgeShard.create("./shard", EdgeConfig(
+    vectors={"my-vector": EdgeVectorParams(size=4, distance=Distance.Cosine)}
+))
+shard.update(UpdateOperation.upsert_points([
+    Point(id=1, vector={"my-vector": [0.1, 0.2, 0.3, 0.4]}, payload={"color": "red"})
+]))
+```
+
 ### Where Do I Go from Here?
 
 - [Quick Start Guide](https://qdrant.tech/documentation/quickstart/)
@@ -130,6 +143,12 @@ Combine multiple vectors in a single query to get the best of semantic understan
 
 Built-in quantization cuts RAM usage by up to 97% and lets you tune the trade-off between search speed and precision.
 
+### Web UI
+
+Web UI provides a visual way to interact with your data and monitor the health of your deployment. It enables you to explore your collections, manage data, interact with the REST API, and more.
+
+<img src="https://qdrant.tech/docs/gettingstarted/web-ui.png" alt="Qdrant Web UI" />
+
 ### Distributed Deployment
 
 Scale horizontally with sharding and replication, and update or resize collections with zero downtime.
@@ -141,11 +160,10 @@ Scale horizontally with sharding and replication, and update or resize collectio
 * **Discovery** - constrain search to a specific region of the vector space.
 * **Search Relevance Tuning** - tools for adjusting search results, such as Maximal Marginal Relevance (MMR) and the Relevance Feedback Query.
 * **Multitenancy** - scalable partitioning of data for multi-user environments.
-* **Web UI** - a user interface for managing collections, monitoring performance, and visualizing data.
-* **Observability** - comprehensive logging, metrics, and tracing for monitoring and debugging.
+* **Observability** - comprehensive metrics, telemetry, and audit logging for monitoring and debugging.
 * **Query Planning and Payload Indexes** - leverages stored payload information to optimize query execution strategy.
 * **SIMD Hardware Acceleration** - utilizes modern CPU x86-x64 and Neon architectures to deliver better performance.
-* **GPU Support** - for accelerated indexing.
+* **GPU Support** - for accelerated indexing, with support for NVIDIA and AMD GPUs.
 * **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on network-attached storage.
 * **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages.
 
