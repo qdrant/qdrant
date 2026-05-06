@@ -168,7 +168,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         {
             let points_map_file = create_and_ensure_length(
                 &points_map_path,
-                dynamic_index.points_map.len() * std::mem::size_of::<PointKeyValue>(),
+                dynamic_index.points_map.len() * size_of::<PointKeyValue>(),
             )?;
             let points_map_file = unsafe { MmapMut::map_mut(&points_map_file)? };
             let mut points_map = unsafe { MmapSlice::<PointKeyValue>::try_from(points_map_file)? };
@@ -180,7 +180,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
                     .values()
                     .map(|v| v.len())
                     .sum::<usize>()
-                    * std::mem::size_of::<PointOffsetType>(),
+                    * size_of::<PointOffsetType>(),
             )?;
             let points_map_ids_file = unsafe { MmapMut::map_mut(&points_map_ids_file)? };
             let mut points_map_ids =
@@ -206,7 +206,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
                 std::cmp::min(
                     dynamic_index.points_per_hash.len(),
                     dynamic_index.values_per_hash.len(),
-                ) * std::mem::size_of::<Counts>(),
+                ) * size_of::<Counts>(),
             )?;
             let counts_per_hash_file = unsafe { MmapMut::map_mut(&counts_per_hash_file)? };
             let mut counts_per_hash =

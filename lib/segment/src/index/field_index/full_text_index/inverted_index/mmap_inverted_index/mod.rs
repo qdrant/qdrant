@@ -524,7 +524,7 @@ impl InvertedIndex for MmapInvertedIndex {
         }
 
         self.storage.deleted_points.set(idx as usize, true);
-        self.active_points_count -= 1;
+        self.active_points_count = self.active_points_count.saturating_sub(1);
         true
     }
 

@@ -116,7 +116,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         {
             let pairs_file = create_and_ensure_length(
                 &pairs_path,
-                in_memory_index.map.len() * std::mem::size_of::<Point<T>>(),
+                in_memory_index.map.len() * size_of::<Point<T>>(),
             )?;
             let pairs_mmap = unsafe { MmapMut::map_mut(&pairs_file)? };
             let mut pairs = unsafe { MmapSlice::<Point<T>>::try_from(pairs_mmap)? };

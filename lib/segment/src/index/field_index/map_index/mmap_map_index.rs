@@ -1,6 +1,5 @@
 use std::borrow::{Borrow, Cow};
 use std::iter;
-use std::mem::size_of;
 use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
