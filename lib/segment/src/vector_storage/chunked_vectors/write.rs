@@ -55,10 +55,11 @@ where
 {
     pub fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
         let status_file = ChunkedVectorsRead::<T, S>::status_file(directory);
-        if !status_file.exists() {
+        if !S::exists(&status_file)? {
             {
-                let length = std::mem::size_of::<usize>() as u64;
-                common::mmap::create_and_ensure_length(&status_file, length as usize)?;
+                let length = std::mem::size_of::<Status>();
+                // TODO(uio): migrate when UniversalWriteFileOps is available
+                common::mmap::create_and_ensure_length(&status_file, length)?;
             }
         }
         Ok(status_file)
