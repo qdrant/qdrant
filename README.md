@@ -30,27 +30,16 @@ With Qdrant, embeddings or neural network encoders can be turned into full-fledg
 Qdrant is also available as a fully managed **[Qdrant Cloud](https://cloud.qdrant.io/)** ⛅ including a **free tier**.
 
 <p align="center">
-<strong><a href="docs/QUICK_START.md">Quick Start</a> • <a href="#clients">Client Libraries</a> • <a href="#demo-projects">Demo Projects</a> • <a href="#integrations">Integrations</a> • <a href="#contacts">Contact</a>
+<strong><a href="https://qdrant.tech/documentation/quickstart/">Quick Start</a> • <a href="#agent-skills">Agent Skills</a> • <a href="#clients">Client Libraries</a> • <a href="#demo-projects">Demo Projects</a> • <a href="#integrations">Integrations</a> • <a href="#contacts">Contact</a>
 
 </strong>
 </p>
 
 ## Getting Started
 
-### Python
+### Agent Skills
 
-```
-pip install qdrant-client
-```
-
-The python client offers a convenient way to start with Qdrant locally:
-
-```python
-from qdrant_client import QdrantClient
-qdrant = QdrantClient(":memory:") # Create in-memory Qdrant instance, for testing, CI/CD
-# OR
-client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast prototyping
-```
+Qdrant provides a collection of ready-to-use [agent skills](https://github.com/qdrant/skills) that bring Qdrant's vector search capabilities directly into your AI coding assistant. Install these skills to empower your agent in making critical engineering decisions for optimal vector search performance, such as quantization, sharding, tenant isolation, hybrid search, model migration, and more.
 
 ### Client-Server
 
@@ -60,20 +49,19 @@ To experience the full power of Qdrant locally, run the container with this comm
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
-> [!CAUTION]
-> Starts an insecure deployment without authentication open to all network interfaces. Please refer to [secure your instance](https://qdrant.tech/documentation/guides/security/#secure-your-instance).
+This starts an insecure deployment without authentication, open to all network interfaces. Please refer to [secure your instance](https://qdrant.tech/documentation/security/#secure-your-instance).
 
-Now you can connect to this with any client, including Python:
+Now you can connect to the server with any [client](#clients). For example, using Python:
 
 ```python
-qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance
+client = QdrantClient(url="http://localhost:6333")
 ```
 
-Before deploying Qdrant to production, be sure to read our [installation](https://qdrant.tech/documentation/guides/installation/) and [security](https://qdrant.tech/documentation/guides/security/) guides.
+Before deploying Qdrant to production, be sure to read our [installation](https://qdrant.tech/documentation/installation/) and [security](https://qdrant.tech/documentation/security/) guides.
 
 ### Clients
 
-Qdrant offers the following client libraries to help you integrate it into your application stack with ease:
+Qdrant offers the following client libraries to help you integrate it into your application stack:
 
 - Official:
   - [Go client](https://github.com/qdrant/go-client)
@@ -83,19 +71,22 @@ Qdrant offers the following client libraries to help you integrate it into your 
   - [.NET/C# client](https://github.com/qdrant/qdrant-dotnet)
   - [Java client](https://github.com/qdrant/java-client)
 - Community:
-  - [Elixir](https://hexdocs.pm/qdrant/readme.html)
   - [PHP](https://github.com/hkulekci/qdrant-php)
-  - [Ruby](https://github.com/andreibondarev/qdrant-ruby)
-  - [Java](https://github.com/metaloom/qdrant-java-client)
+
+### Qdrant Edge
+
+[Qdrant Edge](https://qdrant.tech/documentation/edge/) is a lightweight version of Qdrant designed for edge devices and resource-constrained environments. It offers the same powerful vector search capabilities as the full version but with a smaller footprint, making it ideal for applications that require low latency and offline functionality.
+
+Unlike Qdrant Server, which uses a client-server architecture, Qdrant Edge runs inside the application process. Data is stored and queried locally and can be synchronized with a Qdrant server.
 
 ### Where do I go from here?
 
-- [Quick Start Guide](docs/QUICK_START.md)
-- End to End [Colab Notebook](https://colab.research.google.com/drive/1Bz8RSVHwnNDaNtDwotfPj0w7AYzsdXZ-?usp=sharing) demo with SentenceBERT and Qdrant
-- Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
-- [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
+- [Quick Start Guide](https://qdrant.tech/documentation/quickstart/)
+- Detailed [Documentation](https://qdrant.tech/documentation/)
+- Take the [Qdrant Essentials course](https://qdrant.tech/course/essentials/)
+- [Tutorial](https://qdrant.tech/documentation/tutorials-basics/search-beginners/) to create a semantic search engine with Qdrant
 
-## Demo Projects<a href="https://replit.com/@qdrant"><img align="right" src="https://replit.com/badge/github/qdrant/qdrant" alt="Run on Repl.it"></a>
+## Demo Projects
 
 ### Discover Semantic Text Search 🔍
 
@@ -109,67 +100,12 @@ There's more to discovery than text search, especially when it comes to food. Pe
 
 Enter the cutting-edge realm of extreme classification, an emerging machine learning field tackling multi-class and multi-label problems with millions of labels. Harness the potential of similarity learning models, and see how a pre-trained transformer model and Qdrant can revolutionize e-commerce product categorization. [Play with it online!](https://qdrant.to/extreme-classification-demo)
 
-<details>
-<summary> More solutions </summary>
-
-<table>
-    <tr>
-        <td width="30%">
-            <img src="https://qdrant.tech/content/images/text_search.png">
-        </td>
-        <td width="30%">
-            <img src="https://qdrant.tech/content/images/image_search.png">
-        </td>
-        <td width="30%">
-            <img src="https://qdrant.tech/content/images/recommendations.png">
-        </td>
-    </tr>
-    <tr>
-        <td>
-            Semantic Text Search
-        </td>
-        <td>
-            Similar Image Search
-        </td>
-        <td>
-            Recommendations
-        </td>
-    </tr>
-</table>
-
-<table>
-    <tr>
-        <td>
-            <img width="300px" src="https://qdrant.tech/content/images/chat_bots.png">
-        </td>
-        <td>
-            <img width="300px" src="https://qdrant.tech/content/images/matching_engines.png">
-        </td>
-        <td>
-            <img width="300px" src="https://qdrant.tech/content/images/anomalies_detection.png">
-        </td>
-    </tr>
-    <tr>
-        <td>
-            Chat Bots
-        </td>
-        <td>
-            Matching Engines
-        </td>
-        <td>
-            Anomaly Detection
-        </td>
-    </tr>
-</table>
-
-</details>
-
 ## API
 
 ### REST
 
 Online OpenAPI 3.0 documentation is available [here](https://api.qdrant.tech/).
-OpenAPI makes it easy to generate a client for virtually any framework or programming language.
+OpenAPI enables generating a client for virtually any framework or programming language.
 
 You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant/blob/master/docs/redoc/master/openapi.json).
 
@@ -179,54 +115,41 @@ For faster production-tier searches, Qdrant also provides a gRPC interface. You 
 
 ## Features
 
-### Filtering and Payload
+### Dense, Sparse, and Multivector Vector Search
 
-Qdrant can attach any JSON payloads to vectors, allowing for both the storage and filtering of data based on the values in these payloads.
-Payload supports a wide range of data types and query conditions, including keyword matching, full-text filtering, numerical ranges, geo-locations, and more.
+Qdrant supports dense vectors for semantic similarity, sparse vectors for full-text search, and multivector search for objects with multiple embeddings or late interaction models like ColBERT.
 
-Filtering conditions can be combined in various ways, including `should`, `must`, and `must_not` clauses,
-ensuring that you can implement any desired business logic on top of similarity matching.
+### Filtering on Payload
 
+Attach any JSON payload to your vectors and filter on it using a rich set of conditions—keyword matching, full-text, numeric ranges, geo-locations, and more—combined with `should`, `must`, and `must_not` clauses.
 
-### Hybrid Search with Sparse Vectors
+### Hybrid Search
 
-To address the limitations of vector embeddings when searching for specific keywords, Qdrant introduces support for sparse vectors in addition to the regular dense ones.
-
-Sparse vectors can be viewed as an generalization of BM25 or TF-IDF ranking. They enable you to harness the capabilities of transformer-based neural networks to weigh individual tokens effectively.
-
+Combine multiple vectors in a single query to get the best of semantic understanding and keyword precision, with results merged via configurable fusion strategies, such as Reciprocal Rank Fusion (RRF) and Distribution-Based Score Fusion (DBSF).
 
 ### Vector Quantization and On-Disk Storage
 
-Qdrant provides multiple options to make vector search cheaper and more resource-efficient.
-Built-in vector quantization reduces RAM usage by up to 97% and dynamically manages the trade-off between search speed and precision.
-
+Built-in quantization cuts RAM usage by up to 97% and lets you tune the trade-off between search speed and precision.
 
 ### Distributed Deployment
 
-Qdrant offers comprehensive horizontal scaling support through two key mechanisms:
-1. Size expansion via sharding and throughput enhancement via replication
-2. Zero-downtime rolling updates and seamless dynamic scaling of the collections
-
+Scale horizontally with sharding and replication, and update or resize collections with zero downtime.
 
 ### Highlighted Features
 
+* **Multitenancy** - scalable partitioning of data for multi-user environments.
+* **Observability** - comprehensive logging, metrics, and tracing for monitoring and debugging.
+* **Web UI** - a user interface for managing collections, monitoring performance, and visualizing data.
+* **Search Relevance Tuning** - tools for adjusting search results, such as Maximal Marginal Relevance (MMR) and the Relevance Feedback Query.
 * **Query Planning and Payload Indexes** - leverages stored payload information to optimize query execution strategy.
 * **SIMD Hardware Acceleration** - utilizes modern CPU x86-x64 and Neon architectures to deliver better performance.
+* **GPU Support** - for accelerated indexing.
 * **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on a network-attached storage.
 * **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages.
 
-
 # Integrations
 
-Examples and/or documentation of Qdrant integrations:
-
-- [Cohere](https://docs.cohere.com/docs/qdrant-and-cohere) ([blogpost on building a QA app with Cohere and Qdrant](https://qdrant.tech/articles/qa-with-cohere-and-qdrant/)) - Use Cohere embeddings with Qdrant
-- [DocArray](https://docs.docarray.org/user_guide/storing/index_qdrant/) - Use Qdrant as a document store in DocArray
-- [Haystack](https://haystack.deepset.ai/integrations/qdrant-document-store) - Use Qdrant as a document store with Haystack ([blogpost](https://haystack.deepset.ai/blog/qdrant-integration)).
-- [LangChain](https://python.langchain.com/docs/integrations/providers/qdrant/) ([blogpost](https://qdrant.tech/articles/langchain-integration/)) - Use Qdrant as a memory backend for LangChain.
-- [LlamaIndex](https://developers.llamaindex.ai/python/framework/integrations/vector_stores/qdrantindexdemo/) - Use Qdrant as a Vector Store with LlamaIndex.
-- [OpenAI - ChatGPT retrieval plugin](https://github.com/openai/chatgpt-retrieval-plugin/blob/main/docs/providers/qdrant/setup.md) - Use Qdrant as a memory backend for ChatGPT
-- [Microsoft Semantic Kernel](https://devblogs.microsoft.com/semantic-kernel/the-power-of-persistent-memory-with-semantic-kernel-and-qdrant-vector-database/) - Use Qdrant as persistent memory with Semantic Kernel
+Qdrant integrates with the tools you're already using across every stage of your AI stack. You can connect to embedding providers, AI application frameworks, and data pipeline tools, as well as observability platforms for monitoring and tracing your vector search in production. No-code and low-code automation platforms are supported too. Refer to the full [Ecosystem page](https://qdrant.tech/documentation/ecosystem/) for the complete list.
 
 ## Contributing
 
@@ -237,7 +160,7 @@ We are happy to receive your contributions! Before opening a pull request, pleas
 
 ## Contacts
 
-- Have questions? Join our [Discord channel](https://qdrant.to/discord) or mention [@qdrant_engine on Twitter](https://qdrant.to/twitter)
+- Have questions? Join our [Discord channel](https://qdrant.to/discord) or mention [@qdrant_engine on X](https://qdrant.to/twitter)
 - Want to stay in touch with latest releases? Subscribe to our [Newsletters](https://qdrant.tech/subscribe/)
 - Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/), need something personalised? We're at [info@qdrant.tech](mailto:info@qdrant.tech)
 
