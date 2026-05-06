@@ -54,6 +54,8 @@ Note that this starts an insecure deployment without authentication, open to all
 Now you can connect to the server with any [client](#clients). For example, using Python:
 
 ```python
+from qdrant_client import QdrantClient
+
 client = QdrantClient(url="http://localhost:6333")
 ```
 
@@ -112,7 +114,7 @@ For faster, production-tier searches, Qdrant also provides a [gRPC interface](ht
 
 ## Features
 
-### Dense, Sparse, and Multivector Vector Search
+### Dense, Sparse, and Multi Vector Search
 
 Qdrant supports dense vectors for semantic similarity, sparse vectors for full-text search, and multivector search for objects with multiple embeddings or late interaction models like ColBERT.
 
@@ -147,7 +149,7 @@ Scale horizontally with sharding and replication, and update or resize collectio
 * **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on network-attached storage.
 * **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages.
 
-# Integrations
+## Integrations
 
 Qdrant integrates with the tools you're already using across every stage of your AI stack. You can connect to embedding providers, AI application frameworks, and data pipeline tools, as well as observability platforms for monitoring and tracing your vector search in production. No-code and low-code automation platforms are supported too. Refer to the [Ecosystem page](https://qdrant.tech/documentation/ecosystem/) for the complete list.
 
