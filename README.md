@@ -102,14 +102,13 @@ Enter the cutting-edge realm of extreme classification, an emerging machine lear
 
 ### REST
 
-Online OpenAPI 3.0 documentation is available [here](https://api.qdrant.tech/).
-OpenAPI enables generating a client for virtually any framework or programming language.
+Qdrant provides a REST API with an [OpenAPI 3.0 specification](https://api.qdrant.tech/), enabling client generation for virtually any framework or programming language.
 
-You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant/blob/master/docs/redoc/master/openapi.json).
+You can also download the raw [OpenAPI definitions](https://github.com/qdrant/qdrant/blob/master/docs/redoc/master/openapi.json).
 
 ### gRPC
 
-For faster, production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/interfaces/#grpc-interface).
+For faster, production-tier searches, Qdrant also provides a [gRPC interface](https://qdrant.tech/documentation/interfaces/#grpc-interface).
 
 ## Features
 
