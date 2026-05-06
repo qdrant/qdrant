@@ -172,26 +172,42 @@ impl Collection {
     }
 
     /// Updates the strict mode configuration and saves it to disk.
+    ///
+    /// Order matters: rate limiters on each shard are updated *before* the new
+    /// `strict_mode_config` is published to `self.collection_config`. Otherwise
+    /// readers of `info()` could observe `enabled=false` while a search arriving
+    /// on the same peer is still rejected by a not-yet-cleared rate limiter
+    /// (or vice versa for an enable).
     pub async fn update_strict_mode_config(
         &self,
         strict_mode_diff: StrictModeConfig,
     ) -> CollectionResult<()> {
+        // Compute the new strict-mode config without yet exposing it.
+        let new_strict_mode_config = {
+            let config = self.collection_config.read().await;
+            if let Some(current) = config.strict_mode_config.as_ref() {
+                current.update(&strict_mode_diff)
+            } else {
+                strict_mode_diff
+            }
+        };
+
+        // Apply rate-limiter changes to every shard first, so the visible config
+        // never lies about the active rate limit.
+        {
+            let shard_holder = self.shards_holder.write().await;
+            let updates = shard_holder.all_shards().map(|replica_set| {
+                replica_set.on_strict_mode_config_update(&new_strict_mode_config)
+            });
+            future::try_join_all(updates).await?;
+        }
+
+        // Publish the new config and persist it.
         {
             let mut config = self.collection_config.write().await;
-            if let Some(current_config) = config.strict_mode_config.as_mut() {
-                *current_config = current_config.update(&strict_mode_diff);
-            } else {
-                config.strict_mode_config = Some(strict_mode_diff);
-            }
+            config.strict_mode_config = Some(new_strict_mode_config);
         }
-        // update collection config
         self.collection_config.read().await.save(&self.path)?;
-        // apply config change to all shards
-        let shard_holder = self.shards_holder.write().await;
-        let updates = shard_holder
-            .all_shards()
-            .map(|replica_set| replica_set.on_strict_mode_config_update());
-        future::try_join_all(updates).await?;
         Ok(())
     }
 

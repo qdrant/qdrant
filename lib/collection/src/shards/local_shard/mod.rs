@@ -49,7 +49,7 @@ use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
-    SeqNumberType,
+    SeqNumberType, StrictModeConfig,
 };
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
@@ -911,13 +911,14 @@ impl LocalShard {
 
     /// Apply shard's strict mode configuration update
     /// - Update read and write rate limiters
-    pub async fn on_strict_mode_config_update(&mut self) {
-        let config = self.collection_config.read().await;
-
-        let strict_mode = config
-            .strict_mode_config
-            .as_ref()
-            .filter(|cfg| cfg.enabled == Some(true));
+    ///
+    /// The new strict-mode config is passed in explicitly rather than read from
+    /// `self.collection_config` so the caller can apply rate-limiter changes
+    /// before publishing the new config to readers of `self.collection_config`.
+    /// That order ensures `info()` never reports the new strict-mode state
+    /// while the rate limiters are still on the old one.
+    pub fn on_strict_mode_config_update(&mut self, new_strict_mode: &StrictModeConfig) {
+        let strict_mode = Some(new_strict_mode).filter(|cfg| cfg.enabled == Some(true));
 
         let read_rate_limit_per_min = strict_mode.and_then(|cfg| cfg.read_rate_limit);
         let write_rate_limit_per_min = strict_mode.and_then(|cfg| cfg.write_rate_limit);

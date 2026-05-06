@@ -20,7 +20,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
-use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey};
+use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey, StrictModeConfig};
 use serde::{Deserialize, Serialize};
 use shard::operations::optimization::{
     OptimizationsRequestOptions, OptimizationsResponse, OptimizationsSummary,
@@ -931,9 +931,12 @@ impl ShardReplicaSet {
     ///
     /// The actual rate limiters live on `LocalShard`, so this just delegates
     /// while we hold the local-shard write lock.
-    pub(crate) async fn on_strict_mode_config_update(&self) -> CollectionResult<()> {
+    pub(crate) async fn on_strict_mode_config_update(
+        &self,
+        new_strict_mode: &StrictModeConfig,
+    ) -> CollectionResult<()> {
         if let Some(shard) = self.local.write().await.as_mut() {
-            shard.on_strict_mode_config_update().await;
+            shard.on_strict_mode_config_update(new_strict_mode);
         }
         Ok(())
     }

@@ -7,7 +7,8 @@ use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SizeStats, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, StrictModeConfig, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use shard::count::CountRequestInternal;
 use shard::operations::CollectionUpdateOperations;
@@ -49,7 +50,7 @@ impl DummyShard {
         Ok(())
     }
 
-    pub fn on_strict_mode_config_update(&mut self) {}
+    pub fn on_strict_mode_config_update(&mut self, _new_strict_mode: &StrictModeConfig) {}
 
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         LocalShardTelemetry {

@@ -11,7 +11,7 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, StrictModeConfig, WithPayload,
     WithPayloadInterface, WithVector,
 };
 use semver::Version;
@@ -192,11 +192,10 @@ impl QueueProxyShard {
             .await
     }
 
-    pub async fn on_strict_mode_config_update(&mut self) {
+    pub fn on_strict_mode_config_update(&mut self, new_strict_mode: &StrictModeConfig) {
         self.inner_mut_unchecked()
             .wrapped_shard
-            .on_strict_mode_config_update()
-            .await
+            .on_strict_mode_config_update(new_strict_mode)
     }
 
     pub fn trigger_optimizers(&self) {
