@@ -1,13 +1,12 @@
 use std::cmp::max;
 use std::ops::Deref;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
-use common::mmap::{Advice, AdviceSetting, MmapType, open_write_mmap};
-use common::universal_io::UniversalWrite;
+use common::mmap::AdviceSetting;
+use common::universal_io::{OpenOptions, StoredStruct, UniversalWrite};
 use fs_err as fs;
-use memmap2::MmapMut;
 use num_traits::AsPrimitive;
 
 use super::chunks::{create_chunk, read_chunks};
@@ -18,13 +17,30 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
 
-#[derive(Debug)]
-pub struct ChunkedVectors<T: Copy + Sized + 'static, S: UniversalWrite<T>> {
-    inner: ChunkedVectorsRead<T, S>,
-    status: MmapType<Status>,
+pub trait UioChunkedVectors<T>:
+    UniversalWrite<T> + UniversalWrite<Status> + Send + 'static
+where
+    T: Copy + 'static,
+{
+}
+impl<T, S> UioChunkedVectors<T> for S
+where
+    T: Copy + 'static,
+    S: UniversalWrite<T> + UniversalWrite<Status> + Send + 'static,
+{
 }
 
-impl<T: Copy + Sized + 'static, S: UniversalWrite<T>> Deref for ChunkedVectors<T, S> {
+#[derive(Debug)]
+pub struct ChunkedVectors<T, S>
+where
+    T: Copy + 'static,
+    S: UioChunkedVectors<T>,
+{
+    inner: ChunkedVectorsRead<T, S>,
+    status: StoredStruct<S, Status>,
+}
+
+impl<T: Copy + 'static, S: UioChunkedVectors<T>> Deref for ChunkedVectors<T, S> {
     type Target = ChunkedVectorsRead<T, S>;
 
     fn deref(&self) -> &Self::Target {
@@ -32,8 +48,12 @@ impl<T: Copy + Sized + 'static, S: UniversalWrite<T>> Deref for ChunkedVectors<T
     }
 }
 
-impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
-    pub fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
+impl<T, S> ChunkedVectors<T, S>
+where
+    T: Copy + 'static,
+    S: UioChunkedVectors<T>,
+{
+    pub fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
         let status_file = ChunkedVectorsRead::<T, S>::status_file(directory);
         if !status_file.exists() {
             {
@@ -41,11 +61,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
                 common::mmap::create_and_ensure_length(&status_file, length as usize)?;
             }
         }
-        Ok(open_write_mmap(
-            &status_file,
-            AdviceSetting::from(Advice::Normal),
-            false, // Status file is write-only
-        )?)
+        Ok(status_file)
     }
 
     fn ensure_config(
@@ -107,8 +123,19 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
         populate: Option<bool>,
     ) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
-        let status_mmap = Self::ensure_status_file(directory)?;
-        let status: MmapType<Status> = unsafe { MmapType::from(status_mmap) };
+        let status_path = Self::ensure_status_file(directory)?;
+
+        let status: StoredStruct<S, Status> = StoredStruct::open(
+            status_path,
+            OpenOptions {
+                writeable: true,
+                need_sequential: false,
+                disk_parallel: None,
+                populate,
+                advice: None,
+                prevent_caching: None,
+            },
+        )?;
 
         let config = Self::ensure_config(directory, dim, populate)?;
         let chunks = read_chunks(directory, advice, populate.unwrap_or_default(), true)?;

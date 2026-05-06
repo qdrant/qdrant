@@ -7,6 +7,7 @@ pub(super) const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 // TODO: rename for other storages?
 pub(super) const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Status {
     pub len: usize,

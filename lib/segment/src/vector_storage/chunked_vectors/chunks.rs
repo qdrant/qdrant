@@ -18,7 +18,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalRead<T>>(
+pub fn read_chunks<T: Copy + 'static, S: UniversalRead<T>>(
     directory: &Path,
     advice: AdviceSetting,
     populate: bool,
