@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use common::types::{DetailsLevel, TelemetryDetail};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
-use segment::types::SizeStats;
+use segment::types::{SegmentInfo, SizeStats};
 use segment::vector_storage::common::get_async_scorer;
 use shard::common::stopping_guard::StoppingGuard;
 use tokio_util::task::AbortOnDropHandle;
@@ -21,8 +21,11 @@ impl LocalShard {
     ) -> CollectionResult<LocalShardTelemetry> {
         let start = std::time::Instant::now();
         let segments = self.segments.clone();
-        let segments_data = if detail.level < DetailsLevel::Level4 {
-            Ok((vec![], HashMap::default()))
+        let segments_data: CollectionResult<(Vec<_>, HashMap<_, _>, Option<SizeStats>)> = if detail
+            .level
+            < DetailsLevel::Level4
+        {
+            Ok((vec![], HashMap::default(), None))
         } else {
             let locked_collection_config = self.collection_config.clone();
             let is_stopped_guard = StoppingGuard::new();
@@ -40,9 +43,10 @@ impl LocalShard {
                 };
 
                 let mut segments_telemetry = Vec::with_capacity(segments.len());
+                let mut size_stats = SizeStats::default();
                 for segment in segments.iter() {
                     if is_stopped.load(Ordering::Relaxed) {
-                        return Ok((vec![], HashMap::default()));
+                        return Ok((vec![], HashMap::default(), None));
                     }
 
                     // blocking sync lock
@@ -50,19 +54,25 @@ impl LocalShard {
                         return Err(CollectionError::timeout(timeout, "shard telemetry"));
                     };
 
-                    segments_telemetry.push(segment_guard.get_telemetry_data(detail))
+                    let segment_telemetry = segment_guard.get_telemetry_data(detail);
+                    accumulate_size_stats(&mut size_stats, &segment_telemetry.info);
+                    segments_telemetry.push(segment_telemetry);
                 }
 
                 let collection_config = locked_collection_config.blocking_read();
                 let indexed_only_excluded_vectors =
                     indexed_only::get_index_only_excluded_vectors(&segments, &collection_config);
 
-                Ok((segments_telemetry, indexed_only_excluded_vectors))
+                Ok((
+                    segments_telemetry,
+                    indexed_only_excluded_vectors,
+                    Some(size_stats),
+                ))
             });
             AbortOnDropHandle::new(handle).await?
         };
 
-        let (segments, index_only_excluded_vectors) = segments_data?;
+        let (segments, index_only_excluded_vectors, size_stats) = segments_data?;
         let total_optimized_points = self.total_optimized_points.load(Ordering::Relaxed);
 
         let optimizations: OperationDurationStatistics = self
@@ -80,15 +90,23 @@ impl LocalShard {
         let status = self
             .get_optimization_status(timeout.saturating_sub(start.elapsed()))
             .await?;
+
+        // Reuse size stats already harvested from the per-segment telemetry
+        // walk above; otherwise (lower detail levels, or interrupted walk) do
+        // a dedicated walk.
         let SizeStats {
             num_vectors,
             num_vectors_by_name,
             vectors_size_bytes,
             payloads_size_bytes,
             num_points,
-        } = self
-            .get_size_stats(timeout.saturating_sub(start.elapsed()))
-            .await?;
+        } = match size_stats {
+            Some(stats) => stats,
+            None => {
+                self.get_size_stats(timeout.saturating_sub(start.elapsed()))
+                    .await?
+            }
+        };
 
         Ok(LocalShardTelemetry {
             variant_name: None,
@@ -176,5 +194,28 @@ impl LocalShard {
             })
         });
         AbortOnDropHandle::new(stats).await?
+    }
+}
+
+/// Fold a single segment's [`SegmentInfo`] into the running [`SizeStats`].
+///
+/// `SizeStats` is destructured exhaustively (no `..`) so that adding a
+/// field to it forces a compile error here, prompting an explicit
+/// decision about whether the new field should be aggregated.
+fn accumulate_size_stats(stats: &mut SizeStats, info: &SegmentInfo) {
+    let SizeStats {
+        num_vectors,
+        num_vectors_by_name,
+        vectors_size_bytes,
+        payloads_size_bytes,
+        num_points,
+    } = stats;
+
+    *num_points += info.num_points;
+    *num_vectors += info.num_vectors;
+    *vectors_size_bytes += info.vectors_size_bytes;
+    *payloads_size_bytes += info.payloads_size_bytes;
+    for (vector_name, vector_data) in info.vector_data.iter() {
+        *num_vectors_by_name.get_or_insert_default(vector_name) += vector_data.num_vectors;
     }
 }
