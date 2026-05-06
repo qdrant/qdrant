@@ -150,7 +150,7 @@ where
             MapIndex::Mmap(Box::new(mmap_index))
         } else {
             // Load into RAM, use mmap as backing storage
-            MapIndex::Immutable(ImmutableMapIndex::open_mmap(mmap_index))
+            MapIndex::Immutable(ImmutableMapIndex::open_mmap(mmap_index)?)
         };
         Ok(Some(index))
     }
