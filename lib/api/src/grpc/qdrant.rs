@@ -5623,6 +5623,9 @@ pub struct CreateVectorNameRequest {
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "6")]
     pub timeout: ::core::option::Option<u64>,
+    /// Write ordering guarantees
+    #[prost(message, optional, tag = "7")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
     /// Configuration for the new vector - either dense or sparse
     #[prost(oneof = "create_vector_name_request::VectorConfig", tags = "4, 5")]
     #[validate(nested)]
@@ -5664,6 +5667,9 @@ pub struct DeleteVectorNameRequest {
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
     pub timeout: ::core::option::Option<u64>,
+    /// Write ordering guarantees
+    #[prost(message, optional, tag = "5")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -503,6 +503,7 @@ pub fn internal_create_vector_name(
     create: shard::operations::CreateVectorName,
     wait: WaitUntil,
     wait_timeout: Option<u64>,
+    ordering: Option<WriteOrdering>,
 ) -> api::grpc::qdrant::CreateVectorNameInternal {
     api::grpc::qdrant::CreateVectorNameInternal {
         shard_id,
@@ -514,6 +515,7 @@ pub fn internal_create_vector_name(
             vector_name: create.vector_name,
             vector_config: Some(create.config.into()),
             timeout: wait_timeout,
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }
@@ -525,6 +527,7 @@ pub fn internal_delete_vector_name(
     delete: shard::operations::DeleteVectorName,
     wait: WaitUntil,
     wait_timeout: Option<u64>,
+    ordering: Option<WriteOrdering>,
 ) -> api::grpc::qdrant::DeleteVectorNameInternal {
     api::grpc::qdrant::DeleteVectorNameInternal {
         shard_id,
@@ -535,6 +538,7 @@ pub fn internal_delete_vector_name(
             wait: Some(wait.needs_callback()),
             vector_name: delete.vector_name,
             timeout: wait_timeout,
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }

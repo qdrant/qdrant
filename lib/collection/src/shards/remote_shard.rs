@@ -457,6 +457,7 @@ impl RemoteShard {
                                 create,
                                 wait,
                                 timeout,
+                                ordering,
                             );
                             Update::CreateVectorName(request)
                         }
@@ -468,6 +469,7 @@ impl RemoteShard {
                                 delete,
                                 wait,
                                 timeout,
+                                ordering,
                             );
                             Update::DeleteVectorName(request)
                         }
@@ -843,6 +845,7 @@ impl RemoteShard {
                         create,
                         wait,
                         timeout,
+                        ordering,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -860,6 +863,7 @@ impl RemoteShard {
                         delete,
                         wait,
                         timeout,
+                        ordering,
                     );
                     self.with_points_client(|mut client| async move {
                         client

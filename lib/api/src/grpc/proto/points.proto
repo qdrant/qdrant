@@ -391,6 +391,8 @@ message CreateVectorNameRequest {
   }
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 6;
+  // Write ordering guarantees
+  optional WriteOrdering ordering = 7;
 }
 
 message DeleteVectorNameRequest {
@@ -402,6 +404,8 @@ message DeleteVectorNameRequest {
   string vector_name = 3;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 4;
+  // Write ordering guarantees
+  optional WriteOrdering ordering = 5;
 }
 
 message PayloadIncludeSelector {

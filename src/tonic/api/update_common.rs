@@ -1033,6 +1033,7 @@ pub async fn create_vector_name(
         vector_name,
         vector_config,
         timeout,
+        ordering,
     } = request;
 
     let config = segment::data_types::vector_name_config::VectorNameConfig::try_from(
@@ -1048,7 +1049,7 @@ pub async fn create_vector_name(
         vector_name,
         config,
         internal_params,
-        UpdateParams::from_grpc(wait, None, timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
         request_hw_counter.get_counter(),
     )
@@ -1070,6 +1071,7 @@ pub async fn create_vector_name_internal(
         vector_name,
         vector_config,
         timeout,
+        ordering,
     } = request;
 
     let config = segment::data_types::vector_name_config::VectorNameConfig::try_from(
@@ -1093,7 +1095,7 @@ pub async fn create_vector_name_internal(
         &collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, None, timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         None,
         auth,
         HwMeasurementAcc::disposable(),
@@ -1115,6 +1117,7 @@ pub async fn delete_vector_name_internal(
         wait,
         vector_name,
         timeout,
+        ordering,
     } = request;
 
     let operation = CollectionUpdateOperations::VectorNameOperation(
@@ -1129,7 +1132,7 @@ pub async fn delete_vector_name_internal(
         &collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, None, timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         None,
         auth,
         HwMeasurementAcc::disposable(),
@@ -1152,6 +1155,7 @@ pub async fn delete_vector_name(
         wait,
         vector_name,
         timeout,
+        ordering,
     } = request;
 
     let timing = Instant::now();
@@ -1160,7 +1164,7 @@ pub async fn delete_vector_name(
         collection_name,
         vector_name,
         internal_params,
-        UpdateParams::from_grpc(wait, None, timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
         request_hw_counter.get_counter(),
     )
