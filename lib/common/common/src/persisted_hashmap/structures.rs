@@ -1,11 +1,13 @@
 //! On-disk structures.
 
+use std::fmt::Debug;
 use std::hash::Hash;
-use std::io::{self, Write};
-use std::mem::{align_of, size_of};
-use std::str;
+use std::io::Write;
+use std::{io, str};
 
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{ConvertError, FromBytes, Immutable, IntoBytes, KnownLayout};
+
+use super::read_err;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
@@ -18,11 +20,22 @@ pub(super) struct Header {
 pub(super) type ValuesLen = u32;
 pub(super) type BucketOffset = u64;
 
+pub enum ReadResult<T> {
+    Ok(T),
+    Incomplete,
+    Invalid(io::Error),
+}
+
 /// A key that can be stored in the hash map.
-pub trait Key: Sync + Hash {
+pub trait Key: Debug + PartialEq + Sync + Hash {
     const ALIGN: usize;
 
+    /// Stored in the file header.
     const NAME: [u8; 8];
+
+    /// Reasonable guess size of the key when performing random read.
+    /// Exact size for fixed-size keys, some arbitrary length for string keys.
+    const KEY_SIZE_EST: usize;
 
     /// Returns number of bytes which `write` will write.
     fn write_bytes(&self) -> usize;
@@ -34,11 +47,13 @@ pub trait Key: Sync + Hash {
     fn matches(&self, buf: &[u8]) -> bool;
 
     /// Try to read the key from `buf`.
-    fn from_bytes(buf: &[u8]) -> Option<&Self>;
+    fn from_bytes(buf: &[u8]) -> ReadResult<&Self>;
 }
 
 impl Key for str {
     const ALIGN: usize = align_of::<u8>();
+
+    const KEY_SIZE_EST: usize = 512;
 
     const NAME: [u8; 8] = *b"str\0\0\0\0\0";
 
@@ -82,14 +97,21 @@ impl Key for str {
             && buf.get(self.len()) == Some(&0xFF)
     }
 
-    fn from_bytes(buf: &[u8]) -> Option<&Self> {
-        let len = buf.iter().position(|&b| b == 0xFF)?;
-        str::from_utf8(&buf[..len]).ok()
+    fn from_bytes(buf: &[u8]) -> ReadResult<&Self> {
+        let Some(len) = buf.iter().position(|&b| b == 0xFF) else {
+            return ReadResult::Incomplete;
+        };
+        match str::from_utf8(&buf[..len]) {
+            Err(_) => ReadResult::Invalid(read_err("String key is not valid UTF-8")),
+            Ok(s) => ReadResult::Ok(s),
+        }
     }
 }
 
 impl Key for i64 {
     const ALIGN: usize = align_of::<i64>();
+
+    const KEY_SIZE_EST: usize = size_of::<i64>();
 
     const NAME: [u8; 8] = *b"i64\0\0\0\0\0";
 
@@ -105,13 +127,21 @@ impl Key for i64 {
         buf.get(..size_of::<i64>()) == Some(self.as_bytes())
     }
 
-    fn from_bytes(buf: &[u8]) -> Option<&Self> {
-        Some(i64::ref_from_prefix(buf).ok()?.0)
+    fn from_bytes(buf: &[u8]) -> ReadResult<&Self> {
+        match i64::ref_from_prefix(buf) {
+            Ok((res, _)) => ReadResult::Ok(res),
+            Err(ConvertError::Alignment(_)) => {
+                ReadResult::Invalid(read_err("i64 key is not properly aligned"))
+            }
+            Err(ConvertError::Size(_)) => ReadResult::Incomplete,
+        }
     }
 }
 
 impl Key for u128 {
     const ALIGN: usize = size_of::<u128>();
+
+    const KEY_SIZE_EST: usize = size_of::<u128>();
 
     const NAME: [u8; 8] = *b"u128\0\0\0\0";
 
@@ -127,14 +157,159 @@ impl Key for u128 {
         buf.get(..size_of::<u128>()) == Some(self.as_bytes())
     }
 
-    fn from_bytes(buf: &[u8]) -> Option<&Self> {
-        match u128::ref_from_prefix(buf) {
-            Ok(res) => Some(res.0),
-            Err(err) => {
-                debug_assert!(false, "Error reading u128 from mmap: {err}");
-                log::error!("Error reading u128 from mmap: {err}");
-                None
+    fn from_bytes(buf: &[u8]) -> ReadResult<&Self> {
+        match Self::ref_from_prefix(buf) {
+            Ok((res, _)) => ReadResult::Ok(res),
+            Err(ConvertError::Alignment(_)) => {
+                ReadResult::Invalid(read_err("u128 key is not properly aligned"))
             }
+            Err(ConvertError::Size(_)) => ReadResult::Incomplete,
         }
     }
+}
+
+/// Specifies which entry fields we are interested in. E.g., for
+/// [`PartialEntryKind::KeyOnly`], we will read just enough to parse the key
+/// and skip the values.
+#[derive(Copy, Clone)]
+#[expect(clippy::enum_variant_names)]
+pub enum PartialEntryKind {
+    KeyOnly,
+    KeyAndValuesLen,
+    KeyAndValues,
+}
+
+impl PartialEntryKind {
+    // Estimate the entry size.
+    pub fn estimated_size<K: Key + ?Sized, V>(self) -> usize {
+        // ┌─1:pad─┬────2:key─────┬─3:pad─┬─4:len─┬─5:pad─┬─────6:vals─────┐
+        // │ · · · │ "abcdef\xFF" │ · · · │   5   │ · · · │ 10 20 30 40 50 │
+        // └───────┴──────────────┴───────┴───────┴───────┴────────────────┘
+
+        let f2key = K::KEY_SIZE_EST;
+        let f3pad = size_of::<V /*sic*/>().saturating_sub(1);
+        let f4len = size_of::<ValuesLen>();
+        let f5pad = size_of::<V>().saturating_sub(1);
+        let f6vals = size_of::<V>() * 2; // wild guess: 2 values per key
+
+        match self {
+            Self::KeyOnly => f2key,
+            Self::KeyAndValuesLen => f2key + f3pad + f4len,
+            Self::KeyAndValues => f2key + f3pad + f4len + f5pad + f6vals,
+        }
+    }
+}
+
+/// An entry. Might be partially parsed.
+/// The variants are ordered by completeness.
+pub(super) enum IncompleteEntry<'a, K: Key + ?Sized, V> {
+    None,
+    Key(&'a K),
+    KeyAndValuesLen(&'a K, u32),
+    /// Complete entry. Also contains the remaining bytes after this entry.
+    KeyAndValues(&'a K, &'a [V], &'a [u8]),
+}
+
+impl<K: Key + ?Sized, V> Copy for IncompleteEntry<'_, K, V> {}
+impl<K: Key + ?Sized, V> Clone for IncompleteEntry<'_, K, V> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> IncompleteEntry<'a, K, V> {
+    /// `true` if this [`IncompleteEntry`] has all fields required by `kind`.
+    pub fn satisfies_kind(self, kind: PartialEntryKind) -> bool {
+        match kind {
+            PartialEntryKind::KeyOnly => self.key().is_some(),
+            PartialEntryKind::KeyAndValuesLen => {
+                self.key().is_some() && self.values_len().is_some()
+            }
+            PartialEntryKind::KeyAndValues => self.key().is_some() && self.values().is_some(),
+        }
+    }
+
+    pub fn key(self) -> Option<&'a K> {
+        match self {
+            IncompleteEntry::None => None,
+            IncompleteEntry::Key(key) => Some(key),
+            IncompleteEntry::KeyAndValuesLen(key, _) => Some(key),
+            IncompleteEntry::KeyAndValues(key, _, _) => Some(key),
+        }
+    }
+
+    pub fn values_len(self) -> Option<u32> {
+        match self {
+            IncompleteEntry::None => None,
+            IncompleteEntry::Key(_) => None,
+            IncompleteEntry::KeyAndValuesLen(_, values_len) => Some(values_len),
+            IncompleteEntry::KeyAndValues(_, values, _) => Some(values.len() as u32),
+        }
+    }
+
+    pub fn values(self) -> Option<&'a [V]> {
+        match self {
+            IncompleteEntry::None => None,
+            IncompleteEntry::Key(_) => None,
+            IncompleteEntry::KeyAndValuesLen(_, _) => None,
+            IncompleteEntry::KeyAndValues(_, values, _) => Some(values),
+        }
+    }
+
+    pub fn parse(buf: &'a [u8]) -> io::Result<IncompleteEntry<'a, K, V>> {
+        // ┌─1:pad─┬────2:key─────┬─3:pad─┬─4:len─┬─5:pad─┬─────6:vals─────┐
+        // │ · · · │ "abcdef\xFF" │ · · · │   5   │ · · · │ 10 20 30 40 50 │
+        // └───────┴──────────────┴───────┴───────┴───────┴────────────────┘
+
+        // 1. padding for the key
+        let Some(buf) = align_slice_to(K::ALIGN, buf) else {
+            return Ok(IncompleteEntry::None);
+        };
+
+        // 2. key
+        let key = match K::from_bytes(buf) {
+            ReadResult::Ok(k) => k,
+            ReadResult::Incomplete => return Ok(IncompleteEntry::None),
+            ReadResult::Invalid(e) => return Err(e),
+        };
+        let Some(buf) = buf.get(key.write_bytes()..) else {
+            return Ok(IncompleteEntry::Key(key));
+        };
+
+        // 3. padding for values_len
+        let Some(buf) = align_slice_to(size_of::<V /*sic*/>(), buf) else {
+            return Ok(IncompleteEntry::Key(key));
+        };
+
+        // 4. values_len
+        let (&values_len, buf) = match ValuesLen::ref_from_prefix(buf) {
+            Ok(v) => v,
+            Err(ConvertError::Alignment(_)) => {
+                return Err(read_err("ValuesLen is not properly aligned"));
+            }
+            Err(ConvertError::Size(_)) => return Ok(IncompleteEntry::Key(key)),
+        };
+
+        // 5. padding for values
+        let Some(buf) = align_slice_to(size_of::<V>(), buf) else {
+            return Ok(IncompleteEntry::KeyAndValuesLen(key, values_len));
+        };
+
+        // 6. values
+        let (values, buf) = match <[V]>::ref_from_prefix_with_elems(buf, values_len as usize) {
+            Ok(v) => v,
+            Err(ConvertError::Alignment(_)) => {
+                return Err(read_err("Values are not properly aligned"));
+            }
+            Err(ConvertError::Size(_)) => {
+                return Ok(IncompleteEntry::KeyAndValuesLen(key, values_len));
+            }
+        };
+
+        Ok(IncompleteEntry::KeyAndValues(key, values, buf))
+    }
+}
+
+fn align_slice_to(alignment: usize, data: &[u8]) -> Option<&[u8]> {
+    data.get(data.as_ptr().align_offset(alignment)..)
 }
