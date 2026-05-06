@@ -283,7 +283,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             return false; // Already removed or never actually existed
         }
         self.point_to_tokens_count[idx as usize] = 0;
-        self.points_count -= 1;
+        self.points_count = self.points_count.saturating_sub(1);
         true
     }
 
@@ -541,14 +541,12 @@ impl ImmutableInvertedIndex {
 
         let postings_bytes = postings.ram_usage_bytes();
         // HashMap per-slot overhead: hash (u64) + metadata pointer
-        let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
+        let hashmap_entry_overhead = size_of::<u64>() + size_of::<usize>();
         let vocab_base_bytes = vocab.capacity()
-            * (std::mem::size_of::<String>()
-                + std::mem::size_of::<TokenId>()
-                + hashmap_entry_overhead);
+            * (size_of::<String>() + size_of::<TokenId>() + hashmap_entry_overhead);
         // Account for actual heap-allocated string data
         let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
-        let pttc_bytes = point_to_tokens_count.capacity() * std::mem::size_of::<usize>();
+        let pttc_bytes = point_to_tokens_count.capacity() * size_of::<usize>();
         postings_bytes + vocab_base_bytes + vocab_heap_bytes + pttc_bytes
     }
 }

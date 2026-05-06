@@ -13,6 +13,8 @@ pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,
     // Backing storage, source of state, persists deletions
     pub(super) storage: Storage,
+    /// Snapshot of approximate RAM usage at construction time.
+    /// Not refreshed on `remove_point`.
     cached_ram_usage_bytes: usize,
 }
 
@@ -39,6 +41,9 @@ impl ImmutableFullTextIndex {
         Ok(result)
     }
 
+    /// Apply the deletion to both `inverted_index` (the in-RAM cache used
+    /// by queries) and `storage` (keeps the mmap's `points_count()` in
+    /// sync; not persisted — id-tracker re-supplies on reload).
     pub fn remove_point(&mut self, id: PointOffsetType) {
         if self.inverted_index.remove(id) {
             match self.storage {
