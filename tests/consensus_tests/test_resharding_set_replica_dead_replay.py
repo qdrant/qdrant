@@ -121,20 +121,36 @@ def test_set_replica_dead_clears_resharding_state(tmp_path: pathlib.Path):
     restart_port = p.p2p_port
     p.kill()
 
-    upsert_random_points(
-        driver_uri,
-        num=200,
-        collection_name=COLLECTION,
-        fail_on_error=False,
-        ordering="weak",
-    )
-
     # Running peers apply `SetShardReplicaState(Dead)`; the local
     # `abort_resharding` runs first (per the reorder), clearing
     # `resharding_state` before the replica state write.
+    #
+    # With weak ordering the upsert returns as soon as the local replica
+    # acks, leaving the fan-out failure to target's dead replica to land
+    # asynchronously — a single batch sometimes returns 200 without ever
+    # observing the dead target. Drive a fresh batch on each poll until
+    # every running peer has applied the deactivation and cleared its
+    # `resharding_state`.
     running_uris = [uri for idx, uri in enumerate(peer_uris) if idx != target_idx]
-    for uri in running_uris:
-        wait_for_collection_resharding_operations_count(uri, COLLECTION, 0)
+
+    def all_running_peers_aborted_resharding() -> bool:
+        upsert_random_points(
+            driver_uri,
+            num=100,
+            collection_name=COLLECTION,
+            fail_on_error=False,
+            ordering="weak",
+        )
+        return all(
+            not get_collection_cluster_info(uri, COLLECTION).get("resharding_operations")
+            for uri in running_uris
+        )
+
+    wait_for(
+        all_running_peers_aborted_resharding,
+        wait_for_timeout=60,
+        wait_for_interval=1,
+    )
 
     # Restart target. It catches up via raft, applies the same entry, and
     # the same reorder makes it clear `resharding_state` and drop shard 2
