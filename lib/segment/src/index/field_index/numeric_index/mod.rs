@@ -317,7 +317,9 @@ where
         }
 
         let range = match range {
-            RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+            RangeInterface::Float(float_range) => float_range
+                .normalized_to_stored_precision()
+                .map(|float| T::from_f64(float.0)),
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
@@ -1158,7 +1160,9 @@ where
         range: &RangeInterface,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         let range = match range {
-            RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+            RangeInterface::Float(float_range) => float_range
+                .normalized_to_stored_precision()
+                .map(|float| T::from_f64(float.0)),
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
