@@ -25,7 +25,7 @@ use crate::index::field_index::{
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, PayloadKeyType};
+use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, MatchTextAny, PayloadKeyType};
 
 /// Selects how a text query is parsed and matched against the payload.
 pub enum PayloadMatchQueryType {
@@ -542,12 +542,17 @@ impl PayloadFieldIndex for FullTextIndex {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        let parsed_query_opt = match &condition.r#match {
-            Some(Match::Text(MatchText { text })) => self.parse_text_query(text, hw_counter),
-            Some(Match::Phrase(MatchPhrase { phrase })) => {
-                self.parse_phrase_query(phrase, hw_counter)
+        let Some(r#match) = &condition.r#match else {
+            return Ok(None);
+        };
+
+        let parsed_query_opt = match r#match {
+            Match::Text(MatchText { text }) => self.parse_text_query(text, hw_counter),
+            Match::Phrase(MatchPhrase { phrase }) => self.parse_phrase_query(phrase, hw_counter),
+            Match::TextAny(MatchTextAny { text_any }) => {
+                self.parse_text_any_query(text_any, hw_counter)
             }
-            _ => return Ok(None),
+            Match::Value(_) | Match::Any(_) | Match::Except(_) => return Ok(None),
         }?;
 
         let Some(parsed_query) = parsed_query_opt else {
@@ -562,12 +567,17 @@ impl PayloadFieldIndex for FullTextIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        let parsed_query_opt = match &condition.r#match {
-            Some(Match::Text(MatchText { text })) => self.parse_text_query(text, hw_counter),
-            Some(Match::Phrase(MatchPhrase { phrase })) => {
-                self.parse_phrase_query(phrase, hw_counter)
+        let Some(r#match) = &condition.r#match else {
+            return Ok(None);
+        };
+
+        let parsed_query_opt = match r#match {
+            Match::Text(MatchText { text }) => self.parse_text_query(text, hw_counter),
+            Match::Phrase(MatchPhrase { phrase }) => self.parse_phrase_query(phrase, hw_counter),
+            Match::TextAny(MatchTextAny { text_any }) => {
+                self.parse_text_any_query(text_any, hw_counter)
             }
-            _ => return Ok(None),
+            Match::Value(_) | Match::Any(_) | Match::Except(_) => return Ok(None),
         }?;
 
         let Some(parsed_query) = parsed_query_opt else {
