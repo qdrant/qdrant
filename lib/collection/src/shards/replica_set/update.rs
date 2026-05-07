@@ -756,13 +756,8 @@ impl ShardReplicaSet {
             // replay — without it, replay reads `current_state` as Dead from
             // disk and silently skips the side-effect, leaving
             // resharding_state stale.
-            let from_state = Some(peer_state).filter(|state| {
-                !state.is_partial_or_recovery()
-                    || matches!(
-                        state,
-                        ReplicaState::Resharding | ReplicaState::ReshardingScaleDown
-                    )
-            });
+            let from_state = Some(peer_state)
+                .filter(|state| !state.is_partial_or_recovery() || state.is_resharding());
 
             self.add_locally_disabled(Some(state), *peer_id, from_state);
         }
