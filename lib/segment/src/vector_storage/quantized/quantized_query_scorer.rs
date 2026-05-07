@@ -80,6 +80,20 @@ where
 {
     type TVector = [VectorElementType];
 
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert_eq!(ids.len(), scores.len());
+
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(ids.len() * self.quantized_data.quantized_vector_size());
+
+        self.quantized_data.for_each_in_batch(ids, |idx, vector| {
+            scores[idx] = self
+                .quantized_data
+                .score(&self.query, vector, &self.hardware_counter);
+        });
+    }
+
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter
             .vector_io_read()
