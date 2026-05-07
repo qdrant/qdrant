@@ -630,4 +630,123 @@ mod tests {
         let query = Filter::new_must(Condition::HasId(ids.into()));
         assert!(payload_checker.check(2, &query));
     }
+
+    /// Regression test for <https://github.com/qdrant/qdrant/issues/8936>
+    ///
+    /// Verifies that `MatchTextAny` inside a `NestedCondition` uses the
+    /// full-text index tokenizer and does NOT fall back to substring matching.
+    /// Before the fix, "good" would incorrectly match "goodness" in the
+    /// nested path because `special_check_condition` didn't handle
+    /// `Match::TextAny`.
+    #[test]
+    fn test_nested_match_text_any_uses_full_text_index() {
+        use tempfile::Builder;
+
+        use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
+        use crate::index::field_index::ValueIndexer;
+        use crate::index::field_index::full_text_index::text_index::FullTextIndex;
+        use crate::types::{Condition, MatchTextAny, Nested, NestedCondition};
+
+        let hw_counter = HardwareCounterCell::new();
+
+        // --- build payloads with nested objects ---
+        // Point 0: nested title "goodness only" (should NOT match "good cheap")
+        // Point 1: nested title "cheap hardware" (SHOULD match "good cheap")
+        // Point 2: nested title "neutral text"  (should NOT match)
+        let payloads = [
+            payload_json! {
+                "items": [{"title": "goodness only"}],
+            },
+            payload_json! {
+                "items": [{"title": "cheap hardware"}],
+            },
+            payload_json! {
+                "items": [{"title": "neutral text"}],
+            },
+        ];
+
+        // --- build a full-text index for "items.title" ---
+        let temp_dir = Builder::new()
+            .prefix("test_nested_text_any")
+            .tempdir()
+            .unwrap();
+        let config = TextIndexParams {
+            r#type: TextIndexType::Text,
+            tokenizer: TokenizerType::Word,
+            min_token_len: None,
+            max_token_len: None,
+            lowercase: Some(true),
+            on_disk: None,
+            phrase_matching: None,
+            stopwords: None,
+            stemmer: None,
+            ascii_folding: None,
+            enable_hnsw: None,
+        };
+
+        let mut ft_index =
+            FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
+                .unwrap()
+                .unwrap();
+
+        // Index each point's nested title value
+        let nested_titles = ["goodness only", "cheap hardware", "neutral text"];
+        for (idx, title) in nested_titles.iter().enumerate() {
+            ft_index
+                .add_many(idx as u32, vec![title.to_string()], &hw_counter)
+                .unwrap();
+        }
+
+        // The key must include the `[]` wildcard so that
+        // `select_nested_indexes` can strip the `items[]` prefix and pass the
+        // index under key `title` into the nested `check_payload`.
+        let field_indexes: HashMap<PayloadKeyType, Vec<FieldIndex>> = HashMap::from([(
+            JsonPath::new("items[].title"),
+            vec![FieldIndex::FullTextIndex(ft_index)],
+        )]);
+
+        // --- build the nested MatchTextAny filter ---
+        let nested_filter = Filter::new_must(Condition::Nested(NestedCondition::new(Nested {
+            key: JsonPath::new("items"),
+            filter: Filter::new_must(Condition::Field(FieldCondition::new_match(
+                JsonPath::new("title"),
+                crate::types::Match::TextAny(MatchTextAny {
+                    text_any: "good cheap".to_string(),
+                }),
+            ))),
+        })));
+
+        // --- run check_payload for each point ---
+        let results: Vec<bool> = (0..3)
+            .map(|point_id| {
+                let payload = &payloads[point_id as usize];
+                check_payload(
+                    Box::new(|| payload.into()),
+                    None,
+                    &HashMap::new(),
+                    &nested_filter,
+                    point_id,
+                    &field_indexes,
+                    &hw_counter,
+                )
+            })
+            .collect();
+
+        // Point 0 ("goodness only"): must NOT match — "good" is not a token in "goodness"
+        assert!(
+            !results[0],
+            "Point 0 ('goodness only') must not match text_any('good cheap') — \
+             'good' is a substring of 'goodness' but not a whole token"
+        );
+        // Point 1 ("cheap hardware"): must match — "cheap" is an exact token
+        assert!(
+            results[1],
+            "Point 1 ('cheap hardware') must match text_any('good cheap')"
+        );
+        // Point 2 ("neutral text"): must NOT match
+        assert!(
+            !results[2],
+            "Point 2 ('neutral text') must not match text_any('good cheap')"
+        );
+    }
 }

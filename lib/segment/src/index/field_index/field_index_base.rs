@@ -11,7 +11,9 @@ use super::bool_index::immutable_bool_index::ImmutableBoolIndexBuilder;
 use super::bool_index::mutable_bool_index::MutableBoolIndexBuilder;
 use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
-use super::full_text_index::text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
+use super::full_text_index::text_index::{
+    FullTextGridstoreIndexBuilder, FullTextIndex, PayloadMatchQueryType,
+};
 use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexMmapBuilder};
 use super::null_index::immutable_null_index::ImmutableNullIndexBuilder;
@@ -32,7 +34,7 @@ use crate::index::payload_config::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchPhrase,
-    MatchText, PayloadKeyType, RangeInterface, UuidIntType, UuidPayloadType,
+    MatchText, MatchTextAny, PayloadKeyType, RangeInterface, UuidIntType, UuidPayloadType,
 };
 
 pub trait PayloadFieldIndex {
@@ -183,13 +185,27 @@ impl FieldIndex {
             FieldIndex::GeoIndex(_) => None,
             FieldIndex::BoolIndex(_) => None,
             FieldIndex::FullTextIndex(index) => match &condition.r#match {
-                Some(Match::Text(MatchText { text })) => {
-                    Some(index.check_payload_match::<false>(payload_value, text, hw_counter)?)
+                Some(Match::Text(MatchText { text })) => Some(index.check_payload_match(
+                    payload_value,
+                    text,
+                    PayloadMatchQueryType::Text,
+                    hw_counter,
+                )?),
+                Some(Match::Phrase(MatchPhrase { phrase })) => Some(index.check_payload_match(
+                    payload_value,
+                    phrase,
+                    PayloadMatchQueryType::Phrase,
+                    hw_counter,
+                )?),
+                Some(Match::TextAny(MatchTextAny { text_any })) => {
+                    Some(index.check_payload_match(
+                        payload_value,
+                        text_any,
+                        PayloadMatchQueryType::TextAny,
+                        hw_counter,
+                    )?)
                 }
-                Some(Match::Phrase(MatchPhrase { phrase })) => {
-                    Some(index.check_payload_match::<true>(payload_value, phrase, hw_counter)?)
-                }
-                _ => None,
+                Some(Match::Value(_) | Match::Any(_) | Match::Except(_)) | None => None,
             },
             FieldIndex::UuidIndex(_) => None,
             FieldIndex::UuidMapIndex(_) => None,

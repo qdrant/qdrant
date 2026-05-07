@@ -27,6 +27,16 @@ use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, PayloadKeyType};
 
+/// Selects how a text query is parsed and matched against the payload.
+pub enum PayloadMatchQueryType {
+    /// All query tokens must be present in the document (any order).
+    Text,
+    /// All query tokens must be present in exact order.
+    Phrase,
+    /// At least one query token must be present.
+    TextAny,
+}
+
 #[allow(clippy::large_enum_variant)]
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
@@ -354,17 +364,24 @@ impl FullTextIndex {
         self.filter_query(parsed_query, hw_counter)
     }
 
-    /// Checks the text directly against the payload value
-    pub fn check_payload_match<const IS_PHRASE: bool>(
+    /// Checks the text directly against the payload value using the
+    /// full-text index tokenizer.
+    ///
+    /// `query_type` selects the parsing / matching strategy:
+    /// - `Text`    — all query tokens must appear in the document
+    /// - `Phrase`  — all query tokens must appear in exact order
+    /// - `TextAny` — at least one query token must appear
+    pub fn check_payload_match(
         &self,
         payload_value: &serde_json::Value,
         text: &str,
+        query_type: PayloadMatchQueryType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let query_opt = if IS_PHRASE {
-            self.parse_phrase_query(text, hw_counter)?
-        } else {
-            self.parse_text_query(text, hw_counter)?
+        let query_opt = match query_type {
+            PayloadMatchQueryType::Text => self.parse_text_query(text, hw_counter)?,
+            PayloadMatchQueryType::Phrase => self.parse_phrase_query(text, hw_counter)?,
+            PayloadMatchQueryType::TextAny => self.parse_text_any_query(text, hw_counter)?,
         };
 
         let Some(query) = query_opt else {

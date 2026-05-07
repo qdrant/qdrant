@@ -7,7 +7,7 @@ use tempfile::Builder;
 
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
-use crate::index::field_index::{FieldIndexBuilderTrait as _, ValueIndexer};
+use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait as _, ValueIndexer};
 
 fn movie_titles() -> Vec<String> {
     vec![
@@ -442,4 +442,100 @@ fn test_ascii_folding_in_full_text_index_word() {
         .unwrap()
         .collect();
     assert!(results_acento2.contains(&0));
+}
+
+/// Regression test for <https://github.com/qdrant/qdrant/issues/8936>
+///
+/// `MatchTextAny` inside a nested condition must use the full-text index
+/// tokenizer for matching, not naive substring `contains`.  In the bug,
+/// `special_check_condition` did not handle `Match::TextAny`, so the
+/// nested-condition code path fell back to `ValueChecker::check_match`
+/// which uses `String::contains`, making "good" match "goodness".
+#[test]
+fn test_special_check_condition_match_text_any() {
+    use crate::json_path::JsonPath;
+    use crate::types::{FieldCondition, Match, MatchTextAny};
+
+    let hw_counter = HardwareCounterCell::new();
+
+    let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+    let config = TextIndexParams {
+        r#type: TextIndexType::Text,
+        tokenizer: TokenizerType::Word,
+        min_token_len: None,
+        max_token_len: None,
+        lowercase: Some(true),
+        on_disk: None,
+        phrase_matching: None,
+        stopwords: None,
+        stemmer: None,
+        ascii_folding: None,
+        enable_hnsw: None,
+    };
+
+    let mut index = FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
+        .unwrap()
+        .unwrap();
+
+    // Point 0: "goodness only" — should NOT match text_any("good cheap")
+    // Point 1: "cheap hardware" — should match text_any("good cheap")
+    // Point 2: "neutral text" — should NOT match
+    index
+        .add_many(0, vec!["goodness only".to_string()], &hw_counter)
+        .unwrap();
+    index
+        .add_many(1, vec!["cheap hardware".to_string()], &hw_counter)
+        .unwrap();
+    index
+        .add_many(2, vec!["neutral text".to_string()], &hw_counter)
+        .unwrap();
+
+    let field_index = FieldIndex::FullTextIndex(index);
+
+    let condition = FieldCondition {
+        key: JsonPath::new("title"),
+        r#match: Some(Match::TextAny(MatchTextAny {
+            text_any: "good cheap".to_string(),
+        })),
+        range: None,
+        geo_bounding_box: None,
+        geo_radius: None,
+        geo_polygon: None,
+        values_count: None,
+        is_empty: None,
+        is_null: None,
+    };
+
+    // "goodness only" — "good" is a substring but NOT a token match
+    let goodness_value = serde_json::Value::String("goodness only".to_string());
+    let result = field_index
+        .special_check_condition(&condition, &goodness_value, &hw_counter)
+        .unwrap();
+    assert_eq!(
+        result,
+        Some(false),
+        "MatchTextAny must not match 'goodness' for query token 'good'"
+    );
+
+    // "cheap hardware" — "cheap" is an exact token match
+    let cheap_value = serde_json::Value::String("cheap hardware".to_string());
+    let result = field_index
+        .special_check_condition(&condition, &cheap_value, &hw_counter)
+        .unwrap();
+    assert_eq!(
+        result,
+        Some(true),
+        "MatchTextAny must match 'cheap hardware' for query token 'cheap'"
+    );
+
+    // "neutral text" — no tokens match
+    let neutral_value = serde_json::Value::String("neutral text".to_string());
+    let result = field_index
+        .special_check_condition(&condition, &neutral_value, &hw_counter)
+        .unwrap();
+    assert_eq!(
+        result,
+        Some(false),
+        "MatchTextAny must not match 'neutral text' for query 'good cheap'"
+    );
 }
