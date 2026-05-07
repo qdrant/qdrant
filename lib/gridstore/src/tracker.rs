@@ -69,11 +69,11 @@ impl OptionalPointer {
         }
     }
 
-    pub fn pointer(&self) -> Option<&ValuePointer> {
+    pub fn to_option(self) -> Option<ValuePointer> {
         if self.discriminant == Self::OPTIONAL_NONE {
             None
         } else {
-            Some(&self.value)
+            Some(self.value)
         }
     }
 }
@@ -338,21 +338,18 @@ impl<S: UniversalRead> Tracker<S> {
     }
 
     /// Get the raw value at the given point offset
-    fn get_raw(&self, point_offset: PointOffset) -> Result<Option<Option<ValuePointer>>> {
-        let start_offset = std::mem::size_of::<TrackerHeader>()
-            + point_offset as usize * std::mem::size_of::<Optional<ValuePointer>>();
-        let end_offset = start_offset + std::mem::size_of::<Optional<ValuePointer>>();
-        let storage_len = self.storage.len::<u8>()?;
+    fn get_raw(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        let start_offset =
+            size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
+        let end_offset = start_offset + size_of::<OptionalPointer>();
+        let storage_len = UniversalRead::<u8>::len(&self.storage)?;
         if end_offset as u64 > storage_len {
             return Ok(None);
         }
-        let bytes = self.storage.read::<Random, u8>(ReadRange {
-            byte_offset: start_offset as u64,
-            length: std::mem::size_of::<Optional<ValuePointer>>() as u64,
-        })?;
-        #[expect(deprecated, reason = "legacy code")]
-        let opt: &Optional<ValuePointer> = unsafe { transmute_from_u8(bytes.as_ref()) };
-        Ok(Some(opt.is_some().copied()))
+        let opt: OptionalPointer = self
+            .storage
+            .read::<Random>(ReadRange::one(start_offset as u64))?[0];
+        Ok(opt.to_option())
     }
 
     /// Get the page pointer at the given point offset
@@ -361,12 +358,12 @@ impl<S: UniversalRead> Tracker<S> {
             // Pending update exists but is empty, should not happen, fall back to real data
             Some(pending) if pending.is_empty() => {
                 debug_assert!(false, "pending updates must not be empty");
-                Ok(self.get_raw(point_offset)?.and_then(|o| o))
+                self.get_raw(point_offset)
             }
             // Use set from pending updates
             Some(pending) => Ok(pending.current),
             // No pending update, use real data
-            None => Ok(self.get_raw(point_offset)?.and_then(|o| o)),
+            None => self.get_raw(point_offset),
         }
     }
 
@@ -413,7 +410,7 @@ impl<S: UniversalRead> Tracker<S> {
             <S as UniversalRead<OptionalPointer>>::read_multi_iter::<Random, _>(reads)?
         {
             let (i, opt) = read_result?;
-            result[i] = opt[0].pointer().copied();
+            result[i] = opt[0].to_option();
         }
 
         Ok(result)
@@ -520,7 +517,7 @@ where
                 // Write to store a new pointer
                 Some(new_pointer) => {
                     // Mark any existing pointer for removal to free its blocks
-                    if let Some(Some(old_pointer)) = self.get_raw(point_offset)? {
+                    if let Some(old_pointer) = self.get_raw(point_offset)? {
                         old_pointers.push(old_pointer);
                     }
 
@@ -718,20 +715,20 @@ mod tests {
 
         assert_eq!(
             tracker.get_raw(0).unwrap(),
-            Some(Some(ValuePointer::new(1, 1, 1)))
+            Some(ValuePointer::new(1, 1, 1))
         );
         assert_eq!(
             tracker.get_raw(1).unwrap(),
-            Some(Some(ValuePointer::new(2, 2, 2)))
+            Some(ValuePointer::new(2, 2, 2))
         );
         assert_eq!(
             tracker.get_raw(2).unwrap(),
-            Some(Some(ValuePointer::new(3, 3, 3)))
+            Some(ValuePointer::new(3, 3, 3))
         );
-        assert_eq!(tracker.get_raw(3).unwrap(), Some(None)); // intermediate empty slot
+        assert_eq!(tracker.get_raw(3).unwrap(), None); // intermediate empty slot
         assert_eq!(
             tracker.get_raw(10).unwrap(),
-            Some(Some(ValuePointer::new(10, 10, 10)))
+            Some(ValuePointer::new(10, 10, 10))
         );
         assert_eq!(tracker.get_raw(100_000).unwrap(), None); // out of bounds
 
@@ -740,7 +737,7 @@ mod tests {
         tracker.write_pending_and_flush_internal().unwrap();
 
         // the value has been cleared but the entry is still there
-        assert_eq!(tracker.get_raw(1).unwrap(), Some(None));
+        assert_eq!(tracker.get_raw(1).unwrap(), None);
         assert_eq!(tracker.get(1).unwrap(), None);
 
         assert_eq!(tracker.mapping_len().unwrap(), 3);
@@ -965,7 +962,7 @@ mod tests {
 
         let none_data = AlignedData([0; _]);
         let none_val: &OptionalPointer = bytemuck::cast_ref(&none_data.0);
-        assert!(none_val.pointer().is_none());
+        assert!(none_val.to_option().is_none());
 
         let some_data = AlignedData([
             1, 0, 0, 0, // discriminant with padding
@@ -976,8 +973,8 @@ mod tests {
         let some_val: &OptionalPointer = bytemuck::cast_ref(&some_data.0);
         // N.B. fails on a big-endian machine.
         assert_eq!(
-            some_val.pointer(),
-            Some(&ValuePointer {
+            some_val.to_option(),
+            Some(ValuePointer {
                 page_id: 0x11223344,
                 block_offset: 0x55667788,
                 length: 0xAABBCCDD,
