@@ -9,7 +9,7 @@ use common::mmap::{self, Advice, AdviceSetting, MmapSlice, create_and_ensure_len
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, UserData};
+use common::universal_io::{MmapFile, OpenOptions, Populate, UserData};
 use types::ZerocopyPostingValue;
 use uio_postings::UniversalPostings;
 
@@ -159,7 +159,7 @@ impl MmapInvertedIndex {
             writeable: false,
             need_sequential: false,
             disk_parallel: None,
-            populate: populate.into(),
+            populate: Populate::from(populate),
             advice: Some(AdviceSetting::Advice(Advice::Normal)),
             prevent_caching: None,
         };

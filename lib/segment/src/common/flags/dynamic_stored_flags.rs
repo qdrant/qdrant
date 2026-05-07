@@ -160,7 +160,7 @@ where
 
         let options = OpenOptions {
             writeable: true,
-            populate: populate.into(),
+            populate: Populate::from(populate),
             advice: Some(AdviceSetting::Global),
             ..Default::default()
         };

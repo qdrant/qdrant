@@ -56,7 +56,7 @@ pub fn read_chunks<T: bytemuck::Pod, S: UniversalRead>(
                 writeable,
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
                 disk_parallel: None,
-                populate: populate.into(),
+                populate: Populate::from(populate),
                 advice: Some(advice),
                 prevent_caching: None,
             },

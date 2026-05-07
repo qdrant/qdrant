@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
-use common::universal_io::{Flusher, OpenOptions, TypedStorage, Populate, UniversalWrite};
+use common::universal_io::{Flusher, OpenOptions, Populate, TypedStorage, UniversalWrite};
 use itertools::Itertools;
 
 use super::{RegionId, StorageConfig};

@@ -8,7 +8,7 @@ use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{self, Populate, ReadOnly, ReadRange, UniversalRead};
 use zerocopy::IntoBytes;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -169,7 +169,7 @@ where
             writeable: false,
             need_sequential: false,
             disk_parallel: None,
-            populate: populate.into(),
+            populate: Populate::from(populate),
             advice: None,
             prevent_caching: None,
         };
