@@ -451,7 +451,6 @@ fn hnsw_turbo_quantization_cosine_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits4),
             },
         }),
@@ -469,7 +468,6 @@ fn hnsw_turbo_quantization_dot_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits4),
             },
         }),
@@ -487,7 +485,6 @@ fn hnsw_turbo_quantization_cosine_larger_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits4),
             },
         }),
@@ -506,7 +503,6 @@ fn hnsw_turbo_quantization_cosine_bits2_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits2),
             },
         }),
@@ -524,7 +520,6 @@ fn hnsw_turbo_quantization_dot_bits2_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits2),
             },
         }),
@@ -542,7 +537,6 @@ fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits2),
             },
         }),
@@ -564,7 +558,6 @@ fn hnsw_turbo_quantization_euclid_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits4),
             },
         }),
@@ -581,7 +574,6 @@ fn hnsw_turbo_quantization_manhattan_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits4),
             },
         }),
@@ -598,7 +590,6 @@ fn hnsw_turbo_quantization_euclid_bits2_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits2),
             },
         }),
@@ -615,7 +606,6 @@ fn hnsw_turbo_quantization_manhattan_bits2_test() {
         QuantizationConfig::Turbo(TurboQuantization {
             turbo: TurboQuantQuantizationConfig {
                 always_ram: Some(true),
-                data_fit: None,
                 bits: Some(TurboQuantBitSize::Bits2),
             },
         }),
@@ -654,7 +644,6 @@ fn hnsw_quantized_low_bit_compare_test(
     let tq_config = QuantizationConfig::Turbo(TurboQuantization {
         turbo: TurboQuantQuantizationConfig {
             always_ram: Some(true),
-            data_fit: None,
             bits: Some(tq_bits),
         },
     });

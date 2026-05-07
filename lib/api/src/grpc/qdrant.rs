@@ -977,8 +977,6 @@ pub struct TurboQuantization {
     pub always_ram: ::core::option::Option<bool>,
     #[prost(enumeration = "TurboQuantBitSize", optional, tag = "2")]
     pub bits: ::core::option::Option<i32>,
-    #[prost(bool, optional, tag = "3")]
-    pub data_fit: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

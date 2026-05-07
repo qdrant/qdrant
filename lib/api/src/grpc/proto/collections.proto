@@ -364,7 +364,8 @@ message BinaryQuantization {
 message TurboQuantization{
   optional bool always_ram = 1;
   optional TurboQuantBitSize bits = 2;
-  optional bool data_fit = 3;
+  reserved 3;
+  reserved "data_fit";
 }
 
 enum TurboQuantBitSize{

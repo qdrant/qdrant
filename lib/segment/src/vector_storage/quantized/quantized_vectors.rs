@@ -1423,7 +1423,7 @@ impl QuantizedVectors {
         turbo_config: &TurboQuantQuantizationConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
-        let mode = Self::convert_tq_mode(turbo_config.data_fit);
+        let mode = TQMode::Plus;
 
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let data_path = Self::get_data_path(path, config.storage_type);
@@ -1486,7 +1486,7 @@ impl QuantizedVectors {
         multivector_config: &MultiVectorConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
-        let mode = Self::convert_tq_mode(turbo_config.data_fit);
+        let mode = TQMode::Plus;
 
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let data_path = Self::get_data_path(path, config.storage_type);
@@ -2054,7 +2054,7 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
-        let mode = Self::convert_tq_mode(turbo_config.data_fit);
+        let mode = TQMode::Plus;
         let quantized_vector_size =
             EncodedVectorsTQ::<QuantizedMmapStorage>::get_quantized_vector_size(
                 vector_parameters,
@@ -2141,7 +2141,7 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
-        let mode = Self::convert_tq_mode(turbo_config.data_fit);
+        let mode = TQMode::Plus;
         let quantized_vector_size =
             EncodedVectorsTQ::<QuantizedMmapStorage>::get_quantized_vector_size(
                 vector_parameters,
@@ -2306,13 +2306,6 @@ impl QuantizedVectors {
         match bits {
             TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 => true,
             TQBits::Bits4 => false,
-        }
-    }
-
-    fn convert_tq_mode(data_fit: Option<bool>) -> TQMode {
-        match data_fit {
-            Some(false) => TQMode::Normal,
-            _ => TQMode::Plus,
         }
     }
 
