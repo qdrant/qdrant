@@ -147,8 +147,6 @@ Built-in quantization cuts RAM usage by up to 97% and lets you tune the trade-of
 
 Web UI provides a visual way to interact with your data and monitor the health of your deployment. It enables you to explore your collections, manage data, interact with the REST API, and more.
 
-<img src="https://qdrant.tech/docs/gettingstarted/web-ui.png" alt="Qdrant Web UI" />
-
 ### Distributed Deployment
 
 Scale horizontally with sharding and replication, and update or resize collections with zero downtime.
@@ -166,6 +164,8 @@ Scale horizontally with sharding and replication, and update or resize collectio
 * **GPU Support** - for accelerated indexing, with support for NVIDIA and AMD GPUs.
 * **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on network-attached storage.
 * **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages.
+
+<p align="center"><img style="width: 75%; border: 1px solid #8f98b2;" src="https://qdrant.tech/docs/gettingstarted/web-ui.png" alt="Qdrant Web UI" /></p>
 
 ## Integrations
 
