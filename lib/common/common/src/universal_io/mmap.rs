@@ -63,7 +63,7 @@ impl UniversalRead for MmapFile {
         let mmap = open_mmap(
             path.as_ref(),
             writeable,
-            matches!(populate, Populate::Blocking), // only populate on explicit blocking request
+            populate.is_set(), // always populate on foreground
             advice.unwrap_or(AdviceSetting::Global),
         )?;
         let ptr = SendSyncPtr(mmap.as_mut_ptr());
