@@ -44,6 +44,10 @@ pub trait EncodedVectors: Sized {
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
 
+    fn for_each_in_batch<F>(&self, offsets: &[PointOffsetType], callback: F)
+    where
+        F: FnMut(usize, &[u8]);
+
     fn score_point(
         &self,
         query: &Self::EncodedQuery,
