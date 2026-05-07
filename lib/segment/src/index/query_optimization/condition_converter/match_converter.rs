@@ -176,6 +176,16 @@ fn get_match_except_checker(
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'_>> {
+    if matches!(index, FieldIndex::NullIndex(_))
+        || (matches!(except, AnyVariants::Strings(_))
+            && matches!(index, FieldIndex::FullTextIndex(_)))
+    {
+        // Full-text index tokenizes values, while MatchExcept currently has exact-string semantics.
+        // Null index can only reason about emptiness.
+        // In both cases, let payload-level matcher evaluate exact values.
+        return None;
+    }
+
     let checker: Option<ConditionCheckerFn> = match (except, index) {
         (AnyVariants::Strings(list), FieldIndex::KeywordIndex(index)) => {
             let hw_counter = hw_acc.get_counter_cell();

@@ -17,7 +17,8 @@ use rand::{RngExt, SeedableRng};
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
-    KeywordIndexType, TextIndexParams, TextIndexType,
+    KeywordIndexType, StopwordsInterface, StopwordsSet, TextIndexParams, TextIndexType,
+    TokenizerType,
 };
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
@@ -45,7 +46,8 @@ use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString,
     GeoPoint, GeoPolygon, GeoRadius, HnswConfig, HnswGlobalConfig, Indexes, IsEmptyCondition,
     Match, Payload, PayloadField, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-    Range, SegmentConfig, ValueVariants, VectorDataConfig, VectorStorageType, WithPayload,
+    Range, SegmentConfig, SeqNumberType, ValueVariants, VectorDataConfig, VectorStorageType,
+    WithPayload,
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tempfile::{Builder, TempDir};
@@ -1181,6 +1183,120 @@ fn test_struct_payload_index_nested_fields() {
                 );
                 assert!((r1.score - r2.score) < 0.0001)
             });
+    }
+}
+
+#[test]
+fn test_match_except_fulltext_consistency_with_unindexed_and_keyword() {
+    fn collect_ids(except: Vec<String>, index_mode: &str) -> Vec<u64> {
+        let dir = Builder::new()
+            .prefix("segment_match_except_fulltext")
+            .tempdir()
+            .unwrap();
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        let title_key = JsonPath::new("title");
+
+        for (idx, title) in [
+            (1_u64, "the the"),
+            (2_u64, "theory lesson"),
+            (3_u64, "alpha beta"),
+            (4_u64, ""),
+        ] {
+            segment
+                .upsert_point(
+                    idx as SeqNumberType,
+                    idx.into(),
+                    only_default_vector(&[1.0, 0.0]),
+                    &hw_counter,
+                )
+                .unwrap();
+            segment
+                .set_full_payload(
+                    idx as SeqNumberType,
+                    idx.into(),
+                    &payload_json! { "title": title },
+                    &hw_counter,
+                )
+                .unwrap();
+        }
+
+        match index_mode {
+            "no_index" => {}
+            "keyword" => {
+                segment
+                    .create_field_index(
+                        10,
+                        &title_key,
+                        Some(&FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                            r#type: KeywordIndexType::Keyword,
+                            is_tenant: None,
+                            on_disk: None,
+                            enable_hnsw: None,
+                        }))),
+                        &hw_counter,
+                    )
+                    .unwrap();
+            }
+            "fulltext" => {
+                segment
+                    .create_field_index(
+                        10,
+                        &title_key,
+                        Some(&FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+                            r#type: TextIndexType::Text,
+                            tokenizer: TokenizerType::Word,
+                            min_token_len: None,
+                            max_token_len: None,
+                            lowercase: Some(true),
+                            ascii_folding: None,
+                            phrase_matching: None,
+                            stopwords: Some(StopwordsInterface::Set(StopwordsSet {
+                                languages: None,
+                                custom: Some(["the".to_string()].into_iter().collect()),
+                            })),
+                            on_disk: None,
+                            stemmer: None,
+                            enable_hnsw: None,
+                        }))),
+                        &hw_counter,
+                    )
+                    .unwrap();
+            }
+            _ => panic!("unsupported index_mode"),
+        }
+
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            title_key,
+            Match::new_except(AnyVariants::Strings(except.into_iter().collect())),
+        )));
+        let is_stopped = AtomicBool::new(false);
+        let mut ids = segment
+            .payload_index
+            .borrow()
+            .query_points(&filter, &hw_counter, &is_stopped, None)
+            .unwrap()
+            .into_iter()
+            .map(|offset| match segment.id_tracker.borrow().external_id(offset).unwrap() {
+                segment::types::ExtendedPointId::NumId(id) => id,
+                segment::types::ExtendedPointId::Uuid(_) => panic!("unexpected uuid id"),
+            })
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids
+    }
+
+    for index_mode in ["no_index", "keyword", "fulltext"] {
+        assert_eq!(
+            collect_ids(vec!["zzz".to_string()], index_mode),
+            vec![1, 2, 3, 4],
+            "index_mode={index_mode}, except=['zzz']"
+        );
+        assert_eq!(
+            collect_ids(vec!["alpha beta".to_string()], index_mode),
+            vec![1, 2, 4],
+            "index_mode={index_mode}, except=['alpha beta']"
+        );
     }
 }
 
