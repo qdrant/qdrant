@@ -11,6 +11,7 @@ pub use stemmer::Stemmer;
 pub use tokens_processor::TokensProcessor;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
+use crate::index::field_index::full_text_index::inverted_index::ARRAY_BOUNDARY_SENTINEL;
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 
 struct WhiteSpaceTokenizer;
@@ -228,8 +229,12 @@ impl Tokenizer {
         self.tokenize(TokenizerTextKind::Document, text, callback);
     }
 
-    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
-        self.tokenize(TokenizerTextKind::Query, text, callback);
+    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, mut callback: C) {
+        self.tokenize(TokenizerTextKind::Query, text, |token| {
+            if token != ARRAY_BOUNDARY_SENTINEL {
+                callback(token)
+            }
+        });
     }
 }
 
