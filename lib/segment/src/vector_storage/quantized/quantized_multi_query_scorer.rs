@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::marker::PhantomData;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
@@ -14,32 +13,29 @@ use crate::vector_storage::quantized::quantized_multivector_storage::{
 };
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedMultiQueryScorer<'a, TElement, TMetric, TEncodedVectors>
+pub struct QuantizedMultiQueryScorer<'a, TEncodedVectors>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
 {
     query: TEncodedVectors::EncodedQuery,
     quantized_multivector_storage: &'a TEncodedVectors,
-    metric: PhantomData<TMetric>,
-    element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TElement, TMetric, TEncodedVectors>
-    QuantizedMultiQueryScorer<'a, TElement, TMetric, TEncodedVectors>
+impl<'a, TEncodedVectors> QuantizedMultiQueryScorer<'a, TEncodedVectors>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
 {
-    pub fn new_multi(
+    pub fn new_multi<TElement, TMetric>(
         raw_query: &MultiDenseVectorInternal,
         quantized_multivector_storage: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
         mut hardware_counter: HardwareCounterCell,
-    ) -> Self {
+    ) -> Self
+    where
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
+    {
         let mut query = Vec::new();
         for inner_vector in raw_query.multi_vectors() {
             let inner_preprocessed = TMetric::preprocess(inner_vector.to_vec());
@@ -60,21 +56,16 @@ where
         Self {
             query,
             quantized_multivector_storage,
-            metric: PhantomData,
-            element: PhantomData,
             hardware_counter,
         }
     }
 }
 
-impl<TElement, TMetric, TEncodedVectors> QueryScorer
-    for QuantizedMultiQueryScorer<'_, TElement, TMetric, TEncodedVectors>
+impl<TEncodedVectors> QueryScorer for QuantizedMultiQueryScorer<'_, TEncodedVectors>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets,
 {
-    type TVector = [TElement];
+    type TVector = ();
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
@@ -88,7 +79,7 @@ where
             .score_point(&self.query, idx, &self.hardware_counter)
     }
 
-    fn score(&self, _v2: &[TElement]) -> ScoreType {
+    fn score(&self, _v2: &()) -> ScoreType {
         unimplemented!("This method is not expected to be called for quantized scorer");
     }
 
