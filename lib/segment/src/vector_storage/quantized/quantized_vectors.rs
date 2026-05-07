@@ -254,7 +254,7 @@ impl QuantizedVectors {
     }
 
     pub fn default_rescoring(&self) -> bool {
-        match self.storage_impl {
+        match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(_) => false,
             QuantizedVectorStorage::ScalarMmap(_) => false,
             QuantizedVectorStorage::ScalarChunkedMmap(_) => false,
@@ -264,9 +264,15 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRam(_) => true,
             QuantizedVectorStorage::BinaryMmap(_) => true,
             QuantizedVectorStorage::BinaryChunkedMmap(_) => true,
-            QuantizedVectorStorage::TQRam(_) => false,
-            QuantizedVectorStorage::TQMmap(_) => false,
-            QuantizedVectorStorage::TQChunkedMmap(_) => false,
+            QuantizedVectorStorage::TQRam(q) => {
+                Self::tq_bits_default_rescoring(q.get_metadata().bits)
+            }
+            QuantizedVectorStorage::TQMmap(q) => {
+                Self::tq_bits_default_rescoring(q.get_metadata().bits)
+            }
+            QuantizedVectorStorage::TQChunkedMmap(q) => {
+                Self::tq_bits_default_rescoring(q.get_metadata().bits)
+            }
             QuantizedVectorStorage::ScalarRamMulti(_) => false,
             QuantizedVectorStorage::ScalarMmapMulti(_) => false,
             QuantizedVectorStorage::ScalarChunkedMmapMulti(_) => false,
@@ -276,9 +282,15 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRamMulti(_) => true,
             QuantizedVectorStorage::BinaryMmapMulti(_) => true,
             QuantizedVectorStorage::BinaryChunkedMmapMulti(_) => true,
-            QuantizedVectorStorage::TQRamMulti(_) => false,
-            QuantizedVectorStorage::TQMmapMulti(_) => false,
-            QuantizedVectorStorage::TQChunkedMmapMulti(_) => false,
+            QuantizedVectorStorage::TQRamMulti(q) => {
+                Self::tq_bits_default_rescoring(q.storage().get_metadata().bits)
+            }
+            QuantizedVectorStorage::TQMmapMulti(q) => {
+                Self::tq_bits_default_rescoring(q.storage().get_metadata().bits)
+            }
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => {
+                Self::tq_bits_default_rescoring(q.storage().get_metadata().bits)
+            }
         }
     }
 
@@ -2287,6 +2299,13 @@ impl QuantizedVectors {
             TurboQuantBitSize::Bits1_5 => TQBits::Bits1_5,
             TurboQuantBitSize::Bits2 => TQBits::Bits2,
             TurboQuantBitSize::Bits4 => TQBits::Bits4,
+        }
+    }
+
+    fn tq_bits_default_rescoring(bits: TQBits) -> bool {
+        match bits {
+            TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 => true,
+            TQBits::Bits4 => false,
         }
     }
 
