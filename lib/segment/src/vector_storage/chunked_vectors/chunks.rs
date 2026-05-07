@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, TypedStorage, UniversalIoError, UniversalRead, UniversalWrite,
+    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalWrite,
 };
 use fs_err as fs;
 
@@ -56,7 +56,7 @@ pub fn read_chunks<T: bytemuck::Pod, S: UniversalRead>(
                 writeable,
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
                 disk_parallel: None,
-                populate: Some(populate),
+                populate: populate.into(),
                 advice: Some(advice),
                 prevent_caching: None,
             },
@@ -87,7 +87,7 @@ pub fn create_chunk<T: bytemuck::Pod, S: UniversalWrite>(
             writeable: true,
             need_sequential: *MULTI_MMAP_IS_SUPPORTED,
             disk_parallel: None,
-            populate: Some(false), // don't populate newly created chunk, as it's empty and will be filled later
+            populate: Populate::No, // don't populate newly created chunk, as it's empty and will be filled later
             advice: None,
             prevent_caching: None,
         },

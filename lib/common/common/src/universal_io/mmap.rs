@@ -63,7 +63,7 @@ impl UniversalRead for MmapFile {
         let mmap = open_mmap(
             path.as_ref(),
             writeable,
-            populate.unwrap_or_default(),
+            populate.is_set(), // always populate on foreground
             advice.unwrap_or(AdviceSetting::Global),
         )?;
         let ptr = SendSyncPtr(mmap.as_mut_ptr());
@@ -278,7 +278,7 @@ impl MmapFile {
                 writeable: false,
                 need_sequential: false,
                 disk_parallel: None,
-                populate: Some(false),
+                populate: Populate::No,
                 advice: Some(AdviceSetting::Advice(Advice::Normal)),
                 prevent_caching: None,
             },

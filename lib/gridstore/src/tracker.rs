@@ -4,7 +4,7 @@ use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalWrite,
+    OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalWrite,
 };
 use smallvec::SmallVec;
 
@@ -21,7 +21,7 @@ fn tracker_open_options() -> OpenOptions {
         writeable: true,
         need_sequential: false,
         disk_parallel: None,
-        populate: Some(false),
+        populate: Populate::No,
         advice: Some(AdviceSetting::Advice(Advice::Random)),
         prevent_caching: None,
     }

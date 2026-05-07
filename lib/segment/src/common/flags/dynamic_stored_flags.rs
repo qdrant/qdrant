@@ -7,7 +7,7 @@ use common::bitvec::BitSlice;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, StoredStruct, UniversalWrite};
+use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalWrite};
 use fs_err as fs;
 use itertools::Either;
 
@@ -116,7 +116,7 @@ where
                 writeable: true,
                 need_sequential: false,
                 disk_parallel: None,
-                populate: Some(false),
+                populate: Populate::No,
                 advice: None,
                 prevent_caching: None,
             },
@@ -160,7 +160,7 @@ where
 
         let options = OpenOptions {
             writeable: true,
-            populate: Some(populate),
+            populate: populate.into(),
             advice: Some(AdviceSetting::Global),
             ..Default::default()
         };

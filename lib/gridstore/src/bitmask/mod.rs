@@ -7,7 +7,7 @@ use ahash::AHashSet;
 use common::bitvec::BitSlice;
 use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{MmapFile, OpenOptions, UniversalWrite};
+use common::universal_io::{MmapFile, OpenOptions, Populate, UniversalWrite};
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
 
@@ -22,7 +22,7 @@ const OPEN_OPTIONS: OpenOptions = OpenOptions {
     writeable: true,
     need_sequential: false,
     disk_parallel: None,
-    populate: Some(false),
+    populate: Populate::No,
     advice: None,
     prevent_caching: None,
 };

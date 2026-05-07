@@ -59,7 +59,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
             writeable: false,
             need_sequential: true,
             disk_parallel: None,
-            populate: Some(populate),
+            populate: populate.into(),
             advice: None,
             prevent_caching: None,
         };
