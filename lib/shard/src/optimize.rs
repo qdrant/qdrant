@@ -67,7 +67,19 @@ pub trait OptimizationStrategy: Send {
     ) -> OperationResult<SegmentBuilder>;
 
     /// Create a temporary COW segment for writes during optimization.
-    fn create_temp_segment(&self) -> OperationResult<LockedSegment>;
+    ///
+    /// `donor_ecs` carries trained TQ+ ECs from existing sibling segments;
+    /// the new appendable temp segment adopts them so its score
+    /// distribution lines up with the indexed segments at search time.
+    /// `execute_optimization` collects them via
+    /// [`SegmentHolder::collect_trained_tq_ecs`].
+    fn create_temp_segment(
+        &self,
+        donor_ecs: &std::collections::HashMap<
+            segment::types::VectorNameBuf,
+            segment::vector_storage::quantized::quantized_vectors::ErrorCorrectionMetadata,
+        >,
+    ) -> OperationResult<LockedSegment>;
 }
 
 /// Restores original segments from proxies
@@ -720,8 +732,30 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     let hw_counter = HardwareCounterCell::disposable();
 
+    // Collect trained TQ+ ECs from existing sibling segments so the new
+    // COW segment encodes against the same `shift`/`scale` as the indexed
+    // segments — without this, cross-segment top-K merging produces a
+    // distribution mismatch that tanks 1-bit recall.
+    let donor_ecs = need_extra_cow_segment
+        .then(|| {
+            let config = segment_holder_read
+                .non_appendable_then_appendable_segments()
+                .find_map(|s| match s {
+                    LockedSegment::Original(seg) => Some(seg.read().config().clone()),
+                    LockedSegment::Proxy(_) => None,
+                });
+            config.map(|cfg| segment_holder_read.collect_trained_tq_ecs(&cfg))
+        })
+        .flatten()
+        .unwrap_or_default();
+    log::info!(
+        "execute_optimization: COW donor_ecs has {} entries (need_extra_cow={})",
+        donor_ecs.len(),
+        need_extra_cow_segment,
+    );
+
     let extra_cow_segment_opt = need_extra_cow_segment
-        .then(|| factory.create_temp_segment())
+        .then(|| factory.create_temp_segment(&donor_ecs))
         .transpose()?;
 
     let mut proxies = Vec::new();

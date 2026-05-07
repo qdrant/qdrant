@@ -358,7 +358,7 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     let quantization_files = quantized_vectors.files();
 
     // test save-load
-    let quantized_vectors = QuantizedVectors::load(&config, storage, dir.path(), &stopped)
+    let quantized_vectors = QuantizedVectors::load(&config, storage, dir.path(), None, &stopped)
         .unwrap()
         .unwrap();
     assert_eq!(files, storage.files());

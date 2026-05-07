@@ -444,6 +444,22 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn get_metadata(&self) -> &Metadata {
         &self.metadata
     }
+
+    /// Return the persisted EC if it's been trained on real data — i.e.
+    /// the encoder is in [`TQMode::Plus`] and the `shift`/`scale` are not
+    /// the identity placeholder produced by an empty pre-pass.
+    ///
+    /// Used as a "donor" when a fresh appendable segment in the same
+    /// collection is created with no vectors of its own and would otherwise
+    /// fall back to a no-op EC. See `EncodedVectorsTQ::encode`'s `donor_ec`
+    /// parameter.
+    pub fn trained_ec(&self) -> Option<ErrorCorrectionMetadata> {
+        let ec = self.metadata.error_correction.as_ref()?;
+        // Identity EC: the empty-pre-pass output. Treating it as "trained"
+        // would just propagate the bug we're trying to escape.
+        let trivial = ec.shift.iter().all(|&s| s == 0.0) && ec.scale.iter().all(|&s| s == 1.0);
+        if trivial { None } else { Some(ec.clone()) }
+    }
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {

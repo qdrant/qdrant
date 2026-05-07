@@ -6,7 +6,7 @@ mod snapshot;
 mod tests;
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
@@ -29,8 +29,11 @@ use segment::entry::{
     NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
 };
 use segment::segment::Segment;
-use segment::segment_constructor::build_segment;
-use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
+use segment::segment_constructor::build_segment_with_donor_ecs;
+use segment::types::{
+    ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf,
+};
+use segment::vector_storage::quantized::quantized_vectors::ErrorCorrectionMetadata;
 use smallvec::SmallVec;
 
 use crate::locked_segment::LockedSegment;
@@ -769,6 +772,78 @@ impl SegmentHolder {
         Ok(segment)
     }
 
+    /// Collect per-vector trained TQ+ ECs from any sibling segment that has
+    /// one. Used as donor input when building a new appendable segment so it
+    /// can adopt the same `shift`/`scale` instead of falling back to the
+    /// no-op identity that an empty pre-pass produces (which corrupts
+    /// cross-segment top-K merging at low bit widths).
+    ///
+    /// Only inspects [`LockedSegment::Original`] segments — proxy segments
+    /// wrap an Original underneath, but they're transient and we'd rather
+    /// pick the donor from a stable on-disk source.
+    ///
+    /// Returns one EC per vector_name in `config.vector_data`. If no sibling
+    /// has a trained EC for a given vector, the entry is omitted; downstream
+    /// the auto-create path then falls back to the no-op EC for that vector.
+    pub fn collect_trained_tq_ecs(
+        &self,
+        config: &SegmentConfig,
+    ) -> HashMap<VectorNameBuf, ErrorCorrectionMetadata> {
+        let mut donors: HashMap<VectorNameBuf, ErrorCorrectionMetadata> = HashMap::new();
+        let mut total_segments = 0usize;
+        let mut original_segments = 0usize;
+        for segment in self.non_appendable_then_appendable_segments() {
+            total_segments += 1;
+            let LockedSegment::Original(seg) = segment else {
+                continue;
+            };
+            original_segments += 1;
+            let seg_read = seg.read();
+            for vector_name in config.vector_data.keys() {
+                if donors.contains_key(vector_name.as_str()) {
+                    continue;
+                }
+                let Some(vector_data) = seg_read.vector_data.get(vector_name.as_str()) else {
+                    continue;
+                };
+                let quantized = vector_data.quantized_vectors.borrow();
+                let Some(quantized) = quantized.as_ref() else {
+                    log::debug!(
+                        "collect_trained_tq_ecs: segment has no quantized_vectors for {vector_name}",
+                    );
+                    continue;
+                };
+                match quantized.trained_tq_ec() {
+                    Some(ec) => {
+                        log::info!(
+                            "collect_trained_tq_ecs: found trained donor EC for vector {vector_name} \
+                             (shift_len={}, scale_len={})",
+                            ec.shift.len(),
+                            ec.scale.len(),
+                        );
+                        donors.insert(vector_name.clone(), ec);
+                    }
+                    None => {
+                        log::debug!(
+                            "collect_trained_tq_ecs: segment's quantized_vectors has no trained \
+                             EC for {vector_name} (no-op or non-TQ+)",
+                        );
+                    }
+                }
+            }
+            if donors.len() == config.vector_data.len() {
+                break;
+            }
+        }
+        log::info!(
+            "collect_trained_tq_ecs: scanned {total_segments} segments ({original_segments} \
+             Original), found donors for {}/{} vector(s)",
+            donors.len(),
+            config.vector_data.len(),
+        );
+        donors
+    }
+
     /// Build a temporary appendable segment, usually for proxying writes into.
     ///
     /// The segment configuration is sourced from the given collection parameters. If none is
@@ -812,8 +887,14 @@ impl SegmentHolder {
                 .clone(),
         };
 
-        let mut segment =
-            build_segment(segments_path, &config, deferred_internal_id, save_version)?;
+        let donor_ecs = self.collect_trained_tq_ecs(&config);
+        let mut segment = build_segment_with_donor_ecs(
+            segments_path,
+            &config,
+            deferred_internal_id,
+            save_version,
+            &donor_ecs,
+        )?;
 
         // Internal operation.
         let hw_counter = HardwareCounterCell::disposable();

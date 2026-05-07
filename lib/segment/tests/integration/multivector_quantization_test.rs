@@ -296,6 +296,7 @@ fn test_multivector_quantization_hnsw(
             &quantization_config,
             &vector_storage.vector_storage.borrow(),
             quantized_data_path,
+            None,
             &stopped,
         )
         .unwrap()

@@ -45,7 +45,7 @@ use crate::segment::{
 use crate::types::{
     Distance, HnswGlobalConfig, Indexes, PayloadStorageType, SegmentConfig, SegmentState,
     SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
-    VectorStorageDatatype, VectorStorageType,
+    VectorNameBuf, VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::dense::dense_vector_storage::{
     open_dense_vector_storage, open_dense_vector_storage_byte, open_dense_vector_storage_half,
@@ -53,7 +53,9 @@ use crate::vector_storage::dense::dense_vector_storage::{
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     open_appendable_memmap_multi_vector_storage, open_appendable_memmap_vector_storage,
 };
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::{
+    ErrorCorrectionMetadata, QuantizedVectors,
+};
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
@@ -416,6 +418,7 @@ fn create_segment(
     uuid: Uuid,
     deferred_internal_id: Option<PointOffsetType>,
     config: &SegmentConfig,
+    donor_ecs: &HashMap<VectorNameBuf, ErrorCorrectionMetadata>,
     stopped: &AtomicBool,
     create: bool,
 ) -> OperationResult<Segment> {
@@ -503,10 +506,12 @@ fn create_segment(
         let quantized_vectors = sp(
             if let Some(quantization_config) = config.quantization_config(vector_name) {
                 let quantized_data_path = vector_storage_path;
+                let donor_ec = donor_ecs.get(vector_name).cloned();
                 QuantizedVectors::load(
                     quantization_config,
                     &vector_storage.borrow(),
                     &quantized_data_path,
+                    donor_ec,
                     stopped,
                 )?
             } else {
@@ -715,6 +720,23 @@ pub fn load_segment(
     deferred_internal_id: Option<PointOffsetType>,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
+    load_segment_with_donor_ecs(path, uuid, deferred_internal_id, &HashMap::new(), stopped)
+}
+
+/// Same as [`load_segment`] but accepts per-vector trained TQ+ ECs that the
+/// loaded segment can adopt if its quantization config is missing on disk
+/// (i.e. the auto-create path inside `QuantizedVectors::load` fires). The
+/// caller — typically `SegmentHolder` — collects donor ECs from already-
+/// loaded sibling segments via `QuantizedVectors::trained_tq_ec` and feeds
+/// them in here so the new segment encodes against the same EC instead of
+/// the no-op identity that `count == 0` would otherwise produce.
+pub fn load_segment_with_donor_ecs(
+    path: &Path,
+    uuid: Uuid,
+    deferred_internal_id: Option<PointOffsetType>,
+    donor_ecs: &HashMap<VectorNameBuf, ErrorCorrectionMetadata>,
+    stopped: &AtomicBool,
+) -> OperationResult<Segment> {
     let total_started = Instant::now();
 
     let stored_version = SegmentVersion::load(path)?.ok_or_else(|| {
@@ -764,6 +786,7 @@ pub fn load_segment(
         uuid,
         deferred_internal_id,
         &segment_state.config,
+        donor_ecs,
         stopped,
         false,
     )?;
@@ -791,6 +814,24 @@ pub fn build_segment(
     deferred_internal_id: Option<PointOffsetType>,
     ready: bool,
 ) -> OperationResult<Segment> {
+    build_segment_with_donor_ecs(
+        segments_path,
+        config,
+        deferred_internal_id,
+        ready,
+        &HashMap::new(),
+    )
+}
+
+/// Same as [`build_segment`] but accepts per-vector trained TQ+ ECs from
+/// sibling segments. See [`load_segment_with_donor_ecs`] for the rationale.
+pub fn build_segment_with_donor_ecs(
+    segments_path: &Path,
+    config: &SegmentConfig,
+    deferred_internal_id: Option<PointOffsetType>,
+    ready: bool,
+    donor_ecs: &HashMap<VectorNameBuf, ErrorCorrectionMetadata>,
+) -> OperationResult<Segment> {
     let uuid = Uuid::new_v4();
     let segment_path = segments_path.join(uuid.to_string());
     let stopped = AtomicBool::new(false);
@@ -803,6 +844,7 @@ pub fn build_segment(
         uuid,
         deferred_internal_id,
         config,
+        donor_ecs,
         &stopped,
         true,
     )?;

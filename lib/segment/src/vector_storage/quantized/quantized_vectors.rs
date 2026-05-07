@@ -11,6 +11,7 @@ use common::low_memory::low_memory_mode;
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
+pub use quantization::turboquant::ErrorCorrectionMetadata;
 use quantization::turboquant::{EncodedVectorsTQ, TQBits, TQMode};
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
@@ -253,6 +254,28 @@ impl QuantizedVectors {
         &self.config
     }
 
+    /// Return the trained TQ+ error correction (`shift`/`scale`) if this
+    /// `QuantizedVectors` is backed by a TurboQuant encoder whose EC was
+    /// fit to real data. Returns `None` for non-TQ storage, for `TQMode::Normal`,
+    /// or when the EC is the identity placeholder produced by an empty
+    /// pre-pass.
+    ///
+    /// Intended as a donor source for fresh appendable segments in the same
+    /// collection that would otherwise auto-create with a no-op EC. The
+    /// caller (e.g. `SegmentHolder`) walks its existing segments and feeds
+    /// the result into `build_segment_with_donor_ecs`.
+    pub fn trained_tq_ec(&self) -> Option<ErrorCorrectionMetadata> {
+        match &self.storage_impl {
+            QuantizedVectorStorage::TQRam(q) => q.trained_ec(),
+            QuantizedVectorStorage::TQMmap(q) => q.trained_ec(),
+            QuantizedVectorStorage::TQChunkedMmap(q) => q.trained_ec(),
+            QuantizedVectorStorage::TQRamMulti(q) => q.storage().trained_ec(),
+            QuantizedVectorStorage::TQMmapMulti(q) => q.storage().trained_ec(),
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.storage().trained_ec(),
+            _ => None,
+        }
+    }
+
     pub fn default_rescoring(&self) -> bool {
         match self.storage_impl {
             QuantizedVectorStorage::ScalarRam(_) => false,
@@ -463,66 +486,6 @@ impl QuantizedVectors {
         path.join(QUANTIZED_META_PATH)
     }
 
-    /// Look for a sibling segment in the same collection that has already
-    /// trained a TQ+ EC, and return its `shift`/`scale` so an empty
-    /// appendable segment can adopt them.
-    ///
-    /// `path` is this segment's per-vector quantization root, i.e.
-    /// `<segments_root>/<segment_uuid>/<vector_storage_basename>`. We walk
-    /// `<segments_root>/*/<vector_storage_basename>/quantized.meta.json`
-    /// (skipping our own segment) and return the first metadata file that
-    /// parses as TQ+ with non-trivial EC. The basename match is essential —
-    /// EC dimensionality is per-named-vector, not per-collection.
-    ///
-    /// Best-effort: any I/O or parse error short-circuits this sibling and
-    /// the scan continues. Returns `None` if no usable donor is found, in
-    /// which case the caller falls back to the existing "no-op EC" path.
-    fn find_sibling_donor_ec(
-        path: &Path,
-    ) -> Option<quantization::turboquant::ErrorCorrectionMetadata> {
-        let segment_dir = path.parent()?;
-        let segments_root = segment_dir.parent()?;
-        let basename = path.file_name()?;
-
-        let entries = fs_err::read_dir(segments_root).ok()?;
-        for entry in entries.flatten() {
-            let sibling_segment = entry.path();
-            if sibling_segment == segment_dir {
-                continue;
-            }
-            if !sibling_segment.is_dir() {
-                continue;
-            }
-            let sibling_meta = sibling_segment.join(basename).join(QUANTIZED_META_PATH);
-            if !sibling_meta.exists() {
-                continue;
-            }
-            let Ok(contents) = fs_err::read_to_string(&sibling_meta) else {
-                continue;
-            };
-            let Ok(metadata) =
-                serde_json::from_str::<quantization::turboquant::Metadata>(&contents)
-            else {
-                continue;
-            };
-            if !matches!(metadata.mode, TQMode::Plus) {
-                continue;
-            }
-            let Some(ec) = metadata.error_correction else {
-                continue;
-            };
-            // Reject a no-op EC — it would produce the same recall hole we're
-            // trying to avoid. Detect it as "all shifts zero AND all scales
-            // exactly 1.0", which is what the empty pre-pass produces.
-            let trivial = ec.shift.iter().all(|&s| s == 0.0) && ec.scale.iter().all(|&s| s == 1.0);
-            if trivial {
-                continue;
-            }
-            return Some(ec);
-        }
-        None
-    }
-
     fn get_offsets_path(path: &Path, storage_type: QuantizedVectorsStorageType) -> PathBuf {
         match storage_type {
             QuantizedVectorsStorageType::Immutable => path.join(QUANTIZED_OFFSETS_PATH),
@@ -598,7 +561,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
-        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
+        donor_ec: Option<ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         match vector_storage {
@@ -796,7 +759,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
-        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
+        donor_ec: Option<ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
@@ -913,7 +876,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
-        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
+        donor_ec: Option<ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
@@ -1052,9 +1015,16 @@ impl QuantizedVectors {
         quantization_config: &QuantizationConfig,
         vector_storage: &VectorStorageEnum,
         path: &Path,
+        donor_ec: Option<ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<Option<Self>> {
         let config_path = Self::get_config_path(path);
+        log::info!(
+            "QuantizedVectors::load path={} config_exists={} donor_ec={}",
+            path.display(),
+            config_path.exists(),
+            donor_ec.is_some(),
+        );
         if config_path.exists() {
             let config: QuantizedVectorsConfig = read_json(&config_path)?;
             return Ok(Some(Self::load_impl(config, vector_storage, path)?));
@@ -1080,15 +1050,15 @@ impl QuantizedVectors {
         // `SegmentBuilder::build` under a permit-bounded `max_threads`.
         let max_threads = 1;
 
-        // For TQ+, an empty segment can't train its own EC. If a sibling
-        // segment in the same collection has already trained one (typically
-        // the indexed segment built from the first batch of data), reuse its
-        // `shift`/`scale`. Without this, the appendable encodes vectors with
-        // a no-op EC while the indexed segment uses a trained EC; their
-        // score distributions then differ enough that cross-segment top-K
-        // merging suffers heavy recall loss for 1-bit storage.
+        // `donor_ec` is supplied by the caller (e.g. `SegmentHolder` walking
+        // its in-memory siblings via `QuantizedVectors::trained_tq_ec`) when
+        // a fresh TQ+ appendable segment is created in a collection that
+        // already has a sibling with a trained EC. Without it the appendable
+        // encodes vectors with a no-op EC while the indexed segment uses a
+        // trained one; the resulting score-distribution mismatch tanks 1-bit
+        // recall when results are merged across segments.
         let donor_ec = if matches!(quantization_config, QuantizationConfig::Turbo(_)) {
-            Self::find_sibling_donor_ec(path)
+            donor_ec
         } else {
             None
         };
@@ -2140,7 +2110,7 @@ impl QuantizedVectors {
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
-        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
+        donor_ec: Option<ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
@@ -2231,7 +2201,7 @@ impl QuantizedVectors {
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
-        donor_ec: Option<quantization::turboquant::ErrorCorrectionMetadata>,
+        donor_ec: Option<ErrorCorrectionMetadata>,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());

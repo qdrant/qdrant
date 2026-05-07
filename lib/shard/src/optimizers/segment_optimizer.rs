@@ -14,7 +14,7 @@ use segment::entry::ReadSegmentEntry;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
-use segment::segment_constructor::build_segment;
+use segment::segment_constructor::build_segment_with_donor_ecs;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{HnswGlobalConfig, Indexes, VectorStorageType};
 use uuid::Uuid;
@@ -57,8 +57,14 @@ impl<O: SegmentOptimizer + ?Sized> OptimizationStrategy for ShardOptimizationStr
         self.optimizer.optimized_segment_builder(input_segments)
     }
 
-    fn create_temp_segment(&self) -> OperationResult<LockedSegment> {
-        self.optimizer.temp_segment(false)
+    fn create_temp_segment(
+        &self,
+        donor_ecs: &std::collections::HashMap<
+            segment::types::VectorNameBuf,
+            segment::vector_storage::quantized::quantized_vectors::ErrorCorrectionMetadata,
+        >,
+    ) -> OperationResult<LockedSegment> {
+        self.optimizer.temp_segment(false, donor_ecs)
     }
 }
 
@@ -137,13 +143,21 @@ pub trait SegmentOptimizer: Sync {
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
 
     /// Build temp segment
-    fn temp_segment(&self, save_version: bool) -> OperationResult<LockedSegment> {
+    fn temp_segment(
+        &self,
+        save_version: bool,
+        donor_ecs: &std::collections::HashMap<
+            segment::types::VectorNameBuf,
+            segment::vector_storage::quantized::quantized_vectors::ErrorCorrectionMetadata,
+        >,
+    ) -> OperationResult<LockedSegment> {
         let config = self.segment_optimizer_config().plain_segment_config();
-        Ok(LockedSegment::new(build_segment(
+        Ok(LockedSegment::new(build_segment_with_donor_ecs(
             self.segments_path(),
             &config,
             self.threshold_config().deferred_internal_id,
             save_version,
+            donor_ecs,
         )?))
     }
 
