@@ -17,30 +17,21 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
 
-pub trait UioChunkedVectors<T>:
-    UniversalWrite<T> + UniversalWrite<Status> + Send + 'static
-where
-    T: Copy + 'static,
-{
-}
-impl<T, S> UioChunkedVectors<T> for S
-where
-    T: Copy + 'static,
-    S: UniversalWrite<T> + UniversalWrite<Status> + Send + 'static,
-{
-}
-
 #[derive(Debug)]
 pub struct ChunkedVectors<T, S>
 where
     T: Copy + 'static,
-    S: UioChunkedVectors<T>,
+    S: UniversalWrite<T> + UniversalWrite<Status> + Send + 'static,
 {
     inner: ChunkedVectorsRead<T, S>,
     status: StoredStruct<S, Status>,
 }
 
-impl<T: Copy + 'static, S: UioChunkedVectors<T>> Deref for ChunkedVectors<T, S> {
+impl<T, S> Deref for ChunkedVectors<T, S>
+where
+    T: Copy + 'static,
+    S: UniversalWrite<T> + UniversalWrite<Status> + Send + 'static,
+{
     type Target = ChunkedVectorsRead<T, S>;
 
     fn deref(&self) -> &Self::Target {
@@ -51,7 +42,7 @@ impl<T: Copy + 'static, S: UioChunkedVectors<T>> Deref for ChunkedVectors<T, S> 
 impl<T, S> ChunkedVectors<T, S>
 where
     T: Copy + 'static,
-    S: UioChunkedVectors<T>,
+    S: UniversalWrite<T> + UniversalWrite<Status> + Send + 'static,
 {
     pub fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
         let status_file = ChunkedVectorsRead::<T, S>::status_file(directory);
