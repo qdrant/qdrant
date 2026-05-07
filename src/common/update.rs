@@ -1217,8 +1217,12 @@ pub async fn update(
     let UpdateParams {
         wait,
         ordering,
-        timeout: _,
+        timeout,
     } = params;
+
+    // Default missing timeout to the inter-node update timeout so REST/gRPC
+    // user requests can't wait indefinitely on a vanished client.
+    let timeout = timeout.or_else(|| Some(toc.get_channel_service().request_timeout()));
 
     // Use wait_override if present, otherwise fall back to the wait boolean
     let wait =
@@ -1270,7 +1274,7 @@ pub async fn update(
         collection_name,
         OperationWithClockTag::new(operation, clock_tag),
         wait,
-        params.timeout,
+        timeout,
         ordering,
         shard_selector,
         auth,
