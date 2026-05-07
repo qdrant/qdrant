@@ -609,6 +609,15 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         self.encoded_vectors.for_each_in_batch(offsets, callback);
     }
 
+    fn score(
+        &self,
+        query: &Self::EncodedQuery,
+        encoded_vector: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        self.score_bytes(True, query, encoded_vector, hw_counter)
+    }
+
     fn score_point(
         &self,
         query: &EncodedQueryU8,

@@ -48,6 +48,13 @@ pub trait EncodedVectors: Sized {
     where
         F: FnMut(usize, &[u8]);
 
+    fn score(
+        &self,
+        query: &Self::EncodedQuery,
+        encoded_vector: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32;
+
     fn score_point(
         &self,
         query: &Self::EncodedQuery,
