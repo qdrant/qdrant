@@ -151,6 +151,11 @@ def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replicatio
     # Start cluster
     peers, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
 
+    # Wait until all peers have been promoted from learner to voter, so killing
+    # the last peer leaves a 2-of-3 voter quorum. Otherwise the survivors may
+    # be {leader voter, learner} and consensus stalls.
+    wait_for(all_peers_are_voters, peers)
+
     # Get last peer ID
     last_peer_id = get_cluster_info(peers[-1])['peer_id']
 

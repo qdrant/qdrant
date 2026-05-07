@@ -518,6 +518,16 @@ def all_nodes_respond(peer_api_uris: [str]) -> bool:
     return True
 
 
+def all_peers_are_voters(peer_api_uris: [str]) -> bool:
+    try:
+        for uri in peer_api_uris:
+            if not get_cluster_info(uri)["raft_info"]["is_voter"]:
+                return False
+        return True
+    except requests.exceptions.ConnectionError:
+        return False
+
+
 def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -> bool:
     for uri in peer_api_uris:
         r = requests.get(f"{uri}/collections")
