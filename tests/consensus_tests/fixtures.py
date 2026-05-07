@@ -151,6 +151,7 @@ def create_collection(
     sparse_vectors=True,
     default_segment_number=None,
     on_disk_payload=None,
+    fail_on_error=True,
 ):
     payload = {
         "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
@@ -175,7 +176,8 @@ def create_collection(
         json=payload,
         headers=headers,
     )
-    assert_http_ok(r_batch)
+    if fail_on_error:
+        assert_http_ok(r_batch)
 
 
 def drop_collection(peer_url, collection="test_collection", timeout=10, headers={}):

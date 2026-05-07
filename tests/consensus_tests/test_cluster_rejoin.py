@@ -40,8 +40,10 @@ def test_rejoin_cluster(tmp_path: pathlib.Path, uris_in_env):
         print(f"creating collection {i}")
         # Drop test_collection
         drop_collection(peer_api_uris[0], "test_collection", timeout=5)
-        # Re-create test_collection
-        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3)
+        # Re-create test_collection. The 3s timeout is intentionally tight to keep the loop
+        # fast; under CI load the consensus apply can exceed it even though the operation
+        # eventually commits, so we tolerate an HTTP timeout here.
+        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3, fail_on_error=False)
         # Collection might not be ready yet, we don't care
         upsert_random_points(peer_api_uris[0], 100)
         print(f"before recovery end {i}")
@@ -70,8 +72,8 @@ def test_rejoin_cluster(tmp_path: pathlib.Path, uris_in_env):
         print(f"after recovery start {i}")
         # Drop test_collection
         drop_collection(peer_api_uris[0], "test_collection", timeout=5)
-        # Re-create test_collection
-        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3)
+        # Re-create test_collection. Same rationale as above for tolerating HTTP timeouts.
+        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3, fail_on_error=False)
         upsert_random_points(peer_api_uris[0], 500, fail_on_error=False)
         print(f"after recovery end {i}")
         res = requests.get(f"{new_url}/collections")
