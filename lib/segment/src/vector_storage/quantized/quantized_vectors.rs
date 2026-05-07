@@ -36,8 +36,9 @@ use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
+use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageRam,
+    MultivectorOffsets, MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageRam,
 };
 use crate::vector_storage::quantized::quantized_query_scorer::{
     InternalScorerUnsupported, QuantizedQueryScorer,
@@ -380,6 +381,20 @@ impl QuantizedVectors {
             Ok(Box::new(RawScorerImpl { query_scorer }))
         }
 
+        fn build_multi<'a, TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets>(
+            point_id: PointOffsetType,
+            quantized_data: &'a TEncodedVectors,
+            hardware_counter: HardwareCounterCell,
+        ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
+            let query_scorer = QuantizedMultiQueryScorer::new_internal(
+                point_id,
+                quantized_data,
+                hardware_counter,
+            )?;
+
+            Ok(Box::new(RawScorerImpl { query_scorer }))
+        }
+
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => {
                 build(point_id, storage, hardware_counter)
@@ -410,40 +425,40 @@ impl QuantizedVectors {
                 build(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::ScalarRamMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::ScalarMmapMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::ScalarChunkedMmapMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::PQRamMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::PQMmapMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::PQChunkedMmapMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::BinaryRamMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::BinaryMmapMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::TQRamMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::TQMmapMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
             QuantizedVectorStorage::TQChunkedMmapMulti(storage) => {
-                build(point_id, storage, hardware_counter)
+                build_multi(point_id, storage, hardware_counter)
             }
         }
     }

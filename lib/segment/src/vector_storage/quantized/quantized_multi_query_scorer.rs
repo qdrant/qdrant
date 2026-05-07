@@ -4,6 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
+use super::quantized_query_scorer::InternalScorerUnsupported;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::spaces::metric::Metric;
@@ -58,6 +59,25 @@ where
             quantized_multivector_storage,
             hardware_counter,
         }
+    }
+
+    pub fn new_internal(
+        point_id: PointOffsetType,
+        quantized_multivector_storage: &'a TEncodedVectors,
+        mut hardware_counter: HardwareCounterCell,
+    ) -> Result<Self, InternalScorerUnsupported> {
+        let Some(query) = quantized_multivector_storage.encode_internal_vector(point_id) else {
+            return Err(InternalScorerUnsupported(hardware_counter));
+        };
+
+        hardware_counter
+            .set_vector_io_read_multiplier(usize::from(quantized_multivector_storage.is_on_disk()));
+
+        Ok(Self {
+            query,
+            quantized_multivector_storage,
+            hardware_counter,
+        })
     }
 }
 
