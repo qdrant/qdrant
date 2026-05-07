@@ -3,8 +3,6 @@ use std::path::{Path, PathBuf};
 use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
-#[expect(deprecated, reason = "legacy code")]
-use common::mmap::{transmute_from_u8, transmute_to_u8};
 use common::universal_io::{
     OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalWrite,
 };
@@ -35,7 +33,7 @@ fn tracker_open_options() -> OpenOptions {
 /// Please note that it uses 32-bit tag so that there's no padding before `ValuePointer`.
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
-pub struct OptionalPointer {
+struct OptionalPointer {
     discriminant: u32,
     value: ValuePointer,
 }
@@ -224,7 +222,7 @@ impl PointerUpdates {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct TrackerHeader {
     next_pointer_offset: u32,
@@ -285,14 +283,15 @@ impl<S: UniversalRead> Tracker<S> {
     fn read_header(storage: &S) -> Result<TrackerHeader> {
         let header_bytes = storage.read::<Random, u8>(ReadRange {
             byte_offset: 0,
-            length: std::mem::size_of::<TrackerHeader>() as u64,
+            length: size_of::<TrackerHeader>() as u64,
         })?;
-        #[expect(deprecated, reason = "legacy code")]
-        Ok(*unsafe { transmute_from_u8::<TrackerHeader>(header_bytes.as_ref()) })
+        Ok(*bytemuck::from_bytes::<TrackerHeader>(
+            header_bytes.as_ref(),
+        ))
     }
 
     fn open_storage(path: &Path) -> Result<S> {
-        let storage = match <S as UniversalRead<u8>>::open(path, tracker_open_options()) {
+        let storage = match S::open(path, tracker_open_options()) {
             Err(UniversalIoError::NotFound { .. }) => {
                 return Err(GridstoreError::service_error(format!(
                     "Tracker file does not exist: {}",
@@ -342,13 +341,15 @@ impl<S: UniversalRead> Tracker<S> {
         let start_offset =
             size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
         let end_offset = start_offset + size_of::<OptionalPointer>();
-        let storage_len = UniversalRead::<u8>::len(&self.storage)?;
+        let storage_len = self.storage.len()?;
         if end_offset as u64 > storage_len {
             return Ok(None);
         }
-        let opt: OptionalPointer = self
-            .storage
-            .read::<Random>(ReadRange::one(start_offset as u64))?[0];
+        let bytes = self.storage.read::<Random>(ReadRange {
+            byte_offset: start_offset as u64,
+            length: size_of::<OptionalPointer>() as u64,
+        })?;
+        let opt: &OptionalPointer = bytemuck::from_bytes(bytes.as_ref());
         Ok(opt.to_option())
     }
 
@@ -399,18 +400,23 @@ impl<S: UniversalRead> Tracker<S> {
                 continue;
             }
 
-            storage_reads.push((i, ReadRange::one(start_offset as u64)));
+            storage_reads.push((
+                i,
+                ReadRange {
+                    byte_offset: start_offset as u64,
+                    length: item_size as u64,
+                },
+            ));
         }
 
         let reads = storage_reads
             .iter()
             .map(|(i, range)| (*i, &self.storage, *range));
 
-        for read_result in
-            <S as UniversalRead<OptionalPointer>>::read_multi_iter::<Random, _>(reads)?
-        {
-            let (i, opt) = read_result?;
-            result[i] = opt[0].to_option();
+        for read_result in S::read_multi_iter::<Random, _>(reads)? {
+            let (i, bytes) = read_result?;
+            let opt: &OptionalPointer = bytemuck::from_bytes(bytes.as_ref());
+            result[i] = opt.to_option();
         }
 
         Ok(result)
@@ -432,7 +438,7 @@ impl<S: UniversalRead> Tracker<S> {
     }
 
     pub fn populate(&self) -> Result<()> {
-        UniversalRead::<u8>::populate(&self.storage).map_err(Into::into)
+        self.storage.populate().map_err(Into::into)
     }
 
     /// Get the length of the mapping
@@ -482,7 +488,7 @@ where
             "Size hint is too small"
         );
         create_and_ensure_length(&path, size)?;
-        let storage = <S as UniversalRead<u8>>::open(&path, tracker_open_options())?;
+        let storage = S::open(&path, tracker_open_options())?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
@@ -552,7 +558,7 @@ where
     }
 
     pub fn flusher(&self) -> crate::gridstore::Flusher {
-        let inner = UniversalWrite::<u8>::flusher(&self.storage);
+        let inner = self.storage.flusher();
         Box::new(move || inner().map_err(Into::into))
     }
 
@@ -560,15 +566,13 @@ where
     pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
         let res = self.write_pending(pending_updates)?;
-        UniversalWrite::<u8>::flusher(&self.storage)()?;
+        self.storage.flusher()()?;
         Ok(res)
     }
 
     /// Write the current page header to the storage
     fn write_header(&mut self) -> Result<()> {
-        #[expect(deprecated, reason = "legacy code")]
-        let header_bytes = unsafe { transmute_to_u8(&self.header) };
-        self.storage.write(0, header_bytes)?;
+        self.storage.write(0, bytemuck::bytes_of(&self.header))?;
         Ok(())
     }
 
@@ -585,20 +589,20 @@ where
         }
 
         let point_offset = point_offset as usize;
-        let start_offset = std::mem::size_of::<TrackerHeader>()
-            + point_offset * std::mem::size_of::<OptionalPointer>();
-        let end_offset = start_offset + std::mem::size_of::<OptionalPointer>();
+        let start_offset = size_of::<TrackerHeader>() + point_offset * size_of::<OptionalPointer>();
+        let end_offset = start_offset + size_of::<OptionalPointer>();
 
         // Grow tracker file if it isn't big enough
         if storage_len < end_offset {
-            UniversalWrite::<u8>::flusher(&self.storage)()?;
+            self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage = <S as UniversalRead<u8>>::open(&self.path, tracker_open_options())?;
+            self.storage = S::open(&self.path, tracker_open_options())?;
         }
 
         let pointer = OptionalPointer::from(pointer);
-        self.storage.write(start_offset as u64, &[pointer])?;
+        self.storage
+            .write(start_offset as u64, bytemuck::bytes_of(&pointer))?;
         Ok(())
     }
 

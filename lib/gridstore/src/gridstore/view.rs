@@ -12,7 +12,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{OptionalPointer, PointOffset, Tracker, ValuePointer};
+use crate::tracker::{PointOffset, Tracker, ValuePointer};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
