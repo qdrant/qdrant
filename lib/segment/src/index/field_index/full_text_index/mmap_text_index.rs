@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
 use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
-use super::inverted_index::{Document, InvertedIndex, TokenSet};
+use super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
@@ -146,9 +146,14 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             return Ok(());
         }
 
-        let mut str_tokens = Vec::new();
+        let phrase_matching = self.mutable_index.point_to_doc.is_some();
+        let insert_boundaries = phrase_matching && values.len() > 1;
 
-        for value in &values {
+        let mut str_tokens: Vec<std::borrow::Cow<str>> = Vec::new();
+        for (i, value) in values.iter().enumerate() {
+            if insert_boundaries && i > 0 {
+                str_tokens.push(std::borrow::Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+            }
             self.tokenizer.tokenize_doc(value, |token| {
                 str_tokens.push(token);
             });
@@ -156,7 +161,7 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
 
         let tokens = self.mutable_index.register_tokens(&str_tokens);
 
-        if self.mutable_index.point_to_doc.is_some() {
+        if phrase_matching {
             let document = Document::new(tokens.clone());
             self.mutable_index
                 .index_document(id, document, hw_counter)?;

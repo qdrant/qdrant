@@ -21,6 +21,13 @@ use crate::types::{FieldCondition, Match, PayloadKeyType};
 
 pub type TokenId = u32;
 
+/// Sentinel string inserted between tokens of consecutive array elements.
+/// When registered as a normal vocab token it occupies a position in the
+/// document, preventing phrase queries from matching across element boundaries.
+/// No tokenizer will ever produce this string, so it can never appear in a
+/// user query.
+pub const ARRAY_BOUNDARY_SENTINEL: &str = "\x00";
+
 /// Contains the set of tokens that are in a document.
 ///
 /// Internally, it keeps them unique and sorted, so that we can binary-search over them
@@ -119,7 +126,9 @@ impl Document {
 
     /// Checks if the current document contains the given phrase.
     ///
-    /// Returns false if the phrase is empty
+    /// Returns false if the phrase is empty.
+    /// Boundary sentinels naturally prevent matches across array elements
+    /// because the query never contains them.
     pub fn has_phrase(&self, phrase: &Document) -> bool {
         let doc = self.0.as_slice();
         let phrase = phrase.0.as_slice();

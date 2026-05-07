@@ -9,7 +9,7 @@ use itertools::Itertools;
 
 use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::inverted_index::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
-use super::inverted_index::{Document, InvertedIndex, TokenSet};
+use super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
@@ -158,9 +158,14 @@ impl MutableFullTextIndex {
             return Ok(());
         }
 
-        let mut str_tokens: Vec<Cow<str>> = Vec::new();
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+        let insert_boundaries = phrase_matching && values.len() > 1;
 
-        for value in &values {
+        let mut str_tokens: Vec<Cow<str>> = Vec::new();
+        for (i, value) in values.iter().enumerate() {
+            if insert_boundaries && i > 0 {
+                str_tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+            }
             self.tokenizer.tokenize_doc(value, |token| {
                 str_tokens.push(token);
             });
@@ -168,7 +173,6 @@ impl MutableFullTextIndex {
 
         let tokens = self.inverted_index.register_tokens(&str_tokens);
 
-        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         if phrase_matching {
             let document = Document::new(tokens.clone());
             self.inverted_index

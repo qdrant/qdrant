@@ -14,7 +14,7 @@ use crate::data_types::index::TextIndexParams;
 use crate::fixtures::payload_fixtures::random_full_text_payload;
 use crate::index::field_index::field_index_base::PayloadFieldIndex;
 use crate::index::field_index::full_text_index::inverted_index::{
-    Document, ParsedQuery, TokenId, TokenSet,
+    ARRAY_BOUNDARY_SENTINEL, Document, ParsedQuery, TokenId, TokenSet,
 };
 use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::full_text_index::mutable_text_index::MutableFullTextIndex;
@@ -379,22 +379,26 @@ fn test_congruence(
                 let parsed_query_a = parse_query(phrase, true, index_a);
                 let parsed_query_b = parse_query(phrase, true, index_b);
 
-                let field_condition = FieldCondition::new_values_count(
-                    JsonPath::new(FIELD_NAME),
-                    ValuesCount::from(0..10),
-                );
-                assert_eq!(
-                    index_a.estimate_query_cardinality(
-                        &parsed_query_a,
-                        &field_condition,
-                        &hw_counter
-                    ),
-                    index_b.estimate_query_cardinality(
-                        &parsed_query_b,
-                        &field_condition,
-                        &hw_counter
-                    ),
-                );
+                // Mutable index removes from postings on deletion,
+                // immutable does not — cardinality estimates can differ.
+                if !deleted {
+                    let field_condition = FieldCondition::new_values_count(
+                        JsonPath::new(FIELD_NAME),
+                        ValuesCount::from(0..10),
+                    );
+                    assert_eq!(
+                        index_a.estimate_query_cardinality(
+                            &parsed_query_a,
+                            &field_condition,
+                            &hw_counter
+                        ),
+                        index_b.estimate_query_cardinality(
+                            &parsed_query_b,
+                            &field_condition,
+                            &hw_counter
+                        ),
+                    );
+                }
 
                 for point_id in 0..POINT_COUNT as PointOffsetType {
                     assert_eq!(
@@ -448,14 +452,36 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
     check_indexes: &[(FullTextIndex, IndexType)],
     phrase_matching: bool,
 ) -> Vec<Vec<String>> {
-    // From the ids, choose a random phrase of 4 words.
     const PHRASE_LENGTH: usize = 4;
     let mut phrases = Vec::new();
     let rng = &mut StdRng::seed_from_u64(43);
     for id in existing_ids {
         let doc = mutable_index.get_doc(*id).unwrap();
-        let rand_idx = rng.random_range(0..=KEYWORD_COUNT - PHRASE_LENGTH);
-        let phrase = doc[rand_idx..rand_idx + PHRASE_LENGTH].to_vec();
+
+        // Split stored tokens into per-element segments at boundary sentinels
+        let segments: Vec<Vec<&str>> = doc
+            .split(|t| t.as_str() == ARRAY_BOUNDARY_SENTINEL)
+            .map(|seg| seg.iter().map(|s| s.as_str()).collect())
+            .filter(|seg: &Vec<&str>| seg.len() >= PHRASE_LENGTH)
+            .collect();
+
+        let phrase = if segments.is_empty() {
+            // All elements are single-word; fall back to a single-token phrase
+            let real_tokens: Vec<&str> = doc
+                .iter()
+                .filter(|t| t.as_str() != ARRAY_BOUNDARY_SENTINEL)
+                .map(|t| t.as_str())
+                .collect();
+            let rand_idx = rng.random_range(0..real_tokens.len());
+            vec![real_tokens[rand_idx].to_string()]
+        } else {
+            let seg = &segments[rng.random_range(0..segments.len())];
+            let rand_idx = rng.random_range(0..=seg.len() - PHRASE_LENGTH);
+            seg[rand_idx..rand_idx + PHRASE_LENGTH]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        };
 
         phrases.push(phrase);
     }
@@ -485,4 +511,103 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
     }
 
     phrases
+}
+
+/// Reproduces the bug from <https://github.com/qdrant/qdrant/issues/8937>:
+/// phrase matching must NOT cross string-array element boundaries when a
+/// full-text index is enabled.
+#[rstest]
+fn test_phrase_matching_respects_array_boundaries(
+    #[values(IndexType::MutableGridstore, IndexType::ImmMmap, IndexType::ImmRamMmap)]
+    index_type: IndexType,
+) {
+    let hw = HardwareCounterCell::new();
+    let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
+
+    // ID 1: ["quick", "brown"] — words in separate elements
+    let p1 = serde_json::json!(["quick", "brown"]);
+    // ID 2: ["quick brown"]   — phrase in a single element
+    let p2 = serde_json::json!(["quick brown"]);
+    // ID 3: ["quick", "blue"] — words in separate elements
+    let p3 = serde_json::json!(["quick", "blue"]);
+    // ID 4: "quick brown fox" — plain string
+    let p4 = serde_json::json!("quick brown fox");
+    // ID 5: ["quick blue"]    — phrase in a single element
+    let p5 = serde_json::json!(["quick blue"]);
+
+    builder.add_point(1, &[&p1], &hw).unwrap();
+    builder.add_point(2, &[&p2], &hw).unwrap();
+    builder.add_point(3, &[&p3], &hw).unwrap();
+    builder.add_point(4, &[&p4], &hw).unwrap();
+    builder.add_point(5, &[&p5], &hw).unwrap();
+
+    let index = builder.finalize().unwrap();
+
+    // "quick brown" should match only IDs 2 and 4 (phrase within one element)
+    let qb = index.parse_phrase_query("quick brown", &hw).unwrap();
+    assert!(qb.is_some(), "query tokens must exist");
+    let qb = qb.unwrap();
+
+    let mut results: Vec<_> = index.filter_query(qb.clone(), &hw).unwrap().collect();
+    results.sort();
+    assert_eq!(
+        results,
+        vec![2, 4],
+        "\"quick brown\" must NOT match ID 1 (words in separate array elements)"
+    );
+
+    // Also verify via check_match
+    assert!(!index.check_match(&qb, 1).unwrap());
+    assert!(index.check_match(&qb, 2).unwrap());
+    assert!(!index.check_match(&qb, 3).unwrap());
+    assert!(index.check_match(&qb, 4).unwrap());
+    assert!(!index.check_match(&qb, 5).unwrap());
+
+    // "quick blue" should match only ID 5 (phrase within one element)
+    let qbl = index.parse_phrase_query("quick blue", &hw).unwrap();
+    assert!(qbl.is_some(), "query tokens must exist");
+    let qbl = qbl.unwrap();
+
+    let mut results: Vec<_> = index.filter_query(qbl.clone(), &hw).unwrap().collect();
+    results.sort();
+    assert_eq!(
+        results,
+        vec![5],
+        "\"quick blue\" must NOT match ID 3 (words in separate array elements)"
+    );
+
+    assert!(!index.check_match(&qbl, 1).unwrap());
+    assert!(!index.check_match(&qbl, 2).unwrap());
+    assert!(!index.check_match(&qbl, 3).unwrap());
+    assert!(!index.check_match(&qbl, 4).unwrap());
+    assert!(index.check_match(&qbl, 5).unwrap());
+}
+
+/// Single-element arrays and plain strings should still work normally.
+#[rstest]
+fn test_phrase_matching_single_element_array(
+    #[values(IndexType::MutableGridstore, IndexType::ImmMmap, IndexType::ImmRamMmap)]
+    index_type: IndexType,
+) {
+    let hw = HardwareCounterCell::new();
+    let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
+
+    let p1 = serde_json::json!(["the quick brown fox"]);
+    let p2 = serde_json::json!("the quick brown fox");
+    let p3 = serde_json::json!(["the", "quick brown fox"]);
+
+    builder.add_point(1, &[&p1], &hw).unwrap();
+    builder.add_point(2, &[&p2], &hw).unwrap();
+    builder.add_point(3, &[&p3], &hw).unwrap();
+
+    let index = builder.finalize().unwrap();
+
+    let q = index
+        .parse_phrase_query("quick brown", &hw)
+        .unwrap()
+        .unwrap();
+
+    let mut results: Vec<_> = index.filter_query(q, &hw).unwrap().collect();
+    results.sort();
+    assert_eq!(results, vec![1, 2, 3]);
 }
