@@ -1228,12 +1228,14 @@ fn test_match_except_fulltext_consistency_with_unindexed_and_keyword() {
                     .create_field_index(
                         10,
                         &title_key,
-                        Some(&FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
-                            r#type: KeywordIndexType::Keyword,
-                            is_tenant: None,
-                            on_disk: None,
-                            enable_hnsw: None,
-                        }))),
+                        Some(&FieldParams(PayloadSchemaParams::Keyword(
+                            KeywordIndexParams {
+                                r#type: KeywordIndexType::Keyword,
+                                is_tenant: None,
+                                on_disk: None,
+                                enable_hnsw: None,
+                            },
+                        ))),
                         &hw_counter,
                     )
                     .unwrap();
@@ -1277,10 +1279,12 @@ fn test_match_except_fulltext_consistency_with_unindexed_and_keyword() {
             .query_points(&filter, &hw_counter, &is_stopped, None)
             .unwrap()
             .into_iter()
-            .map(|offset| match segment.id_tracker.borrow().external_id(offset).unwrap() {
-                segment::types::ExtendedPointId::NumId(id) => id,
-                segment::types::ExtendedPointId::Uuid(_) => panic!("unexpected uuid id"),
-            })
+            .map(
+                |offset| match segment.id_tracker.borrow().external_id(offset).unwrap() {
+                    segment::types::ExtendedPointId::NumId(id) => id,
+                    segment::types::ExtendedPointId::Uuid(_) => panic!("unexpected uuid id"),
+                },
+            )
             .collect::<Vec<_>>();
         ids.sort_unstable();
         ids
