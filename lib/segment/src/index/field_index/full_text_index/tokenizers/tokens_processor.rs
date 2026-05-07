@@ -74,16 +74,6 @@ impl TokensProcessor {
             return None;
         }
 
-        // Strip null bytes — they are reserved as array-boundary sentinels
-        // in phrase-matching indexes and must never appear in real tokens.
-        if token_cow.contains('\0') {
-            let stripped: String = token_cow.chars().filter(|&c| c != '\0').collect();
-            if stripped.is_empty() {
-                return None;
-            }
-            token_cow = Cow::Owned(stripped);
-        }
-
         // Handle ASCII folding (normalize accents)
         if *ascii_folding {
             token_cow = super::ascii_folding::fold_to_ascii_cow(token_cow);

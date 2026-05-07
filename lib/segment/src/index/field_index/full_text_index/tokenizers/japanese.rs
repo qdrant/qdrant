@@ -60,19 +60,12 @@ impl JapaneseTokenizer {
                 continue;
             }
 
-            let mut processed = if tokens_processor.lowercase {
-                surface.to_lowercase()
+            let surface = if tokens_processor.lowercase {
+                Cow::Owned(surface.to_lowercase())
             } else {
-                surface.to_string()
+                Cow::Owned(surface.to_string())
             };
-
-            // Strip null bytes — reserved as array-boundary sentinels.
-            processed.retain(|c| c != '\0');
-            if processed.is_empty() {
-                continue;
-            }
-
-            cb(Cow::Owned(processed));
+            cb(surface);
         }
     }
 }
