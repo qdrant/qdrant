@@ -77,7 +77,9 @@ fn plan_snapshot_priority_snapshot_actions(
             replicas_to_remove -= 1;
             actions.push(SnapshotPriorityReplicaAction::RemoveReplica(*peer_id));
         } else {
-            actions.push(SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(*peer_id));
+            actions.push(SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(
+                *peer_id,
+            ));
         }
     }
 
@@ -417,9 +419,7 @@ async fn _do_recover_from_snapshot(
                                     peer_id,
                                 )?;
                             }
-                            SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(
-                                peer_id,
-                            ) => {
+                            SnapshotPriorityReplicaAction::MarkReplicaDeadForRecovery(peer_id) => {
                                 // Retained replicas are still stale after restore. Mark them dead
                                 // and let the normal recovery machinery pick the transfer method
                                 // and concurrency envelope.
