@@ -61,7 +61,7 @@ fn benches(c: &mut Criterion) {
     }
 }
 
-fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
+fn read_benches<T: bytemuck::Pod, C: UniversalRead>(
     c: &mut Criterion,
     impl_name: &str, // Corresponds to `C`
     elem_size: &str, // Corresponds to `T`
@@ -78,7 +78,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
     let storage = C::open(path, options).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
     let mut rng = rand::rng();
-    assert_eq!(storage.len().unwrap(), len);
+    assert_eq!(storage.len::<T>().unwrap(), len);
 
     let low_mem = std::env::var_os(LIMIT_MEMORY_ENV_INTERNAL).is_some();
 
@@ -96,7 +96,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
             let mut sum = 0u64;
             let offset = rng.random_range(0..len) * size_of::<T>() as u64;
             let data = storage
-                .read::<Random>(ReadRange {
+                .read::<Random, T>(ReadRange {
                     byte_offset: offset,
                     length: 1,
                 })
@@ -119,7 +119,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Random, ()>(ranges, |(), chunk| {
+                .read_batch::<Random, T, ()>(ranges, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -142,7 +142,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Sequential, ()>(ranges, |(), chunk| {
+                .read_batch::<Sequential, T, ()>(ranges, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -158,7 +158,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead<T>>(
     let read_batch_full = || {
         let mut sum = 0u64;
         storage
-            .read_batch::<Sequential, ()>(ranges_full_file::<T>(), |(), chunk| {
+            .read_batch::<Sequential, T, ()>(ranges_full_file::<T>(), |(), chunk| {
                 for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                     sum = sum.wrapping_add(item);
                 }

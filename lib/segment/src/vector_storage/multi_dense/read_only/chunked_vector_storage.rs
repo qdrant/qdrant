@@ -1,7 +1,7 @@
 use common::bitvec::{BitSlice, BitVec};
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalReadFamily;
+use common::universal_io::UniversalRead;
 
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -13,10 +13,9 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
 };
 
 #[derive(Debug)]
-pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalReadFamily>
-{
-    vectors: ChunkedVectorsRead<T, S::Read<T>>,
-    offsets: ChunkedVectorsRead<MultivectorMmapOffset, S::Read<MultivectorMmapOffset>>,
+pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead> {
+    vectors: ChunkedVectorsRead<T, S>,
+    offsets: ChunkedVectorsRead<MultivectorMmapOffset, S>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -26,7 +25,7 @@ pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: 
     deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalReadFamily> VectorStorageRead
+impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     for ReadOnlyChunkedMultiDenseVectorStorage<T, S>
 {
     fn distance(&self) -> Distance {
@@ -50,7 +49,7 @@ impl<T: PrimitiveVectorElement, S: UniversalReadFamily> VectorStorageRead
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        read_multi_vector::<T, P, _, _>(&self.offsets, &self.vectors, key)
+        read_multi_vector::<T, P, _>(&self.offsets, &self.vectors, key)
             .map(|multi| CowVector::MultiDense(T::into_float_multivector(multi)))
     }
 

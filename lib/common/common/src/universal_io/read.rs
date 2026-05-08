@@ -8,41 +8,40 @@ use crate::universal_io::file_ops::UniversalReadFileOps;
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 #[expect(clippy::len_without_is_empty)]
-pub trait UniversalRead<T>: UniversalReadFileOps
-where
-    T: Copy + 'static,
-{
-    type ReadPipeline<'file, Meta>: UniversalReadPipeline<'file, T, Meta, File = Self>
+pub trait UniversalRead: UniversalReadFileOps {
+    type ReadPipeline<'file, T, Meta>: UniversalReadPipeline<'file, T, Meta, File = Self>
     where
-        Self: 'file;
+        Self: 'file,
+        T: bytemuck::Pod + 'static;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>;
+    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>;
 
     /// Read the entire file in one logical access.
     ///
     /// Implementations may override this to avoid the two accesses that would result from
     /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
-    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
+    fn read_whole<T: bytemuck::Pod>(&self) -> Result<Cow<'_, [T]>> {
         let range = ReadRange {
             byte_offset: 0,
-            length: self.len()?,
+            length: self.len::<T>()?,
         };
 
-        self.read::<Sequential>(range)
+        self.read::<Sequential, T>(range)
     }
 
-    fn read_batch<P, Meta>(
+    fn read_batch<P, T, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
     where
         P: AccessPattern,
+        T: bytemuck::Pod,
     {
-        for record in self.read_iter::<P, Meta>(ranges)? {
+        for record in self.read_iter::<P, T, Meta>(ranges)? {
             let (meta, data) = record?;
             callback(meta, &data)?;
         }
@@ -52,21 +51,22 @@ where
 
     /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator instead of
     /// accepting a callback.
-    fn read_iter<P, Meta>(
+    fn read_iter<P, T, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
+        T: bytemuck::Pod,
     {
         let reads = ranges
             .into_iter()
             .map(move |(meta, range)| (meta, self, range));
 
-        Self::read_multi_iter::<P, Meta>(reads)
+        Self::read_multi_iter::<P, T, Meta>(reads)
     }
 
-    fn len(&self) -> Result<u64>;
+    fn len<T>(&self) -> Result<u64>;
 
     /// Fill RAM cache with related data, if applicable for this implementation.
     ///
@@ -79,15 +79,16 @@ where
     fn clear_ram_cache(&self) -> Result<()>;
 
     /// Read from multiple files in a single operation.
-    fn read_multi<'a, P, Meta>(
+    fn read_multi<'a, P, T, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
         mut callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
     where
         P: AccessPattern,
+        T: bytemuck::Pod,
         Self: 'a,
     {
-        for record in Self::read_multi_iter::<P, Meta>(reads)? {
+        for record in Self::read_multi_iter::<P, T, Meta>(reads)? {
             let (meta, items) = record?;
             callback(meta, &items)?;
         }
@@ -97,14 +98,15 @@ where
 
     /// Like [`read_multi`](Self::read_multi), but returns a fallible iterator instead of
     /// accepting a callback.
-    fn read_multi_iter<'a, P, Meta>(
+    fn read_multi_iter<'a, P, T, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>>
     where
         P: AccessPattern,
+        T: bytemuck::Pod,
         Self: 'a,
     {
-        let mut pipeline = Self::ReadPipeline::<'a, Meta>::new()?;
+        let mut pipeline = Self::ReadPipeline::<'a, T, Meta>::new()?;
         let mut reads = reads.into_iter();
 
         let iter = std::iter::from_fn(move || {
@@ -131,7 +133,7 @@ where
 
 pub trait UniversalReadPipeline<'file, T, Meta>: Sized
 where
-    T: Copy + 'static,
+    T: bytemuck::Pod + 'static,
 {
     type File: 'file;
 

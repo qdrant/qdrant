@@ -10,7 +10,7 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, TypedStorage, UniversalRead,
+    MmapFile, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, UniversalRead,
 };
 use fs_err::{File, OpenOptions};
 
@@ -29,19 +29,20 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 pub struct ImmutableDenseVectors<T, S = MmapFile>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     pub dim: usize,
     pub num_vectors: usize,
-    /// Vector data storage, providing read access via [`UniversalRead<T>`].
-    storage: TypedStorage<ReadOnly<S>, T>,
+    /// Vector data storage, providing read access via [`UniversalRead`].
+    storage: ReadOnly<S>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
+    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S> {
+impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
@@ -63,7 +64,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             advice: None,
             prevent_caching: None,
         };
-        let storage = TypedStorage::open(vectors_path, options).map_err(|e| {
+        let storage = ReadOnly::<S>::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(
                 "Failed to open vector mmap at {}: {e}",
                 vectors_path.display()
@@ -93,6 +94,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             storage,
             deleted,
             deleted_count,
+            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -124,7 +126,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
         };
 
         self.storage
-            .read::<P>(range)
+            .read::<P, T>(range)
             .expect("vector read from storage failed")
     }
 
@@ -194,7 +196,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
 
         // access pattern does not matter for io_uring
         self.storage
-            .read_batch::<Random, _>(ranges, callback)
+            .read_batch::<Random, T, _>(ranges, callback)
             .expect("vectors read");
     }
 
@@ -234,6 +236,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
             storage,
             deleted,
             deleted_count: _,
+            _phantom: _,
         } = self;
         storage.clear_ram_cache()?;
         deleted.clear_cache()?;

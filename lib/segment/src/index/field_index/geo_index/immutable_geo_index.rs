@@ -69,43 +69,47 @@ impl ImmutableGeoMapIndex {
         let counts_per_hash = index
             .storage
             .counts_per_hash
-            .read_whole()?
+            .read_whole::<super::mmap_geo_index::Counts>()?
             .iter()
             .copied()
             .map(Counts::from)
             .collect();
 
         // Build flat parallel arrays from on-disk points_map + points_map_ids
-        let points_map_entries = index.storage.points_map.read_whole()?;
+        let points_map_entries = index.storage.points_map.read_whole::<crate::index::field_index::geo_index::mmap_geo_index::PointKeyValue>()?;
         let num_entries = points_map_entries.len();
         let mut points_map_hashes = Vec::with_capacity(num_entries);
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
         let mut points_map_ids = Vec::new();
 
-        index.storage.points_map_ids.read_batch::<Random, _>(
-            points_map_entries
-                .iter()
-                .map(|item| ReadRange {
-                    byte_offset: u64::from(item.ids_start) * size_of::<PointOffsetType>() as u64,
-                    length: u64::from(item.ids_end.saturating_sub(item.ids_start)),
-                })
-                .enumerate(),
-            |i, ids| {
-                points_map_hashes.push(points_map_entries[i].hash.normalize());
-                points_map_offsets.push(points_map_ids.len() as u32);
-                for &id in ids {
-                    if !index
-                        .storage
-                        .deleted
-                        .get_bit(id as usize)
-                        .unwrap_or_default()
-                    {
-                        points_map_ids.push(id);
+        index
+            .storage
+            .points_map_ids
+            .read_batch::<Random, PointOffsetType, _>(
+                points_map_entries
+                    .iter()
+                    .map(|item| ReadRange {
+                        byte_offset: u64::from(item.ids_start)
+                            * size_of::<PointOffsetType>() as u64,
+                        length: u64::from(item.ids_end.saturating_sub(item.ids_start)),
+                    })
+                    .enumerate(),
+                |i, ids| {
+                    points_map_hashes.push(points_map_entries[i].hash.normalize());
+                    points_map_offsets.push(points_map_ids.len() as u32);
+                    for &id in ids {
+                        if !index
+                            .storage
+                            .deleted
+                            .get_bit(id as usize)
+                            .unwrap_or_default()
+                        {
+                            points_map_ids.push(id);
+                        }
                     }
-                }
-                Ok(())
-            },
-        )?;
+                    Ok(())
+                },
+            )?;
         points_map_offsets.push(points_map_ids.len() as u32);
         drop(points_map_entries);
 

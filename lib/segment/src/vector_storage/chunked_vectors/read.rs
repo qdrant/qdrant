@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::AdviceSetting;
-use common::universal_io::{
-    MmapFile, ReadRange, TypedStorage, UniversalIoError, UniversalRead, read_json_via,
-};
+use common::universal_io::{MmapFile, ReadRange, UniversalIoError, UniversalRead, read_json_via};
 use fs_err as fs;
 use num_traits::AsPrimitive;
 
@@ -25,17 +23,18 @@ use crate::vector_storage::{VectorOffset, VectorOffsetType};
 /// not refreshed afterwards. Mutating storage uses [`super::ChunkedVectors`]
 /// which wraps this and adds a writable status mmap.
 #[derive(Debug)]
-pub struct ChunkedVectorsRead<T: Copy + 'static, S: UniversalRead<T>> {
+pub struct ChunkedVectorsRead<T: bytemuck::Pod, S: UniversalRead> {
     pub(super) config: ChunkedVectorsConfig,
     /// Number of vectors currently stored. Snapshot for read-only mode; for
     /// [`super::ChunkedVectors`] this is kept in sync with the writable status
     /// mmap.
     pub(super) len: usize,
-    pub(super) chunks: Vec<TypedStorage<S, T>>,
+    pub(super) chunks: Vec<S>,
     pub(super) directory: PathBuf,
+    pub(super) _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
+impl<T: bytemuck::Pod, S: UniversalRead> ChunkedVectorsRead<T, S> {
     pub(super) fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
     }
@@ -86,6 +85,7 @@ impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
             len,
             chunks,
             directory: directory.to_owned(),
+            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -168,9 +168,9 @@ impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
             force_sequential || range.length as usize * size_of::<T>() > PAGE_SIZE_BYTES * 4;
 
         if use_sequential {
-            chunk.read::<Sequential>(range).ok()
+            chunk.read::<Sequential, T>(range).ok()
         } else {
-            chunk.read::<Random>(range).ok()
+            chunk.read::<Random, T>(range).ok()
         }
     }
 
@@ -222,7 +222,7 @@ impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
         });
 
         // access pattern does not matter for io_uring
-        UniversalRead::read_multi_iter::<Random, _>(reads)
+        S::read_multi_iter::<Random, T, _>(reads)
             .expect("iterator initialized")
             .map(|result| result.expect("vector read"))
     }
@@ -272,6 +272,7 @@ impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
             len: _,
             chunks,
             directory: _,
+            _phantom: _,
         } = self;
         for chunk in chunks {
             chunk.clear_ram_cache()?;
@@ -285,6 +286,7 @@ impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
             len: _,
             chunks: _,
             directory: _,
+            _phantom: _,
         } = self;
 
         0

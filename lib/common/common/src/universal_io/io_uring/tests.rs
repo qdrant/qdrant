@@ -27,24 +27,24 @@ fn test_io_uring_file_for_u64(#[case] o_direct: bool) -> Result<()> {
     };
 
     // 2. Read data back using `IoUringFile` and verify it matches what was written
-    let file = TypedStorage::<IoUringFile, u64>::open(&path, opts)?;
+    let file = IoUringFile::open(&path, opts)?;
 
     // Read all elements
-    let read_back = file.read::<Sequential>(ReadRange {
+    let read_back = file.read::<Sequential, u64>(ReadRange {
         byte_offset: 0,
         length: data.len() as u64,
     })?;
     assert_eq!(read_back.as_ref(), &data);
 
     // Read a sub-range (start at element 10, byte offset = 10 * size_of::<u64>())
-    let read_sub = file.read::<Sequential>(ReadRange {
+    let read_sub = file.read::<Sequential, u64>(ReadRange {
         byte_offset: 10 * size_of::<u64>() as u64,
         length: 20,
     })?;
     assert_eq!(read_sub.as_ref(), &data[10..30]);
 
     // Verify len()
-    let len = file.len()?;
+    let len = file.len::<u64>()?;
     assert_eq!(len, 128);
 
     Ok(())
@@ -65,7 +65,7 @@ fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
         ..Default::default()
     };
 
-    let file = TypedStorage::<IoUringFile, u64>::open(&path, opts)?;
+    let file = IoUringFile::open(&path, opts)?;
     let elem = size_of::<u64>() as u64;
 
     // Non-contiguous ranges across the file.
@@ -86,7 +86,7 @@ fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
 
     // --- read_batch (callback API) ---
     let mut batch_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    file.read_batch::<Sequential, _>(ranges.iter().copied().enumerate(), |idx, slice| {
+    file.read_batch::<Sequential, u64, _>(ranges.iter().copied().enumerate(), |idx, slice| {
         batch_results.push((idx, slice.to_vec()));
         Ok(())
     })?;
@@ -102,7 +102,7 @@ fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
 
     // --- read_iter (iterator API) ---
     let mut iter_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    for record in file.read_iter::<Sequential, _>(ranges.iter().copied().enumerate())? {
+    for record in file.read_iter::<Sequential, u64, _>(ranges.iter().copied().enumerate())? {
         let (idx, cow) = record?;
         iter_results.push((idx, cow.into_owned()));
     }
@@ -123,7 +123,7 @@ fn test_io_uring_read_batch(#[case] o_direct: bool) -> Result<()> {
     });
 
     let mut count = 0;
-    for record in file.read_iter::<Sequential, _>(many_ranges.enumerate())? {
+    for record in file.read_iter::<Sequential, u64, _>(many_ranges.enumerate())? {
         let (idx, cow) = record?;
         assert_eq!(
             cow.as_ref(),
@@ -163,8 +163,8 @@ fn test_io_uring_concurrent_read_iter(#[case] o_direct: bool) -> Result<()> {
         prevent_caching: Some(o_direct),
         ..Default::default()
     };
-    let file_a = TypedStorage::<IoUringFile, u64>::open(&path_a, opts)?;
-    let file_b = TypedStorage::<IoUringFile, u64>::open(&path_b, opts)?;
+    let file_a = IoUringFile::open(&path_a, opts)?;
+    let file_b = IoUringFile::open(&path_b, opts)?;
 
     // NUM_RANGES ranges, each reading CHUNK elements — well over the queue depth.
     let ranges_a = (0..NUM_RANGES).map(|i| ReadRange {
@@ -176,8 +176,8 @@ fn test_io_uring_concurrent_read_iter(#[case] o_direct: bool) -> Result<()> {
         length: CHUNK,
     });
 
-    let iter_a = file_a.read_iter::<Sequential, _>(ranges_a.enumerate())?;
-    let iter_b = file_b.read_iter::<Sequential, _>(ranges_b.enumerate())?;
+    let iter_a = file_a.read_iter::<Sequential, u64, _>(ranges_a.enumerate())?;
+    let iter_b = file_b.read_iter::<Sequential, u64, _>(ranges_b.enumerate())?;
 
     // Zip alternates next() calls between the two iterators on the same
     // thread-local io_uring ring. With in-flight operations left across
@@ -228,8 +228,8 @@ fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
         prevent_caching: Some(o_direct),
         ..Default::default()
     };
-    let file_0 = <IoUringFile as UniversalRead<u64>>::open(&path_0, opts)?;
-    let file_1 = <IoUringFile as UniversalRead<u64>>::open(&path_1, opts)?;
+    let file_0 = IoUringFile::open(&path_0, opts)?;
+    let file_1 = IoUringFile::open(&path_1, opts)?;
     let files = [file_0, file_1];
 
     // Interleaved reads across both files.
@@ -249,7 +249,7 @@ fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
     ];
 
     let mut results: Vec<(char, Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
+    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
         let (idx, cow) = record?;
         results.push((idx, cow.into_owned()));
     }
@@ -287,7 +287,7 @@ fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<(
         let path = dir.path().join(format!("f{i}.bin"));
         fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-        let file = <IoUringFile as UniversalRead<u64>>::open(&path, opts)?;
+        let file = IoUringFile::open(&path, opts)?;
         files.push(file);
         all_data.push(data);
     }
@@ -311,7 +311,7 @@ fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<(
         .collect();
 
     let mut results: Vec<((usize, usize), Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
+    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
         let (idx, cow) = record?;
         results.push((idx, cow.into_owned()));
     }
@@ -346,8 +346,8 @@ fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
     fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
     let opts = OpenOptions::default();
-    let file_a: IoUringFile = UniversalRead::<u64>::open(&path_a, opts)?;
-    let file_b: IoUringFile = UniversalRead::<u64>::open(&path_b, opts)?;
+    let file_a = IoUringFile::open(&path_a, opts)?;
+    let file_b = IoUringFile::open(&path_b, opts)?;
     let files = [file_a, file_b];
 
     #[rustfmt::skip]
@@ -361,14 +361,14 @@ fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
 
     // Collect via callback.
     let mut callback_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    IoUringFile::read_multi::<Sequential, _>(reads.clone(), |idx, data| {
+    IoUringFile::read_multi::<Sequential, u64, _>(reads.clone(), |idx, data| {
         callback_results.push((idx, data.to_vec()));
         Ok(())
     })?;
 
     // Collect via iterator.
     let mut iter_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
+    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
         let (idx, cow) = record?;
         iter_results.push((idx, cow.into_owned()));
     }
@@ -414,7 +414,7 @@ fn test_io_uring_eintr_handling() -> Result<()> {
     let data: Vec<u64> = (0..NUM_ELEMENTS).collect();
     fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-    let file = TypedStorage::<IoUringFile, u64>::open(&path, OpenOptions::default())?;
+    let file = IoUringFile::open(&path, OpenOptions::default())?;
 
     let stop = Arc::new(AtomicBool::new(false));
     let signals_sent = Arc::new(AtomicU64::new(0));
@@ -461,7 +461,7 @@ fn test_io_uring_eintr_handling() -> Result<()> {
         // which panics when in-flight requests leak due to EINTR.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut errors = 0u64;
-            let Ok(iter) = file.read_iter::<Sequential, _>(ranges) else {
+            let Ok(iter) = file.read_iter::<Sequential, u64, _>(ranges) else {
                 return 1;
             };
             for record in iter {

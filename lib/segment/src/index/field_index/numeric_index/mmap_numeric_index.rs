@@ -11,7 +11,7 @@ use common::generic_consts::Random;
 use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalRead};
+use common::universal_io::{MmapFile, OpenOptions, ReadRange, UniversalRead};
 use fs_err as fs;
 use itertools::Either;
 use memmap2::MmapMut;
@@ -51,19 +51,15 @@ pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue +
 
 pub(super) struct Storage<
     T: Encodable + Numericable + Default + StoredValue + 'static,
-    S: UniversalRead<Point<T>> + UniversalRead<u8>,
+    S: UniversalRead,
 > {
     deleted: BitVec,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
-    pairs: TypedStorage<S, Point<T>>,
+    pairs: S,
     pub(super) point_to_values: StoredPointToValues<T, S>,
 }
 
-impl<
-    T: Encodable + Numericable + Default + StoredValue + 'static,
-    S: UniversalRead<Point<T>> + UniversalRead<u8>,
-> Storage<T, S>
-{
+impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead> Storage<T, S> {
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         let Self {
             deleted,
@@ -71,9 +67,8 @@ impl<
             point_to_values,
         } = self;
 
-        deleted.capacity().div_ceil(u8::BITS as usize)
-            + pairs.ram_usage_bytes()
-            + point_to_values.ram_usage_bytes()
+        let _ = pairs; // io-backed: no significant heap allocations
+        deleted.capacity().div_ceil(u8::BITS as usize) + point_to_values.ram_usage_bytes()
     }
 }
 
@@ -178,7 +173,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
             advice: None,
             prevent_caching: None,
         };
-        let pairs = TypedStorage::open(pairs_path, pairs_options)?;
+        let pairs = MmapFile::open(pairs_path, pairs_options)?;
 
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
         let mut deleted = deleted_points.to_owned();
@@ -293,7 +288,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
     /// Returns the number of key-value pairs in the index.
     /// Note that is doesn't count deleted pairs.
     pub(super) fn total_unique_values_count(&self) -> OperationResult<usize> {
-        Ok(self.storage.pairs.len()? as usize)
+        Ok(self.storage.pairs.len::<Point<T>>()? as usize)
     }
 
     pub(super) fn values_range<'a>(
@@ -370,7 +365,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         while left < right {
             let mid = left + (right - left) / 2;
             // TODO(luis): use read_one
-            let elem = self.storage.pairs.read::<Random>(ReadRange {
+            let elem = self.storage.pairs.read::<Random, Point<T>>(ReadRange {
                 byte_offset: (mid * size_of::<Point<T>>()) as u64,
                 length: 1,
             })?;
@@ -389,7 +384,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
     ) -> OperationResult<(usize, usize)> {
-        let len = self.storage.pairs.len()? as usize;
+        let len = self.storage.pairs.len::<Point<T>>()? as usize;
 
         let start_index = match start_bound {
             Bound::Included(bound) => self
@@ -432,7 +427,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         let count = end_pos - start_pos;
 
         let iter = if count > 0 {
-            match self.storage.pairs.read::<Random>(ReadRange {
+            match self.storage.pairs.read::<Random, Point<T>>(ReadRange {
                 byte_offset: (start_pos * size_of::<Point<T>>()) as u64,
                 length: count as u64,
             })? {

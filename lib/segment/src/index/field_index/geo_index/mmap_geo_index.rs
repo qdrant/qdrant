@@ -13,7 +13,7 @@ use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, ReadRange, TypedStorage, UniversalRead};
+use common::universal_io::{MmapFile, OpenOptions, ReadRange, UniversalRead};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -47,23 +47,6 @@ pub(super) struct PointKeyValue {
     pub ids_end: u32,
 }
 
-/// An alias to set of traits required by [`StoredGeoMapIndex`].
-#[expect(private_bounds)]
-pub trait StoredGeoMapIndexStorage:
-    UniversalRead<u8>
-    + UniversalRead<Counts>
-    + UniversalRead<PointKeyValue>
-    + UniversalRead<PointOffsetType>
-{
-}
-impl<T> StoredGeoMapIndexStorage for T where
-    T: UniversalRead<u8>
-        + UniversalRead<Counts>
-        + UniversalRead<PointKeyValue>
-        + UniversalRead<PointOffsetType>
-{
-}
-
 ///
 ///   points_map
 ///  ┌─────────────────────────────────────────┐
@@ -90,7 +73,7 @@ impl<T> StoredGeoMapIndexStorage for T where
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct StoredGeoMapIndex<S: StoredGeoMapIndexStorage> {
+pub struct StoredGeoMapIndex<S: UniversalRead> {
     path: PathBuf,
     pub(super) storage: Storage<S>,
     pub(super) deleted_count: usize,
@@ -99,15 +82,15 @@ pub struct StoredGeoMapIndex<S: StoredGeoMapIndexStorage> {
     is_on_disk: bool,
 }
 
-pub(super) struct Storage<S: StoredGeoMapIndexStorage> {
+pub(super) struct Storage<S: UniversalRead> {
     /// Stores GeoHash, points count and values count.
     /// Sorted by geohash, so we binary search the region.
-    pub(super) counts_per_hash: TypedStorage<S, Counts>,
+    pub(super) counts_per_hash: S,
     /// Stores GeoHash and associated range of offsets in the points_map_ids.
     /// Sorted by geohash, so we binary search the region.
-    pub(super) points_map: TypedStorage<S, PointKeyValue>,
+    pub(super) points_map: S,
     /// A storage of associations between geo-hashes and point ids. (See the diagram above)
-    pub(super) points_map_ids: TypedStorage<S, PointOffsetType>,
+    pub(super) points_map_ids: S,
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
     pub(super) point_to_values: StoredPointToValues<GeoPoint, S>,
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
@@ -116,7 +99,7 @@ pub(super) struct Storage<S: StoredGeoMapIndexStorage> {
     pub(super) deleted: BitVec,
 }
 
-impl<S: StoredGeoMapIndexStorage> Storage<S> {
+impl<S: UniversalRead> Storage<S> {
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         let Self {
             counts_per_hash,
@@ -126,11 +109,9 @@ impl<S: StoredGeoMapIndexStorage> Storage<S> {
             deleted,
         } = self;
 
-        counts_per_hash.ram_usage_bytes()
-            + points_map.ram_usage_bytes()
-            + points_map_ids.ram_usage_bytes()
-            + point_to_values.ram_usage_bytes()
-            + deleted.capacity().div_ceil(u8::BITS as usize)
+        // io-backed storages have no significant heap allocations
+        let _ = (counts_per_hash, points_map, points_map_ids);
+        point_to_values.ram_usage_bytes() + deleted.capacity().div_ceil(u8::BITS as usize)
     }
 }
 
@@ -140,7 +121,7 @@ struct StoredGeoMapIndexStat {
     max_values_per_point: usize,
 }
 
-impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
+impl<S: UniversalRead> StoredGeoMapIndex<S> {
     pub fn build(
         dynamic_index: InMemoryGeoMapIndex,
         path: &Path,
@@ -286,9 +267,9 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
             prevent_caching: None,
         };
 
-        let counts_per_hash = UniversalRead::open(&counts_per_hash_path, open_options)?;
-        let points_map = UniversalRead::open(&points_map_path, open_options)?;
-        let points_map_ids = UniversalRead::open(&points_map_ids_path, open_options)?;
+        let counts_per_hash = S::open(&counts_per_hash_path, open_options)?;
+        let points_map = S::open(&points_map_path, open_options)?;
+        let points_map_ids = S::open(&points_map_ids_path, open_options)?;
         let point_to_values = StoredPointToValues::open(path, true)?;
 
         let mut deleted = deleted_points.to_owned();
@@ -366,10 +347,13 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         &self,
         filter: impl Fn(&(GeoHash, usize)) -> bool,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
-        let counts = self.storage.counts_per_hash.read::<Sequential>(ReadRange {
-            byte_offset: 0,
-            length: self.storage.counts_per_hash.len()?,
-        })?;
+        let counts = self
+            .storage
+            .counts_per_hash
+            .read::<Sequential, Counts>(ReadRange {
+                byte_offset: 0,
+                length: self.storage.counts_per_hash.len::<Counts>()?,
+            })?;
         let mut results = Vec::with_capacity(counts.len());
         for count in counts.iter() {
             let pair = (count.hash.normalize(), count.points as usize);
@@ -408,7 +392,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Counts>> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
-        let len = self.storage.counts_per_hash.len()? as usize;
+        let len = self.storage.counts_per_hash.len::<Counts>()? as usize;
 
         hw_counter
             .payload_index_io_read_counter()
@@ -417,7 +401,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
 
         let read_one = |idx| -> OperationResult<Counts> {
             let range = ReadRange::one((idx * size_of::<Counts>()) as u64);
-            let value = self.storage.counts_per_hash.read::<Random>(range)?;
+            let value = self.storage.counts_per_hash.read::<Random, Counts>(range)?;
             Ok(value[0])
         };
 
@@ -495,7 +479,7 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
             return Ok(AHashSet::default());
         }
 
-        let len = self.storage.points_map.len()?;
+        let len = self.storage.points_map.len::<PointKeyValue>()?;
 
         geo_hashes.sort_unstable();
         // Drop any prefix that is already subsumed by or equal to an earlier (shorter)
@@ -526,7 +510,10 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         // Step 1: binary search to find the index of the `start` entry.
         let start_idx = binary_search_by(0..len, |idx| {
             let range = ReadRange::one(idx * size_of::<PointKeyValue>() as u64);
-            let value = self.storage.points_map.read::<Random>(range)?;
+            let value = self
+                .storage
+                .points_map
+                .read::<Random, PointKeyValue>(range)?;
             OperationResult::Ok(value[0].hash.normalize().cmp(&smallest_hash))
         })?
         .unwrap_or_else(|index| index);
@@ -535,14 +522,17 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         // arrive out of order from the underlying IO, so we reorder them with
         // `OrderingIterator` before inspecting their contents; this lets us
         // stop reading as soon as we walk past the last prefix.
-        let chunks = self.storage.points_map.read_iter::<Sequential, _>(
-            ReadRange {
-                byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
-                length: len - start_idx,
-            }
-            .iter_autochunks::<PointKeyValue>()
-            .enumerate(),
-        )?;
+        let chunks = self
+            .storage
+            .points_map
+            .read_iter::<Sequential, PointKeyValue, _>(
+                ReadRange {
+                    byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
+                    length: len - start_idx,
+                }
+                .iter_autochunks::<PointKeyValue>()
+                .enumerate(),
+            )?;
 
         let ordered_chunks = OrderingIterator::new(chunks);
 
@@ -584,18 +574,19 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
         // Step 3: read the collected ranges and accumulate unique,
         // non-deleted point ids.
         let mut points = AHashSet::new();
-        self.storage.points_map_ids.read_batch::<Random, _>(
-            point_map_ranges.into_iter().enumerate(),
-            |_idx, values| {
-                points.extend(
-                    values
-                        .iter()
-                        .copied()
-                        .filter(|&id| !self.storage.deleted.get_bit(id as usize).unwrap_or(true)),
-                );
-                Ok(())
-            },
-        )?;
+        self.storage
+            .points_map_ids
+            .read_batch::<Random, PointOffsetType, _>(
+                point_map_ranges.into_iter().enumerate(),
+                |_idx, values| {
+                    points.extend(
+                        values.iter().copied().filter(|&id| {
+                            !self.storage.deleted.get_bit(id as usize).unwrap_or(true)
+                        }),
+                    );
+                    Ok(())
+                },
+            )?;
 
         Ok(points)
     }

@@ -48,11 +48,11 @@ impl UniversalReadFileOps for IoUringFile {
     }
 }
 
-impl<T> UniversalRead<T> for IoUringFile
-where
-    T: bytemuck::Pod,
-{
-    type ReadPipeline<'a, Meta> = IoUringPipeline<'a, T, Meta>;
+impl UniversalRead for IoUringFile {
+    type ReadPipeline<'a, T, Meta>
+        = IoUringPipeline<'a, T, Meta>
+    where
+        T: bytemuck::Pod + 'static;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         // Check that io_uring is supported on this system.
@@ -86,11 +86,11 @@ where
         Ok(file)
     }
 
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         if self.direct_io {
             // direct_io needs special handling
             return self
-                .read_iter::<P, _>([((), range)])?
+                .read_iter::<P, T, _>([((), range)])?
                 .next()
                 .expect("there's exactly one read")
                 .map(|(_, data)| data);
@@ -102,7 +102,7 @@ where
         Ok(Cow::Owned(items))
     }
 
-    fn len(&self) -> Result<u64> {
+    fn len<T>(&self) -> Result<u64> {
         let byte_len = self.file.metadata()?.len();
 
         let items_len = byte_len / size_of::<T>() as u64;
@@ -207,17 +207,14 @@ where
     }
 }
 
-impl<T> UniversalWrite<T> for IoUringFile
-where
-    T: bytemuck::Pod,
-{
-    fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
+impl UniversalWrite for IoUringFile {
+    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         let bytes = bytemuck::cast_slice(items);
         self.file.write_all_at(bytes, byte_offset)?;
         Ok(())
     }
 
-    fn write_batch<'a>(
+    fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
@@ -245,7 +242,7 @@ where
         Ok(())
     }
 
-    fn write_multi<'a>(
+    fn write_multi<'a, T: bytemuck::Pod>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {

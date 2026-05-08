@@ -12,7 +12,7 @@ use tonic::Status;
 
 use crate::tonic::api::storage_read_api::StorageReadService;
 
-impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
+impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S> {
     pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             dispatcher,

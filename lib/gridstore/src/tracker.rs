@@ -268,7 +268,7 @@ impl<S> Tracker<S> {
 }
 
 // Read operations -- only require UniversalRead
-impl<S: UniversalRead<u8>> Tracker<S> {
+impl<S: UniversalRead> Tracker<S> {
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return an error
     pub fn open(path: &Path) -> Result<Self> {
@@ -286,7 +286,7 @@ impl<S: UniversalRead<u8>> Tracker<S> {
     }
 
     fn read_header(storage: &S) -> Result<TrackerHeader> {
-        let header_bytes = storage.read::<Random>(ReadRange {
+        let header_bytes = storage.read::<Random, u8>(ReadRange {
             byte_offset: 0,
             length: std::mem::size_of::<TrackerHeader>() as u64,
         })?;
@@ -345,11 +345,11 @@ impl<S: UniversalRead<u8>> Tracker<S> {
         let start_offset = std::mem::size_of::<TrackerHeader>()
             + point_offset as usize * std::mem::size_of::<Optional<ValuePointer>>();
         let end_offset = start_offset + std::mem::size_of::<Optional<ValuePointer>>();
-        let storage_len = self.storage.len()?;
+        let storage_len = self.storage.len::<u8>()?;
         if end_offset as u64 > storage_len {
             return Ok(None);
         }
-        let bytes = self.storage.read::<Random>(ReadRange {
+        let bytes = self.storage.read::<Random, u8>(ReadRange {
             byte_offset: start_offset as u64,
             length: std::mem::size_of::<Optional<ValuePointer>>() as u64,
         })?;
@@ -382,7 +382,7 @@ impl<S: UniversalRead<u8>> Tracker<S> {
     pub fn get_batch(&self, point_offsets: &[PointOffset]) -> Result<Vec<Option<ValuePointer>>> {
         let item_size = std::mem::size_of::<Optional<ValuePointer>>();
         let header_size = std::mem::size_of::<TrackerHeader>();
-        let storage_len = self.storage.len()?;
+        let storage_len = self.storage.len::<u8>()?;
 
         let mut result: Vec<Option<ValuePointer>> = vec![None; point_offsets.len()];
         let mut storage_reads: Vec<(usize, ReadRange)> = Vec::with_capacity(point_offsets.len());
@@ -418,7 +418,7 @@ impl<S: UniversalRead<u8>> Tracker<S> {
             .iter()
             .map(|(i, range)| (*i, &self.storage, *range));
 
-        for read_result in S::read_multi_iter::<Random, _>(reads)? {
+        for read_result in S::read_multi_iter::<Random, u8, _>(reads)? {
             let (i, bytes) = read_result?;
             #[expect(deprecated, reason = "legacy code")]
             let opt: &Optional<ValuePointer> = unsafe { transmute_from_u8(bytes.as_ref()) };
@@ -470,14 +470,17 @@ impl<S: UniversalRead<u8>> Tracker<S> {
     /// Return the size of the underlying file
     #[cfg(test)]
     pub fn mmap_file_size(&self) -> Result<usize> {
-        self.storage.len().map(|u| u as usize).map_err(Into::into)
+        self.storage
+            .len::<u8>()
+            .map(|u| u as usize)
+            .map_err(Into::into)
     }
 }
 
 // Write operations and constructors -- require UniversalWrite
 impl<S> Tracker<S>
 where
-    S: UniversalRead<u8> + UniversalWrite<u8>,
+    S: UniversalRead + UniversalWrite,
 {
     const DEFAULT_SIZE: usize = 1024 * 1024; // 1MB
 
@@ -588,7 +591,7 @@ where
         point_offset: PointOffset,
         pointer: Option<ValuePointer>,
     ) -> Result<()> {
-        let storage_len = self.storage.len()? as usize;
+        let storage_len = self.storage.len::<u8>()? as usize;
         if pointer.is_none() && point_offset as usize >= storage_len {
             return Ok(());
         }
