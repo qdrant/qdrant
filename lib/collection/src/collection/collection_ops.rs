@@ -222,19 +222,15 @@ impl Collection {
             return Ok(());
         }
 
-        let mut shard_holder = None;
+        let shard_holder = self.shards_holder.read().await;
+        let mut to_remove = Vec::with_capacity(replica_changes.len());
 
         for change in replica_changes {
-            let inner_shard_holder = match shard_holder {
-                Some(ref holder) => holder,
-                None => shard_holder.insert(self.shards_holder.read().await),
-            };
-
             let (shard_id, peer_id) = match change {
                 Change::Remove(shard_id, peer_id) => (shard_id, peer_id),
             };
 
-            let Some(replica_set) = inner_shard_holder.get_shard(shard_id).cloned() else {
+            let Some(replica_set) = shard_holder.get_shard(shard_id).cloned() else {
                 return Err(CollectionError::bad_request(format!(
                     "Shard {shard_id} of {} not found",
                     self.name(),
@@ -264,23 +260,24 @@ impl Collection {
 
             // Collect shard transfers related to removed shard...
             let transfers = if all_nodes_fixed_cancellation {
-                inner_shard_holder.get_related_transfers(peer_id, shard_id)
+                shard_holder.get_related_transfers(peer_id, shard_id)
             } else {
                 // This is the old buggy logic, but we have to keep it
                 // for maintaining consistency in a cluster with mixed versions.
-                inner_shard_holder
+                shard_holder
                     .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id)
             };
 
-            // ...and cancel transfer tasks and remove transfers from internal state
-            if !transfers.is_empty() {
-                // Must release shard holder lock for abort_shard_transfer_and_resharding
-                drop(shard_holder.take());
+            to_remove.push((replica_set, peer_id, transfers));
+        }
 
-                for transfer in transfers {
-                    self.abort_shard_transfer_and_resharding(transfer.key())
-                        .await?;
-                }
+        // Must release shard holder lock for abort_shard_transfer_and_resharding
+        drop(shard_holder);
+
+        for (replica_set, peer_id, transfers) in to_remove {
+            for transfer in transfers {
+                self.abort_shard_transfer_and_resharding(transfer.key())
+                    .await?;
             }
 
             replica_set.remove_peer(peer_id).await?;
@@ -292,6 +289,7 @@ impl Collection {
             // the transfer should be cancelled (see the block right above this comment),
             // so no special handling is needed.
         }
+
         Ok(())
     }
 
