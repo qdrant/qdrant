@@ -436,15 +436,10 @@ impl Collection {
     pub async fn abort_shard_transfer_and_resharding(
         &self,
         transfer_key: ShardTransferKey,
-        shard_holder: Option<&ShardHolder>,
     ) -> CollectionResult<()> {
         // Look up transfer and any resharding state we need to abort
         let resharding_state = {
-            let mut shard_holder_guard = None;
-            let shard_holder = match shard_holder {
-                Some(shard_holder) => shard_holder,
-                None => shard_holder_guard.insert(self.shards_holder.read().await),
-            };
+            let shard_holder = self.shards_holder.read().await;
 
             let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
                 return Ok(());
@@ -463,17 +458,13 @@ impl Collection {
         }
 
         // Resharding may already have aborted the transfer so we check it again
-        let mut shard_holder_guard = None;
-        let shard_holder = match shard_holder {
-            Some(shard_holder) => shard_holder,
-            None => shard_holder_guard.insert(self.shards_holder.read().await),
-        };
+        let shard_holder = self.shards_holder.read().await;
 
         let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
             return Ok(());
         };
 
-        self.abort_shard_transfer(transfer, shard_holder).await
+        self.abort_shard_transfer(transfer, &shard_holder).await
     }
 
     /// Initiate local partial shard

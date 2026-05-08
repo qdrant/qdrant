@@ -278,7 +278,7 @@ impl Collection {
                 drop(shard_holder.take());
 
                 for transfer in transfers {
-                    self.abort_shard_transfer_and_resharding(transfer.key(), None)
+                    self.abort_shard_transfer_and_resharding(transfer.key())
                         .await?;
                 }
             }
