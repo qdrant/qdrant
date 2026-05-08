@@ -15,7 +15,8 @@ use itertools::Itertools;
 use crate::bitvec::BitVec;
 use crate::generic_consts::Random;
 use crate::universal_io::{
-    Flusher, OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalWrite,
+    Flusher, OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalWrite,
 };
 
 /// Number of bits per `BitStore` element.
@@ -35,7 +36,7 @@ pub type MmapBitSlice = StoredBitSlice<crate::universal_io::MmapFile>;
 /// on the backend.
 #[derive(Debug)]
 pub struct StoredBitSlice<S> {
-    storage: S,
+    storage: TypedStorage<S, BitStore>,
     /// Total number of `BitStore` elements in the underlying storage.
     element_len: u64,
 }
@@ -43,8 +44,8 @@ pub struct StoredBitSlice<S> {
 impl<S: UniversalRead> StoredBitSlice<S> {
     /// Open a bitslice storage from the given path using backend `S`.
     pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
-        let storage = S::open(path, options)?;
-        let element_len = storage.len::<BitStore>()?;
+        let storage = TypedStorage::open(path, options)?;
+        let element_len = storage.len()?;
         Ok(Self {
             storage,
             element_len,
@@ -88,7 +89,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// Returns `Cow::Borrowed` when the backend supports zero-copy reads
     /// (e.g., mmap), otherwise returns `Cow::Owned`.
     pub fn read_all(&self) -> Result<Cow<'_, BitSlice>> {
-        let elements = self.storage.read_whole::<BitStore>()?;
+        let elements = self.storage.read_whole()?;
         match elements {
             Cow::Borrowed(slice) => Ok(Cow::Borrowed(BitSlice::from_slice(slice))),
             Cow::Owned(vec) => Ok(Cow::Owned(BitVec::from_vec(vec))),
@@ -109,7 +110,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         let elem_end = range.end.div_ceil(u64::from(BITS_PER_ELEMENT));
         let num_elements = elem_end - elem_start;
 
-        let elements = self.storage.read::<Random, BitStore>(ReadRange {
+        let elements = self.storage.read::<Random>(ReadRange {
             byte_offset: elem_start * size_of::<BitStore>() as u64,
             length: num_elements,
         })?;
@@ -148,9 +149,9 @@ impl<S: UniversalRead> StoredBitSlice<S> {
             return Ok(None);
         }
 
-        let element = self.storage.read::<Random, BitStore>(ReadRange::one(
-            element_index * size_of::<BitStore>() as u64,
-        ))?[0];
+        let element = self
+            .storage
+            .read::<Random>(ReadRange::one(element_index * size_of::<BitStore>() as u64))?[0];
 
         let bitslice = BitSlice::from_element(&element);
 
@@ -215,7 +216,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
 
             let mut buf = self
                 .storage
-                .read::<Random, BitStore>(ReadRange {
+                .read::<Random>(ReadRange {
                     byte_offset: element_start * size_of::<BitStore>() as u64,
                     length: num_elements,
                 })?
@@ -263,7 +264,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
         // Fetch existing, in case the source length is not a multiple of element size
         let element_count = bit_count.div_ceil(u64::from(BITS_PER_ELEMENT));
 
-        let existing = self.storage.read::<Random, BitStore>(ReadRange {
+        let existing = self.storage.read::<Random>(ReadRange {
             byte_offset: 0,
             length: element_count,
         })?;
@@ -290,9 +291,9 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
             });
         }
 
-        let mut element = self.storage.read::<Random, BitStore>(ReadRange::one(
-            element_index * size_of::<BitStore>() as u64,
-        ))?[0];
+        let mut element = self
+            .storage
+            .read::<Random>(ReadRange::one(element_index * size_of::<BitStore>() as u64))?[0];
 
         let element = &mut element;
 
