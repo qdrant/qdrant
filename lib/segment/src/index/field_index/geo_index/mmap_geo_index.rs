@@ -349,13 +349,10 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
         &self,
         filter: impl Fn(&(GeoHash, usize)) -> bool,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
-        let counts = self
-            .storage
-            .counts_per_hash
-            .read::<Sequential>(ReadRange {
-                byte_offset: 0,
-                length: self.storage.counts_per_hash.len()?,
-            })?;
+        let counts = self.storage.counts_per_hash.read::<Sequential>(ReadRange {
+            byte_offset: 0,
+            length: self.storage.counts_per_hash.len()?,
+        })?;
         let mut results = Vec::with_capacity(counts.len());
         for count in counts.iter() {
             let pair = (count.hash.normalize(), count.points as usize);
@@ -521,17 +518,14 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
         // arrive out of order from the underlying IO, so we reorder them with
         // `OrderingIterator` before inspecting their contents; this lets us
         // stop reading as soon as we walk past the last prefix.
-        let chunks = self
-            .storage
-            .points_map
-            .read_iter::<Sequential, _>(
-                ReadRange {
-                    byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
-                    length: len - start_idx,
-                }
-                .iter_autochunks::<PointKeyValue>()
-                .enumerate(),
-            )?;
+        let chunks = self.storage.points_map.read_iter::<Sequential, _>(
+            ReadRange {
+                byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
+                length: len - start_idx,
+            }
+            .iter_autochunks::<PointKeyValue>()
+            .enumerate(),
+        )?;
 
         let ordered_chunks = OrderingIterator::new(chunks);
 
