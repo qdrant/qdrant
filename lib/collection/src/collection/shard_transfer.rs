@@ -59,13 +59,19 @@ impl Collection {
     }
 
     pub async fn wal_delta_fallback_transfer_method(&self) -> ShardTransferMethod {
-        if self.is_prevent_unoptimized().await {
+        let fallback_method = if self.is_prevent_unoptimized().await {
             log::info!("Using snapshot transfer fallback because prevent_unoptimized is enabled");
             ShardTransferMethod::Snapshot
         } else {
             self.shared_storage_config
                 .default_shard_transfer_method
                 .unwrap_or(ShardTransferMethod::Snapshot)
+        };
+
+        if fallback_method == ShardTransferMethod::WalDelta {
+            ShardTransferMethod::StreamRecords
+        } else {
+            fallback_method
         }
     }
 
