@@ -415,40 +415,6 @@ impl Collection {
 
         let current_state = replica_set.peer_state(peer_id);
 
-        // Abort resharding *before* persisting the new replica state.
-        //
-        // If we did this after the persist, a crash between the durable
-        // `replica_state.json` write and `abort_resharding` would leave
-        // `resharding_state.json` stuck `Some` on the replaying peer (a
-        // `current_state`-based gate reads `Dead` from disk on replay and
-        // skips the abort). Doing it first means a partial-apply crash
-        // either re-runs the whole entry (replica state still reads as a
-        // resharding state, gate fires, the idempotent abort re-runs) or no
-        // longer needs the abort to fire at all (resharding_state already
-        // cleared by the prior attempt). Either way, every peer converges.
-        //
-        // Covers both directions: up (`Resharding`) and down (`ReshardingScaleDown`).
-        // For up, `abort_resharding` drops the shard entirely; we detect the
-        // missing shard below and skip the persist. For down, the shard
-        // stays, abort just reverts the receiver back to `Active`, and the
-        // persist below overwrites that with `Dead`.
-        if new_state == ReplicaState::Dead && current_state.is_some_and(|s| s.is_resharding()) {
-            let resharding_state = shard_holder.resharding_state.read().clone();
-            if let Some(state) = resharding_state {
-                // `abort_resharding` grabs the shard_holder write lock internally.
-                drop(shard_holder);
-                self.abort_resharding(state.key(), false).await?;
-                // For up direction, abort dropped the shard. If it's gone, the
-                // replica we'd be deactivating no longer exists on this peer
-                // and the rest of the function is a no-op.
-                shard_holder = self.shards_holder.read().await;
-                let Some(rs) = shard_holder.get_shard(shard_id) else {
-                    return Ok(());
-                };
-                replica_set = rs;
-            }
-        }
-
         // Validation:
         //
         // 1. Check that peer exists in the cluster (peer might *not* exist, if it was removed from
@@ -483,6 +449,40 @@ impl Collection {
             return Err(CollectionError::bad_input(format!(
                 "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
             )));
+        }
+
+        // Abort resharding *before* persisting the new replica state.
+        //
+        // If we did this after the persist, a crash between the durable
+        // `replica_state.json` write and `abort_resharding` would leave
+        // `resharding_state.json` stuck `Some` on the replaying peer (a
+        // `current_state`-based gate reads `Dead` from disk on replay and
+        // skips the abort). Doing it first means a partial-apply crash
+        // either re-runs the whole entry (replica state still reads as a
+        // resharding state, gate fires, the idempotent abort re-runs) or no
+        // longer needs the abort to fire at all (resharding_state already
+        // cleared by the prior attempt). Either way, every peer converges.
+        //
+        // Covers both directions: up (`Resharding`) and down (`ReshardingScaleDown`).
+        // For up, `abort_resharding` drops the shard entirely; we detect the
+        // missing shard below and skip the persist. For down, the shard
+        // stays, abort just reverts the receiver back to `Active`, and the
+        // persist below overwrites that with `Dead`.
+        if new_state == ReplicaState::Dead && current_state.is_some_and(|s| s.is_resharding()) {
+            let resharding_state = shard_holder.resharding_state.read().clone();
+            if let Some(state) = resharding_state {
+                // `abort_resharding` grabs the shard_holder write lock internally.
+                drop(shard_holder);
+                self.abort_resharding(state.key(), false).await?;
+                // For up direction, abort dropped the shard. If it's gone, the
+                // replica we'd be deactivating no longer exists on this peer
+                // and the rest of the function is a no-op.
+                shard_holder = self.shards_holder.read().await;
+                let Some(rs) = shard_holder.get_shard(shard_id) else {
+                    return Ok(());
+                };
+                replica_set = rs;
+            }
         }
 
         // Update replica status
