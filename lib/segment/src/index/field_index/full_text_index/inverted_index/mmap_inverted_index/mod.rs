@@ -179,7 +179,7 @@ impl MmapInvertedIndex {
             &vocab_path,
             OpenOptions {
                 writeable: false,
-                populate: Some(populate),
+                populate: Populate::from(populate),
                 ..OpenOptions::default()
             },
         )?;

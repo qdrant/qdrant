@@ -13,7 +13,9 @@ use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead};
+use common::universal_io::{
+    MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+};
 use fs_err as fs;
 use memmap2::MmapMut;
 
