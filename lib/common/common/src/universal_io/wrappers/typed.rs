@@ -47,6 +47,7 @@ where
     }
 }
 
+#[expect(clippy::len_without_is_empty)]
 impl<S, T> TypedStorage<S, T>
 where
     S: UniversalRead,
