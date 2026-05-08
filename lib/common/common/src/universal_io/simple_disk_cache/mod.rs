@@ -2,8 +2,10 @@ mod config;
 mod file;
 
 pub mod pipeline;
+pub mod prefill;
 #[cfg(test)]
 mod tests;
+
 
 pub use config::DiskCacheConfig;
 pub use file::DiskCache;

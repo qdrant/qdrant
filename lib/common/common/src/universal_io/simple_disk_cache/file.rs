@@ -1,18 +1,20 @@
 use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use fs_err as fs;
 use memmap2::MmapRaw;
 use parking_lot::Mutex;
 use roaring::RoaringBitmap;
+use tokio::sync::oneshot;
 
 use super::BLOCK_SIZE;
 use super::config::DiskCacheConfig;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::{AdviceSetting, Madviseable};
 use crate::universal_io::pipeline::DiskCachePipeline;
+use crate::universal_io::prefill::GLOBAL_PREFILL_THREAD;
 use crate::universal_io::{
     OpenOptions, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
     UniversalReadFileOps,
@@ -32,13 +34,9 @@ pub struct DiskCache<R> {
     open_options: OpenOptions,
     /// Path to the local mmap file
     local_path: PathBuf,
-    pub(super) local: OnceLock<LocalState>,
+    pub(super) local: Arc<OnceLock<LocalState>>,
     /// Prevents concurrent initialization of `local` across threads.
-    ///
-    /// TODO: Switch to [`OnceLock::get_or_try_init`][1] once it stabilizes
-    ///
-    /// [1]: https://github.com/rust-lang/rust/issues/109737
-    init_lock: Mutex<()>,
+    init_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Debug)]
@@ -49,6 +47,42 @@ pub(super) struct LocalState {
 }
 
 impl LocalState {
+    pub(super) fn new(
+        local_path: impl AsRef<Path>,
+        len: u64,
+        options: OpenOptions,
+    ) -> Result<Self> {
+        if let Some(parent) = local_path.as_ref().parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let OpenOptions {
+            writeable: _,       // always needs to be writeable
+            need_sequential: _, // TODO: add sequential mmap
+            disk_parallel: _,   // unsupported
+            populate: _,        // this is handled in populate() function
+            advice,
+            prevent_caching: _, // TODO: use o_direct
+        } = options;
+
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(local_path.as_ref())?;
+
+        file.set_len(len)?;
+        let mmap = MmapRaw::map_raw(&file)?;
+
+        mmap.madvise(advice.unwrap_or(AdviceSetting::Global).resolve())?;
+
+        Ok(LocalState {
+            mmap,
+            fetched: Mutex::new(RoaringBitmap::new()),
+        })
+    }
+
     /// # Safety
     /// `byte_range` must have been populated first, caller must ensure `self.fetched` references the
     /// blocks for the byte range.
@@ -114,13 +148,40 @@ impl<R: UniversalRead> DiskCache<R> {
 
         let remote = R::open(remote_path, remote_options)?;
 
-        Ok(Self {
+        let file = Self {
             remote,
             open_options: options,
             local_path,
-            local: OnceLock::new(),
-            init_lock: Mutex::new(()),
-        })
+            local: Default::default(),
+            init_lock: Default::default(),
+        };
+
+        match options.populate {
+            Populate::Auto | Populate::No => {}
+            Populate::Blocking => file.populate()?,
+            Populate::PreferBackground => {
+                file.populate_async(remote_path.to_path_buf())?;
+            }
+        }
+
+        Ok(file)
+    }
+
+    fn populate_async(&self, remote_path: PathBuf) -> Result<()> {
+        if crate::low_memory::low_memory_mode().skip_populate() {
+            return Ok(());
+        }
+
+        let prefiller = &*GLOBAL_PREFILL_THREAD;
+
+        let (finish, result) = oneshot::channel();
+
+        // TODO! handle result
+        dbg!(result);
+
+        prefiller.send_request(remote_path, self.local_path.to_owned(), self.open_options, finish);
+
+        Ok(())
     }
 
     /// Return the cached [`LocalState`], initializing it on first call.
@@ -130,7 +191,7 @@ impl<R: UniversalRead> DiskCache<R> {
         }
 
         // Only first thread is able to initialize
-        let _guard = self.init_lock.lock();
+        let _guard = self.init_lock.blocking_lock();
         if let Some(state) = self.local.get() {
             return Ok(state);
         }
@@ -143,36 +204,8 @@ impl<R: UniversalRead> DiskCache<R> {
     }
 
     fn init_local_state(&self) -> Result<LocalState> {
-        if let Some(parent) = self.local_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let OpenOptions {
-            writeable: _,       // always needs to be writeable
-            need_sequential: _, // TODO: add sequential mmap
-            disk_parallel: _,   // unsupported
-            populate: _,        // this is handled in populate() function
-            advice,
-            prevent_caching: _, // TODO: use o_direct
-        } = self.open_options;
-
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&self.local_path)?;
-
-        let remote_len = self.remote.len::<u8>()?;
-        file.set_len(remote_len)?;
-        let mmap = MmapRaw::map_raw(&file)?;
-
-        mmap.madvise(advice.unwrap_or(AdviceSetting::Global).resolve())?;
-
-        Ok(LocalState {
-            mmap,
-            fetched: Mutex::new(RoaringBitmap::new()),
-        })
+        let len = self.remote.len::<u8>()?;
+        LocalState::new(&self.local_path, len, self.open_options)
     }
 }
 
