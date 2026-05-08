@@ -9,7 +9,7 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::{self, ReadOnly, ReadRange, UniversalRead};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::IntoBytes;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -86,7 +86,7 @@ struct MmapRange {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Header {
     ranges_start: u64,
     points_count: u64,
@@ -124,7 +124,7 @@ where
             ranges_start: PADDING_SIZE as u64,
             points_count: points_count as u64,
         };
-        header
+        bytemuck::bytes_of(&header)
             .write_to_prefix(mmap.as_mut())
             .map_err(|_| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
 
@@ -176,13 +176,7 @@ where
 
         let store = ReadOnly::open(&file_name, open_options)?;
 
-        let header_bytes = store.read::<Random, u8>(ReadRange {
-            byte_offset: 0,
-            length: std::mem::size_of::<Header>() as u64,
-        })?;
-
-        let (header, _) = Header::read_from_prefix(&header_bytes)
-            .map_err(|_| OperationError::inconsistent_storage(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
+        let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
 
         Ok(Self {
             file_name,
