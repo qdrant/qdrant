@@ -4,12 +4,12 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalWrite;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 
 use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
-use crate::common::flags::dynamic_stored_flags::UioDynamicFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
@@ -29,7 +29,7 @@ pub(crate) struct BufferedDynamicFlags<S> {
 
 impl<S> BufferedDynamicFlags<S>
 where
-    S: UioDynamicFlags,
+    S: UniversalWrite + Send + 'static,
 {
     pub fn new(dynamic_flags: DynamicStoredFlags<S>) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));

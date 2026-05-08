@@ -9,7 +9,7 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::{self, ReadOnly, ReadRange, UniversalRead};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::IntoBytes;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -79,14 +79,14 @@ pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
 pub const MMAP_PTV_ACCESS_OVERHEAD: usize = size_of::<MmapRange>();
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 struct MmapRange {
     start: u64,
     count: u64,
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Header {
     ranges_start: u64,
     points_count: u64,
@@ -124,7 +124,7 @@ where
             ranges_start: PADDING_SIZE as u64,
             points_count: points_count as u64,
         };
-        header
+        bytemuck::bytes_of(&header)
             .write_to_prefix(mmap.as_mut())
             .map_err(|_| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
 
@@ -152,7 +152,7 @@ where
                 header.ranges_start as usize
                     + point_id as usize * std::mem::size_of::<MmapRange>()..,
             )
-            .and_then(|bytes| range.write_to_prefix(bytes).ok())
+            .and_then(|bytes| range.write_to_prefix(bytes))
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
         }
 
@@ -176,13 +176,7 @@ where
 
         let store = ReadOnly::open(&file_name, open_options)?;
 
-        let header_bytes = store.read::<Random, u8>(ReadRange {
-            byte_offset: 0,
-            length: std::mem::size_of::<Header>() as u64,
-        })?;
-
-        let (header, _) = Header::read_from_prefix(&header_bytes)
-            .map_err(|_| OperationError::inconsistent_storage(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
+        let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
 
         Ok(Self {
             file_name,
@@ -272,16 +266,13 @@ where
 
     fn get_range(&self, point_id: PointOffsetType) -> OperationResult<Option<MmapRange>> {
         if point_id < self.header.points_count as PointOffsetType {
-            let range_offset = (self.header.ranges_start as usize)
-                + (point_id as usize) * std::mem::size_of::<MmapRange>();
+            let range_offset =
+                (self.header.ranges_start as usize) + (point_id as usize) * size_of::<MmapRange>();
 
-            let bytes = self.store.read::<Random, u8>(ReadRange {
-                byte_offset: range_offset as u64,
-                length: std::mem::size_of::<MmapRange>() as u64,
-            })?;
-            Ok(MmapRange::read_from_prefix(&bytes)
-                .ok()
-                .map(|(range, _)| range))
+            let range = self
+                .store
+                .read::<Random, MmapRange>(ReadRange::one(range_offset as u64))?[0];
+            Ok(Some(range))
         } else {
             Ok(None)
         }

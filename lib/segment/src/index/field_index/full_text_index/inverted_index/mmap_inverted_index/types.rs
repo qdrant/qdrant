@@ -20,7 +20,7 @@ impl ZerocopyPostingValue for () {}
 
 impl ZerocopyPostingValue for Positions {}
 
-#[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Debug, Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub(in crate::index::field_index::full_text_index) struct PostingsHeader {
     /// Number of posting lists. One posting list per term

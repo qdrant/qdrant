@@ -88,7 +88,7 @@ pub fn create_postings_file<V: ZerocopyPostingValue>(
         _reserved: [0; 32],
     };
 
-    bufw.write_all(postings_header.as_bytes())?;
+    bufw.write_all(bytemuck::bytes_of(&postings_header))?;
 
     let postings_lists_headers_size = compressed_postings.len() * size_of::<PostingListHeader>();
     let mut posting_offset = size_of::<PostingsHeader>() + postings_lists_headers_size;

@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
+use common::universal_io::UniversalWrite;
 use roaring::RoaringBitmap;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
 use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
-use crate::common::flags::dynamic_stored_flags::UioDynamicFlags;
 use crate::common::operation_error::OperationResult;
 
 /// A buffered, growable, and persistent bitslice with fast in-memory roaring bitmap.
@@ -30,7 +30,7 @@ pub struct RoaringFlags<S> {
 
 impl<S> RoaringFlags<S>
 where
-    S: UioDynamicFlags,
+    S: UniversalWrite + Send + 'static,
 {
     pub fn new(dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
         // load flags into memory

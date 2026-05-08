@@ -71,7 +71,7 @@ impl UniversalRead for CachedSlice {
         = DiskCacheReadPipeline<'a, T, Meta>
     where
         Self: 'a,
-        T: bytemuck::Pod + 'static;
+        T: bytemuck::Pod;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let Some(controller) = CacheController::global() else {

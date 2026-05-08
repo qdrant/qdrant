@@ -32,9 +32,6 @@ type RegionId = u32;
 /// Concrete bitmask type using memory-mapped storage.
 pub type MmapBitmask = Bitmask<MmapFile>;
 
-pub trait BitmaskStorage: UniversalWrite {}
-impl<T> BitmaskStorage for T where T: UniversalWrite {}
-
 #[derive(Debug)]
 pub struct Bitmask<S> {
     config: StorageConfig,
@@ -49,7 +46,7 @@ pub struct Bitmask<S> {
     path: PathBuf,
 }
 
-impl<S: BitmaskStorage> Bitmask<S> {
+impl<S: UniversalWrite> Bitmask<S> {
     pub fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone(), self.regions_gaps.path()]
     }

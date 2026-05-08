@@ -12,7 +12,7 @@ pub trait UniversalRead: UniversalReadFileOps {
     type ReadPipeline<'file, T, Meta>: UniversalReadPipeline<'file, T, Meta, File = Self>
     where
         Self: 'file,
-        T: bytemuck::Pod + 'static;
+        T: bytemuck::Pod;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
@@ -133,7 +133,7 @@ pub trait UniversalRead: UniversalReadFileOps {
 
 pub trait UniversalReadPipeline<'file, T, Meta>: Sized
 where
-    T: bytemuck::Pod + 'static,
+    T: bytemuck::Pod,
 {
     type File: 'file;
 

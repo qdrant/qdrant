@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
+use common::universal_io::UniversalWrite;
 
 use super::buffered_dynamic_flags::BufferedDynamicFlags;
 use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
-use crate::common::flags::dynamic_stored_flags::UioDynamicFlags;
 use crate::common::operation_error::OperationResult;
 
 /// A buffered, growable, and persistent bitslice with a separate in-memory bitvec.
@@ -30,7 +30,7 @@ pub struct BitvecFlags<S> {
 
 impl<S> BitvecFlags<S>
 where
-    S: UioDynamicFlags,
+    S: UniversalWrite + Send + 'static,
 {
     pub fn new(dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
         // load flags into memory

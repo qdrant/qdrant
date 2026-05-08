@@ -47,7 +47,7 @@ impl UniversalRead for MmapFile {
     type ReadPipeline<'a, T, Meta>
         = MmapReadPipeline<'a, T, Meta>
     where
-        T: bytemuck::Pod + 'static;
+        T: bytemuck::Pod;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
