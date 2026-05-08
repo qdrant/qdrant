@@ -149,7 +149,8 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
         let phrase_matching = self.mutable_index.point_to_doc.is_some();
         let insert_boundaries = phrase_matching && values.len() > 1;
 
-        let mut str_tokens: Vec<std::borrow::Cow<str>> = Vec::new();
+        let mut str_tokens: Vec<std::borrow::Cow<str>> =
+            Vec::with_capacity((values.len() * 2).saturating_sub(1));
         for (i, value) in values.iter().enumerate() {
             if insert_boundaries && i > 0 {
                 str_tokens.push(std::borrow::Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));

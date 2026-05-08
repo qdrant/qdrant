@@ -161,7 +161,8 @@ impl MutableFullTextIndex {
         let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         let insert_boundaries = phrase_matching && values.len() > 1;
 
-        let mut str_tokens: Vec<Cow<str>> = Vec::new();
+        let mut str_tokens: Vec<Cow<str>> =
+            Vec::with_capacity((values.len() * 2).saturating_sub(1));
         for (i, value) in values.iter().enumerate() {
             if insert_boundaries && i > 0 {
                 str_tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
