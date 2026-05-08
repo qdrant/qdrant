@@ -47,7 +47,7 @@ impl Scenario {
 
     fn open<R>(&self) -> DiskCache<R>
     where
-        R: UniversalRead<u8>,
+        R: UniversalRead,
     {
         DiskCache::open_with_config(
             &self.config,
@@ -78,26 +78,22 @@ mod tests_mod {
         let file = scn.open::<R>();
 
         // Read inside the first block.
-        let bytes = UniversalRead::<u8>::read::<Sequential>(
-            &file,
-            ReadRange {
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
                 byte_offset: 10,
                 length: 20,
-            },
-        )
-        .unwrap();
+            })
+            .unwrap();
         assert_eq!(&*bytes, &scn.data[10..30]);
 
         // Last block includes the 100-byte tail.
         let last = scn.data.len() as u64;
-        let bytes = UniversalRead::<u8>::read::<Sequential>(
-            &file,
-            ReadRange {
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
                 byte_offset: last - 50,
                 length: 50,
-            },
-        )
-        .unwrap();
+            })
+            .unwrap();
         assert_eq!(&*bytes, &scn.data[scn.data.len() - 50..]);
     }
 
@@ -108,14 +104,12 @@ mod tests_mod {
 
         let start = (BLOCK_SIZE - 50) as u64;
         let len = (BLOCK_SIZE + 100) as u64;
-        let bytes = UniversalRead::<u8>::read::<Sequential>(
-            &file,
-            ReadRange {
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
                 byte_offset: start,
                 length: len,
-            },
-        )
-        .unwrap();
+            })
+            .unwrap();
         let start = start as usize;
         let end = start + len as usize;
         assert!(matches!(bytes, Cow::Borrowed(_)));
@@ -137,14 +131,12 @@ mod tests_mod {
         );
 
         // Trigger one read. This must bring up the local file.
-        let _ = UniversalRead::<u8>::read::<Sequential>(
-            &file,
-            ReadRange {
+        let _ = file
+            .read::<Sequential, u8>(ReadRange {
                 byte_offset: 0,
                 length: 1,
-            },
-        )
-        .unwrap();
+            })
+            .unwrap();
 
         assert!(
             expected_local.exists(),
@@ -163,14 +155,12 @@ mod tests_mod {
         let expected_local = scn.expected_local_path();
         let file = scn.open::<R>();
 
-        let bytes = UniversalRead::<u8>::read::<Sequential>(
-            &file,
-            ReadRange {
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
                 byte_offset: 0,
                 length: 0,
-            },
-        )
-        .unwrap();
+            })
+            .unwrap();
         assert!(bytes.is_empty());
         assert!(
             !expected_local.exists(),
@@ -183,16 +173,14 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
         let file = scn.open::<R>();
 
-        UniversalRead::<u8>::populate(&file).unwrap();
+        file.populate().unwrap();
 
-        let bytes = UniversalRead::<u8>::read::<Sequential>(
-            &file,
-            ReadRange {
+        let bytes = file
+            .read::<Sequential, u8>(ReadRange {
                 byte_offset: 0,
                 length: scn.data.len() as u64,
-            },
-        )
-        .unwrap();
+            })
+            .unwrap();
         assert_eq!(&*bytes, &scn.data[..]);
     }
 
@@ -201,14 +189,12 @@ mod tests_mod {
         let scn = Scenario::new(1024);
         let file = scn.open::<R>();
 
-        let err = UniversalRead::<u8>::read::<Sequential>(
-            &file,
-            ReadRange {
+        let err = file
+            .read::<Sequential, u8>(ReadRange {
                 byte_offset: 1000,
                 length: 100,
-            },
-        )
-        .unwrap_err();
+            })
+            .unwrap_err();
         assert!(
             matches!(
                 err,

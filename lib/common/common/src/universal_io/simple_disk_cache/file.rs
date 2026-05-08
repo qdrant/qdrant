@@ -84,7 +84,7 @@ impl LocalState {
     }
 }
 
-impl<R: UniversalRead<u8>> DiskCache<R> {
+impl<R: UniversalRead> DiskCache<R> {
     /// Open an [`DiskCache`] with an explicit configuration
     pub fn open_with_config(
         config: &DiskCacheConfig,
@@ -162,7 +162,7 @@ impl<R: UniversalRead<u8>> DiskCache<R> {
             .truncate(true)
             .open(&self.local_path)?;
 
-        let remote_len = self.remote.len()?;
+        let remote_len = self.remote.len::<u8>()?;
         file.set_len(remote_len)?;
         let mmap = MmapRaw::map_raw(&file)?;
 
@@ -185,15 +185,15 @@ impl<R: UniversalReadFileOps> UniversalReadFileOps for DiskCache<R> {
     }
 }
 
-impl<R, T> UniversalRead<T> for DiskCache<R>
+impl<R> UniversalRead for DiskCache<R>
 where
-    R: UniversalRead<u8>,
-    T: bytemuck::Pod,
+    R: UniversalRead,
 {
-    type ReadPipeline<'a, Meta>
+    type ReadPipeline<'a, T, Meta>
         = DiskCachePipeline<'a, T, Meta, R>
     where
-        R: 'a;
+        R: 'a,
+        T: bytemuck::Pod;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let config = DiskCacheConfig::global().ok_or_else(|| {
@@ -205,23 +205,27 @@ where
         Self::open_with_config(config, path, options)
     }
 
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P, T>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>
+    where
+        P: AccessPattern,
+        T: bytemuck::Pod,
+    {
         let (_, read) = self
-            .read_iter::<P, _>(std::iter::once(((), range)))?
+            .read_iter::<P, T, _>(std::iter::once(((), range)))?
             .next()
             .expect("there's exactly one read")?;
 
         Ok(read)
     }
 
-    fn len(&self) -> Result<u64> {
+    fn len<T>(&self) -> Result<u64> {
         let t_size = size_of::<T>();
         debug_assert!(t_size > 0, "zero-sized types are not supported");
 
         let bytes_len = if let Some(local) = self.local.get() {
             local.mmap.len() as u64
         } else {
-            self.remote.len()?
+            self.remote.len::<u8>()?
         };
 
         Ok(bytes_len / t_size as u64)
@@ -232,7 +236,7 @@ where
             return Ok(());
         }
 
-        let remote_len = self.remote.len()?;
+        let remote_len = self.remote.len::<u8>()?;
         if remote_len == 0 {
             return Ok(());
         }
@@ -241,7 +245,7 @@ where
             .step_by(BLOCK_SIZE)
             .map(|byte_offset| ((), ReadRange::one(byte_offset as u64)));
 
-        for result in UniversalRead::<u8>::read_iter::<Sequential, ()>(self, one_byte_per_block)? {
+        for result in self.read_iter::<Sequential, u8, ()>(one_byte_per_block)? {
             result?;
         }
 

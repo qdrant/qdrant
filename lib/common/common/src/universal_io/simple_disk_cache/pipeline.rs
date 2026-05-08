@@ -17,20 +17,21 @@ struct RemoteMeta<'file, Meta, R> {
 
 pub struct DiskCachePipeline<'file, T, Meta, R>
 where
-    R: UniversalRead<u8> + 'file,
+    R: UniversalRead + 'file,
+    T: bytemuck::Pod,
 {
-    remote_pipeline: OnceCell<R::ReadPipeline<'file, RemoteMeta<'file, Meta, R>>>,
+    remote_pipeline: OnceCell<R::ReadPipeline<'file, u8, RemoteMeta<'file, Meta, R>>>,
     result: Option<(Meta, &'file [T])>,
 }
 
 impl<'file, T, Meta, R> DiskCachePipeline<'file, T, Meta, R>
 where
     T: bytemuck::Pod,
-    R: UniversalRead<u8> + 'file,
+    R: UniversalRead + 'file,
 {
     fn get_or_init_remote_pipeline(
         &mut self,
-    ) -> universal_io::Result<&mut R::ReadPipeline<'file, RemoteMeta<'file, Meta, R>>> {
+    ) -> universal_io::Result<&mut R::ReadPipeline<'file, u8, RemoteMeta<'file, Meta, R>>> {
         if self.remote_pipeline.get().is_none() {
             let remote = R::ReadPipeline::new()?;
             // We just observed the cell as empty and hold `&mut self`, so set cannot fail.
@@ -71,7 +72,7 @@ impl<'file, T, Meta, Remote> UniversalReadPipeline<'file, T, Meta>
     for DiskCachePipeline<'file, T, Meta, Remote>
 where
     T: bytemuck::Pod + Copy + 'static,
-    Remote: UniversalRead<u8>,
+    Remote: UniversalRead,
 {
     type File = DiskCache<Remote>;
 
