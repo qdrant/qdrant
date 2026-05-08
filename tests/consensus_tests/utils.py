@@ -857,9 +857,9 @@ def peer_is_online(peer_api_uri: str, path: str = "/readyz") -> bool:
         return False
 
 
-def wait_for_peer_online(peer_api_uri: str, path="/readyz"):
+def wait_for_peer_online(peer_api_uri: str, path="/readyz", wait_for_timeout=WAIT_TIME_SEC):
     try:
-        wait_for(peer_is_online, peer_api_uri, path=path)
+        wait_for(peer_is_online, peer_api_uri, path=path, wait_for_timeout=wait_for_timeout)
     except Exception as e:
         print_clusters_info([peer_api_uri])
         raise e
