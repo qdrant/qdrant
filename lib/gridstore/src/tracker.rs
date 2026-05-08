@@ -281,13 +281,8 @@ impl<S: UniversalRead> Tracker<S> {
     }
 
     fn read_header(storage: &S) -> Result<TrackerHeader> {
-        let header_bytes = storage.read::<Random, u8>(ReadRange {
-            byte_offset: 0,
-            length: size_of::<TrackerHeader>() as u64,
-        })?;
-        Ok(*bytemuck::from_bytes::<TrackerHeader>(
-            header_bytes.as_ref(),
-        ))
+        let header = storage.read::<Random, TrackerHeader>(ReadRange::one(0))?[0];
+        Ok(header)
     }
 
     fn open_storage(path: &Path) -> Result<S> {
@@ -341,15 +336,13 @@ impl<S: UniversalRead> Tracker<S> {
         let start_offset =
             size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
         let end_offset = start_offset + size_of::<OptionalPointer>();
-        let storage_len = self.storage.len()?;
+        let storage_len = self.storage.len::<u8>()?;
         if end_offset as u64 > storage_len {
             return Ok(None);
         }
-        let bytes = self.storage.read::<Random>(ReadRange {
-            byte_offset: start_offset as u64,
-            length: size_of::<OptionalPointer>() as u64,
-        })?;
-        let opt: &OptionalPointer = bytemuck::from_bytes(bytes.as_ref());
+        let opt = self
+            .storage
+            .read::<Random, OptionalPointer>(ReadRange::one(start_offset as u64))?[0];
         Ok(opt.to_option())
     }
 
@@ -400,23 +393,16 @@ impl<S: UniversalRead> Tracker<S> {
                 continue;
             }
 
-            storage_reads.push((
-                i,
-                ReadRange {
-                    byte_offset: start_offset as u64,
-                    length: item_size as u64,
-                },
-            ));
+            storage_reads.push((i, ReadRange::one(start_offset as u64)));
         }
 
         let reads = storage_reads
             .iter()
             .map(|(i, range)| (*i, &self.storage, *range));
 
-        for read_result in S::read_multi_iter::<Random, _>(reads)? {
-            let (i, bytes) = read_result?;
-            let opt: &OptionalPointer = bytemuck::from_bytes(bytes.as_ref());
-            result[i] = opt.to_option();
+        for read_result in S::read_multi_iter::<Random, OptionalPointer, _>(reads)? {
+            let (i, opt_slice) = read_result?;
+            result[i] = opt_slice[0].to_option();
         }
 
         Ok(result)
@@ -572,7 +558,7 @@ where
 
     /// Write the current page header to the storage
     fn write_header(&mut self) -> Result<()> {
-        self.storage.write(0, bytemuck::bytes_of(&self.header))?;
+        self.storage.write(0, &[self.header])?;
         Ok(())
     }
 
@@ -601,8 +587,7 @@ where
         }
 
         let pointer = OptionalPointer::from(pointer);
-        self.storage
-            .write(start_offset as u64, bytemuck::bytes_of(&pointer))?;
+        self.storage.write(start_offset as u64, &[pointer])?;
         Ok(())
     }
 
