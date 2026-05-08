@@ -14,21 +14,13 @@ use storage::content_manager::errors::StorageError;
 
 const DEFAULT_LANGUAGE: &str = "english";
 
-/// Newtype wrapping `segment::Tokenizer` so we can implement the foreign
-/// `bm25::Tokenizer` trait for it (orphan rule).
+/// Adapter: builds a `bm25::Bm25` from the REST/gRPC `Bm25Config` and runs it
+/// over `segment`'s text-preprocessing pipeline. Returns qdrant's `VectorPersisted`.
 #[derive(Debug)]
-struct SegmentTokenizer(Tokenizer);
-
-impl bm25::Tokenizer for SegmentTokenizer {
-    fn tokenize<'a>(&'a self, input: &'a str, out: &mut dyn FnMut(Cow<'a, str>)) {
-        self.0.tokenize_query(input, out);
-    }
+pub struct Bm25 {
+    bm25: Bm25Core,
+    tokenizer: Tokenizer,
 }
-
-/// Adapter: builds a `bm25::Bm25` from the REST/gRPC `Bm25Config`, using
-/// `segment`'s text-preprocessing pipeline. Returns qdrant's `VectorPersisted`.
-#[derive(Debug)]
-pub struct Bm25(Bm25Core<SegmentTokenizer>);
 
 impl Bm25 {
     pub fn new(mut config: Bm25Config) -> Result<Self, StorageError> {
@@ -42,17 +34,20 @@ impl Bm25 {
             avg_doc_len: config.avg_len.into_inner(),
         };
 
-        Bm25Core::new(params, SegmentTokenizer(tokenizer))
-            .map(Self)
-            .map_err(|e| StorageError::bad_input(e.to_string()))
+        let bm25 = Bm25Core::new(params).map_err(|e| StorageError::bad_input(e.to_string()))?;
+        Ok(Self { bm25, tokenizer })
     }
 
     pub fn search_embed(&self, input: &str) -> VectorPersisted {
-        to_persisted(self.0.embed_query(input))
+        let mut tokens: Vec<Cow<'_, str>> = Vec::new();
+        self.tokenizer.tokenize_query(input, |t| tokens.push(t));
+        to_persisted(self.bm25.embed_query(&tokens))
     }
 
     pub fn doc_embed(&self, input: &str) -> VectorPersisted {
-        to_persisted(self.0.embed_document(input))
+        let mut tokens: Vec<Cow<'_, str>> = Vec::new();
+        self.tokenizer.tokenize_doc(input, |t| tokens.push(t));
+        to_persisted(self.bm25.embed_document(&tokens))
     }
 }
 

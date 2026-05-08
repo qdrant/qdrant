@@ -1,8 +1,8 @@
 //! Standalone BM25 sparse-vector embedding.
 //!
-//! Compute-only crate: no qdrant types, no tokenizer pipeline. Bring your own
-//! tokenizer by implementing [`Tokenizer`], then use [`Bm25`] to embed queries
-//! and documents into [`SparseEmbedding`]s.
+//! Compute-only crate: no qdrant types, no tokenizer pipeline. Tokenize text
+//! with whatever pipeline you have, then pass the tokens to [`Bm25::embed_query`]
+//! / [`Bm25::embed_document`] to get a [`SparseEmbedding`].
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
@@ -12,9 +12,6 @@ use murmur3::murmur3_32_of_slice;
 
 #[cfg(feature = "basic-tokenizer")]
 pub mod basic_tokenizer;
-mod document;
-
-pub use document::Bm25Document;
 
 /// BM25 hyperparameters.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -104,38 +101,25 @@ impl SparseEmbedding {
     }
 }
 
-/// Pluggable tokenization. Implementers push tokens for `input` to `out`.
-///
-/// The same method is called for both queries and documents — if you need to
-/// tokenize them differently, configure your tokenizer accordingly.
-pub trait Tokenizer {
-    fn tokenize<'a>(&'a self, input: &'a str, out: &mut dyn FnMut(Cow<'a, str>));
-}
-
-/// BM25 embedder over a pluggable tokenizer.
-#[derive(Debug)]
-pub struct Bm25<T: Tokenizer> {
+/// BM25 embedder. Pure compute over pre-tokenized input.
+#[derive(Debug, Clone, Copy)]
+pub struct Bm25 {
     params: Bm25Params,
-    tokenizer: T,
 }
 
-impl<T: Tokenizer> Bm25<T> {
-    pub fn new(params: Bm25Params, tokenizer: T) -> Result<Self, Bm25Error> {
+impl Bm25 {
+    pub fn new(params: Bm25Params) -> Result<Self, Bm25Error> {
         params.validate()?;
-        Ok(Self { params, tokenizer })
+        Ok(Self { params })
     }
 
     pub fn params(&self) -> &Bm25Params {
         &self.params
     }
 
-    pub fn tokenizer(&self) -> &T {
-        &self.tokenizer
-    }
-
-    /// Embed a search query: each unique token gets weight `1.0`.
-    pub fn embed_query(&self, input: &str) -> SparseEmbedding {
-        let tokens = self.tokenize(input);
+    /// Embed a search query: each unique token gets weight `1.0`. Indices are
+    /// returned sorted (post-dedup invariant).
+    pub fn embed_query(&self, tokens: &[Cow<'_, str>]) -> SparseEmbedding {
         if tokens.is_empty() {
             return SparseEmbedding::empty();
         }
@@ -149,24 +133,17 @@ impl<T: Tokenizer> Bm25<T> {
     }
 
     /// Embed a document: each unique token gets the BM25 term-frequency weight.
-    pub fn embed_document(&self, input: &str) -> SparseEmbedding {
-        let tokens = self.tokenize(input);
+    pub fn embed_document(&self, tokens: &[Cow<'_, str>]) -> SparseEmbedding {
         if tokens.is_empty() {
             return SparseEmbedding::empty();
         }
 
-        let tf_map = self.term_frequency(&tokens);
+        let tf_map = self.term_frequency(tokens);
         let (indices, values): (Vec<u32>, Vec<f32>) = tf_map.into_iter().unzip();
         SparseEmbedding { indices, values }
     }
 
-    fn tokenize<'a>(&'a self, input: &'a str) -> Vec<Cow<'a, str>> {
-        let mut out = Vec::new();
-        self.tokenizer.tokenize(input, &mut |t| out.push(t));
-        out
-    }
-
-    fn term_frequency(&self, tokens: &[Cow<str>]) -> BTreeMap<u32, f32> {
+    fn term_frequency(&self, tokens: &[Cow<'_, str>]) -> BTreeMap<u32, f32> {
         let doc_len = tokens.len() as f64;
 
         let mut counter: HashMap<&str, u32> = HashMap::new();
@@ -198,14 +175,8 @@ pub fn token_id(token: &str) -> u32 {
 mod tests {
     use super::*;
 
-    /// Minimal tokenizer for tests: splits on whitespace, no transformations.
-    struct Whitespace;
-    impl Tokenizer for Whitespace {
-        fn tokenize<'a>(&'a self, input: &'a str, out: &mut dyn FnMut(Cow<'a, str>)) {
-            for tok in input.split_whitespace() {
-                out(Cow::Borrowed(tok));
-            }
-        }
+    fn ws(input: &str) -> Vec<Cow<'_, str>> {
+        input.split_whitespace().map(Cow::Borrowed).collect()
     }
 
     #[test]
@@ -218,15 +189,15 @@ mod tests {
 
     #[test]
     fn empty_input_yields_empty_embedding() {
-        let bm = Bm25::new(Bm25Params::default(), Whitespace).unwrap();
-        assert!(bm.embed_query("").is_empty());
-        assert!(bm.embed_document("   ").is_empty());
+        let bm = Bm25::new(Bm25Params::default()).unwrap();
+        assert!(bm.embed_query(&ws("")).is_empty());
+        assert!(bm.embed_document(&ws("   ")).is_empty());
     }
 
     #[test]
     fn query_dedupes_and_uses_unit_weights() {
-        let bm = Bm25::new(Bm25Params::default(), Whitespace).unwrap();
-        let e = bm.embed_query("foo bar foo baz bar");
+        let bm = Bm25::new(Bm25Params::default()).unwrap();
+        let e = bm.embed_query(&ws("foo bar foo baz bar"));
         assert_eq!(e.indices.len(), 3);
         assert!(e.values.iter().all(|&v| v == 1.0));
         // Indices must be sorted (post-dedup invariant).
@@ -244,8 +215,8 @@ mod tests {
             b: 0.75,
             avg_doc_len: 5.0,
         };
-        let bm = Bm25::new(params, Whitespace).unwrap();
-        let e = bm.embed_document("the cat sat on the");
+        let bm = Bm25::new(params).unwrap();
+        let e = bm.embed_document(&ws("the cat sat on the"));
         let id_the = token_id("the");
         let v = e
             .indices
@@ -265,10 +236,11 @@ mod tests {
             b: 0.75,
             avg_doc_len: 5.0,
         };
-        let bm = Bm25::new(params, Whitespace).unwrap();
-        let short = bm.embed_document("foo bar foo");
-        let long =
-            bm.embed_document("foo bar foo lorem ipsum dolor sit amet consectetur adipiscing");
+        let bm = Bm25::new(params).unwrap();
+        let short = bm.embed_document(&ws("foo bar foo"));
+        let long = bm.embed_document(&ws(
+            "foo bar foo lorem ipsum dolor sit amet consectetur adipiscing",
+        ));
         let foo = token_id("foo");
         let v_short = short
             .indices
@@ -321,7 +293,7 @@ mod tests {
         ];
         for params in cases {
             assert!(
-                Bm25::new(params, Whitespace).is_err(),
+                Bm25::new(params).is_err(),
                 "expected validation failure for {params:?}",
             );
         }

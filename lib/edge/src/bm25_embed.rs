@@ -1,7 +1,7 @@
 //! Edge-side BM25 wiring.
 //!
-//! Builds [`bm25::Bm25`] using `segment`'s tokenizer pipeline (so stopwords,
-//! stemming, and language defaults match server behavior), and emits
+//! Builds [`bm25::Bm25`] and runs it over `segment`'s tokenizer pipeline (so
+//! stopwords, stemming, and language defaults match server behavior). Emits
 //! [`sparse::common::sparse_vector::SparseVector`] which the rest of the edge
 //! API already understands.
 //!
@@ -14,7 +14,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use bm25::{Bm25Document, SparseEmbedding};
+use bm25::SparseEmbedding;
 use ordered_float::NotNan;
 use segment::data_types::index::{Language, StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
@@ -128,19 +128,11 @@ impl Default for EdgeBm25Config {
     }
 }
 
-/// Edge-side BM25 model. Embeds [`Bm25Document`]s into [`SparseVector`].
+/// Edge-side BM25 model. Embeds raw text into [`SparseVector`].
 #[derive(Debug)]
 pub struct EdgeBm25 {
-    inner: bm25::Bm25<EdgeSegmentTokenizer>,
-}
-
-#[derive(Debug)]
-struct EdgeSegmentTokenizer(Tokenizer);
-
-impl bm25::Tokenizer for EdgeSegmentTokenizer {
-    fn tokenize<'a>(&'a self, input: &'a str, out: &mut dyn FnMut(Cow<'a, str>)) {
-        self.0.tokenize_query(input, out);
-    }
+    bm25: bm25::Bm25,
+    tokenizer: Tokenizer,
 }
 
 impl EdgeBm25 {
@@ -163,16 +155,21 @@ impl EdgeBm25 {
         let tokenizer = Tokenizer::new(config.tokenizer, processor);
 
         Ok(Self {
-            inner: bm25::Bm25::new(params, EdgeSegmentTokenizer(tokenizer))?,
+            bm25: bm25::Bm25::new(params)?,
+            tokenizer,
         })
     }
 
-    pub fn embed_query(&self, doc: &Bm25Document) -> SparseVector {
-        to_sparse_vector(doc.embed_query(&self.inner))
+    pub fn embed_query(&self, text: &str) -> SparseVector {
+        let mut tokens: Vec<Cow<'_, str>> = Vec::new();
+        self.tokenizer.tokenize_query(text, |t| tokens.push(t));
+        to_sparse_vector(self.bm25.embed_query(&tokens))
     }
 
-    pub fn embed_document(&self, doc: &Bm25Document) -> SparseVector {
-        to_sparse_vector(doc.embed_document(&self.inner))
+    pub fn embed_document(&self, text: &str) -> SparseVector {
+        let mut tokens: Vec<Cow<'_, str>> = Vec::new();
+        self.tokenizer.tokenize_doc(text, |t| tokens.push(t));
+        to_sparse_vector(self.bm25.embed_document(&tokens))
     }
 }
 
@@ -232,9 +229,9 @@ mod tests {
     #[test]
     fn defaults_construct_a_working_model() {
         let model = EdgeBm25::new(EdgeBm25Config::default()).unwrap();
-        let doc = Bm25Document::new("the quick brown fox jumps over the lazy dog");
-        let q = model.embed_query(&doc);
-        let d = model.embed_document(&doc);
+        let text = "the quick brown fox jumps over the lazy dog";
+        let q = model.embed_query(text);
+        let d = model.embed_document(text);
         // Stopwords ("the") get filtered, so we should still have content.
         assert!(!q.indices.is_empty());
         assert!(!d.indices.is_empty());
@@ -246,8 +243,8 @@ mod tests {
     fn english_stopwords_are_filtered_by_default() {
         let model = EdgeBm25::new(EdgeBm25Config::default()).unwrap();
         // "the", "a", "is" are stopwords — should not contribute distinct indices.
-        let with_stops = model.embed_query(&Bm25Document::new("the cat is a hunter"));
-        let without_stops = model.embed_query(&Bm25Document::new("cat hunter"));
+        let with_stops = model.embed_query("the cat is a hunter");
+        let without_stops = model.embed_query("cat hunter");
         assert_eq!(with_stops.indices.len(), without_stops.indices.len());
     }
 
@@ -260,8 +257,7 @@ mod tests {
             ..Default::default()
         };
         let model = EdgeBm25::new(cfg).unwrap();
-        let doc = Bm25Document::new("alpha beta gamma");
-        let v = model.embed_document(&doc);
+        let v = model.embed_document("alpha beta gamma");
         assert_eq!(v.indices.len(), 3);
     }
 
