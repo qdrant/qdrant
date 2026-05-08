@@ -33,16 +33,15 @@ pub enum UniversalKind {
 
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Populate {
+    /// Let backend choose
     #[default]
+    Auto,
+    /// Do not populate
     No,
+    /// Populate on foreground
     Blocking,
+    /// Populate, but prefer to do it in the background
     PreferBackground,
-}
-
-impl Populate {
-    pub fn is_set(&self) -> bool {
-        matches!(self, Populate::Blocking | Populate::PreferBackground)
-    }
 }
 
 impl From<bool> for Populate {
@@ -76,7 +75,7 @@ impl Default for OpenOptions {
             writeable: true,
             need_sequential: true,
             disk_parallel: None,
-            populate: Populate::No,
+            populate: Populate::Auto,
             advice: None,
             prevent_caching: None,
         }
