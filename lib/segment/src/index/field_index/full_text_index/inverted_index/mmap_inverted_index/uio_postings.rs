@@ -46,12 +46,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> UniversalPostings<V, S> {
         let path = path.into();
         let storage = S::open(&path, options)?;
 
-        let header_bytes = storage.read::<Sequential, u8>(ReadRange {
-            byte_offset: 0,
-            length: size_of::<PostingsHeader>() as u64,
-        })?;
-
-        let (header, _) = PostingsHeader::read_from_prefix(header_bytes.as_ref())?;
+        let header = storage.read::<Sequential, PostingsHeader>(ReadRange::one(0))?[0];
 
         Ok(Self {
             _path: path,
