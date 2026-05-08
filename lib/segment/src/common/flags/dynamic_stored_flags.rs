@@ -28,9 +28,6 @@ fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
-pub trait UioDynamicFlags: UniversalWrite + Send + 'static {}
-impl<T> UioDynamicFlags for T where T: UniversalWrite + Send + 'static {}
-
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct DynamicFlagsStatus {
@@ -78,7 +75,7 @@ fn file_size_for(num_flags: usize) -> usize {
 
 impl<S> DynamicStoredFlags<S>
 where
-    S: UioDynamicFlags,
+    S: UniversalWrite + Send + 'static,
 {
     pub fn len(&self) -> usize {
         self.status.len
