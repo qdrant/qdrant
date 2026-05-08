@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
-use common::universal_io::{OpenOptions, UniversalIoError, UniversalRead, UniversalWrite};
+use common::universal_io::{
+    OpenOptions, TypedStorage, UniversalIoError, UniversalRead, UniversalWrite,
+};
 use fs_err as fs;
 
 use super::config::{MMAP_CHUNKS_PATTERN_END, MMAP_CHUNKS_PATTERN_START};
@@ -16,12 +18,12 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_chunks<S: UniversalRead>(
+pub fn read_chunks<T: bytemuck::Pod, S: UniversalRead>(
     directory: &Path,
     advice: AdviceSetting,
     populate: bool,
     writeable: bool,
-) -> Result<Vec<S>, UniversalIoError> {
+) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
     let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
@@ -48,7 +50,7 @@ pub fn read_chunks<S: UniversalRead>(
             ))
         })?;
 
-        let chunk = S::open(
+        let chunk = TypedStorage::open(
             &chunk_path,
             OpenOptions {
                 writeable,
@@ -71,15 +73,15 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     ))
 }
 
-pub fn create_chunk<S: UniversalWrite>(
+pub fn create_chunk<T: bytemuck::Pod, S: UniversalWrite>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-) -> Result<S, UniversalIoError> {
+) -> Result<TypedStorage<S, T>, UniversalIoError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
 
-    S::open(
+    TypedStorage::open(
         &chunk_file_path,
         OpenOptions {
             writeable: true,

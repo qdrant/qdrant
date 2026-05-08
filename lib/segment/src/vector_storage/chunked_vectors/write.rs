@@ -136,13 +136,12 @@ where
             len: status.len,
             chunks,
             directory: directory.to_owned(),
-            _phantom: std::marker::PhantomData,
         };
         Ok(Self { inner, status })
     }
 
     fn add_chunk(&mut self) -> OperationResult<()> {
-        let chunk: S = create_chunk(
+        let chunk = create_chunk(
             &self.inner.directory,
             self.inner.chunks.len(),
             self.inner.config.chunk_size_bytes,

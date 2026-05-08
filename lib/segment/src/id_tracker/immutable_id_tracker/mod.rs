@@ -16,9 +16,7 @@ use common::bitvec::{BitSlice, BitVec};
 use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    MmapFile, OpenOptions, SliceBufferedUpdateWrapper, UniversalRead, UniversalWrite,
-};
+use common::universal_io::{MmapFile, OpenOptions, SliceBufferedUpdateWrapper, TypedStorage};
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;
@@ -91,7 +89,7 @@ impl ImmutableIdTracker {
 
         let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
-        let internal_to_version_file = MmapFile::open(
+        let internal_to_version_file = TypedStorage::<MmapFile, SeqNumberType>::open(
             version_mapping_path(segment_path),
             OpenOptions {
                 writeable: true,
@@ -103,11 +101,11 @@ impl ImmutableIdTracker {
             },
         )?;
 
-        let internal_to_version_slice = internal_to_version_file.read_whole::<SeqNumberType>()?;
+        let internal_to_version_slice = internal_to_version_file.read_whole()?;
 
         let internal_to_version = CompressedVersions::from_slice(&internal_to_version_slice);
         let internal_to_version_wrapper =
-            SliceBufferedUpdateWrapper::new(internal_to_version_file)?;
+            SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
 
         let reader = BufReader::new(File::open(mappings_path(segment_path))?);
         let mappings = load_mapping(reader, Some(deleted_bitvec))?;
@@ -168,7 +166,7 @@ impl ImmutableIdTracker {
             create_and_ensure_length(&version_filepath, version_size)?;
         }
 
-        let mut internal_to_version_file = MmapFile::open(
+        let mut internal_to_version_file = TypedStorage::<MmapFile, SeqNumberType>::open(
             &version_filepath,
             OpenOptions {
                 writeable: true,
@@ -181,14 +179,13 @@ impl ImmutableIdTracker {
         )?;
         internal_to_version_file.write(0, internal_to_version)?;
 
-        let internal_to_version = CompressedVersions::from_slice(
-            &internal_to_version_file.read_whole::<SeqNumberType>()?,
-        );
+        let internal_to_version =
+            CompressedVersions::from_slice(&internal_to_version_file.read_whole()?);
 
         debug_assert_eq!(internal_to_version.len(), mappings.total_point_count());
 
         let internal_to_version_wrapper =
-            SliceBufferedUpdateWrapper::new(internal_to_version_file)?;
+            SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
 
         // Write mappings to disk.
         let file = File::create(mappings_path(path))?;
