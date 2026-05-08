@@ -1206,7 +1206,7 @@ fn test_match_except_fulltext_consistency_with_unindexed_and_keyword() {
             segment
                 .upsert_point(
                     idx as SeqNumberType,
-                    idx.into(),
+                    segment::types::PointIdType::from(idx),
                     only_default_vector(&[1.0, 0.0]),
                     &hw_counter,
                 )
@@ -1214,7 +1214,7 @@ fn test_match_except_fulltext_consistency_with_unindexed_and_keyword() {
             segment
                 .set_full_payload(
                     idx as SeqNumberType,
-                    idx.into(),
+                    segment::types::PointIdType::from(idx),
                     &payload_json! { "title": title },
                     &hw_counter,
                 )

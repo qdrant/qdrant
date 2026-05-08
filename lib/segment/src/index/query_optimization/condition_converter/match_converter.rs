@@ -177,7 +177,7 @@ fn get_match_except_checker(
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'_>> {
     if matches!(index, FieldIndex::NullIndex(_))
-        || (matches!(except, AnyVariants::Strings(_))
+        || (matches!(&except, AnyVariants::Strings(_))
             && matches!(index, FieldIndex::FullTextIndex(_)))
     {
         // Full-text index tokenizes values, while MatchExcept currently has exact-string semantics.
