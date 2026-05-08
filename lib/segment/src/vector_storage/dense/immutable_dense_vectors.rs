@@ -10,7 +10,8 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions as UniversalOpenOptions, ReadOnly, ReadRange, TypedStorage, UniversalRead,
+    MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange, TypedStorage,
+    UniversalRead,
 };
 use fs_err::{File, OpenOptions};
 
@@ -59,7 +60,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
             writeable: false,
             need_sequential: true,
             disk_parallel: None,
-            populate: populate.into(),
+            populate: Populate::from(populate),
             advice: None,
             prevent_caching: None,
         };
