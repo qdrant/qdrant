@@ -10,7 +10,7 @@ use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 use crate::vector_storage::{VectorOffsetType, VectorStorageRead};
 
 #[derive(Debug)]
-pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead<T>> {
+pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead> {
     vectors: ChunkedVectorsRead<T, S>,
     /// Flags marking deleted vectors
     ///
@@ -21,7 +21,7 @@ pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: Unive
     deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<T>> VectorStorageRead
+impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     for ReadOnlyChunkedDenseVectorStorage<T, S>
 {
     fn distance(&self) -> Distance {

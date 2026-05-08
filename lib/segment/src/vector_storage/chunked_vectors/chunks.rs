@@ -18,7 +18,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_chunks<T: Copy + 'static, S: UniversalRead<T>>(
+pub fn read_chunks<T: bytemuck::Pod, S: UniversalRead>(
     directory: &Path,
     advice: AdviceSetting,
     populate: bool,
@@ -73,7 +73,7 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     ))
 }
 
-pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
+pub fn create_chunk<T: bytemuck::Pod, S: UniversalWrite>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,

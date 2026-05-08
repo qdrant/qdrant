@@ -56,7 +56,7 @@ struct BlockRequest {
     range: Range<usize>,
 }
 
-impl<T> UniversalReadFileOps for CachedSlice<T> {
+impl UniversalReadFileOps for CachedSlice {
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
         local_file_ops::local_list_files(prefix_path)
     }
@@ -66,14 +66,12 @@ impl<T> UniversalReadFileOps for CachedSlice<T> {
     }
 }
 
-impl<T> UniversalRead<T> for CachedSlice<T>
-where
-    T: bytemuck::Pod,
-{
-    type ReadPipeline<'a, Meta>
+impl UniversalRead for CachedSlice {
+    type ReadPipeline<'a, T, Meta>
         = DiskCacheReadPipeline<'a, T, Meta>
     where
-        Self: 'a;
+        Self: 'a,
+        T: bytemuck::Pod + 'static;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let Some(controller) = CacheController::global() else {
@@ -97,7 +95,7 @@ where
         Ok(CachedSlice::open(controller, path.as_ref())?)
     }
 
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         let elem_start = usize::try_from(range.byte_offset).expect("range.start is within usize")
             / size_of::<T>();
         let elem_length = usize::try_from(range.length).expect("range.length is within usize");
@@ -107,8 +105,8 @@ where
         Ok(self.get_range(range)?)
     }
 
-    fn len(&self) -> Result<u64> {
-        Ok(Self::len(self) as u64)
+    fn len<T>(&self) -> Result<u64> {
+        Ok(Self::len::<T>(self) as u64)
     }
 
     fn populate(&self) -> Result<()> {
@@ -136,7 +134,7 @@ impl<'file, T, Meta> UniversalReadPipeline<'file, T, Meta> for DiskCacheReadPipe
 where
     T: bytemuck::Pod,
 {
-    type File = CachedSlice<T>;
+    type File = CachedSlice;
 
     fn new() -> Result<Self> {
         Ok(Self { result: None })
@@ -146,12 +144,7 @@ where
         self.result.is_none()
     }
 
-    fn schedule<P>(
-        &mut self,
-        meta: Meta,
-        file: &'file CachedSlice<T>,
-        range: ReadRange,
-    ) -> Result<()>
+    fn schedule<P>(&mut self, meta: Meta, file: &'file CachedSlice, range: ReadRange) -> Result<()>
     where
         P: AccessPattern,
     {
@@ -159,7 +152,7 @@ where
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        self.result = Some((meta, file.read::<Random>(range)?));
+        self.result = Some((meta, file.read::<Random, T>(range)?));
         Ok(())
     }
 

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::bitvec::BitSliceExt;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, ReadRange, UniversalRead};
+use common::universal_io::{MmapFile, ReadRange};
 
 use super::mmap_geo_index::StoredGeoMapIndex;
 use crate::common::Flusher;

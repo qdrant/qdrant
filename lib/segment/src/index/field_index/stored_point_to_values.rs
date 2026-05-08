@@ -68,7 +68,7 @@ impl StoredValue for str {
 /// This structure is immutable.
 /// It's used in mmap field indices like `MmapMapIndex`, `MmapNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
-pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead<u8>> {
+pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
     file_name: PathBuf,
     store: ReadOnly<S>,
     header: Header,
@@ -95,7 +95,7 @@ struct Header {
 impl<T, S> StoredPointToValues<T, S>
 where
     T: StoredValue + ?Sized,
-    S: UniversalRead<u8>,
+    S: UniversalRead,
 {
     pub fn from_iter<'a>(
         path: &Path,
@@ -176,7 +176,7 @@ where
 
         let store = ReadOnly::open(&file_name, open_options)?;
 
-        let header_bytes = store.read::<Random>(ReadRange {
+        let header_bytes = store.read::<Random, u8>(ReadRange {
             byte_offset: 0,
             length: std::mem::size_of::<Header>() as u64,
         })?;
@@ -241,7 +241,7 @@ where
             return Ok(None);
         };
 
-        let bytes = self.store.read::<Random>(bytes_range)?;
+        let bytes = self.store.read::<Random, u8>(bytes_range)?;
         let count = self.get_values_count(point_id)?.unwrap_or(0);
 
         let iter = ValuesIter::new(bytes, count);
@@ -275,7 +275,7 @@ where
             let range_offset = (self.header.ranges_start as usize)
                 + (point_id as usize) * std::mem::size_of::<MmapRange>();
 
-            let bytes = self.store.read::<Random>(ReadRange {
+            let bytes = self.store.read::<Random, u8>(ReadRange {
                 byte_offset: range_offset as u64,
                 length: std::mem::size_of::<MmapRange>() as u64,
             })?;
@@ -297,7 +297,7 @@ where
             Some(end) => end,
             None => {
                 // if there is no next point, then use end of file
-                self.store.len()?
+                self.store.len::<u8>()?
             }
         };
 

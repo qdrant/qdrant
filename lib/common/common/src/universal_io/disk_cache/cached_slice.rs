@@ -1,19 +1,18 @@
 use std::borrow::Cow;
 use std::io;
-use std::marker::PhantomData;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
 use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, CacheRead, FileId};
 
-/// Typed view over a cached file, simulating a `&[T]` backed by the block cache.
+/// View over a cached file, simulating a `&[T]` backed by the block cache.
 ///
 /// Internally maps element ranges into fixed-size blocks and fetches them
 /// through the [`CacheController`]. Blocks that are already cached are returned
 /// as zero-copy borrows from the mmap; multi-block reads allocate a `Vec<T>`
 /// (not `Vec<u8>`) so alignment is always correct.
-pub struct CachedSlice<T> {
+pub struct CachedSlice {
     /// The id assigned by the controller for this file.
     file_id: FileId,
 
@@ -22,11 +21,9 @@ pub struct CachedSlice<T> {
 
     /// The controller backing this structure.
     controller: Arc<CacheController>,
-
-    r#type: PhantomData<T>,
 }
 
-impl<T: bytemuck::Pod> CachedSlice<T> {
+impl CachedSlice {
     /// Open a file through the cache controller and return a typed view over it.
     pub fn open(controller: &Arc<CacheController>, path: &Path) -> io::Result<Self> {
         let (file_id, len) = controller.open_file(path)?;
@@ -34,7 +31,6 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
             file_id,
             len_bytes: len,
             controller: Arc::clone(controller),
-            r#type: PhantomData,
         })
     }
 
@@ -47,7 +43,7 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
     /// reference into the mmap. Otherwise, it will allocate a `Vec<T>` and copy
     /// block data into it. Allocating as `Vec<T>` (rather than `Vec<u8>`)
     /// guarantees correct alignment for any `T`.
-    pub fn get_range(&self, range: Range<usize>) -> io::Result<Cow<'_, [T]>> {
+    pub fn get_range<T: bytemuck::Pod>(&self, range: Range<usize>) -> io::Result<Cow<'_, [T]>> {
         let t_size = size_of::<T>();
         debug_assert!(t_size != 0, "cannot use zero-sized type");
 
@@ -129,8 +125,8 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
     }
 
     #[cfg(test)]
-    pub fn get(&self, idx: usize) -> io::Result<Cow<'_, T>> {
-        let slice = self.get_range(idx..idx + 1)?;
+    pub fn get<T: bytemuck::Pod>(&self, idx: usize) -> io::Result<Cow<'_, T>> {
+        let slice = self.get_range::<T>(idx..idx + 1)?;
 
         let cow = match slice {
             Cow::Borrowed(slice) => Cow::Borrowed(&slice[0]),
@@ -141,7 +137,7 @@ impl<T: bytemuck::Pod> CachedSlice<T> {
     }
 
     #[expect(clippy::len_without_is_empty)] // Doesn't make sense to cache 0-length files
-    pub fn len(&self) -> usize {
+    pub fn len<T>(&self) -> usize {
         self.len_bytes / size_of::<T>()
     }
 

@@ -228,8 +228,8 @@ fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
         prevent_caching: Some(o_direct),
         ..Default::default()
     };
-    let file_0 = <IoUringFile as UniversalRead<u64>>::open(&path_0, opts)?;
-    let file_1 = <IoUringFile as UniversalRead<u64>>::open(&path_1, opts)?;
+    let file_0 = IoUringFile::open(&path_0, opts)?;
+    let file_1 = IoUringFile::open(&path_1, opts)?;
     let files = [file_0, file_1];
 
     // Interleaved reads across both files.
@@ -249,7 +249,7 @@ fn test_io_uring_read_multi_iter_basic(#[case] o_direct: bool) -> Result<()> {
     ];
 
     let mut results: Vec<(char, Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
+    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
         let (idx, cow) = record?;
         results.push((idx, cow.into_owned()));
     }
@@ -287,7 +287,7 @@ fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<(
         let path = dir.path().join(format!("f{i}.bin"));
         fs_err::write(&path, bytemuck::cast_slice(&data)).unwrap();
 
-        let file = <IoUringFile as UniversalRead<u64>>::open(&path, opts)?;
+        let file = IoUringFile::open(&path, opts)?;
         files.push(file);
         all_data.push(data);
     }
@@ -311,7 +311,7 @@ fn test_io_uring_read_multi_iter_many_ranges(#[case] o_direct: bool) -> Result<(
         .collect();
 
     let mut results: Vec<((usize, usize), Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
+    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
         let (idx, cow) = record?;
         results.push((idx, cow.into_owned()));
     }
@@ -346,8 +346,8 @@ fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
     fs_err::write(&path_b, bytemuck::cast_slice(&data_b)).unwrap();
 
     let opts = OpenOptions::default();
-    let file_a: IoUringFile = UniversalRead::<u64>::open(&path_a, opts)?;
-    let file_b: IoUringFile = UniversalRead::<u64>::open(&path_b, opts)?;
+    let file_a = IoUringFile::open(&path_a, opts)?;
+    let file_b = IoUringFile::open(&path_b, opts)?;
     let files = [file_a, file_b];
 
     #[rustfmt::skip]
@@ -361,14 +361,14 @@ fn test_io_uring_read_multi_callback_matches_iter() -> Result<()> {
 
     // Collect via callback.
     let mut callback_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    IoUringFile::read_multi::<Sequential, _>(reads.clone(), |idx, data| {
+    IoUringFile::read_multi::<Sequential, u64, _>(reads.clone(), |idx, data| {
         callback_results.push((idx, data.to_vec()));
         Ok(())
     })?;
 
     // Collect via iterator.
     let mut iter_results: Vec<(usize, Vec<u64>)> = Vec::new();
-    for record in IoUringFile::read_multi_iter::<Sequential, _>(reads)? {
+    for record in IoUringFile::read_multi_iter::<Sequential, u64, _>(reads)? {
         let (idx, cow) = record?;
         iter_results.push((idx, cow.into_owned()));
     }

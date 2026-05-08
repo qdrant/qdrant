@@ -25,7 +25,7 @@ use crate::vector_storage::{VectorOffset, VectorOffsetType};
 /// not refreshed afterwards. Mutating storage uses [`super::ChunkedVectors`]
 /// which wraps this and adds a writable status mmap.
 #[derive(Debug)]
-pub struct ChunkedVectorsRead<T: Copy + 'static, S: UniversalRead<T>> {
+pub struct ChunkedVectorsRead<T: bytemuck::Pod, S: UniversalRead> {
     pub(super) config: ChunkedVectorsConfig,
     /// Number of vectors currently stored. Snapshot for read-only mode; for
     /// [`super::ChunkedVectors`] this is kept in sync with the writable status
@@ -35,7 +35,7 @@ pub struct ChunkedVectorsRead<T: Copy + 'static, S: UniversalRead<T>> {
     pub(super) directory: PathBuf,
 }
 
-impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
+impl<T: bytemuck::Pod, S: UniversalRead> ChunkedVectorsRead<T, S> {
     pub(super) fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
     }
@@ -176,7 +176,7 @@ impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
 
     pub fn for_each_in_batch<F: FnMut(usize, &[T]), O: VectorOffset>(&self, keys: &[O], mut f: F) {
         #[cfg(target_os = "linux")]
-        if S::kind() == common::universal_io::UniversalKind::IoUring {
+        if TypedStorage::<S, T>::kind() == common::universal_io::UniversalKind::IoUring {
             for (idx, vectors) in self.iter(keys) {
                 f(idx, &vectors);
             }
@@ -222,7 +222,7 @@ impl<T: Copy + 'static, S: UniversalRead<T>> ChunkedVectorsRead<T, S> {
         });
 
         // access pattern does not matter for io_uring
-        UniversalRead::read_multi_iter::<Random, _>(reads)
+        TypedStorage::<S, T>::read_multi_iter::<Random, _>(reads)
             .expect("iterator initialized")
             .map(|result| result.expect("vector read"))
     }

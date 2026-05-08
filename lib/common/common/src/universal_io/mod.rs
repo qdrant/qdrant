@@ -1,7 +1,6 @@
 #[cfg(not(target_os = "windows"))]
 pub mod disk_cache;
 pub mod error;
-pub mod family;
 pub mod file_ops;
 #[cfg(target_os = "linux")]
 pub mod io_uring;
@@ -16,7 +15,6 @@ use std::path::Path;
 use serde::de::DeserializeOwned;
 
 pub use self::error::UniversalIoError;
-pub use self::family::UniversalReadFamily;
 pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::*;
@@ -118,7 +116,7 @@ pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
 /// Uses a single logical read when the backend overrides [`UniversalRead::read_whole`].
 pub fn read_json_via<S, T>(path: impl AsRef<Path>) -> Result<T>
 where
-    S: UniversalRead<u8>,
+    S: UniversalRead,
     T: DeserializeOwned,
 {
     let options = OpenOptions {
@@ -131,6 +129,6 @@ where
     };
 
     let storage = S::open(path, options)?;
-    let bytes = storage.read_whole()?;
+    let bytes = storage.read_whole::<u8>()?;
     serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
 }

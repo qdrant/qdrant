@@ -43,11 +43,11 @@ impl UniversalReadFileOps for MmapFile {
     }
 }
 
-impl<T> UniversalRead<T> for MmapFile
-where
-    T: bytemuck::Pod,
-{
-    type ReadPipeline<'a, Meta> = MmapReadPipeline<'a, T, Meta>;
+impl UniversalRead for MmapFile {
+    type ReadPipeline<'a, T, Meta>
+        = MmapReadPipeline<'a, T, Meta>
+    where
+        T: bytemuck::Pod + 'static;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
@@ -100,13 +100,13 @@ where
         Ok(mmap)
     }
 
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         let mmap = self.as_bytes::<P>();
         let items = read(mmap, range)?;
         Ok(Cow::Borrowed(items))
     }
 
-    fn len(&self) -> Result<u64> {
+    fn len<T>(&self) -> Result<u64> {
         let len = self.len / size_of::<T>();
         Ok(len as u64)
     }
@@ -165,17 +165,14 @@ where
     }
 }
 
-impl<T> UniversalWrite<T> for MmapFile
-where
-    T: bytemuck::Pod,
-{
-    fn write(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
+impl UniversalWrite for MmapFile {
+    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         let mmap = self.as_bytes_mut();
         write(mmap, byte_offset, items)?;
         Ok(())
     }
 
-    fn write_batch<'a>(
+    fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
@@ -273,7 +270,7 @@ impl MmapFile {
     /// ensuring all measurements go through the same mmap path.
     #[cfg(unix)]
     pub fn probe_memory_stats(path: impl AsRef<Path>) -> std::io::Result<(u64, u64)> {
-        let file: Self = <Self as UniversalRead<u8>>::open(
+        let file: Self = MmapFile::open(
             path,
             OpenOptions {
                 writeable: false,

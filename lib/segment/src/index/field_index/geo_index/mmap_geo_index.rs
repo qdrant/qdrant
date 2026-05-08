@@ -47,23 +47,6 @@ pub(super) struct PointKeyValue {
     pub ids_end: u32,
 }
 
-/// An alias to set of traits required by [`StoredGeoMapIndex`].
-#[expect(private_bounds)]
-pub trait StoredGeoMapIndexStorage:
-    UniversalRead<u8>
-    + UniversalRead<Counts>
-    + UniversalRead<PointKeyValue>
-    + UniversalRead<PointOffsetType>
-{
-}
-impl<T> StoredGeoMapIndexStorage for T where
-    T: UniversalRead<u8>
-        + UniversalRead<Counts>
-        + UniversalRead<PointKeyValue>
-        + UniversalRead<PointOffsetType>
-{
-}
-
 ///
 ///   points_map
 ///  ┌─────────────────────────────────────────┐
@@ -90,7 +73,7 @@ impl<T> StoredGeoMapIndexStorage for T where
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct StoredGeoMapIndex<S: StoredGeoMapIndexStorage> {
+pub struct StoredGeoMapIndex<S: UniversalRead> {
     path: PathBuf,
     pub(super) storage: Storage<S>,
     pub(super) deleted_count: usize,
@@ -99,7 +82,7 @@ pub struct StoredGeoMapIndex<S: StoredGeoMapIndexStorage> {
     is_on_disk: bool,
 }
 
-pub(super) struct Storage<S: StoredGeoMapIndexStorage> {
+pub(super) struct Storage<S: UniversalRead> {
     /// Stores GeoHash, points count and values count.
     /// Sorted by geohash, so we binary search the region.
     pub(super) counts_per_hash: TypedStorage<S, Counts>,
@@ -116,7 +99,7 @@ pub(super) struct Storage<S: StoredGeoMapIndexStorage> {
     pub(super) deleted: BitVec,
 }
 
-impl<S: StoredGeoMapIndexStorage> Storage<S> {
+impl<S: UniversalRead> Storage<S> {
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         let Self {
             counts_per_hash,
@@ -140,7 +123,7 @@ struct StoredGeoMapIndexStat {
     max_values_per_point: usize,
 }
 
-impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
+impl<S: UniversalRead> StoredGeoMapIndex<S> {
     pub fn build(
         dynamic_index: InMemoryGeoMapIndex,
         path: &Path,
@@ -286,9 +269,9 @@ impl<S: StoredGeoMapIndexStorage> StoredGeoMapIndex<S> {
             prevent_caching: None,
         };
 
-        let counts_per_hash = UniversalRead::open(&counts_per_hash_path, open_options)?;
-        let points_map = UniversalRead::open(&points_map_path, open_options)?;
-        let points_map_ids = UniversalRead::open(&points_map_ids_path, open_options)?;
+        let counts_per_hash = TypedStorage::open(&counts_per_hash_path, open_options)?;
+        let points_map = TypedStorage::open(&points_map_path, open_options)?;
+        let points_map_ids = TypedStorage::open(&points_map_ids_path, open_options)?;
         let point_to_values = StoredPointToValues::open(path, true)?;
 
         let mut deleted = deleted_points.to_owned();

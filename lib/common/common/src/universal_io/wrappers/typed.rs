@@ -8,16 +8,14 @@ use super::super::{
     ByteOffset, FileIndex, Flusher, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead,
     UniversalReadFileOps, UniversalWrite,
 };
-use super::WrappedReadPipeline;
 use crate::generic_consts::AccessPattern;
 
-/// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds `T` to a
-/// specific type.
+/// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
+/// type to a specific `T`.
 ///
-/// This wrapper is not needed for code with a single universal io trait bound,
-/// (e.g. `where S: UniversalRead<f32>`), but it helps the compiler to
-/// distinguish when more than one bound is used, e.g.
-/// `where S: UniversalRead<f32> + UniversalRead<PointOffsetType> + …`.
+/// The underlying read/write methods are generic over `T` per call. This
+/// wrapper forwards them with `T` fixed, acting as a fail-safe against
+/// accidentally reading or writing the wrong type from a generic storage.
 #[derive(Debug, TransparentWrapper)]
 #[repr(transparent)]
 #[transparent(S)]
@@ -49,18 +47,14 @@ where
     }
 }
 
-impl<S, T> UniversalRead<T> for TypedStorage<S, T>
+#[expect(clippy::len_without_is_empty)]
+impl<S, T> TypedStorage<S, T>
 where
-    S: UniversalRead<T>,
-    T: Copy + 'static,
+    S: UniversalRead,
+    T: bytemuck::Pod,
 {
-    type ReadPipeline<'file, Meta>
-        = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, Meta>>
-    where
-        Self: 'file;
-
     #[inline]
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
+    pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         S::open(path, options).map(|inner| TypedStorage {
             inner,
             _phantom: PhantomData,
@@ -68,17 +62,17 @@ where
     }
 
     #[inline]
-    fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        self.inner.read::<P>(range)
+    pub fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+        self.inner.read::<P, T>(range)
     }
 
     #[inline]
-    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
-        self.inner.read_whole()
+    pub fn read_whole(&self) -> Result<Cow<'_, [T]>> {
+        self.inner.read_whole::<T>()
     }
 
     #[inline]
-    fn read_batch<P, Meta>(
+    pub fn read_batch<P, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
@@ -86,37 +80,37 @@ where
     where
         P: AccessPattern,
     {
-        self.inner.read_batch::<P, Meta>(ranges, callback)
+        self.inner.read_batch::<P, T, Meta>(ranges, callback)
     }
 
     #[inline]
-    fn read_iter<P, Meta>(
+    pub fn read_iter<P, Meta>(
         &self,
         ranges: impl IntoIterator<Item = (Meta, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
     {
-        self.inner.read_iter::<P, Meta>(ranges)
+        self.inner.read_iter::<P, T, Meta>(ranges)
     }
 
     #[inline]
-    fn len(&self) -> Result<u64> {
-        self.inner.len()
+    pub fn len(&self) -> Result<u64> {
+        self.inner.len::<T>()
     }
 
     #[inline]
-    fn populate(&self) -> Result<()> {
+    pub fn populate(&self) -> Result<()> {
         self.inner.populate()
     }
 
     #[inline]
-    fn clear_ram_cache(&self) -> Result<()> {
+    pub fn clear_ram_cache(&self) -> Result<()> {
         self.inner.clear_ram_cache()
     }
 
     #[inline]
-    fn read_multi<'a, P, Meta>(
+    pub fn read_multi<'a, P, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
         callback: impl FnMut(Meta, &[T]) -> Result<()>,
     ) -> Result<()>
@@ -127,12 +121,11 @@ where
         let reads = reads
             .into_iter()
             .map(|(meta, file, range)| (meta, &file.inner, range));
-
-        S::read_multi::<'a, P, Meta>(reads, callback)
+        S::read_multi::<P, T, Meta>(reads, callback)
     }
 
     #[inline]
-    fn read_multi_iter<'a, P, Meta>(
+    pub fn read_multi_iter<'a, P, Meta>(
         reads: impl IntoIterator<Item = (Meta, &'a Self, ReadRange)>,
     ) -> Result<impl Iterator<Item = Result<(Meta, Cow<'a, [T]>)>>>
     where
@@ -142,43 +135,48 @@ where
         let reads = reads
             .into_iter()
             .map(|(meta, file, range)| (meta, &file.inner, range));
-
-        S::read_multi_iter::<P, _>(reads)
+        S::read_multi_iter::<P, T, _>(reads)
     }
 
-    fn kind() -> UniversalKind {
+    pub fn kind() -> UniversalKind {
         S::kind()
     }
 }
 
-impl<S, T> UniversalWrite<T> for TypedStorage<S, T>
+impl<S, T> TypedStorage<S, T>
 where
-    S: UniversalWrite<T>,
-    T: Copy + 'static,
+    S: UniversalWrite,
+    T: bytemuck::Pod,
 {
     #[inline]
-    fn write(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()> {
-        self.inner.write(byte_offset, data)
+    pub fn write(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()> {
+        self.inner.write::<T>(byte_offset, data)
     }
 
     #[inline]
-    fn write_batch<'a>(
+    pub fn write_batch<'a>(
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
-    ) -> Result<()> {
-        self.inner.write_batch(offset_data)
+    ) -> Result<()>
+    where
+        T: 'a,
+    {
+        self.inner.write_batch::<T>(offset_data)
     }
 
     #[inline]
-    fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> Flusher {
         self.inner.flusher()
     }
 
     #[inline]
-    fn write_multi<'a>(
+    pub fn write_multi<'a>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
-    ) -> Result<()> {
-        S::write_multi(Self::peel_slice_mut(files), writes)
+    ) -> Result<()>
+    where
+        T: 'a,
+    {
+        S::write_multi::<T>(Self::peel_slice_mut(files), writes)
     }
 }

@@ -51,7 +51,7 @@ pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue +
 
 pub(super) struct Storage<
     T: Encodable + Numericable + Default + StoredValue + 'static,
-    S: UniversalRead<Point<T>> + UniversalRead<u8>,
+    S: UniversalRead,
 > {
     deleted: BitVec,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
@@ -59,11 +59,7 @@ pub(super) struct Storage<
     pub(super) point_to_values: StoredPointToValues<T, S>,
 }
 
-impl<
-    T: Encodable + Numericable + Default + StoredValue + 'static,
-    S: UniversalRead<Point<T>> + UniversalRead<u8>,
-> Storage<T, S>
-{
+impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead> Storage<T, S> {
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         let Self {
             deleted,

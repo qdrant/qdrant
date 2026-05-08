@@ -29,11 +29,11 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 pub struct ImmutableDenseVectors<T, S = MmapFile>
 where
     T: PrimitiveVectorElement,
-    S: UniversalRead<T>,
+    S: UniversalRead,
 {
     pub dim: usize,
     pub num_vectors: usize,
-    /// Vector data storage, providing read access via [`UniversalRead<T>`].
+    /// Vector data storage, providing typed read access for `T`.
     storage: TypedStorage<ReadOnly<S>, T>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
@@ -41,7 +41,7 @@ where
     pub deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S> {
+impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
@@ -141,7 +141,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<T>> ImmutableDenseVectors<T, S>
 
     pub fn for_each_in_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
         #[cfg(target_os = "linux")]
-        if S::kind() == common::universal_io::UniversalKind::IoUring {
+        if TypedStorage::<ReadOnly<S>, T>::kind() == common::universal_io::UniversalKind::IoUring {
             return self.for_each_in_batch_async(keys, f);
         }
 

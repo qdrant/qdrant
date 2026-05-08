@@ -16,9 +16,7 @@ use common::bitvec::{BitSlice, BitVec};
 use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    MmapFile, OpenOptions, SliceBufferedUpdateWrapper, TypedStorage, UniversalRead, UniversalWrite,
-};
+use common::universal_io::{MmapFile, OpenOptions, SliceBufferedUpdateWrapper, TypedStorage};
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;

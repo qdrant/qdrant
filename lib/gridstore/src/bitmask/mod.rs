@@ -32,8 +32,8 @@ type RegionId = u32;
 /// Concrete bitmask type using memory-mapped storage.
 pub type MmapBitmask = Bitmask<MmapFile>;
 
-pub trait BitmaskStorage: UniversalWrite<RegionGaps> + UniversalWrite<u64> {}
-impl<T> BitmaskStorage for T where T: UniversalWrite<RegionGaps> + UniversalWrite<u64> {}
+pub trait BitmaskStorage: UniversalWrite {}
+impl<T> BitmaskStorage for T where T: UniversalWrite {}
 
 #[derive(Debug)]
 pub struct Bitmask<S> {

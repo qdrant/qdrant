@@ -1,10 +1,10 @@
 use super::read::UniversalRead;
 use super::*;
 
-pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
-    fn write(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()>;
+pub trait UniversalWrite: UniversalRead {
+    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()>;
 
-    fn write_batch<'a>(
+    fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()>;
@@ -12,7 +12,7 @@ pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
     fn flusher(&self) -> Flusher;
 
     /// Write to multiple files in a single operation.
-    fn write_multi<'a>(
+    fn write_multi<'a, T: bytemuck::Pod>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
     ) -> Result<()> {

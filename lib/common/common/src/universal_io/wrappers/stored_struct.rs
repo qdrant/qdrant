@@ -4,9 +4,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::is_alive_lock::IsAliveLock;
-use crate::universal_io::{
-    self, Flusher, OpenOptions, TypedStorage, UniversalRead, UniversalWrite,
-};
+use crate::universal_io::{self, Flusher, OpenOptions, TypedStorage, UniversalWrite};
 
 /// A generic-storage wrapper for a type that should be possible to `read_whole` fairly cheaply.
 ///
@@ -22,10 +20,10 @@ pub struct StoredStruct<S, T> {
 impl<S, T> StoredStruct<S, T>
 where
     T: bytemuck::Pod + Send,
-    S: UniversalWrite<T> + Send + 'static,
+    S: UniversalWrite + Send + 'static,
 {
     pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> universal_io::Result<Self> {
-        let storage = TypedStorage::open(path, options)?;
+        let storage = TypedStorage::<S, T>::open(path, options)?;
         let inner = storage.read_whole()?[0];
         Ok(Self {
             inner,

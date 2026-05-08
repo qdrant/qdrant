@@ -86,7 +86,7 @@ pub(super) struct BitmaskGaps<S> {
     slice_store: S,
 }
 
-impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
+impl<S: UniversalWrite> BitmaskGaps<S> {
     pub fn path(&self) -> PathBuf {
         self.path.clone()
     }
@@ -112,7 +112,7 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
         };
         let mut slice_store = S::open(&path, options)?;
 
-        debug_assert_eq!(slice_store.len()? as usize, data.len());
+        debug_assert_eq!(slice_store.len::<RegionGaps>()? as usize, data.len());
 
         slice_store.write(0, &data)?;
 
@@ -189,7 +189,7 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
     }
 
     pub fn len(&self) -> Result<usize> {
-        Ok(self.slice_store.len()? as usize)
+        Ok(self.slice_store.len::<RegionGaps>()? as usize)
     }
 
     #[cfg(test)]
@@ -205,7 +205,7 @@ impl<S: UniversalWrite<RegionGaps>> BitmaskGaps<S> {
     }
 
     pub fn read_all(&self) -> Result<Cow<'_, [RegionGaps]>> {
-        Ok(self.slice_store.read_whole()?)
+        Ok(self.slice_store.read_whole::<RegionGaps>()?)
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.

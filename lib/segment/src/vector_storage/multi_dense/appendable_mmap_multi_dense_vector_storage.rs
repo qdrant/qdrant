@@ -60,16 +60,15 @@ impl VectorOffset for MultivectorMmapOffset {
 /// Shared by the appendable and read-only storage variants — both back the
 /// same on-disk layout, so they only differ in the writability of the chunked
 /// stores.
-pub(crate) fn read_multi_vector<'a, T, P, So, Sv>(
-    offsets: &'a ChunkedVectorsRead<MultivectorMmapOffset, So>,
-    vectors: &'a ChunkedVectorsRead<T, Sv>,
+pub(crate) fn read_multi_vector<'a, T, P, S>(
+    offsets: &'a ChunkedVectorsRead<MultivectorMmapOffset, S>,
+    vectors: &'a ChunkedVectorsRead<T, S>,
     key: PointOffsetType,
 ) -> Option<CowMultiVector<'a, T>>
 where
     T: PrimitiveVectorElement,
     P: AccessPattern,
-    So: UniversalRead<MultivectorMmapOffset>,
-    Sv: UniversalRead<T>,
+    S: UniversalRead,
 {
     let mmap_offset = *offsets
         .get::<P>(key as VectorOffsetType)?
@@ -168,7 +167,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         &self,
         key: PointOffsetType,
     ) -> Option<CowMultiVector<'_, T>> {
-        read_multi_vector::<T, P, _, _>(&self.offsets, &self.vectors, key)
+        read_multi_vector::<T, P, _>(&self.offsets, &self.vectors, key)
     }
 
     fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
