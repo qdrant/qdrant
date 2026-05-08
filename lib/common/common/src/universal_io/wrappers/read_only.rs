@@ -36,7 +36,7 @@ where
         = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, T, Meta>>
     where
         Self: 'file,
-        T: bytemuck::Pod + 'static;
+        T: bytemuck::Pod;
 
     #[inline]
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {

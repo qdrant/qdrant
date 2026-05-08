@@ -18,7 +18,7 @@ impl<'a, File, Inner, T, Meta> UniversalReadPipeline<'a, T, Meta>
 where
     File: TransparentWrapper<Inner::File>,
     Inner: UniversalReadPipeline<'a, T, Meta>,
-    T: bytemuck::Pod + 'static,
+    T: bytemuck::Pod,
 {
     type File = File;
 
