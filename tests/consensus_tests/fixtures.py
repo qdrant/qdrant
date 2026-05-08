@@ -96,6 +96,7 @@ def upsert_random_points(
     num_cities=None,
     headers={},
     extra_payload=None,
+    timeout=None,
 ):
     extra_payload = extra_payload or {}
 
@@ -129,6 +130,7 @@ def upsert_random_points(
                 "shard_key": shard_key,
             },
             headers=headers,
+            timeout=timeout,
         )
         if fail_on_error:
             assert_http_ok(r_batch)

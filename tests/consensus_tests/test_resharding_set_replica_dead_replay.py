@@ -131,16 +131,26 @@ def test_set_replica_dead_clears_resharding_state(tmp_path: pathlib.Path):
     # observing the dead target. Drive a fresh batch on each poll until
     # every running peer has applied the deactivation and cleared its
     # `resharding_state`.
+    #
+    # Cap each upsert at 5s so a stuck gRPC channel to the dead peer can't
+    # block a single iteration past the wait_for budget — without this,
+    # `requests.put` has no timeout and a hung fan-out leaves wait_for
+    # unable to iterate at all (test hangs until pytest's outer deadline
+    # rather than failing within 60s).
     running_uris = [uri for idx, uri in enumerate(peer_uris) if idx != target_idx]
 
     def all_running_peers_aborted_resharding() -> bool:
-        upsert_random_points(
-            driver_uri,
-            num=100,
-            collection_name=COLLECTION,
-            fail_on_error=False,
-            ordering="weak",
-        )
+        try:
+            upsert_random_points(
+                driver_uri,
+                num=100,
+                collection_name=COLLECTION,
+                fail_on_error=False,
+                ordering="weak",
+                timeout=5,
+            )
+        except requests.RequestException:
+            pass
         return all(
             not get_collection_cluster_info(uri, COLLECTION).get("resharding_operations")
             for uri in running_uris
