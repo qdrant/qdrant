@@ -227,7 +227,7 @@ impl PointerUpdates {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct TrackerHeader {
     next_pointer_offset: u32,
@@ -286,12 +286,8 @@ impl<S: UniversalRead> Tracker<S> {
     }
 
     fn read_header(storage: &S) -> Result<TrackerHeader> {
-        let header_bytes = storage.read::<Random, u8>(ReadRange {
-            byte_offset: 0,
-            length: std::mem::size_of::<TrackerHeader>() as u64,
-        })?;
-        #[expect(deprecated, reason = "legacy code")]
-        Ok(*unsafe { transmute_from_u8::<TrackerHeader>(header_bytes.as_ref()) })
+        let header = storage.read::<Random, TrackerHeader>(ReadRange::one(0))?[0];
+        Ok(header)
     }
 
     fn open_storage(path: &Path) -> Result<S> {
