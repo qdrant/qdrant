@@ -55,7 +55,7 @@ impl OptionalPointer {
     pub fn none() -> Self {
         Self {
             discriminant: Self::OPTIONAL_NONE,
-            value: bytemuck::Zeroable::zeroed(),
+            value: ValuePointer::new(0, 0, 0),
         }
     }
 
