@@ -159,7 +159,12 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
 
     # Restart the peer, wait unil it is up
     peer_url = start_peer(killed_peer_dir, "peer_0_restarted.log", bootstrap_url, port=restart_port)
-    wait_for_peer_online(peer_url)
+    # Use a longer timeout: with 3 concurrent user-requested snapshot transfers running, the
+    # leader can fall behind on heartbeats and trigger raft elections. The recovery transfer's
+    # `RecoveryToPartial` proposal can be dropped during the leader election, and the retry
+    # path waits up to CONSENSUS_CONFIRM_TIMEOUT (10s) per attempt before retrying. Combined
+    # with sequential per-shard recovery (auto transfer limit = 1 × 3 shards), 30s is too tight.
+    wait_for_peer_online(peer_url, wait_for_timeout=60)
     recovering_peer_id = get_cluster_info(peer_url)["peer_id"]
 
     # We must see N_SHARDS transfers on our new node
