@@ -95,3 +95,129 @@ fn build_tokens_processor(value: TextPreprocessingConfig) -> TokensProcessor {
         max_token_len,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use ordered_float::NotNan;
+    use segment::data_types::index::TokenizerType;
+
+    use super::*;
+
+    fn make_config(tok: TokenizerType) -> Bm25Config {
+        Bm25Config {
+            k: NotNan::new(1.2).unwrap(),
+            b: NotNan::new(0.75).unwrap(),
+            avg_len: NotNan::new(256.0).unwrap(),
+            tokenizer: tok,
+            text_preprocessing_config: TextPreprocessingConfig {
+                language: Some("english".to_string()),
+                lowercase: Some(true),
+                ascii_folding: Some(false),
+                stopwords: None,
+                stemmer: None,
+                min_token_len: None,
+                max_token_len: None,
+            },
+        }
+    }
+
+    /// Replicate the pre-refactor flow: a single `tokenize_query` call drives
+    /// both query and document embeddings. Used to assert byte-for-byte
+    /// equality of the new adapter against the old behavior.
+    fn legacy_embed(config: Bm25Config, input: &str, doc: bool) -> VectorPersisted {
+        let mut config = config;
+        let preproc = std::mem::take(&mut config.text_preprocessing_config);
+        let processor = build_tokens_processor(preproc);
+        let tokenizer = Tokenizer::new(config.tokenizer, processor);
+
+        let params = Bm25Params {
+            k1: config.k.into_inner(),
+            b: config.b.into_inner(),
+            avg_doc_len: config.avg_len.into_inner(),
+        };
+        let bm25 = Bm25Core::new(params).unwrap();
+
+        let mut tokens: Vec<Cow<'_, str>> = Vec::new();
+        tokenizer.tokenize_query(input, |t| tokens.push(t));
+        let e = if doc {
+            bm25.embed_document(&tokens)
+        } else {
+            bm25.embed_query(&tokens)
+        };
+        to_persisted(e)
+    }
+
+    const CORPUS: &[&str] = &[
+        "",
+        "hello",
+        "Hello World",
+        "the quick brown fox jumps over the lazy dog",
+        "alpha beta alpha gamma alpha",
+        "The Cat Sat On The Mat",
+        "lorem ipsum dolor sit amet consectetur adipiscing elit",
+        "rust is a systems programming language focused on safety",
+        "café naïve façade",
+        "qdrant search engine vector database",
+    ];
+
+    /// Word/Whitespace/Multilingual: `tokenize_query == tokenize_doc`, so the
+    /// new adapter must produce byte-identical output to the pre-refactor flow.
+    #[test]
+    fn parity_with_legacy_flow_word_tokenizer() {
+        let bm25 = Bm25::new(make_config(TokenizerType::Word)).unwrap();
+        for &input in CORPUS {
+            let q_new = bm25.search_embed(input);
+            let d_new = bm25.doc_embed(input);
+            let q_old = legacy_embed(make_config(TokenizerType::Word), input, false);
+            let d_old = legacy_embed(make_config(TokenizerType::Word), input, true);
+            assert_eq!(q_new, q_old, "search_embed differs for {input:?}");
+            assert_eq!(d_new, d_old, "doc_embed differs for {input:?}");
+        }
+    }
+
+    #[test]
+    fn parity_with_legacy_flow_whitespace_tokenizer() {
+        let bm25 = Bm25::new(make_config(TokenizerType::Whitespace)).unwrap();
+        for &input in CORPUS {
+            let q_new = bm25.search_embed(input);
+            let d_new = bm25.doc_embed(input);
+            let q_old = legacy_embed(make_config(TokenizerType::Whitespace), input, false);
+            let d_old = legacy_embed(make_config(TokenizerType::Whitespace), input, true);
+            assert_eq!(q_new, q_old, "search_embed differs for {input:?}");
+            assert_eq!(d_new, d_old, "doc_embed differs for {input:?}");
+        }
+    }
+
+    #[test]
+    fn parity_with_legacy_flow_multilingual_tokenizer() {
+        let bm25 = Bm25::new(make_config(TokenizerType::Multilingual)).unwrap();
+        for &input in CORPUS {
+            let q_new = bm25.search_embed(input);
+            let d_new = bm25.doc_embed(input);
+            let q_old = legacy_embed(make_config(TokenizerType::Multilingual), input, false);
+            let d_old = legacy_embed(make_config(TokenizerType::Multilingual), input, true);
+            assert_eq!(q_new, q_old, "search_embed differs for {input:?}");
+            assert_eq!(d_new, d_old, "doc_embed differs for {input:?}");
+        }
+    }
+
+    /// Prefix: queries match the legacy flow exactly; documents intentionally
+    /// differ because the pre-refactor code passed query-side tokens to the
+    /// document embed path (the bug CodeRabbit flagged).
+    #[test]
+    fn prefix_tokenizer_query_parity_doc_diverges() {
+        let bm25 = Bm25::new(make_config(TokenizerType::Prefix)).unwrap();
+        let input = "hello world example";
+
+        let q_new = bm25.search_embed(input);
+        let q_old = legacy_embed(make_config(TokenizerType::Prefix), input, false);
+        assert_eq!(q_new, q_old, "prefix query path must match legacy");
+
+        let d_new = bm25.doc_embed(input);
+        let d_old = legacy_embed(make_config(TokenizerType::Prefix), input, true);
+        assert_ne!(
+            d_new, d_old,
+            "prefix doc path must use the full n-gram set (intentional fix)"
+        );
+    }
+}
