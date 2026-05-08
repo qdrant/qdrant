@@ -6,8 +6,6 @@
 
 use std::borrow::Cow;
 
-use crate::Tokenizer;
-
 #[derive(Debug, Clone, Copy)]
 pub struct BasicTokenizer {
     pub lowercase: bool,
@@ -21,6 +19,21 @@ impl BasicTokenizer {
     pub fn case_sensitive() -> Self {
         Self { lowercase: false }
     }
+
+    /// Split `input` on whitespace, optionally lowercasing tokens. Borrows from
+    /// `input` when no transformation is needed; allocates only when lowercasing.
+    pub fn tokenize<'a>(&self, input: &'a str) -> Vec<Cow<'a, str>> {
+        input
+            .split_whitespace()
+            .map(|tok| {
+                if self.lowercase && tok.chars().any(char::is_uppercase) {
+                    Cow::Owned(tok.to_lowercase())
+                } else {
+                    Cow::Borrowed(tok)
+                }
+            })
+            .collect()
+    }
 }
 
 impl Default for BasicTokenizer {
@@ -29,26 +42,12 @@ impl Default for BasicTokenizer {
     }
 }
 
-impl Tokenizer for BasicTokenizer {
-    fn tokenize<'a>(&'a self, input: &'a str, out: &mut dyn FnMut(Cow<'a, str>)) {
-        for tok in input.split_whitespace() {
-            if self.lowercase && tok.chars().any(char::is_uppercase) {
-                out(Cow::Owned(tok.to_lowercase()));
-            } else {
-                out(Cow::Borrowed(tok));
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn collect<'a>(t: &'a impl Tokenizer, s: &'a str) -> Vec<String> {
-        let mut out = Vec::new();
-        t.tokenize(s, &mut |c| out.push(c.into_owned()));
-        out
+    fn collect(t: &BasicTokenizer, s: &str) -> Vec<String> {
+        t.tokenize(s).into_iter().map(Cow::into_owned).collect()
     }
 
     #[test]

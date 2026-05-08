@@ -167,13 +167,11 @@ impl PyBm25 {
 
     /// Embed `text` as a search query: each unique token gets weight 1.0.
     pub fn embed_query(&self, text: &str) -> PySparseVector {
-        let doc = bm25::Bm25Document::new(text);
-        PySparseVector(self.0.embed_query(&doc))
+        PySparseVector(self.0.embed_query(text))
     }
 
     /// Embed `text` as an indexed document: term-frequency weights with `(k, b, avg_len)`.
     pub fn embed_document(&self, text: &str) -> PySparseVector {
-        let doc = bm25::Bm25Document::new(text);
-        PySparseVector(self.0.embed_document(&doc))
+        PySparseVector(self.0.embed_document(text))
     }
 }
