@@ -115,7 +115,10 @@ fn check_invalid_name_chars(value: &str, kind: &str) -> Result<(), ValidationErr
 
 /// Reject `value` if it matches one of [`RESERVED_PATH_NAMES`].
 fn check_reserved_path_name(value: &str, kind: &str) -> Result<(), ValidationError> {
-    if RESERVED_PATH_NAMES.iter().any(|reserved| *reserved == value) {
+    if RESERVED_PATH_NAMES
+        .iter()
+        .any(|reserved| *reserved == value)
+    {
         let mut err = ValidationError::new("reserved_path_name");
         err.add_param(Cow::from("value"), &value);
         err.message.replace(Cow::from(format!(
