@@ -28,14 +28,16 @@ fn test_filtering_context_consistency() {
         let filter = random_filter(&mut rng, 3);
 
         let plain_filter_context = plain_index.filter_context(&filter, &hw_counter).unwrap();
-        let struct_filter_context = struct_index.filter_context(&filter, &hw_counter).unwrap();
-
         let plain_result = (0..NUM_POINTS)
             .filter(|point_id| plain_filter_context.check(*point_id as PointOffsetType))
             .collect_vec();
-        let struct_result = (0..NUM_POINTS)
-            .filter(|point_id| struct_filter_context.check(*point_id as PointOffsetType))
-            .collect_vec();
+
+        let struct_result = struct_index.with_view(|v| {
+            let struct_filter_context = v.filter_context(&filter, &hw_counter).unwrap();
+            (0..NUM_POINTS)
+                .filter(|point_id| struct_filter_context.check(*point_id as PointOffsetType))
+                .collect_vec()
+        });
         assert_eq!(plain_result, struct_result, "filter: {filter:#?}");
     }
 }

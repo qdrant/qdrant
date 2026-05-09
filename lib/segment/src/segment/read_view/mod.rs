@@ -14,12 +14,13 @@ use std::collections::HashMap;
 
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::PayloadIndexRead;
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::segment::{DeferredPointStatus, VectorData};
 use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
+use crate::vector_storage::VectorStorageEnum;
 
 /// This structure serves as a generic representation of data
 /// necessary for all read operations on a segment.
@@ -46,8 +47,13 @@ where
 /// Concrete `SegmentReadView` instantiation that wraps a regular [`Segment`].
 ///
 /// [`Segment`]: crate::segment::Segment
-pub type SegmentReadViewFor<'s> =
-    SegmentReadView<'s, IdTrackerEnum, StructPayloadIndex, PayloadStorageEnum, VectorData>;
+pub type SegmentReadViewFor<'s> = SegmentReadView<
+    's,
+    IdTrackerEnum,
+    StructPayloadIndexReadView<'s, PayloadStorageEnum, IdTrackerEnum, VectorStorageEnum>,
+    PayloadStorageEnum,
+    VectorData,
+>;
 
 #[allow(unused, dead_code)]
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>

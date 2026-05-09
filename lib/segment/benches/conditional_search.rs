@@ -144,10 +144,10 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
 
     let filter = random_must_filter(&mut rng, 2);
     let cardinality = struct_index
-        .estimate_cardinality(&filter, &hw_counter)
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
         .unwrap();
 
-    let indexed_fields = struct_index.indexed_fields();
+    let indexed_fields = struct_index.with_view(|v| v.indexed_fields());
 
     eprintln!("cardinality = {cardinality:#?}");
     eprintln!("indexed_fields = {indexed_fields:#?}");
@@ -156,7 +156,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
             result_size += struct_index
-                .query_points(&filter, &hw_counter, &is_stopped, None)
+                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
                 .unwrap()
                 .len();
             query_count += 1;
@@ -175,13 +175,11 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
             let sample = (0..CHECK_SAMPLE_SIZE)
                 .map(|_| rng.random_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
-            let context = struct_index.filter_context(&filter, &hw_counter).unwrap();
-
-            let filtered_sample = sample
-                .into_iter()
-                .filter(|id| context.check(*id))
-                .collect_vec();
-            result_size += filtered_sample.len();
+            let filtered_count = struct_index.with_view(|v| {
+                let context = v.filter_context(&filter, &hw_counter).unwrap();
+                sample.into_iter().filter(|id| context.check(*id)).count()
+            });
+            result_size += filtered_count;
             query_count += 1;
         })
     });

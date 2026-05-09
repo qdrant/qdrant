@@ -282,9 +282,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     ) -> OperationResult<CardinalityEstimation> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
-        let payload_index = self.payload_index.borrow();
         let available_vector_count = vector_storage.available_vector_count();
-        let query_point_cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
+        let query_point_cardinality = self
+            .payload_index
+            .borrow()
+            .with_view(|v| v.estimate_cardinality(filter, hw_counter))?;
         Ok(adjust_to_available_vectors(
             query_point_cardinality,
             available_vector_count,
@@ -321,17 +323,18 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let hw_counter = vector_query_context.hardware_counter();
         let mut results = match filter {
             Some(filter) => {
-                let payload_index = self.payload_index.borrow();
                 let filtered_points = match prefiltered_points {
                     // `prefiltered_points` always contains visible points only so we don't need additional filtering here.
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
-                        let filtered_points = payload_index.query_points(
-                            filter,
-                            &hw_counter,
-                            &is_stopped,
-                            vector_query_context.deferred_internal_id(),
-                        )?;
+                        let filtered_points = self.payload_index.borrow().with_view(|v| {
+                            v.query_points(
+                                filter,
+                                &hw_counter,
+                                &is_stopped,
+                                vector_query_context.deferred_internal_id(),
+                            )
+                        })?;
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
@@ -356,7 +359,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
-        let payload_index = self.payload_index.borrow();
 
         let is_stopped = vector_query_context.is_stopped();
 
@@ -373,12 +375,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // so no additional filtering is required in that case.
             Some(filtered_points) => filtered_points.iter(),
             None => {
-                let filtered_points = payload_index.query_points(
-                    filter,
-                    &hw_counter,
-                    &is_stopped,
-                    vector_query_context.deferred_internal_id(),
-                )?;
+                let filtered_points = self.payload_index.borrow().with_view(|v| {
+                    v.query_points(
+                        filter,
+                        &hw_counter,
+                        &is_stopped,
+                        vector_query_context.deferred_internal_id(),
+                    )
+                })?;
                 *prefiltered_points = Some(filtered_points);
                 prefiltered_points.as_ref().unwrap().iter()
             }
@@ -450,14 +454,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         );
 
         match filter {
-            Some(filter) => {
-                let payload_index = self.payload_index.borrow();
-                let filter_context = payload_index.filter_context(filter, &hw_counter)?;
+            Some(filter) => self.payload_index.borrow().with_view(|v| {
+                let filter_context = v.filter_context(filter, &hw_counter)?;
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check(idx)
                 };
                 Ok(search_context.search(&matches_filter_condition))
-            }
+            }),
             None => Ok(search_context.search(&not_deleted_condition)),
         }
     }

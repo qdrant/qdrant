@@ -264,7 +264,9 @@ impl ReadSegmentEntry for Segment {
         self.appendable_flag
     }
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.payload_index.borrow().indexed_fields()
+        self.payload_index
+            .borrow()
+            .with_view(|v| v.indexed_fields())
     }
 
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
