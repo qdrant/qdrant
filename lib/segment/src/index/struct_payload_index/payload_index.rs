@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use schemars::_serde_json::Value;
+use serde_json::Value;
 
 use super::StructPayloadIndex;
 use crate::common::Flusher;

@@ -67,7 +67,7 @@ fn test_load_payload_index() {
     assert_eq!(payload_config.indices.len(), 1);
 
     let schema = payload_config.indices.get_mut(&key).unwrap();
-    check_index_types(&schema.types);
+    assert!(check_index_types(&schema.types));
 
     // Clear index types to check loading from an old segment.
     schema.types.clear();
@@ -89,5 +89,5 @@ fn test_load_payload_index() {
     assert_eq!(payload_config.indices.len(), 1);
 
     let schema = payload_config.indices.get(&key).unwrap();
-    check_index_types(&schema.types);
+    assert!(check_index_types(&schema.types));
 }
