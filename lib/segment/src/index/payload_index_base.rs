@@ -146,7 +146,13 @@ pub trait PayloadIndexRead {
 }
 
 /// Trait for payload index with mutating operations.
-pub trait PayloadIndex: PayloadIndexRead {
+///
+/// `PayloadIndex` only covers writes. Callers that also need reads must
+/// bring [`PayloadIndexRead`] into scope explicitly (or bound on it
+/// explicitly in generic code) -- the two traits are siblings, not
+/// parent/child, so that implementations of `PayloadIndexRead` (e.g. a
+/// borrowed read-only view) do not need to also implement `PayloadIndex`.
+pub trait PayloadIndex {
     /// Build the index, if not built before, taking the caller by reference only
     fn build_index(
         &self,
