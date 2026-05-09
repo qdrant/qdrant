@@ -7,7 +7,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use serde_json::Value;
 
-use super::field_index::{FacetIndex, FieldIndex, NumericFieldIndexRead};
+use super::field_index::numeric_index::NumericFieldIndexRead;
+use super::field_index::{FacetIndex, FieldIndex};
 use super::query_optimization::rescore_formula::FormulaScorer;
 use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
