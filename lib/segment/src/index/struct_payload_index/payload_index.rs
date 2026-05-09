@@ -9,9 +9,9 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::FieldIndex;
 use crate::index::payload_config::PayloadFieldSchemaWithIndexType;
-use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
+use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
-use crate::payload_storage::PayloadStorage;
+use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::types::{
     Payload, PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
 };
@@ -165,7 +165,10 @@ impl PayloadIndex for StructPayloadIndex {
                 .set(point_id, payload, hw_counter)?;
         };
 
-        let updated_payload = self.get_payload(point_id, hw_counter)?;
+        // Re-read the payload after the write so field indexes see the merged
+        // value. Inlined `get_payload` to avoid going through `with_view` from
+        // a `&mut self` write path.
+        let updated_payload = self.payload.borrow().get(point_id, hw_counter)?;
         for (field, field_index) in &mut self.field_indexes {
             if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
                 continue;

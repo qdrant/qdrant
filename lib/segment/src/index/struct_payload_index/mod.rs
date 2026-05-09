@@ -1,7 +1,8 @@
 mod build;
-mod filtering;
 mod payload_index;
-mod payload_index_read;
+mod read_view;
+
+pub use read_view::StructPayloadIndexReadView;
 
 #[cfg(test)]
 mod tests;
@@ -349,5 +350,29 @@ impl StructPayloadIndex {
             }
         }
         Ok(())
+    }
+
+    /// Run a closure with a borrowed read-only view of this index.
+    ///
+    /// The view borrows `id_tracker` (and the payload `Arc`) for the
+    /// duration of the closure, collapsing the per-method
+    /// `AtomicRefCell::borrow()` cost into a single up-front borrow.
+    /// All `PayloadIndexRead` methods are available on the view.
+    pub fn with_view<R>(
+        &self,
+        f: impl FnOnce(
+            StructPayloadIndexReadView<'_, PayloadStorageEnum, IdTrackerEnum, VectorStorageEnum>,
+        ) -> R,
+    ) -> R {
+        let id_tracker = self.id_tracker.borrow();
+        let view = StructPayloadIndexReadView {
+            payload: &self.payload,
+            id_tracker: &*id_tracker,
+            vector_storages: &self.vector_storages,
+            field_indexes: &self.field_indexes,
+            config: &self.config,
+            visited_pool: &self.visited_pool,
+        };
+        f(view)
     }
 }

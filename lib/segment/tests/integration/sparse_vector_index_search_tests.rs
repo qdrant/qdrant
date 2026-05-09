@@ -410,7 +410,7 @@ fn sparse_vector_index_ram_filtered_search() {
 
     // assert payload field index created and empty
     let payload_index = sparse_vector_index.payload_index().borrow();
-    let indexed_fields = payload_index.indexed_fields();
+    let indexed_fields = payload_index.with_view(|v| v.indexed_fields());
     assert_eq!(
         *indexed_fields.get(&JsonPath::new(field_name)).unwrap(),
         FieldType(Keyword)

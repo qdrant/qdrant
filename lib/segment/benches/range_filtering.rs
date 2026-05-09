@@ -94,8 +94,14 @@ fn range_filtering(c: &mut Criterion) {
         .unwrap();
 
     // make sure all points are indexed
-    assert_eq!(index.indexed_points(&FLT_KEY.parse().unwrap()), NUM_POINTS);
-    assert_eq!(index.indexed_points(&INT_KEY.parse().unwrap()), NUM_POINTS);
+    assert_eq!(
+        index.with_view(|v| v.indexed_points(&FLT_KEY.parse().unwrap())),
+        NUM_POINTS,
+    );
+    assert_eq!(
+        index.with_view(|v| v.indexed_points(&INT_KEY.parse().unwrap())),
+        NUM_POINTS,
+    );
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -105,7 +111,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
                 result_size += index
-                    .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -119,7 +125,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
                 result_size += index
-                    .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -148,7 +154,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
                 result_size += index
-                    .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -162,7 +168,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
                 result_size += index
-                    .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
                     .unwrap()
                     .len();
                 query_count += 1;

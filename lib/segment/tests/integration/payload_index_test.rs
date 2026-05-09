@@ -520,7 +520,7 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
             .plain_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&query_filter, &hw_counter)
+            .with_view(|v| v.estimate_cardinality(&query_filter, &hw_counter))
             .unwrap();
 
         ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
@@ -552,7 +552,7 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
             .struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&query_filter, &hw_counter)
+            .with_view(|v| v.estimate_cardinality(&query_filter, &hw_counter))
             .unwrap();
 
         ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
@@ -622,21 +622,21 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         .struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter, &hw_counter)
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
         .unwrap();
 
     let estimation_plain = test_segments
         .plain_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter, &hw_counter)
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
         .unwrap();
 
     let plain_result = test_segments
         .plain_segment
         .payload_index
         .borrow()
-        .query_points(&filter, &hw_counter, &is_stopped, None)
+        .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
         .unwrap();
 
     let real_number = plain_result.len();
@@ -646,7 +646,7 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         .struct_segment
         .payload_index
         .borrow()
-        .query_points(&filter, &hw_counter, &is_stopped, None)
+        .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
         .unwrap()
         .into_iter()
         // null index does not track deleted points, so we need to filter them out here. In callsites,
@@ -745,22 +745,24 @@ fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
         .struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter, &hw_counter)
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
         .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
     let payload_index = test_segments.struct_segment.payload_index.borrow();
-    let filter_context = payload_index.filter_context(&filter, &hw_counter).unwrap();
-    let exact = test_segments
-        .struct_segment
-        .id_tracker
-        .borrow()
-        .point_mappings()
-        .iter_internal()
-        .filter(|x| filter_context.check(*x))
-        .collect_vec()
-        .len();
+    let exact = payload_index.with_view(|v| {
+        let filter_context = v.filter_context(&filter, &hw_counter).unwrap();
+        test_segments
+            .struct_segment
+            .id_tracker
+            .borrow()
+            .point_mappings()
+            .iter_internal()
+            .filter(|x| filter_context.check(*x))
+            .collect_vec()
+            .len()
+    });
 
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");
@@ -792,7 +794,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
     let estimation = struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter, &hw_counter)
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
         .unwrap();
 
     // not empty primary clauses
@@ -807,7 +809,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
 
     match primary_clause {
         PrimaryCondition::Condition(field_condition) => {
-            assert_eq!(*field_condition, Box::new(expected_primary_clause));
+            assert_eq!(**field_condition, expected_primary_clause);
         }
         o => panic!("unexpected primary clause: {o:?}"),
     }
@@ -815,15 +817,17 @@ fn test_root_nested_array_filter_cardinality_estimation() {
     let hw_counter = HardwareCounterCell::new();
 
     let payload_index = struct_segment.payload_index.borrow();
-    let filter_context = payload_index.filter_context(&filter, &hw_counter).unwrap();
-    let exact = struct_segment
-        .id_tracker
-        .borrow()
-        .point_mappings()
-        .iter_internal()
-        .filter(|x| filter_context.check(*x))
-        .collect_vec()
-        .len();
+    let exact = payload_index.with_view(|v| {
+        let filter_context = v.filter_context(&filter, &hw_counter).unwrap();
+        struct_segment
+            .id_tracker
+            .borrow()
+            .point_mappings()
+            .iter_internal()
+            .filter(|x| filter_context.check(*x))
+            .collect_vec()
+            .len()
+    });
 
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");
@@ -858,7 +862,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
     let estimation = struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter, &hw_counter)
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
         .unwrap();
 
     // not empty primary clauses
@@ -876,7 +880,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 
     match primary_clause {
         PrimaryCondition::Condition(field_condition) => {
-            assert_eq!(*field_condition, Box::new(expected_primary_clause));
+            assert_eq!(**field_condition, expected_primary_clause);
         }
         o => panic!("unexpected primary clause: {o:?}"),
     }
@@ -884,15 +888,17 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
     let hw_counter = HardwareCounterCell::new();
 
     let payload_index = struct_segment.payload_index.borrow();
-    let filter_context = payload_index.filter_context(&filter, &hw_counter).unwrap();
-    let exact = struct_segment
-        .id_tracker
-        .borrow()
-        .point_mappings()
-        .iter_internal()
-        .filter(|x| filter_context.check(*x))
-        .collect_vec()
-        .len();
+    let exact = payload_index.with_view(|v| {
+        let filter_context = v.filter_context(&filter, &hw_counter).unwrap();
+        struct_segment
+            .id_tracker
+            .borrow()
+            .point_mappings()
+            .iter_internal()
+            .filter(|x| filter_context.check(*x))
+            .collect_vec()
+            .len()
+    });
 
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");
@@ -952,7 +958,7 @@ fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
             .struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&query_filter, &hw_counter)
+            .with_view(|v| v.estimate_cardinality(&query_filter, &hw_counter))
             .unwrap();
 
         ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
@@ -1156,7 +1162,7 @@ fn test_struct_payload_index_nested_fields() {
         let estimation = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&query_filter, &hw_counter)
+            .with_view(|v| v.estimate_cardinality(&query_filter, &hw_counter))
             .unwrap();
 
         assert!(estimation.min <= estimation.exp, "{estimation:#?}");
@@ -1224,7 +1230,7 @@ fn test_update_payload_index_type() {
     // set field to Integer type
     index.set_indexed(&field, Integer, &hw_counter).unwrap();
     assert_eq!(
-        *index.indexed_fields().get(&field).unwrap(),
+        *index.with_view(|v| v.indexed_fields()).get(&field).unwrap(),
         FieldType(Integer)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
@@ -1234,7 +1240,7 @@ fn test_update_payload_index_type() {
     // update field to Keyword type
     index.set_indexed(&field, Keyword, &hw_counter).unwrap();
     assert_eq!(
-        *index.indexed_fields().get(&field).unwrap(),
+        *index.with_view(|v| v.indexed_fields()).get(&field).unwrap(),
         FieldType(Keyword)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
@@ -1243,7 +1249,7 @@ fn test_update_payload_index_type() {
     // set field to Integer type (again)
     index.set_indexed(&field, Integer, &hw_counter).unwrap();
     assert_eq!(
-        *index.indexed_fields().get(&field).unwrap(),
+        *index.with_view(|v| v.indexed_fields()).get(&field).unwrap(),
         FieldType(Integer)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
@@ -1410,7 +1416,7 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
         .struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter, &hw_counter)
+        .with_view(|v| v.estimate_cardinality(&filter, &hw_counter))
         .unwrap();
 
     ensure!(estimation.primary_clauses.len() == 1);
@@ -1419,7 +1425,7 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
 
         match clause {
             PrimaryCondition::Condition(field_condition) => {
-                ensure!(*field_condition == Box::new(expected_primary_clause));
+                ensure!(**field_condition == expected_primary_clause);
             }
             o => panic!("unexpected primary clause: {o:?}"),
         }
@@ -1428,16 +1434,18 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
     let hw_counter = HardwareCounterCell::new();
 
     let payload_index = test_segments.struct_segment.payload_index.borrow();
-    let filter_context = payload_index.filter_context(&filter, &hw_counter).unwrap();
-    let exact = test_segments
-        .struct_segment
-        .id_tracker
-        .borrow()
-        .point_mappings()
-        .iter_internal()
-        .filter(|x| filter_context.check(*x))
-        .collect_vec()
-        .len();
+    let exact = payload_index.with_view(|v| {
+        let filter_context = v.filter_context(&filter, &hw_counter).unwrap();
+        test_segments
+            .struct_segment
+            .id_tracker
+            .borrow()
+            .point_mappings()
+            .iter_internal()
+            .filter(|x| filter_context.check(*x))
+            .collect_vec()
+            .len()
+    });
 
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");

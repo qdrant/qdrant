@@ -281,7 +281,7 @@ impl HNSWIndex {
         let progress_main_graph = build_main_graph.then(|| progress.subtask("main_graph"));
         let additional_links_params: Option<(ProgressTracker, Vec<(ProgressTracker, JsonPath)>)> =
             (payload_m.m > 0)
-                .then(|| payload_index_ref.indexed_fields())
+                .then(|| payload_index_ref.with_view(|v| v.indexed_fields()))
                 .filter(|fields| !fields.is_empty())
                 .map(|fields| {
                     let progress_additional_links = progress.subtask("additional_links");
@@ -678,11 +678,9 @@ impl HNSWIndex {
                     Ok(())
                 };
 
-                payload_index_ref.for_each_payload_block(
-                    &field,
-                    full_scan_threshold,
-                    &mut process_block,
-                )?;
+                payload_index_ref.with_view(|v| {
+                    v.for_each_payload_block(&field, full_scan_threshold, &mut process_block)
+                })?;
             }
 
             let indexed_payload_vectors = indexed_vectors_set.count_ones();
@@ -766,12 +764,11 @@ impl HNSWIndex {
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        let cardinality_estimation =
-            payload_index.estimate_cardinality(&filter, &disposed_hw_counter)?;
         let point_mappings = id_tracker.point_mappings();
 
-        Ok(payload_index
-            .iter_filtered_points(
+        payload_index.with_view(|v| {
+            let cardinality_estimation = v.estimate_cardinality(&filter, &disposed_hw_counter)?;
+            Ok(v.iter_filtered_points(
                 &filter,
                 id_tracker,
                 &point_mappings,
@@ -782,6 +779,7 @@ impl HNSWIndex {
             )?
             .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
             .collect())
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1086,7 +1084,7 @@ impl HNSWIndex {
                 1.0
             } else {
                 let query_point_cardinality =
-                    payload_index.estimate_cardinality(filter, &hw_counter)?;
+                    payload_index.with_view(|v| v.estimate_cardinality(filter, &hw_counter))?;
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
@@ -1114,79 +1112,83 @@ impl HNSWIndex {
                 return Ok(None);
             };
 
-            // Quantized vectors are "link vectors"
-            let link_scorer_filtered = FilteredScorer::new(
-                vector.to_owned(),
-                &vector_storage,
-                Some(quantized_vectors),
-                filter
-                    .map(|f| {
-                        payload_index
-                            .filter_context(f, &hw_counter)
-                            .map(BoxCow::Owned)
-                    })
-                    .transpose()?,
-                deleted_points,
-                vector_query_context.hardware_counter(),
-            )?;
-            let Some(link_scorer_filtered_bytes) = link_scorer_filtered.scorer_bytes() else {
-                return Ok(None);
-            };
+            payload_index.with_view(|payload_index_view| {
+                // Quantized vectors are "link vectors"
+                let link_scorer_filtered = FilteredScorer::new(
+                    vector.to_owned(),
+                    &vector_storage,
+                    Some(quantized_vectors),
+                    filter
+                        .map(|f| {
+                            payload_index_view
+                                .filter_context(f, &hw_counter)
+                                .map(BoxCow::Owned)
+                        })
+                        .transpose()?,
+                    deleted_points,
+                    vector_query_context.hardware_counter(),
+                )?;
+                let Some(link_scorer_filtered_bytes) = link_scorer_filtered.scorer_bytes() else {
+                    return Ok(None);
+                };
 
-            // Full vectors are "base vectors"
-            let base_scorer = new_raw_scorer(
-                vector.to_owned(),
-                &vector_storage,
-                vector_query_context.hardware_counter(),
-            )?;
-            let Some(base_scorer_bytes) = base_scorer.scorer_bytes() else {
-                return Ok(None);
-            };
+                // Full vectors are "base vectors"
+                let base_scorer = new_raw_scorer(
+                    vector.to_owned(),
+                    &vector_storage,
+                    vector_query_context.hardware_counter(),
+                )?;
+                let Some(base_scorer_bytes) = base_scorer.scorer_bytes() else {
+                    return Ok(None);
+                };
 
-            Ok(Some(self.graph.search_with_vectors(
-                top,
-                std::cmp::max(ef, oversampled_top),
-                &link_scorer_filtered,
-                &link_scorer_filtered_bytes,
-                base_scorer_bytes,
-                custom_entry_points,
-                &vector_query_context.is_stopped(),
-            )?))
+                Ok(Some(self.graph.search_with_vectors(
+                    top,
+                    std::cmp::max(ef, oversampled_top),
+                    &link_scorer_filtered,
+                    &link_scorer_filtered_bytes,
+                    base_scorer_bytes,
+                    custom_entry_points,
+                    &vector_query_context.is_stopped(),
+                )?))
+            })
         };
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
-            let filter_context = filter
-                .map(|f| payload_index.filter_context(f, &hw_counter))
-                .transpose()?;
-            let points_scorer = Self::construct_search_scorer(
-                vector,
-                &vector_storage,
-                quantized_vectors.as_ref(),
-                deleted_points,
-                params,
-                vector_query_context.hardware_counter(),
-                filter_context,
-            )?;
+            payload_index.with_view(|payload_index_view| {
+                let filter_context = filter
+                    .map(|f| payload_index_view.filter_context(f, &hw_counter))
+                    .transpose()?;
+                let points_scorer = Self::construct_search_scorer(
+                    vector,
+                    &vector_storage,
+                    quantized_vectors.as_ref(),
+                    deleted_points,
+                    params,
+                    vector_query_context.hardware_counter(),
+                    filter_context,
+                )?;
 
-            let search_result = self.graph.search(
-                oversampled_top,
-                ef,
-                algorithm,
-                points_scorer,
-                custom_entry_points,
-                &is_stopped,
-            )?;
+                let search_result = self.graph.search(
+                    oversampled_top,
+                    ef,
+                    algorithm,
+                    points_scorer,
+                    custom_entry_points,
+                    &is_stopped,
+                )?;
 
-            postprocess_search_result(
-                search_result,
-                id_tracker.deleted_point_bitslice(),
-                &vector_storage,
-                quantized_vectors.as_ref(),
-                vector,
-                params,
-                top,
-                vector_query_context.hardware_counter(),
-            )
+                postprocess_search_result(
+                    search_result,
+                    id_tracker.deleted_point_bitslice(),
+                    &vector_storage,
+                    quantized_vectors.as_ref(),
+                    vector,
+                    params,
+                    top,
+                    vector_query_context.hardware_counter(),
+                )
+            })
         };
 
         // Try to use graph with vectors first.
@@ -1310,20 +1312,29 @@ impl HNSWIndex {
 
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
-        let query_cardinality = payload_index.estimate_cardinality(filter, hw_counter)?;
         let point_mappings = id_tracker.point_mappings();
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let filtered_points = payload_index.iter_filtered_points(
-            filter,
-            &*id_tracker,
-            &point_mappings,
-            &query_cardinality,
-            hw_counter,
-            is_stopped,
-            // No deferred filtering here since it's HNSW index.
-            None,
-        )?;
-        self.search_plain_batched(vectors, filtered_points, top, params, vector_query_context)
+        let filtered_points: Vec<PointOffsetType> = payload_index.with_view(|v| {
+            let query_cardinality = v.estimate_cardinality(filter, hw_counter)?;
+            v.iter_filtered_points(
+                filter,
+                &*id_tracker,
+                &point_mappings,
+                &query_cardinality,
+                hw_counter,
+                is_stopped,
+                // No deferred filtering here since it's HNSW index.
+                None,
+            )
+            .map(|it| it.collect())
+        })?;
+        self.search_plain_batched(
+            vectors,
+            filtered_points.into_iter(),
+            top,
+            params,
+            vector_query_context,
+        )
     }
 
     fn discover_search_with_graph(
@@ -1521,8 +1532,8 @@ impl VectorIndexRead for HNSWIndex {
 
                 let hw_counter = query_context.hardware_counter();
 
-                let query_point_cardinality =
-                    payload_index.estimate_cardinality(query_filter, &hw_counter)?;
+                let query_point_cardinality = payload_index
+                    .with_view(|v| v.estimate_cardinality(query_filter, &hw_counter))?;
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
@@ -1555,16 +1566,21 @@ impl VectorIndexRead for HNSWIndex {
                     );
                 }
 
-                let filter_context = payload_index.filter_context(query_filter, &hw_counter)?;
+                // Fast cardinality estimation is not enough, do sample estimation of cardinality.
+                // The filter context's lifetime is tied to the view, so the sample check
+                // must run inside `with_view` -- the recursive search dispatches re-borrow
+                // payload_index on their own.
+                let use_graph = payload_index.with_view(|v| {
+                    let filter_context = v.filter_context(query_filter, &hw_counter)?;
+                    Ok::<_, OperationError>(sample_check_cardinality(
+                        id_tracker.sample_ids(Some(vector_storage.deleted_vector_bitslice())),
+                        |idx| filter_context.check(idx),
+                        self.config.full_scan_threshold,
+                        available_vector_count, // Check cardinality among available vectors
+                    ))
+                })?;
 
-                // Fast cardinality estimation is not enough, do sample estimation of cardinality
-                let id_tracker = self.id_tracker.borrow();
-                if sample_check_cardinality(
-                    id_tracker.sample_ids(Some(vector_storage.deleted_vector_bitslice())),
-                    |idx| filter_context.check(idx),
-                    self.config.full_scan_threshold,
-                    available_vector_count, // Check cardinality among available vectors
-                ) {
+                if use_graph {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
