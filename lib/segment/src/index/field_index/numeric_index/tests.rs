@@ -851,7 +851,7 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
 /// `lib/segment/src/segment/tests/test_immutable_payload_index_files.rs`.
 #[test]
 fn test_remove_reopen() {
-    use crate::index::field_index::PayloadFieldIndex;
+    use crate::index::field_index::PayloadFieldIndexRead;
 
     let hw_acc = HwMeasurementAcc::new();
     let hw_counter = hw_acc.get_counter_cell();

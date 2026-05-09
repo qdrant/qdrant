@@ -8,7 +8,7 @@ use super::mutable_bool_index::MutableBoolIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
-    ValueIndexer,
+    PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -112,20 +112,10 @@ impl ImmutableBoolIndex {
     }
 }
 
-impl PayloadFieldIndex for ImmutableBoolIndex {
+impl PayloadFieldIndexRead for ImmutableBoolIndex {
     #[inline]
     fn count_indexed_points(&self) -> usize {
         self.0.count_indexed_points()
-    }
-
-    #[inline]
-    fn wipe(self) -> OperationResult<()> {
-        self.0.wipe()
-    }
-
-    #[inline]
-    fn files(&self) -> Vec<PathBuf> {
-        self.0.files()
     }
 
     #[inline]
@@ -154,6 +144,18 @@ impl PayloadFieldIndex for ImmutableBoolIndex {
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.0.for_each_payload_block(threshold, key, f)
+    }
+}
+
+impl PayloadFieldIndex for ImmutableBoolIndex {
+    #[inline]
+    fn wipe(self) -> OperationResult<()> {
+        self.0.wipe()
+    }
+
+    #[inline]
+    fn files(&self) -> Vec<PathBuf> {
+        self.0.files()
     }
 
     #[inline]

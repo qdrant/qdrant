@@ -299,7 +299,7 @@ mod tests {
         use common::counter::hardware_counter::HardwareCounterCell;
         use common::types::PointOffsetType;
 
-        use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
+        use crate::index::field_index::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 
         let payloads: Vec<_> = vec![
             serde_json::json!(

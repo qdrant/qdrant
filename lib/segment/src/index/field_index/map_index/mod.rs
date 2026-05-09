@@ -30,7 +30,8 @@ use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::utils::value_to_integer;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
+    PrimaryCondition, ValueIndexer,
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::index::query_estimator::combine_should_estimations;
@@ -720,10 +721,6 @@ where
 }
 
 impl PayloadFieldIndex for MapIndex<str> {
-    fn count_indexed_points(&self) -> usize {
-        self.get_indexed_points()
-    }
-
     fn wipe(self) -> OperationResult<()> {
         self.wipe()
     }
@@ -738,6 +735,12 @@ impl PayloadFieldIndex for MapIndex<str> {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.immutable_files()
+    }
+}
+
+impl PayloadFieldIndexRead for MapIndex<str> {
+    fn count_indexed_points(&self) -> usize {
+        self.get_indexed_points()
     }
 
     fn filter<'a>(
@@ -870,10 +873,6 @@ impl PayloadFieldIndex for MapIndex<str> {
 }
 
 impl PayloadFieldIndex for MapIndex<UuidIntType> {
-    fn count_indexed_points(&self) -> usize {
-        self.get_indexed_points()
-    }
-
     fn wipe(self) -> OperationResult<()> {
         self.wipe()
     }
@@ -888,6 +887,12 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.immutable_files()
+    }
+}
+
+impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
+    fn count_indexed_points(&self) -> usize {
+        self.get_indexed_points()
     }
 
     fn filter<'a>(
@@ -1074,10 +1079,6 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 }
 
 impl PayloadFieldIndex for MapIndex<IntPayloadType> {
-    fn count_indexed_points(&self) -> usize {
-        self.get_indexed_points()
-    }
-
     fn wipe(self) -> OperationResult<()> {
         self.wipe()
     }
@@ -1092,6 +1093,12 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.immutable_files()
+    }
+}
+
+impl PayloadFieldIndexRead for MapIndex<IntPayloadType> {
+    fn count_indexed_points(&self) -> usize {
+        self.get_indexed_points()
     }
 
     fn filter<'a>(

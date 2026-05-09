@@ -13,7 +13,7 @@ use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
-    PrimaryCondition,
+    PayloadFieldIndexRead, PrimaryCondition,
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -264,10 +264,6 @@ impl MutableNullIndex {
 }
 
 impl PayloadFieldIndex for MutableNullIndex {
-    fn count_indexed_points(&self) -> usize {
-        self.storage.has_values_flags.len()
-    }
-
     fn wipe(self) -> OperationResult<()> {
         let base_dir = self.base_dir.clone();
         // drop mmap handles before deleting files
@@ -297,6 +293,12 @@ impl PayloadFieldIndex for MutableNullIndex {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new() // everything is mutable
+    }
+}
+
+impl PayloadFieldIndexRead for MutableNullIndex {
+    fn count_indexed_points(&self) -> usize {
+        self.storage.has_values_flags.len()
     }
 
     fn filter<'a>(
