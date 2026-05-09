@@ -12,7 +12,7 @@ use tempfile::{Builder, TempDir};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
 use crate::fixtures::payload_fixtures::random_full_text_payload;
-use crate::index::field_index::field_index_base::PayloadFieldIndex;
+use crate::index::field_index::field_index_base::{PayloadFieldIndex, PayloadFieldIndexRead};
 use crate::index::field_index::full_text_index::inverted_index::{
     ARRAY_BOUNDARY_SENTINEL, Document, ParsedQuery, TokenId, TokenSet,
 };

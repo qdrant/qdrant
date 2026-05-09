@@ -5,5 +5,5 @@ mod value_indexer;
 
 pub use builder::{FieldIndexBuilder, FieldIndexBuilderTrait};
 pub use field_index::FieldIndex;
-pub use payload_field_index::PayloadFieldIndex;
+pub use payload_field_index::{PayloadFieldIndex, PayloadFieldIndexRead};
 pub use value_indexer::ValueIndexer;

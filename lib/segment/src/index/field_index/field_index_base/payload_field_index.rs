@@ -8,19 +8,14 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{FieldCondition, PayloadKeyType};
 
-pub trait PayloadFieldIndex {
+/// Read-only operations available on every payload field index.
+///
+/// Split out from [`PayloadFieldIndex`] so consumers that only need to query
+/// the index (filtering, cardinality, payload-block iteration) can take a
+/// `&dyn PayloadFieldIndexRead` without depending on storage-lifecycle methods.
+pub trait PayloadFieldIndexRead {
     /// Return number of points with at least one value indexed in here
     fn count_indexed_points(&self) -> usize;
-
-    /// Remove db content or files of the current payload index
-    fn wipe(self) -> OperationResult<()>;
-
-    /// Return function that flushes all pending updates to disk.
-    fn flusher(&self) -> Flusher;
-
-    fn files(&self) -> Vec<PathBuf>;
-
-    fn immutable_files(&self) -> Vec<PathBuf>;
 
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
@@ -46,4 +41,20 @@ pub trait PayloadFieldIndex {
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()>;
+}
+
+/// Storage-lifecycle operations on top of [`PayloadFieldIndexRead`].
+///
+/// Owners of the index implement this; read-only consumers can depend on the
+/// supertrait alone.
+pub trait PayloadFieldIndex: PayloadFieldIndexRead {
+    /// Remove db content or files of the current payload index
+    fn wipe(self) -> OperationResult<()>;
+
+    /// Return function that flushes all pending updates to disk.
+    fn flusher(&self) -> Flusher;
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 }

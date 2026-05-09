@@ -21,7 +21,8 @@ use crate::index::field_index::geo_hash::{
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
+    PrimaryCondition, ValueIndexer,
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -505,10 +506,6 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
 }
 
 impl PayloadFieldIndex for GeoMapIndex {
-    fn count_indexed_points(&self) -> usize {
-        self.points_count()
-    }
-
     fn wipe(self) -> OperationResult<()> {
         match self {
             GeoMapIndex::Mutable(index) => index.wipe(),
@@ -539,6 +536,12 @@ impl PayloadFieldIndex for GeoMapIndex {
             GeoMapIndex::Immutable(index) => index.immutable_files(),
             GeoMapIndex::Storage(index) => index.immutable_files(),
         }
+    }
+}
+
+impl PayloadFieldIndexRead for GeoMapIndex {
+    fn count_indexed_points(&self) -> usize {
+        self.points_count()
     }
 
     fn filter<'a>(

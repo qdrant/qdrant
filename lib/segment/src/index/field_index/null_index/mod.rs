@@ -7,7 +7,7 @@ pub use immutable_null_index::ImmutableNullIndex;
 pub use mutable_null_index::MutableNullIndex;
 use serde_json::Value;
 
-use super::PayloadFieldIndex;
+use super::{PayloadFieldIndex, PayloadFieldIndexRead};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -123,39 +123,11 @@ impl NullIndex {
     }
 }
 
-impl PayloadFieldIndex for NullIndex {
+impl PayloadFieldIndexRead for NullIndex {
     fn count_indexed_points(&self) -> usize {
         match self {
             NullIndex::Mutable(mutable) => mutable.count_indexed_points(),
             NullIndex::Immutable(immutable) => immutable.count_indexed_points(),
-        }
-    }
-
-    fn wipe(self) -> OperationResult<()> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.wipe(),
-            NullIndex::Immutable(immutable) => immutable.wipe(),
-        }
-    }
-
-    fn flusher(&self) -> crate::common::Flusher {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.flusher(),
-            NullIndex::Immutable(immutable) => immutable.flusher(),
-        }
-    }
-
-    fn files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.files(),
-            NullIndex::Immutable(immutable) => immutable.files(),
-        }
-    }
-
-    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.immutable_files(),
-            NullIndex::Immutable(immutable) => immutable.immutable_files(),
         }
     }
 
@@ -192,6 +164,36 @@ impl PayloadFieldIndex for NullIndex {
         match self {
             NullIndex::Mutable(mutable) => mutable.for_each_payload_block(threshold, key, f),
             NullIndex::Immutable(immutable) => immutable.for_each_payload_block(threshold, key, f),
+        }
+    }
+}
+
+impl PayloadFieldIndex for NullIndex {
+    fn wipe(self) -> OperationResult<()> {
+        match self {
+            NullIndex::Mutable(mutable) => mutable.wipe(),
+            NullIndex::Immutable(immutable) => immutable.wipe(),
+        }
+    }
+
+    fn flusher(&self) -> crate::common::Flusher {
+        match self {
+            NullIndex::Mutable(mutable) => mutable.flusher(),
+            NullIndex::Immutable(immutable) => immutable.flusher(),
+        }
+    }
+
+    fn files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            NullIndex::Mutable(mutable) => mutable.files(),
+            NullIndex::Immutable(immutable) => immutable.files(),
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            NullIndex::Mutable(mutable) => mutable.immutable_files(),
+            NullIndex::Immutable(immutable) => immutable.immutable_files(),
         }
     }
 }

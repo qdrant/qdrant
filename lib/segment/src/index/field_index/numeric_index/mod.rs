@@ -39,7 +39,8 @@ use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
+    PrimaryCondition, ValueIndexer,
 };
 use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, decode_u128_key_ascending,
@@ -807,10 +808,6 @@ impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> PayloadFi
 where
     Vec<T>: Blob,
 {
-    fn count_indexed_points(&self) -> usize {
-        self.get_points_count()
-    }
-
     fn wipe(self) -> OperationResult<()> {
         match self {
             NumericIndexInner::Mutable(index) => index.wipe(),
@@ -829,6 +826,16 @@ where
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         NumericIndexInner::immutable_files(self)
+    }
+}
+
+impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> PayloadFieldIndexRead
+    for NumericIndexInner<T>
+where
+    Vec<T>: Blob,
+{
+    fn count_indexed_points(&self) -> usize {
+        self.get_points_count()
     }
 
     fn filter<'a>(

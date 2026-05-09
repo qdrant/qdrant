@@ -21,7 +21,7 @@ use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::full_text_index::tokenizers::TokenizerTextKind;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
-    ValueIndexer,
+    PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -501,10 +501,6 @@ impl ValueIndexer for FullTextIndex {
 }
 
 impl PayloadFieldIndex for FullTextIndex {
-    fn count_indexed_points(&self) -> usize {
-        self.points_count()
-    }
-
     fn wipe(self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.wipe(),
@@ -535,6 +531,12 @@ impl PayloadFieldIndex for FullTextIndex {
             Self::Immutable(index) => index.immutable_files(),
             Self::Mmap(index) => index.immutable_files(),
         }
+    }
+}
+
+impl PayloadFieldIndexRead for FullTextIndex {
+    fn count_indexed_points(&self) -> usize {
+        self.points_count()
     }
 
     fn filter<'a>(

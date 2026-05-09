@@ -4,7 +4,7 @@ use immutable_bool_index::ImmutableBoolIndex;
 use mutable_bool_index::MutableBoolIndex;
 
 use super::facet_index::FacetIndex;
-use super::{PayloadFieldIndex, ValueIndexer};
+use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::{IndexMutability, StorageType};
@@ -155,39 +155,11 @@ impl From<ImmutableBoolIndex> for BoolIndex {
     }
 }
 
-impl PayloadFieldIndex for BoolIndex {
+impl PayloadFieldIndexRead for BoolIndex {
     fn count_indexed_points(&self) -> usize {
         match self {
             BoolIndex::Mmap(index) => index.count_indexed_points(),
             BoolIndex::Immutable(index) => index.count_indexed_points(),
-        }
-    }
-
-    fn wipe(self) -> OperationResult<()> {
-        match self {
-            BoolIndex::Mmap(index) => index.wipe(),
-            BoolIndex::Immutable(index) => index.wipe(),
-        }
-    }
-
-    fn flusher(&self) -> crate::common::Flusher {
-        match self {
-            BoolIndex::Mmap(index) => index.flusher(),
-            BoolIndex::Immutable(index) => index.flusher(),
-        }
-    }
-
-    fn files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            BoolIndex::Mmap(index) => index.files(),
-            BoolIndex::Immutable(index) => index.files(),
-        }
-    }
-
-    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            BoolIndex::Mmap(index) => index.immutable_files(),
-            BoolIndex::Immutable(index) => index.immutable_files(),
         }
     }
 
@@ -222,6 +194,36 @@ impl PayloadFieldIndex for BoolIndex {
         match self {
             BoolIndex::Mmap(index) => index.for_each_payload_block(threshold, key, f),
             BoolIndex::Immutable(index) => index.for_each_payload_block(threshold, key, f),
+        }
+    }
+}
+
+impl PayloadFieldIndex for BoolIndex {
+    fn wipe(self) -> OperationResult<()> {
+        match self {
+            BoolIndex::Mmap(index) => index.wipe(),
+            BoolIndex::Immutable(index) => index.wipe(),
+        }
+    }
+
+    fn flusher(&self) -> crate::common::Flusher {
+        match self {
+            BoolIndex::Mmap(index) => index.flusher(),
+            BoolIndex::Immutable(index) => index.flusher(),
+        }
+    }
+
+    fn files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            BoolIndex::Mmap(index) => index.files(),
+            BoolIndex::Immutable(index) => index.files(),
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            BoolIndex::Mmap(index) => index.immutable_files(),
+            BoolIndex::Immutable(index) => index.immutable_files(),
         }
     }
 }
