@@ -16,4 +16,4 @@ use crate::error::GridstoreError;
 pub(crate) type Result<T> = std::result::Result<T, GridstoreError>;
 
 /// Concrete tracker type used by gridstore (universal io over mmap).
-pub(crate) type Tracker = tracker::Tracker<MmapFile>;
+pub(crate) type TrackerMmap = tracker::Tracker<MmapFile>;
