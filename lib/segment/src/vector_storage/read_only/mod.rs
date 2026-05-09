@@ -26,7 +26,7 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
     MultiDenseChunked(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementType, S>>),
     MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
     MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
-    Sparse(Box<ReadOnlySparseVectorStorage>),
+    Sparse(Box<ReadOnlySparseVectorStorage<S>>),
 }
 
 impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {

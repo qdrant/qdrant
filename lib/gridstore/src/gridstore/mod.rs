@@ -28,7 +28,7 @@ use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::pages::{Pages, page_path};
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, ValuePointer};
-use crate::{Result, Tracker};
+use crate::{Result, TrackerMmap};
 
 pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> + Send>;
 
@@ -39,7 +39,7 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 #[derive(Debug)]
 pub struct Gridstore<V> {
     pub(super) config: StorageConfig,
-    pub(super) tracker: Arc<RwLock<Tracker>>,
+    pub(super) tracker: Arc<RwLock<TrackerMmap>>,
     pub(super) pages: Arc<RwLock<Pages<MmapFile>>>,
     /// MmapBitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
@@ -112,7 +112,7 @@ impl<V: Blob> Gridstore<V> {
         let bitmask = MmapBitmask::create(&base_path, config.clone())?;
 
         let storage = Self {
-            tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None)?)),
+            tracker: Arc::new(RwLock::new(TrackerMmap::new(&base_path, None)?)),
             pages: Arc::new(RwLock::new(Pages::new(base_path.clone()))),
             base_path,
             config,
@@ -482,7 +482,7 @@ impl<V> Gridstore<V> {
 
     /// Write pending updates to the tracker and flush it.
     fn flush_tracker(
-        tracker: &Arc<RwLock<Tracker>>,
+        tracker: &Arc<RwLock<TrackerMmap>>,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {

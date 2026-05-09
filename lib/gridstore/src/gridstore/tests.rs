@@ -1080,7 +1080,7 @@ fn test_live_reload() {
     storage.flusher()().unwrap();
 
     // Step 2: Open a reader
-    let mut reader = GridstoreReader::<Payload>::open(path.clone()).unwrap();
+    let mut reader = GridstoreReader::<Payload, MmapFile>::open(path.clone()).unwrap();
     assert_eq!(reader.max_point_offset(), 2);
 
     // Step 3: Verify reader sees initial data
@@ -1156,7 +1156,7 @@ fn test_live_reload_across_pages() {
     let initial_pages = storage.pages.read().num_pages();
 
     // Open reader
-    let mut reader = GridstoreReader::<Payload>::open(path.clone()).unwrap();
+    let mut reader = GridstoreReader::<Payload, MmapFile>::open(path.clone()).unwrap();
     assert_eq!(reader.max_point_offset(), first_batch);
 
     // Verify reader can read all initial data

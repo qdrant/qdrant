@@ -2,6 +2,7 @@ use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use gridstore::GridstoreReader;
 use sparse::common::sparse_vector::SparseVector;
 
@@ -12,8 +13,8 @@ use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
 
 #[derive(Debug)]
-pub struct ReadOnlySparseVectorStorage {
-    storage: GridstoreReader<StoredSparseVector>,
+pub struct ReadOnlySparseVectorStorage<S: UniversalRead> {
+    storage: GridstoreReader<StoredSparseVector, S>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -23,7 +24,7 @@ pub struct ReadOnlySparseVectorStorage {
     next_point_offset: usize,
 }
 
-impl VectorStorageRead for ReadOnlySparseVectorStorage {
+impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
     fn distance(&self) -> Distance {
         SPARSE_VECTOR_DISTANCE
     }
