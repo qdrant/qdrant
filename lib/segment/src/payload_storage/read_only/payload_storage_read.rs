@@ -6,7 +6,7 @@ use common::universal_io::UniversalRead;
 use crate::common::operation_error::OperationResult;
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
-use crate::types::Payload;
+use crate::types::{OwnedPayloadRef, Payload};
 
 impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     fn get(
@@ -32,6 +32,15 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
+    }
+
+    fn payload_ref(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<OwnedPayloadRef<'_>> {
+        let payload = self.get(point_offset, hw_counter)?;
+        Ok(OwnedPayloadRef::from(payload))
     }
 
     fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>

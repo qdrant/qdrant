@@ -14,6 +14,7 @@ use crate::index::query_optimization::optimized_filter::{
 };
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, Filter, MinShould};
 
 impl StructPayloadIndex {
@@ -36,10 +37,10 @@ impl StructPayloadIndex {
     /// # Result
     ///
     /// Optimized query + Cardinality estimation
-    pub fn optimize_filter<'a>(
+    pub fn optimize_filter<'a, P: PayloadStorageRead + 'a>(
         &'a self,
         filter: &'a Filter,
-        payload_provider: PayloadProvider,
+        payload_provider: PayloadProvider<P>,
         total: usize,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(OptimizedFilter<'a>, CardinalityEstimation)> {
@@ -105,10 +106,10 @@ impl StructPayloadIndex {
         ))
     }
 
-    pub fn convert_conditions<'a>(
+    pub fn convert_conditions<'a, P: PayloadStorageRead + 'a>(
         &'a self,
         conditions: &'a [Condition],
-        payload_provider: PayloadProvider,
+        payload_provider: PayloadProvider<P>,
         total: usize,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OptimizedCondition<'a>, CardinalityEstimation)>> {
@@ -130,10 +131,10 @@ impl StructPayloadIndex {
             .collect()
     }
 
-    fn optimize_should<'a>(
+    fn optimize_should<'a, P: PayloadStorageRead + 'a>(
         &'a self,
         conditions: &'a [Condition],
-        payload_provider: PayloadProvider,
+        payload_provider: PayloadProvider<P>,
         total: usize,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)> {
@@ -146,11 +147,11 @@ impl StructPayloadIndex {
         Ok((conditions, combine_should_estimations(&estimations, total)))
     }
 
-    fn optimize_min_should<'a>(
+    fn optimize_min_should<'a, P: PayloadStorageRead + 'a>(
         &'a self,
         conditions: &'a [Condition],
         min_count: usize,
-        payload_provider: PayloadProvider,
+        payload_provider: PayloadProvider<P>,
         total: usize,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)> {
@@ -171,10 +172,10 @@ impl StructPayloadIndex {
         ))
     }
 
-    fn optimize_must<'a>(
+    fn optimize_must<'a, P: PayloadStorageRead + 'a>(
         &'a self,
         conditions: &'a [Condition],
-        payload_provider: PayloadProvider,
+        payload_provider: PayloadProvider<P>,
         total: usize,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)> {
@@ -187,10 +188,10 @@ impl StructPayloadIndex {
         Ok((conditions, combine_must_estimations(&estimations, total)))
     }
 
-    fn optimize_must_not<'a>(
+    fn optimize_must_not<'a, P: PayloadStorageRead + 'a>(
         &'a self,
         conditions: &'a [Condition],
-        payload_provider: PayloadProvider,
+        payload_provider: PayloadProvider<P>,
         total: usize,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)> {

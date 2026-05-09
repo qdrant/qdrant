@@ -9,7 +9,7 @@ use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
-use crate::types::Payload;
+use crate::types::{OwnedPayloadRef, Payload};
 
 impl PayloadStorageRead for InMemoryPayloadStorage {
     fn get(
@@ -30,6 +30,17 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
     ) -> OperationResult<Payload> {
         // In memory => No optimizations available.
         self.get(point_id, hw_counter)
+    }
+
+    fn payload_ref(
+        &self,
+        point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<OwnedPayloadRef<'_>> {
+        Ok(self
+            .payload_ptr(point_id)
+            .map(OwnedPayloadRef::from)
+            .unwrap_or_else(|| OwnedPayloadRef::from(Payload::default())))
     }
 
     fn iter<F>(&self, mut callback: F, _hw_counter: &HardwareCounterCell) -> OperationResult<()>

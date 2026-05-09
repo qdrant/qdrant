@@ -9,6 +9,7 @@ use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
+use crate::payload_storage::PayloadStorageRead;
 use crate::types::{DateTimePayloadType, PayloadContainer, UuidPayloadType};
 
 pub type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> MultiValue<Value> + 'a>;
@@ -44,10 +45,10 @@ impl StructPayloadIndex {
     }
 }
 
-fn variable_retriever<'a, 'q>(
+fn variable_retriever<'a, 'q, P: PayloadStorageRead + 'q>(
     indices: &'a HashMap<JsonPath, Vec<FieldIndex>>,
     json_path: &JsonPath,
-    payload_provider: PayloadProvider,
+    payload_provider: PayloadProvider<P>,
     hw_counter: &'q HardwareCounterCell,
 ) -> VariableRetrieverFn<'q>
 where
@@ -68,11 +69,11 @@ where
         })
 }
 
-fn payload_variable_retriever(
-    payload_provider: PayloadProvider,
+fn payload_variable_retriever<'a, P: PayloadStorageRead + 'a>(
+    payload_provider: PayloadProvider<P>,
     json_path: JsonPath,
-    hw_counter: &HardwareCounterCell,
-) -> VariableRetrieverFn<'_> {
+    hw_counter: &'a HardwareCounterCell,
+) -> VariableRetrieverFn<'a> {
     let retriever_fn = move |point_id: PointOffsetType| {
         payload_provider.with_payload(
             point_id,
@@ -241,7 +242,7 @@ mod tests {
     use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
     use crate::types::Payload;
 
-    pub fn fixture_payload_provider() -> PayloadProvider {
+    pub fn fixture_payload_provider() -> PayloadProvider<PayloadStorageEnum> {
         // Create an in-memory payload storage and populate it with some payload maps containing numbers and geo points.
         let mut in_memory_storage = InMemoryPayloadStorage::default();
 

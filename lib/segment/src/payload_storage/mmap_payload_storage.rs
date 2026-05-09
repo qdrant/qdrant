@@ -12,7 +12,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
-use crate::types::{Payload, PayloadKeyTypeRef};
+use crate::types::{OwnedPayloadRef, Payload, PayloadKeyTypeRef};
 
 const STORAGE_PATH: &str = "payload_storage";
 
@@ -106,6 +106,15 @@ impl PayloadStorageRead for MmapPayloadStorage {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
+    }
+
+    fn payload_ref(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<OwnedPayloadRef<'_>> {
+        let payload = self.get(point_offset, hw_counter)?;
+        Ok(OwnedPayloadRef::from(payload))
     }
 
     fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>

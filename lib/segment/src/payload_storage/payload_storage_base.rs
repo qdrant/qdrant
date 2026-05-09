@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
-use crate::types::{Filter, Payload};
+use crate::types::{Filter, OwnedPayloadRef, Payload};
 
 /// Read-only trait for payload data storage.
 ///
@@ -26,6 +26,20 @@ pub trait PayloadStorageRead {
         point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
+
+    /// Return a borrowed or owned reference to the payload for `point_offset`.
+    ///
+    /// In-memory implementations should return `OwnedPayloadRef::Ref(...)` to
+    /// avoid a clone on the hot path. On-disk implementations may materialise
+    /// a copy and return `OwnedPayloadRef::Owned(...)`.
+    ///
+    /// For points without payload, return an empty payload via
+    /// `OwnedPayloadRef::Owned(...)` so the caller never has to handle `None`.
+    fn payload_ref(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<OwnedPayloadRef<'_>>;
 
     /// Iterate over all stored payload and apply the provided callback.
     /// Stop iteration if callback returns false or error.
