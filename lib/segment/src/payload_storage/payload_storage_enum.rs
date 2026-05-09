@@ -11,7 +11,7 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
-use crate::types::Payload;
+use crate::types::{OwnedPayloadRef, Payload};
 
 #[derive(Debug)]
 pub enum PayloadStorageEnum {
@@ -57,6 +57,20 @@ impl PayloadStorageRead for PayloadStorageEnum {
                 s.get_sequential(point_offset, hw_counter)
             }
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_offset, hw_counter),
+        }
+    }
+
+    fn payload_ref(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<OwnedPayloadRef<'_>> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.payload_ref(point_offset, hw_counter)
+            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.payload_ref(point_offset, hw_counter),
         }
     }
 

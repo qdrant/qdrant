@@ -14,6 +14,7 @@ use crate::index::field_index::null_index::NullIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
     select_nested_indexes,
@@ -27,10 +28,10 @@ use crate::vector_storage::VectorStorageRead;
 mod match_converter;
 
 impl StructPayloadIndex {
-    pub fn condition_converter<'a>(
+    pub fn condition_converter<'a, P: PayloadStorageRead + 'a>(
         &'a self,
         condition: &'a Condition,
-        payload_provider: PayloadProvider,
+        payload_provider: PayloadProvider<P>,
         hw_counter: &HardwareCounterCell,
     ) -> ConditionCheckerFn<'a> {
         let id_tracker = self.id_tracker.borrow();
