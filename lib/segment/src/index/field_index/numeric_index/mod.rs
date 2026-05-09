@@ -1,6 +1,9 @@
 pub mod immutable_numeric_index;
 pub mod mmap_numeric_index;
 pub mod mutable_numeric_index;
+mod numeric_field_index;
+
+pub use numeric_field_index::{NumericFieldIndex, NumericFieldIndexRead};
 
 #[cfg(test)]
 mod tests;

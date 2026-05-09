@@ -17,10 +17,8 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::facet_index::FacetIndexEnum;
-use crate::index::field_index::{
-    CardinalityEstimation, FacetIndex, NumericFieldIndex, NumericFieldIndexRead,
-    PayloadBlockCondition,
-};
+use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
+use crate::index::field_index::{CardinalityEstimation, FacetIndex, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;

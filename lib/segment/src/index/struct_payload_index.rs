@@ -25,9 +25,9 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
+use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::field_index::{
-    CardinalityEstimation, FacetIndex, FieldIndex, NumericFieldIndexRead, PayloadBlockCondition,
-    PrimaryCondition,
+    CardinalityEstimation, FacetIndex, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
 use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::query_estimator::estimate_filter;
