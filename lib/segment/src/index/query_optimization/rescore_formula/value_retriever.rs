@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -7,45 +7,13 @@ use serde_json::{Number, Value};
 use crate::common::utils::MultiValue;
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{DateTimePayloadType, PayloadContainer, UuidPayloadType};
 
 pub type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> MultiValue<Value> + 'a>;
 
-impl StructPayloadIndex {
-    /// Prepares optimized functions to extract each of the variables, given a point id.
-    pub(crate) fn retrievers_map<'a, 'q>(
-        &'a self,
-        variables: HashSet<JsonPath>,
-        hw_counter: &'q HardwareCounterCell,
-    ) -> HashMap<JsonPath, VariableRetrieverFn<'q>>
-    where
-        'a: 'q,
-    {
-        let payload_provider = PayloadProvider::new(self.payload.clone());
-
-        // prepare extraction of the variables from field indices or payload.
-        let mut var_retrievers = HashMap::new();
-        for key in variables {
-            let payload_provider = payload_provider.clone();
-
-            let retriever = variable_retriever(
-                &self.field_indexes,
-                &key,
-                payload_provider.clone(),
-                hw_counter,
-            );
-
-            var_retrievers.insert(key, retriever);
-        }
-
-        var_retrievers
-    }
-}
-
-fn variable_retriever<'a, 'q, P: PayloadStorageRead + 'q>(
+pub(crate) fn variable_retriever<'a, 'q, P: PayloadStorageRead + 'q>(
     indices: &'a HashMap<JsonPath, Vec<FieldIndex>>,
     json_path: &JsonPath,
     payload_provider: PayloadProvider<P>,

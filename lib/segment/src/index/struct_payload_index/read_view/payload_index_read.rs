@@ -8,7 +8,7 @@ use common::either_variant::EitherVariant;
 use common::iterator_ext::IteratorExt;
 use common::types::{PointOffsetType, ScoreType};
 
-use super::StructPayloadIndex;
+use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::index::PayloadIndexRead;
@@ -24,10 +24,16 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
 };
+use crate::vector_storage::VectorStorageRead;
 
-impl PayloadIndexRead for StructPayloadIndex {
+impl<'a, P, I, V> PayloadIndexRead for StructPayloadIndexReadView<'a, P, I, V>
+where
+    P: PayloadStorageRead,
+    I: IdTrackerRead,
+    V: VectorStorageRead,
+{
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.config().indices.to_schemas()
+        self.config.indices.to_schemas()
     }
 
     fn estimate_cardinality(
@@ -63,12 +69,11 @@ impl PayloadIndexRead for StructPayloadIndex {
     ) -> OperationResult<Vec<PointOffsetType>> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(filter, hw_counter)?;
-        let id_tracker = self.id_tracker.borrow();
-        let point_mappings = id_tracker.point_mappings();
+        let point_mappings = self.id_tracker.point_mappings();
         let result = self
             .iter_filtered_points(
                 filter,
-                &*id_tracker,
+                self.id_tracker,
                 &point_mappings,
                 &query_cardinality,
                 hw_counter,
@@ -135,16 +140,16 @@ impl PayloadIndexRead for StructPayloadIndex {
         ))
     }
 
-    fn iter_filtered_points<'a, I: IdTrackerRead>(
-        &'a self,
-        filter: &'a Filter,
-        id_tracker: &'a I,
-        point_mappings: &'a PointMappingsRefEnum<'a>,
-        query_cardinality: &'a CardinalityEstimation,
-        hw_counter: &'a HardwareCounterCell,
-        is_stopped: &'a AtomicBool,
+    fn iter_filtered_points<'b, IT: IdTrackerRead>(
+        &'b self,
+        filter: &'b Filter,
+        id_tracker: &'b IT,
+        point_mappings: &'b PointMappingsRefEnum<'b>,
+        query_cardinality: &'b CardinalityEstimation,
+        hw_counter: &'b HardwareCounterCell,
+        is_stopped: &'b AtomicBool,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'b> {
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
 
@@ -232,11 +237,11 @@ impl PayloadIndexRead for StructPayloadIndex {
         })
     }
 
-    fn filter_context<'a>(
-        &'a self,
-        filter: &'a Filter,
+    fn filter_context<'b>(
+        &'b self,
+        filter: &'b Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Box<dyn FilterContext + 'a>> {
+    ) -> OperationResult<Box<dyn FilterContext + 'b>> {
         Ok(Box::new(self.struct_filtered_context(filter, hw_counter)?))
     }
 

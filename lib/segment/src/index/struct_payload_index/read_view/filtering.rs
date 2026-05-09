@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use super::StructPayloadIndex;
+use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
@@ -9,10 +9,16 @@ use crate::index::field_index::{CardinalityEstimation, PrimaryCondition, Resolve
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::json_path::JsonPath;
+use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition};
 use crate::vector_storage::VectorStorageRead;
 
-impl StructPayloadIndex {
+impl<'a, P, I, V> StructPayloadIndexReadView<'a, P, I, V>
+where
+    P: PayloadStorageRead,
+    I: IdTrackerRead,
+    V: VectorStorageRead,
+{
     pub fn estimate_field_condition(
         &self,
         condition: &FieldCondition,
@@ -38,11 +44,11 @@ impl StructPayloadIndex {
             .transpose()
     }
 
-    pub(super) fn query_field<'a>(
-        &'a self,
-        condition: &'a PrimaryCondition,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    pub(super) fn query_field<'q>(
+        &'q self,
+        condition: &'q PrimaryCondition,
+        hw_counter: &'q HardwareCounterCell,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'q>>> {
         match condition {
             PrimaryCondition::Condition(field_condition) => {
                 let Some(field_indexes) = self.field_indexes.get(&field_condition.key) else {
@@ -62,11 +68,11 @@ impl StructPayloadIndex {
         }
     }
 
-    pub fn struct_filtered_context<'a>(
-        &'a self,
-        filter: &'a Filter,
+    pub fn struct_filtered_context<'q>(
+        &'q self,
+        filter: &'q Filter,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<StructFilterContext<'a>> {
+    ) -> OperationResult<StructFilterContext<'q>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
         let (optimized_filter, _) = self.optimize_filter(
@@ -108,10 +114,9 @@ impl StructPayloadIndex {
             }
             Condition::HasId(has_id) => {
                 let point_ids = has_id.has_id.clone();
-                let id_tracker = self.id_tracker.borrow();
                 let resolved_point_offsets: Vec<PointOffsetType> = point_ids
                     .iter()
-                    .filter_map(|external_id| id_tracker.internal_id(*external_id))
+                    .filter_map(|external_id| self.id_tracker.internal_id(*external_id))
                     .collect();
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
@@ -139,9 +144,9 @@ impl StructPayloadIndex {
                 .estimate_field_condition(field_condition, nested_path, hw_counter)?
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
 
-            Condition::CustomIdChecker(cond) => cond
-                .0
-                .estimate_cardinality(self.id_tracker.borrow().available_point_count()),
+            Condition::CustomIdChecker(cond) => {
+                cond.0.estimate_cardinality(self.available_point_count())
+            }
         })
     }
 }

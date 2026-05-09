@@ -446,7 +446,10 @@ impl Segment {
         &mut self,
         desired_schemas: &HashMap<PayloadKeyType, PayloadFieldSchema>,
     ) -> OperationResult<()> {
-        let schema_applied = self.payload_index.borrow().indexed_fields();
+        let schema_applied = self
+            .payload_index
+            .borrow()
+            .with_view(|v| v.indexed_fields());
         let schema_config = desired_schemas;
 
         // Create or update payload indices if they don't match configuration

@@ -71,8 +71,10 @@ impl PlainVectorIndex {
         let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
         if let Some(payload_filter) = filter {
-            let payload_index = self.payload_index.borrow();
-            let cardinality = payload_index.estimate_cardinality(payload_filter, hw_counter)?;
+            let cardinality = self
+                .payload_index
+                .borrow()
+                .with_view(|v| v.estimate_cardinality(payload_filter, hw_counter))?;
             let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
             Ok(scan_size <= indexing_threshold_bytes)
         } else {
@@ -139,13 +141,9 @@ impl VectorIndexRead for PlainVectorIndex {
 
         let mut search_results = match filter {
             Some(filter) => {
-                let payload_index = self.payload_index.borrow();
-                let filtered_ids_vec = payload_index.query_points(
-                    filter,
-                    &hw_counter,
-                    &is_stopped,
-                    deferred_internal_id,
-                )?;
+                let filtered_ids_vec = self.payload_index.borrow().with_view(|v| {
+                    v.query_points(filter, &hw_counter, &is_stopped, deferred_internal_id)
+                })?;
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => batch_searcher.peek_top_all(&is_stopped, deferred_internal_id)?,
