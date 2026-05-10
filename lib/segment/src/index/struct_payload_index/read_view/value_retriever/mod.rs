@@ -1,13 +1,14 @@
+mod helpers;
+
 use std::collections::{HashMap, HashSet};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 
+use self::helpers::variable_retriever;
 use super::StructPayloadIndexReadView;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::index::query_optimization::rescore_formula::value_retriever::{
-    VariableRetrieverFn, variable_retriever,
-};
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::vector_storage::VectorStorageRead;
