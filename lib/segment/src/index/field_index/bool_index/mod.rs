@@ -1,3 +1,4 @@
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use immutable_bool_index::ImmutableBoolIndex;
@@ -8,7 +9,11 @@ use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::{
+    AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, ValueVariants,
+};
 
 pub mod immutable_bool_index;
 pub mod mutable_bool_index;
@@ -194,6 +199,55 @@ impl PayloadFieldIndexRead for BoolIndex {
         match self {
             BoolIndex::Mmap(index) => index.for_each_payload_block(threshold, key, f),
             BoolIndex::Immutable(index) => index.for_each_payload_block(threshold, key, f),
+        }
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let cond_match = r#match.as_ref()?;
+        let hw_counter = hw_acc.get_counter_cell();
+        // BoolIndex only serves Match::Value(Bool). `Match::Any` /
+        // `Match::Except` over booleans aren't supported by the legacy
+        // helpers either, so they return None here. Text variants are
+        // for FullTextIndex.
+        match cond_match {
+            Match::Value(MatchValue {
+                value: ValueVariants::Bool(is_true),
+            }) => {
+                let is_true = *is_true;
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    self.check_values_any(point_id, is_true, &hw_counter)
+                }))
+            }
+            Match::Value(MatchValue {
+                value: ValueVariants::String(_) | ValueVariants::Integer(_),
+            })
+            | Match::Any(MatchAny {
+                any: AnyVariants::Strings(_) | AnyVariants::Integers(_),
+            })
+            | Match::Except(MatchExcept {
+                except: AnyVariants::Strings(_) | AnyVariants::Integers(_),
+            })
+            | Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_) => None,
         }
     }
 }

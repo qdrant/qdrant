@@ -34,20 +34,15 @@ pub fn get_match_checkers(
 fn get_match_value_checker(
     value_variant: ValueVariants,
     index: &FieldIndex,
-    hw_acc: HwMeasurementAcc,
+    _hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'_>> {
-    // Map cases (String/KeywordIndex, String/UuidMapIndex,
-    // Integer/IntMapIndex) are served via `condition_checker` on
-    // `MapIndex<K>`. Only `(Bool, BoolIndex)` remains here until
-    // `BoolIndex` migrates in a follow-up PR.
+    // Every typed `Match::Value(...)` case is now served via
+    // `condition_checker` on the typed index (BoolIndex / MapIndex<K>).
+    // Explicit list below to keep this exhaustive so a new
+    // `FieldIndex` or `ValueVariants` variant forces a decision.
     match (value_variant, index) {
-        (ValueVariants::Bool(is_true), FieldIndex::BoolIndex(index)) => {
-            let hw_counter = hw_acc.get_counter_cell();
-            Some(Box::new(move |point_id: PointOffsetType| {
-                index.check_values_any(point_id, is_true, &hw_counter)
-            }))
-        }
-        (ValueVariants::Bool(_), FieldIndex::DatetimeIndex(_))
+        (ValueVariants::Bool(_), FieldIndex::BoolIndex(_))
+        | (ValueVariants::Bool(_), FieldIndex::DatetimeIndex(_))
         | (ValueVariants::Bool(_), FieldIndex::FloatIndex(_))
         | (ValueVariants::Bool(_), FieldIndex::FullTextIndex(_))
         | (ValueVariants::Bool(_), FieldIndex::GeoIndex(_))
