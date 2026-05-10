@@ -3,10 +3,7 @@ use common::types::PointOffsetType;
 
 use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
-use crate::types::{
-    AnyVariants, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
-    ValueVariants,
-};
+use crate::types::{AnyVariants, Match, MatchAny, MatchExcept, MatchValue, ValueVariants};
 
 pub fn get_match_checkers(
     index: &FieldIndex,
@@ -15,19 +12,14 @@ pub fn get_match_checkers(
 ) -> Option<ConditionCheckerFn<'_>> {
     match cond_match {
         Match::Value(MatchValue { value }) => get_match_value_checker(value, index, hw_acc),
-        Match::Text(MatchText { text }) => {
-            get_match_text_checker(text, TextQueryType::Text, index, hw_acc)
-        }
-        Match::TextAny(MatchTextAny { text_any }) => {
-            get_match_text_checker(text_any, TextQueryType::TextAny, index, hw_acc)
-        }
-        Match::Phrase(MatchPhrase { phrase }) => {
-            get_match_text_checker(phrase, TextQueryType::Phrase, index, hw_acc)
-        }
         Match::Any(MatchAny { any }) => get_match_any_checker(any, index, hw_acc),
         Match::Except(MatchExcept { except }) => {
             Some(get_match_except_checker(except, index, hw_acc))
         }
+        // Text / TextAny / Phrase are served by `FullTextIndex` via
+        // `condition_checker` on the typed index — no other variant
+        // ever handled them.
+        Match::Text(_) | Match::TextAny(_) | Match::Phrase(_) => None,
     }
 }
 
@@ -124,54 +116,4 @@ fn get_match_except_checker(
     // any point that has at least one value in the index — the value
     // can't possibly be in the type-mismatched list.
     Box::new(|point_id: PointOffsetType| index.values_count(point_id) > 0)
-}
-
-enum TextQueryType {
-    Phrase,
-    Text,
-    TextAny,
-}
-
-fn get_match_text_checker(
-    text: String,
-    query_type: TextQueryType,
-    index: &FieldIndex,
-    hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'_>> {
-    let hw_counter = hw_acc.get_counter_cell();
-    match index {
-        FieldIndex::FullTextIndex(full_text_index) => {
-            let query_opt = match query_type {
-                TextQueryType::Phrase => full_text_index.parse_phrase_query(&text, &hw_counter),
-                TextQueryType::Text => full_text_index.parse_text_query(&text, &hw_counter),
-                TextQueryType::TextAny => full_text_index.parse_text_any_query(&text, &hw_counter),
-            };
-
-            let parsed_query = match query_opt {
-                Ok(Some(query)) => query,
-                Ok(None) => return Some(Box::new(|_| false)),
-                Err(_) => {
-                    // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
-                    return Some(Box::new(|_| false));
-                }
-            };
-
-            Some(Box::new(move |point_id: PointOffsetType| {
-                // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
-                full_text_index
-                    .check_match(&parsed_query, point_id)
-                    .unwrap_or(false)
-            }))
-        }
-        FieldIndex::BoolIndex(_)
-        | FieldIndex::DatetimeIndex(_)
-        | FieldIndex::FloatIndex(_)
-        | FieldIndex::GeoIndex(_)
-        | FieldIndex::IntIndex(_)
-        | FieldIndex::IntMapIndex(_)
-        | FieldIndex::KeywordIndex(_)
-        | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_)
-        | FieldIndex::NullIndex(_) => None,
-    }
 }
