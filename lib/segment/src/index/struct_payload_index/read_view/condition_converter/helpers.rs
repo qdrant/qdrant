@@ -16,6 +16,15 @@ pub(super) fn field_condition_index<'a>(
     field_condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'a>> {
+    // Try the polymorphic dispatch first. As variants migrate their
+    // condition handling into `PayloadFieldIndexRead::condition_checker`,
+    // this short-circuits more cases. The legacy match below shrinks
+    // until it can be deleted entirely (see
+    // docs/plans/field-index-read-trait/condition-checker-migration/).
+    if let Some(checker) = index.condition_checker(field_condition, hw_acc.clone()) {
+        return Some(checker);
+    }
+
     match field_condition {
         FieldCondition {
             r#match: Some(cond_match),
