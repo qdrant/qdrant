@@ -7,8 +7,7 @@ use crate::index::field_index::null_index::NullIndex;
 use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::types::{
-    DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon, GeoRadius,
-    IntPayloadType, Range, RangeInterface,
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Range, RangeInterface,
 };
 
 pub(super) fn field_condition_index<'a>(
@@ -36,21 +35,6 @@ pub(super) fn field_condition_index<'a>(
         } => get_range_checkers(index, *cond, hw_acc),
 
         FieldCondition {
-            geo_radius: Some(geo_radius),
-            ..
-        } => get_geo_radius_checkers(index, *geo_radius, hw_acc),
-
-        FieldCondition {
-            geo_bounding_box: Some(geo_bounding_box),
-            ..
-        } => get_geo_bounding_box_checkers(index, *geo_bounding_box, hw_acc),
-
-        FieldCondition {
-            geo_polygon: Some(geo_polygon),
-            ..
-        } => get_geo_polygon_checkers(index, geo_polygon.clone(), hw_acc),
-
-        FieldCondition {
             is_empty: Some(is_empty),
             ..
         } => get_is_empty_checker(index, *is_empty),
@@ -64,9 +48,14 @@ pub(super) fn field_condition_index<'a>(
             key: _,
             r#match: None,
             range: None,
-            geo_radius: None,
-            geo_bounding_box: None,
-            geo_polygon: None,
+            // Geo conditions are served via `condition_checker` on
+            // `GeoMapIndex`; if we got here, no Geo-handling index was
+            // available for this field. Returning `None` falls back to
+            // the payload check, matching the prior behaviour for
+            // non-Geo variants.
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
             // We can't use index for this condition, since some indices don't count values,
             // like boolean index, where [true, true, true] is the same as [true]. Count should be 3 but they think is 1.
             //
@@ -75,80 +64,6 @@ pub(super) fn field_condition_index<'a>(
             is_empty: None,
             is_null: None,
         } => None,
-    }
-}
-
-fn get_geo_polygon_checkers(
-    index: &FieldIndex,
-    geo_polygon: GeoPolygon,
-    hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'_>> {
-    let polygon_wrapper = geo_polygon.convert();
-    let hw_counter = hw_acc.get_counter_cell();
-    match index {
-        FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            geo_index.check_values_any(point_id, &hw_counter, |value| {
-                polygon_wrapper.check_point(value)
-            })
-        })),
-        FieldIndex::BoolIndex(_)
-        | FieldIndex::DatetimeIndex(_)
-        | FieldIndex::FloatIndex(_)
-        | FieldIndex::FullTextIndex(_)
-        | FieldIndex::IntIndex(_)
-        | FieldIndex::IntMapIndex(_)
-        | FieldIndex::KeywordIndex(_)
-        | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_)
-        | FieldIndex::NullIndex(_) => None,
-    }
-}
-
-fn get_geo_radius_checkers(
-    index: &FieldIndex,
-    geo_radius: GeoRadius,
-    hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'_>> {
-    let hw_counter = hw_acc.get_counter_cell();
-    match index {
-        FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            geo_index.check_values_any(point_id, &hw_counter, |value| geo_radius.check_point(value))
-        })),
-        FieldIndex::BoolIndex(_)
-        | FieldIndex::DatetimeIndex(_)
-        | FieldIndex::FloatIndex(_)
-        | FieldIndex::FullTextIndex(_)
-        | FieldIndex::IntIndex(_)
-        | FieldIndex::IntMapIndex(_)
-        | FieldIndex::KeywordIndex(_)
-        | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_)
-        | FieldIndex::NullIndex(_) => None,
-    }
-}
-
-fn get_geo_bounding_box_checkers(
-    index: &FieldIndex,
-    geo_bounding_box: GeoBoundingBox,
-    hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'_>> {
-    let hw_counter = hw_acc.get_counter_cell();
-    match index {
-        FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            geo_index.check_values_any(point_id, &hw_counter, |value| {
-                geo_bounding_box.check_point(value)
-            })
-        })),
-        FieldIndex::BoolIndex(_)
-        | FieldIndex::DatetimeIndex(_)
-        | FieldIndex::FloatIndex(_)
-        | FieldIndex::FullTextIndex(_)
-        | FieldIndex::IntIndex(_)
-        | FieldIndex::IntMapIndex(_)
-        | FieldIndex::KeywordIndex(_)
-        | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_)
-        | FieldIndex::NullIndex(_) => None,
     }
 }
 

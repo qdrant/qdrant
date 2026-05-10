@@ -2,6 +2,7 @@ use std::cmp::{max, min};
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
@@ -25,6 +26,7 @@ use crate::index::field_index::{
     PrimaryCondition, ValueIndexer,
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
@@ -661,6 +663,50 @@ impl PayloadFieldIndexRead for GeoMapIndex {
                     cardinality: size,
                 })
             })
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_radius,
+            geo_bounding_box,
+            geo_polygon,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let hw_counter = hw_acc.get_counter_cell();
+
+        if let Some(geo_radius) = *geo_radius {
+            return Some(Box::new(move |point_id: PointOffsetType| {
+                self.check_values_any(point_id, &hw_counter, |value| geo_radius.check_point(value))
+            }));
+        }
+        if let Some(geo_bounding_box) = *geo_bounding_box {
+            return Some(Box::new(move |point_id: PointOffsetType| {
+                self.check_values_any(point_id, &hw_counter, |value| {
+                    geo_bounding_box.check_point(value)
+                })
+            }));
+        }
+        if let Some(geo_polygon) = geo_polygon.as_ref() {
+            let polygon_wrapper = geo_polygon.convert();
+            return Some(Box::new(move |point_id: PointOffsetType| {
+                self.check_values_any(point_id, &hw_counter, |value| {
+                    polygon_wrapper.check_point(value)
+                })
+            }));
+        }
+        None
     }
 }
 
