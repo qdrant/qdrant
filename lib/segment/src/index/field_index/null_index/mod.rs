@@ -1,6 +1,7 @@
 pub mod immutable_null_index;
 pub mod mutable_null_index;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 pub use immutable_null_index::ImmutableNullIndex;
@@ -10,7 +11,9 @@ use serde_json::Value;
 use super::{PayloadFieldIndex, PayloadFieldIndexRead};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::FieldCondition;
 
 pub enum NullIndex {
     Mutable(MutableNullIndex),
@@ -165,6 +168,38 @@ impl PayloadFieldIndexRead for NullIndex {
             NullIndex::Mutable(mutable) => mutable.for_each_payload_block(threshold, key, f),
             NullIndex::Immutable(immutable) => immutable.for_each_payload_block(threshold, key, f),
         }
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        _hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty,
+            is_null,
+        } = condition;
+
+        if let Some(is_empty) = *is_empty {
+            return Some(Box::new(move |point_id: PointOffsetType| {
+                self.values_is_empty(point_id) == is_empty
+            }));
+        }
+        if let Some(is_null) = *is_null {
+            return Some(Box::new(move |point_id: PointOffsetType| {
+                self.values_is_null(point_id) == is_null
+            }));
+        }
+        None
     }
 }
 
