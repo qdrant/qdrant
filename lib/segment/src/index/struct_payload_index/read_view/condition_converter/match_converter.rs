@@ -1,11 +1,8 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
-use indexmap::IndexSet;
-use uuid::Uuid;
 
 use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
-use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
     AnyVariants, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
     ValueVariants,
@@ -28,7 +25,9 @@ pub fn get_match_checkers(
             get_match_text_checker(phrase, TextQueryType::Phrase, index, hw_acc)
         }
         Match::Any(MatchAny { any }) => get_match_any_checker(any, index, hw_acc),
-        Match::Except(MatchExcept { except }) => get_match_except_checker(except, index, hw_acc),
+        Match::Except(MatchExcept { except }) => {
+            Some(get_match_except_checker(except, index, hw_acc))
+        }
     }
 }
 
@@ -37,26 +36,11 @@ fn get_match_value_checker(
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'_>> {
+    // Map cases (String/KeywordIndex, String/UuidMapIndex,
+    // Integer/IntMapIndex) are served via `condition_checker` on
+    // `MapIndex<K>`. Only `(Bool, BoolIndex)` remains here until
+    // `BoolIndex` migrates in a follow-up PR.
     match (value_variant, index) {
-        (ValueVariants::String(keyword), FieldIndex::KeywordIndex(index)) => {
-            let hw_counter = hw_acc.get_counter_cell();
-            Some(Box::new(move |point_id: PointOffsetType| {
-                index.check_values_any(point_id, &hw_counter, |k| k == keyword)
-            }))
-        }
-        (ValueVariants::String(value), FieldIndex::UuidMapIndex(index)) => {
-            let uuid = Uuid::parse_str(&value).map(|uuid| uuid.as_u128()).ok()?;
-            let hw_counter = hw_acc.get_counter_cell();
-            Some(Box::new(move |point_id: PointOffsetType| {
-                index.check_values_any(point_id, &hw_counter, |i| i == &uuid)
-            }))
-        }
-        (ValueVariants::Integer(value), FieldIndex::IntMapIndex(index)) => {
-            let hw_counter = hw_acc.get_counter_cell();
-            Some(Box::new(move |point_id: PointOffsetType| {
-                index.check_values_any(point_id, &hw_counter, |i| *i == value)
-            }))
-        }
         (ValueVariants::Bool(is_true), FieldIndex::BoolIndex(index)) => {
             let hw_counter = hw_acc.get_counter_cell();
             Some(Box::new(move |point_id: PointOffsetType| {
@@ -79,6 +63,7 @@ fn get_match_value_checker(
         | (ValueVariants::Integer(_), FieldIndex::FullTextIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::GeoIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::IntIndex(_))
+        | (ValueVariants::Integer(_), FieldIndex::IntMapIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::KeywordIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::UuidIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::UuidMapIndex(_))
@@ -90,7 +75,9 @@ fn get_match_value_checker(
         | (ValueVariants::String(_), FieldIndex::GeoIndex(_))
         | (ValueVariants::String(_), FieldIndex::IntIndex(_))
         | (ValueVariants::String(_), FieldIndex::IntMapIndex(_))
+        | (ValueVariants::String(_), FieldIndex::KeywordIndex(_))
         | (ValueVariants::String(_), FieldIndex::UuidIndex(_))
+        | (ValueVariants::String(_), FieldIndex::UuidMapIndex(_))
         | (ValueVariants::String(_), FieldIndex::NullIndex(_)) => None,
     }
 }
@@ -98,161 +85,50 @@ fn get_match_value_checker(
 fn get_match_any_checker(
     any_variant: AnyVariants,
     index: &FieldIndex,
-    hw_acc: HwMeasurementAcc,
+    _hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'_>> {
+    // All `Match::Any` cases against `MapIndex<K>` are served via
+    // `condition_checker` on the typed index. No other variant ever
+    // served `Any` — explicit list below to keep this exhaustive so a
+    // new `FieldIndex` variant or `AnyVariants` case forces a decision.
     match (any_variant, index) {
-        (AnyVariants::Strings(list), FieldIndex::KeywordIndex(index)) => {
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                let hw_counter = hw_acc.get_counter_cell();
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        list.iter().any(|s| s.as_str() == value)
-                    })
-                }))
-            } else {
-                let hw_counter = hw_acc.get_counter_cell();
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| list.contains(value))
-                }))
-            }
-        }
-        (AnyVariants::Strings(list), FieldIndex::UuidMapIndex(index)) => {
-            let list = list
-                .iter()
-                .map(|s| Uuid::parse_str(s).map(|uuid| uuid.as_u128()).ok())
-                .collect::<Option<IndexSet<_>>>()?;
-
-            let hw_counter = hw_acc.get_counter_cell();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| list.contains(value))
-                }))
-            }
-        }
-        (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
-            let hw_counter = hw_acc.get_counter_cell();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| list.contains(value))
-                }))
-            }
-        }
-        (AnyVariants::Integers(_), FieldIndex::BoolIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::DatetimeIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::FloatIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::FullTextIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::GeoIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::IntIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::KeywordIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::UuidIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::UuidMapIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::NullIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::BoolIndex(_))
+        (AnyVariants::Strings(_), FieldIndex::BoolIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::DatetimeIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::FloatIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::FullTextIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::GeoIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::IntIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::IntMapIndex(_))
+        | (AnyVariants::Strings(_), FieldIndex::KeywordIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::UuidIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::NullIndex(_)) => None,
+        | (AnyVariants::Strings(_), FieldIndex::UuidMapIndex(_))
+        | (AnyVariants::Strings(_), FieldIndex::NullIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::BoolIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::DatetimeIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::FloatIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::FullTextIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::GeoIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::IntIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::IntMapIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::KeywordIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::UuidIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::UuidMapIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::NullIndex(_)) => None,
     }
 }
 
 fn get_match_except_checker(
-    except: AnyVariants,
+    _except: AnyVariants,
     index: &FieldIndex,
-    hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'_>> {
-    let checker: Option<ConditionCheckerFn> = match (except, index) {
-        (AnyVariants::Strings(list), FieldIndex::KeywordIndex(index)) => {
-            let hw_counter = hw_acc.get_counter_cell();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        !list.iter().any(|s| s.as_str() == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
-                }))
-            }
-        }
-        (AnyVariants::Strings(list), FieldIndex::UuidMapIndex(index)) => {
-            let list = list
-                .iter()
-                .map(|s| Uuid::parse_str(s).map(|uuid| uuid.as_u128()).ok())
-                .collect::<Option<IndexSet<_>>>()?;
-            let hw_counter = hw_acc.get_counter_cell();
-
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        !list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
-                }))
-            }
-        }
-        (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
-            let hw_counter = hw_acc.get_counter_cell();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        !list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
-                }))
-            }
-        }
-        (AnyVariants::Strings(_), FieldIndex::IntIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::DatetimeIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::IntMapIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::FloatIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::GeoIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::FullTextIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::BoolIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::UuidIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::NullIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::IntIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::DatetimeIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::KeywordIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::FloatIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::GeoIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::FullTextIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::BoolIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::UuidIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::UuidMapIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::NullIndex(_)) => None,
-    };
-
-    if checker.is_none() {
-        return Some(Box::new(|point_id: PointOffsetType| {
-            // If there is any other value of any other index, then it's a match
-            index.values_count(point_id) > 0
-        }));
-    };
-
-    checker
+    _hw_acc: HwMeasurementAcc,
+) -> ConditionCheckerFn<'_> {
+    // Typed `Match::Except` cases against `MapIndex<K>` are served via
+    // `condition_checker` on the typed index. The legacy uniform
+    // fallback survives: when nobody handled the Except (e.g. the
+    // list's value type doesn't match any indexed field's type), match
+    // any point that has at least one value in the index — the value
+    // can't possibly be in the type-mismatched list.
+    Box::new(|point_id: PointOffsetType| index.values_count(point_id) > 0)
 }
 
 enum TextQueryType {

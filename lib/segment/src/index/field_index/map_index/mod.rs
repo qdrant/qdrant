@@ -8,6 +8,7 @@ use std::str::FromStr;
 
 use ahash::HashMap;
 use common::bitvec::{BitSlice, BitVec};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::Key;
 use common::types::PointOffsetType;
@@ -35,6 +36,8 @@ use crate::index::field_index::{
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::index::query_estimator::combine_should_estimations;
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
@@ -870,6 +873,86 @@ impl PayloadFieldIndexRead for MapIndex<str> {
             Ok(())
         })
     }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let cond_match = r#match.as_ref()?;
+        let hw_counter = hw_acc.get_counter_cell();
+        match cond_match {
+            Match::Value(MatchValue {
+                value: ValueVariants::String(keyword),
+            }) => {
+                let keyword = keyword.clone();
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    self.check_values_any(point_id, &hw_counter, |value| value == keyword.as_str())
+                }))
+            }
+            Match::Any(MatchAny {
+                any: AnyVariants::Strings(list),
+            }) => {
+                let list = list.clone();
+                if list.len() < INDEXSET_ITER_THRESHOLD {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| {
+                            list.iter().any(|s| s.as_str() == value)
+                        })
+                    }))
+                } else {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| list.contains(value))
+                    }))
+                }
+            }
+            Match::Except(MatchExcept {
+                except: AnyVariants::Strings(list),
+            }) => {
+                let list = list.clone();
+                if list.len() < INDEXSET_ITER_THRESHOLD {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| {
+                            !list.iter().any(|s| s.as_str() == value)
+                        })
+                    }))
+                } else {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
+                    }))
+                }
+            }
+            // Conditions this index can't serve: Match::Text/TextAny/Phrase
+            // (handled by FullTextIndex) and value-type mismatches (e.g.
+            // Match::Value(Integer) against a string-keyed map).
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(_) | ValueVariants::Bool(_),
+            })
+            | Match::Any(MatchAny {
+                any: AnyVariants::Integers(_),
+            })
+            | Match::Except(MatchExcept {
+                except: AnyVariants::Integers(_),
+            })
+            | Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_) => None,
+        }
+    }
 }
 
 impl PayloadFieldIndex for MapIndex<UuidIntType> {
@@ -1076,6 +1159,90 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
             Ok(())
         })
     }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let cond_match = r#match.as_ref()?;
+        let hw_counter = hw_acc.get_counter_cell();
+        match cond_match {
+            Match::Value(MatchValue {
+                value: ValueVariants::String(keyword),
+            }) => {
+                let uuid = Uuid::parse_str(keyword).map(|u| u.as_u128()).ok()?;
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    self.check_values_any(point_id, &hw_counter, |value| value == &uuid)
+                }))
+            }
+            Match::Any(MatchAny {
+                any: AnyVariants::Strings(list),
+            }) => {
+                let list = list
+                    .iter()
+                    .map(|s| Uuid::parse_str(s).map(|u| u.as_u128()).ok())
+                    .collect::<Option<IndexSet<_>>>()?;
+                if list.len() < INDEXSET_ITER_THRESHOLD {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| {
+                            list.iter().any(|i| i == value)
+                        })
+                    }))
+                } else {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| list.contains(value))
+                    }))
+                }
+            }
+            Match::Except(MatchExcept {
+                except: AnyVariants::Strings(list),
+            }) => {
+                let list = list
+                    .iter()
+                    .map(|s| Uuid::parse_str(s).map(|u| u.as_u128()).ok())
+                    .collect::<Option<IndexSet<_>>>()?;
+                if list.len() < INDEXSET_ITER_THRESHOLD {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| {
+                            !list.iter().any(|i| i == value)
+                        })
+                    }))
+                } else {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
+                    }))
+                }
+            }
+            // Conditions this index can't serve.
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(_) | ValueVariants::Bool(_),
+            })
+            | Match::Any(MatchAny {
+                any: AnyVariants::Integers(_),
+            })
+            | Match::Except(MatchExcept {
+                except: AnyVariants::Integers(_),
+            })
+            | Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_) => None,
+        }
+    }
 }
 
 impl PayloadFieldIndex for MapIndex<IntPayloadType> {
@@ -1226,6 +1393,84 @@ impl PayloadFieldIndexRead for MapIndex<IntPayloadType> {
             }
             Ok(())
         })
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let cond_match = r#match.as_ref()?;
+        let hw_counter = hw_acc.get_counter_cell();
+        match cond_match {
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(value),
+            }) => {
+                let value = *value;
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    self.check_values_any(point_id, &hw_counter, |i| *i == value)
+                }))
+            }
+            Match::Any(MatchAny {
+                any: AnyVariants::Integers(list),
+            }) => {
+                let list = list.clone();
+                if list.len() < INDEXSET_ITER_THRESHOLD {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| {
+                            list.iter().any(|i| i == value)
+                        })
+                    }))
+                } else {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| list.contains(value))
+                    }))
+                }
+            }
+            Match::Except(MatchExcept {
+                except: AnyVariants::Integers(list),
+            }) => {
+                let list = list.clone();
+                if list.len() < INDEXSET_ITER_THRESHOLD {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| {
+                            !list.iter().any(|i| i == value)
+                        })
+                    }))
+                } else {
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        self.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
+                    }))
+                }
+            }
+            // Conditions this index can't serve.
+            Match::Value(MatchValue {
+                value: ValueVariants::String(_) | ValueVariants::Bool(_),
+            })
+            | Match::Any(MatchAny {
+                any: AnyVariants::Strings(_),
+            })
+            | Match::Except(MatchExcept {
+                except: AnyVariants::Strings(_),
+            })
+            | Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_) => None,
+        }
     }
 }
 
