@@ -9,6 +9,7 @@ use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -113,6 +114,23 @@ pub trait FieldIndexRead {
         self.get_payload_field_index_read()
             .condition_checker(condition, hw_acc)
     }
+
+    /// Build a closure that extracts this index's values for a given
+    /// point as a [`MultiValue<Value>`](crate::common::utils::MultiValue).
+    ///
+    /// Returns `None` when this index can't serve point-level value
+    /// retrieval — `FullTextIndex` (callers fall back to payload) and
+    /// `NullIndex` (no underlying values to return).
+    ///
+    /// Used by rescore-formula value lookup; mirrors the shape of
+    /// [`Self::condition_checker`] (build a closure once, invoke per
+    /// point).
+    fn value_retriever<'a, 'q>(
+        &'a self,
+        hw_counter: &'q HardwareCounterCell,
+    ) -> Option<VariableRetrieverFn<'q>>
+    where
+        'a: 'q;
 
     /// Borrowed numeric view, if this index is numeric.
     ///
