@@ -18,7 +18,6 @@ use common::defaults::log_load_timing;
 use fs_err as fs;
 
 use super::field_index::FieldIndex;
-use super::field_index::facet_index::FacetIndexEnum;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
@@ -28,7 +27,6 @@ use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::visited_pool::VisitedPool;
-use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
@@ -312,15 +310,6 @@ impl StructPayloadIndex {
         };
 
         Ok(selector)
-    }
-
-    pub fn get_facet_index(&self, key: &JsonPath) -> OperationResult<FacetIndexEnum<'_>> {
-        self.field_indexes
-            .get(key)
-            .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))
-            .ok_or_else(|| OperationError::MissingMapIndexForFacet {
-                key: key.to_string(),
-            })
     }
 
     pub fn populate(&self) -> OperationResult<()> {
