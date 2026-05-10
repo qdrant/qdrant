@@ -17,6 +17,7 @@ use std::str::FromStr;
 
 use chrono::DateTime;
 use common::bitvec::{BitSlice, BitVec};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::either_variant::EitherVariant;
 use common::types::PointOffsetType;
@@ -47,6 +48,7 @@ use crate::index::key_encoding::{
     encode_f64_key_ascending, encode_i64_key_ascending, encode_u128_key_ascending,
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchValue,
@@ -998,6 +1000,51 @@ where
         };
 
         inner()?.into_iter().try_for_each(f)
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let range = range.as_ref()?;
+        // Convert the range bounds into the index's storage type `T`.
+        // Same conversion `filter` already uses — `T::from_f64` /
+        // `T::from_u128` are total functions provided by `Numericable`,
+        // so every numeric variant (Int / Float / Datetime / Uuid)
+        // can serve any `RangeInterface` shape. This brings
+        // `condition_checker` in line with `filter` (the legacy
+        // helpers were stricter, but the schema layer normally
+        // prevents cross-type range queries from reaching here).
+        let typed_range = match range {
+            RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+            RangeInterface::DateTime(datetime_range) => {
+                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
+            }
+        };
+
+        let hw_counter = hw_acc.get_counter_cell();
+        Some(Box::new(move |point_id: PointOffsetType| {
+            self.check_values_any(
+                point_id,
+                |value| typed_range.check_range(*value),
+                &hw_counter,
+            )
+        }))
     }
 }
 
