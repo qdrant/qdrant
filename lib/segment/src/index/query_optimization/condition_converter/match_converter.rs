@@ -3,7 +3,7 @@ use common::types::PointOffsetType;
 use indexmap::IndexSet;
 use uuid::Uuid;
 
-use crate::index::field_index::FieldIndex;
+use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{

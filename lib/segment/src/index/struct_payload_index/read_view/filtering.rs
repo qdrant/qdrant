@@ -5,7 +5,9 @@ use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
-use crate::index::field_index::{CardinalityEstimation, PrimaryCondition, ResolvedHasId};
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndexRead, PrimaryCondition, ResolvedHasId,
+};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::json_path::JsonPath;

@@ -12,7 +12,7 @@ use common::types::PointOffsetType;
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::{IndexesMap, check_is_empty, check_is_null};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
-use crate::index::field_index::FieldIndex;
+use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{ConditionChecker, PayloadStorageRead};

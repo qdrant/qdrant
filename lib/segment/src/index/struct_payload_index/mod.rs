@@ -317,7 +317,21 @@ impl StructPayloadIndex {
     pub fn get_facet_index(&self, key: &JsonPath) -> OperationResult<FacetIndexEnum<'_>> {
         self.field_indexes
             .get(key)
-            .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))
+            .and_then(|indexes| {
+                indexes.iter().find_map(|index| match index {
+                    FieldIndex::KeywordIndex(idx) => Some(FacetIndexEnum::Keyword(idx)),
+                    FieldIndex::IntMapIndex(idx) => Some(FacetIndexEnum::Int(idx)),
+                    FieldIndex::UuidMapIndex(idx) => Some(FacetIndexEnum::Uuid(idx)),
+                    FieldIndex::BoolIndex(idx) => Some(FacetIndexEnum::Bool(idx)),
+                    FieldIndex::IntIndex(_)
+                    | FieldIndex::DatetimeIndex(_)
+                    | FieldIndex::FloatIndex(_)
+                    | FieldIndex::GeoIndex(_)
+                    | FieldIndex::FullTextIndex(_)
+                    | FieldIndex::UuidIndex(_)
+                    | FieldIndex::NullIndex(_) => None,
+                })
+            })
             .ok_or_else(|| OperationError::MissingMapIndexForFacet {
                 key: key.to_string(),
             })

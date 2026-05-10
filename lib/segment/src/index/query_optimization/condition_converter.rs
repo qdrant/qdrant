@@ -3,8 +3,8 @@ use common::types::PointOffsetType;
 use match_converter::get_match_checkers;
 use ordered_float::OrderedFloat;
 
-use crate::index::field_index::FieldIndex;
 use crate::index::field_index::null_index::NullIndex;
+use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon, GeoRadius,

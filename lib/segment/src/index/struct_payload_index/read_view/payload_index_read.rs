@@ -13,7 +13,9 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
-use crate::index::field_index::{CardinalityEstimation, FacetIndex, PayloadBlockCondition};
+use crate::index::field_index::{
+    CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
+};
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
