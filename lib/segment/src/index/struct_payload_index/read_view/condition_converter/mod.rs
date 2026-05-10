@@ -1,15 +1,18 @@
+mod helpers;
+mod match_converter;
+
 use std::collections::HashMap;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use serde_json::Value;
 
-use super::StructPayloadIndexReadView;
-use crate::id_tracker::IdTrackerRead;
-use crate::index::query_optimization::condition_converter::{
+use self::helpers::{
     field_condition_index, get_fallback_is_empty_checker, get_is_empty_indexes,
     get_is_null_checker, get_null_index_is_empty_checker,
 };
+use super::StructPayloadIndexReadView;
+use crate::id_tracker::IdTrackerRead;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::PayloadStorageRead;

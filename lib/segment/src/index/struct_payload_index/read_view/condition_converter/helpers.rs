@@ -1,8 +1,8 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
-use match_converter::get_match_checkers;
 use ordered_float::OrderedFloat;
 
+use super::match_converter::get_match_checkers;
 use crate::index::field_index::null_index::NullIndex;
 use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
@@ -11,9 +11,7 @@ use crate::types::{
     IntPayloadType, Range, RangeInterface,
 };
 
-mod match_converter;
-
-pub fn field_condition_index<'a>(
+pub(super) fn field_condition_index<'a>(
     index: &'a FieldIndex,
     field_condition: &FieldCondition,
     hw_acc: HwMeasurementAcc,
@@ -71,7 +69,7 @@ pub fn field_condition_index<'a>(
     }
 }
 
-pub fn get_geo_polygon_checkers(
+fn get_geo_polygon_checkers(
     index: &FieldIndex,
     geo_polygon: GeoPolygon,
     hw_acc: HwMeasurementAcc,
@@ -97,7 +95,7 @@ pub fn get_geo_polygon_checkers(
     }
 }
 
-pub fn get_geo_radius_checkers(
+fn get_geo_radius_checkers(
     index: &FieldIndex,
     geo_radius: GeoRadius,
     hw_acc: HwMeasurementAcc,
@@ -120,7 +118,7 @@ pub fn get_geo_radius_checkers(
     }
 }
 
-pub fn get_geo_bounding_box_checkers(
+fn get_geo_bounding_box_checkers(
     index: &FieldIndex,
     geo_bounding_box: GeoBoundingBox,
     hw_acc: HwMeasurementAcc,
@@ -145,7 +143,7 @@ pub fn get_geo_bounding_box_checkers(
     }
 }
 
-pub fn get_range_checkers(
+fn get_range_checkers(
     index: &FieldIndex,
     range: RangeInterface,
     hw_acc: HwMeasurementAcc,
@@ -156,7 +154,7 @@ pub fn get_range_checkers(
     }
 }
 
-pub fn get_float_range_checkers(
+fn get_float_range_checkers(
     index: &FieldIndex,
     range: Range<OrderedFloat<FloatPayloadType>>,
     hw_acc: HwMeasurementAcc,
@@ -188,7 +186,7 @@ pub fn get_float_range_checkers(
     }
 }
 
-pub fn get_datetime_range_checkers(
+fn get_datetime_range_checkers(
     index: &FieldIndex,
     range: Range<DateTimePayloadType>,
     hw_acc: HwMeasurementAcc,
@@ -214,7 +212,7 @@ pub fn get_datetime_range_checkers(
     }
 }
 
-pub(in crate::index) fn get_is_empty_indexes(
+pub(super) fn get_is_empty_indexes(
     indexes: &[FieldIndex],
 ) -> (Option<&NullIndex>, Option<&FieldIndex>) {
     let mut primary_null_index: Option<&NullIndex> = None;
@@ -234,14 +232,14 @@ pub(in crate::index) fn get_is_empty_indexes(
     (primary_null_index, fallback_index)
 }
 
-pub(in crate::index) fn get_null_index_is_empty_checker(
+pub(super) fn get_null_index_is_empty_checker(
     null_index: &NullIndex,
     is_empty: bool,
 ) -> ConditionCheckerFn<'_> {
     Box::new(move |point_id: PointOffsetType| null_index.values_is_empty(point_id) == is_empty)
 }
 
-pub(in crate::index) fn get_fallback_is_empty_checker<'a>(
+pub(super) fn get_fallback_is_empty_checker<'a>(
     index: &'a FieldIndex,
     is_empty: bool,
     fallback_checker: ConditionCheckerFn<'a>,
@@ -280,7 +278,7 @@ fn get_is_empty_checker(index: &FieldIndex, is_empty: bool) -> Option<ConditionC
     }
 }
 
-pub(in crate::index) fn get_is_null_checker(
+pub(super) fn get_is_null_checker(
     index: &FieldIndex,
     is_null: bool,
 ) -> Option<ConditionCheckerFn<'_>> {
