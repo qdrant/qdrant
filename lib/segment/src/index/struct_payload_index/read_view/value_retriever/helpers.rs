@@ -2,15 +2,15 @@ use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use serde_json::{Number, Value};
+use serde_json::Value;
 
 use crate::common::utils::MultiValue;
-use crate::index::field_index::FieldIndex;
+use crate::index::field_index::{FieldIndex, FieldIndexRead};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
-use crate::types::{DateTimePayloadType, PayloadContainer, UuidPayloadType};
+use crate::types::PayloadContainer;
 
 pub(super) fn variable_retriever<'a, 'q, P: PayloadStorageRead + 'q>(
     indices: &'a HashMap<JsonPath, Vec<FieldIndex>>,
@@ -26,7 +26,7 @@ where
         .and_then(|indices| {
             indices
                 .iter()
-                .find_map(|index| indexed_variable_retriever(index, hw_counter))
+                .find_map(|index| index.value_retriever(hw_counter))
         })
         // TODO(scoreboost): optimize by reusing the same payload for all variables?
         .unwrap_or_else(|| {
@@ -69,123 +69,6 @@ fn payload_variable_retriever<'a, P: PayloadStorageRead + 'a>(
         )
     };
     Box::new(retriever_fn)
-}
-
-/// Returns function to extract all the values a point has in the index
-///
-/// If there is no appropriate index, returns None
-fn indexed_variable_retriever<'a, 'q>(
-    index: &'a FieldIndex,
-    hw_counter: &'q HardwareCounterCell,
-) -> Option<VariableRetrieverFn<'q>>
-where
-    'a: 'q,
-{
-    match index {
-        FieldIndex::IntIndex(numeric_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                numeric_index
-                    .get_values(point_id)
-                    .into_iter()
-                    .flatten()
-                    .map(|v| Value::Number(Number::from(v)))
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-        FieldIndex::IntMapIndex(map_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                map_index
-                    .get_values(point_id, hw_counter)
-                    .into_iter()
-                    .flatten()
-                    .map(|v| Value::Number(Number::from(*v)))
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-        FieldIndex::FloatIndex(numeric_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                numeric_index
-                    .get_values(point_id)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|v| Some(Value::Number(Number::from_f64(v)?)))
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-        FieldIndex::DatetimeIndex(numeric_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                numeric_index
-                    .get_values(point_id)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|v| {
-                        serde_json::to_value(DateTimePayloadType::from_timestamp(v)?).ok()
-                    })
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-        FieldIndex::KeywordIndex(keyword_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                keyword_index
-                    .get_values(point_id, hw_counter)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|v| serde_json::to_value(v).ok())
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-        FieldIndex::GeoIndex(geo_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                geo_index
-                    .get_values(point_id)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|v| serde_json::to_value(v).ok())
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-
-        FieldIndex::BoolIndex(bool_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                bool_index
-                    .get_point_values(point_id)
-                    .into_iter()
-                    .map(Value::Bool)
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-        FieldIndex::UuidMapIndex(uuid_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                uuid_index
-                    .get_values(point_id, hw_counter)
-                    .into_iter()
-                    .flatten()
-                    .map(|value| Value::String(UuidPayloadType::from_u128(*value).to_string()))
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-        FieldIndex::UuidIndex(uuid_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
-                uuid_index
-                    .get_values(point_id)
-                    .into_iter()
-                    .flatten()
-                    .map(|value| Value::String(UuidPayloadType::from_u128(value).to_string()))
-                    .collect()
-            };
-            Some(Box::new(extract_fn))
-        }
-        FieldIndex::FullTextIndex(_) => None, // Better get it from the payload
-        FieldIndex::NullIndex(_) => None,     // There should be other index for the same field
-    }
 }
 
 #[cfg(test)]
