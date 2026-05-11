@@ -12,9 +12,12 @@ use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Read-only operations available on every payload field index.
 ///
-/// Split out from [`PayloadFieldIndex`] so consumers that only need to query
-/// the index (filtering, cardinality, payload-block iteration) can take a
-/// `&dyn PayloadFieldIndexRead` without depending on storage-lifecycle methods.
+/// Split out from [`PayloadFieldIndex`] so consumers that only need to
+/// query the index (filtering, cardinality, payload-block iteration) can
+/// be generic over `F: PayloadFieldIndexRead` without depending on
+/// storage-lifecycle methods. Also a supertrait of
+/// [`FieldIndexRead`](super::field_index_read::FieldIndexRead), so
+/// `F: FieldIndexRead` consumers get these methods directly.
 pub trait PayloadFieldIndexRead {
     /// Return number of points with at least one value indexed in here
     fn count_indexed_points(&self) -> usize;

@@ -1,3 +1,4 @@
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
@@ -9,9 +10,114 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
 use crate::index::field_index::full_text_index::text_index::PayloadMatchQueryType;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
+use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, MatchTextAny};
+use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, MatchTextAny, PayloadKeyType};
+
+impl PayloadFieldIndexRead for FieldIndex {
+    fn count_indexed_points(&self) -> usize {
+        match self {
+            FieldIndex::IntIndex(idx) => idx.inner().count_indexed_points(),
+            FieldIndex::DatetimeIndex(idx) => idx.inner().count_indexed_points(),
+            FieldIndex::IntMapIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::KeywordIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::FloatIndex(idx) => idx.inner().count_indexed_points(),
+            FieldIndex::GeoIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::BoolIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::FullTextIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::UuidIndex(idx) => idx.inner().count_indexed_points(),
+            FieldIndex::UuidMapIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::NullIndex(idx) => idx.count_indexed_points(),
+        }
+    }
+
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        match self {
+            FieldIndex::IntIndex(idx) => idx.inner().filter(condition, hw_counter),
+            FieldIndex::DatetimeIndex(idx) => idx.inner().filter(condition, hw_counter),
+            FieldIndex::IntMapIndex(idx) => idx.filter(condition, hw_counter),
+            FieldIndex::KeywordIndex(idx) => idx.filter(condition, hw_counter),
+            FieldIndex::FloatIndex(idx) => idx.inner().filter(condition, hw_counter),
+            FieldIndex::GeoIndex(idx) => idx.filter(condition, hw_counter),
+            FieldIndex::BoolIndex(idx) => idx.filter(condition, hw_counter),
+            FieldIndex::FullTextIndex(idx) => idx.filter(condition, hw_counter),
+            FieldIndex::UuidIndex(idx) => idx.inner().filter(condition, hw_counter),
+            FieldIndex::UuidMapIndex(idx) => idx.filter(condition, hw_counter),
+            FieldIndex::NullIndex(idx) => idx.filter(condition, hw_counter),
+        }
+    }
+
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        match self {
+            FieldIndex::IntIndex(idx) => idx.inner().estimate_cardinality(condition, hw_counter),
+            FieldIndex::DatetimeIndex(idx) => {
+                idx.inner().estimate_cardinality(condition, hw_counter)
+            }
+            FieldIndex::IntMapIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
+            FieldIndex::KeywordIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
+            FieldIndex::FloatIndex(idx) => idx.inner().estimate_cardinality(condition, hw_counter),
+            FieldIndex::GeoIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
+            FieldIndex::BoolIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
+            FieldIndex::FullTextIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
+            FieldIndex::UuidIndex(idx) => idx.inner().estimate_cardinality(condition, hw_counter),
+            FieldIndex::UuidMapIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
+            FieldIndex::NullIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
+        }
+    }
+
+    fn for_each_payload_block(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        match self {
+            FieldIndex::IntIndex(idx) => idx.inner().for_each_payload_block(threshold, key, f),
+            FieldIndex::DatetimeIndex(idx) => {
+                idx.inner().for_each_payload_block(threshold, key, f)
+            }
+            FieldIndex::IntMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::KeywordIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::FloatIndex(idx) => idx.inner().for_each_payload_block(threshold, key, f),
+            FieldIndex::GeoIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::BoolIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::FullTextIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::UuidIndex(idx) => idx.inner().for_each_payload_block(threshold, key, f),
+            FieldIndex::UuidMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::NullIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+        }
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        match self {
+            FieldIndex::IntIndex(idx) => idx.inner().condition_checker(condition, hw_acc),
+            FieldIndex::DatetimeIndex(idx) => idx.inner().condition_checker(condition, hw_acc),
+            FieldIndex::IntMapIndex(idx) => idx.condition_checker(condition, hw_acc),
+            FieldIndex::KeywordIndex(idx) => idx.condition_checker(condition, hw_acc),
+            FieldIndex::FloatIndex(idx) => idx.inner().condition_checker(condition, hw_acc),
+            FieldIndex::GeoIndex(idx) => idx.condition_checker(condition, hw_acc),
+            FieldIndex::BoolIndex(idx) => idx.condition_checker(condition, hw_acc),
+            FieldIndex::FullTextIndex(idx) => idx.condition_checker(condition, hw_acc),
+            FieldIndex::UuidIndex(idx) => idx.inner().condition_checker(condition, hw_acc),
+            FieldIndex::UuidMapIndex(idx) => idx.condition_checker(condition, hw_acc),
+            FieldIndex::NullIndex(idx) => idx.condition_checker(condition, hw_acc),
+        }
+    }
+}
 
 impl FieldIndexRead for FieldIndex {
     /// Try to check condition for a payload given a field index.
@@ -62,22 +168,6 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidMapIndex(_) => None,
             FieldIndex::NullIndex(_) => None,
         })
-    }
-
-    fn get_payload_field_index_read(&self) -> &dyn PayloadFieldIndexRead {
-        match self {
-            FieldIndex::IntIndex(payload_field_index) => payload_field_index.inner(),
-            FieldIndex::DatetimeIndex(payload_field_index) => payload_field_index.inner(),
-            FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
-            FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
-            FieldIndex::FloatIndex(payload_field_index) => payload_field_index.inner(),
-            FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
-            FieldIndex::BoolIndex(payload_field_index) => payload_field_index,
-            FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
-            FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
-            FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index,
-            FieldIndex::NullIndex(payload_field_index) => payload_field_index,
-        }
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
