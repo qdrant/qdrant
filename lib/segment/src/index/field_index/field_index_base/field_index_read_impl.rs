@@ -83,9 +83,7 @@ impl PayloadFieldIndexRead for FieldIndex {
     ) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(idx) => idx.inner().for_each_payload_block(threshold, key, f),
-            FieldIndex::DatetimeIndex(idx) => {
-                idx.inner().for_each_payload_block(threshold, key, f)
-            }
+            FieldIndex::DatetimeIndex(idx) => idx.inner().for_each_payload_block(threshold, key, f),
             FieldIndex::IntMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
             FieldIndex::KeywordIndex(idx) => idx.for_each_payload_block(threshold, key, f),
             FieldIndex::FloatIndex(idx) => idx.inner().for_each_payload_block(threshold, key, f),
