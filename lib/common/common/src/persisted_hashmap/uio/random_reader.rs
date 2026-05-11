@@ -6,7 +6,7 @@ use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Random;
 use crate::persisted_hashmap::uio::parse_bucket_offset;
 use crate::universal_io::read::UniversalReadPipeline;
-use crate::universal_io::{ReadRange, Result, UniversalIoError, UniversalRead};
+use crate::universal_io::{ReadRange, Result, UniversalIoError, UniversalRead, UserData};
 
 pub(super) enum Request<'a, K: Key + ?Sized> {
     /// Request an entry by the given offset with unknown key.
@@ -16,21 +16,22 @@ pub(super) enum Request<'a, K: Key + ?Sized> {
 }
 
 /// State machine driver for [`UniversalHashMap::for_each_sparse`].
-struct PipelineDriver<'map, 'key, Meta, K, V, S>
+struct PipelineDriver<'map, 'key, U, K, V, S>
 where
+    U: UserData,
     K: Key + ?Sized + 'key,
     V: Sized + Copy + FromBytes + Immutable + IntoBytes + KnownLayout,
     S: UniversalRead,
 {
     map: &'map UniversalHashMap<K, V, S>,
     entry_kind: MaybeIncompleteEntryKind,
-    queue: Vec<Entry<'key, Meta, K>>,
+    queue: Vec<Entry<'key, U, K>>,
     entry_read_size_est: u64,
     file_len: u64,
 }
 
-struct Entry<'a, Meta, K: Key + ?Sized> {
-    meta: Meta,
+struct Entry<'a, U: UserData, K: Key + ?Sized> {
+    user_data: U,
     state: State<'a, K>,
 }
 
@@ -64,15 +65,16 @@ where
     ///
     /// Implementation detail: unlike [`UniversalHashMap::for_each_entry`], it
     /// will try to read only the requested entries.
-    pub(super) fn for_each_sparse<Meta, I, F, E>(
+    pub(super) fn for_each_sparse<U, I, F, E>(
         &self,
         entry_kind: MaybeIncompleteEntryKind,
         requests: I,
         mut f: F,
     ) -> Result<(), E>
     where
-        I: Iterator<Item = (Meta, Request<'key, K>)>,
-        F: FnMut(Meta, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
+        U: UserData,
+        I: Iterator<Item = (U, Request<'key, K>)>,
+        F: FnMut(U, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
         E: From<UniversalIoError>,
     {
         let mut sparse = PipelineDriver::new(self, entry_kind)?;
@@ -95,10 +97,11 @@ where
     }
 }
 
-type ScheduledEntry<'key, Meta, K> = (Entry<'key, Meta, K>, ReadRange);
+type ScheduledEntry<'key, U, K> = (Entry<'key, U, K>, ReadRange);
 
-impl<'map, 'key, Meta, K, V, S> PipelineDriver<'map, 'key, Meta, K, V, S>
+impl<'map, 'key, U, K, V, S> PipelineDriver<'map, 'key, U, K, V, S>
 where
+    U: UserData,
     K: Key + ?Sized + 'key,
     V: Copy + FromBytes + Immutable + IntoBytes + KnownLayout,
     S: UniversalRead,
@@ -119,12 +122,12 @@ where
     /// Produce the next entry to schedule.
     fn schedule_next_entry<E, F>(
         &mut self,
-        requests: &mut impl Iterator<Item = (Meta, Request<'key, K>)>,
+        requests: &mut impl Iterator<Item = (U, Request<'key, K>)>,
         f: &mut F,
-    ) -> Result<Option<ScheduledEntry<'key, Meta, K>>, E>
+    ) -> Result<Option<ScheduledEntry<'key, U, K>>, E>
     where
         E: From<UniversalIoError>,
-        F: FnMut(Meta, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
+        F: FnMut(U, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
     {
         if let Some(entry) = self.queue.pop() {
             match &entry.state {
@@ -148,7 +151,7 @@ where
             };
         }
 
-        for (meta, request) in requests.by_ref() {
+        for (user_data, request) in requests.by_ref() {
             let (state, range);
             match request {
                 Request::Offset(offset) => {
@@ -167,7 +170,7 @@ where
                 Request::Key(requested_key) => {
                     // PHF miss: no stored entry; report immediately and continue.
                     let Some(hash) = self.map.phf.get(requested_key) else {
-                        f(meta, None)?;
+                        f(user_data, None)?;
                         continue;
                     };
                     // PHF hit: schedule the bucket-offset read; transitions to
@@ -181,7 +184,7 @@ where
                     };
                 }
             }
-            let entry = Entry { meta, state };
+            let entry = Entry { user_data, state };
             return Ok(Some((entry, range.clamp::<u8>(self.file_len))));
         }
 
@@ -189,21 +192,16 @@ where
     }
 
     /// Process a completed read result.
-    fn process<E, F>(
-        &mut self,
-        entry: Entry<'key, Meta, K>,
-        data: &[u8],
-        f: &mut F,
-    ) -> Result<(), E>
+    fn process<E, F>(&mut self, entry: Entry<'key, U, K>, data: &[u8], f: &mut F) -> Result<(), E>
     where
         E: From<UniversalIoError>,
-        F: FnMut(Meta, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
+        F: FnMut(U, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
     {
         match entry.state {
             State::ReadingOffset { requested_key } => {
                 let byte_offset = self.map.entries_start + parse_bucket_offset(data)?;
                 self.queue.push(Entry {
-                    meta: entry.meta,
+                    user_data: entry.user_data,
                     state: State::ReadingEntry {
                         byte_offset,
                         buf: AlignedBuf::new_for_offset(byte_offset),
@@ -227,17 +225,17 @@ where
                     && let Some(stored_key) = parsed.key()
                 {
                     if key != stored_key {
-                        f(entry.meta, None)?;
+                        f(entry.user_data, None)?;
                         return Ok(());
                     }
                     requested_key = None;
                 }
 
                 if parsed.satisfies_kind(self.entry_kind) {
-                    f(entry.meta, Some(parsed))?;
+                    f(entry.user_data, Some(parsed))?;
                 } else {
                     self.queue.push(Entry {
-                        meta: entry.meta,
+                        user_data: entry.user_data,
                         state: State::ReadingEntry {
                             byte_offset,
                             // `+ 1` so the size strictly grows when `buf.len()` is already a

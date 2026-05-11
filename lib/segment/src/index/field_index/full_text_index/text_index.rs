@@ -7,6 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -127,11 +128,11 @@ impl FullTextIndex {
         }
     }
 
-    pub(super) fn for_each_token_id<'a, Meta>(
+    pub(super) fn for_each_token_id<'a, U: UserData>(
         &self,
-        iter: impl Iterator<Item = (Meta, &'a str)>,
+        iter: impl Iterator<Item = (U, &'a str)>,
         hw_counter: &HardwareCounterCell,
-        f: impl FnMut(Meta, Option<TokenId>),
+        f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),

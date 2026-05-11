@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use itertools::Itertools;
 
 use crate::common::operation_error::OperationResult;
@@ -400,11 +401,11 @@ pub trait InvertedIndex {
     fn points_count(&self) -> usize;
 
     /// Resolve token -> token_id and call the closure for each token_id.
-    fn for_each_token_id<'a, Meta>(
+    fn for_each_token_id<'a, U: UserData>(
         &self,
-        tokens: impl Iterator<Item = (Meta, &'a str)>,
+        tokens: impl Iterator<Item = (U, &'a str)>,
         hw_counter: &HardwareCounterCell,
-        f: impl FnMut(Meta, Option<TokenId>),
+        f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()>;
 }
 

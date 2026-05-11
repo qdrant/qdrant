@@ -11,7 +11,7 @@ use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Sequential;
 use crate::iterator_ext::ordering_iterator::OrderingIterator;
 use crate::universal_io::{
-    OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead,
+    OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead, UserData,
 };
 
 mod random_reader;
@@ -196,20 +196,21 @@ where
     }
 
     /// Read all keys and call the provided closure on each of them.
-    pub fn for_each_entry_in_iter<Meta, I, F, E>(&self, keys: I, mut f: F) -> Result<(), E>
+    pub fn for_each_entry_in_iter<U, I, F, E>(&self, keys: I, mut f: F) -> Result<(), E>
     where
-        I: IntoIterator<Item = (Meta, &'key K)>,
-        F: FnMut(Meta, Option<&[V]>) -> Result<(), E>,
+        U: UserData,
+        I: IntoIterator<Item = (U, &'key K)>,
+        F: FnMut(U, Option<&[V]>) -> Result<(), E>,
         E: From<UniversalIoError>,
     {
         self.for_each_sparse(
             MaybeIncompleteEntryKind::KeyAndValues,
             keys.into_iter()
-                .map(|(meta, key)| (meta, Request::Key(key))),
-            |meta, entry| {
+                .map(|(user_data, key)| (user_data, Request::Key(key))),
+            |user_data, entry| {
                 let values =
                     entry.map(|e| e.values().expect("KeyAndValues entry should have values"));
-                f(meta, values)
+                f(user_data, values)
             },
         )
     }
