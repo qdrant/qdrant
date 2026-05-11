@@ -9,13 +9,11 @@ use super::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
-use crate::index::hnsw_index::gpu::get_gpu_groups_count;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
-use crate::index::hnsw_index::gpu::gpu_graph_builder::{
-    GPU_MAX_VISITED_FLAGS_FACTOR, build_hnsw_on_gpu,
-};
+use crate::index::hnsw_index::gpu::gpu_graph_builder::{GPU_MAX_VISITED_FLAGS_FACTOR, build_hnsw_on_gpu};
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
+use crate::index::hnsw_index::gpu::get_gpu_groups_count;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::visited_pool::VisitedListHandle;
@@ -112,7 +110,9 @@ fn build_graph_on_gpu<'a, 'b>(
     graph_layers_builder: &GraphLayersBuilder,
     points_to_index: impl Iterator<Item = PointOffsetType>,
     entry_points_num: usize,
-    points_scorer_builder: impl Fn(PointOffsetType) -> OperationResult<FilteredScorer<'a>> + Send + Sync,
+    points_scorer_builder: impl Fn(PointOffsetType) -> OperationResult<FilteredScorer<'a>>
+    + Send
+    + Sync,
     stopped: &AtomicBool,
 ) -> OperationResult<Option<GraphLayersBuilder>> {
     if let Some(gpu_insert_context) = gpu_insert_context {
