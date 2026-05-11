@@ -1,6 +1,7 @@
 pub mod immutable_null_index;
 pub mod mutable_null_index;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 pub use immutable_null_index::ImmutableNullIndex;
@@ -10,7 +11,9 @@ use serde_json::Value;
 use super::{PayloadFieldIndex, PayloadFieldIndexRead};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::FieldCondition;
 
 pub enum NullIndex {
     Mutable(MutableNullIndex),
@@ -164,6 +167,17 @@ impl PayloadFieldIndexRead for NullIndex {
         match self {
             NullIndex::Mutable(mutable) => mutable.for_each_payload_block(threshold, key, f),
             NullIndex::Immutable(immutable) => immutable.for_each_payload_block(threshold, key, f),
+        }
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        match self {
+            NullIndex::Mutable(mutable) => mutable.condition_checker(condition, hw_acc),
+            NullIndex::Immutable(immutable) => immutable.condition_checker(condition, hw_acc),
         }
     }
 }

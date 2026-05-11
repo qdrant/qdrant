@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Read-only operations available on every payload field index.
@@ -41,6 +43,16 @@ pub trait PayloadFieldIndexRead {
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()>;
+
+    /// Convert a field condition into a per-point checker closure, if this
+    /// index can serve the condition.
+    ///
+    /// Returns `None` when the condition is not one this index understands.
+    fn condition_checker<'a>(
+        &'a self,
+        _condition: &FieldCondition,
+        _hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>>;
 }
 
 /// Storage-lifecycle operations on top of [`PayloadFieldIndexRead`].

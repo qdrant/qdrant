@@ -6,7 +6,7 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use super::FieldIndexRead;
-use super::payload_field_index::PayloadFieldIndex;
+use super::payload_field_index::{PayloadFieldIndex, PayloadFieldIndexRead};
 use super::value_indexer::ValueIndexer;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -21,14 +21,14 @@ use crate::index::field_index::null_index::NullIndex;
 use crate::index::field_index::numeric_index::{
     NumericFieldIndex, NumericFieldIndexRead, NumericIndex,
 };
-use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadIndexType, StorageType,
 };
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchPhrase,
-    MatchText, MatchTextAny, PayloadKeyType, UuidIntType, UuidPayloadType,
+    MatchText, MatchTextAny, UuidIntType, UuidPayloadType,
 };
 
 /// Common interface for all possible types of field indexes
@@ -66,6 +66,9 @@ impl std::fmt::Debug for FieldIndex {
 }
 
 impl FieldIndex {
+    /// Borrow the underlying typed index as the full
+    /// [`PayloadFieldIndex`] trait object — used for write/lifecycle
+    /// methods (`flusher`, `files`, `immutable_files`).
     fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index.inner(),
@@ -343,35 +346,20 @@ impl FieldIndexRead for FieldIndex {
         })
     }
 
-    fn count_indexed_points(&self) -> usize {
-        self.get_payload_field_index().count_indexed_points()
-    }
-
-    fn filter<'a>(
-        &'a self,
-        condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        self.get_payload_field_index().filter(condition, hw_counter)
-    }
-
-    fn estimate_cardinality(
-        &self,
-        condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<CardinalityEstimation>> {
-        self.get_payload_field_index()
-            .estimate_cardinality(condition, hw_counter)
-    }
-
-    fn for_each_payload_block(
-        &self,
-        threshold: usize,
-        key: PayloadKeyType,
-        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.get_payload_field_index()
-            .for_each_payload_block(threshold, key, f)
+    fn get_payload_field_index_read(&self) -> &dyn PayloadFieldIndexRead {
+        match self {
+            FieldIndex::IntIndex(payload_field_index) => payload_field_index.inner(),
+            FieldIndex::DatetimeIndex(payload_field_index) => payload_field_index.inner(),
+            FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
+            FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
+            FieldIndex::FloatIndex(payload_field_index) => payload_field_index.inner(),
+            FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
+            FieldIndex::BoolIndex(payload_field_index) => payload_field_index,
+            FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
+            FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
+            FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index,
+            FieldIndex::NullIndex(payload_field_index) => payload_field_index,
+        }
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
@@ -419,6 +407,38 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
             FieldIndex::NullIndex(index) => index.values_is_empty(point_id),
+        }
+    }
+
+    fn value_retriever<'a, 'q>(
+        &'a self,
+        hw_counter: &'q HardwareCounterCell,
+    ) -> Option<VariableRetrieverFn<'q>>
+    where
+        'a: 'q,
+    {
+        // Per-variant value-to-`Value` conversion lives on each typed
+        // index as an inherent `value_retriever` method (see e.g.
+        // `NumericIndex<IntPayloadType, DateTimePayloadType>::value_retriever`).
+        // This dispatch is mechanical — adding a `FieldIndex` variant
+        // forces a compile error here.
+        match self {
+            FieldIndex::IntIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::DatetimeIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::IntMapIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::KeywordIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::FloatIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::GeoIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::BoolIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::UuidIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::UuidMapIndex(index) => Some(index.value_retriever(hw_counter)),
+            // FullTextIndex: caller falls back to payload — text values
+            // are easier to read directly than reconstruct from the
+            // inverted index.
+            FieldIndex::FullTextIndex(_) => None,
+            // NullIndex: no underlying values to return; another index
+            // on the same field is expected to provide them.
+            FieldIndex::NullIndex(_) => None,
         }
     }
 
