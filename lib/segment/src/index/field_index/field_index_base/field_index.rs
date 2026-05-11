@@ -3,14 +3,13 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use serde_json::{Number, Value};
+use serde_json::Value;
 
 use super::FieldIndexRead;
 use super::payload_field_index::{PayloadFieldIndex, PayloadFieldIndexRead};
 use super::value_indexer::ValueIndexer;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::common::utils::MultiValue;
 use crate::index::field_index::bool_index::BoolIndex;
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
 use crate::index::field_index::full_text_index::text_index::{
@@ -418,98 +417,21 @@ impl FieldIndexRead for FieldIndex {
     where
         'a: 'q,
     {
+        // Per-variant value-to-`Value` conversion lives on each typed
+        // index as an inherent `value_retriever` method (see e.g.
+        // `NumericIndex<IntPayloadType, DateTimePayloadType>::value_retriever`).
+        // This dispatch is mechanical — adding a `FieldIndex` variant
+        // forces a compile error here.
         match self {
-            FieldIndex::IntIndex(numeric_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    numeric_index
-                        .get_values(point_id)
-                        .into_iter()
-                        .flatten()
-                        .map(|v| Value::Number(Number::from(v)))
-                        .collect()
-                },
-            )),
-            FieldIndex::IntMapIndex(map_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    map_index
-                        .get_values(point_id, hw_counter)
-                        .into_iter()
-                        .flatten()
-                        .map(|v| Value::Number(Number::from(*v)))
-                        .collect()
-                },
-            )),
-            FieldIndex::FloatIndex(numeric_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    numeric_index
-                        .get_values(point_id)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|v| Some(Value::Number(Number::from_f64(v)?)))
-                        .collect()
-                },
-            )),
-            FieldIndex::DatetimeIndex(numeric_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    numeric_index
-                        .get_values(point_id)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|v| {
-                            serde_json::to_value(DateTimePayloadType::from_timestamp(v)?).ok()
-                        })
-                        .collect()
-                },
-            )),
-            FieldIndex::KeywordIndex(keyword_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    keyword_index
-                        .get_values(point_id, hw_counter)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|v| serde_json::to_value(v).ok())
-                        .collect()
-                },
-            )),
-            FieldIndex::GeoIndex(geo_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    geo_index
-                        .get_values(point_id)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|v| serde_json::to_value(v).ok())
-                        .collect()
-                },
-            )),
-            FieldIndex::BoolIndex(bool_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    bool_index
-                        .get_point_values(point_id)
-                        .into_iter()
-                        .map(Value::Bool)
-                        .collect()
-                },
-            )),
-            FieldIndex::UuidMapIndex(uuid_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    uuid_index
-                        .get_values(point_id, hw_counter)
-                        .into_iter()
-                        .flatten()
-                        .map(|value| Value::String(UuidPayloadType::from_u128(*value).to_string()))
-                        .collect()
-                },
-            )),
-            FieldIndex::UuidIndex(uuid_index) => Some(Box::new(
-                move |point_id: PointOffsetType| -> MultiValue<Value> {
-                    uuid_index
-                        .get_values(point_id)
-                        .into_iter()
-                        .flatten()
-                        .map(|value| Value::String(UuidPayloadType::from_u128(value).to_string()))
-                        .collect()
-                },
-            )),
+            FieldIndex::IntIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::DatetimeIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::IntMapIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::KeywordIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::FloatIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::GeoIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::BoolIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::UuidIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::UuidMapIndex(index) => Some(index.value_retriever(hw_counter)),
             // FullTextIndex: caller falls back to payload — text values
             // are easier to read directly than reconstruct from the
             // inverted index.
