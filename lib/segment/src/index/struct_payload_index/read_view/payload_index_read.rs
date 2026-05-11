@@ -28,11 +28,12 @@ use crate::types::{
 };
 use crate::vector_storage::VectorStorageRead;
 
-impl<'a, P, I, V> PayloadIndexRead for StructPayloadIndexReadView<'a, P, I, V>
+impl<'a, P, I, V, F> PayloadIndexRead for StructPayloadIndexReadView<'a, P, I, V, F>
 where
     P: PayloadStorageRead,
     I: IdTrackerRead,
     V: VectorStorageRead,
+    F: FieldIndexRead,
 {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.config.indices.to_schemas()
