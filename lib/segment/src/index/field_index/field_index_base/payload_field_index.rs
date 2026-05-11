@@ -47,9 +47,7 @@ pub trait PayloadFieldIndexRead {
     /// Convert a field condition into a per-point checker closure, if this
     /// index can serve the condition.
     ///
-    /// Returns `None` when the condition is not one this index understands —
-    /// the default impl returns `None` so types that don't override it
-    /// fall through to whatever dispatcher the caller layered on top.
+    /// Returns `None` when the condition is not one this index understands.
     fn condition_checker<'a>(
         &'a self,
         _condition: &FieldCondition,
