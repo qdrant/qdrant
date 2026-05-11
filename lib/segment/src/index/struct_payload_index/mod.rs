@@ -350,13 +350,7 @@ impl StructPayloadIndex {
     pub fn with_view<R>(
         &self,
         f: impl FnOnce(
-            StructPayloadIndexReadView<
-                '_,
-                PayloadStorageEnum,
-                IdTrackerEnum,
-                VectorStorageEnum,
-                FieldIndex,
-            >,
+            StructPayloadIndexReadView<'_, PayloadStorageEnum, IdTrackerEnum, VectorStorageEnum>,
         ) -> R,
     ) -> R {
         let id_tracker = self.id_tracker.borrow();

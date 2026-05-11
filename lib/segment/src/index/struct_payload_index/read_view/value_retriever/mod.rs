@@ -7,19 +7,17 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use self::helpers::variable_retriever;
 use super::StructPayloadIndexReadView;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::vector_storage::VectorStorageRead;
 
-impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
+impl<'a, P, I, V> StructPayloadIndexReadView<'a, P, I, V>
 where
     P: PayloadStorageRead,
     I: IdTrackerRead,
     V: VectorStorageRead,
-    F: FieldIndexRead,
 {
     /// Prepares optimized functions to extract each of the variables, given a point id.
     pub(crate) fn retrievers_map<'b, 'q>(

@@ -15,12 +15,11 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition};
 use crate::vector_storage::VectorStorageRead;
 
-impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
+impl<'a, P, I, V> StructPayloadIndexReadView<'a, P, I, V>
 where
     P: PayloadStorageRead,
     I: IdTrackerRead,
     V: VectorStorageRead,
-    F: FieldIndexRead,
 {
     pub fn estimate_field_condition(
         &self,

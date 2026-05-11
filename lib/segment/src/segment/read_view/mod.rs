@@ -14,7 +14,6 @@ use std::collections::HashMap;
 
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::PayloadIndexRead;
-use crate::index::field_index::FieldIndex;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -51,13 +50,7 @@ where
 pub type SegmentReadViewFor<'s> = SegmentReadView<
     's,
     IdTrackerEnum,
-    StructPayloadIndexReadView<
-        's,
-        PayloadStorageEnum,
-        IdTrackerEnum,
-        VectorStorageEnum,
-        FieldIndex,
-    >,
+    StructPayloadIndexReadView<'s, PayloadStorageEnum, IdTrackerEnum, VectorStorageEnum>,
     PayloadStorageEnum,
     VectorData,
 >;

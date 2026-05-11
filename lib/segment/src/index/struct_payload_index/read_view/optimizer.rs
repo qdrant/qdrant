@@ -6,7 +6,7 @@ use itertools::Itertools;
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::field_index::{CardinalityEstimation, FieldIndexRead};
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::{
     combine_min_should_estimations, combine_must_estimations, combine_should_estimations,
     invert_estimation,
@@ -19,12 +19,11 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, Filter, MinShould};
 use crate::vector_storage::VectorStorageRead;
 
-impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
+impl<'a, P, I, V> StructPayloadIndexReadView<'a, P, I, V>
 where
     P: PayloadStorageRead,
     I: IdTrackerRead,
     V: VectorStorageRead,
-    F: FieldIndexRead,
 {
     /// Converts user-provided filtering condition into optimized representation
     ///

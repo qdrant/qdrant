@@ -35,7 +35,7 @@ fn smoke_view_over_in_memory_backends() {
     let config = PayloadConfig::default();
     let visited_pool = VisitedPool::new();
 
-    let view: StructPayloadIndexReadView<'_, _, _, VectorStorageEnum, _> =
+    let view: StructPayloadIndexReadView<'_, _, _, VectorStorageEnum> =
         StructPayloadIndexReadView {
             payload: &payload,
             id_tracker: &id_tracker,
