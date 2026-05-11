@@ -11,7 +11,9 @@ mod tests;
 pub use mmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 pub use serialize::serialize_hashmap;
 pub use structures::Key;
-use structures::{BucketOffset, Header, IncompleteEntry, PartialEntryKind, ReadResult, ValuesLen};
+use structures::{
+    BucketOffset, Header, MaybeIncompleteEntry, MaybeIncompleteEntryKind, ReadResult, ValuesLen,
+};
 pub use uio::UniversalHashMap;
 
 fn read_err(msg: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> std::io::Error {

@@ -1,7 +1,7 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::super::read_err;
-use super::{BucketOffset, IncompleteEntry, Key, PartialEntryKind, UniversalHashMap};
+use super::{BucketOffset, Key, MaybeIncompleteEntry, MaybeIncompleteEntryKind, UniversalHashMap};
 use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Random;
 use crate::persisted_hashmap::uio::parse_bucket_offset;
@@ -23,7 +23,7 @@ where
     S: UniversalRead,
 {
     map: &'map UniversalHashMap<K, V, S>,
-    entry_kind: PartialEntryKind,
+    entry_kind: MaybeIncompleteEntryKind,
     queue: Vec<Entry<'key, Meta, K>>,
     entry_read_size_est: u64,
     file_len: u64,
@@ -66,13 +66,13 @@ where
     /// will try to read only the requested entries.
     pub(super) fn for_each_sparse<Meta, I, F, E>(
         &self,
-        entry_kind: PartialEntryKind,
+        entry_kind: MaybeIncompleteEntryKind,
         requests: I,
         mut f: F,
     ) -> Result<(), E>
     where
         I: Iterator<Item = (Meta, Request<'key, K>)>,
-        F: FnMut(Meta, Option<IncompleteEntry<'_, K, V>>) -> Result<(), E>,
+        F: FnMut(Meta, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
         E: From<UniversalIoError>,
     {
         let mut sparse = PipelineDriver::new(self, entry_kind)?;
@@ -103,7 +103,10 @@ where
     V: Copy + FromBytes + Immutable + IntoBytes + KnownLayout,
     S: UniversalRead,
 {
-    fn new(map: &'map UniversalHashMap<K, V, S>, entry_kind: PartialEntryKind) -> Result<Self> {
+    fn new(
+        map: &'map UniversalHashMap<K, V, S>,
+        entry_kind: MaybeIncompleteEntryKind,
+    ) -> Result<Self> {
         Ok(Self {
             map,
             entry_kind,
@@ -121,7 +124,7 @@ where
     ) -> Result<Option<ScheduledEntry<'key, Meta, K>>, E>
     where
         E: From<UniversalIoError>,
-        F: FnMut(Meta, Option<IncompleteEntry<'_, K, V>>) -> Result<(), E>,
+        F: FnMut(Meta, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
     {
         if let Some(entry) = self.queue.pop() {
             match &entry.state {
@@ -194,7 +197,7 @@ where
     ) -> Result<(), E>
     where
         E: From<UniversalIoError>,
-        F: FnMut(Meta, Option<IncompleteEntry<'_, K, V>>) -> Result<(), E>,
+        F: FnMut(Meta, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
     {
         match entry.state {
             State::ReadingOffset { requested_key } => {
@@ -217,7 +220,8 @@ where
                 mut requested_key,
             } => {
                 buf.extend_from_slice(data);
-                let parsed = IncompleteEntry::parse(&buf).map_err(UniversalIoError::from)?;
+                let parsed =
+                    MaybeIncompleteEntry::partial_parse(&buf).map_err(UniversalIoError::from)?;
 
                 if let Some(key) = requested_key
                     && let Some(stored_key) = parsed.key()

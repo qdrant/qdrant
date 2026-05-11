@@ -3,10 +3,10 @@ use std::marker::PhantomData;
 use std::path::Path;
 
 use ph::fmph::Function;
-use sparse_reader::Request;
+use random_reader::Request;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use super::{BucketOffset, Header, IncompleteEntry, Key, PartialEntryKind, read_err};
+use super::{BucketOffset, Header, Key, MaybeIncompleteEntry, MaybeIncompleteEntryKind, read_err};
 use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Sequential;
 use crate::iterator_ext::ordering_iterator::OrderingIterator;
@@ -14,7 +14,7 @@ use crate::universal_io::{
     OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead,
 };
 
-mod sparse_reader;
+mod random_reader;
 
 /// If entries are smaller than that, it's likely more efficient to read them sequentially.
 const SEQUENTIAL_READ_THRESHOLD: u64 = 8 * 1024;
@@ -140,8 +140,9 @@ where
 
             let mut remaining: &[u8] = &buf;
             while entries_seen < entries_expected
-                && let IncompleteEntry::KeyAndValues(key, values, new_remaining) =
-                    IncompleteEntry::parse(remaining).map_err(UniversalIoError::from)?
+                && let MaybeIncompleteEntry::KeyAndValues(key, values, new_remaining) =
+                    MaybeIncompleteEntry::partial_parse(remaining)
+                        .map_err(UniversalIoError::from)?
             {
                 f(key, values)?;
                 entries_seen += 1;
@@ -172,18 +173,18 @@ where
         if self.average_entry_size < SEQUENTIAL_READ_THRESHOLD {
             self.for_each_entry(|key, _| f(key))
         } else {
-            let bytes = self.storage.read::<Sequential>(ReadRange {
+            let buckets = self.storage.read::<Sequential>(ReadRange {
                 byte_offset: self.header.buckets_pos,
                 length: self.header.buckets_count * size_of::<BucketOffset>() as u64,
             })?;
-            let mut offsets: Vec<BucketOffset> = bytes
+            let mut offsets: Vec<BucketOffset> = buckets
                 .chunks_exact(size_of::<BucketOffset>())
                 .map(|c| parse_bucket_offset(c).unwrap())
                 .collect();
             offsets.sort_unstable();
 
             self.for_each_sparse(
-                PartialEntryKind::KeyOnly,
+                MaybeIncompleteEntryKind::KeyOnly,
                 offsets.into_iter().map(|o| ((), Request::Offset(o))),
                 |(), entry| {
                     let entry = entry.expect("Entry from bucket offset array should exist");
@@ -202,7 +203,7 @@ where
         E: From<UniversalIoError>,
     {
         self.for_each_sparse(
-            PartialEntryKind::KeyAndValues,
+            MaybeIncompleteEntryKind::KeyAndValues,
             keys.into_iter()
                 .map(|(meta, key)| (meta, Request::Key(key))),
             |meta, entry| {
@@ -229,7 +230,7 @@ where
     pub fn unbatched_get_values_count(&self, key: &K) -> Result<Option<usize>> {
         let mut result: Option<usize> = None;
         self.for_each_sparse(
-            PartialEntryKind::KeyAndValuesLen,
+            MaybeIncompleteEntryKind::KeyAndValuesLen,
             std::iter::once(((), Request::Key(key))),
             |(), entry| -> Result<()> {
                 if let Some(e) = entry {

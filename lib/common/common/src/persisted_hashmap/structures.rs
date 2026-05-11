@@ -1,4 +1,4 @@
-//! On-disk structures.
+//! On-disk structures and their parsers: header, key types, entry.
 
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -169,40 +169,49 @@ impl Key for u128 {
 }
 
 /// Specifies which entry fields we are interested in. E.g., for
-/// [`PartialEntryKind::KeyOnly`], we will read just enough to parse the key
-/// and skip the values.
+/// [`MaybeIncompleteEntryKind::KeyOnly`], we will read just enough to parse the
+/// key and skip the values.
 #[derive(Copy, Clone)]
 #[expect(clippy::enum_variant_names)]
-pub enum PartialEntryKind {
+pub enum MaybeIncompleteEntryKind {
     KeyOnly,
     KeyAndValuesLen,
     KeyAndValues,
 }
 
-impl PartialEntryKind {
-    // Estimate the entry size.
+impl MaybeIncompleteEntryKind {
+    /// Guesstimate the entry size based on key and value types.
     pub fn estimated_size<K: Key + ?Sized, V>(self) -> usize {
+        // Entry structure:
         // ┌─1:pad─┬────2:key─────┬─3:pad─┬─4:len─┬─5:pad─┬─────6:vals─────┐
         // │ · · · │ "abcdef\xFF" │ · · · │   5   │ · · · │ 10 20 30 40 50 │
         // └───────┴──────────────┴───────┴───────┴───────┴────────────────┘
 
-        let f2key = K::KEY_SIZE_EST;
-        let f3pad = size_of::<V /*sic*/>().saturating_sub(1);
-        let f4len = size_of::<ValuesLen>();
-        let f5pad = size_of::<V>().saturating_sub(1);
-        let f6vals = size_of::<V>() * 2; // wild guess: 2 values per key
+        let field2key = K::KEY_SIZE_EST;
+        let field3pad = size_of::<V /*sic*/>().saturating_sub(1);
+        let field4len = size_of::<ValuesLen>();
+        let field5pad = size_of::<V>().saturating_sub(1);
+        let field6vals = size_of::<V>() * 2; // wild guess: 2 values per key
 
         match self {
-            Self::KeyOnly => f2key,
-            Self::KeyAndValuesLen => f2key + f3pad + f4len,
-            Self::KeyAndValues => f2key + f3pad + f4len + f5pad + f6vals,
+            Self::KeyOnly => field2key,
+            Self::KeyAndValuesLen => field2key + field3pad + field4len,
+            Self::KeyAndValues => field2key + field3pad + field4len + field5pad + field6vals,
         }
     }
 }
 
-/// An entry. Might be partially parsed.
+/// An entry returned by [`MaybeIncompleteEntry::partial_parse`].
+/// Might be complete or partial (if there are not enough bytes).
+///
 /// The variants are ordered by completeness.
-pub(super) enum IncompleteEntry<'a, K: Key + ?Sized, V> {
+/// | Variant           | key | values_len | values |
+/// | ----------------- | --- | ---------- | ------ |
+/// | `None`            |     |            |        |
+/// | `Key`             | yes |            |        |
+/// | `KeyAndValuesLen` | yes | yes        |        |
+/// | `KeyAndValues`    | yes | yes        | yes    |
+pub(super) enum MaybeIncompleteEntry<'a, K: Key + ?Sized, V> {
     None,
     Key(&'a K),
     KeyAndValuesLen(&'a K, u32),
@@ -210,75 +219,80 @@ pub(super) enum IncompleteEntry<'a, K: Key + ?Sized, V> {
     KeyAndValues(&'a K, &'a [V], &'a [u8]),
 }
 
-impl<K: Key + ?Sized, V> Copy for IncompleteEntry<'_, K, V> {}
-impl<K: Key + ?Sized, V> Clone for IncompleteEntry<'_, K, V> {
+impl<K: Key + ?Sized, V> Copy for MaybeIncompleteEntry<'_, K, V> {}
+impl<K: Key + ?Sized, V> Clone for MaybeIncompleteEntry<'_, K, V> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> IncompleteEntry<'a, K, V> {
-    /// `true` if this [`IncompleteEntry`] has all fields required by `kind`.
-    pub fn satisfies_kind(self, kind: PartialEntryKind) -> bool {
+impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> MaybeIncompleteEntry<'a, K, V> {
+    /// `true` if this entry has all fields required by `kind`.
+    pub fn satisfies_kind(self, kind: MaybeIncompleteEntryKind) -> bool {
         match kind {
-            PartialEntryKind::KeyOnly => self.key().is_some(),
-            PartialEntryKind::KeyAndValuesLen => {
+            MaybeIncompleteEntryKind::KeyOnly => self.key().is_some(),
+            MaybeIncompleteEntryKind::KeyAndValuesLen => {
                 self.key().is_some() && self.values_len().is_some()
             }
-            PartialEntryKind::KeyAndValues => self.key().is_some() && self.values().is_some(),
+            MaybeIncompleteEntryKind::KeyAndValues => {
+                self.key().is_some() && self.values().is_some()
+            }
         }
     }
 
     pub fn key(self) -> Option<&'a K> {
         match self {
-            IncompleteEntry::None => None,
-            IncompleteEntry::Key(key) => Some(key),
-            IncompleteEntry::KeyAndValuesLen(key, _) => Some(key),
-            IncompleteEntry::KeyAndValues(key, _, _) => Some(key),
+            MaybeIncompleteEntry::None => None,
+            MaybeIncompleteEntry::Key(key) => Some(key),
+            MaybeIncompleteEntry::KeyAndValuesLen(key, _) => Some(key),
+            MaybeIncompleteEntry::KeyAndValues(key, _, _) => Some(key),
         }
     }
 
     pub fn values_len(self) -> Option<u32> {
         match self {
-            IncompleteEntry::None => None,
-            IncompleteEntry::Key(_) => None,
-            IncompleteEntry::KeyAndValuesLen(_, values_len) => Some(values_len),
-            IncompleteEntry::KeyAndValues(_, values, _) => Some(values.len() as u32),
+            MaybeIncompleteEntry::None => None,
+            MaybeIncompleteEntry::Key(_) => None,
+            MaybeIncompleteEntry::KeyAndValuesLen(_, values_len) => Some(values_len),
+            MaybeIncompleteEntry::KeyAndValues(_, values, _) => Some(values.len() as u32),
         }
     }
 
     pub fn values(self) -> Option<&'a [V]> {
         match self {
-            IncompleteEntry::None => None,
-            IncompleteEntry::Key(_) => None,
-            IncompleteEntry::KeyAndValuesLen(_, _) => None,
-            IncompleteEntry::KeyAndValues(_, values, _) => Some(values),
+            MaybeIncompleteEntry::None => None,
+            MaybeIncompleteEntry::Key(_) => None,
+            MaybeIncompleteEntry::KeyAndValuesLen(_, _) => None,
+            MaybeIncompleteEntry::KeyAndValues(_, values, _) => Some(values),
         }
     }
 
-    pub fn parse(buf: &'a [u8]) -> io::Result<IncompleteEntry<'a, K, V>> {
+    /// Try to parse an entry from `buf`.
+    /// If there are not enough bytes in the buf, return the partially parsed entry.
+    pub fn partial_parse(buf: &'a [u8]) -> io::Result<MaybeIncompleteEntry<'a, K, V>> {
+        // Entry structure:
         // ┌─1:pad─┬────2:key─────┬─3:pad─┬─4:len─┬─5:pad─┬─────6:vals─────┐
         // │ · · · │ "abcdef\xFF" │ · · · │   5   │ · · · │ 10 20 30 40 50 │
         // └───────┴──────────────┴───────┴───────┴───────┴────────────────┘
 
         // 1. padding for the key
         let Some(buf) = align_slice_to(K::ALIGN, buf) else {
-            return Ok(IncompleteEntry::None);
+            return Ok(MaybeIncompleteEntry::None);
         };
 
         // 2. key
         let key = match K::from_bytes(buf) {
             ReadResult::Ok(k) => k,
-            ReadResult::Incomplete => return Ok(IncompleteEntry::None),
+            ReadResult::Incomplete => return Ok(MaybeIncompleteEntry::None),
             ReadResult::Invalid(e) => return Err(e),
         };
         let Some(buf) = buf.get(key.write_bytes()..) else {
-            return Ok(IncompleteEntry::Key(key));
+            return Ok(MaybeIncompleteEntry::Key(key));
         };
 
         // 3. padding for values_len
         let Some(buf) = align_slice_to(size_of::<V /*sic*/>(), buf) else {
-            return Ok(IncompleteEntry::Key(key));
+            return Ok(MaybeIncompleteEntry::Key(key));
         };
 
         // 4. values_len
@@ -287,12 +301,12 @@ impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> IncompleteEntry<'a, K, V> {
             Err(ConvertError::Alignment(_)) => {
                 return Err(read_err("ValuesLen is not properly aligned"));
             }
-            Err(ConvertError::Size(_)) => return Ok(IncompleteEntry::Key(key)),
+            Err(ConvertError::Size(_)) => return Ok(MaybeIncompleteEntry::Key(key)),
         };
 
         // 5. padding for values
         let Some(buf) = align_slice_to(size_of::<V>(), buf) else {
-            return Ok(IncompleteEntry::KeyAndValuesLen(key, values_len));
+            return Ok(MaybeIncompleteEntry::KeyAndValuesLen(key, values_len));
         };
 
         // 6. values
@@ -302,11 +316,11 @@ impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> IncompleteEntry<'a, K, V> {
                 return Err(read_err("Values are not properly aligned"));
             }
             Err(ConvertError::Size(_)) => {
-                return Ok(IncompleteEntry::KeyAndValuesLen(key, values_len));
+                return Ok(MaybeIncompleteEntry::KeyAndValuesLen(key, values_len));
             }
         };
 
-        Ok(IncompleteEntry::KeyAndValues(key, values, buf))
+        Ok(MaybeIncompleteEntry::KeyAndValues(key, values, buf))
     }
 }
 
