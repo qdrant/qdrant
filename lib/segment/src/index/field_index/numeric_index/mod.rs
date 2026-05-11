@@ -17,6 +17,7 @@ use std::str::FromStr;
 
 use chrono::DateTime;
 use common::bitvec::{BitSlice, BitVec};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::either_variant::EitherVariant;
 use common::types::PointOffsetType;
@@ -26,7 +27,7 @@ use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
 use ordered_float::OrderedFloat;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::Value;
+use serde_json::{Number, Value};
 use uuid::Uuid;
 
 use self::immutable_numeric_index::ImmutableNumericIndex;
@@ -35,6 +36,7 @@ use super::stored_point_to_values::StoredValue;
 use super::utils::{check_boundaries, value_to_integer};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::utils::MultiValue;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -47,6 +49,8 @@ use crate::index::key_encoding::{
     encode_f64_key_ascending, encode_i64_key_ascending, encode_u128_key_ascending,
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchValue,
@@ -999,6 +1003,51 @@ where
 
         inner()?.into_iter().try_for_each(f)
     }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let range = range.as_ref()?;
+        // Convert the range bounds into the index's storage type `T`.
+        // Same conversion `filter` already uses — `T::from_f64` /
+        // `T::from_u128` are total functions provided by `Numericable`,
+        // so every numeric variant (Int / Float / Datetime / Uuid)
+        // can serve any `RangeInterface` shape. This brings
+        // `condition_checker` in line with `filter` (the legacy
+        // helpers were stricter, but the schema layer normally
+        // prevents cross-type range queries from reaching here).
+        let typed_range = match range {
+            RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+            RangeInterface::DateTime(datetime_range) => {
+                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
+            }
+        };
+
+        let hw_counter = hw_acc.get_counter_cell();
+        Some(Box::new(move |point_id: PointOffsetType| {
+            self.check_values_any(
+                point_id,
+                |value| typed_range.check_range(*value),
+                &hw_counter,
+            )
+        }))
+    }
 }
 
 impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
@@ -1153,6 +1202,71 @@ impl NumericIndexIntoInnerValue<UuidIntType, UuidPayloadType>
 {
     fn into_inner_value(value: UuidPayloadType) -> UuidIntType {
         value.as_u128()
+    }
+}
+
+// Per-(T, U) value retrievers — produce a closure that maps a point id
+// to its indexed values as JSON `Value`s. The conversion is U-specific
+// (the second type param), so each numeric variant has its own inherent
+// impl. `FieldIndex::value_retriever` dispatches here per variant.
+
+impl NumericIndex<IntPayloadType, IntPayloadType> {
+    pub fn value_retriever<'a>(
+        &'a self,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_values(point_id)
+                .into_iter()
+                .flatten()
+                .map(|v| Value::Number(Number::from(v)))
+                .collect()
+        })
+    }
+}
+
+impl NumericIndex<IntPayloadType, DateTimePayloadType> {
+    pub fn value_retriever<'a>(
+        &'a self,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_values(point_id)
+                .into_iter()
+                .flatten()
+                .filter_map(|v| serde_json::to_value(DateTimePayloadType::from_timestamp(v)?).ok())
+                .collect()
+        })
+    }
+}
+
+impl NumericIndex<FloatPayloadType, FloatPayloadType> {
+    pub fn value_retriever<'a>(
+        &'a self,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_values(point_id)
+                .into_iter()
+                .flatten()
+                .filter_map(|v| Some(Value::Number(Number::from_f64(v)?)))
+                .collect()
+        })
+    }
+}
+
+impl NumericIndex<UuidIntType, UuidPayloadType> {
+    pub fn value_retriever<'a>(
+        &'a self,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_values(point_id)
+                .into_iter()
+                .flatten()
+                .map(|value| Value::String(UuidPayloadType::from_u128(value).to_string()))
+                .collect()
+        })
     }
 }
 
