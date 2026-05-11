@@ -24,6 +24,7 @@ use crate::index::field_index::numeric_index::{
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadIndexType, StorageType,
 };
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchPhrase,
@@ -406,6 +407,38 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
             FieldIndex::NullIndex(index) => index.values_is_empty(point_id),
+        }
+    }
+
+    fn value_retriever<'a, 'q>(
+        &'a self,
+        hw_counter: &'q HardwareCounterCell,
+    ) -> Option<VariableRetrieverFn<'q>>
+    where
+        'a: 'q,
+    {
+        // Per-variant value-to-`Value` conversion lives on each typed
+        // index as an inherent `value_retriever` method (see e.g.
+        // `NumericIndex<IntPayloadType, DateTimePayloadType>::value_retriever`).
+        // This dispatch is mechanical — adding a `FieldIndex` variant
+        // forces a compile error here.
+        match self {
+            FieldIndex::IntIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::DatetimeIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::IntMapIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::KeywordIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::FloatIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::GeoIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::BoolIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::UuidIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::UuidMapIndex(index) => Some(index.value_retriever(hw_counter)),
+            // FullTextIndex: caller falls back to payload — text values
+            // are easier to read directly than reconstruct from the
+            // inverted index.
+            FieldIndex::FullTextIndex(_) => None,
+            // NullIndex: no underlying values to return; another index
+            // on the same field is expected to provide them.
+            FieldIndex::NullIndex(_) => None,
         }
     }
 

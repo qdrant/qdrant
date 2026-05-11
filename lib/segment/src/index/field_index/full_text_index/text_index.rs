@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use ahash::AHashMap;
 use common::bitvec::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
@@ -24,8 +25,12 @@ use crate::index::field_index::{
     PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, MatchTextAny, PayloadKeyType};
+use crate::types::{
+    FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
+    PayloadKeyType,
+};
 
 /// Selects how a text query is parsed and matched against the payload.
 pub enum PayloadMatchQueryType {
@@ -600,6 +605,59 @@ impl PayloadFieldIndexRead for FullTextIndex {
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.for_each_payload_block(threshold, key, f)
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let cond_match = r#match.as_ref()?;
+        let hw_counter = hw_acc.get_counter_cell();
+
+        // FullTextIndex serves Text / TextAny / Phrase only. Other
+        // Match variants are explicitly listed so a new `Match`
+        // variant forces a decision.
+        let (text, query_type): (&str, _) = match cond_match {
+            Match::Text(MatchText { text }) => (text, PayloadMatchQueryType::Text),
+            Match::TextAny(MatchTextAny { text_any }) => (text_any, PayloadMatchQueryType::TextAny),
+            Match::Phrase(MatchPhrase { phrase }) => (phrase, PayloadMatchQueryType::Phrase),
+            Match::Value(MatchValue { value: _ })
+            | Match::Any(MatchAny { any: _ })
+            | Match::Except(MatchExcept { except: _ }) => return None,
+        };
+
+        let query_opt = match query_type {
+            PayloadMatchQueryType::Phrase => self.parse_phrase_query(text, &hw_counter),
+            PayloadMatchQueryType::Text => self.parse_text_query(text, &hw_counter),
+            PayloadMatchQueryType::TextAny => self.parse_text_any_query(text, &hw_counter),
+        };
+
+        // Empty query or parse error: legacy behaviour returns a checker
+        // that always says false. FIXME(uio): the error arm silently
+        // ignores errors — see the existing TODO on `check_match` below.
+        let Ok(Some(parsed_query)) = query_opt else {
+            return Some(Box::new(|_| false));
+        };
+
+        Some(Box::new(move |point_id: PointOffsetType| {
+            // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
+            self.check_match(&parsed_query, point_id).unwrap_or(false)
+        }))
     }
 }
 

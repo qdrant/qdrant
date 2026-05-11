@@ -1,15 +1,12 @@
-mod helpers;
-mod match_converter;
-
 use std::collections::HashMap;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use serde_json::Value;
 
-use self::helpers::field_condition_index;
 use super::StructPayloadIndexReadView;
 use crate::id_tracker::IdTrackerRead;
+use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::PayloadStorageRead;
@@ -40,7 +37,7 @@ where
                 .and_then(|indexes| {
                     indexes.iter().find_map(move |index| {
                         let hw_acc = hw_counter.new_accumulator();
-                        field_condition_index(index, field_condition, hw_acc)
+                        index.condition_checker(field_condition, hw_acc)
                     })
                 })
                 .unwrap_or_else(|| {
@@ -73,7 +70,7 @@ where
                     .and_then(|indexes| {
                         indexes.iter().find_map(|index| {
                             let hw_acc = hw_counter.new_accumulator();
-                            field_condition_index(index, &field_condition, hw_acc)
+                            index.condition_checker(&field_condition, hw_acc)
                         })
                     })
                     .unwrap_or_else(|| {
@@ -97,7 +94,7 @@ where
                     .and_then(|indexes| {
                         indexes.iter().find_map(|index| {
                             let hw_acc = hw_counter.new_accumulator();
-                            field_condition_index(index, &field_condition, hw_acc)
+                            index.condition_checker(&field_condition, hw_acc)
                         })
                     })
                     .unwrap_or_else(|| {

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
@@ -10,8 +11,12 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     PayloadFieldIndexRead, ValueIndexer,
 };
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, PayloadKeyType};
+use crate::types::{
+    AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
+    ValueVariants,
+};
 
 pub struct ImmutableBoolIndex(MutableBoolIndex);
 
@@ -144,6 +149,50 @@ impl PayloadFieldIndexRead for ImmutableBoolIndex {
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.0.for_each_payload_block(threshold, key, f)
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        _hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+
+        let cond_match = r#match.as_ref()?;
+        match cond_match {
+            Match::Value(MatchValue {
+                value: ValueVariants::Bool(is_true),
+            }) => {
+                let is_true = *is_true;
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    self.check_values_any(point_id, is_true)
+                }))
+            }
+            Match::Value(MatchValue {
+                value: ValueVariants::String(_) | ValueVariants::Integer(_),
+            })
+            | Match::Any(MatchAny {
+                any: AnyVariants::Strings(_) | AnyVariants::Integers(_),
+            })
+            | Match::Except(MatchExcept {
+                except: AnyVariants::Strings(_) | AnyVariants::Integers(_),
+            })
+            | Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_) => None,
+        }
     }
 }
 
