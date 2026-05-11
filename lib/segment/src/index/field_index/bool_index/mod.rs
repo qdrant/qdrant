@@ -1,14 +1,20 @@
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use immutable_bool_index::ImmutableBoolIndex;
 use mutable_bool_index::MutableBoolIndex;
+use serde_json::Value;
 
 use super::facet_index::FacetIndex;
 use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::utils::MultiValue;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::FieldCondition;
 
 pub mod immutable_bool_index;
 pub mod mutable_bool_index;
@@ -155,6 +161,22 @@ impl From<ImmutableBoolIndex> for BoolIndex {
     }
 }
 
+impl BoolIndex {
+    /// Produce a closure that maps a point id to its indexed bool
+    /// values as JSON `Value`s. Used by `FieldIndex::value_retriever`.
+    pub fn value_retriever<'a>(
+        &'a self,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_point_values(point_id)
+                .into_iter()
+                .map(Value::Bool)
+                .collect()
+        })
+    }
+}
+
 impl PayloadFieldIndexRead for BoolIndex {
     fn count_indexed_points(&self) -> usize {
         match self {
@@ -194,6 +216,17 @@ impl PayloadFieldIndexRead for BoolIndex {
         match self {
             BoolIndex::Mmap(index) => index.for_each_payload_block(threshold, key, f),
             BoolIndex::Immutable(index) => index.for_each_payload_block(threshold, key, f),
+        }
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        match self {
+            BoolIndex::Mmap(index) => index.condition_checker(condition, hw_acc),
+            BoolIndex::Immutable(index) => index.condition_checker(condition, hw_acc),
         }
     }
 }
