@@ -54,9 +54,7 @@ pub trait PayloadFieldIndexRead {
         &'a self,
         _condition: &FieldCondition,
         _hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        None
-    }
+    ) -> Option<ConditionCheckerFn<'a>>;
 }
 
 /// Storage-lifecycle operations on top of [`PayloadFieldIndexRead`].
