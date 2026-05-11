@@ -5,20 +5,22 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::utils::MultiValue;
-use crate::index::field_index::{FieldIndex, FieldIndexRead};
+use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::PayloadContainer;
 
-pub(super) fn variable_retriever<'a, 'q, P: PayloadStorageRead + 'q>(
-    indices: &'a HashMap<JsonPath, Vec<FieldIndex>>,
+pub(super) fn variable_retriever<'a, 'q, P, F>(
+    indices: &'a HashMap<JsonPath, Vec<F>>,
     json_path: &JsonPath,
     payload_provider: PayloadProvider<P>,
     hw_counter: &'q HardwareCounterCell,
 ) -> VariableRetrieverFn<'q>
 where
+    P: PayloadStorageRead + 'q,
+    F: FieldIndexRead,
     'a: 'q,
 {
     indices
@@ -148,7 +150,8 @@ mod tests {
     fn test_variable_retriever_from_payload() {
         let payload_provider = fixture_payload_provider();
 
-        let no_indices = Default::default();
+        // No indices — pick FieldIndex as the concrete F for type inference.
+        let no_indices: HashMap<_, Vec<FieldIndex>> = Default::default();
 
         let hw_counter = Default::default();
 
