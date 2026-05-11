@@ -173,33 +173,12 @@ impl PayloadFieldIndexRead for NullIndex {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        _hw_acc: HwMeasurementAcc,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        // Destructure explicitly (no `..`) so a new field added to
-        // `FieldCondition` forces this method to be revisited.
-        let FieldCondition {
-            key: _,
-            r#match: _,
-            range: _,
-            geo_radius: _,
-            geo_bounding_box: _,
-            geo_polygon: _,
-            values_count: _,
-            is_empty,
-            is_null,
-        } = condition;
-
-        if let Some(is_empty) = *is_empty {
-            return Some(Box::new(move |point_id: PointOffsetType| {
-                self.values_is_empty(point_id) == is_empty
-            }));
+        match self {
+            NullIndex::Mutable(mutable) => mutable.condition_checker(condition, hw_acc),
+            NullIndex::Immutable(immutable) => immutable.condition_checker(condition, hw_acc),
         }
-        if let Some(is_null) = *is_null {
-            return Some(Box::new(move |point_id: PointOffsetType| {
-                self.values_is_null(point_id) == is_null
-            }));
-        }
-        None
     }
 }
 
