@@ -18,6 +18,7 @@
 mod statistics;
 mod trait_impls;
 
+use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
@@ -31,7 +32,7 @@ use super::mmap_numeric_index::MmapNumericIndex;
 use super::mutable_numeric_index::MutableNumericIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::numeric_point::Numericable;
+use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::telemetry::PayloadIndexTelemetry;
 
@@ -138,6 +139,20 @@ where
             NumericIndexInner::Immutable(index) => index.get_values(idx),
             NumericIndexInner::Mmap(index) => index.get_values(idx),
         }
+    }
+
+    pub fn point_ids_by_value<'a>(
+        &'a self,
+        value: T,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
+        let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
+        Ok(match &self {
+            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
+            NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
+            NumericIndexInner::Mmap(mmap) => Box::new(mmap.values_range(start, end, hw_counter)?),
+        })
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {

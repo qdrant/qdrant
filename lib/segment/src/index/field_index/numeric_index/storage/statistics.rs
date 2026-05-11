@@ -121,20 +121,6 @@ where
         })
     }
 
-    pub fn point_ids_by_value<'a>(
-        &'a self,
-        value: T,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
-        let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
-        Ok(match &self {
-            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
-            NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
-            NumericIndexInner::Mmap(mmap) => Box::new(mmap.values_range(start, end, hw_counter)?),
-        })
-    }
-
     /// Tries to estimate the amount of points for a given key.
     pub fn estimate_points(
         &self,
