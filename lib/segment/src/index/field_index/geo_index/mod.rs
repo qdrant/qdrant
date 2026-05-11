@@ -16,6 +16,7 @@ use self::mutable_geo_index::MutableGeoMapIndex;
 use super::FieldIndexBuilderTrait;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::utils::MultiValue;
 use crate::index::field_index::geo_hash::{
     GeoHash, circle_hashes, common_hash_prefix, geo_hash_to_box, polygon_hashes,
     polygon_hashes_estimation, rectangle_hashes,
@@ -27,6 +28,7 @@ use crate::index::field_index::{
 };
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
@@ -452,6 +454,23 @@ impl ValueIndexer for GeoMapIndex {
                 Ok(())
             }
         }
+    }
+}
+
+impl GeoMapIndex {
+    /// Produce a closure that maps a point id to its indexed geo
+    /// points as JSON `Value`s. Used by `FieldIndex::value_retriever`.
+    pub fn value_retriever<'a>(
+        &'a self,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_values(point_id)
+                .into_iter()
+                .flatten()
+                .filter_map(|v| serde_json::to_value(v).ok())
+                .collect()
+        })
     }
 }
 

@@ -17,7 +17,7 @@ use gridstore::Blob;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mmap_map_index::MmapMapIndex;
-use serde_json::Value;
+use serde_json::{Number, Value};
 use uuid::Uuid;
 
 use self::immutable_map_index::ImmutableMapIndex;
@@ -27,6 +27,7 @@ use super::facet_index::FacetIndex;
 use super::stored_point_to_values::StoredValue;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::utils::MultiValue;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::utils::value_to_integer;
@@ -37,11 +38,12 @@ use crate::index::field_index::{
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::index::query_estimator::combine_should_estimations;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
-    PayloadKeyType, UuidIntType, ValueVariants,
+    PayloadKeyType, UuidIntType, UuidPayloadType, ValueVariants,
 };
 
 pub mod immutable_map_index;
@@ -1619,6 +1621,56 @@ impl ValueIndexer for MapIndex<UuidIntType> {
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         self.remove_point(id)
+    }
+}
+
+// Per-K value retrievers — produce a closure that maps a point id to
+// its indexed keyword/int/uuid values as JSON `Value`s. The conversion
+// is K-specific, so each MapIndex variant has its own inherent impl.
+// `FieldIndex::value_retriever` dispatches here per variant.
+
+impl MapIndex<str> {
+    pub fn value_retriever<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_values(point_id, hw_counter)
+                .into_iter()
+                .flatten()
+                .filter_map(|v| serde_json::to_value(v).ok())
+                .collect()
+        })
+    }
+}
+
+impl MapIndex<IntPayloadType> {
+    pub fn value_retriever<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_values(point_id, hw_counter)
+                .into_iter()
+                .flatten()
+                .map(|v| Value::Number(Number::from(*v)))
+                .collect()
+        })
+    }
+}
+
+impl MapIndex<UuidIntType> {
+    pub fn value_retriever<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_values(point_id, hw_counter)
+                .into_iter()
+                .flatten()
+                .map(|value| Value::String(UuidPayloadType::from_u128(*value).to_string()))
+                .collect()
+        })
     }
 }
 

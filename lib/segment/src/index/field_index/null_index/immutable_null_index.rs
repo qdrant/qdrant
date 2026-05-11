@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
@@ -11,6 +12,7 @@ use crate::index::field_index::{
     PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -136,6 +138,38 @@ impl PayloadFieldIndexRead for ImmutableNullIndex {
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.0.for_each_payload_block(threshold, key, f)
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        _hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        // Destructure explicitly (no `..`) so a new field added to
+        // `FieldCondition` forces this method to be revisited.
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty,
+            is_null,
+        } = condition;
+
+        if let Some(is_empty) = *is_empty {
+            return Some(Box::new(move |point_id: PointOffsetType| {
+                self.values_is_empty(point_id) == is_empty
+            }));
+        }
+        if let Some(is_null) = *is_null {
+            return Some(Box::new(move |point_id: PointOffsetType| {
+                self.values_is_null(point_id) == is_null
+            }));
+        }
+        None
     }
 }
 
