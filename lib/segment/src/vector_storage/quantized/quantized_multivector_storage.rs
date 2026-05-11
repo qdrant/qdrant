@@ -11,6 +11,7 @@ use fs_err as fs;
 use memmap2::MmapMut;
 use quantization::EncodedVectors;
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
@@ -350,22 +351,26 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let offset = self.offsets.get_offset(vector_index);
-        let mut sum = 0.0;
-        for inner_query in query {
-            let mut max_sim = ScoreType::NEG_INFINITY;
-            // manual `max_by` for performance
-            for i in 0..offset.count {
-                let sim =
-                    self.quantized_storage
-                        .score_point(inner_query, offset.start + i, hw_counter);
-                if sim > max_sim {
-                    max_sim = sim;
+
+        let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count)
+            .into_iter()
+            .collect();
+
+        let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
+        max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
+
+        self.quantized_storage
+            .for_each_in_batch(&offsets, |_, vector| {
+                for (query_idx, query) in query.iter().enumerate() {
+                    let sim = self.quantized_storage.score(&query, vector, hw_counter);
+
+                    if max_sim[query_idx] < sim {
+                        max_sim[query_idx] = sim;
+                    }
                 }
-            }
-            // sum of max similarity
-            sum += max_sim;
-        }
-        sum
+            });
+
+        max_sim.into_iter().sum()
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
