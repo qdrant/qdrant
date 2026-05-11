@@ -18,21 +18,22 @@ use rayon::prelude::*;
 use super::old_index::OldIndexCandidate;
 use super::telemetry::HNSWSearchesTelemetry;
 use super::{
-    FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSWIndex, HNSW_USE_HEURISTIC, HnswIndexOpenArgs,
+    FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs,
     SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use crate::index::PayloadIndexRead;
 use crate::index::field_index::PayloadBlockCondition;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
-#[cfg(feature = "gpu")]
-use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::get_gpu_groups_count;
+#[cfg(feature = "gpu")]
+use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
+use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
@@ -40,7 +41,6 @@ use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphL
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
-use crate::index::PayloadIndexRead;
 use crate::json_path::JsonPath;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::types::Condition::Field;
