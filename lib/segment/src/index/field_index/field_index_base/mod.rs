@@ -1,6 +1,7 @@
 mod builder;
 mod field_index;
 mod field_index_read;
+mod field_index_read_impl;
 mod payload_field_index;
 mod value_indexer;
 
