@@ -37,7 +37,7 @@ pub trait FieldIndexRead {
     /// a unifying borrowed-enum wrapper, which is more code than the
     /// trait-object indirection saves.
     ///
-    /// Used internally by the default impls below — implementors typically
+    /// Used internally by the default impls below — implementers typically
     /// only need to provide this method plus the variant-specific ones
     /// (`get_telemetry_data`, `values_*`, `as_numeric`, …).
     fn get_payload_field_index_read(&self) -> &dyn PayloadFieldIndexRead;
