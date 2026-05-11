@@ -38,13 +38,20 @@ impl<'a> TqVectorExtras<'a> {
             DistanceType::Cosine => size_of::<f32>(),
             DistanceType::L1 | DistanceType::L2 => size_of::<f32>(),
         };
+        // L2 folds renormalization into `scaling_factor = l2 / cn` (like
+        // Dot/Cosine) but still needs the raw `l2_length` for the `||v||²`
+        // term in the L2 score formula — store it as a second f32.
+        let l2_length_size = match distance {
+            DistanceType::L2 => size_of::<f32>(),
+            DistanceType::Dot | DistanceType::Cosine | DistanceType::L1 => 0,
+        };
         let ec_correction_size = match mode {
             // TQ+ stores `xm = ⟨X, M⟩` per vector for the symmetric-scoring
             // slow path.
             TQMode::Plus => size_of::<f32>(),
             TQMode::Normal => 0,
         };
-        scaling_factor_size + ec_correction_size
+        scaling_factor_size + l2_length_size + ec_correction_size
     }
 
     /// Per-vector scaling factor that scoring multiplies into the centroid dot.
@@ -57,15 +64,35 @@ impl<'a> TqVectorExtras<'a> {
         f32::from_le_bytes(bytes)
     }
 
+    /// Original L2 length of the source vector (pre-rotation, pre-rescale).
+    /// Only present for [`DistanceType::L2`] — stored at offset 4 immediately
+    /// after `scaling_factor`. Needed because L2's `scaling_factor` already
+    /// folds in the renormalization (`l2 / cn`, matching Dot/Cosine), so the
+    /// raw `||v||²` term in the L2 score formula has to be recovered from a
+    /// separate field.
+    pub fn l2_length(&self) -> f32 {
+        debug_assert!(
+            self.src.len() >= 2 * size_of::<f32>(),
+            "l2_length is only stored for DistanceType::L2"
+        );
+        let off = size_of::<f32>();
+        let bytes: [u8; 4] = self.src[off..off + size_of::<f32>()]
+            .try_into()
+            .expect("expected 4 bytes for l2_length");
+        f32::from_le_bytes(bytes)
+    }
+
     /// TQ+ per-vector `⟨X, M⟩` correction. Only present when the quantizer
     /// was configured with [`TQMode::Plus`]; the caller is responsible for
     /// only calling this getter in that mode (validated via `debug_assert`).
+    /// Stored as the trailing 4 bytes of the extras blob — the only field
+    /// whose offset can shift (L2 stores an extra `centroid_norm` before it).
     pub fn ec_correction(&self) -> f32 {
         debug_assert!(
             self.src.len() >= 2 * size_of::<f32>(),
             "ec_correction is only stored for TQMode::Plus"
         );
-        let off = size_of::<f32>();
+        let off = self.src.len() - size_of::<f32>();
         let bytes: [u8; 4] = self.src[off..off + size_of::<f32>()]
             .try_into()
             .expect("expected 4 bytes for ec_correction");
@@ -184,7 +211,10 @@ impl TurboQuantizer {
 
     /// Encodes the given raw extras values and appends them to `buf`.
     /// `ec_correction` (`xm = ⟨X, M⟩`) is required when the quantizer is in
-    /// [`TQMode::Plus`] and ignored otherwise.
+    /// [`TQMode::Plus`] and ignored otherwise. `centroid_norm` is required for
+    /// Dot/Cosine/L2 — for all three it's folded into the merged
+    /// `scaling_factor = l2_length / centroid_norm`. L2 additionally stores
+    /// the raw `l2_length` separately so scoring can recover the `||v||²` term.
     pub(super) fn pack_extras_into(
         &self,
         l2_length: Option<f32>,
@@ -193,13 +223,20 @@ impl TurboQuantizer {
         buf: &mut Vec<u8>,
     ) {
         let scaling_factor = match self.distance {
-            DistanceType::Dot | DistanceType::Cosine => {
+            DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => {
                 l2_length.unwrap_or(1.0) / centroid_norm.unwrap()
             }
-            DistanceType::L1 | DistanceType::L2 => l2_length.unwrap(),
+            DistanceType::L1 => l2_length.unwrap(),
         };
 
         buf.extend(&scaling_factor.to_le_bytes());
+
+        // L2 stores the raw `l2_length` separately: `scaling_factor` already
+        // folds in renormalization, but the `||v_a||² + ||v_b||²` part of the
+        // score formula still needs the un-divided lengths.
+        if matches!(self.distance, DistanceType::L2) {
+            buf.extend(&l2_length.unwrap().to_le_bytes());
+        }
 
         if matches!(self.mode, TQMode::Plus) {
             buf.extend(&ec_correction.unwrap_or(0.0).to_le_bytes());
@@ -226,12 +263,15 @@ mod tests {
 
     /// `(l2_length, centroid_norm, expected_scaling_factor)` per distance:
     /// the first two are the raw inputs to `pack_extras_into`; the third is
-    /// the merged f32 that `scaling_factor()` should read back.
+    /// the merged f32 that `scaling_factor()` should read back. For L2 the
+    /// merged `scaling_factor` is `l2/cn` (like Dot/Cosine) and the raw
+    /// `l2_length` is roundtripped via the dedicated `l2_length()` getter.
     fn example_extras(distance: DistanceType) -> (Option<f32>, Option<f32>, f32) {
         match distance {
             DistanceType::Dot => (Some(1.25), Some(15.5), 1.25 / 15.5),
             DistanceType::Cosine => (None, Some(0.875), 1.0 / 0.875),
-            DistanceType::L1 | DistanceType::L2 => (Some(1.3), None, 1.3),
+            DistanceType::L2 => (Some(1.3), Some(8.0), 1.3 / 8.0),
+            DistanceType::L1 => (Some(1.3), None, 1.3),
         }
     }
 
@@ -276,6 +316,14 @@ mod tests {
                         expected_scaling,
                         "scaling_factor roundtrip (bits={bits:?}, mode={mode:?}, distance={distance:?})",
                     );
+                    if matches!(distance, DistanceType::L2) {
+                        let expected_l2 = l2_length.expect("L2 must supply l2_length");
+                        assert_eq!(
+                            extras.l2_length(),
+                            expected_l2,
+                            "l2_length roundtrip (bits={bits:?}, mode={mode:?}, distance={distance:?})",
+                        );
+                    }
                     if let Some(expected) = expected_ec {
                         assert_eq!(
                             extras.ec_correction(),

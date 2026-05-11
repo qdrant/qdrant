@@ -18,9 +18,6 @@ pub struct TurboQuantizer {
     pub(super) distance: DistanceType,
     pub(super) padded_dim: usize,
     pub(super) error_correction: Option<ErrorCorrection>,
-
-    // Pre-calculated `sqrt(dim)` used in L2 scoring.
-    dim_sqrt: f32,
 }
 
 /// TQ+ per-coordinate shift+scale: pulls each rotated, length-rescaled
@@ -130,7 +127,6 @@ impl TurboQuantizer {
     ) -> Self {
         let padded_dim = Self::padded_dim(dim, bits);
         let rotation = HadamardRotation::new(padded_dim);
-        let dim_sqrt = (padded_dim as f32).sqrt();
         TurboQuantizer {
             rotation,
             bits,
@@ -138,7 +134,6 @@ impl TurboQuantizer {
             distance,
             padded_dim,
             error_correction,
-            dim_sqrt,
         }
     }
 
@@ -249,7 +244,7 @@ impl TurboQuantizer {
         // the renormalized denominator equals padded_dim — i.e. renorm is a
         // no-op for these degenerate inputs, preserving baseline behavior.
         let centroid_norm = match self.distance {
-            DistanceType::Dot => Some(self.compute_centroid_norm(buf, scale)),
+            DistanceType::Dot | DistanceType::L2 => Some(self.compute_centroid_norm(buf, scale)),
             DistanceType::Cosine => {
                 let rotated_l2_sq: f64 = buf.iter().map(|&x| x * x).sum();
                 if rotated_l2_sq < 1e-12 {
@@ -258,7 +253,7 @@ impl TurboQuantizer {
                     Some(self.compute_centroid_norm(buf, scale))
                 }
             }
-            DistanceType::L1 | DistanceType::L2 => None,
+            DistanceType::L1 => None,
         };
 
         let mut extras_bytes = Vec::with_capacity(TqVectorExtras::size_for(
@@ -313,10 +308,13 @@ impl TurboQuantizer {
         // bytes twice for every dequantize call.
         let unpacked: Vec<f64> = unpacked_iter.collect();
 
-        // Stored field is `l2/cn_quant` (`l2 == 1.0` for Cosine).
-        // To recover the original l2 length, we need to `* cn_quant` measured
-        // in the same space `cn` was stored in. For TQ+ that's the EC-reverted
-        // (rescaled) space, matching `compute_centroid_norm`'s convention.
+        // Stored `scaling_factor` is `l2/cn_quant` for Dot/Cosine/L2 (`l2 ==
+        // 1.0` for Cosine). To recover the original l2 length we either
+        // multiply by `cn_quant` recomputed from the unpacked centroids
+        // (Dot/Cosine — `l2` isn't stored separately) or read the dedicated
+        // `l2_length` field (L2 stores it directly, no recompute needed).
+        // For TQ+, `cn_quant` is measured in the EC-reverted (rescaled) space,
+        // matching `compute_centroid_norm`'s convention.
         let recovered_l2 = match self.distance {
             DistanceType::Dot | DistanceType::Cosine => {
                 let cn_quant = match &self.error_correction {
@@ -333,7 +331,8 @@ impl TurboQuantizer {
                 };
                 scaling_factor * cn_quant
             }
-            DistanceType::L1 | DistanceType::L2 => scaling_factor,
+            DistanceType::L2 => f64::from(extras.l2_length()),
+            DistanceType::L1 => scaling_factor,
         };
 
         let scale = recovered_l2 / (self.padded_dim as f64).sqrt();
@@ -382,11 +381,15 @@ impl TurboQuantizer {
         match self.distance {
             DistanceType::Cosine | DistanceType::Dot => raw_dot * v1_scale * v2_scale,
             DistanceType::L2 => {
-                // For L2, the "dot" we calculated is actually ||v1||² + ||v2||² - 2*||v1||*||v2||*<v1_normalized, v2_normalized>>,
-                // so we need to do some extra math to recover the actual <v1, v2>.
-                // Note that `v*_scale` is equal to ||v*||² for L2 distance metric.
-                v1_scale * v1_scale + v2_scale * v2_scale
-                    - 2.0 * v1_scale * v2_scale * raw_dot / self.padded_dim as f32
+                // ||v1 - v2||² = ||v1||² + ||v2||² - 2·⟨v1, v2⟩.
+                // `v*_scale = l2 / cn` already folds renorm in, so the cross
+                // term `2 · raw_dot · sf_a · sf_b` reconstructs `2·⟨v1, v2⟩`
+                // exactly the way Dot/Cosine do. `l2_length` is fetched
+                // separately for the `||v||²` term — we can't read it back
+                // out of `sf` without `cn`.
+                let l2_a = extra_v1.l2_length();
+                let l2_b = extra_v2.l2_length();
+                l2_a * l2_a + l2_b * l2_b - 2.0 * v1_scale * v2_scale * raw_dot
             }
             DistanceType::L1 => {
                 // Fallback case for L1, where we need to fully dequantize both vectors.
@@ -546,11 +549,14 @@ impl TurboQuantizer {
                 dot * scaling_factor
             }
             DistanceType::L2 => {
-                let l2 = vector_extras.scaling_factor();
-                // For L2, the "dot" we calculated is actually ||query||² + ||v||² - 2*||v||²*<query, v_normalized>>,
-                // so we need to do some extra math to recover the actual <query, v>.
+                // ||q - v||² = ||q||² + ||v||² - 2·⟨q, v⟩.
+                // `scaling_factor = l2 / cn` folds renorm in, so `dot · sf`
+                // reconstructs `⟨q, v⟩`. Query side isn't quantized → no `cn`
+                // factor on that side. `l2_length` is the raw `||v||`.
+                let scaling_factor = vector_extras.scaling_factor();
+                let l2 = vector_extras.l2_length();
                 let query_l2 = query.l2_norm.unwrap_or(1.0);
-                query_l2 * query_l2 + l2 * l2 - 2.0 * l2 * dot / self.dim_sqrt
+                query_l2 * query_l2 + l2 * l2 - 2.0 * dot * scaling_factor
             }
             DistanceType::L1 => {
                 let mut deq_v: Vec<f64> = self.dequantize(vec);
