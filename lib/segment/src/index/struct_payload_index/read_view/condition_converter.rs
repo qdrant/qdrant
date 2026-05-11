@@ -17,11 +17,12 @@ use crate::payload_storage::query_checker::{
 use crate::types::{Condition, FieldCondition, OwnedPayloadRef, PayloadContainer};
 use crate::vector_storage::VectorStorageRead;
 
-impl<'a, P, I, V> StructPayloadIndexReadView<'a, P, I, V>
+impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
 where
     P: PayloadStorageRead,
     I: IdTrackerRead,
     V: VectorStorageRead,
+    F: FieldIndexRead,
 {
     pub fn condition_converter<'b, S: PayloadStorageRead + 'b>(
         &'b self,
