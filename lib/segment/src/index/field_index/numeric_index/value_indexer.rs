@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use serde_json::{Number, Value};
 use uuid::Uuid;
 
-use super::numeric_index::{NumericIndex, NumericIndexIntoInnerValue};
+use super::index::{NumericIndex, NumericIndexIntoInnerValue};
 use super::storage::NumericIndexInner;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;

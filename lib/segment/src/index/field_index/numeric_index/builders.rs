@@ -8,9 +8,9 @@ use gridstore::Blob;
 use serde_json::Value;
 
 use super::Encodable;
+use super::index::{NumericIndex, NumericIndexIntoInnerValue};
 use super::mmap_numeric_index::MmapNumericIndex;
 use super::mutable_numeric_index::InMemoryNumericIndex;
-use super::numeric_index::{NumericIndex, NumericIndexIntoInnerValue};
 use super::storage::NumericIndexInner;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::numeric_point::Numericable;

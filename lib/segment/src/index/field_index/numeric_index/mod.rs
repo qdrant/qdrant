@@ -1,15 +1,15 @@
 mod builders;
 pub mod immutable_numeric_index;
+mod index;
 pub mod mmap_numeric_index;
 pub mod mutable_numeric_index;
 mod numeric_field_index;
-mod numeric_index;
 mod storage;
 mod value_indexer;
 
 pub use builders::{NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder};
+pub use index::{NumericIndex, NumericIndexIntoInnerValue};
 pub use numeric_field_index::{NumericFieldIndex, NumericFieldIndexRead};
-pub use numeric_index::{NumericIndex, NumericIndexIntoInnerValue};
 pub use storage::NumericIndexInner;
 
 #[cfg(test)]
