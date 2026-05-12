@@ -307,13 +307,15 @@ impl InvertedIndex for ImmutableInvertedIndex {
         Ok(self.postings.posting_len(token_id))
     }
 
-    fn vocab_with_postings_len_iter(
+    fn for_each_vocab_with_postings_len(
         &self,
-    ) -> impl Iterator<Item = OperationResult<(&str, usize)>> + '_ {
-        self.vocab.iter().filter_map(|(token, &token_id)| {
-            self.postings
-                .posting_len(token_id)
-                .map(|len| Ok((token.as_str(), len)))
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.vocab.iter().try_for_each(|(token, &token_id)| {
+            if let Some(len) = self.postings.posting_len(token_id) {
+                f(token.as_str(), len)?;
+            }
+            Ok(())
         })
     }
 
@@ -503,12 +505,11 @@ impl TryFrom<&MmapInvertedIndex> for ImmutableInvertedIndex {
             }
         };
 
-        let vocab: HashMap<String, TokenId> = index
-            .storage
-            .vocab
-            .iter()
-            .map(|(token_str, token_id)| (token_str.to_owned(), token_id[0]))
-            .collect();
+        let mut vocab = HashMap::with_capacity(index.storage.vocab.keys_count());
+        index.storage.vocab.for_each_entry(|token_str, token_id| {
+            vocab.insert(token_str.to_owned(), token_id[0]);
+            OperationResult::Ok(())
+        })?;
 
         debug_assert!(
             postings.len() == vocab.len(),

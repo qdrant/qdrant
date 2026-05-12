@@ -363,9 +363,10 @@ pub trait InvertedIndex {
         })
     }
 
-    fn vocab_with_postings_len_iter(
+    fn for_each_vocab_with_postings_len(
         &self,
-    ) -> impl Iterator<Item = OperationResult<(&str, usize)>> + '_;
+        f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<()>;
 
     fn for_each_payload_block(
         &self,
@@ -375,8 +376,7 @@ pub trait InvertedIndex {
     ) -> OperationResult<()> {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
-        self.vocab_with_postings_len_iter().try_for_each(|item| {
-            let (token, postings_len) = item?;
+        self.for_each_vocab_with_postings_len(|token, postings_len| {
             if postings_len >= threshold {
                 f(PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), Match::new_text(token)),
