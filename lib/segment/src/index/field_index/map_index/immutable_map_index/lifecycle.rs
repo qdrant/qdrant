@@ -1,56 +1,26 @@
-use std::borrow::{Borrow as _, Cow};
+use std::borrow::Borrow as _;
 use std::collections::HashMap;
-use std::iter;
-use std::ops::Range;
 use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::persisted_hashmap::Key;
 use common::types::PointOffsetType;
 use gridstore::Blob;
 
-use super::mmap_map_index::MmapMapIndex;
-use super::{IdIter, MapIndexKey};
+use super::super::MapIndexKey;
+use super::super::mmap_map_index::MmapMapIndex;
+use super::super::read_ops::MapIndexRead;
+use super::{ContainerSegment, ImmutableMapIndex, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
-use crate::index::payload_config::StorageType;
-
-pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
-    value_to_points: HashMap<<N as MapIndexKey>::Owned, ContainerSegment>,
-    /// Container holding a slice of point IDs per value. `value_to_point` holds the range per value.
-    /// Each slice MUST be sorted so that we can binary search over it.
-    value_to_points_container: Vec<PointOffsetType>,
-    deleted_value_to_points_container: BitVec,
-    point_to_values: ImmutablePointToValues<<N as MapIndexKey>::Owned>,
-    /// Amount of point which have at least one indexed payload value
-    indexed_points: usize,
-    values_count: usize,
-    // Backing storage, source of state, persists deletions
-    storage: Storage<N>,
-    /// Snapshot of approximate RAM usage at construction time.
-    /// Not refreshed on `remove_point`.
-    cached_ram_usage_bytes: usize,
-}
-
-enum Storage<N: MapIndexKey + Key + ?Sized> {
-    Mmap(Box<MmapMapIndex<N>>),
-}
-
-pub(super) struct ContainerSegment {
-    /// Range in the container which holds point IDs for the value.
-    range: Range<u32>,
-    /// Number of available point IDs in the range, excludes number of deleted points.
-    count: u32,
-}
 
 impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     /// Open and load immutable map index from mmap storage
-    pub(super) fn open_mmap(index: MmapMapIndex<N>) -> OperationResult<Self> {
+    pub(in super::super) fn open_mmap(index: MmapMapIndex<N>) -> OperationResult<Self> {
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation
 
         let mut indexed_points = 0;
@@ -258,7 +228,7 @@ where
     }
 
     #[inline]
-    pub(super) fn wipe(self) -> OperationResult<()> {
+    pub(in super::super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
             Storage::Mmap(index) => index.wipe(),
         }
@@ -275,169 +245,23 @@ where
     }
 
     #[inline]
-    pub(super) fn files(&self) -> Vec<PathBuf> {
+    pub(in super::super) fn files(&self) -> Vec<PathBuf> {
         match self.storage {
             Storage::Mmap(ref index) => index.files(),
         }
     }
 
     #[inline]
-    pub(super) fn immutable_files(&self) -> Vec<PathBuf> {
+    pub(in super::super) fn immutable_files(&self) -> Vec<PathBuf> {
         match &self.storage {
             Storage::Mmap(index) => index.immutable_files(),
         }
     }
 
     #[inline]
-    pub(super) fn flusher(&self) -> Flusher {
+    pub(in super::super) fn flusher(&self) -> Flusher {
         match self.storage {
             Storage::Mmap(ref index) => index.flusher(),
         }
-    }
-
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
-        self.point_to_values
-            .check_values_any(idx, |v| check_fn(v.borrow()))
-    }
-
-    pub fn get_values(
-        &self,
-        idx: PointOffsetType,
-    ) -> Option<impl Iterator<Item = Cow<'_, N>> + '_> {
-        Some(
-            self.point_to_values
-                .get_values(idx)?
-                .map(|v| Cow::Borrowed(v.borrow())),
-        )
-    }
-
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        Some(self.point_to_values.get_values(idx)?.count())
-    }
-
-    pub fn get_indexed_points(&self) -> usize {
-        self.indexed_points
-    }
-
-    pub fn get_values_count(&self) -> usize {
-        self.values_count
-    }
-
-    pub fn get_unique_values_count(&self) -> usize {
-        self.value_to_points.len()
-    }
-
-    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
-        self.value_to_points
-            .get(value)
-            .map(|entry| entry.count as usize)
-    }
-
-    pub fn for_points_values(
-        &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        mut f: impl FnMut(PointOffsetType, &[<N as MapIndexKey>::Owned]),
-    ) {
-        points.for_each(|idx| {
-            if let Some(values) = self.point_to_values.get_values_slice(idx) {
-                f(idx, values);
-            }
-        });
-    }
-
-    pub fn for_each_count_per_value(
-        &self,
-        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.value_to_points
-            .iter()
-            .try_for_each(|(k, entry)| f(k.borrow(), entry.count as usize))
-    }
-
-    pub fn for_each_value_map(
-        &self,
-        mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.value_to_points
-            .iter()
-            .try_for_each(|(k, entry)| f(k.borrow(), &mut self.get_entry_iterator(entry)))
-    }
-
-    pub fn get_iterator(&self, value: &N) -> IdIter<'_> {
-        if let Some(entry) = self.value_to_points.get(value) {
-            Box::new(self.get_entry_iterator(entry))
-        } else {
-            Box::new(iter::empty::<PointOffsetType>())
-        }
-    }
-
-    fn get_entry_iterator(
-        &self,
-        entry: &ContainerSegment,
-    ) -> impl Iterator<Item = PointOffsetType> {
-        let range = entry.range.start as usize..entry.range.end as usize;
-
-        let deleted_flags = self
-            .deleted_value_to_points_container
-            .iter()
-            .by_vals()
-            .skip(range.start)
-            .chain(std::iter::repeat(false));
-
-        self.value_to_points_container[range]
-            .iter()
-            .zip(deleted_flags)
-            .filter(|(_, is_deleted)| !is_deleted)
-            .map(|(idx, _)| *idx)
-    }
-
-    pub fn for_each_value(
-        &self,
-        mut f: impl FnMut(&N) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.value_to_points.keys().try_for_each(|v| f(v.borrow()))
-    }
-
-    pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
-        }
-    }
-
-    /// Approximate RAM usage in bytes (cached at construction).
-    pub fn ram_usage_bytes(&self) -> usize {
-        self.cached_ram_usage_bytes
-    }
-
-    fn compute_ram_usage_bytes(&self) -> usize {
-        let Self {
-            value_to_points,
-            value_to_points_container,
-            deleted_value_to_points_container,
-            point_to_values,
-            indexed_points: _,
-            values_count: _,
-            storage: _,
-            cached_ram_usage_bytes: _,
-        } = self;
-
-        let hashmap_entry_overhead = size_of::<u64>() + size_of::<usize>();
-        let vtp_base_bytes: usize = value_to_points.capacity()
-            * (size_of::<<N as MapIndexKey>::Owned>()
-                + size_of::<ContainerSegment>()
-                + hashmap_entry_overhead);
-        // Account for heap-allocated key data (e.g., long strings)
-        let vtp_heap_bytes: usize = value_to_points.keys().map(|k| N::owned_heap_bytes(k)).sum();
-        let container_bytes = value_to_points_container.capacity() * size_of::<PointOffsetType>();
-        let deleted_bytes = deleted_value_to_points_container
-            .capacity()
-            .div_ceil(u8::BITS as usize);
-        vtp_base_bytes
-            + vtp_heap_bytes
-            + container_bytes
-            + deleted_bytes
-            + point_to_values.ram_usage_bytes()
     }
 }
