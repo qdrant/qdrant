@@ -6,7 +6,7 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
 use super::mutable_null_index::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME};
-use super::shared::{self, NullIndexRead};
+use super::read_ops::{self, NullIndexRead};
 use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{
@@ -102,7 +102,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        shared::filter(self, condition)
+        Ok(read_ops::filter(self, condition))
     }
 
     fn estimate_cardinality(
@@ -110,7 +110,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
         condition: &FieldCondition,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        shared::estimate_cardinality(self, condition)
+        Ok(read_ops::estimate_cardinality(self, condition))
     }
 
     fn for_each_payload_block(
@@ -128,7 +128,7 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        shared::condition_checker(self, condition, hw_acc)
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 }
 

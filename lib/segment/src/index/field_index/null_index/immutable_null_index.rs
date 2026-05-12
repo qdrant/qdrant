@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 
 use super::mutable_null_index::MutableNullIndex;
-use super::shared::{self, NullIndexRead};
+use super::read_ops::{self, NullIndexRead};
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
@@ -83,7 +83,7 @@ impl PayloadFieldIndexRead for ImmutableNullIndex {
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        shared::filter(self, condition)
+        Ok(read_ops::filter(self, condition))
     }
 
     #[inline]
@@ -92,7 +92,7 @@ impl PayloadFieldIndexRead for ImmutableNullIndex {
         condition: &FieldCondition,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        shared::estimate_cardinality(self, condition)
+        Ok(read_ops::estimate_cardinality(self, condition))
     }
 
     #[inline]
@@ -111,7 +111,7 @@ impl PayloadFieldIndexRead for ImmutableNullIndex {
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        shared::condition_checker(self, condition, hw_acc)
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 }
 

@@ -1,4 +1,4 @@
-//! Shared read surface for null indexes.
+//! Read operations shared by all null index variants.
 //!
 //! The three concrete null index types ([`MutableNullIndex`],
 //! [`ImmutableNullIndex`], [`ReadOnlyNullIndex`]) all expose the same read
@@ -108,7 +108,7 @@ pub trait NullIndexRead {
 pub(super) fn filter<'a, N: NullIndexRead>(
     idx: &'a N,
     condition: &'a FieldCondition,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
     let FieldCondition {
         key: _,
         r#match: _,
@@ -125,40 +125,37 @@ pub(super) fn filter<'a, N: NullIndexRead>(
     let is_null_flags = idx.is_null_flags();
     let total_point_count = idx.total_point_count();
 
-    let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> =
-        if let Some(is_empty) = is_empty {
-            if *is_empty {
-                // Return points that don't have values
-                Some(Box::new(has_values_flags.iter_falses().chain({
-                    let end = has_values_flags.len() as PointOffsetType;
-                    end..total_point_count as u32
-                })))
-            } else {
-                // Return points that have values
-                Some(Box::new(has_values_flags.iter_trues()))
-            }
-        } else if let Some(is_null) = is_null {
-            if *is_null {
-                // Return points that have null values
-                Some(Box::new(is_null_flags.iter_trues()))
-            } else {
-                // Return points that don't have null values
-                Some(Box::new(is_null_flags.iter_falses().chain({
-                    let end = is_null_flags.len() as PointOffsetType;
-                    end..total_point_count as u32
-                })))
-            }
+    if let Some(is_empty) = is_empty {
+        if *is_empty {
+            // Return points that don't have values
+            Some(Box::new(has_values_flags.iter_falses().chain({
+                let end = has_values_flags.len() as PointOffsetType;
+                end..total_point_count as u32
+            })))
         } else {
-            None
-        };
-
-    Ok(result)
+            // Return points that have values
+            Some(Box::new(has_values_flags.iter_trues()))
+        }
+    } else if let Some(is_null) = is_null {
+        if *is_null {
+            // Return points that have null values
+            Some(Box::new(is_null_flags.iter_trues()))
+        } else {
+            // Return points that don't have null values
+            Some(Box::new(is_null_flags.iter_falses().chain({
+                let end = is_null_flags.len() as PointOffsetType;
+                end..total_point_count as u32
+            })))
+        }
+    } else {
+        None
+    }
 }
 
 pub(super) fn estimate_cardinality<N: NullIndexRead>(
     idx: &N,
     condition: &FieldCondition,
-) -> OperationResult<Option<CardinalityEstimation>> {
+) -> Option<CardinalityEstimation> {
     let FieldCondition {
         key,
         r#match: _,
@@ -175,7 +172,7 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
     let is_null_flags = idx.is_null_flags();
     let total_point_count = idx.total_point_count();
 
-    Ok(if let Some(is_empty) = is_empty {
+    if let Some(is_empty) = is_empty {
         if *is_empty {
             let has_values_count = has_values_flags.count_trues();
             let estimated = total_point_count.saturating_sub(has_values_count);
@@ -221,7 +218,7 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
         }
     } else {
         None
-    })
+    }
 }
 
 pub(super) fn condition_checker<'a, N: NullIndexRead>(

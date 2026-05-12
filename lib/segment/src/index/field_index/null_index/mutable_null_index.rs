@@ -8,7 +8,7 @@ use common::universal_io::MmapFile;
 use fs_err as fs;
 use serde_json::Value;
 
-use super::shared::{self, NullIndexRead};
+use super::read_ops::{self, NullIndexRead};
 use crate::common::Flusher;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::flags::roaring_flags::RoaringFlags;
@@ -267,7 +267,7 @@ impl PayloadFieldIndexRead for MutableNullIndex {
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        shared::filter(self, condition)
+        Ok(read_ops::filter(self, condition))
     }
 
     fn estimate_cardinality(
@@ -275,7 +275,7 @@ impl PayloadFieldIndexRead for MutableNullIndex {
         condition: &FieldCondition,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        shared::estimate_cardinality(self, condition)
+        Ok(read_ops::estimate_cardinality(self, condition))
     }
 
     fn for_each_payload_block(
@@ -293,7 +293,7 @@ impl PayloadFieldIndexRead for MutableNullIndex {
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        shared::condition_checker(self, condition, hw_acc)
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 }
 

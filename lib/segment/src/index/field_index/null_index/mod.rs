@@ -1,7 +1,7 @@
 pub mod immutable_null_index;
 pub mod mutable_null_index;
 pub mod read_only_null_index;
-mod shared;
+mod read_ops;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -11,7 +11,7 @@ pub use immutable_null_index::ImmutableNullIndex;
 pub use mutable_null_index::MutableNullIndex;
 pub use read_only_null_index::ReadOnlyNullIndex;
 use serde_json::Value;
-pub use shared::NullIndexRead;
+pub use read_ops::NullIndexRead;
 
 use super::{PayloadFieldIndex, PayloadFieldIndexRead};
 use crate::common::flags::roaring_flags::RoaringFlags;
@@ -109,7 +109,7 @@ impl PayloadFieldIndexRead for NullIndex {
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        shared::filter(self, condition)
+        Ok(read_ops::filter(self, condition))
     }
 
     fn estimate_cardinality(
@@ -117,7 +117,7 @@ impl PayloadFieldIndexRead for NullIndex {
         condition: &FieldCondition,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<super::CardinalityEstimation>> {
-        shared::estimate_cardinality(self, condition)
+        Ok(read_ops::estimate_cardinality(self, condition))
     }
 
     fn for_each_payload_block(
@@ -135,7 +135,7 @@ impl PayloadFieldIndexRead for NullIndex {
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        shared::condition_checker(self, condition, hw_acc)
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 }
 
