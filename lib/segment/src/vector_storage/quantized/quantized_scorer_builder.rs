@@ -15,7 +15,9 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, Manhat
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_multi_custom_query_scorer::QuantizedMultiCustomQueryScorer;
 use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
-use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsets;
+use crate::vector_storage::quantized::quantized_multivector_storage::{
+    MultivectorOffsetsStorage, QuantizedMultivectorStorage,
+};
 use crate::vector_storage::query::{
     ContextQuery, DiscoverQuery, NaiveFeedbackQuery, RecoBestScoreQuery, RecoQuery,
     RecoSumScoresQuery, TransformInto,
@@ -129,40 +131,40 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 self.new_quantized_scorer::<TElement, TMetric>(storage)
             }
             QuantizedVectorStorage::ScalarRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::ScalarMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::ScalarChunkedMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::PQRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::PQMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::PQChunkedMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::BinaryRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::BinaryMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::TQRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::TQMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
             QuantizedVectorStorage::TQChunkedMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(storage)
             }
         }
     }
@@ -248,13 +250,18 @@ impl<'a> QuantizedScorerBuilder<'a> {
         }
     }
 
-    fn new_multi_quantized_scorer<TElement, TMetric>(
+    fn new_multi_quantized_scorer<TElement, TMetric, QuantizedStorage, OffsetStorage>(
         self,
-        quantized_multivector_storage: &'a (impl EncodedVectors + MultivectorOffsets),
+        quantized_multivector_storage: &'a QuantizedMultivectorStorage<
+            QuantizedStorage,
+            OffsetStorage,
+        >,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
         TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement> + 'a,
+        QuantizedStorage: quantization::EncodedVectors + 'a,
+        OffsetStorage: MultivectorOffsetsStorage + 'a,
     {
         let Self {
             quantized_storage: _same_as_quantized_storage_in_args,

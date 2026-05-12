@@ -16,7 +16,8 @@ use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
 use super::quantized_multivector_storage::{
-    MultivectorOffset, MultivectorOffsetsStorageMmap, QuantizedMultivectorStorage,
+    MultivectorOffset, MultivectorOffsetsStorage, MultivectorOffsetsStorageMmap,
+    QuantizedMultivectorStorage,
 };
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::Flusher;
@@ -38,7 +39,7 @@ use crate::vector_storage::quantized::quantized_mmap_storage::{
 };
 use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffsets, MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageRam,
+    MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageRam,
 };
 use crate::vector_storage::quantized::quantized_query_scorer::{
     InternalScorerUnsupported, QuantizedQueryScorer,
@@ -393,11 +394,15 @@ impl QuantizedVectors {
             Ok(Box::new(RawScorerImpl { query_scorer }))
         }
 
-        fn build_multi<'a, TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets>(
+        fn build_multi<'a, QuantizedStorage, OffsetStorage>(
             point_id: PointOffsetType,
-            quantized_data: &'a TEncodedVectors,
+            quantized_data: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
             hardware_counter: HardwareCounterCell,
-        ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
+        ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported>
+        where
+            QuantizedStorage: quantization::EncodedVectors + 'a,
+            OffsetStorage: MultivectorOffsetsStorage + 'a,
+        {
             let query_scorer = QuantizedMultiQueryScorer::new_internal(
                 point_id,
                 quantized_data,
