@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -16,37 +14,25 @@ use crate::vector_storage::quantized::quantized_multivector_storage::{
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedMultiCustomQueryScorer<
-    'a,
-    TElement,
-    TMetric,
-    QuantizedStorage,
-    OffsetStorage,
-    TQuery,
-> where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
+pub struct QuantizedMultiCustomQueryScorer<'a, QuantizedStorage, OffsetStorage, TQuery>
+where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
     TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
     query: TQuery,
     quantized_multivector_storage: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
-    metric: PhantomData<TMetric>,
-    element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TElement, TMetric, QuantizedStorage, OffsetStorage, TQuery>
-    QuantizedMultiCustomQueryScorer<'a, TElement, TMetric, QuantizedStorage, OffsetStorage, TQuery>
+impl<'a, QuantizedStorage, OffsetStorage, TQuery>
+    QuantizedMultiCustomQueryScorer<'a, QuantizedStorage, OffsetStorage, TQuery>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
     TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
-    pub fn new_multi<TOriginalQuery, TInputQuery>(
+    pub fn new_multi<TElement, TMetric, TOriginalQuery, TInputQuery>(
         raw_query: TInputQuery,
         quantized_multivector_storage: &'a QuantizedMultivectorStorage<
             QuantizedStorage,
@@ -56,6 +42,8 @@ where
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
         TOriginalQuery: Query<TypedMultiDenseVector<TElement>>
             + TransformInto<
                 TQuery,
@@ -98,30 +86,19 @@ where
         Self {
             query,
             quantized_multivector_storage,
-            metric: PhantomData,
-            element: PhantomData,
             hardware_counter,
         }
     }
 }
 
-impl<TElement, TMetric, QuantizedStorage, OffsetStorage, TQuery> QueryScorer
-    for QuantizedMultiCustomQueryScorer<
-        '_,
-        TElement,
-        TMetric,
-        QuantizedStorage,
-        OffsetStorage,
-        TQuery,
-    >
+impl<QuantizedStorage, OffsetStorage, TQuery> QueryScorer
+    for QuantizedMultiCustomQueryScorer<'_, QuantizedStorage, OffsetStorage, TQuery>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
     TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
-    type TVector = [TElement];
+    type TVector = ();
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
@@ -138,7 +115,7 @@ where
         })
     }
 
-    fn score(&self, _v2: &[TElement]) -> ScoreType {
+    fn score(&self, _v2: &()) -> ScoreType {
         unimplemented!("This method is not expected to be called for quantized scorer");
     }
 
