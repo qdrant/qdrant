@@ -74,7 +74,8 @@ where
         let index = if effective_is_on_disk {
             MapIndex::Mmap(Box::new(mmap_index))
         } else {
-            MapIndex::Immutable(ImmutableMapIndex::open_mmap(mmap_index))
+            // Load into RAM, use mmap as backing storage
+            MapIndex::Immutable(ImmutableMapIndex::open_mmap(mmap_index)?)
         };
         Ok(Some(index))
     }

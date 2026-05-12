@@ -6,7 +6,7 @@ use common::bitvec::{BitSlice, BitSliceExt, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::mmap::{self, Advice, AdviceSetting, MmapSlice, create_and_ensure_length};
-use common::persisted_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD, serialize_hashmap};
+use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, OpenOptions};
@@ -62,7 +62,8 @@ pub struct MmapInvertedIndex {
 
 pub(in crate::index::field_index::full_text_index) struct Storage {
     pub(in crate::index::field_index::full_text_index) postings: MmapPostingsEnum,
-    pub(in crate::index::field_index::full_text_index) vocab: MmapHashMap<str, TokenId>,
+    pub(in crate::index::field_index::full_text_index) vocab:
+        UniversalHashMap<str, TokenId, MmapFile>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: MmapSlice<usize>,
     pub(in crate::index::field_index::full_text_index) deleted_points: BitVec,
 }
@@ -103,8 +104,6 @@ impl MmapInvertedIndex {
             }
         }
 
-        // Currently MmapHashMap maps str -> [u32], but we only need to map str -> u32.
-        // TODO: Consider making another mmap structure for this case.
         serialize_hashmap::<str, TokenId>(
             &vocab_path,
             vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
@@ -176,7 +175,14 @@ impl MmapInvertedIndex {
                 )?)
             }
         };
-        let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path, false)?;
+        let vocab = UniversalHashMap::<str, TokenId, MmapFile>::open(
+            &vocab_path,
+            OpenOptions {
+                writeable: false,
+                populate: Some(populate),
+                ..OpenOptions::default()
+            },
+        )?;
 
         let point_to_tokens_count = unsafe {
             MmapSlice::try_from(mmap::open_write_mmap(
@@ -216,12 +222,13 @@ impl MmapInvertedIndex {
         }))
     }
 
-    pub(super) fn iter_vocab(&self) -> impl Iterator<Item = (&str, &TokenId)> + '_ {
-        // unwrap safety: we know that each token points to a token id.
+    pub(super) fn for_each_vocab(
+        &self,
+        mut f: impl FnMut(&str, TokenId) -> OperationResult<()>,
+    ) -> OperationResult<()> {
         self.storage
             .vocab
-            .iter()
-            .map(|(k, v)| (k, v.first().unwrap()))
+            .for_each_entry(|k, v| f(k, unwrap_token(v)))
     }
 
     /// Returns whether the point id is valid and active.
@@ -480,7 +487,7 @@ impl MmapInvertedIndex {
             deleted_points: _,
         } = storage;
         postings.clear_cache()?;
-        vocab.clear_cache()?;
+        vocab.clear_ram_cache()?;
         point_to_tokens_count.clear_cache()?;
         clear_disk_cache(&path.join(DELETED_POINTS_FILE))?;
         Ok(())
@@ -549,17 +556,16 @@ impl InvertedIndex for MmapInvertedIndex {
         self.storage.postings.posting_len(token_id)
     }
 
-    fn vocab_with_postings_len_iter(
+    fn for_each_vocab_with_postings_len(
         &self,
-    ) -> impl Iterator<Item = OperationResult<(&str, usize)>> + '_ {
-        self.iter_vocab().filter_map(move |(token, &token_id)| {
-            // Surface read errors as iterator items; drop tokens with no
-            // posting list silently (same as the in-memory variants).
-            match self.storage.postings.posting_len(token_id) {
-                Ok(Some(posting_len)) => Some(Ok((token, posting_len))),
-                Ok(None) => None,
-                Err(err) => Some(Err(err)),
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.for_each_vocab(|token, token_id| {
+            // Drop tokens with no posting list silently (same as the in-memory variants).
+            if let Some(posting_len) = self.storage.postings.posting_len(token_id)? {
+                f(token, posting_len)?;
             }
+            Ok(())
         })
     }
 
@@ -616,25 +622,30 @@ impl InvertedIndex for MmapInvertedIndex {
 
     fn for_each_token_id<'a, Meta>(
         &self,
-        mut tokens: impl Iterator<Item = (Meta, &'a str)>,
+        tokens: impl Iterator<Item = (Meta, &'a str)>,
         hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(Meta, Option<TokenId>),
     ) -> OperationResult<()> {
-        tokens.try_for_each(|(meta, token)| {
-            if self.is_on_disk {
-                hw_counter.payload_index_io_read_counter().incr_delta(
-                    READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
-                );
-            }
+        self.storage
+            .vocab
+            .for_each_entry_in_iter(tokens, |meta, token_ids| {
+                if self.is_on_disk {
+                    hw_counter.payload_index_io_read_counter().incr_delta(
+                        READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
+                    );
+                }
+                f(meta, token_ids.map(unwrap_token));
+                Ok(())
+            })
+    }
+}
 
-            let token_id = self
-                .storage
-                .vocab
-                .get(token.as_ref())?
-                .and_then(<[TokenId]>::first)
-                .copied();
-            f(meta, token_id);
-            Ok(())
-        })
+/// Currently persisted_hashmap maps `str -> [u32]`, but we only need to map
+/// `str -> u32`.
+/// TODO: Consider making another mmap structure for this case.
+fn unwrap_token(token_ids: &[TokenId]) -> TokenId {
+    match token_ids {
+        [token_id] => *token_id,
+        _ => panic!("Expected exactly one token id, got {}", token_ids.len()),
     }
 }

@@ -230,13 +230,15 @@ impl InvertedIndex for MutableInvertedIndex {
         Ok(self.postings.get(token_id as usize).map(|x| x.len()))
     }
 
-    fn vocab_with_postings_len_iter(
+    fn for_each_vocab_with_postings_len(
         &self,
-    ) -> impl Iterator<Item = OperationResult<(&str, usize)>> + '_ {
-        self.vocab.iter().filter_map(|(token, &posting_idx)| {
-            self.postings
-                .get(posting_idx as usize)
-                .map(|postings| Ok((token.as_str(), postings.len())))
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.vocab.iter().try_for_each(|(token, &posting_idx)| {
+            if let Some(postings) = self.postings.get(posting_idx as usize) {
+                f(token.as_str(), postings.len())?;
+            }
+            Ok(())
         })
     }
 

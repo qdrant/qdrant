@@ -17,6 +17,7 @@ testing = []
 
 [dependencies]
 ahash = { workspace = true }
+aligned-vec = "0.6.4"
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }

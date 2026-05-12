@@ -1,3 +1,4 @@
+pub mod aligned_buf;
 pub mod binary_search;
 pub mod bitpacking;
 pub mod bitpacking_links;

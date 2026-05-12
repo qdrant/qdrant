@@ -1,123 +1,237 @@
-use std::collections::{BTreeSet, HashMap};
-use std::hash::Hash;
+use std::collections::BTreeMap;
 
+use itertools::{Itertools, assert_equal};
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
 
-use super::fixtures::{gen_ident, gen_map, repeat_until};
-use super::{Key, MmapHashMap, serialize_hashmap};
+use super::fixtures::{Group, TestKey, TestReport, TestValue};
+use super::{Key, MmapHashMap, UniversalHashMap, serialize_hashmap};
+#[cfg(target_os = "linux")]
+use crate::universal_io::IoUringFile;
+use crate::universal_io::{self, MmapFile, UniversalRead};
 
-#[test]
-fn test_mmap_hash() {
-    test_mmap_hash_impl(gen_ident, |s| s.as_str(), |s| s.to_owned());
-    test_mmap_hash_impl(|rng| rng.random::<i64>(), |i| i, |i| *i);
-    test_mmap_hash_impl(|rng| rng.random::<u128>(), |i| i, |i| *i);
+#[rustfmt::skip] #[test] fn test_k_str_v_i64()   { run_checks::<str,  i64 >(); }
+#[rustfmt::skip] #[test] fn test_k_str_v_u128()  { run_checks::<str,  u128>(); }
+#[rustfmt::skip] #[test] fn test_k_str_v_u32()   { run_checks::<str,  u32 >(); }
+
+#[rustfmt::skip] #[test] fn test_k_i64_v_i64()   { run_checks::<i64,  i64 >(); }
+#[rustfmt::skip] #[test] fn test_k_i64_v_u128()  { run_checks::<i64,  u128>(); }
+#[rustfmt::skip] #[test] fn test_k_i64_v_u32()   { run_checks::<i64,  u32 >(); }
+
+#[rustfmt::skip] #[test] fn test_k_u128_v_i64()  { run_checks::<u128, i64 >(); }
+#[rustfmt::skip] #[test] fn test_k_u128_v_u128() { run_checks::<u128, u128>(); }
+#[rustfmt::skip] #[test] fn test_k_u128_v_u32()  { run_checks::<u128, u32 >(); }
+
+fn run_checks<K: ?Sized + TestKey, V: TestValue>() {
+    let mut r = TestReport::new();
+    run_checks2::<K, V>(r.group("main"), 1000, false);
+    run_checks2::<K, V>(r.group("empty"), 0, false);
+
+    if K::NAME == str::NAME {
+        run_checks2::<K, V>(r.group("large_keys"), 50, true);
+    }
 }
 
-fn test_mmap_hash_impl<K: Key + ?Sized, K1: Ord + Hash>(
-    generator: impl Clone + Fn(&mut StdRng) -> K1,
-    as_ref: impl Fn(&K1) -> &K,
-    from_ref: impl Fn(&K) -> K1,
+fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
+    mut r: Group<'_>,
+    entry_count: usize,
+    large_keys: bool,
 ) {
     let mut rng = StdRng::seed_from_u64(42);
+
+    // Ground truth
+    let mut orig = BTreeMap::<K::Owned, Vec<V>>::new();
+    while orig.len() < entry_count {
+        let key = K::gen_key(&mut rng, large_keys);
+        if orig.contains_key(&key) {
+            continue;
+        }
+        let values = (0..rng.random_range(1..=100))
+            .map(|_| V::gen_value(&mut rng))
+            .collect();
+        orig.insert(key, values);
+    }
+    let non_existing_keys = std::iter::repeat_with(|| K::gen_key(&mut rng, large_keys))
+        .filter(|key| !orig.contains_key(key))
+        .unique()
+        .take(1000)
+        .collect::<Vec<_>>();
+
+    // File
     let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-
-    let map = gen_map(&mut rng, generator.clone(), 1000);
+    let path = tmpdir.path().join("map");
     serialize_hashmap(
-        &tmpdir.path().join("map"),
-        map.iter().map(|(k, v)| (as_ref(k), v.iter().copied())),
-    )
-    .unwrap();
-    let mmap = MmapHashMap::<K, u32>::open(&tmpdir.path().join("map"), false).unwrap();
-
-    // Non-existing keys should return None
-    for _ in 0..1000 {
-        let key = repeat_until(|| generator(&mut rng), |key| !map.contains_key(key));
-        assert!(mmap.get(as_ref(&key)).unwrap().is_none());
-    }
-
-    // check keys iterator
-    for key in mmap.keys() {
-        let key = from_ref(key);
-        assert!(map.contains_key(&key));
-    }
-    assert_eq!(mmap.keys_count(), map.len());
-    assert_eq!(mmap.keys().count(), map.len());
-
-    for (k, v) in mmap.iter() {
-        let v = v.iter().copied().collect::<BTreeSet<_>>();
-        assert_eq!(map.get(&from_ref(k)).unwrap(), &v);
-    }
-
-    let keys: Vec<_> = mmap.keys().collect();
-    assert_eq!(keys.len(), map.len());
-
-    // Existing keys should return the correct values
-    for (k, v) in map {
-        assert_eq!(
-            mmap.get(as_ref(&k)).unwrap().unwrap(),
-            &v.into_iter().collect::<Vec<_>>()
-        );
-    }
-}
-
-#[test]
-fn test_mmap_hash_impl_u64_value() {
-    let mut rng = StdRng::seed_from_u64(42);
-    let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-
-    let mut map: HashMap<i64, BTreeSet<u64>> = Default::default();
-
-    for key in 0..10i64 {
-        map.insert(key, (0..100).map(|_| rng.random_range(0..=1000)).collect());
-    }
-
-    serialize_hashmap(
-        &tmpdir.path().join("map"),
-        map.iter().map(|(k, v)| (k, v.iter().copied())),
+        &path,
+        orig.iter().map(|(k, v)| (K::as_ref(k), v.iter().copied())),
     )
     .unwrap();
 
-    let mmap = MmapHashMap::<i64, u64>::open(&tmpdir.path().join("map"), true).unwrap();
-
-    for (k, v) in map {
-        assert_eq!(
-            mmap.get(&k).unwrap().unwrap(),
-            &v.into_iter().collect::<Vec<_>>()
-        );
-    }
-
-    assert!(mmap.get(&100).unwrap().is_none())
-}
-
-#[test]
-fn test_mmap_hash_impl_u128_value() {
-    let mut rng = StdRng::seed_from_u64(42);
-    let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-
-    let mut map: HashMap<u128, BTreeSet<u32>> = Default::default();
-
-    map.insert(
-        9812384971724u128,
-        (0..100).map(|_| rng.random_range(0..=1000)).collect(),
+    // implementations under test
+    run_mmap_checks(
+        r.group("mmap"),
+        &MmapHashMap::<K, V>::open(&path, false).unwrap(),
+        &orig,
+        &non_existing_keys,
     );
+    run_uio_checks(
+        r.group("uio:mmap"),
+        &mut rng,
+        &UniversalHashMap::<K, V, MmapFile>::open(&path, Default::default()).unwrap(),
+        &orig,
+        &non_existing_keys,
+    );
+    #[cfg(target_os = "linux")]
+    run_uio_checks(
+        r.group("uio:io_uring"),
+        &mut rng,
+        &UniversalHashMap::<K, V, IoUringFile>::open(&path, Default::default()).unwrap(),
+        &orig,
+        &non_existing_keys,
+    );
+}
 
-    serialize_hashmap(
-        &tmpdir.path().join("map"),
-        map.iter().map(|(k, v)| (k, v.iter().copied())),
-    )
-    .unwrap();
+fn run_mmap_checks<K: ?Sized + TestKey, V: TestValue>(
+    mut r: Group<'_>,
+    mmap: &MmapHashMap<K, V>,
+    orig: &BTreeMap<K::Owned, Vec<V>>,
+    non_existing_keys: &[K::Owned],
+) {
+    r.check("get() for existing keys", || {
+        for (key, values) in orig {
+            let val = mmap.get(K::as_ref(key)).unwrap().unwrap();
+            assert_eq!(val, values);
+        }
+    });
+    r.check("get() for non-existing keys", || {
+        for key in non_existing_keys {
+            assert!(mmap.get(K::as_ref(key)).unwrap().is_none());
+        }
+    });
+    r.check("keys_count()", || assert_eq!(mmap.keys_count(), orig.len()));
+    r.check("keys()", || assert_equal(mmap.keys().sorted(), orig.keys()));
 
-    let mmap = MmapHashMap::<u128, u32>::open(&tmpdir.path().join("map"), true).unwrap();
-
-    let keys: Vec<_> = mmap.keys().collect();
-    assert_eq!(keys.len(), map.len());
-
-    for (k, v) in map {
-        assert_eq!(
-            mmap.get(&k).unwrap().unwrap(),
-            &v.into_iter().collect::<Vec<_>>()
+    r.check("iter()", || {
+        assert_equal(
+            mmap.iter().sorted(),
+            orig.iter().map(|(k, v)| (K::as_ref(k), v.as_slice())),
         );
-    }
-    assert!(mmap.get(&100).unwrap().is_none())
+    });
+}
+
+fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
+    mut r: Group<'_>,
+    mut rng: &mut StdRng,
+    uio: &UniversalHashMap<K, V, S>,
+    orig: &BTreeMap<K::Owned, Vec<V>>,
+    non_existing_keys: &[K::Owned],
+) {
+    r.check("keys_count()", || assert_eq!(uio.keys_count(), orig.len()));
+
+    r.check("get() for existing keys", || {
+        for (key, values) in orig {
+            let val = uio.unbatched_get(K::as_ref(key)).unwrap().unwrap();
+            assert_eq!(&val, values, "uio::unbatched_get()");
+        }
+    });
+
+    r.check("get_values_count() for existing keys", || {
+        for (key, values) in orig {
+            let val = uio
+                .unbatched_get_values_count(K::as_ref(key))
+                .unwrap()
+                .unwrap();
+            assert_eq!(val, values.len());
+        }
+    });
+
+    r.check("get() for non-existing keys", || {
+        for key in non_existing_keys {
+            assert!(uio.unbatched_get(K::as_ref(key)).unwrap().is_none());
+        }
+    });
+
+    r.check("get_values_count() for non-existing keys", || {
+        for key in non_existing_keys {
+            assert!(
+                uio.unbatched_get_values_count(K::as_ref(key))
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    });
+
+    r.check("for_each_entry", || {
+        let mut res = Vec::new();
+        uio.for_each_entry(|k, vals| push_val(&mut res, (K::from_ref(k), vals.to_vec())))
+            .unwrap();
+        res.sort();
+        assert_equal(res.iter().map(|(k, v)| (k, v)), orig.iter());
+    });
+
+    r.check("for_each_key", || {
+        let mut res = Vec::new();
+        uio.for_each_key(|k| push_val(&mut res, K::from_ref(k)))
+            .unwrap();
+        res.sort();
+        assert_equal(res.iter(), orig.keys());
+    });
+
+    r.check("for_each_entry_in_iter", || {
+        #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+        struct Entry<KO, V> {
+            key: KO,
+            values: Option<Vec<V>>,
+            meta: u16,
+        }
+
+        let mut rng2 = rng.fork();
+        let mut shuffled = std::iter::chain(
+            orig.iter().map(|(k, v)| Entry {
+                key: k.clone(),
+                values: Some(v.clone()),
+                meta: rng.random::<u16>(),
+            }),
+            non_existing_keys.iter().map(|k| Entry {
+                key: k.clone(),
+                values: None,
+                meta: rng2.random::<u16>(),
+            }),
+        )
+        .collect_vec();
+        shuffled.shuffle(&mut rng);
+
+        let mut collected = Vec::new();
+        uio.for_each_entry_in_iter(
+            shuffled.iter().map(|entry| {
+                let Entry {
+                    key,
+                    values: _,
+                    meta,
+                } = entry;
+                ((*meta, key.clone()), K::as_ref(key))
+            }),
+            |(meta, key), vals| {
+                push_val(
+                    &mut collected,
+                    Entry {
+                        key,
+                        values: vals.map(|v| v.to_vec()),
+                        meta,
+                    },
+                )
+            },
+        )
+        .unwrap();
+
+        shuffled.sort();
+        collected.sort();
+        assert_equal(collected.iter(), shuffled.iter());
+    });
+}
+
+#[expect(clippy::unnecessary_wraps, reason = "reduce boilerplate in checks")]
+fn push_val<T>(v: &mut Vec<T>, val: T) -> universal_io::Result<()> {
+    v.push(val);
+    Ok(())
 }

@@ -9,7 +9,7 @@ use memmap2::Mmap;
 use ph::fmph::Function;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use super::{BucketOffset, Header, Key, ValuesLen};
+use super::{BucketOffset, Header, Key, ReadResult, ValuesLen, read_err};
 use crate::mmap::{AdviceSetting, Madviseable, open_read_mmap};
 
 /// On-disk hash map backed by a memory-mapped file.
@@ -93,7 +93,15 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
 
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         (0..self.keys_count()).filter_map(|i| match self.get_entry(i) {
-            Ok(entry) => K::from_bytes(entry),
+            Ok(entry) => match K::from_bytes(entry) {
+                ReadResult::Ok(entry) => Some(entry),
+                ReadResult::Incomplete => None,
+                ReadResult::Invalid(error) => {
+                    debug_assert!(false, "Error reading key for entry {i}: {error}");
+                    log::error!("Error reading key for entry {i}: {error}");
+                    None
+                }
+            },
             Err(err) => {
                 debug_assert!(false, "Error reading entry for key {i}: {err}");
                 log::error!("Error reading entry for key {i}: {err}");
@@ -104,8 +112,11 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
 
     pub fn iter(&self) -> impl Iterator<Item = (&K, &[V])> {
         (0..self.keys_count()).filter_map(|i| {
+            // NOTE: errors are discarded
             let entry = self.get_entry(i).ok()?;
-            let key = K::from_bytes(entry)?;
+            let ReadResult::Ok(key) = K::from_bytes(entry) else {
+                return None;
+            };
             let values = Self::get_values_from_entry(entry, key).ok()?;
             Some((key, values))
         })
@@ -184,10 +195,9 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
             .and_then(|b| <[BucketOffset]>::ref_from_bytes(b).ok())
             .and_then(|buckets| buckets.get(index).copied())
             .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Can't read bucket from mmap, pos: {bucket_from}:{bucket_to}"),
-                )
+                read_err(format!(
+                    "Can't read bucket from mmap, pos: {bucket_from}:{bucket_to}"
+                ))
             })?;
 
         let entry_start = self.header.buckets_pos as usize
