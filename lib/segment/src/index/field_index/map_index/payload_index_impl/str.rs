@@ -1,15 +1,12 @@
 use std::iter;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use indexmap::IndexSet;
 use itertools::Itertools;
-use uuid::Uuid;
 
-use super::MapIndex;
+use super::super::MapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{
@@ -21,10 +18,10 @@ use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
-    UuidIntType, ValueVariants,
+    ValueVariants,
 };
 
-impl PayloadFieldIndex for MapIndex<UuidIntType> {
+impl PayloadFieldIndex for MapIndex<str> {
     fn wipe(self) -> OperationResult<()> {
         self.wipe()
     }
@@ -42,7 +39,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     }
 }
 
-impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
+impl PayloadFieldIndexRead for MapIndex<str> {
     fn count_indexed_points(&self) -> usize {
         self.get_indexed_points()
     }
@@ -52,73 +49,43 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> =
-            match &condition.r#match {
-                Some(Match::Value(MatchValue { value })) => match value {
-                    ValueVariants::String(uuid_string) => {
-                        let Ok(uuid) = Uuid::from_str(uuid_string) else {
-                            return Ok(None);
-                        };
-                        Some(Box::new(self.get_iterator(&uuid.as_u128(), hw_counter)))
+        let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> = match &condition
+            .r#match
+        {
+            Some(Match::Value(MatchValue { value })) => match value {
+                ValueVariants::String(keyword) => {
+                    Some(Box::new(self.get_iterator(keyword.as_str(), hw_counter)))
+                }
+                ValueVariants::Integer(_) => None,
+                ValueVariants::Bool(_) => None,
+            },
+            Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
+                AnyVariants::Strings(keywords) => Some(Box::new(
+                    keywords
+                        .iter()
+                        .flat_map(move |keyword| self.get_iterator(keyword.as_str(), hw_counter))
+                        .unique(),
+                )),
+                AnyVariants::Integers(integers) => {
+                    if integers.is_empty() {
+                        Some(Box::new(iter::empty()))
+                    } else {
+                        None
                     }
-                    ValueVariants::Integer(_) => None,
-                    ValueVariants::Bool(_) => None,
-                },
-                Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                    AnyVariants::Strings(uuids_string) => {
-                        let Ok(uuids) = uuids_string
-                            .iter()
-                            .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
-                            .collect::<Result<IndexSet<u128>, _>>()
-                        else {
-                            return Ok(None);
-                        };
-
-                        Some(Box::new(
-                            uuids
-                                .into_iter()
-                                .flat_map(move |uuid| self.get_iterator(&uuid, hw_counter))
-                                .unique(),
-                        ))
+                }
+            },
+            Some(Match::Except(MatchExcept { except })) => match except {
+                AnyVariants::Strings(keywords) => Some(self.except_set(keywords, hw_counter)?),
+                AnyVariants::Integers(other) => {
+                    if other.is_empty() {
+                        Some(Box::new(iter::empty()))
+                    } else {
+                        None
                     }
-                    AnyVariants::Integers(integers) => {
-                        if integers.is_empty() {
-                            Some(Box::new(iter::empty()))
-                        } else {
-                            None
-                        }
-                    }
-                },
-                Some(Match::Except(MatchExcept { except })) => match except {
-                    AnyVariants::Strings(uuids_string) => {
-                        let Ok(excluded_uuids) = uuids_string
-                            .iter()
-                            .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
-                            .collect::<Result<IndexSet<u128>, _>>()
-                        else {
-                            return Ok(None);
-                        };
-                        let mut points = IndexSet::new();
-                        self.for_each_value(|key| {
-                            if !excluded_uuids.contains(key) {
-                                self.get_iterator(key, hw_counter).for_each(|p| {
-                                    points.insert(p);
-                                });
-                            }
-                            Ok(())
-                        })?;
-                        Some(Box::new(points.into_iter()))
-                    }
-                    AnyVariants::Integers(other) => {
-                        if other.is_empty() {
-                            Some(Box::new(iter::empty()))
-                        } else {
-                            None
-                        }
-                    }
-                },
-                _ => None,
-            };
+                }
+            },
+            _ => None,
+        };
 
         Ok(result)
     }
@@ -130,11 +97,8 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
     ) -> OperationResult<Option<CardinalityEstimation>> {
         Ok(match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
-                ValueVariants::String(uuid_string) => {
-                    let Some(uuid) = Uuid::from_str(uuid_string).ok() else {
-                        return Ok(None);
-                    };
-                    let mut estimation = self.match_cardinality(&uuid.as_u128(), hw_counter);
+                ValueVariants::String(keyword) => {
+                    let mut estimation = self.match_cardinality(keyword.as_str(), hw_counter);
                     estimation
                         .primary_clauses
                         .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -144,19 +108,10 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
                 ValueVariants::Bool(_) => None,
             },
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Strings(uuids_string) => {
-                    let uuids: Result<IndexSet<u128>, _> = uuids_string
+                AnyVariants::Strings(keywords) => {
+                    let estimations = keywords
                         .iter()
-                        .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
-                        .collect();
-
-                    let Some(uuids) = uuids.ok() else {
-                        return Ok(None);
-                    };
-
-                    let estimations = uuids
-                        .into_iter()
-                        .map(|uuid| self.match_cardinality(&uuid, hw_counter))
+                        .map(|keyword| self.match_cardinality(keyword.as_str(), hw_counter))
                         .collect::<Vec<_>>();
                     let estimation = if estimations.is_empty() {
                         CardinalityEstimation::exact(0)
@@ -180,20 +135,11 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
                 }
             },
             Some(Match::Except(MatchExcept { except })) => match except {
-                AnyVariants::Strings(uuids_string) => {
-                    let uuids: Result<IndexSet<u128>, _> = uuids_string
-                        .iter()
-                        .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
-                        .collect();
-
-                    let Some(excluded_uuids) = uuids.ok() else {
-                        return Ok(None);
-                    };
-
-                    Some(self.except_cardinality(excluded_uuids.iter(), hw_counter))
+                AnyVariants::Strings(keywords) => {
+                    Some(self.except_cardinality(keywords.iter().map(|k| k.as_str()), hw_counter))
                 }
-                AnyVariants::Integers(other) => {
-                    if other.is_empty() {
+                AnyVariants::Integers(others) => {
+                    if others.is_empty() {
                         Some(CardinalityEstimation::exact(0).with_primary_clause(
                             PrimaryCondition::Condition(Box::new(condition.clone())),
                         ))
@@ -214,14 +160,11 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
     ) -> OperationResult<()> {
         self.for_each_value(|value| {
             let count = self
-                .get_count_for_value(value, &HardwareCounterCell::disposable()) // payload_blocks only used in HNSW building, which is unmeasured.
+                .get_count_for_value(value, &HardwareCounterCell::disposable()) // Payload_blocks only used in HNSW building, which is unmeasured.
                 .unwrap_or(0);
-            if count >= threshold {
+            if count > threshold {
                 f(PayloadBlockCondition {
-                    condition: FieldCondition::new_match(
-                        key.clone(),
-                        Uuid::from_u128(*value).to_string().into(),
-                    ),
+                    condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
                     cardinality: count,
                 })?;
             }
@@ -254,22 +197,19 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
             Match::Value(MatchValue {
                 value: ValueVariants::String(keyword),
             }) => {
-                let uuid = Uuid::parse_str(keyword).map(|u| u.as_u128()).ok()?;
+                let keyword = keyword.clone();
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    self.check_values_any(point_id, &hw_counter, |value| value == &uuid)
+                    self.check_values_any(point_id, &hw_counter, |value| value == keyword.as_str())
                 }))
             }
             Match::Any(MatchAny {
                 any: AnyVariants::Strings(list),
             }) => {
-                let list = list
-                    .iter()
-                    .map(|s| Uuid::parse_str(s).map(|u| u.as_u128()).ok())
-                    .collect::<Option<IndexSet<_>>>()?;
+                let list = list.clone();
                 if list.len() < INDEXSET_ITER_THRESHOLD {
                     Some(Box::new(move |point_id: PointOffsetType| {
                         self.check_values_any(point_id, &hw_counter, |value| {
-                            list.iter().any(|i| i == value)
+                            list.iter().any(|s| s.as_str() == value)
                         })
                     }))
                 } else {
@@ -281,14 +221,11 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
             Match::Except(MatchExcept {
                 except: AnyVariants::Strings(list),
             }) => {
-                let list = list
-                    .iter()
-                    .map(|s| Uuid::parse_str(s).map(|u| u.as_u128()).ok())
-                    .collect::<Option<IndexSet<_>>>()?;
+                let list = list.clone();
                 if list.len() < INDEXSET_ITER_THRESHOLD {
                     Some(Box::new(move |point_id: PointOffsetType| {
                         self.check_values_any(point_id, &hw_counter, |value| {
-                            !list.iter().any(|i| i == value)
+                            !list.iter().any(|s| s.as_str() == value)
                         })
                     }))
                 } else {
@@ -297,7 +234,9 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
                     }))
                 }
             }
-            // Conditions this index can't serve.
+            // Conditions this index can't serve: Match::Text/TextAny/Phrase
+            // (handled by FullTextIndex) and value-type mismatches (e.g.
+            // Match::Value(Integer) against a string-keyed map).
             Match::Value(MatchValue {
                 value: ValueVariants::Integer(_) | ValueVariants::Bool(_),
             })
