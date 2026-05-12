@@ -10,8 +10,8 @@ use common::universal_io::MmapFile;
 pub use immutable_null_index::ImmutableNullIndex;
 pub use mutable_null_index::MutableNullIndex;
 pub use read_only_null_index::ReadOnlyNullIndex;
-use serde_json::Value;
 pub use read_ops::NullIndexRead;
+use serde_json::Value;
 
 use super::{PayloadFieldIndex, PayloadFieldIndexRead};
 use crate::common::flags::roaring_flags::RoaringFlags;
