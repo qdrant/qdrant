@@ -1421,6 +1421,7 @@ name = "common"
 version = "0.0.0"
 dependencies = [
  "ahash",
+ "aligned-vec",
  "atomicwrites",
  "bincode 1.3.3",
  "bitvec",

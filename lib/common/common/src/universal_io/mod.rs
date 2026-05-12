@@ -101,6 +101,15 @@ impl ReadRange {
                 length: std::cmp::min(chunk_len, length - start),
             })
     }
+
+    /// If the last element is beyond `max_end_offset`, then shorten the length
+    /// to fit into the `0..max_end_offset` range.
+    pub fn clamp<T>(mut self, max_end_offset: u64) -> ReadRange {
+        self.byte_offset = self.byte_offset.min(max_end_offset);
+        let max_len = max_end_offset.saturating_sub(self.byte_offset) / size_of::<T>() as u64;
+        self.length = self.length.min(max_len);
+        self
+    }
 }
 
 pub type ByteOffset = u64;
