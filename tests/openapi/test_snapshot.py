@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import qdrant_host_headers, request_with_validation
 from .helpers.settings import QDRANT_HOST
 
 
@@ -370,7 +370,7 @@ def test_full_snapshot_security():
     snapshot_name = "/etc/passwd"
     response = requests.get(
         f"{QDRANT_HOST}/snapshots/{snapshot_name}",
-        headers={"Content-Type": "application/json"},
+        headers={**qdrant_host_headers(), "Content-Type": "application/json"},
     )
     assert not response.ok
     assert response.status_code == 404
@@ -378,7 +378,7 @@ def test_full_snapshot_security():
     snapshot_name = "../../../../../../../etc/passwd"
     response = requests.get(
         f"{QDRANT_HOST}/snapshots/{snapshot_name}",
-        headers={"Content-Type": "application/json"},
+        headers={**qdrant_host_headers(), "Content-Type": "application/json"},
     )
     assert not response.ok
     assert response.status_code == 404
@@ -398,7 +398,7 @@ def test_collection_snapshot_security(collection_name):
     snapshot_name = "/etc/passwd"
     response = requests.get(
         f"{QDRANT_HOST}/collections/{collection_name}/snapshots/{snapshot_name}",
-        headers={"Content-Type": "application/json"},
+        headers={**qdrant_host_headers(), "Content-Type": "application/json"},
     )
     assert not response.ok
     assert response.status_code == 404
@@ -406,7 +406,7 @@ def test_collection_snapshot_security(collection_name):
     snapshot_name = "../../../../../../../etc/passwd"
     response = requests.get(
         f"{QDRANT_HOST}/collections/{collection_name}/snapshots/{snapshot_name}",
-        headers={"Content-Type": "application/json"},
+        headers={**qdrant_host_headers(), "Content-Type": "application/json"},
     )
     assert not response.ok
     assert response.status_code == 404

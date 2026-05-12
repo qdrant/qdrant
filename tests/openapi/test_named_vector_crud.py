@@ -2,7 +2,7 @@ import pytest
 import time
 import requests
 
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import qdrant_host_headers, request_with_validation
 from .helpers.settings import QDRANT_HOST
 
 
@@ -117,6 +117,7 @@ def test_create_vector_rejects_zero_size(collection_name):
     response = requests.put(
         f"{QDRANT_HOST}/collections/{collection_name}/vectors/vec_zero",
         params={'wait': 'true'},
+        headers=qdrant_host_headers(),
         json={"dense": {"size": 0, "distance": "Cosine"}},
     )
     assert response.status_code == 422, response.text
@@ -128,6 +129,7 @@ def test_create_vector_rejects_oversize(collection_name):
     response = requests.put(
         f"{QDRANT_HOST}/collections/{collection_name}/vectors/vec_huge",
         params={'wait': 'true'},
+        headers=qdrant_host_headers(),
         json={"dense": {"size": 65537, "distance": "Cosine"}},
     )
     assert response.status_code == 422, response.text
