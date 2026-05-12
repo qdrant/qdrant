@@ -286,7 +286,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let reco_query: RecoQuery<MultiDenseVectorInternal> =
                     reco_query.transform_into()?;
                 let query_scorer =
-                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         RecoBestScoreQuery::from(reco_query),
                         quantized_multivector_storage,
                         quantization_config,
@@ -298,7 +298,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let reco_query: RecoQuery<MultiDenseVectorInternal> =
                     reco_query.transform_into()?;
                 let query_scorer =
-                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         RecoSumScoresQuery::from(reco_query),
                         quantized_multivector_storage,
                         quantization_config,
@@ -310,7 +310,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let discover_query: DiscoverQuery<MultiDenseVectorInternal> =
                     discover_query.transform_into()?;
                 let query_scorer =
-                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         discover_query,
                         quantized_multivector_storage,
                         quantization_config,
@@ -322,7 +322,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let context_query: ContextQuery<MultiDenseVectorInternal> =
                     context_query.transform_into()?;
                 let query_scorer =
-                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         context_query,
                         quantized_multivector_storage,
                         quantization_config,
@@ -334,7 +334,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let feedback_query: NaiveFeedbackQuery<MultiDenseVectorInternal> =
                     feedback_query.transform_into()?;
                 let query_scorer =
-                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         feedback_query.into_query(),
                         quantized_multivector_storage,
                         quantization_config,

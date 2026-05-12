@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
+use quantization::EncodedVectors;
 
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -10,43 +11,57 @@ use crate::data_types::vectors::{MultiDenseVectorInternal, TypedMultiDenseVector
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffset, MultivectorOffsets,
+    MultivectorOffset, MultivectorOffsets, MultivectorOffsetsStorage, QuantizedMultivectorStorage,
 };
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedMultiCustomQueryScorer<'a, TElement, TMetric, TEncodedVectors, TQuery>
-where
+pub struct QuantizedMultiCustomQueryScorer<
+    'a,
+    TElement,
+    TMetric,
+    QuantizedStorage,
+    OffsetStorage,
+    TQuery,
+> where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets,
-    TQuery: Query<TEncodedVectors::EncodedQuery>,
+    QuantizedStorage: quantization::EncodedVectors,
+    OffsetStorage: MultivectorOffsetsStorage,
+    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
     query: TQuery,
-    quantized_multivector_storage: &'a TEncodedVectors,
+    quantized_multivector_storage: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
     metric: PhantomData<TMetric>,
     element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TElement, TMetric, TEncodedVectors, TQuery>
-    QuantizedMultiCustomQueryScorer<'a, TElement, TMetric, TEncodedVectors, TQuery>
+impl<'a, TElement, TMetric, QuantizedStorage, OffsetStorage, TQuery>
+    QuantizedMultiCustomQueryScorer<'a, TElement, TMetric, QuantizedStorage, OffsetStorage, TQuery>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets,
-    TQuery: Query<TEncodedVectors::EncodedQuery>,
+    QuantizedStorage: quantization::EncodedVectors,
+    OffsetStorage: MultivectorOffsetsStorage,
+    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
     pub fn new_multi<TOriginalQuery, TInputQuery>(
         raw_query: TInputQuery,
-        quantized_multivector_storage: &'a TEncodedVectors,
+        quantized_multivector_storage: &'a QuantizedMultivectorStorage<
+            QuantizedStorage,
+            OffsetStorage,
+        >,
         quantization_config: &QuantizationConfig,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
         TOriginalQuery: Query<TypedMultiDenseVector<TElement>>
-            + TransformInto<TQuery, TypedMultiDenseVector<TElement>, TEncodedVectors::EncodedQuery>
-            + Clone,
+            + TransformInto<
+                TQuery,
+                TypedMultiDenseVector<TElement>,
+                Vec<QuantizedStorage::EncodedQuery>,
+            > + Clone,
         TInputQuery: Query<MultiDenseVectorInternal>
             + TransformInto<TOriginalQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
     {
@@ -90,13 +105,21 @@ where
     }
 }
 
-impl<TElement, TMetric, TEncodedVectors, TQuery> QueryScorer
-    for QuantizedMultiCustomQueryScorer<'_, TElement, TMetric, TEncodedVectors, TQuery>
+impl<TElement, TMetric, QuantizedStorage, OffsetStorage, TQuery> QueryScorer
+    for QuantizedMultiCustomQueryScorer<
+        '_,
+        TElement,
+        TMetric,
+        QuantizedStorage,
+        OffsetStorage,
+        TQuery,
+    >
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets,
-    TQuery: Query<TEncodedVectors::EncodedQuery>,
+    QuantizedStorage: quantization::EncodedVectors,
+    OffsetStorage: MultivectorOffsetsStorage,
+    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
     type TVector = [TElement];
 
