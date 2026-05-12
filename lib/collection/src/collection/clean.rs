@@ -13,6 +13,7 @@ use tokio::sync::watch::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
 use super::Collection;
+use crate::operations::point_ops::PointOperations;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
@@ -265,23 +266,28 @@ async fn drain_update_queue(
     shard_holder: &WeakShardHolder,
     shard_id: ShardId,
 ) -> CollectionResult<()> {
-    let Some(shard_holder) = shard_holder.upgrade() else {
-        return Err(CollectionError::not_found("Shard holder dropped"));
-    };
-    let shard_holder = shard_holder.read().await;
-    let Some(shard) = shard_holder.get_shard(shard_id) else {
-        return Err(CollectionError::not_found(format!(
-            "Shard {shard_id} not found",
-        )));
-    };
-    if !shard.is_local().await {
-        return Err(CollectionError::not_found(format!(
-            "Shard {shard_id} is not a local shard",
-        )));
-    }
+    let shard = {
+        let Some(shard_holder) = shard_holder.upgrade() else {
+            return Err(CollectionError::not_found("Shard holder dropped"));
+        };
+        let shard_holder = shard_holder.read().await;
+        let Some(shard) = shard_holder.get_shard(shard_id) else {
+            return Err(CollectionError::not_found(format!(
+                "Shard {shard_id} not found",
+            )));
+        };
+        if !shard.is_local().await {
+            return Err(CollectionError::not_found(format!(
+                "Shard {shard_id} is not a local shard",
+            )));
+        }
 
+        shard.clone()
+    };
+
+    // Use empty delete points as plunger
     let barrier = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
-        crate::operations::point_ops::PointOperations::DeletePoints { ids: vec![] },
+        PointOperations::DeletePoints { ids: vec![] },
     ));
     shard
         .update_local(
@@ -389,10 +395,9 @@ async fn clean_task(
             .collect();
 
         // Delete points from local shard
-        let delete_operation =
-            OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
-                crate::operations::point_ops::PointOperations::DeletePoints { ids },
-            ));
+        let delete_operation = OperationWithClockTag::from(
+            CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids }),
+        );
         if let Err(err) = shard
             .update_local(
                 delete_operation,
