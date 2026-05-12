@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
 use super::super::super::read_ops::MapIndexRead;
@@ -10,7 +11,7 @@ use super::ReadOnlyAppendableMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for ReadOnlyAppendableMapIndex<N>
+impl<N: MapIndexKey + ?Sized, S: UniversalRead> MapIndexRead<N> for ReadOnlyAppendableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -89,7 +90,7 @@ where
     }
 }
 
-impl<N: MapIndexKey + ?Sized> ReadOnlyAppendableMapIndex<N>
+impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
