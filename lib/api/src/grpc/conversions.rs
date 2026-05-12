@@ -1995,18 +1995,19 @@ impl From<segment::types::GeoLineString> for GeoLineString {
 impl From<Range> for segment::types::Range<OrderedFloat<FloatPayloadType>> {
     fn from(value: Range) -> Self {
         let Range { lt, gt, gte, lte } = value;
-        Self {
+        segment::types::Range {
             lt: lt.map(OrderedFloat::from),
             gt: gt.map(OrderedFloat::from),
             gte: gte.map(OrderedFloat::from),
             lte: lte.map(OrderedFloat::from),
         }
+        .normalized_to_stored_precision()
     }
 }
 
 impl From<segment::types::Range<OrderedFloat<FloatPayloadType>>> for Range {
     fn from(value: segment::types::Range<OrderedFloat<FloatPayloadType>>) -> Self {
-        let segment::types::Range { lt, gt, gte, lte } = value;
+        let segment::types::Range { lt, gt, gte, lte } = value.normalized_to_stored_precision();
         Self {
             lt: lt.map(FloatPayloadType::from),
             gt: gt.map(FloatPayloadType::from),
@@ -2018,7 +2019,44 @@ impl From<segment::types::Range<OrderedFloat<FloatPayloadType>>> for Range {
 
 impl From<Range> for segment::types::RangeInterface {
     fn from(value: Range) -> Self {
-        Self::Float(value.into())
+        Self::Float(segment::types::Range::from(value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ordered_float::OrderedFloat;
+    use segment::types::FloatPayloadType;
+
+    use crate::grpc::qdrant::Range;
+
+    #[test]
+    fn float_min_boundary_grpc_range_round_trip() {
+        let float_min = f64::from(f32::MIN);
+        let neg_one = f64::from(-1.0_f32);
+        let pos_one = f64::from(1.0_f32);
+        let float_max = f64::from(f32::MAX);
+        let grpc = Range {
+            lt: Some(float_min),
+            gt: Some(neg_one),
+            gte: Some(pos_one),
+            lte: Some(float_max),
+        };
+
+        let segment_range =
+            segment::types::Range::<OrderedFloat<FloatPayloadType>>::from(grpc.clone());
+
+        assert_eq!(segment_range.lt, Some(OrderedFloat(float_min)));
+        assert_eq!(segment_range.gt, Some(OrderedFloat(neg_one)));
+        assert_eq!(segment_range.gte, Some(OrderedFloat(pos_one)));
+        assert_eq!(segment_range.lte, Some(OrderedFloat(float_max)));
+
+        let grpc_round_trip = Range::from(segment_range);
+
+        assert_eq!(grpc_round_trip.lt, Some(float_min));
+        assert_eq!(grpc_round_trip.gt, Some(neg_one));
+        assert_eq!(grpc_round_trip.gte, Some(pos_one));
+        assert_eq!(grpc_round_trip.lte, Some(float_max));
     }
 }
 

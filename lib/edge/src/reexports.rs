@@ -75,7 +75,5 @@ pub mod internal {
 
 /// Re-export from external crates used by Qdrant.
 pub mod external {
-    pub use ordered_float;
-    pub use serde_json;
-    pub use uuid;
+    pub use {ordered_float, serde_json, uuid};
 }
