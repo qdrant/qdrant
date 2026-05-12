@@ -95,6 +95,10 @@ impl TryFrom<ReadConsistencyGrpc> for ReadConsistency {
             read_consistency::Value::Type(consistency) => Self::Type(consistency.try_into()?),
         };
 
+        consistency
+            .validate()
+            .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?;
+
         Ok(consistency)
     }
 }
