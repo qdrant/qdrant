@@ -11,6 +11,7 @@ class TestSnapshotsInterferenceWithConsensus:
         """Test that creating snapshots does not block other operations - https://github.com/qdrant/qdrant/issues/7489."""
         client = ClientUtils(host=qdrant_compose[0].host, port=qdrant_compose[0].http_port, timeout=10)
         client.wait_for_server()
+        client.wait_for_cluster_ready(expected_peers=3)
 
         # Create collection and insert points
         collection_config = {"vectors": {"size": 512, "distance": "Dot"}, "shard_number": 3, "replication_factor": 1, "optimization_config": {"indexing_threshold": 0}}
