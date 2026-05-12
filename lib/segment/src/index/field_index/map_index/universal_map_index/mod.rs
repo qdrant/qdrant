@@ -48,7 +48,7 @@ pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = Mmap
     pub(super) deleted: BitVec,
 }
 
-impl<N: MapIndexKey + Key + ?Sized> Storage<N> {
+impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> Storage<N, S> {
     pub(super) fn ram_usage_bytes(&self) -> usize {
         let Self {
             value_to_points: _,

@@ -13,7 +13,9 @@ use common::universal_io::{MmapFile, OpenOptions};
 use fs_err as fs;
 
 use super::super::MapIndexKey;
-use super::{CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, UniversalMapIndex, UniversalMapIndexConfig, Storage};
+use super::{
+    CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, Storage, UniversalMapIndex, UniversalMapIndexConfig,
+};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;

@@ -6,6 +6,7 @@ use gridstore::Blob;
 
 use super::MapIndex;
 use super::key::MapIndexKey;
+use super::read_ops::MapIndexRead;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::field_index::facet_index::FacetIndex;
@@ -40,7 +41,10 @@ where
         &self,
         mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.for_each_value(|v| f(v.into()))
+        // Disambiguate from `FacetIndex::for_each_value` (the trait we're
+        // implementing): the inner call is `MapIndexRead::for_each_value`,
+        // which iterates raw `&N` values rather than `FacetValueRef`.
+        MapIndexRead::for_each_value(self, |v| f(v.into()))
     }
 
     fn for_each_value_map(
@@ -51,7 +55,7 @@ where
             &mut dyn Iterator<Item = PointOffsetType>,
         ) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.for_each_value_map(hw_counter, |value, iter| f(value.into(), iter))
+        MapIndexRead::for_each_value_map(self, hw_counter, |value, iter| f(value.into(), iter))
     }
 
     fn for_each_count_per_value(
@@ -59,7 +63,7 @@ where
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.for_each_count_per_value(deferred_internal_id, |value, count| {
+        MapIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
             f(FacetHit {
                 value: value.into(),
                 count,

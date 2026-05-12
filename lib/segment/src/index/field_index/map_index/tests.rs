@@ -14,6 +14,7 @@ use tempfile::Builder;
 
 use super::MapIndex;
 use super::key::MapIndexKey;
+use super::read_ops::MapIndexRead;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PayloadFieldIndexRead,
     ValueIndexer,
