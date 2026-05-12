@@ -1,27 +1,38 @@
 use std::borrow::{Borrow as _, Cow};
 use std::iter;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Blob;
 
+use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::{ContainerSegment, ImmutableMapIndex, Storage};
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
+impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for ImmutableMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+    fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+        check_fn: impl Fn(&N) -> bool,
+    ) -> bool {
         self.point_to_values
             .check_values_any(idx, |v| check_fn(v.borrow()))
     }
 
-    pub fn get_values(
-        &self,
+    fn get_values<'a>(
+        &'a self,
         idx: PointOffsetType,
-    ) -> Option<impl Iterator<Item = Cow<'_, N>> + '_> {
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
+    where
+        N: 'a,
+    {
         Some(
             self.point_to_values
                 .get_values(idx)?
@@ -29,28 +40,82 @@ where
         )
     }
 
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         Some(self.point_to_values.get_values(idx)?.count())
     }
 
-    pub fn get_indexed_points(&self) -> usize {
+    fn get_indexed_points(&self) -> usize {
         self.indexed_points
     }
 
-    pub fn get_values_count(&self) -> usize {
+    fn get_values_count(&self) -> usize {
         self.values_count
     }
 
-    pub fn get_unique_values_count(&self) -> usize {
+    fn get_unique_values_count(&self) -> usize {
         self.value_to_points.len()
     }
 
-    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N, _hw_counter: &HardwareCounterCell) -> Option<usize> {
         self.value_to_points
             .get(value)
             .map(|entry| entry.count as usize)
     }
 
+    fn get_iterator(&self, value: &N, _hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+        if let Some(entry) = self.value_to_points.get(value) {
+            Box::new(self.get_entry_iterator(entry))
+        } else {
+            Box::new(iter::empty::<PointOffsetType>())
+        }
+    }
+
+    fn for_each_value(&self, mut f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+        self.value_to_points.keys().try_for_each(|v| f(v.borrow()))
+    }
+
+    fn for_each_count_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        // Immutable indexes don't support deferred filtering; callers must
+        // pass `None`. See `MapIndex::for_each_count_per_value` for context.
+        debug_assert!(deferred_internal_id.is_none());
+        let _ = deferred_internal_id;
+        self.value_to_points
+            .iter()
+            .try_for_each(|(k, entry)| f(k.borrow(), entry.count as usize))
+    }
+
+    fn for_each_value_map(
+        &self,
+        _hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.value_to_points
+            .iter()
+            .try_for_each(|(k, entry)| f(k.borrow(), &mut self.get_entry_iterator(entry)))
+    }
+
+    fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            Storage::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
+        }
+    }
+
+    /// Approximate RAM usage in bytes (cached at construction).
+    fn ram_usage_bytes(&self) -> usize {
+        self.cached_ram_usage_bytes
+    }
+}
+
+impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+{
     pub fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
@@ -61,32 +126,6 @@ where
                 f(idx, values);
             }
         });
-    }
-
-    pub fn for_each_count_per_value(
-        &self,
-        mut f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.value_to_points
-            .iter()
-            .try_for_each(|(k, entry)| f(k.borrow(), entry.count as usize))
-    }
-
-    pub fn for_each_value_map(
-        &self,
-        mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.value_to_points
-            .iter()
-            .try_for_each(|(k, entry)| f(k.borrow(), &mut self.get_entry_iterator(entry)))
-    }
-
-    pub fn get_iterator(&self, value: &N) -> IdIter<'_> {
-        if let Some(entry) = self.value_to_points.get(value) {
-            Box::new(self.get_entry_iterator(entry))
-        } else {
-            Box::new(iter::empty::<PointOffsetType>())
-        }
     }
 
     fn get_entry_iterator(
@@ -107,26 +146,6 @@ where
             .zip(deleted_flags)
             .filter(|(_, is_deleted)| !is_deleted)
             .map(|(idx, _)| *idx)
-    }
-
-    pub fn for_each_value(
-        &self,
-        mut f: impl FnMut(&N) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.value_to_points.keys().try_for_each(|v| f(v.borrow()))
-    }
-
-    pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
-        }
-    }
-
-    /// Approximate RAM usage in bytes (cached at construction).
-    pub fn ram_usage_bytes(&self) -> usize {
-        self.cached_ram_usage_bytes
     }
 
     pub(super) fn compute_ram_usage_bytes(&self) -> usize {

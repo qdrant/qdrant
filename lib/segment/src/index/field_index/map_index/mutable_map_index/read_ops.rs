@@ -1,30 +1,41 @@
 use std::borrow::{Borrow, Cow};
 use std::iter;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Blob;
 use roaring::RoaringBitmap;
 
+use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::{MutableMapIndex, Storage};
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
+impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for MutableMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+    fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+        check_fn: impl Fn(&N) -> bool,
+    ) -> bool {
         self.point_to_values
             .get(idx as usize)
             .map(|values| values.iter().any(|v| check_fn(v.borrow())))
             .unwrap_or(false)
     }
 
-    pub fn get_values(
-        &self,
+    fn get_values<'a>(
+        &'a self,
         idx: PointOffsetType,
-    ) -> Option<impl Iterator<Item = Cow<'_, N>> + '_> {
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
+    where
+        N: 'a,
+    {
         Some(
             self.point_to_values
                 .get(idx as usize)?
@@ -33,39 +44,38 @@ where
         )
     }
 
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         self.point_to_values.get(idx as usize).map(Vec::len)
     }
 
-    pub fn get_indexed_points(&self) -> usize {
+    fn get_indexed_points(&self) -> usize {
         self.indexed_points
     }
 
-    pub fn get_values_count(&self) -> usize {
+    fn get_values_count(&self) -> usize {
         self.values_count
     }
 
-    pub fn get_unique_values_count(&self) -> usize {
+    fn get_unique_values_count(&self) -> usize {
         self.map.len()
     }
 
-    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N, _hw_counter: &HardwareCounterCell) -> Option<usize> {
         self.map.get(value).map(|p| p.len() as usize)
     }
 
-    pub fn for_points_values(
-        &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        mut f: impl FnMut(PointOffsetType, &[<N as MapIndexKey>::Owned]),
-    ) {
-        points.for_each(|idx| {
-            if let Some(values) = self.point_to_values.get(idx as usize) {
-                f(idx, values);
-            }
-        });
+    fn get_iterator(&self, value: &N, _hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+        self.map
+            .get(value)
+            .map(|ids| Box::new(ids.iter()) as IdIter)
+            .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 
-    pub fn for_each_count_per_value(
+    fn for_each_value(&self, mut f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+        self.map.keys().try_for_each(|v| f(v.borrow()))
+    }
+
+    fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(&N, usize) -> OperationResult<()>,
@@ -79,8 +89,9 @@ where
         })
     }
 
-    pub fn for_each_value_map(
+    fn for_each_value_map(
         &self,
+        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.map
@@ -88,28 +99,14 @@ where
             .try_for_each(|(k, v)| f(k.borrow(), &mut v.iter()))
     }
 
-    pub fn get_iterator(&self, value: &N) -> IdIter<'_> {
-        self.map
-            .get(value)
-            .map(|ids| Box::new(ids.iter()) as IdIter)
-            .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
-    }
-
-    pub fn for_each_value(
-        &self,
-        mut f: impl FnMut(&N) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.map.keys().try_for_each(|v| f(v.borrow()))
-    }
-
-    pub fn storage_type(&self) -> StorageType {
+    fn storage_type(&self) -> StorageType {
         match &self.storage {
             Storage::Gridstore(_) => StorageType::Gridstore,
         }
     }
 
     /// Approximate RAM usage in bytes for in-memory index structures.
-    pub fn ram_usage_bytes(&self) -> usize {
+    fn ram_usage_bytes(&self) -> usize {
         let Self {
             map,
             point_to_values,
@@ -134,5 +131,22 @@ where
                 .map(|v| v.capacity() * std::mem::size_of::<<N as MapIndexKey>::Owned>())
                 .sum::<usize>();
         map_bytes + ptv_bytes
+    }
+}
+
+impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+{
+    pub fn for_points_values(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        mut f: impl FnMut(PointOffsetType, &[<N as MapIndexKey>::Owned]),
+    ) {
+        points.for_each(|idx| {
+            if let Some(values) = self.point_to_values.get(idx as usize) {
+                f(idx, values);
+            }
+        });
     }
 }

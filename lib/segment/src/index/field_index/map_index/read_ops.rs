@@ -6,13 +6,74 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 use indexmap::IndexSet;
 
-use super::MapIndex;
 use super::key::MapIndexKey;
+use super::{IdIter, MapIndex};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
+
+/// Read-only operations supported by every map-index storage variant
+/// ([`super::mutable_map_index::MutableMapIndex`],
+/// [`super::immutable_map_index::ImmutableMapIndex`],
+/// [`super::mmap_map_index::MmapMapIndex`]).
+///
+/// Signatures are unified across variants so the enum-level dispatcher in
+/// [`MapIndex`] can call them generically. Variants that don't need
+/// `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the mmap
+/// variant uses it to track payload-index IO.
+pub(super) trait MapIndexRead<N: MapIndexKey + ?Sized> {
+    fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+        check_fn: impl Fn(&N) -> bool,
+    ) -> bool;
+
+    fn get_values<'a>(
+        &'a self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
+    where
+        N: 'a;
+
+    fn values_count(&self, idx: PointOffsetType) -> Option<usize>;
+
+    fn get_indexed_points(&self) -> usize;
+
+    fn get_values_count(&self) -> usize;
+
+    fn get_unique_values_count(&self) -> usize;
+
+    fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize>;
+
+    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_>;
+
+    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()>;
+
+    /// Iterate `(value, count)` pairs.
+    ///
+    /// `deferred_internal_id` (mutable / mmap only) restricts the count to
+    /// point IDs strictly less than the given value. The immutable variant
+    /// does not support deferred filtering and asserts the argument is `None`.
+    fn for_each_count_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+        f: impl FnMut(&N, usize) -> OperationResult<()>,
+    ) -> OperationResult<()>;
+
+    fn for_each_value_map(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()>;
+
+    fn storage_type(&self) -> StorageType;
+
+    fn ram_usage_bytes(&self) -> usize;
+}
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N>
 where
@@ -25,12 +86,9 @@ where
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
         match self {
-            MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
-            MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
-            // FIXME: don't silently ignore errors. Log error? Update ConditionCheckerFn?
-            MapIndex::Mmap(index) => index
-                .check_values_any(idx, hw_counter, check_fn)
-                .unwrap_or(false),
+            MapIndex::Mutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
         }
     }
 
@@ -40,8 +98,8 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
         match self {
-            MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx)?)),
-            MapIndex::Immutable(index) => Some(Box::new(index.get_values(idx)?)),
+            MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
+            MapIndex::Immutable(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
             MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
         }
     }
@@ -84,20 +142,16 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
         match self {
-            MapIndex::Mutable(index) => index.get_count_for_value(value),
-            MapIndex::Immutable(index) => index.get_count_for_value(value),
+            MapIndex::Mutable(index) => index.get_count_for_value(value, hw_counter),
+            MapIndex::Immutable(index) => index.get_count_for_value(value, hw_counter),
             MapIndex::Mmap(index) => index.get_count_for_value(value, hw_counter),
         }
     }
 
-    pub(crate) fn get_iterator(
-        &self,
-        value: &N,
-        hw_counter: &HardwareCounterCell,
-    ) -> super::IdIter<'_> {
+    pub(crate) fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
         match self {
-            MapIndex::Mutable(index) => index.get_iterator(value),
-            MapIndex::Immutable(index) => index.get_iterator(value),
+            MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
+            MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),
             MapIndex::Mmap(index) => index.get_iterator(value, hw_counter),
         }
     }
@@ -115,18 +169,15 @@ where
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(&N, usize) -> OperationResult<()>,
     ) -> OperationResult<()> {
+        // The immutable variant does not support deferred filtering — it
+        // asserts the argument is `None`. Two reasons we don't implement it:
+        //  - We don't have both deferred points and an immutable index.
+        //  - It is not trivial (nor performant) to implement correct filtering
+        //    for this index variant as it doesn't work well in combination
+        //    with the way it handles deletions.
         match self {
             MapIndex::Mutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-
-            // Two reasons we don't implement deferred filtering here:
-            //  - We don't have both deferred points and an immutable index.
-            //  - It is not trivial (nor performant) to implement correct filtering for this index variant as
-            //    it doesn't work well in combination with the way it handles deletions.
-            MapIndex::Immutable(index) => {
-                debug_assert!(deferred_internal_id.is_none());
-                index.for_each_count_per_value(f)
-            }
-
+            MapIndex::Immutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
             MapIndex::Mmap(index) => index.for_each_count_per_value(deferred_internal_id, f),
         }
     }
@@ -137,8 +188,8 @@ where
         f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.for_each_value_map(f),
-            MapIndex::Immutable(index) => index.for_each_value_map(f),
+            MapIndex::Mutable(index) => index.for_each_value_map(hw_cell, f),
+            MapIndex::Immutable(index) => index.for_each_value_map(hw_cell, f),
             MapIndex::Mmap(index) => index.for_each_value_map(hw_cell, f),
         }
     }
@@ -324,9 +375,7 @@ where
         match self {
             Self::Mutable(index) => index.storage_type(),
             Self::Immutable(index) => index.storage_type(),
-            Self::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
+            Self::Mmap(index) => index.storage_type(),
         }
     }
 }

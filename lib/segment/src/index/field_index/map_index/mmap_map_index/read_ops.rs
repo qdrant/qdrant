@@ -9,18 +9,20 @@ use common::persisted_hashmap::{Key, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
+use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::MmapMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::stored_point_to_values::ValuesIter;
+use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
-    pub fn check_values_any(
+impl<N: MapIndexKey + Key + ?Sized> MapIndexRead<N> for MmapMapIndex<N> {
+    fn check_values_any(
         &self,
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> OperationResult<bool> {
+    ) -> bool {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         // Measure self.deleted access.
@@ -34,18 +36,25 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             .get_bit(idx as usize)
             .is_some_and(|b| b);
 
-        Ok(!is_deleted
-            && self
-                .storage
-                .point_to_values
-                .check_values_any(idx, |v| check_fn(v), &hw_counter)?)
+        if is_deleted {
+            return false;
+        }
+
+        // FIXME: don't silently ignore errors. Log error? Update ConditionCheckerFn?
+        self.storage
+            .point_to_values
+            .check_values_any(idx, |v| check_fn(v), &hw_counter)
+            .unwrap_or(false)
     }
 
-    pub fn get_values(
-        &self,
+    fn get_values<'a>(
+        &'a self,
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
+    where
+        N: 'a,
+    {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         // We can account cost of reading `bool`, but it will likely be more expensive, than
@@ -62,26 +71,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn for_points_values(
-        &self,
-        mut points: impl Iterator<Item = PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
-        mut f: impl FnMut(PointOffsetType, ValuesIter<'_, N>),
-    ) -> OperationResult<()> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
-
-        points.try_for_each(|idx| {
-            if self.storage.deleted.get_bit(idx as usize) != Some(false) {
-                return Ok(());
-            }
-            if let Some(iter) = self.storage.point_to_values.values_iter(idx, hw_counter)? {
-                f(idx, iter);
-            }
-            Ok(())
-        })
-    }
-
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         if self.storage.deleted.get_bit(idx as usize) == Some(false) {
             self.storage.point_to_values.get_values_count(idx).ok()?
         } else {
@@ -89,7 +79,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn get_indexed_points(&self) -> usize {
+    fn get_indexed_points(&self) -> usize {
         self.storage
             .point_to_values
             .len()
@@ -98,19 +88,15 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
     /// Returns the number of key-value pairs in the index.
     /// Note that is doesn't count deleted pairs.
-    pub fn get_values_count(&self) -> usize {
+    fn get_values_count(&self) -> usize {
         self.total_key_value_pairs
     }
 
-    pub fn get_unique_values_count(&self) -> usize {
+    fn get_unique_values_count(&self) -> usize {
         self.storage.value_to_points.keys_count()
     }
 
-    pub fn get_count_for_value(
-        &self,
-        value: &N,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         // Since `value_to_points.get` doesn't actually force read from disk for all values
@@ -137,7 +123,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         match self.storage.value_to_points.unbatched_get(value) {
@@ -171,11 +157,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
         self.storage.value_to_points.for_each_key(f)
     }
 
-    pub fn for_each_count_per_value(
+    fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(&N, usize) -> OperationResult<()>,
@@ -196,7 +182,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         })
     }
 
-    pub fn for_each_value_map(
+    fn for_each_value_map(
         &self,
         hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
@@ -220,6 +206,37 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 );
 
             f(k, &mut iter)
+        })
+    }
+
+    fn storage_type(&self) -> StorageType {
+        StorageType::Mmap {
+            is_on_disk: self.is_on_disk,
+        }
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
+        self.storage.ram_usage_bytes()
+    }
+}
+
+impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
+    pub fn for_points_values(
+        &self,
+        mut points: impl Iterator<Item = PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(PointOffsetType, ValuesIter<'_, N>),
+    ) -> OperationResult<()> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
+        points.try_for_each(|idx| {
+            if self.storage.deleted.get_bit(idx as usize) != Some(false) {
+                return Ok(());
+            }
+            if let Some(iter) = self.storage.point_to_values.values_iter(idx, hw_counter)? {
+                f(idx, iter);
+            }
+            Ok(())
         })
     }
 
