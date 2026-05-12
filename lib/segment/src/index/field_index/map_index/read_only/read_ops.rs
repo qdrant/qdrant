@@ -138,4 +138,11 @@ where
             ReadOnlyMapIndex::Immutable(index) => index.ram_usage_bytes(),
         }
     }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        match self {
+            ReadOnlyMapIndex::Appendable(index) => index.telemetry_index_type(),
+            ReadOnlyMapIndex::Immutable(index) => index.telemetry_index_type(),
+        }
+    }
 }

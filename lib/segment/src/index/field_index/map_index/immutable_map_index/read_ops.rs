@@ -110,6 +110,10 @@ where
     fn ram_usage_bytes(&self) -> usize {
         self.cached_ram_usage_bytes
     }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        "immutable_map"
+    }
 }
 
 impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
