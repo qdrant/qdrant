@@ -8,8 +8,8 @@ use super::MapIndex;
 use super::builders::MapIndexMmapBuilder;
 use super::immutable_map_index::ImmutableMapIndex;
 use super::key::MapIndexKey;
-use super::mmap_map_index::MmapMapIndex;
 use super::mutable_map_index::MutableMapIndex;
+use super::universal_map_index::UniversalMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 
@@ -30,16 +30,17 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(mmap_index) = MmapMapIndex::open(path, effective_is_on_disk, deleted_points)?
+        let Some(universal_index) =
+            UniversalMapIndex::open(path, effective_is_on_disk, deleted_points)?
         else {
             return Ok(None);
         };
 
         let index = if effective_is_on_disk {
-            MapIndex::Mmap(Box::new(mmap_index))
+            MapIndex::Mmap(Box::new(universal_index))
         } else {
             // Load into RAM, use mmap as backing storage
-            MapIndex::Immutable(ImmutableMapIndex::open_mmap(mmap_index)?)
+            MapIndex::Immutable(ImmutableMapIndex::open_mmap(universal_index)?)
         };
         Ok(Some(index))
     }

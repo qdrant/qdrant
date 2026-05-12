@@ -66,7 +66,7 @@ impl StoredValue for str {
 /// Flattened memmapped points-to-values map
 /// It's an analogue of `Vec<Vec<N>>` but in memmapped file.
 /// This structure is immutable.
-/// It's used in mmap field indices like `MmapMapIndex`, `MmapNumericIndex`, etc to store points-to-values map.
+/// It's used in mmap field indices like `UniversalMapIndex`, `MmapNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
 pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
     file_name: PathBuf,

@@ -17,12 +17,12 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// Read-only operations supported by every map-index storage variant
 /// ([`super::mutable_map_index::MutableMapIndex`],
 /// [`super::immutable_map_index::ImmutableMapIndex`],
-/// [`super::mmap_map_index::MmapMapIndex`]).
+/// [`super::universal_map_index::UniversalMapIndex`]).
 ///
 /// Signatures are unified across variants so the enum-level dispatcher in
 /// [`MapIndex`] can call them generically. Variants that don't need
-/// `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the mmap
-/// variant uses it to track payload-index IO.
+/// `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the
+/// storage-backed `Universal` variant uses it to track payload-index IO.
 pub(super) trait MapIndexRead<N: MapIndexKey + ?Sized> {
     fn check_values_any(
         &self,

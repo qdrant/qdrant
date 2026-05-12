@@ -13,12 +13,12 @@ use common::universal_io::{MmapFile, OpenOptions};
 use fs_err as fs;
 
 use super::super::MapIndexKey;
-use super::{CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, MmapMapIndex, MmapMapIndexConfig, Storage};
+use super::{CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, UniversalMapIndex, UniversalMapIndexConfig, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 
-impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
+impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
     /// Open and load mmap map index from the given path
     pub fn open(
         path: &Path,
@@ -34,7 +34,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             return Ok(None);
         }
 
-        let config: MmapMapIndexConfig = read_json(&config_path)?;
+        let config: UniversalMapIndexConfig = read_json(&config_path)?;
 
         let do_populate = !is_on_disk;
 
@@ -91,7 +91,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
         atomic_save_json(
             &config_path,
-            &MmapMapIndexConfig {
+            &UniversalMapIndexConfig {
                 total_key_value_pairs: point_to_values.iter().map(|v| v.len()).sum(),
             },
         )?;
@@ -134,12 +134,12 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
 
         Self::open(path, is_on_disk, deleted_points)?.ok_or_else(|| {
-            OperationError::service_error("Failed to open MmapMapIndex after building it")
+            OperationError::service_error("Failed to open UniversalMapIndex after building it")
         })
     }
 
     /// No-op flusher: the on-disk state is build-time only. See the type-level
-    /// docs on [`MmapMapIndex`] for the deletion durability contract.
+    /// docs on [`UniversalMapIndex`] for the deletion durability contract.
     pub fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }

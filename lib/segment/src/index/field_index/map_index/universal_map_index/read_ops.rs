@@ -11,12 +11,12 @@ use itertools::Itertools;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
-use super::MmapMapIndex;
+use super::UniversalMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::stored_point_to_values::ValuesIter;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + Key + ?Sized> MapIndexRead<N> for MmapMapIndex<N> {
+impl<N: MapIndexKey + Key + ?Sized> MapIndexRead<N> for UniversalMapIndex<N> {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
@@ -220,7 +220,7 @@ impl<N: MapIndexKey + Key + ?Sized> MapIndexRead<N> for MmapMapIndex<N> {
     }
 }
 
-impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
+impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
     pub fn for_points_values(
         &self,
         mut points: impl Iterator<Item = PointOffsetType>,
