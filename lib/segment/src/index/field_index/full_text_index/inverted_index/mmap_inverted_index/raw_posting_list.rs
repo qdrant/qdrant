@@ -21,8 +21,12 @@ impl<'a> RawPostingList<'a> {
     }
 }
 
-impl<'a> RawPostingList<'a> {
-    pub fn as_view<V: ZerocopyPostingValue>(&'a self) -> OperationResult<PostingListView<'a, V>> {
+impl RawPostingList<'_> {
+    /// Decode the raw bytes into a [`PostingListView`]. The view borrows from
+    /// `self` (not from the original `'a`), which allows it to be produced from
+    /// contexts that hold `RawPostingList` by value (e.g., inside a `self_cell`
+    /// builder where the outer `'a` is not reachable).
+    pub fn as_view<V: ZerocopyPostingValue>(&self) -> OperationResult<PostingListView<'_, V>> {
         let (last_doc_id, bytes) = PointOffsetType::read_from_prefix(self.bytes.as_ref())?;
 
         let (chunks, bytes) = <[PostingChunk<SizedTypeFor<V>>]>::ref_from_prefix_with_elems(
