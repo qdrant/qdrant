@@ -8,7 +8,7 @@ use roaring::RoaringBitmap;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
-use super::{MutableMapIndex, Storage};
+use super::MutableMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
 
@@ -100,9 +100,7 @@ where
     }
 
     fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Gridstore(_) => StorageType::Gridstore,
-        }
+        StorageType::Gridstore
     }
 
     /// Approximate RAM usage in bytes for in-memory index structures.

@@ -17,12 +17,5 @@ where
     /// Amount of point which have at least one indexed payload value
     pub(super) indexed_points: usize,
     pub(super) values_count: usize,
-    pub(super) storage: Storage<<N as MapIndexKey>::Owned>,
-}
-
-pub(super) enum Storage<T>
-where
-    Vec<T>: Blob + Send + Sync,
-{
-    Gridstore(Gridstore<Vec<T>>),
+    pub(super) storage: Gridstore<Vec<<N as MapIndexKey>::Owned>>,
 }

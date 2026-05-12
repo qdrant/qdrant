@@ -10,7 +10,7 @@ use gridstore::{Blob, Gridstore};
 use roaring::RoaringBitmap;
 
 use super::super::MapIndexKey;
-use super::{MutableMapIndex, Storage};
+use super::MutableMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -91,7 +91,7 @@ where
             point_to_values,
             indexed_points,
             values_count,
-            storage: Storage::Gridstore(store),
+            storage: store,
         }))
     }
 
@@ -115,26 +115,22 @@ where
 
         self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
 
-        match &mut self.storage {
-            Storage::Gridstore(store) => {
-                let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
-                for value in values.clone() {
-                    let entry = self.map.entry(value.into());
-                    self.point_to_values[idx as usize].push(entry.key().clone());
-                    entry.or_default().insert(idx);
-                }
-
-                let values = values.into_iter().map(Into::into).collect::<Vec<_>>();
-                store
-                    .put_value(idx, &values, hw_counter_ref)
-                    .map_err(|err| {
-                        OperationError::service_error(format!(
-                            "failed to put value in mutable map index gridstore: {err}"
-                        ))
-                    })?;
-            }
+        for value in values.clone() {
+            let entry = self.map.entry(value.into());
+            self.point_to_values[idx as usize].push(entry.key().clone());
+            entry.or_default().insert(idx);
         }
+
+        let values = values.into_iter().map(Into::into).collect::<Vec<_>>();
+        self.storage
+            .put_value(idx, &values, hw_counter_ref)
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to put value in mutable map index gridstore: {err}"
+                ))
+            })?;
 
         self.indexed_points += 1;
         Ok(())
@@ -158,61 +154,42 @@ where
             }
         }
 
-        match &mut self.storage {
-            Storage::Gridstore(store) => {
-                store.delete_value(idx)?;
-            }
-        }
+        self.storage.delete_value(idx)?;
 
         Ok(())
     }
 
     #[inline]
     pub(in super::super) fn clear(&mut self) -> OperationResult<()> {
-        match &mut self.storage {
-            Storage::Gridstore(store) => store.clear().map_err(|err| {
-                OperationError::service_error(format!("Failed to clear mutable map index: {err}",))
-            }),
-        }
+        self.storage.clear().map_err(|err| {
+            OperationError::service_error(format!("Failed to clear mutable map index: {err}"))
+        })
     }
 
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Gridstore(store) => store.wipe().map_err(|err| {
-                OperationError::service_error(format!("Failed to wipe mutable map index: {err}",))
-            }),
-        }
+        self.storage.wipe().map_err(|err| {
+            OperationError::service_error(format!("Failed to wipe mutable map index: {err}"))
+        })
     }
 
-    /// Clear cache
-    ///
-    /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
-    /// index.
+    /// Clear gridstore disk cache. Does not affect the in-memory index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match &self.storage {
-            Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear mutable map index gridstore cache: {err}"
-                ))
-            }),
-        }
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear mutable map index gridstore cache: {err}"
+            ))
+        })
     }
 
     #[inline]
     pub(in super::super) fn files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Gridstore(store) => store.files(),
-        }
+        self.storage.files()
     }
 
     #[inline]
     pub(in super::super) fn flusher(&self) -> Flusher {
-        match &self.storage {
-            Storage::Gridstore(store) => {
-                let storage_flusher = store.flusher();
-                Box::new(move || storage_flusher().map_err(OperationError::from))
-            }
-        }
+        let storage_flusher = self.storage.flusher();
+        Box::new(move || storage_flusher().map_err(OperationError::from))
     }
 }
