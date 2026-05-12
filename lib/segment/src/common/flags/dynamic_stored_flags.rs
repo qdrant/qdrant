@@ -39,6 +39,17 @@ pub struct DynamicFlagsStatus {
     current_file_id: usize,
 }
 
+impl DynamicFlagsStatus {
+    /// Number of logical flags (bits) stored.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
 /// Mutable persisted bitslice. This uses no buffering for updates.
 ///
 /// For buffered variants, check

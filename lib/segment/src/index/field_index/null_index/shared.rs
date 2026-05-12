@@ -31,7 +31,7 @@ use crate::types::FieldCondition;
 
 /// Shared read-only surface over the two-flag null index layout.
 ///
-/// Implementors expose four required pieces (`has_values_flags`,
+/// Implementers expose four required pieces (`has_values_flags`,
 /// `is_null_flags`, `total_point_count`, `telemetry_index_type`); every other
 /// read / lifecycle / telemetry method is a default impl derived from those.
 pub trait NullIndexRead {
