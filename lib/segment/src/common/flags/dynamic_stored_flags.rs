@@ -19,12 +19,12 @@ const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
 #[cfg(not(debug_assertions))]
 const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
-const FLAGS_FILE: &str = "flags_a.dat";
+pub(super) const FLAGS_FILE: &str = "flags_a.dat";
 const FLAGS_FILE_LEGACY: &str = "flags_b.dat";
 
-const STATUS_FILE_NAME: &str = "status.dat";
+pub(super) const STATUS_FILE_NAME: &str = "status.dat";
 
-fn status_file(directory: &Path) -> PathBuf {
+pub(super) fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
@@ -37,6 +37,17 @@ pub struct DynamicFlagsStatus {
     /// Should be 0 in the current version.  Old versions used it to indicate which flags file
     /// (flags_a.dat or flags_b.dat) is currently in use.
     current_file_id: usize,
+}
+
+impl DynamicFlagsStatus {
+    /// Number of logical flags (bits) stored.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 }
 
 /// Mutable persisted bitslice. This uses no buffering for updates.
