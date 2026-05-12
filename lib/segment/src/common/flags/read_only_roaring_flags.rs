@@ -91,7 +91,6 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             directory: directory.to_owned(),
         })
     }
-
 }
 
 impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
