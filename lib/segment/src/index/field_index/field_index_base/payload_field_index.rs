@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use serde_json::Value;
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -12,9 +13,12 @@ use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Read-only operations available on every payload field index.
 ///
-/// Split out from [`PayloadFieldIndex`] so consumers that only need to query
-/// the index (filtering, cardinality, payload-block iteration) can take a
-/// `&dyn PayloadFieldIndexRead` without depending on storage-lifecycle methods.
+/// Split out from [`PayloadFieldIndex`] so consumers that only need to
+/// query the index (filtering, cardinality, payload-block iteration) can
+/// be generic over `F: PayloadFieldIndexRead` without depending on
+/// storage-lifecycle methods. Also a supertrait of
+/// [`FieldIndexRead`](super::field_index_read::FieldIndexRead), so
+/// `F: FieldIndexRead` consumers get these methods directly.
 pub trait PayloadFieldIndexRead {
     /// Return number of points with at least one value indexed in here
     fn count_indexed_points(&self) -> usize;
@@ -53,6 +57,21 @@ pub trait PayloadFieldIndexRead {
         _condition: &FieldCondition,
         _hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>>;
+
+    /// Index-aware check for conditions that need parameters held by
+    /// the index (today: full-text tokenizers).
+    ///
+    /// Returns `Ok(None)` for index types that don't have such
+    /// conditions, `Ok(Some(true))` if the condition is satisfied,
+    /// `Ok(Some(false))` if it is not.
+    fn special_check_condition(
+        &self,
+        _condition: &FieldCondition,
+        _payload_value: &Value,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<bool>> {
+        Ok(None)
+    }
 }
 
 /// Storage-lifecycle operations on top of [`PayloadFieldIndexRead`].

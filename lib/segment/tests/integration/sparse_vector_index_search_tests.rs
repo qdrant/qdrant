@@ -17,7 +17,7 @@ use segment::entry::{SegmentEntry, StorageSegmentEntry as _};
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_sparse_index, fixture_sparse_index_from_iter};
 use segment::id_tracker::{IdTracker, IdTrackerRead};
-use segment::index::field_index::FieldIndexRead;
+use segment::index::field_index::PayloadFieldIndexRead;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
