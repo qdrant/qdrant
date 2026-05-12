@@ -2,15 +2,16 @@ use std::borrow::Cow;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
-use super::super::read_ops::MapIndexRead;
-use super::super::{IdIter, MapIndexKey};
-use super::MutableMapIndex;
+use super::super::super::read_ops::MapIndexRead;
+use super::super::super::{IdIter, MapIndexKey};
+use super::ReadOnlyAppendableMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for MutableMapIndex<N>
+impl<N: MapIndexKey + ?Sized, S: UniversalRead> MapIndexRead<N> for ReadOnlyAppendableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
@@ -79,6 +80,8 @@ where
     }
 
     fn storage_type(&self) -> StorageType {
+        // The on-disk format is Gridstore; the read-only-vs-mutable
+        // distinction is not yet reflected in [`StorageType`].
         StorageType::Gridstore
     }
 
@@ -87,7 +90,7 @@ where
     }
 }
 
-impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
+impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {

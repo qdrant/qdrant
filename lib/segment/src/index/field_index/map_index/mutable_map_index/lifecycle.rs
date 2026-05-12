@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -7,10 +6,10 @@ use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
-use roaring::RoaringBitmap;
 
 use super::super::MapIndexKey;
 use super::MutableMapIndex;
+use super::inner::MutableMapIndexInner;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -54,10 +53,7 @@ where
         };
 
         // Load in-memory index from Gridstore
-        let mut map = HashMap::<_, RoaringBitmap>::new();
-        let mut point_to_values = Vec::new();
-        let mut indexed_points = 0;
-        let mut values_count = 0;
+        let mut inner = MutableMapIndexInner::<N>::empty();
 
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
@@ -65,20 +61,8 @@ where
             .iter::<_, GridstoreError>(
                 |idx, values: Vec<_>| {
                     for value in values {
-                        if point_to_values.len() <= idx as usize {
-                            point_to_values.resize_with(idx as usize + 1, Vec::new)
-                        }
-                        let point_values = &mut point_to_values[idx as usize];
-
-                        if point_values.is_empty() {
-                            indexed_points += 1;
-                        }
-                        values_count += 1;
-
-                        point_values.push(value.clone());
-                        map.entry(value).or_default().insert(idx);
+                        inner.ingest(idx, value);
                     }
-
                     Ok(true)
                 },
                 hw_counter_ref,
@@ -87,10 +71,7 @@ where
             .unwrap();
 
         Ok(Some(Self {
-            map,
-            point_to_values,
-            indexed_points,
-            values_count,
+            inner,
             storage: store,
         }))
     }
@@ -108,18 +89,20 @@ where
             return Ok(());
         }
 
-        self.values_count += values.len();
-        if self.point_to_values.len() <= idx as usize {
-            self.point_to_values.resize_with(idx as usize + 1, Vec::new)
+        self.inner.values_count += values.len();
+        if self.inner.point_to_values.len() <= idx as usize {
+            self.inner
+                .point_to_values
+                .resize_with(idx as usize + 1, Vec::new)
         }
 
-        self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
+        self.inner.point_to_values[idx as usize] = Vec::with_capacity(values.len());
 
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
         for value in values.clone() {
-            let entry = self.map.entry(value.into());
-            self.point_to_values[idx as usize].push(entry.key().clone());
+            let entry = self.inner.map.entry(value.into());
+            self.inner.point_to_values[idx as usize].push(entry.key().clone());
             entry.or_default().insert(idx);
         }
 
@@ -132,24 +115,24 @@ where
                 ))
             })?;
 
-        self.indexed_points += 1;
+        self.inner.indexed_points += 1;
         Ok(())
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if self.point_to_values.len() <= idx as usize {
+        if self.inner.point_to_values.len() <= idx as usize {
             return Ok(());
         }
 
-        let removed_values = std::mem::take(&mut self.point_to_values[idx as usize]);
+        let removed_values = std::mem::take(&mut self.inner.point_to_values[idx as usize]);
 
         if !removed_values.is_empty() {
-            self.indexed_points -= 1;
+            self.inner.indexed_points -= 1;
         }
-        self.values_count -= removed_values.len();
+        self.inner.values_count -= removed_values.len();
 
         for value in &removed_values {
-            if let Some(vals) = self.map.get_mut(value.borrow()) {
+            if let Some(vals) = self.inner.map.get_mut(value.borrow()) {
                 vals.remove(idx);
             }
         }

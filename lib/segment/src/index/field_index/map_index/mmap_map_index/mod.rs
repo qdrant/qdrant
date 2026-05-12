@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::BitVec;
 use common::persisted_hashmap::{Key, UniversalHashMap};
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, UniversalRead};
 use serde::{Deserialize, Serialize};
 
 use super::MapIndexKey;
@@ -28,17 +28,17 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
+pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) path: PathBuf,
-    pub(super) storage: Storage<N>,
+    pub(super) storage: Storage<N, S>,
     pub(super) deleted_count: usize,
     pub(super) total_key_value_pairs: usize,
     pub(super) is_on_disk: bool,
 }
 
-pub(super) struct Storage<N: MapIndexKey + Key + ?Sized> {
-    pub(super) value_to_points: UniversalHashMap<N, PointOffsetType, MmapFile>,
-    pub(super) point_to_values: StoredPointToValues<N, MmapFile>,
+pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
+    pub(super) value_to_points: UniversalHashMap<N, PointOffsetType, S>,
+    pub(super) point_to_values: StoredPointToValues<N, S>,
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
     /// the build-time empty-payload bits read from `deleted.bin` and the
     /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
