@@ -1,14 +1,11 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use serde_json::Value;
 
 use super::payload_field_index::PayloadFieldIndexRead;
-use crate::common::operation_error::OperationResult;
 use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::FieldCondition;
 
 /// Read-only access surface of [`FieldIndex`](super::FieldIndex).
 ///
@@ -40,19 +37,6 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
 
     /// True if `point_id` has zero values in this index.
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
-
-    /// Index-aware check for conditions that need parameters held by
-    /// the index (today: full-text tokenizers).
-    ///
-    /// Returns `Ok(None)` for index types that don't have such
-    /// conditions, `Ok(Some(true))` if the condition is satisfied,
-    /// `Ok(Some(false))` if it is not.
-    fn special_check_condition(
-        &self,
-        condition: &FieldCondition,
-        payload_value: &Value,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<bool>>;
 
     /// Build a closure that extracts this index's values for a given
     /// point as a [`MultiValue<Value>`](crate::common::utils::MultiValue).
