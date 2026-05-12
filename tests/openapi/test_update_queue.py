@@ -4,6 +4,7 @@ import requests
 from openapi.helpers.helpers import (
     skip_if_no_feature,
     get_api_string,
+    qdrant_host_headers,
     request_with_validation,
 )
 from openapi.helpers.settings import QDRANT_HOST
@@ -133,6 +134,7 @@ def test_queue_length(collection_name):
     # apply update delay
     response = requests.post(
         url=get_api_string(QDRANT_HOST, '/collections/{collection_name}/debug', {"collection_name": collection_name}),
+        headers=qdrant_host_headers(),
         json={"delay": {"duration_sec": 3.0}}
     )
     assert response.ok
