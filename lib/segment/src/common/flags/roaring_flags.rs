@@ -9,6 +9,63 @@ use super::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 
+/// Shared read-only surface over a roaring-bitmap-backed flag set.
+///
+/// Implemented by both the writable [`RoaringFlags`] and the read-only
+/// [`ReadOnlyRoaringFlags`](super::read_only_roaring_flags::ReadOnlyRoaringFlags),
+/// so query logic (filter / cardinality / condition checks) can be written
+/// once and parameterized over either.
+pub trait RoaringFlagsRead {
+    /// Total length of the flags, including trailing falses.
+    fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Underlying in-memory roaring bitmap of "true" positions.
+    fn get_bitmap(&self) -> &RoaringBitmap;
+
+    fn get(&self, index: PointOffsetType) -> bool {
+        self.get_bitmap().contains(index)
+    }
+
+    fn iter_trues(&self) -> roaring::bitmap::Iter<'_> {
+        self.get_bitmap().iter()
+    }
+
+    fn iter_falses(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        // potential optimization:
+        //      Create custom iterator which leverages bitmap's iterator for knowing ranges where the flags are false.
+        //      This will help by not checking the bitmap for indices that are already known to be false.
+        let len = self.len() as PointOffsetType;
+        let bitmap = self.get_bitmap();
+        Box::new((0..len).filter(move |i| !bitmap.contains(*i)))
+    }
+
+    fn count_trues(&self) -> usize {
+        self.get_bitmap().len() as usize
+    }
+
+    fn count_falses(&self) -> usize {
+        self.len().saturating_sub(self.count_trues())
+    }
+
+    /// Fill RAM cache with the backing file pages.
+    ///
+    /// Default: no-op (the bitmap is already in RAM after construction; only
+    /// backends that want to keep on-disk pages warm need to override).
+    fn populate(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    /// Drop disk cache for the backing file.
+    fn clear_cache(&self) -> OperationResult<()>;
+
+    /// Paths of the on-disk files backing this storage.
+    fn files(&self) -> Vec<PathBuf>;
+}
+
 /// A buffered, growable, and persistent bitslice with fast in-memory roaring bitmap.
 ///
 /// Use [`BitvecFlags`][1] if you need a reference to a bitslice.
@@ -26,6 +83,33 @@ pub struct RoaringFlags<S> {
 
     /// Total length of the flags, including the trailing ones which have been set to false
     len: usize,
+}
+
+impl<S> RoaringFlagsRead for RoaringFlags<S>
+where
+    S: UniversalWrite + Send + 'static,
+{
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn get_bitmap(&self) -> &RoaringBitmap {
+        &self.bitmap
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        let Self {
+            storage,
+            bitmap: _,
+            len: _,
+        } = self;
+        storage.clear_cache()?;
+        Ok(())
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
 }
 
 impl<S> RoaringFlags<S>
@@ -46,41 +130,6 @@ where
             storage: BufferedDynamicFlags::new(dynamic_flags),
             bitmap,
         })
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    pub fn get_bitmap(&self) -> &RoaringBitmap {
-        &self.bitmap
-    }
-
-    pub fn get(&self, index: PointOffsetType) -> bool {
-        self.bitmap.contains(index)
-    }
-
-    pub fn iter_trues(&self) -> impl Iterator<Item = PointOffsetType> {
-        self.bitmap.iter()
-    }
-
-    pub fn iter_falses(&self) -> impl Iterator<Item = PointOffsetType> {
-        // potential optimization:
-        //      Create custom iterator which leverages bitmap's iterator for knowing ranges where the flags are false.
-        //      This will help by not checking the bitmap for indices that are already known to be false.
-        (0..self.len as PointOffsetType).filter(|&i| !self.bitmap.contains(i))
-    }
-
-    pub fn count_trues(&self) -> usize {
-        self.bitmap.len() as usize
-    }
-
-    pub fn count_falses(&self) -> usize {
-        self.len.saturating_sub(self.count_trues())
     }
 
     /// Set the value of a flag at the given index.
@@ -120,20 +169,6 @@ where
         }
     }
 
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        let Self {
-            storage,
-            bitmap: _,
-            len: _,
-        } = self;
-        storage.clear_cache()?;
-        Ok(())
-    }
-
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.storage.files()
-    }
-
     pub fn flusher(&self) -> Flusher {
         self.storage.flusher()
     }
@@ -152,7 +187,7 @@ mod tests_mod {
     use common::universal_io::S;
 
     use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-    use crate::common::flags::roaring_flags::RoaringFlags;
+    use crate::common::flags::roaring_flags::{RoaringFlags, RoaringFlagsRead};
 
     #[test]
     fn test_roaring_flags_consistency_after_persistence() {

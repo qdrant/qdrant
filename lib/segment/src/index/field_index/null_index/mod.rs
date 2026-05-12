@@ -1,18 +1,23 @@
 pub mod immutable_null_index;
 pub mod mutable_null_index;
+pub mod read_only_null_index;
+mod read_ops;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 pub use immutable_null_index::ImmutableNullIndex;
 pub use mutable_null_index::MutableNullIndex;
+pub use read_only_null_index::ReadOnlyNullIndex;
+pub use read_ops::NullIndexRead;
 use serde_json::Value;
 
 use super::{PayloadFieldIndex, PayloadFieldIndexRead};
+use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::payload_config::IndexMutability;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
-use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::FieldCondition;
 
 pub enum NullIndex {
@@ -54,120 +59,75 @@ impl NullIndex {
         }
     }
 
-    pub fn values_count(&self, id: PointOffsetType) -> usize {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.values_count(id),
-            NullIndex::Immutable(immutable) => immutable.values_count(id),
-        }
-    }
-
-    pub fn values_is_empty(&self, id: PointOffsetType) -> bool {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.values_is_empty(id),
-            NullIndex::Immutable(immutable) => immutable.values_is_empty(id),
-        }
-    }
-
-    pub fn values_is_null(&self, id: PointOffsetType) -> bool {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.values_is_null(id),
-            NullIndex::Immutable(immutable) => immutable.values_is_null(id),
-        }
-    }
-
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.populate(),
-            NullIndex::Immutable(immutable) => immutable.populate(),
-        }
-    }
-
-    /// Approximate RAM usage in bytes.
-    pub fn ram_usage_bytes(&self) -> usize {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.ram_usage_bytes(),
-            NullIndex::Immutable(immutable) => immutable.ram_usage_bytes(),
-        }
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.is_on_disk(),
-            NullIndex::Immutable(immutable) => immutable.is_on_disk(),
-        }
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.clear_cache(),
-            NullIndex::Immutable(immutable) => immutable.clear_cache(),
-        }
-    }
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
             NullIndex::Mutable(_) => IndexMutability::Mutable,
             NullIndex::Immutable(_) => IndexMutability::Immutable,
         }
     }
+}
 
-    pub fn get_storage_type(&self) -> StorageType {
+impl NullIndexRead for NullIndex {
+    type Flags = RoaringFlags<MmapFile>;
+
+    fn has_values_flags(&self) -> &Self::Flags {
         match self {
-            NullIndex::Mutable(mutable) => mutable.get_storage_type(),
-            NullIndex::Immutable(immutable) => immutable.get_storage_type(),
+            NullIndex::Mutable(m) => m.has_values_flags(),
+            NullIndex::Immutable(i) => i.has_values_flags(),
         }
     }
 
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+    fn is_null_flags(&self) -> &Self::Flags {
         match self {
-            NullIndex::Mutable(mutable) => mutable.get_telemetry_data(),
-            NullIndex::Immutable(immutable) => immutable.get_telemetry_data(),
+            NullIndex::Mutable(m) => m.is_null_flags(),
+            NullIndex::Immutable(i) => i.is_null_flags(),
+        }
+    }
+
+    fn total_point_count(&self) -> usize {
+        match self {
+            NullIndex::Mutable(m) => m.total_point_count(),
+            NullIndex::Immutable(i) => i.total_point_count(),
+        }
+    }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        match self {
+            NullIndex::Mutable(m) => m.telemetry_index_type(),
+            NullIndex::Immutable(i) => i.telemetry_index_type(),
         }
     }
 }
 
 impl PayloadFieldIndexRead for NullIndex {
     fn count_indexed_points(&self) -> usize {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.count_indexed_points(),
-            NullIndex::Immutable(immutable) => immutable.count_indexed_points(),
-        }
+        self.indexed_points_count()
     }
 
     fn filter<'a>(
         &'a self,
-        condition: &'a crate::types::FieldCondition,
-        hw_counter: &'a common::counter::hardware_counter::HardwareCounterCell,
+        condition: &'a FieldCondition,
+        _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.filter(condition, hw_counter),
-            NullIndex::Immutable(immutable) => immutable.filter(condition, hw_counter),
-        }
+        Ok(read_ops::filter(self, condition))
     }
 
     fn estimate_cardinality(
         &self,
-        condition: &crate::types::FieldCondition,
-        hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
+        condition: &FieldCondition,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<super::CardinalityEstimation>> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.estimate_cardinality(condition, hw_counter),
-            NullIndex::Immutable(immutable) => {
-                immutable.estimate_cardinality(condition, hw_counter)
-            }
-        }
+        Ok(read_ops::estimate_cardinality(self, condition))
     }
 
     fn for_each_payload_block(
         &self,
-        threshold: usize,
-        key: crate::types::PayloadKeyType,
-        f: &mut dyn FnMut(super::PayloadBlockCondition) -> OperationResult<()>,
+        _threshold: usize,
+        _key: crate::types::PayloadKeyType,
+        _f: &mut dyn FnMut(super::PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.for_each_payload_block(threshold, key, f),
-            NullIndex::Immutable(immutable) => immutable.for_each_payload_block(threshold, key, f),
-        }
+        // No payload blocks
+        Ok(())
     }
 
     fn condition_checker<'a>(
@@ -175,10 +135,7 @@ impl PayloadFieldIndexRead for NullIndex {
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.condition_checker(condition, hw_acc),
-            NullIndex::Immutable(immutable) => immutable.condition_checker(condition, hw_acc),
-        }
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 }
 
@@ -198,15 +155,12 @@ impl PayloadFieldIndex for NullIndex {
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            NullIndex::Mutable(mutable) => mutable.files(),
-            NullIndex::Immutable(immutable) => immutable.files(),
-        }
+        NullIndexRead::files(self)
     }
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
         match self {
-            NullIndex::Mutable(mutable) => mutable.immutable_files(),
+            NullIndex::Mutable(_) => Vec::new(),
             NullIndex::Immutable(immutable) => immutable.immutable_files(),
         }
     }

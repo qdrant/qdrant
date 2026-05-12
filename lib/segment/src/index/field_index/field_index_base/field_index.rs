@@ -13,7 +13,7 @@ use crate::index::field_index::bool_index::BoolIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
-use crate::index::field_index::null_index::NullIndex;
+use crate::index::field_index::null_index::{NullIndex, NullIndexRead};
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadIndexType, StorageType,
