@@ -38,11 +38,21 @@ pub struct MultivectorOffset {
 
 pub trait MultivectorOffsets {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)>;
 }
 
 #[allow(clippy::len_without_is_empty)]
 pub trait MultivectorOffsetsStorage: Sized {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)>;
 
     fn len(&self) -> usize;
 
@@ -95,6 +105,13 @@ impl MultivectorOffsetsStorageRam {
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets[idx as usize]
+    }
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        ids.iter().map(|&id| self.get_offset(id)).enumerate()
     }
 
     fn len(&self) -> usize {
@@ -173,6 +190,13 @@ impl MultivectorOffsetsStorageMmap {
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets[idx as usize]
+    }
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        ids.iter().map(|&id| self.get_offset(id)).enumerate()
     }
 
     fn len(&self) -> usize {
@@ -263,6 +287,19 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
             .get::<Random>(idx as VectorOffsetType)
             .and_then(|offsets| offsets.first().copied())
             .unwrap_or_default()
+    }
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        self.data.iter(ids).map(|(idx, offset)| {
+            let [offset] = offset.as_ref() else {
+                unreachable!("multi-vector offsets are stored as a single-element slice");
+            };
+
+            (idx, *offset)
+        })
     }
 
     fn len(&self) -> usize {
@@ -591,6 +628,13 @@ where
 {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets.get_offset(idx)
+    }
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        self.offsets.iter_offsets(ids)
     }
 }
 
