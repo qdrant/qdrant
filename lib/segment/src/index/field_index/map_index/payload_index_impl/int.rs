@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
-use super::MapIndex;
+use super::super::MapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{
