@@ -368,6 +368,7 @@ def test_resharding_clean_update_queue_data_race(tmp_path: pathlib.Path):
             params={"wait": "true", "timeout": "60"},
         )
         assert_http_ok(resp)
+        assert resp.json()["result"]["status"] == "completed"
 
     # Synchronize: a wait=true upsert ensures the queue is fully drained
     # everywhere before we measure.
