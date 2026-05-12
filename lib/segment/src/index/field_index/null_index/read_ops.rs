@@ -106,7 +106,7 @@ pub trait NullIndexRead {
 }
 
 pub(super) fn filter<'a, N: NullIndexRead>(
-    idx: &'a N,
+    null_index: &'a N,
     condition: &'a FieldCondition,
 ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
     let FieldCondition {
@@ -121,9 +121,9 @@ pub(super) fn filter<'a, N: NullIndexRead>(
         is_null,
     } = condition;
 
-    let has_values_flags = idx.has_values_flags();
-    let is_null_flags = idx.is_null_flags();
-    let total_point_count = idx.total_point_count();
+    let has_values_flags = null_index.has_values_flags();
+    let is_null_flags = null_index.is_null_flags();
+    let total_point_count = null_index.total_point_count();
 
     if let Some(is_empty) = is_empty {
         if *is_empty {
@@ -153,7 +153,7 @@ pub(super) fn filter<'a, N: NullIndexRead>(
 }
 
 pub(super) fn estimate_cardinality<N: NullIndexRead>(
-    idx: &N,
+    null_index: &N,
     condition: &FieldCondition,
 ) -> Option<CardinalityEstimation> {
     let FieldCondition {
@@ -168,9 +168,9 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
         is_null,
     } = condition;
 
-    let has_values_flags = idx.has_values_flags();
-    let is_null_flags = idx.is_null_flags();
-    let total_point_count = idx.total_point_count();
+    let has_values_flags = null_index.has_values_flags();
+    let is_null_flags = null_index.is_null_flags();
+    let total_point_count = null_index.total_point_count();
 
     if let Some(is_empty) = is_empty {
         if *is_empty {
@@ -222,7 +222,7 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
 }
 
 pub(super) fn condition_checker<'a, N: NullIndexRead>(
-    idx: &'a N,
+    null_index: &'a N,
     condition: &FieldCondition,
     _hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'a>> {
@@ -242,12 +242,12 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
 
     if let Some(is_empty) = *is_empty {
         return Some(Box::new(move |point_id: PointOffsetType| {
-            idx.values_is_empty(point_id) == is_empty
+            null_index.values_is_empty(point_id) == is_empty
         }));
     }
     if let Some(is_null) = *is_null {
         return Some(Box::new(move |point_id: PointOffsetType| {
-            idx.values_is_null(point_id) == is_null
+            null_index.values_is_null(point_id) == is_null
         }));
     }
     None

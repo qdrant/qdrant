@@ -1,11 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use common::stored_bitslice::StoredBitSlice;
-use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, TypedStorage, UniversalRead};
+use common::universal_io::UniversalRead;
 use roaring::RoaringBitmap;
 
-use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, status_file};
+use super::dynamic_stored_flags::{FLAGS_FILE, status_file};
 use super::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
 
@@ -36,61 +35,6 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     flags_storage: StoredBitSlice<S>,
 
     directory: PathBuf,
-}
-
-impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
-    pub fn open(directory: &Path, populate: bool) -> OperationResult<Self> {
-        // Read status file once to learn the logical length.
-        let status_path = status_file(directory);
-        let status_storage: TypedStorage<S, DynamicFlagsStatus> = TypedStorage::open(
-            &status_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                disk_parallel: None,
-                populate: Some(false),
-                advice: None,
-                prevent_caching: Some(true),
-            },
-        )?;
-        let len = status_storage.read_whole()?[0].len();
-        drop(status_storage);
-
-        // Open flags file read-only.
-        let flags_path = directory.join(FLAGS_FILE);
-        let flags_storage = StoredBitSlice::<S>::open(
-            &flags_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                disk_parallel: None,
-                populate: Some(populate),
-                advice: None,
-                prevent_caching: None,
-            },
-        )?;
-
-        // Materialize the bitmap from the persisted bitslice.
-        let bitmap = {
-            let bitslice = flags_storage.read_all()?;
-            // The storage file may be larger than `len` (next_power_of_two capacity).
-            let trimmed = bitslice.get(..len).unwrap_or(&bitslice);
-            RoaringBitmap::from_sorted_iter(trimmed.iter_ones().map(|i| i as PointOffsetType))
-                .expect("iter_ones iterates in sorted order")
-        };
-
-        // The bitmap is in RAM now — drop the disk cache.
-        if let Err(err) = flags_storage.clear_ram_cache() {
-            log::warn!("Failed to clear bitslice cache: {err}");
-        }
-
-        Ok(Self {
-            bitmap,
-            len,
-            flags_storage,
-            directory: directory.to_owned(),
-        })
-    }
 }
 
 impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
