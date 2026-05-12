@@ -2,18 +2,25 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Blob;
+use serde_json::Value;
 
 use super::storage::NumericIndexInner;
 use super::{Encodable, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
-use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
+use crate::index::field_index::{
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
+    ValueIndexer,
+};
 use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::{FieldCondition, PayloadKeyType};
 
 pub struct NumericIndex<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>
 where
@@ -137,5 +144,58 @@ where
 
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.inner.clear_cache()
+    }
+}
+
+impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P> PayloadFieldIndexRead
+    for NumericIndex<T, P>
+where
+    Vec<T>: Blob,
+{
+    fn count_indexed_points(&self) -> usize {
+        self.inner.count_indexed_points()
+    }
+
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        self.inner.filter(condition, hw_counter)
+    }
+
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<CardinalityEstimation>> {
+        self.inner.estimate_cardinality(condition, hw_counter)
+    }
+
+    fn for_each_payload_block(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.inner.for_each_payload_block(threshold, key, f)
+    }
+
+    fn condition_checker<'a>(
+        &'a self,
+        condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
+    ) -> Option<ConditionCheckerFn<'a>> {
+        self.inner.condition_checker(condition, hw_acc)
+    }
+
+    fn special_check_condition(
+        &self,
+        condition: &FieldCondition,
+        payload_value: &Value,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<bool>> {
+        self.inner
+            .special_check_condition(condition, payload_value, hw_counter)
     }
 }

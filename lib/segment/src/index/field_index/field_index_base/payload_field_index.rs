@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use serde_json::Value;
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -56,6 +57,21 @@ pub trait PayloadFieldIndexRead {
         _condition: &FieldCondition,
         _hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>>;
+
+    /// Index-aware check for conditions that need parameters held by
+    /// the index (today: full-text tokenizers).
+    ///
+    /// Returns `Ok(None)` for index types that don't have such
+    /// conditions, `Ok(Some(true))` if the condition is satisfied,
+    /// `Ok(Some(false))` if it is not.
+    fn special_check_condition(
+        &self,
+        _condition: &FieldCondition,
+        _payload_value: &Value,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<bool>> {
+        Ok(None)
+    }
 }
 
 /// Storage-lifecycle operations on top of [`PayloadFieldIndexRead`].

@@ -659,6 +659,35 @@ impl PayloadFieldIndexRead for FullTextIndex {
             self.check_match(&parsed_query, point_id).unwrap_or(false)
         }))
     }
+
+    fn special_check_condition(
+        &self,
+        condition: &FieldCondition,
+        payload_value: &Value,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<bool>> {
+        Ok(match &condition.r#match {
+            Some(Match::Text(MatchText { text })) => Some(self.check_payload_match(
+                payload_value,
+                text,
+                PayloadMatchQueryType::Text,
+                hw_counter,
+            )?),
+            Some(Match::Phrase(MatchPhrase { phrase })) => Some(self.check_payload_match(
+                payload_value,
+                phrase,
+                PayloadMatchQueryType::Phrase,
+                hw_counter,
+            )?),
+            Some(Match::TextAny(MatchTextAny { text_any })) => Some(self.check_payload_match(
+                payload_value,
+                text_any,
+                PayloadMatchQueryType::TextAny,
+                hw_counter,
+            )?),
+            Some(Match::Value(_) | Match::Any(_) | Match::Except(_)) | None => None,
+        })
+    }
 }
 
 pub struct FullTextGridstoreIndexBuilder {
