@@ -201,9 +201,11 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
         # Sometimes restart is fast and flag is deleted immediately because we initiate a transfer
         assert flag_exists
 
-    # Initiate transfer from another peer to recover the shard.
-    # This part checks that dummy shard can be recovered with shard transfer.
-    recover_shard(peer_api_uris[-1], collection_name=COLLECTION_NAME)
+        # Initiate transfer from another peer to recover the shard.
+        # This part checks that dummy shard can be recovered with shard transfer.
+        # If a transfer was already auto-initiated by the cluster recovery loop,
+        # skip the manual call — it would fail with 400 "already involved in transfer".
+        recover_shard(peer_api_uris[-1], collection_name=COLLECTION_NAME)
 
     # Assert storage does not contain initialized flag when transfer is started
     print("Checking that the shard initializing flag was removed after recovery")
