@@ -3,28 +3,23 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use fs_err as fs;
-use roaring::RoaringBitmap;
 
+use super::read_ops::{self, BoolIndexRead};
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::flags::roaring_flags::{RoaringFlags, RoaringFlagsRead};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
-    PayloadFieldIndexRead, PrimaryCondition, ValueIndexer,
+    PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
-use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
-    ValueVariants,
-};
+use crate::types::{FieldCondition, PayloadKeyType};
 
-const TRUES_DIRNAME: &str = "trues";
-const FALSES_DIRNAME: &str = "falses";
+pub(super) const TRUES_DIRNAME: &str = "trues";
+pub(super) const FALSES_DIRNAME: &str = "falses";
 
 /// Payload index for boolean values, in-memory via roaring bitmaps, stored in memory-mapped bitslices.
 pub struct MutableBoolIndex {
@@ -200,146 +195,35 @@ impl MutableBoolIndex {
             _ => {}
         }
     }
+}
 
-    fn get_bitmap_for(&self, value: bool) -> &RoaringBitmap {
-        if value {
-            self.storage.trues_flags.get_bitmap()
-        } else {
-            self.storage.falses_flags.get_bitmap()
-        }
+impl BoolIndexRead for MutableBoolIndex {
+    type Flags = RoaringFlags<MmapFile>;
+
+    fn trues_flags(&self) -> &Self::Flags {
+        &self.storage.trues_flags
     }
 
-    fn get_count_for(&self, value: bool) -> usize {
-        if value {
-            self.trues_count
-        } else {
-            self.falses_count
-        }
+    fn falses_flags(&self) -> &Self::Flags {
+        &self.storage.falses_flags
     }
 
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {
-            field_name: None,
-            points_count: self.indexed_count,
-            points_values_count: (self.trues_count + self.falses_count),
-            histogram_bucket_size: None,
-            index_type: "mmap_bool",
-        }
+    fn indexed_count(&self) -> usize {
+        self.indexed_count
     }
 
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        let has_true = self.storage.trues_flags.get(point_id);
-        let has_false = self.storage.falses_flags.get(point_id);
-        usize::from(has_true) + usize::from(has_false)
+    fn telemetry_index_type(&self) -> &'static str {
+        "mmap_bool"
     }
 
-    pub fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> bool {
-        if is_true {
-            self.storage.trues_flags.get(point_id)
-        } else {
-            self.storage.falses_flags.get(point_id)
-        }
+    // Override the default impls to use precomputed counts maintained by the
+    // write path, avoiding a bitmap scan on every read.
+    fn trues_count(&self) -> usize {
+        self.trues_count
     }
 
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        !self.storage.trues_flags.get(point_id) && !self.storage.falses_flags.get(point_id)
-    }
-
-    pub fn for_each_value_map(
-        &self,
-        hw_counter: &HardwareCounterCell,
-        mut f: impl FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        f(false, &mut self.storage.falses_flags.iter_trues())?;
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(u8::BITS as usize);
-        f(true, &mut self.storage.trues_flags.iter_trues())?;
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(u8::BITS as usize);
-        Ok(())
-    }
-
-    pub fn iter_values(&self) -> impl Iterator<Item = bool> + '_ {
-        [
-            self.storage.falses_flags.iter_trues().next().map(|_| false),
-            self.storage.trues_flags.iter_trues().next().map(|_| true),
-        ]
-        .into_iter()
-        .flatten()
-    }
-
-    pub fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        mut f: impl FnMut(bool, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        let (false_count, true_count) = match deferred_internal_id {
-            Some(deferred_internal_id) => {
-                let false_count =
-                    self.storage
-                        .falses_flags
-                        .get_bitmap()
-                        .range_cardinality(..deferred_internal_id) as usize;
-
-                let true_count =
-                    self.storage
-                        .trues_flags
-                        .get_bitmap()
-                        .range_cardinality(..deferred_internal_id) as usize;
-
-                (false_count, true_count)
-            }
-            None => (
-                self.storage.falses_flags.count_trues(),
-                self.storage.trues_flags.count_trues(),
-            ),
-        };
-
-        f(false, false_count)?;
-        f(true, true_count)
-    }
-
-    pub(crate) fn get_point_values(&self, point_id: u32) -> Vec<bool> {
-        [
-            self.storage.trues_flags.get(point_id).then_some(true),
-            self.storage.falses_flags.get(point_id).then_some(false),
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
-    }
-
-    /// Approximate RAM usage in bytes.
-    pub fn ram_usage_bytes(&self) -> usize {
-        let Self {
-            base_dir: _,
-            indexed_count: _,
-            trues_count: _,
-            falses_count: _,
-            storage,
-        } = self;
-        let Storage {
-            trues_flags,
-            falses_flags,
-        } = storage;
-        trues_flags.get_bitmap().serialized_size() + falses_flags.get_bitmap().serialized_size()
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        false
-    }
-
-    pub fn populate(&self) -> OperationResult<()> {
-        // The true and false flags are always in memory
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.trues_flags.clear_cache()?;
-        self.storage.falses_flags.clear_cache()
+    fn falses_count(&self) -> usize {
+        self.falses_count
     }
 }
 
@@ -433,10 +317,8 @@ impl PayloadFieldIndex for MutableBoolIndex {
         })
     }
 
-    fn files(&self) -> Vec<std::path::PathBuf> {
-        let mut files = self.storage.trues_flags.files();
-        files.extend(self.storage.falses_flags.files());
-        files
+    fn files(&self) -> Vec<PathBuf> {
+        BoolIndexRead::files(self)
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
@@ -446,7 +328,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
 
 impl PayloadFieldIndexRead for MutableBoolIndex {
     fn count_indexed_points(&self) -> usize {
-        self.indexed_count
+        self.indexed_count()
     }
 
     fn filter<'a>(
@@ -454,23 +336,7 @@ impl PayloadFieldIndexRead for MutableBoolIndex {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        match &condition.r#match {
-            Some(Match::Value(MatchValue {
-                value: ValueVariants::Bool(value),
-            })) => {
-                let iter = self
-                    .get_bitmap_for(*value)
-                    .iter()
-                    .map(|x| x as PointOffsetType)
-                    .measure_hw_with_acc_and_fraction(
-                        hw_counter.new_accumulator(),
-                        u8::BITS as usize,
-                        |i| i.payload_index_io_read_counter(),
-                    );
-                Ok(Some(Box::new(iter)))
-            }
-            _ => Ok(None),
-        }
+        Ok(read_ops::filter(self, condition, hw_counter))
     }
 
     fn estimate_cardinality(
@@ -478,23 +344,7 @@ impl PayloadFieldIndexRead for MutableBoolIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        Ok(match &condition.r#match {
-            Some(Match::Value(MatchValue {
-                value: ValueVariants::Bool(value),
-            })) => {
-                let count = self.get_count_for(*value);
-
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(size_of::<usize>());
-
-                let estimation = CardinalityEstimation::exact(count)
-                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
-
-                Some(estimation)
-            }
-            _ => None,
-        })
+        Ok(read_ops::estimate_cardinality(self, condition, hw_counter))
     }
 
     fn for_each_payload_block(
@@ -503,63 +353,15 @@ impl PayloadFieldIndexRead for MutableBoolIndex {
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        let mut handle_block = |cardinality, value: bool, key: PayloadKeyType| {
-            if cardinality > threshold {
-                f(PayloadBlockCondition {
-                    condition: FieldCondition::new_match(key.clone(), Match::from(value)),
-                    cardinality,
-                })?;
-            }
-            Ok(())
-        };
-
-        // just two possible blocks: true and false
-        handle_block(self.trues_count, true, key.clone())?;
-        handle_block(self.falses_count, false, key)
+        read_ops::for_each_payload_block(self, threshold, key, f)
     }
 
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        _hw_acc: HwMeasurementAcc,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        // Destructure explicitly (no `..`) so a new field added to
-        // `FieldCondition` forces this method to be revisited.
-        let FieldCondition {
-            key: _,
-            r#match,
-            range: _,
-            geo_radius: _,
-            geo_bounding_box: _,
-            geo_polygon: _,
-            values_count: _,
-            is_empty: _,
-            is_null: _,
-        } = condition;
-
-        let cond_match = r#match.as_ref()?;
-        match cond_match {
-            Match::Value(MatchValue {
-                value: ValueVariants::Bool(is_true),
-            }) => {
-                let is_true = *is_true;
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    self.check_values_any(point_id, is_true)
-                }))
-            }
-            Match::Value(MatchValue {
-                value: ValueVariants::String(_) | ValueVariants::Integer(_),
-            })
-            | Match::Any(MatchAny {
-                any: AnyVariants::Strings(_) | AnyVariants::Integers(_),
-            })
-            | Match::Except(MatchExcept {
-                except: AnyVariants::Strings(_) | AnyVariants::Integers(_),
-            })
-            | Match::Text(_)
-            | Match::TextAny(_)
-            | Match::Phrase(_) => None,
-        }
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 }
 
