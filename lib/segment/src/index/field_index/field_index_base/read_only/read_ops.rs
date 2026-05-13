@@ -110,6 +110,8 @@ impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
                 idx.special_check_condition(condition, payload_value, hw_counter)
             }
             ReadOnlyFieldIndex::BoolIndex(idx) => {
+                idx.special_check_condition(condition, payload_value, hw_counter)
+            }
             ReadOnlyFieldIndex::GeoIndex(idx) => {
                 idx.special_check_condition(condition, payload_value, hw_counter)
             }
