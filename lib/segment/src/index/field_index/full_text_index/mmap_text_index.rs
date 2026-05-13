@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, UniversalRead};
 use fs_err as fs;
 use serde_json::Value;
 
@@ -18,12 +19,12 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
-pub struct MmapFullTextIndex {
-    pub(super) inverted_index: MmapInvertedIndex,
+pub struct MmapFullTextIndex<S: UniversalRead = MmapFile> {
+    pub(super) inverted_index: MmapInvertedIndex<S>,
     pub(super) tokenizer: Tokenizer,
 }
 
-impl MmapFullTextIndex {
+impl<S: UniversalRead> MmapFullTextIndex<S> {
     pub fn open(
         path: PathBuf,
         config: TextIndexParams,
@@ -36,7 +37,7 @@ impl MmapFullTextIndex {
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
         let inverted_index =
-            MmapInvertedIndex::open(path, populate, has_positions, deleted_points)?;
+            MmapInvertedIndex::<S>::open(path, populate, has_positions, deleted_points)?;
         Ok(inverted_index.map(|inverted_index| Self {
             inverted_index,
             tokenizer,

@@ -18,6 +18,7 @@ use crate::index::field_index::full_text_index::inverted_index::{
 };
 use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::full_text_index::mutable_text_index::MutableFullTextIndex;
+use crate::index::field_index::full_text_index::read_ops::FullTextIndexRead;
 use crate::index::field_index::full_text_index::text_index::{
     FullTextGridstoreIndexBuilder, FullTextIndex,
 };

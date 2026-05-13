@@ -6,6 +6,7 @@ use common::types::PointOffsetType;
 use tempfile::Builder;
 
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
+use crate::index::field_index::full_text_index::read_ops::FullTextIndexRead;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::{
     FieldIndex, FieldIndexBuilderTrait as _, PayloadFieldIndexRead, ValueIndexer,

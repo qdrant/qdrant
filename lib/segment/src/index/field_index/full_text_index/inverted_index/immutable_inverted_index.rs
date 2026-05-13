@@ -495,10 +495,12 @@ fn create_compressed_postings_with_positions(
             .collect()
 }
 
-impl TryFrom<&MmapInvertedIndex> for ImmutableInvertedIndex {
+impl<S: common::universal_io::UniversalRead> TryFrom<&MmapInvertedIndex<S>>
+    for ImmutableInvertedIndex
+{
     type Error = OperationError;
 
-    fn try_from(index: &MmapInvertedIndex) -> OperationResult<Self> {
+    fn try_from(index: &MmapInvertedIndex<S>) -> OperationResult<Self> {
         let postings = match &index.storage.postings {
             MmapPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
             MmapPostingsEnum::WithPositions(postings) => {
@@ -521,7 +523,11 @@ impl TryFrom<&MmapInvertedIndex> for ImmutableInvertedIndex {
         // variant tracks deletions in a separate in-memory bitmask and leaves
         // `point_to_tokens_count` untouched on disk, so we apply the bitmask
         // here when materializing the count vector.
-        let mut point_to_tokens_count = index.storage.point_to_tokens_count.to_vec();
+        let mut point_to_tokens_count = index
+            .storage
+            .point_to_tokens_count
+            .read_whole()?
+            .into_owned();
         for (idx, count) in point_to_tokens_count.iter_mut().enumerate() {
             if index.storage.deleted_points.get_bit(idx).unwrap_or(false) {
                 *count = 0;

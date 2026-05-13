@@ -1,26 +1,23 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use ahash::AHashMap;
 use common::bitvec::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::immutable_text_index::{ImmutableFullTextIndex, Storage};
-use super::inverted_index::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
+use super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
 use super::mmap_text_index::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
+use super::read_ops::{self, FullTextIndexRead};
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::inverted_index::Document;
-use crate::index::field_index::full_text_index::tokenizers::TokenizerTextKind;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     PayloadFieldIndexRead, ValueIndexer,
@@ -28,10 +25,7 @@ use crate::index::field_index::{
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
-    PayloadKeyType,
-};
+use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Selects how a text query is parsed and matched against the payload.
 pub enum PayloadMatchQueryType {
@@ -47,7 +41,7 @@ pub enum PayloadMatchQueryType {
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
     Immutable(ImmutableFullTextIndex),
-    Mmap(Box<MmapFullTextIndex>),
+    Mmap(Box<MmapFullTextIndex<common::universal_io::MmapFile>>),
 }
 
 impl FullTextIndex {
@@ -120,115 +114,6 @@ impl FullTextIndex {
         FullTextGridstoreIndexBuilder::new(dir, config)
     }
 
-    pub(super) fn points_count(&self) -> usize {
-        match self {
-            Self::Mutable(index) => index.inverted_index.points_count(),
-            Self::Immutable(index) => index.inverted_index.points_count(),
-            Self::Mmap(index) => index.inverted_index.points_count(),
-        }
-    }
-
-    pub(super) fn for_each_token_id<'a, U: UserData>(
-        &self,
-        iter: impl Iterator<Item = (U, &'a str)>,
-        hw_counter: &HardwareCounterCell,
-        f: impl FnMut(U, Option<TokenId>),
-    ) -> OperationResult<()> {
-        match self {
-            Self::Mutable(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
-            Self::Immutable(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
-            Self::Mmap(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
-        }
-    }
-
-    pub(super) fn filter_query<'a>(
-        &'a self,
-        query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match self {
-            Self::Mutable(index) => index.inverted_index.filter(query, hw_counter),
-            Self::Immutable(index) => index.inverted_index.filter(query, hw_counter),
-            Self::Mmap(index) => index.inverted_index.filter(query, hw_counter),
-        }
-    }
-
-    fn get_tokenizer(&self) -> &Tokenizer {
-        match self {
-            Self::Mutable(index) => &index.tokenizer,
-            Self::Immutable(index) => match &index.storage {
-                Storage::Mmap(mmap_index) => &mmap_index.tokenizer,
-            },
-            Self::Mmap(index) => &index.tokenizer,
-        }
-    }
-
-    fn for_each_payload_block(
-        &self,
-        threshold: usize,
-        key: PayloadKeyType,
-        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        match self {
-            Self::Mutable(index) => index
-                .inverted_index
-                .for_each_payload_block(threshold, key, f),
-            Self::Immutable(index) => index
-                .inverted_index
-                .for_each_payload_block(threshold, key, f),
-            Self::Mmap(index) => index
-                .inverted_index
-                .for_each_payload_block(threshold, key, f),
-        }
-    }
-
-    pub(super) fn estimate_query_cardinality(
-        &self,
-        query: &ParsedQuery,
-        condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation> {
-        match self {
-            Self::Mutable(index) => index
-                .inverted_index
-                .estimate_cardinality(query, condition, hw_counter),
-            Self::Immutable(index) => index
-                .inverted_index
-                .estimate_cardinality(query, condition, hw_counter),
-            Self::Mmap(index) => index
-                .inverted_index
-                .estimate_cardinality(query, condition, hw_counter),
-        }
-    }
-
-    pub fn check_match(
-        &self,
-        query: &ParsedQuery,
-        point_id: PointOffsetType,
-    ) -> OperationResult<bool> {
-        match self {
-            Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
-            Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
-            Self::Mmap(index) => index.inverted_index.check_match(query, point_id),
-        }
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        match self {
-            Self::Mutable(index) => index.inverted_index.values_count(point_id),
-            Self::Immutable(index) => index.inverted_index.values_count(point_id),
-            Self::Mmap(index) => index.inverted_index.values_count(point_id),
-        }
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        match self {
-            Self::Mutable(index) => index.inverted_index.values_is_empty(point_id),
-            Self::Immutable(index) => index.inverted_index.values_is_empty(point_id),
-            Self::Mmap(index) => index.inverted_index.values_is_empty(point_id),
-        }
-    }
-
     pub(super) fn serialize_document(tokens: Vec<Cow<str>>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredDocument<'a> {
@@ -255,107 +140,11 @@ impl FullTextIndex {
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
-            index_type: match self {
-                FullTextIndex::Mutable(_) => "mutable_full_text",
-                FullTextIndex::Immutable(_) => "immutable_full_text",
-                FullTextIndex::Mmap(_) => "mmap_full_text",
-            },
-            points_values_count: self.points_count(),
-            points_count: self.points_count(),
+            index_type: self.telemetry_index_type(),
+            points_values_count: FullTextIndexRead::points_count(self),
+            points_count: FullTextIndexRead::points_count(self),
             histogram_bucket_size: None,
         }
-    }
-
-    /// Parse as [`TokenizerTextKind::Document`] and return [`ParsedQuery::Phrase`].
-    /// Returns [`None`] if there are any unseen tokens.
-    pub fn parse_phrase_query(
-        &self,
-        phrase: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
-        let document = self.parse_document(phrase, hw_counter)?;
-        Ok(document.map(ParsedQuery::Phrase))
-    }
-
-    /// Parse as [`TokenizerTextKind::Query`] and return [`ParsedQuery::AllTokens`].
-    /// Returns [`None`] if there are any unseen tokens.
-    pub fn parse_text_query(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
-        let tokenset: Option<TokenSet> = self
-            .resolve_tokens(TokenizerTextKind::Query, text, hw_counter)?
-            .into_values()
-            .collect::<Option<TokenSet>>();
-        Ok(tokenset.map(ParsedQuery::AllTokens))
-    }
-
-    /// Parse as [`TokenizerTextKind::Query`] and return [`ParsedQuery::AnyTokens`].
-    /// Unseen tokens are ignored. Never returns [`None`].
-    pub fn parse_text_any_query(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
-        let tokenset = self.parse_tokenset(TokenizerTextKind::Query, text, hw_counter)?;
-        Ok(Some(ParsedQuery::AnyTokens(tokenset)))
-    }
-
-    /// Parse as provided [`TokenizerTextKind`] and return [`TokenSet`].
-    /// Unseen tokens are ignored.
-    fn parse_tokenset(
-        &self,
-        kind: TokenizerTextKind,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<TokenSet> {
-        let token_ids = self.resolve_tokens(kind, text, hw_counter)?.into_values();
-        Ok(token_ids.flatten().collect())
-    }
-
-    /// Tokenize the `text` and return a map of token -> token_id.
-    /// Missing tokens will have [`None`] as token_id.
-    fn resolve_tokens<'a>(
-        &self,
-        kind: TokenizerTextKind,
-        text: &'a str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<AHashMap<Cow<'a, str>, Option<TokenId>>> {
-        let mut token_map = AHashMap::new();
-        self.get_tokenizer().tokenize(kind, text, |token| {
-            token_map.insert(token, None);
-        });
-        let iter = token_map
-            .iter_mut()
-            .map(|(token, cell)| (cell, token.as_ref()));
-        self.for_each_token_id(iter, hw_counter, |cell, token_id| *cell = token_id)?;
-        Ok(token_map)
-    }
-
-    /// Parse as [`TokenizerTextKind::Document`] and return a [`Document`].
-    /// Returns [`None`] if there are any unseen tokens.
-    pub fn parse_document(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Document>> {
-        let mut document_tokens = Vec::new();
-        let token_map = self.resolve_tokens(TokenizerTextKind::Document, text, hw_counter)?;
-        if token_map.values().any(|token_id| token_id.is_none()) {
-            return Ok(None);
-        }
-
-        self.get_tokenizer()
-            .tokenize(TokenizerTextKind::Document, text, |token| {
-                let token_id = token_map
-                    .get(&token)
-                    .expect("token should be in map")
-                    .expect("token_id should be set for all tokens");
-                document_tokens.push(token_id);
-            });
-
-        Ok(Some(Document::new(document_tokens)))
     }
 
     #[cfg(test)]
@@ -368,50 +157,6 @@ impl FullTextIndex {
             return Ok(Box::new(std::iter::empty()));
         };
         self.filter_query(parsed_query, hw_counter)
-    }
-
-    /// Checks the text directly against the payload value using the
-    /// full-text index tokenizer.
-    ///
-    /// `query_type` selects the parsing / matching strategy:
-    /// - `Text`    — all query tokens must appear in the document
-    /// - `Phrase`  — all query tokens must appear in exact order
-    /// - `TextAny` — at least one query token must appear
-    pub fn check_payload_match(
-        &self,
-        payload_value: &serde_json::Value,
-        text: &str,
-        query_type: PayloadMatchQueryType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let query_opt = match query_type {
-            PayloadMatchQueryType::Text => self.parse_text_query(text, hw_counter)?,
-            PayloadMatchQueryType::Phrase => self.parse_phrase_query(text, hw_counter)?,
-            PayloadMatchQueryType::TextAny => self.parse_text_any_query(text, hw_counter)?,
-        };
-
-        let Some(query) = query_opt else {
-            return Ok(false);
-        };
-
-        FullTextIndex::get_values(payload_value)
-            .iter()
-            .try_any(|value| match &query {
-                ParsedQuery::AllTokens(query) => {
-                    let tokenset =
-                        self.parse_tokenset(TokenizerTextKind::Document, value, hw_counter)?;
-                    Ok(tokenset.has_subset(query))
-                }
-                ParsedQuery::Phrase(query) => {
-                    let document = self.parse_document(value, hw_counter)?;
-                    Ok(document.is_some_and(|doc| doc.has_phrase(query)))
-                }
-                ParsedQuery::AnyTokens(query) => {
-                    let tokenset =
-                        self.parse_tokenset(TokenizerTextKind::Document, value, hw_counter)?;
-                    Ok(tokenset.has_any(query))
-                }
-            })
     }
 
     /// Approximate RAM usage in bytes for in-memory structures.
@@ -540,9 +285,128 @@ impl PayloadFieldIndex for FullTextIndex {
     }
 }
 
+impl FullTextIndexRead for FullTextIndex {
+    fn tokenizer(&self) -> &Tokenizer {
+        match self {
+            Self::Mutable(index) => &index.tokenizer,
+            Self::Immutable(index) => match &index.storage {
+                Storage::Mmap(mmap_index) => &mmap_index.tokenizer,
+            },
+            Self::Mmap(index) => &index.tokenizer,
+        }
+    }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        match self {
+            FullTextIndex::Mutable(_) => "mutable_full_text",
+            FullTextIndex::Immutable(_) => "immutable_full_text",
+            FullTextIndex::Mmap(_) => "mmap_full_text",
+        }
+    }
+
+    fn points_count(&self) -> usize {
+        match self {
+            Self::Mutable(index) => index.inverted_index.points_count(),
+            Self::Immutable(index) => index.inverted_index.points_count(),
+            Self::Mmap(index) => index.inverted_index.points_count(),
+        }
+    }
+
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
+        match self {
+            Self::Mutable(index) => index.inverted_index.values_count(point_id),
+            Self::Immutable(index) => index.inverted_index.values_count(point_id),
+            Self::Mmap(index) => index.inverted_index.values_count(point_id),
+        }
+    }
+
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.values_is_empty(point_id),
+            Self::Immutable(index) => index.inverted_index.values_is_empty(point_id),
+            Self::Mmap(index) => index.inverted_index.values_is_empty(point_id),
+        }
+    }
+
+    fn for_each_token_id<'a, U: UserData>(
+        &self,
+        iter: impl Iterator<Item = (U, &'a str)>,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(U, Option<TokenId>),
+    ) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
+            Self::Immutable(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
+            Self::Mmap(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
+        }
+    }
+
+    fn filter_query<'a>(
+        &'a self,
+        query: ParsedQuery,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.filter(query, hw_counter),
+            Self::Immutable(index) => index.inverted_index.filter(query, hw_counter),
+            Self::Mmap(index) => index.inverted_index.filter(query, hw_counter),
+        }
+    }
+
+    fn estimate_query_cardinality(
+        &self,
+        query: &ParsedQuery,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<CardinalityEstimation> {
+        match self {
+            Self::Mutable(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+            Self::Immutable(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+            Self::Mmap(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+        }
+    }
+
+    fn check_match(
+        &self,
+        query: &ParsedQuery,
+        point_id: PointOffsetType,
+    ) -> OperationResult<bool> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Mmap(index) => index.inverted_index.check_match(query, point_id),
+        }
+    }
+
+    fn for_each_payload_block_inner(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+        f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index
+                .inverted_index
+                .for_each_payload_block(threshold, key, f),
+            Self::Immutable(index) => index
+                .inverted_index
+                .for_each_payload_block(threshold, key, f),
+            Self::Mmap(index) => index
+                .inverted_index
+                .for_each_payload_block(threshold, key, f),
+        }
+    }
+}
+
 impl PayloadFieldIndexRead for FullTextIndex {
     fn count_indexed_points(&self) -> usize {
-        self.points_count()
+        FullTextIndexRead::points_count(self)
     }
 
     fn filter<'a>(
@@ -550,24 +414,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        let Some(r#match) = &condition.r#match else {
-            return Ok(None);
-        };
-
-        let parsed_query_opt = match r#match {
-            Match::Text(MatchText { text }) => self.parse_text_query(text, hw_counter),
-            Match::Phrase(MatchPhrase { phrase }) => self.parse_phrase_query(phrase, hw_counter),
-            Match::TextAny(MatchTextAny { text_any }) => {
-                self.parse_text_any_query(text_any, hw_counter)
-            }
-            Match::Value(_) | Match::Any(_) | Match::Except(_) => return Ok(None),
-        }?;
-
-        let Some(parsed_query) = parsed_query_opt else {
-            return Ok(Some(Box::new(std::iter::empty())));
-        };
-
-        Ok(Some(self.filter_query(parsed_query, hw_counter)?))
+        read_ops::filter(self, condition, hw_counter)
     }
 
     fn estimate_cardinality(
@@ -575,28 +422,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        let Some(r#match) = &condition.r#match else {
-            return Ok(None);
-        };
-
-        let parsed_query_opt = match r#match {
-            Match::Text(MatchText { text }) => self.parse_text_query(text, hw_counter),
-            Match::Phrase(MatchPhrase { phrase }) => self.parse_phrase_query(phrase, hw_counter),
-            Match::TextAny(MatchTextAny { text_any }) => {
-                self.parse_text_any_query(text_any, hw_counter)
-            }
-            Match::Value(_) | Match::Any(_) | Match::Except(_) => return Ok(None),
-        }?;
-
-        let Some(parsed_query) = parsed_query_opt else {
-            return Ok(Some(CardinalityEstimation::exact(0)));
-        };
-
-        Ok(Some(self.estimate_query_cardinality(
-            &parsed_query,
-            condition,
-            hw_counter,
-        )?))
+        read_ops::estimate_cardinality(self, condition, hw_counter)
     }
 
     fn for_each_payload_block(
@@ -605,7 +431,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.for_each_payload_block(threshold, key, f)
+        read_ops::for_each_payload_block(self, threshold, key, f)
     }
 
     fn condition_checker<'a>(
@@ -613,52 +439,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        // Destructure explicitly (no `..`) so a new field added to
-        // `FieldCondition` forces this method to be revisited.
-        let FieldCondition {
-            key: _,
-            r#match,
-            range: _,
-            geo_radius: _,
-            geo_bounding_box: _,
-            geo_polygon: _,
-            values_count: _,
-            is_empty: _,
-            is_null: _,
-        } = condition;
-
-        let cond_match = r#match.as_ref()?;
-        let hw_counter = hw_acc.get_counter_cell();
-
-        // FullTextIndex serves Text / TextAny / Phrase only. Other
-        // Match variants are explicitly listed so a new `Match`
-        // variant forces a decision.
-        let (text, query_type): (&str, _) = match cond_match {
-            Match::Text(MatchText { text }) => (text, PayloadMatchQueryType::Text),
-            Match::TextAny(MatchTextAny { text_any }) => (text_any, PayloadMatchQueryType::TextAny),
-            Match::Phrase(MatchPhrase { phrase }) => (phrase, PayloadMatchQueryType::Phrase),
-            Match::Value(MatchValue { value: _ })
-            | Match::Any(MatchAny { any: _ })
-            | Match::Except(MatchExcept { except: _ }) => return None,
-        };
-
-        let query_opt = match query_type {
-            PayloadMatchQueryType::Phrase => self.parse_phrase_query(text, &hw_counter),
-            PayloadMatchQueryType::Text => self.parse_text_query(text, &hw_counter),
-            PayloadMatchQueryType::TextAny => self.parse_text_any_query(text, &hw_counter),
-        };
-
-        // Empty query or parse error: legacy behaviour returns a checker
-        // that always says false. FIXME(uio): the error arm silently
-        // ignores errors — see the existing TODO on `check_match` below.
-        let Ok(Some(parsed_query)) = query_opt else {
-            return Some(Box::new(|_| false));
-        };
-
-        Some(Box::new(move |point_id: PointOffsetType| {
-            // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
-            self.check_match(&parsed_query, point_id).unwrap_or(false)
-        }))
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 
     fn special_check_condition(
@@ -667,27 +448,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
         payload_value: &Value,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<bool>> {
-        Ok(match &condition.r#match {
-            Some(Match::Text(MatchText { text })) => Some(self.check_payload_match(
-                payload_value,
-                text,
-                PayloadMatchQueryType::Text,
-                hw_counter,
-            )?),
-            Some(Match::Phrase(MatchPhrase { phrase })) => Some(self.check_payload_match(
-                payload_value,
-                phrase,
-                PayloadMatchQueryType::Phrase,
-                hw_counter,
-            )?),
-            Some(Match::TextAny(MatchTextAny { text_any })) => Some(self.check_payload_match(
-                payload_value,
-                text_any,
-                PayloadMatchQueryType::TextAny,
-                hw_counter,
-            )?),
-            Some(Match::Value(_) | Match::Any(_) | Match::Except(_)) | None => None,
-        })
+        read_ops::special_check_condition(self, condition, payload_value, hw_counter)
     }
 }
 
