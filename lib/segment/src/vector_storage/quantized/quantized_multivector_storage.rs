@@ -11,6 +11,7 @@ use fs_err as fs;
 use memmap2::MmapMut;
 use quantization::EncodedVectors;
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
@@ -37,11 +38,21 @@ pub struct MultivectorOffset {
 
 pub trait MultivectorOffsets {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)>;
 }
 
 #[allow(clippy::len_without_is_empty)]
 pub trait MultivectorOffsetsStorage: Sized {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)>;
 
     fn len(&self) -> usize;
 
@@ -94,6 +105,13 @@ impl MultivectorOffsetsStorageRam {
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets[idx as usize]
+    }
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        ids.iter().map(|&id| self.get_offset(id)).enumerate()
     }
 
     fn len(&self) -> usize {
@@ -172,6 +190,13 @@ impl MultivectorOffsetsStorageMmap {
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets[idx as usize]
+    }
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        ids.iter().map(|&id| self.get_offset(id)).enumerate()
     }
 
     fn len(&self) -> usize {
@@ -264,6 +289,19 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
             .unwrap_or_default()
     }
 
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        self.data.iter(ids).map(|(idx, offset)| {
+            let [offset] = offset.as_ref() else {
+                unreachable!("multi-vector offsets are stored as a single-element slice");
+            };
+
+            (idx, *offset)
+        })
+    }
+
     fn len(&self) -> usize {
         self.data.len()
     }
@@ -342,30 +380,43 @@ where
         }
     }
 
+    pub fn score_multi(
+        &self,
+        query: &[QuantizedStorage::EncodedQuery],
+        offset: MultivectorOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
+        match self.multi_vector_config.comparator {
+            MultiVectorComparator::MaxSim => {
+                self.score_point_max_similarity(query, offset, hw_counter)
+            }
+        }
+    }
+
     /// Custom `score_max_similarity` implementation for quantized vectors
     fn score_point_max_similarity(
         &self,
-        query: &Vec<QuantizedStorage::EncodedQuery>,
-        vector_index: PointOffsetType,
+        query: &[QuantizedStorage::EncodedQuery],
+        offset: MultivectorOffset,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        let offset = self.offsets.get_offset(vector_index);
-        let mut sum = 0.0;
-        for inner_query in query {
-            let mut max_sim = ScoreType::NEG_INFINITY;
-            // manual `max_by` for performance
-            for i in 0..offset.count {
-                let sim =
-                    self.quantized_storage
-                        .score_point(inner_query, offset.start + i, hw_counter);
-                if sim > max_sim {
-                    max_sim = sim;
+        let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
+
+        let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
+        max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
+
+        self.quantized_storage
+            .for_each_in_batch(&offsets, |_, vector| {
+                for (query_idx, query) in query.iter().enumerate() {
+                    let sim = self.quantized_storage.score(query, vector, hw_counter);
+
+                    if max_sim[query_idx] < sim {
+                        max_sim[query_idx] = sim;
+                    }
                 }
-            }
-            // sum of max similarity
-            sum += max_sim;
-        }
-        sum
+            });
+
+        max_sim.into_iter().sum()
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
@@ -451,9 +502,8 @@ where
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i, hw_counter),
-        }
+        let offset = self.offsets.get_offset(i);
+        self.score_multi(query, offset, hw_counter)
     }
 
     fn score_internal(
@@ -586,6 +636,13 @@ where
 {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets.get_offset(idx)
+    }
+
+    fn iter_offsets(
+        &self,
+        ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
+        self.offsets.iter_offsets(ids)
     }
 }
 

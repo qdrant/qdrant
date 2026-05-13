@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
+use quantization::EncodedVectors;
 
 use super::quantized_query_scorer::InternalScorerUnsupported;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -10,26 +11,32 @@ use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffset, MultivectorOffsets,
+    MultivectorOffset, MultivectorOffsets, MultivectorOffsetsStorage, QuantizedMultivectorStorage,
 };
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedMultiQueryScorer<'a, TEncodedVectors>
+pub struct QuantizedMultiQueryScorer<'a, QuantizedStorage, OffsetStorage>
 where
-    TEncodedVectors: quantization::EncodedVectors,
+    QuantizedStorage: quantization::EncodedVectors,
+    OffsetStorage: MultivectorOffsetsStorage,
 {
-    query: TEncodedVectors::EncodedQuery,
-    quantized_multivector_storage: &'a TEncodedVectors,
+    query: Vec<QuantizedStorage::EncodedQuery>,
+    quantized_multivector_storage: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TEncodedVectors> QuantizedMultiQueryScorer<'a, TEncodedVectors>
+impl<'a, QuantizedStorage, OffsetStorage>
+    QuantizedMultiQueryScorer<'a, QuantizedStorage, OffsetStorage>
 where
-    TEncodedVectors: quantization::EncodedVectors,
+    QuantizedStorage: quantization::EncodedVectors,
+    OffsetStorage: MultivectorOffsetsStorage,
 {
     pub fn new_multi<TElement, TMetric>(
         raw_query: &MultiDenseVectorInternal,
-        quantized_multivector_storage: &'a TEncodedVectors,
+        quantized_multivector_storage: &'a QuantizedMultivectorStorage<
+            QuantizedStorage,
+            OffsetStorage,
+        >,
         quantization_config: &QuantizationConfig,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
@@ -63,7 +70,10 @@ where
 
     pub fn new_internal(
         point_id: PointOffsetType,
-        quantized_multivector_storage: &'a TEncodedVectors,
+        quantized_multivector_storage: &'a QuantizedMultivectorStorage<
+            QuantizedStorage,
+            OffsetStorage,
+        >,
         mut hardware_counter: HardwareCounterCell,
     ) -> Result<Self, InternalScorerUnsupported> {
         let Some(query) = quantized_multivector_storage.encode_internal_vector(point_id) else {
@@ -81,11 +91,34 @@ where
     }
 }
 
-impl<TEncodedVectors> QueryScorer for QuantizedMultiQueryScorer<'_, TEncodedVectors>
+impl<QuantizedStorage, OffsetStorage> QueryScorer
+    for QuantizedMultiQueryScorer<'_, QuantizedStorage, OffsetStorage>
 where
-    TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets,
+    QuantizedStorage: quantization::EncodedVectors,
+    OffsetStorage: MultivectorOffsetsStorage,
 {
     type TVector = ();
+
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert_eq!(ids.len(), scores.len());
+
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(size_of::<MultivectorOffset>() * ids.len());
+
+        for (idx, offset) in self.quantized_multivector_storage.iter_offsets(ids) {
+            self.hardware_counter.vector_io_read().incr_delta(
+                self.quantized_multivector_storage.quantized_vector_size() * offset.count as usize,
+            );
+
+            // quantized multivector storage handles CPU hardware counter
+            scores[idx] = self.quantized_multivector_storage.score_multi(
+                &self.query,
+                offset,
+                &self.hardware_counter,
+            );
+        }
+    }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
