@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -107,20 +109,20 @@ where
             .vector_io_read()
             .incr_delta(size_of::<MultivectorOffset>() * ids.len());
 
-        for (idx, offset) in self.quantized_multivector_storage.iter_offsets(ids) {
-            self.hardware_counter.vector_io_read().incr_delta(
-                self.quantized_multivector_storage.quantized_vector_size() * offset.count as usize,
-            );
-
+        let score_multi_vector = |idx, multi_vector: &[Cow<'_, _>]| {
             scores[idx] = self.query.score_by(|query| {
-                // quantized multivector storage handles CPU hardware counter
-                self.quantized_multivector_storage.score_multi(
-                    query,
-                    offset,
-                    &self.hardware_counter,
-                )
+                // `score_point_max_similarity` handles CPU hardware counter
+                self.quantized_multivector_storage
+                    .score_vector_max_similarity(query, multi_vector, &self.hardware_counter)
             });
-        }
+        };
+
+        // `for_each_in_multi_batch` handles multi-vector I/O hardware counter
+        self.quantized_multivector_storage.for_each_in_multi_batch(
+            ids,
+            score_multi_vector,
+            &self.hardware_counter,
+        );
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
