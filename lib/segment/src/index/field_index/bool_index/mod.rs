@@ -1,9 +1,16 @@
+pub mod immutable_bool_index;
+pub mod mutable_bool_index;
+pub mod read_only_bool_index;
+mod read_ops;
+
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
-use immutable_bool_index::ImmutableBoolIndex;
-use mutable_bool_index::MutableBoolIndex;
+pub use immutable_bool_index::ImmutableBoolIndex;
+pub use mutable_bool_index::MutableBoolIndex;
+pub use read_only_bool_index::ReadOnlyBoolIndex;
+pub use read_ops::BoolIndexRead;
 use serde_json::Value;
 
 use super::facet_index::FacetIndex;
@@ -17,16 +24,23 @@ use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::FieldCondition;
 
-pub mod immutable_bool_index;
-pub mod mutable_bool_index;
-pub mod read_only_bool_index;
-mod read_ops;
-
-pub use read_ops::BoolIndexRead;
-
 pub enum BoolIndex {
     Mmap(MutableBoolIndex),
     Immutable(ImmutableBoolIndex),
+}
+
+impl From<MutableBoolIndex> for BoolIndex {
+    #[inline]
+    fn from(index: MutableBoolIndex) -> Self {
+        BoolIndex::Mmap(index)
+    }
+}
+
+impl From<ImmutableBoolIndex> for BoolIndex {
+    #[inline]
+    fn from(index: ImmutableBoolIndex) -> Self {
+        BoolIndex::Immutable(index)
+    }
 }
 
 impl BoolIndex {
@@ -36,6 +50,20 @@ impl BoolIndex {
             BoolIndex::Mmap(_) => IndexMutability::Mutable,
             BoolIndex::Immutable(_) => IndexMutability::Immutable,
         }
+    }
+
+    /// Produce a closure that maps a point id to its indexed bool
+    /// values as JSON `Value`s. Used by `FieldIndex::value_retriever`.
+    pub fn value_retriever<'a>(
+        &'a self,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> VariableRetrieverFn<'a> {
+        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+            self.get_point_values(point_id)
+                .into_iter()
+                .map(Value::Bool)
+                .collect()
+        })
     }
 }
 
@@ -82,36 +110,6 @@ impl BoolIndexRead for BoolIndex {
             BoolIndex::Mmap(index) => index.falses_count(),
             BoolIndex::Immutable(index) => index.falses_count(),
         }
-    }
-}
-
-impl From<MutableBoolIndex> for BoolIndex {
-    #[inline]
-    fn from(index: MutableBoolIndex) -> Self {
-        BoolIndex::Mmap(index)
-    }
-}
-
-impl From<ImmutableBoolIndex> for BoolIndex {
-    #[inline]
-    fn from(index: ImmutableBoolIndex) -> Self {
-        BoolIndex::Immutable(index)
-    }
-}
-
-impl BoolIndex {
-    /// Produce a closure that maps a point id to its indexed bool
-    /// values as JSON `Value`s. Used by `FieldIndex::value_retriever`.
-    pub fn value_retriever<'a>(
-        &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
-        Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            self.get_point_values(point_id)
-                .into_iter()
-                .map(Value::Bool)
-                .collect()
-        })
     }
 }
 
