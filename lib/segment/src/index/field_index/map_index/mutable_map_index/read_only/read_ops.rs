@@ -88,6 +88,10 @@ where
     fn ram_usage_bytes(&self) -> usize {
         self.inner.ram_usage_bytes()
     }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        "read_only_appendable_map"
+    }
 }
 
 impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>

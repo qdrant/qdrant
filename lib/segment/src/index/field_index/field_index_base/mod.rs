@@ -3,6 +3,7 @@ mod field_index;
 mod field_index_read;
 mod field_index_read_impl;
 mod payload_field_index;
+mod read_only;
 mod value_indexer;
 
 pub use builder::{FieldIndexBuilder, FieldIndexBuilderTrait};

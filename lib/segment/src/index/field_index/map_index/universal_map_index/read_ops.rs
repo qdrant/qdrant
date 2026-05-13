@@ -219,6 +219,10 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for Univer
     fn ram_usage_bytes(&self) -> usize {
         self.storage.ram_usage_bytes()
     }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        "mmap_map"
+    }
 }
 
 impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> UniversalMapIndex<N, S> {

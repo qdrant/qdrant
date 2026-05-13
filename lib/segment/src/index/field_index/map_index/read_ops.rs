@@ -23,7 +23,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// [`MapIndex`] can call them generically. Variants that don't need
 /// `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the
 /// storage-backed `Universal` variant uses it to track payload-index IO.
-pub(super) trait MapIndexRead<N: MapIndexKey + ?Sized> {
+pub trait MapIndexRead<N: MapIndexKey + ?Sized> {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
@@ -74,11 +74,29 @@ pub(super) trait MapIndexRead<N: MapIndexKey + ?Sized> {
 
     fn ram_usage_bytes(&self) -> usize;
 
+    /// Per-variant telemetry tag (e.g. `"mutable_map"`, `"mmap_map"`,
+    /// `"read_only_map"`). Used by the default [`Self::get_telemetry_data`]
+    /// to fill the `index_type` field. Mirrors
+    /// [`NullIndexRead::telemetry_index_type`][1].
+    ///
+    /// [1]: crate::index::field_index::null_index::NullIndexRead::telemetry_index_type
+    fn telemetry_index_type(&self) -> &'static str;
+
     // Default-method helpers derived from the required methods above.
     //
     // Kept here (rather than as inherent methods on a single concrete type) so
     // that every `MapIndexRead<N>` impl — `MapIndex<N>`, `ReadOnlyMapIndex<N, S>`,
     // and the leaf variants — exposes them via the same call syntax.
+
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: self.get_indexed_points(),
+            points_values_count: self.get_values_count(),
+            histogram_bucket_size: None,
+            index_type: self.telemetry_index_type(),
+        }
+    }
 
     fn values_is_empty(&self, idx: PointOffsetType) -> bool {
         self.values_count(idx).unwrap_or(0) == 0
@@ -310,6 +328,14 @@ where
             MapIndex::Mutable(index) => index.ram_usage_bytes(),
             MapIndex::Immutable(index) => index.ram_usage_bytes(),
             MapIndex::Mmap(index) => index.ram_usage_bytes(),
+        }
+    }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        match self {
+            MapIndex::Mutable(_) => "mutable_map",
+            MapIndex::Immutable(_) => "immutable_map",
+            MapIndex::Mmap(_) => "mmap_map",
         }
     }
 }

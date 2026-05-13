@@ -176,6 +176,13 @@ where
         StorageType::Gridstore
     }
 
+    /// Placeholder telemetry tag — like [`Self::storage_type`], the inner is
+    /// never queried directly; wrappers override this on their own
+    /// [`MapIndexRead`] impls.
+    fn telemetry_index_type(&self) -> &'static str {
+        "mutable_map"
+    }
+
     /// Approximate RAM usage in bytes for in-memory index structures.
     fn ram_usage_bytes(&self) -> usize {
         let Self {

@@ -14,14 +14,13 @@ pub mod key;
 mod lifecycle;
 pub mod mutable_map_index;
 mod payload_index_impl;
-mod read_ops;
+pub mod read_ops;
 #[cfg(test)]
 mod tests;
 pub mod universal_map_index;
 mod value_indexer_impl;
 
-#[allow(dead_code)]
-mod read_only;
+pub mod read_only;
 
 /// Block size in Gridstore for keyword map index.
 /// Keyword(s) are stored as cbor vector.
