@@ -16,7 +16,10 @@ pub(super) const DELETED_PATH: &str = "deleted.bin";
 pub(super) const HASHMAP_PATH: &str = "values_to_points.bin";
 pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
-/// Mmap-backed immutable map index.
+/// Immutable map index served directly from a [`UniversalRead`] storage backend.
+///
+/// The storage parameter `S` defaults to [`MmapFile`], but any `UniversalRead`
+/// implementation works — e.g. io_uring or disk-cache wrappers.
 ///
 /// On-disk state (`values_to_points.bin`, `deleted.bin`, `point_to_values.*`,
 /// `mmap_field_index_config.json`) is written once during [`Self::build`] and
@@ -28,7 +31,7 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
+pub struct UniversalMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) path: PathBuf,
     pub(super) storage: Storage<N, S>,
     pub(super) deleted_count: usize,
@@ -45,7 +48,7 @@ pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = Mmap
     pub(super) deleted: BitVec,
 }
 
-impl<N: MapIndexKey + Key + ?Sized> Storage<N> {
+impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> Storage<N, S> {
     pub(super) fn ram_usage_bytes(&self) -> usize {
         let Self {
             value_to_points: _,
@@ -53,12 +56,12 @@ impl<N: MapIndexKey + Key + ?Sized> Storage<N> {
             deleted,
         } = self;
 
-        // `value_to_points` is a mmap-backed hashmap with no in-memory state.
+        // `value_to_points` is a storage-backed hashmap with no in-memory state.
         point_to_values.ram_usage_bytes() + deleted.capacity().div_ceil(u8::BITS as usize)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct MmapMapIndexConfig {
+pub(super) struct UniversalMapIndexConfig {
     pub(super) total_key_value_pairs: usize,
 }

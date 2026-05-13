@@ -17,13 +17,13 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// Read-only operations supported by every map-index storage variant
 /// ([`super::mutable_map_index::MutableMapIndex`],
 /// [`super::immutable_map_index::ImmutableMapIndex`],
-/// [`super::mmap_map_index::MmapMapIndex`]).
+/// [`super::universal_map_index::UniversalMapIndex`]).
 ///
 /// Signatures are unified across variants so the enum-level dispatcher in
 /// [`MapIndex`] can call them generically. Variants that don't need
-/// `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the mmap
-/// variant uses it to track payload-index IO.
-pub(super) trait MapIndexRead<N: MapIndexKey + ?Sized> {
+/// `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the
+/// storage-backed `Universal` variant uses it to track payload-index IO.
+pub trait MapIndexRead<N: MapIndexKey + ?Sized> {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
@@ -73,153 +73,42 @@ pub(super) trait MapIndexRead<N: MapIndexKey + ?Sized> {
     fn storage_type(&self) -> StorageType;
 
     fn ram_usage_bytes(&self) -> usize;
-}
 
-impl<N: MapIndexKey + ?Sized> MapIndex<N>
-where
-    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
-{
-    pub fn check_values_any(
-        &self,
-        idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-        check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
-        match self {
-            MapIndex::Mutable(index) => index.check_values_any(idx, hw_counter, check_fn),
-            MapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
-            MapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
-        }
-    }
+    /// Per-variant telemetry tag (e.g. `"mutable_map"`, `"mmap_map"`,
+    /// `"read_only_map"`). Used by the default [`Self::get_telemetry_data`]
+    /// to fill the `index_type` field. Mirrors
+    /// [`NullIndexRead::telemetry_index_type`][1].
+    ///
+    /// [1]: crate::index::field_index::null_index::NullIndexRead::telemetry_index_type
+    fn telemetry_index_type(&self) -> &'static str;
 
-    pub fn get_values(
-        &self,
-        idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
-        match self {
-            MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
-            MapIndex::Immutable(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
-            MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx, hw_counter)?)),
-        }
-    }
+    // Default-method helpers derived from the required methods above.
+    //
+    // Kept here (rather than as inherent methods on a single concrete type) so
+    // that every `MapIndexRead<N>` impl — `MapIndex<N>`, `ReadOnlyMapIndex<N, S>`,
+    // and the leaf variants — exposes them via the same call syntax.
 
-    pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        match self {
-            MapIndex::Mutable(index) => index.values_count(idx).unwrap_or_default(),
-            MapIndex::Immutable(index) => index.values_count(idx).unwrap_or_default(),
-            MapIndex::Mmap(index) => index.values_count(idx).unwrap_or_default(),
-        }
-    }
-
-    pub(crate) fn get_indexed_points(&self) -> usize {
-        match self {
-            MapIndex::Mutable(index) => index.get_indexed_points(),
-            MapIndex::Immutable(index) => index.get_indexed_points(),
-            MapIndex::Mmap(index) => index.get_indexed_points(),
-        }
-    }
-
-    fn get_values_count(&self) -> usize {
-        match self {
-            MapIndex::Mutable(index) => index.get_values_count(),
-            MapIndex::Immutable(index) => index.get_values_count(),
-            MapIndex::Mmap(index) => index.get_values_count(),
-        }
-    }
-
-    pub fn get_unique_values_count(&self) -> usize {
-        match self {
-            MapIndex::Mutable(index) => index.get_unique_values_count(),
-            MapIndex::Immutable(index) => index.get_unique_values_count(),
-            MapIndex::Mmap(index) => index.get_unique_values_count(),
-        }
-    }
-
-    pub(crate) fn get_count_for_value(
-        &self,
-        value: &N,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<usize> {
-        match self {
-            MapIndex::Mutable(index) => index.get_count_for_value(value, hw_counter),
-            MapIndex::Immutable(index) => index.get_count_for_value(value, hw_counter),
-            MapIndex::Mmap(index) => index.get_count_for_value(value, hw_counter),
-        }
-    }
-
-    pub(crate) fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
-        match self {
-            MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
-            MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),
-            MapIndex::Mmap(index) => index.get_iterator(value, hw_counter),
-        }
-    }
-
-    pub fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
-        match self {
-            MapIndex::Mutable(index) => index.for_each_value(f),
-            MapIndex::Immutable(index) => index.for_each_value(f),
-            MapIndex::Mmap(index) => index.for_each_value(f),
-        }
-    }
-
-    pub fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        f: impl FnMut(&N, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        // The immutable variant does not support deferred filtering — it
-        // asserts the argument is `None`. Two reasons we don't implement it:
-        //  - We don't have both deferred points and an immutable index.
-        //  - It is not trivial (nor performant) to implement correct filtering
-        //    for this index variant as it doesn't work well in combination
-        //    with the way it handles deletions.
-        match self {
-            MapIndex::Mutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-            MapIndex::Immutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-            MapIndex::Mmap(index) => index.for_each_count_per_value(deferred_internal_id, f),
-        }
-    }
-
-    pub fn for_each_value_map(
-        &self,
-        hw_cell: &HardwareCounterCell,
-        f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        match self {
-            MapIndex::Mutable(index) => index.for_each_value_map(hw_cell, f),
-            MapIndex::Immutable(index) => index.for_each_value_map(hw_cell, f),
-            MapIndex::Mmap(index) => index.for_each_value_map(hw_cell, f),
-        }
-    }
-
-    pub(crate) fn match_cardinality(
-        &self,
-        value: &N,
-        hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
-        let values_count = self.get_count_for_value(value, hw_counter).unwrap_or(0);
-
-        CardinalityEstimation::exact(values_count)
-    }
-
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
             points_count: self.get_indexed_points(),
             points_values_count: self.get_values_count(),
             histogram_bucket_size: None,
-            index_type: match self {
-                MapIndex::Mutable(_) => "mutable_map",
-                MapIndex::Immutable(_) => "immutable_map",
-                MapIndex::Mmap(_) => "mmap_map",
-            },
+            index_type: self.telemetry_index_type(),
         }
     }
 
-    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
-        self.values_count(idx) == 0
+    fn values_is_empty(&self, idx: PointOffsetType) -> bool {
+        self.values_count(idx).unwrap_or(0) == 0
+    }
+
+    fn match_cardinality(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
+        let values_count = self.get_count_for_value(value, hw_counter).unwrap_or(0);
+        CardinalityEstimation::exact(values_count)
     }
 
     /// Estimates cardinality for `except` clause
@@ -231,57 +120,17 @@ where
     /// # Returns
     ///
     /// * `CardinalityEstimation` - estimation of cardinality
-    pub(crate) fn except_cardinality<'a>(
+    fn except_cardinality<'a>(
         &'a self,
         excluded: impl Iterator<Item = &'a N>,
         hw_counter: &HardwareCounterCell,
-    ) -> CardinalityEstimation {
+    ) -> CardinalityEstimation
+    where
+        N: 'a,
+    {
         // Minimal case: we exclude as many points as possible.
-        // In this case, excluded points do not have any other values except excluded ones.
-        // So the first step - we estimate how many other points is needed to fit unused values.
-
-        // Example:
-        // Values: 20, 20
-        // Unique values: 5
-        // Total points: 100
-        // Total values: 110
-        // total_excluded_value_count = 40
-        // non_excluded_values_count = 110 - 40 = 70
-        // max_values_per_point = 5 - 2 = 3
-        // min_not_excluded_by_values = 70 / 3 = 24
-        // min = max(24, 100 - 40) = 60
-        // exp = ...
-        // max = min(20, 70) = 20
-
-        // Values: 60, 60
-        // Unique values: 5
-        // Total points: 100
-        // Total values: 200
-        // total_excluded_value_count = 120
-        // non_excluded_values_count = 200 - 120 = 80
-        // max_values_per_point = 5 - 2 = 3
-        // min_not_excluded_by_values = 80 / 3 = 27
-        // min = max(27, 100 - 120) = 27
-        // exp = ...
-        // max = min(60, 80) = 60
-
-        // Values: 60, 60, 60
-        // Unique values: 5
-        // Total points: 100
-        // Total values: 200
-        // total_excluded_value_count = 180
-        // non_excluded_values_count = 200 - 180 = 20
-        // max_values_per_point = 5 - 3 = 2
-        // min_not_excluded_by_values = 20 / 2 = 10
-        // min = max(10, 100 - 180) = 10
-        // exp = ...
-        // max = min(60, 20) = 20
-
         let excluded_value_counts: Vec<_> = excluded
-            .map(|val| {
-                self.get_count_for_value(val.borrow(), hw_counter)
-                    .unwrap_or(0)
-            })
+            .map(|val| self.get_count_for_value(val, hw_counter).unwrap_or(0))
             .collect();
         let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
 
@@ -325,7 +174,7 @@ where
         }
     }
 
-    pub(crate) fn except_set<'a, K, A>(
+    fn except_set<'a, K, A>(
         &'a self,
         excluded: &'a IndexSet<K, A>,
         hw_counter: &'a HardwareCounterCell,
@@ -334,7 +183,7 @@ where
         A: BuildHasher,
         K: Borrow<N> + Hash + Eq,
     {
-        let mut points = IndexSet::new();
+        let mut points = IndexSet::<PointOffsetType>::new();
         self.for_each_value(|key| {
             if !excluded.contains(key.borrow()) {
                 self.get_iterator(key.borrow(), hw_counter).for_each(|p| {
@@ -345,14 +194,199 @@ where
         })?;
         Ok(Box::new(points.into_iter()))
     }
+}
 
-    /// Approximate RAM usage in bytes for in-memory structures.
-    pub fn ram_usage_bytes(&self) -> usize {
+impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for MapIndex<N>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+{
+    fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+        check_fn: impl Fn(&N) -> bool,
+    ) -> bool {
+        match self {
+            MapIndex::Mutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
+        }
+    }
+
+    fn get_values<'a>(
+        &'a self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
+    where
+        N: 'a,
+    {
+        let boxed: Box<dyn Iterator<Item = Cow<'a, N>> + 'a> = match self {
+            MapIndex::Mutable(index) => Box::new(index.get_values(idx, hw_counter)?),
+            MapIndex::Immutable(index) => Box::new(index.get_values(idx, hw_counter)?),
+            MapIndex::Mmap(index) => Box::new(index.get_values(idx, hw_counter)?),
+        };
+        Some(boxed)
+    }
+
+    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+        match self {
+            MapIndex::Mutable(index) => index.values_count(idx),
+            MapIndex::Immutable(index) => index.values_count(idx),
+            MapIndex::Mmap(index) => index.values_count(idx),
+        }
+    }
+
+    fn get_indexed_points(&self) -> usize {
+        match self {
+            MapIndex::Mutable(index) => index.get_indexed_points(),
+            MapIndex::Immutable(index) => index.get_indexed_points(),
+            MapIndex::Mmap(index) => index.get_indexed_points(),
+        }
+    }
+
+    fn get_values_count(&self) -> usize {
+        match self {
+            MapIndex::Mutable(index) => index.get_values_count(),
+            MapIndex::Immutable(index) => index.get_values_count(),
+            MapIndex::Mmap(index) => index.get_values_count(),
+        }
+    }
+
+    fn get_unique_values_count(&self) -> usize {
+        match self {
+            MapIndex::Mutable(index) => index.get_unique_values_count(),
+            MapIndex::Immutable(index) => index.get_unique_values_count(),
+            MapIndex::Mmap(index) => index.get_unique_values_count(),
+        }
+    }
+
+    fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize> {
+        match self {
+            MapIndex::Mutable(index) => index.get_count_for_value(value, hw_counter),
+            MapIndex::Immutable(index) => index.get_count_for_value(value, hw_counter),
+            MapIndex::Mmap(index) => index.get_count_for_value(value, hw_counter),
+        }
+    }
+
+    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+        match self {
+            MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
+            MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),
+            MapIndex::Mmap(index) => index.get_iterator(value, hw_counter),
+        }
+    }
+
+    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.for_each_value(f),
+            MapIndex::Immutable(index) => index.for_each_value(f),
+            MapIndex::Mmap(index) => index.for_each_value(f),
+        }
+    }
+
+    fn for_each_count_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+        f: impl FnMut(&N, usize) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        // The immutable variant does not support deferred filtering — it
+        // asserts the argument is `None`. Two reasons we don't implement it:
+        //  - We don't have both deferred points and an immutable index.
+        //  - It is not trivial (nor performant) to implement correct filtering
+        //    for this index variant as it doesn't work well in combination
+        //    with the way it handles deletions.
+        match self {
+            MapIndex::Mutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
+            MapIndex::Immutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
+            MapIndex::Mmap(index) => index.for_each_count_per_value(deferred_internal_id, f),
+        }
+    }
+
+    fn for_each_value_map(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.for_each_value_map(hw_counter, f),
+            MapIndex::Immutable(index) => index.for_each_value_map(hw_counter, f),
+            MapIndex::Mmap(index) => index.for_each_value_map(hw_counter, f),
+        }
+    }
+
+    fn storage_type(&self) -> StorageType {
+        match self {
+            MapIndex::Mutable(index) => index.storage_type(),
+            MapIndex::Immutable(index) => index.storage_type(),
+            MapIndex::Mmap(index) => index.storage_type(),
+        }
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
         match self {
             MapIndex::Mutable(index) => index.ram_usage_bytes(),
             MapIndex::Immutable(index) => index.ram_usage_bytes(),
             MapIndex::Mmap(index) => index.ram_usage_bytes(),
         }
+    }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        match self {
+            MapIndex::Mutable(_) => "mutable_map",
+            MapIndex::Immutable(_) => "immutable_map",
+            MapIndex::Mmap(_) => "mmap_map",
+        }
+    }
+}
+
+impl<N: MapIndexKey + ?Sized> MapIndex<N>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+{
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: <Self as MapIndexRead<N>>::get_indexed_points(self),
+            points_values_count: <Self as MapIndexRead<N>>::get_values_count(self),
+            histogram_bucket_size: None,
+            index_type: match self {
+                MapIndex::Mutable(_) => "mutable_map",
+                MapIndex::Immutable(_) => "immutable_map",
+                MapIndex::Mmap(_) => "mmap_map",
+            },
+        }
+    }
+
+    /// `usize`-returning convenience wrapper around
+    /// [`MapIndexRead::values_count`] for callers outside this module who
+    /// don't have the (`pub(super)`) trait in scope.
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        <Self as MapIndexRead<N>>::values_count(self, idx).unwrap_or(0)
+    }
+
+    /// `bool`-returning convenience wrapper around
+    /// [`MapIndexRead::values_is_empty`]; see [`Self::values_count`] for why.
+    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
+        <Self as MapIndexRead<N>>::values_is_empty(self, idx)
+    }
+
+    /// Convenience wrapper around [`MapIndexRead::get_values`] that boxes the
+    /// returned iterator into `dyn Iterator`. See [`Self::values_count`] for
+    /// why the wrapper exists.
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = Cow<'_, N>> + '_>> {
+        let iter = <Self as MapIndexRead<N>>::get_values(self, idx, hw_counter)?;
+        Some(Box::new(iter))
+    }
+
+    /// Convenience wrapper around [`MapIndexRead::ram_usage_bytes`]; see
+    /// [`Self::values_count`] for why.
+    pub fn ram_usage_bytes(&self) -> usize {
+        <Self as MapIndexRead<N>>::ram_usage_bytes(self)
     }
 
     pub fn is_on_disk(&self) -> bool {

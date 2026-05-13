@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use super::MapIndex;
 use super::key::MapIndexKey;
-use super::mmap_map_index::MmapMapIndex;
+use super::universal_map_index::UniversalMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 
@@ -109,7 +109,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(MapIndex::Mmap(Box::new(MmapMapIndex::build(
+        Ok(MapIndex::Mmap(Box::new(UniversalMapIndex::build(
             &self.path,
             self.point_to_values,
             self.values_to_points,
