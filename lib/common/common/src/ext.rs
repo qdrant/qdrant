@@ -1,3 +1,5 @@
+pub mod aligned_vec;
+
 pub trait OptionExt {
     /// `replace` if the given `value` is `Some`
     fn replace_if_some(&mut self, value: Self);
