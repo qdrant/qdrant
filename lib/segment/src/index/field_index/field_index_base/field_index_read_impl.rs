@@ -256,11 +256,15 @@ impl FieldIndexRead for FieldIndex {
     }
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {
+        // None of these variants carry the `S` storage parameter; pin the
+        // returned `FacetIndexEnum`'s `S` to `MmapFile` (the default) so
+        // inference doesn't choke on the unconstrained generic.
+        use common::universal_io::MmapFile;
         match self {
-            FieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::Keyword(index)),
-            FieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::Int(index)),
-            FieldIndex::UuidMapIndex(index) => Some(FacetIndexEnum::Uuid(index)),
-            FieldIndex::BoolIndex(index) => Some(FacetIndexEnum::Bool(index)),
+            FieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::<MmapFile>::Keyword(index)),
+            FieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::<MmapFile>::Int(index)),
+            FieldIndex::UuidMapIndex(index) => Some(FacetIndexEnum::<MmapFile>::Uuid(index)),
+            FieldIndex::BoolIndex(index) => Some(FacetIndexEnum::<MmapFile>::Bool(index)),
             FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)

@@ -8,8 +8,8 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::MapIndexKey;
-use super::super::mmap_map_index::MmapMapIndex;
 use super::super::read_ops::MapIndexRead;
+use super::super::universal_map_index::UniversalMapIndex;
 use super::{ContainerSegment, ImmutableMapIndex, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -20,7 +20,7 @@ where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     /// Open and load immutable map index from mmap storage
-    pub(in super::super) fn open_mmap(index: MmapMapIndex<N>) -> OperationResult<Self> {
+    pub(in super::super) fn open_mmap(index: UniversalMapIndex<N>) -> OperationResult<Self> {
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation
 
         let mut indexed_points = 0;
@@ -32,7 +32,7 @@ where
         // Create flattened values-to-points mapping. Skip values whose live
         // points are all deleted in the backing mmap (e.g., points the
         // id-tracker has deleted at runtime, applied at open time by
-        // `MmapMapIndex::open`). This mirrors the runtime invariant in
+        // `UniversalMapIndex::open`). This mirrors the runtime invariant in
         // `remove_idx_from_value_list`: `value_to_points` only ever contains
         // entries with `count > 0`.
         let mut value_to_points_container = Vec::with_capacity(index.get_values_count());

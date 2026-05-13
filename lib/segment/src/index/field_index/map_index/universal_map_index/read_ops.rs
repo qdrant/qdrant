@@ -7,16 +7,17 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::persisted_hashmap::{Key, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use itertools::Itertools;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
-use super::MmapMapIndex;
+use super::UniversalMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::stored_point_to_values::ValuesIter;
 use crate::index::payload_config::StorageType;
 
-impl<N: MapIndexKey + Key + ?Sized> MapIndexRead<N> for MmapMapIndex<N> {
+impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> MapIndexRead<N> for UniversalMapIndex<N, S> {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
@@ -218,9 +219,13 @@ impl<N: MapIndexKey + Key + ?Sized> MapIndexRead<N> for MmapMapIndex<N> {
     fn ram_usage_bytes(&self) -> usize {
         self.storage.ram_usage_bytes()
     }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        "mmap_map"
+    }
 }
 
-impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
+impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> UniversalMapIndex<N, S> {
     pub fn for_points_values(
         &self,
         mut points: impl Iterator<Item = PointOffsetType>,
