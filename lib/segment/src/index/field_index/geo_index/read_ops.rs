@@ -70,10 +70,7 @@ pub trait GeoMapIndexRead {
 
     fn values_count(&self, idx: PointOffsetType) -> usize;
 
-    fn get_values(
-        &self,
-        idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>>;
+    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>>;
 
     /// Iterator over point IDs covered by any of the given top-level hash
     /// prefixes. Point IDs may repeat across prefixes; callers that need

@@ -45,8 +45,7 @@ impl<S: UniversalRead> ReadOnlyGeoMapIndex<S> {
         is_on_disk: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        Ok(StoredGeoMapIndex::open(path, is_on_disk, deleted_points)?
-            .map(|inner| Self { inner }))
+        Ok(StoredGeoMapIndex::open(path, is_on_disk, deleted_points)?.map(|inner| Self { inner }))
     }
 
     /// Produce a closure that maps a point id to its indexed geo values as
@@ -107,10 +106,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         GeoMapIndexRead::values_count(&self.inner, idx)
     }
 
-    fn get_values(
-        &self,
-        idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         GeoMapIndexRead::get_values(&self.inner, idx)
     }
 

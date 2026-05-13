@@ -481,13 +481,9 @@ impl GeoMapIndexRead for ImmutableGeoMapIndex {
         ImmutableGeoMapIndex::values_count(self, idx)
     }
 
-    fn get_values(
-        &self,
-        idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
-        ImmutableGeoMapIndex::get_values(self, idx).map(|iter| {
-            Box::new(iter.copied()) as Box<dyn Iterator<Item = GeoPoint> + '_>
-        })
+    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+        ImmutableGeoMapIndex::get_values(self, idx)
+            .map(|iter| Box::new(iter.copied()) as Box<dyn Iterator<Item = GeoPoint> + '_>)
     }
 
     fn iterator(

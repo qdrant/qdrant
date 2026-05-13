@@ -693,10 +693,7 @@ impl<S: UniversalRead> GeoMapIndexRead for StoredGeoMapIndex<S> {
         StoredGeoMapIndex::values_count(self, idx)
     }
 
-    fn get_values(
-        &self,
-        idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         StoredGeoMapIndex::get_values(self, idx)
             .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = GeoPoint> + '_>)
     }

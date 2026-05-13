@@ -168,10 +168,7 @@ impl GeoMapIndexRead for GeoMapIndex {
         }
     }
 
-    fn get_values(
-        &self,
-        idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         match self {
             GeoMapIndex::Mutable(index) => GeoMapIndexRead::get_values(index, idx),
             GeoMapIndex::Immutable(index) => GeoMapIndexRead::get_values(index, idx),
@@ -264,4 +261,3 @@ impl GeoMapIndexRead for GeoMapIndex {
         }
     }
 }
-
