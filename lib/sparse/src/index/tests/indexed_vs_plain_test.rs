@@ -12,11 +12,12 @@ fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
     let accumulator = HwMeasurementAcc::new();
     let hardware_counter = accumulator.get_counter_cell();
     let top = 10;
+    let mut handle = get_pooled_scores();
     let mut search_context = SearchContext::new(
         query.clone(),
         top,
         index,
-        get_pooled_scores(),
+        &mut handle,
         &is_stopped,
         &hardware_counter,
     )
@@ -24,12 +25,13 @@ fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
 
     let result = search_context.search(&match_all);
     let docs: Vec<_> = result.iter().map(|x| x.idx).collect();
+    drop(search_context);
 
     let mut search_context = SearchContext::new(
         query,
         top,
         index,
-        get_pooled_scores(),
+        &mut handle,
         &is_stopped,
         &hardware_counter,
     )

@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering::Relaxed;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::top_k::TopK;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 
 use super::posting_list_common::PostingListIter;
@@ -24,7 +24,7 @@ pub struct IndexedPostingListIterator<T: PostingListIter> {
 /// Making this larger makes the search faster but uses more (pooled) memory
 const ADVANCE_BATCH_SIZE: usize = 10_000;
 
-pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
+pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
     postings_iterators: Vec<IndexedPostingListIterator<T>>,
     query: RemappedSparseVector,
     top: usize,
@@ -32,27 +32,27 @@ pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
     top_results: TopK,
     min_record_id: Option<PointOffsetType>, // min_record_id ids across all posting lists
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
-    pooled: PooledScoresHandle<'b>,         // handle to pooled scores
+    scores: &'a mut Vec<ScoreType>,         // borrowed scores buffer from a pooled handle
     use_pruning: bool,
     hardware_counter: &'a HardwareCounterCell,
 }
 
-impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
+impl<'a, T: PostingListIter> SearchContext<'a, T> {
     pub fn new(
         query: RemappedSparseVector,
         top: usize,
         inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
-        pooled: PooledScoresHandle<'b>,
+        pooled: &'a mut PooledScoresHandle<'_>,
         is_stopped: &'a AtomicBool,
         hardware_counter: &'a HardwareCounterCell,
-    ) -> Result<SearchContext<'a, 'b, T>> {
+    ) -> Result<SearchContext<'a, T>> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
         let mut max_record_id = 0;
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            let mut it = inverted_index.get(*id, hardware_counter)?;
+            let mut it = inverted_index.get(*id, &pooled.entry.bump, hardware_counter)?;
             if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
                 // check if new min
                 let min_record_id_posting = first.record_id;
@@ -87,7 +87,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             top_results,
             min_record_id,
             max_record_id,
-            pooled,
+            scores: &mut pooled.entry.scores,
             use_pruning,
             hardware_counter,
         })
@@ -158,13 +158,13 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
     ) {
         // init batch scores
         let batch_len = batch_last_id - batch_start_id + 1;
-        self.pooled.scores.clear(); // keep underlying allocated memory
-        self.pooled.scores.resize(batch_len as usize, 0.0);
+        self.scores.clear(); // keep underlying allocated memory
+        self.scores.resize(batch_len as usize, 0.0);
 
         for posting in self.postings_iterators.iter_mut() {
             posting.posting_list_iterator.for_each_till_id(
                 batch_last_id,
-                self.pooled.scores.as_mut_slice(),
+                self.scores.as_mut_slice(),
                 #[inline(always)]
                 |scores, id, weight| {
                     let element_score = weight * posting.query_weight;
@@ -176,7 +176,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             );
         }
 
-        for (local_index, &score) in self.pooled.scores.iter().enumerate() {
+        for (local_index, &score) in self.scores.iter().enumerate() {
             // publish only the non-zero scores above the current min to beat
             if score != 0.0 && score > self.top_results.threshold() {
                 let real_id = batch_start_id + local_index as PointOffsetType;

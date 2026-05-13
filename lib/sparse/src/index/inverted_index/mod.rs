@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
+use bumpalo::Bump;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
@@ -36,12 +37,13 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn open(path: &Path) -> Result<Self>;
 
     /// Save index
-    fn save(&self, path: &Path) -> std::io::Result<()>;
+    fn save(&self, path: &Path) -> Result<()>;
 
     /// Get posting list for dimension id
     fn get<'a>(
         &'a self,
         id: DimOffset,
+        bump: &'a Bump,
         hw_counter: &'a HardwareCounterCell,
     ) -> Result<Self::Iter<'a>>;
 
@@ -72,10 +74,7 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     );
 
     /// Create inverted index from ram index
-    fn from_ram_index<P: AsRef<Path>>(
-        ram_index: Cow<InvertedIndexRam>,
-        path: P,
-    ) -> std::io::Result<Self>;
+    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, path: P) -> Result<Self>;
 
     /// Number of indexed vectors
     fn vector_count(&self) -> usize;

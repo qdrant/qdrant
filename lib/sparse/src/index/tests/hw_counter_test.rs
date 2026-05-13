@@ -14,11 +14,12 @@ fn do_search<I: InvertedIndex>(index: &I, query: RemappedSparseVector) -> HwMeas
     let accumulator = HwMeasurementAcc::new();
     let hardware_counter = accumulator.get_counter_cell();
     let top = 10;
+    let mut handle = get_pooled_scores();
     let mut search_context = SearchContext::new(
         query,
         top,
         index,
-        get_pooled_scores(),
+        &mut handle,
         &is_stopped,
         &hardware_counter,
     )
@@ -41,11 +42,12 @@ fn do_plain_search<I: InvertedIndex>(
     let accumulator = HwMeasurementAcc::new();
     let hardware_counter = accumulator.get_counter_cell();
     let top = 10;
+    let mut handle = get_pooled_scores();
     let mut search_context = SearchContext::new(
         query,
         top,
         index,
-        get_pooled_scores(),
+        &mut handle,
         &is_stopped,
         &hardware_counter,
     )

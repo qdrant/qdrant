@@ -108,11 +108,12 @@ mod tests {
         let hw_counter = HardwareCounterCell::disposable();
 
         let is_stopped = AtomicBool::new(false);
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector::default(), // empty query vector
             10,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hw_counter,
         )
@@ -133,6 +134,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -140,7 +142,7 @@ mod tests {
             },
             10,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -192,6 +194,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -199,7 +202,7 @@ mod tests {
             },
             10,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -235,6 +238,7 @@ mod tests {
             None,
         );
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -242,7 +246,7 @@ mod tests {
             },
             10,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -290,6 +294,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -297,7 +302,7 @@ mod tests {
             },
             3,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -332,6 +337,7 @@ mod tests {
 
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -339,7 +345,7 @@ mod tests {
             },
             4,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -385,6 +391,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1],
@@ -392,7 +399,7 @@ mod tests {
             },
             1,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -420,6 +427,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -427,7 +435,7 @@ mod tests {
             },
             1,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -460,6 +468,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -467,7 +476,7 @@ mod tests {
             },
             1,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -498,6 +507,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -505,7 +515,7 @@ mod tests {
             },
             3,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -531,6 +541,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -538,7 +549,7 @@ mod tests {
             },
             3,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )
@@ -586,6 +597,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
         let hardware_counter = accumulator.get_counter_cell();
+        let mut handle = get_pooled_scores();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 3],
@@ -593,7 +605,7 @@ mod tests {
             },
             3,
             &index.index,
-            get_pooled_scores(),
+            &mut handle,
             &is_stopped,
             &hardware_counter,
         )

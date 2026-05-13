@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
-use aligned_vec::{AVec, Alignment, RuntimeAlign};
+use aligned_vec::Alignment;
+pub use aligned_vec::{AVec, RuntimeAlign};
 use bytemuck::PodCastError;
 
 #[derive(Debug)]

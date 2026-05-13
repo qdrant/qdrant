@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use bumpalo::Bump;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::Result;
+use common::universal_io::{MmapFs, Result};
 
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use super::inverted_index_ram::InvertedIndexRam;
@@ -32,18 +33,20 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     }
 
     fn open(path: &Path) -> Result<Self> {
-        let mmap_inverted_index = InvertedIndexCompressedMmap::load(path)?;
+        let mmap_inverted_index = InvertedIndexCompressedMmap::<W>::load(&MmapFs, path)?;
         let mut inverted_index = InvertedIndexCompressedImmutableRam {
             postings: Vec::with_capacity(mmap_inverted_index.file_header.posting_count),
             vector_count: mmap_inverted_index.file_header.vector_count,
             total_sparse_size: mmap_inverted_index.total_sparse_vectors_size(),
         };
 
+        let mut bump = Bump::new();
         let hw_counter = HardwareCounterCell::disposable();
 
         for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
-            let posting_list = mmap_inverted_index.get(i, &hw_counter)?;
+            let posting_list = mmap_inverted_index.get(i, &bump, &hw_counter)?;
             inverted_index.postings.push(posting_list.to_owned());
+            bump.reset();
         }
 
         mmap_inverted_index.clear_cache()?;
@@ -51,14 +54,15 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         Ok(inverted_index)
     }
 
-    fn save(&self, path: &Path) -> std::io::Result<()> {
-        InvertedIndexCompressedMmap::convert_and_save(self, path)?;
+    fn save(&self, path: &Path) -> Result<()> {
+        InvertedIndexCompressedMmap::<W>::convert_and_save(&MmapFs, self, path)?;
         Ok(())
     }
 
     fn get<'a>(
         &'a self,
         id: DimOffset,
+        _bump: &'a Bump,
         hw_counter: &'a HardwareCounterCell, // Ignored for in-ram index
     ) -> Result<Self::Iter<'a>> {
         let posting = self
@@ -73,7 +77,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     }
 
     fn posting_list_len(&self, id: DimOffset, hw_counter: &HardwareCounterCell) -> Result<usize> {
-        Ok(self.get(id, hw_counter)?.len_to_end())
+        Ok(self.get(id, &Bump::new(), hw_counter)?.len_to_end())
     }
 
     fn files(path: &Path) -> Vec<std::path::PathBuf> {
@@ -98,10 +102,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         panic!("Cannot upsert into a read-only RAM inverted index")
     }
 
-    fn from_ram_index<P: AsRef<Path>>(
-        ram_index: Cow<InvertedIndexRam>,
-        _path: P,
-    ) -> std::io::Result<Self> {
+    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, _path: P) -> Result<Self> {
         let mut postings = Vec::with_capacity(ram_index.postings.len());
         for old_posting_list in &ram_index.postings {
             let mut new_posting_list = CompressedPostingBuilder::new();

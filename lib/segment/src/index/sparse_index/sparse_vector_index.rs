@@ -227,9 +227,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let hw_counter = HardwareCounterCell::disposable();
 
         let mut unique_record_ids = std::collections::HashSet::new();
+        let mut bump = bumpalo::Bump::new();
         for dim_id in &query_vector.indices {
             if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id) {
-                let posting_list_iter = self.inverted_index.get(dim_id, &hw_counter)?;
+                bump.reset();
+                let posting_list_iter = self.inverted_index.get(dim_id, &bump, &hw_counter)?;
                 for element in posting_list_iter.into_std_iter() {
                     unique_record_ids.insert(element.record_id);
                 }
