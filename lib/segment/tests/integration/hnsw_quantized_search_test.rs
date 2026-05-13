@@ -289,7 +289,7 @@ fn check_oversampling(
         let oversampling_2_result = hnsw_index
             .search(
                 &[query],
-                None,
+                filter,
                 top,
                 Some(&SearchParams {
                     hnsw_ef: Some(ef_oversampling),
