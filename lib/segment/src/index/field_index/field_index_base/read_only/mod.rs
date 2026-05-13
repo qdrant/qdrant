@@ -3,6 +3,7 @@ mod read_ops;
 use common::universal_io::UniversalRead;
 
 use crate::index::field_index::bool_index::ReadOnlyBoolIndex;
+use crate::index::field_index::geo_index::ReadOnlyGeoMapIndex;
 use crate::index::field_index::map_index::read_only::ReadOnlyMapIndex;
 use crate::index::field_index::null_index::ReadOnlyNullIndex;
 use crate::types::{IntPayloadType, UuidIntType};
@@ -17,7 +18,7 @@ pub enum ReadOnlyFieldIndex<S: UniversalRead> {
     IntMapIndex(ReadOnlyMapIndex<IntPayloadType, S>),
     KeywordIndex(ReadOnlyMapIndex<str, S>),
     // FloatIndex(NumericIndex<FloatPayloadType, FloatPayloadType>),
-    // GeoIndex(GeoMapIndex),
+    GeoIndex(ReadOnlyGeoMapIndex<S>),
     // FullTextIndex(FullTextIndex),
     BoolIndex(ReadOnlyBoolIndex<S>),
     // UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
