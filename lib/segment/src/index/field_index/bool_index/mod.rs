@@ -1,150 +1,32 @@
+pub mod immutable_bool_index;
+pub mod mutable_bool_index;
+pub mod read_only_bool_index;
+mod read_ops;
+
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use immutable_bool_index::ImmutableBoolIndex;
-use mutable_bool_index::MutableBoolIndex;
+use common::universal_io::MmapFile;
+pub use immutable_bool_index::ImmutableBoolIndex;
+pub use mutable_bool_index::MutableBoolIndex;
+pub use read_only_bool_index::ReadOnlyBoolIndex;
+pub use read_ops::BoolIndexRead;
 use serde_json::Value;
 
 use super::facet_index::FacetIndex;
 use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
+use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
-use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::payload_config::IndexMutability;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
-use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::FieldCondition;
-
-pub mod immutable_bool_index;
-pub mod mutable_bool_index;
 
 pub enum BoolIndex {
     Mmap(MutableBoolIndex),
     Immutable(ImmutableBoolIndex),
-}
-
-impl BoolIndex {
-    pub fn get_point_values(&self, point_id: PointOffsetType) -> Vec<bool> {
-        match self {
-            BoolIndex::Mmap(index) => index.get_point_values(point_id),
-            BoolIndex::Immutable(index) => index.get_point_values(point_id),
-        }
-    }
-
-    pub fn for_each_value_map(
-        &self,
-        hw_acc: &HardwareCounterCell,
-        f: impl FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        match self {
-            BoolIndex::Mmap(index) => index.for_each_value_map(hw_acc, f),
-            BoolIndex::Immutable(index) => index.for_each_value_map(hw_acc, f),
-        }
-    }
-
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = bool> + '_> {
-        match self {
-            BoolIndex::Mmap(index) => Box::new(index.iter_values()),
-            BoolIndex::Immutable(index) => Box::new(index.iter_values()),
-        }
-    }
-
-    pub fn for_each_count_per_value(
-        &self,
-        deferred_internal_id: Option<PointOffsetType>,
-        f: impl FnMut(bool, usize) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        match self {
-            BoolIndex::Mmap(index) => index.for_each_count_per_value(deferred_internal_id, f),
-            BoolIndex::Immutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-        }
-    }
-
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        match self {
-            BoolIndex::Mmap(index) => index.get_telemetry_data(),
-            BoolIndex::Immutable(index) => index.get_telemetry_data(),
-        }
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        match self {
-            BoolIndex::Mmap(index) => index.values_count(point_id),
-            BoolIndex::Immutable(index) => index.values_count(point_id),
-        }
-    }
-
-    pub fn check_values_any(
-        &self,
-        point_id: PointOffsetType,
-        is_true: bool,
-        _hw_counter: &HardwareCounterCell,
-    ) -> bool {
-        match self {
-            BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true),
-            BoolIndex::Immutable(index) => index.check_values_any(point_id, is_true),
-        }
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        match self {
-            BoolIndex::Mmap(index) => index.values_is_empty(point_id),
-            BoolIndex::Immutable(index) => index.values_is_empty(point_id),
-        }
-    }
-
-    pub fn ram_usage_bytes(&self) -> usize {
-        match self {
-            BoolIndex::Mmap(index) => index.ram_usage_bytes(),
-            BoolIndex::Immutable(index) => index.ram_usage_bytes(),
-        }
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            BoolIndex::Mmap(index) => index.is_on_disk(),
-            BoolIndex::Immutable(index) => index.is_on_disk(),
-        }
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            BoolIndex::Mmap(index) => index.populate()?,
-            BoolIndex::Immutable(index) => index.populate()?,
-        }
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            BoolIndex::Mmap(index) => index.clear_cache()?,
-            BoolIndex::Immutable(index) => index.clear_cache()?,
-        }
-        Ok(())
-    }
-
-    pub fn get_mutability_type(&self) -> IndexMutability {
-        match self {
-            // Mmap bool index can be both mutable and immutable, so we pick mutable
-            BoolIndex::Mmap(_) => IndexMutability::Mutable,
-            BoolIndex::Immutable(_) => IndexMutability::Immutable,
-        }
-    }
-
-    pub fn get_storage_type(&self) -> StorageType {
-        match self {
-            BoolIndex::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
-            BoolIndex::Immutable(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
-        }
-    }
 }
 
 impl From<MutableBoolIndex> for BoolIndex {
@@ -162,6 +44,14 @@ impl From<ImmutableBoolIndex> for BoolIndex {
 }
 
 impl BoolIndex {
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        match self {
+            // Mmap bool index can be both mutable and immutable, so we pick mutable
+            BoolIndex::Mmap(_) => IndexMutability::Mutable,
+            BoolIndex::Immutable(_) => IndexMutability::Immutable,
+        }
+    }
+
     /// Produce a closure that maps a point id to its indexed bool
     /// values as JSON `Value`s. Used by `FieldIndex::value_retriever`.
     pub fn value_retriever<'a>(
@@ -177,34 +67,71 @@ impl BoolIndex {
     }
 }
 
+impl BoolIndexRead for BoolIndex {
+    type Flags = RoaringFlags<MmapFile>;
+
+    fn trues_flags(&self) -> &Self::Flags {
+        match self {
+            BoolIndex::Mmap(index) => index.trues_flags(),
+            BoolIndex::Immutable(index) => index.trues_flags(),
+        }
+    }
+
+    fn falses_flags(&self) -> &Self::Flags {
+        match self {
+            BoolIndex::Mmap(index) => index.falses_flags(),
+            BoolIndex::Immutable(index) => index.falses_flags(),
+        }
+    }
+
+    fn indexed_count(&self) -> usize {
+        match self {
+            BoolIndex::Mmap(index) => index.indexed_count(),
+            BoolIndex::Immutable(index) => index.indexed_count(),
+        }
+    }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        match self {
+            BoolIndex::Mmap(index) => index.telemetry_index_type(),
+            BoolIndex::Immutable(index) => index.telemetry_index_type(),
+        }
+    }
+
+    fn trues_count(&self) -> usize {
+        match self {
+            BoolIndex::Mmap(index) => index.trues_count(),
+            BoolIndex::Immutable(index) => index.trues_count(),
+        }
+    }
+
+    fn falses_count(&self) -> usize {
+        match self {
+            BoolIndex::Mmap(index) => index.falses_count(),
+            BoolIndex::Immutable(index) => index.falses_count(),
+        }
+    }
+}
+
 impl PayloadFieldIndexRead for BoolIndex {
     fn count_indexed_points(&self) -> usize {
-        match self {
-            BoolIndex::Mmap(index) => index.count_indexed_points(),
-            BoolIndex::Immutable(index) => index.count_indexed_points(),
-        }
+        self.indexed_count()
     }
 
     fn filter<'a>(
         &'a self,
-        condition: &'a crate::types::FieldCondition,
+        condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        match self {
-            BoolIndex::Mmap(index) => index.filter(condition, hw_counter),
-            BoolIndex::Immutable(index) => index.filter(condition, hw_counter),
-        }
+        Ok(read_ops::filter(self, condition, hw_counter))
     }
 
     fn estimate_cardinality(
         &self,
-        condition: &crate::types::FieldCondition,
+        condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<super::CardinalityEstimation>> {
-        match self {
-            BoolIndex::Mmap(index) => index.estimate_cardinality(condition, hw_counter),
-            BoolIndex::Immutable(index) => index.estimate_cardinality(condition, hw_counter),
-        }
+        Ok(read_ops::estimate_cardinality(self, condition, hw_counter))
     }
 
     fn for_each_payload_block(
@@ -213,10 +140,7 @@ impl PayloadFieldIndexRead for BoolIndex {
         key: crate::types::PayloadKeyType,
         f: &mut dyn FnMut(super::PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        match self {
-            BoolIndex::Mmap(index) => index.for_each_payload_block(threshold, key, f),
-            BoolIndex::Immutable(index) => index.for_each_payload_block(threshold, key, f),
-        }
+        read_ops::for_each_payload_block(self, threshold, key, f)
     }
 
     fn condition_checker<'a>(
@@ -224,10 +148,7 @@ impl PayloadFieldIndexRead for BoolIndex {
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        match self {
-            BoolIndex::Mmap(index) => index.condition_checker(condition, hw_acc),
-            BoolIndex::Immutable(index) => index.condition_checker(condition, hw_acc),
-        }
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 }
 
@@ -247,10 +168,7 @@ impl PayloadFieldIndex for BoolIndex {
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            BoolIndex::Mmap(index) => index.files(),
-            BoolIndex::Immutable(index) => index.files(),
-        }
+        BoolIndexRead::files(self)
     }
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
@@ -279,8 +197,7 @@ impl FacetIndex for BoolIndex {
         &self,
         mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.iter_values()
-            .try_for_each(|v| f(FacetValueRef::Bool(v)))
+        BoolIndexRead::iter_values(self).try_for_each(|v| f(FacetValueRef::Bool(v)))
     }
 
     fn for_each_value_map(
@@ -291,7 +208,7 @@ impl FacetIndex for BoolIndex {
             &mut dyn Iterator<Item = PointOffsetType>,
         ) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.for_each_value_map(hw_counter, |value, iter| {
+        BoolIndexRead::for_each_value_map(self, hw_counter, |value, iter| {
             f(FacetValueRef::Bool(value), iter)
         })
     }
@@ -301,7 +218,7 @@ impl FacetIndex for BoolIndex {
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.for_each_count_per_value(deferred_internal_id, |value, count| {
+        BoolIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
             f(FacetHit {
                 value: FacetValueRef::Bool(value),
                 count,
