@@ -470,26 +470,14 @@ where
         sum
     }
 
-    pub fn score_multi(
-        &self,
-        query: &[QuantizedStorage::EncodedQuery],
-        offset: MultivectorOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
-        match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => {
-                self.score_point_max_similarity(query, offset, hw_counter)
-            }
-        }
-    }
-
     /// Custom `score_max_similarity` implementation for quantized vectors
     fn score_point_max_similarity(
         &self,
         query: &[QuantizedStorage::EncodedQuery],
-        offset: MultivectorOffset,
+        point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
+        let offset = self.offsets.get_offset(point_id);
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
 
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
@@ -591,8 +579,9 @@ where
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        let offset = self.offsets.get_offset(i);
-        self.score_multi(query, offset, hw_counter)
+        match self.multi_vector_config.comparator {
+            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i, hw_counter),
+        }
     }
 
     fn score_internal(
