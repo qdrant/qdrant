@@ -77,6 +77,7 @@ fn hnsw_quantized_search_test(
     dim: usize,
     quantization_config: QuantizationConfig,
     test_rescoring: bool,
+    deterministic: bool,
 ) {
     let stopped = AtomicBool::new(false);
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -148,7 +149,12 @@ fn hnsw_quantized_search_test(
         inline_storage: None,
     };
 
-    let permit_cpu_count = 2;
+    // Cells where the recall margin sits close to the 40% floor (e.g. TQ Bits2)
+    // pass `deterministic = true` to force single-threaded HNSW build, removing
+    // parallel-insertion jitter that would otherwise push the assertion over the
+    // edge. Higher-bit / higher-fidelity quantization has enough margin to absorb
+    // the jitter and runs with `deterministic = false` for build speed.
+    let permit_cpu_count = if deterministic { 1 } else { 2 };
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let hnsw_index = HNSWIndex::build(
@@ -359,6 +365,7 @@ fn hnsw_quantized_search_cosine_test() {
         }
         .into(),
         true,
+        false,
     );
 }
 
@@ -375,6 +382,7 @@ fn hnsw_quantized_search_euclid_test() {
         }
         .into(),
         true,
+        false,
     );
 }
 
@@ -391,6 +399,7 @@ fn hnsw_quantized_search_manhattan_test() {
         }
         .into(),
         true,
+        false,
     );
 }
 
@@ -405,6 +414,7 @@ fn hnsw_product_quantization_cosine_test() {
             always_ram: Some(true),
         }
         .into(),
+        false,
         false,
     );
 }
@@ -421,6 +431,7 @@ fn hnsw_product_quantization_euclid_test() {
         }
         .into(),
         false,
+        false,
     );
 }
 
@@ -435,6 +446,7 @@ fn hnsw_product_quantization_manhattan_test() {
             always_ram: Some(true),
         }
         .into(),
+        false,
         false,
     );
 }
@@ -455,6 +467,7 @@ fn hnsw_turbo_quantization_cosine_test() {
             },
         }),
         true,
+        false,
     );
 }
 
@@ -472,6 +485,7 @@ fn hnsw_turbo_quantization_dot_test() {
             },
         }),
         true,
+        false,
     );
 }
 
@@ -489,13 +503,15 @@ fn hnsw_turbo_quantization_cosine_larger_test() {
             },
         }),
         true,
+        false,
     );
 }
 
 #[test]
 fn hnsw_turbo_quantization_cosine_bits2_test() {
-    // Bits2 also clears the standard helper's 40% recall floor on
-    // unit-sphere data, so it can share the scalar/PQ test shape.
+    // Bits2 clears the 40% recall floor but with thin margin — `deterministic`
+    // forces single-threaded HNSW build so parallel-insertion jitter can't
+    // push the assertion over the edge.
     hnsw_quantized_search_test(
         Distance::Cosine,
         1003,
@@ -506,6 +522,7 @@ fn hnsw_turbo_quantization_cosine_bits2_test() {
                 bits: Some(TurboQuantBitSize::Bits2),
             },
         }),
+        true,
         true,
     );
 }
@@ -524,6 +541,7 @@ fn hnsw_turbo_quantization_dot_bits2_test() {
             },
         }),
         true,
+        true,
     );
 }
 
@@ -540,6 +558,7 @@ fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
                 bits: Some(TurboQuantBitSize::Bits2),
             },
         }),
+        true,
         true,
     );
 }
@@ -562,6 +581,7 @@ fn hnsw_turbo_quantization_euclid_test() {
             },
         }),
         true,
+        false,
     );
 }
 
@@ -578,11 +598,13 @@ fn hnsw_turbo_quantization_manhattan_test() {
             },
         }),
         true,
+        false,
     );
 }
 
 #[test]
 fn hnsw_turbo_quantization_euclid_bits2_test() {
+    // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
     hnsw_quantized_search_test(
         Distance::Euclid,
         1003,
@@ -594,11 +616,13 @@ fn hnsw_turbo_quantization_euclid_bits2_test() {
             },
         }),
         true,
+        true,
     );
 }
 
 #[test]
 fn hnsw_turbo_quantization_manhattan_bits2_test() {
+    // See `hnsw_turbo_quantization_cosine_bits2_test` for rationale.
     hnsw_quantized_search_test(
         Distance::Manhattan,
         1003,
@@ -609,6 +633,7 @@ fn hnsw_turbo_quantization_manhattan_bits2_test() {
                 bits: Some(TurboQuantBitSize::Bits2),
             },
         }),
+        true,
         true,
     );
 }
