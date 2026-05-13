@@ -2,7 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
 
-use super::bool_index::BoolIndex;
+use super::bool_index::{BoolIndex, ReadOnlyBoolIndex};
 use super::map_index::MapIndex;
 use super::map_index::read_only::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
@@ -74,9 +74,9 @@ pub trait FacetIndex {
 /// Borrowed view over any concrete index that can produce facet counts.
 ///
 /// The `S: UniversalRead` parameter is consumed only by the `*ReadOnly`
-/// variants, which carry a `ReadOnlyMapIndex<N, S>`; appendable / in-memory
-/// variants (`Keyword`, `Int`, `Uuid`, `Bool`) ignore it. The default
-/// `S = MmapFile` keeps the common construction path
+/// variants, which carry a `ReadOnlyMapIndex<N, S>` or `ReadOnlyBoolIndex<S>`;
+/// appendable / in-memory variants (`Keyword`, `Int`, `Uuid`, `Bool`) ignore
+/// it. The default `S = MmapFile` keeps the common construction path
 /// (`FieldIndex::as_facet_index`) free of turbofish.
 pub enum FacetIndexEnum<'a, S: UniversalRead = MmapFile> {
     Keyword(&'a MapIndex<str>),
@@ -92,6 +92,8 @@ pub enum FacetIndexEnum<'a, S: UniversalRead = MmapFile> {
     IntReadOnly(&'a ReadOnlyMapIndex<IntPayloadType, S>),
     #[allow(dead_code)]
     UuidReadOnly(&'a ReadOnlyMapIndex<UuidIntType, S>),
+    #[allow(dead_code)]
+    BoolReadOnly(&'a ReadOnlyBoolIndex<S>),
 }
 
 impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
@@ -123,6 +125,9 @@ impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
             FacetIndexEnum::UuidReadOnly(index) => {
                 FacetIndex::for_points_values(*index, points, hw_counter, f)
             }
+            FacetIndexEnum::BoolReadOnly(index) => {
+                FacetIndex::for_points_values(*index, points, hw_counter, f)
+            }
         }
     }
 
@@ -138,6 +143,7 @@ impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
             FacetIndexEnum::KeywordReadOnly(index) => FacetIndex::for_each_value(*index, f),
             FacetIndexEnum::IntReadOnly(index) => FacetIndex::for_each_value(*index, f),
             FacetIndexEnum::UuidReadOnly(index) => FacetIndex::for_each_value(*index, f),
+            FacetIndexEnum::BoolReadOnly(index) => FacetIndex::for_each_value(*index, f),
         }
     }
 
@@ -161,6 +167,9 @@ impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
                 FacetIndex::for_each_value_map(*index, hw_counter, f)
             }
             FacetIndexEnum::UuidReadOnly(index) => {
+                FacetIndex::for_each_value_map(*index, hw_counter, f)
+            }
+            FacetIndexEnum::BoolReadOnly(index) => {
                 FacetIndex::for_each_value_map(*index, hw_counter, f)
             }
         }
@@ -191,6 +200,9 @@ impl<'a, S: UniversalRead> FacetIndex for FacetIndexEnum<'a, S> {
                 FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
             }
             FacetIndexEnum::UuidReadOnly(index) => {
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+            }
+            FacetIndexEnum::BoolReadOnly(index) => {
                 FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
             }
         }
