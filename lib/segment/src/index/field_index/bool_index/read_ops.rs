@@ -22,12 +22,15 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
+use serde_json::Value;
 
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
+use crate::common::utils::MultiValue;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::payload_config::StorageType;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
@@ -307,4 +310,25 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
         | Match::TextAny(_)
         | Match::Phrase(_) => None,
     }
+}
+
+/// Produce a closure that maps a point id to its indexed bool values as JSON
+/// `Value`s. Shared by `BoolIndex::value_retriever` and
+/// `ReadOnlyBoolIndex::value_retriever`; both expose it via inherent methods
+/// so the per-variant dispatch in [`FieldIndex::value_retriever`] /
+/// [`ReadOnlyFieldIndex::value_retriever`] can call it without going through
+/// a trait object.
+///
+/// [`FieldIndex::value_retriever`]: crate::index::field_index::FieldIndex::value_retriever
+/// [`ReadOnlyFieldIndex::value_retriever`]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
+pub(super) fn value_retriever<'a, N: BoolIndexRead + ?Sized + 'a>(
+    idx: &'a N,
+    _hw_counter: &'a HardwareCounterCell,
+) -> VariableRetrieverFn<'a> {
+    Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
+        idx.get_point_values(point_id)
+            .into_iter()
+            .map(Value::Bool)
+            .collect()
+    })
 }
