@@ -90,11 +90,7 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
             .estimate_cardinality(query, condition, hw_counter)
     }
 
-    fn check_match(
-        &self,
-        query: &ParsedQuery,
-        point_id: PointOffsetType,
-    ) -> OperationResult<bool> {
+    fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
         self.inner.inverted_index.check_match(query, point_id)
     }
 

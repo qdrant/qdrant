@@ -24,7 +24,9 @@ pub(super) enum Storage {
 
 impl ImmutableFullTextIndex {
     /// Open and load immutable full text index from mmap storage
-    pub fn open_mmap(index: MmapFullTextIndex<common::universal_io::MmapFile>) -> OperationResult<Self> {
+    pub fn open_mmap(
+        index: MmapFullTextIndex<common::universal_io::MmapFile>,
+    ) -> OperationResult<Self> {
         let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
 
         // Index is now loaded into memory, clear cache of backing mmap storage

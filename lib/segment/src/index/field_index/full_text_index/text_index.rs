@@ -372,11 +372,7 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
-    fn check_match(
-        &self,
-        query: &ParsedQuery,
-        point_id: PointOffsetType,
-    ) -> OperationResult<bool> {
+    fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
         match self {
             Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
             Self::Immutable(index) => index.inverted_index.check_match(query, point_id),

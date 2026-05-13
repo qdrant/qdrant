@@ -54,11 +54,7 @@ pub trait FullTextIndexRead {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation>;
 
-    fn check_match(
-        &self,
-        query: &ParsedQuery,
-        point_id: PointOffsetType,
-    ) -> OperationResult<bool>;
+    fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool>;
 
     /// Walk the inverted-index vocab and emit one [`PayloadBlockCondition`] per
     /// token with at least `threshold` postings. Used to seed payload-block
@@ -223,7 +219,9 @@ pub fn filter<'a, T: FullTextIndexRead>(
     let parsed_query_opt = match r#match {
         Match::Text(MatchText { text }) => index.parse_text_query(text, hw_counter),
         Match::Phrase(MatchPhrase { phrase }) => index.parse_phrase_query(phrase, hw_counter),
-        Match::TextAny(MatchTextAny { text_any }) => index.parse_text_any_query(text_any, hw_counter),
+        Match::TextAny(MatchTextAny { text_any }) => {
+            index.parse_text_any_query(text_any, hw_counter)
+        }
         Match::Value(_) | Match::Any(_) | Match::Except(_) => return Ok(None),
     }?;
 
@@ -247,7 +245,9 @@ pub fn estimate_cardinality<T: FullTextIndexRead>(
     let parsed_query_opt = match r#match {
         Match::Text(MatchText { text }) => index.parse_text_query(text, hw_counter),
         Match::Phrase(MatchPhrase { phrase }) => index.parse_phrase_query(phrase, hw_counter),
-        Match::TextAny(MatchTextAny { text_any }) => index.parse_text_any_query(text_any, hw_counter),
+        Match::TextAny(MatchTextAny { text_any }) => {
+            index.parse_text_any_query(text_any, hw_counter)
+        }
         Match::Value(_) | Match::Any(_) | Match::Except(_) => return Ok(None),
     }?;
 
