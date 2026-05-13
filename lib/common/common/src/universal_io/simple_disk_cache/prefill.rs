@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 use std::path::PathBuf;
-use std::sync::LazyLock;
-use std::sync::mpsc;
+use std::sync::{LazyLock, mpsc};
 
 use tokio::sync::oneshot;
 
@@ -18,11 +17,11 @@ type PrefillBackend = cfg_select! {
 };
 
 pub static GLOBAL_PREFILL_THREAD: LazyLock<DiskPrefiller<PrefillBackend>> =
-    LazyLock::new(|| DiskPrefiller::new());
+    LazyLock::new(DiskPrefiller::new);
 
 pub struct DiskPrefiller<R> {
     sender: mpsc::Sender<PrefillReq>,
-    handle: std::thread::JoinHandle<Result<()>>,
+    _handle: std::thread::JoinHandle<Result<()>>,
     remote: PhantomData<R>,
 }
 
@@ -89,6 +88,15 @@ struct RemoteMeta<R> {
     finish: oneshot::Sender<LocalState>,
 }
 
+impl<R> Default for DiskPrefiller<R>
+where
+    R: UniversalRead + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<R> DiskPrefiller<R>
 where
     R: UniversalRead + 'static,
@@ -142,7 +150,7 @@ where
 
         Self {
             sender,
-            handle,
+            _handle: handle,
             remote: PhantomData,
         }
     }

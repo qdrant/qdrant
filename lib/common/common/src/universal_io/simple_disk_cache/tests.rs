@@ -49,15 +49,16 @@ impl Scenario {
     where
         R: UniversalRead,
     {
-        DiskCache::open_with_config(
-            &self.config,
+        DiskCache::new(
             &self.remote_path,
+            self.config
+                .local_path_for(self.remote_path.as_ref())
+                .unwrap(),
             OpenOptions {
                 writeable: false,
                 ..OpenOptions::default()
             },
         )
-        .unwrap()
     }
 }
 
