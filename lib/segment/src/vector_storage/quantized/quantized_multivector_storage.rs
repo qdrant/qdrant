@@ -1,8 +1,9 @@
 use std::borrow::Cow;
-use std::iter;
 use std::ops::DerefMut as _;
 use std::path::{Path, PathBuf};
+use std::{iter, slice};
 
+use ahash::HashMapExt as _;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
@@ -380,6 +381,93 @@ where
             dim,
             multi_vector_config,
         }
+    }
+
+    pub fn for_each_in_multi_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        mut callback: impl FnMut(usize, &[Cow<'_, [u8]>]),
+        hw_counter: &HardwareCounterCell,
+    ) {
+        debug_assert!(point_ids.len() <= u32::MAX as usize);
+
+        #[derive(Copy, Clone)]
+        struct State {
+            index: u32,
+            count: u32,
+        }
+
+        let mut state = Vec::with_capacity(point_ids.len());
+        let mut chunks = Vec::with_capacity(point_ids.len());
+
+        for (index, offset) in self.offsets.iter_offsets(point_ids) {
+            for _ in 0..offset.count {
+                state.push(State {
+                    index: index as u32,
+                    count: offset.count,
+                });
+            }
+
+            chunks.extend(offset.start..offset.start + offset.count);
+        }
+
+        hw_counter
+            .vector_io_read()
+            .incr_delta(chunks.len() * self.quantized_vector_size());
+
+        let mut multi_vectors = ahash::HashMap::new();
+
+        for (chunk_index, vector) in self.quantized_storage.iter_batch(&chunks) {
+            let State { index, count } = state[chunk_index];
+
+            if count == 1 {
+                callback(index as _, slice::from_ref(&vector));
+                continue;
+            }
+
+            let multi_vector = multi_vectors
+                .entry(index)
+                .or_insert_with(SmallVec::<[_; 4]>::new);
+
+            multi_vector.push(vector);
+
+            if multi_vector.len() == count as usize {
+                let multi_vector = multi_vectors.remove(&index).expect("multi-vector exists");
+                callback(index as _, &multi_vector);
+            }
+        }
+
+        debug_assert!(multi_vectors.is_empty());
+    }
+
+    /// Custom `score_max_similarity` implementation for quantized vectors
+    pub fn score_vector_max_similarity(
+        &self,
+        query: &[QuantizedStorage::EncodedQuery],
+        multi_vector: &[Cow<'_, [u8]>],
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
+        let mut sum = 0.0;
+
+        for inner_query in query {
+            let mut max_sim = ScoreType::NEG_INFINITY;
+
+            // manual `max_by` for performance
+            for vector in multi_vector {
+                let sim = self
+                    .quantized_storage
+                    .score(inner_query, vector, hw_counter);
+
+                if max_sim < sim {
+                    max_sim = sim;
+                }
+            }
+
+            // sum of max similarity
+            sum += max_sim;
+        }
+
+        sum
     }
 
     pub fn score_multi(
