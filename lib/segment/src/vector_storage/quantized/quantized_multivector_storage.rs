@@ -1,4 +1,6 @@
-use std::ops::DerefMut;
+use std::borrow::Cow;
+use std::iter;
+use std::ops::DerefMut as _;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -405,16 +407,15 @@ where
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
         max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
 
-        self.quantized_storage
-            .for_each_in_batch(&offsets, |_, vector| {
-                for (query_idx, query) in query.iter().enumerate() {
-                    let sim = self.quantized_storage.score(query, vector, hw_counter);
+        for (_, vector) in self.quantized_storage.iter_batch(&offsets) {
+            for (query_idx, query) in query.iter().enumerate() {
+                let sim = self.quantized_storage.score(query, &vector, hw_counter);
 
-                    if max_sim[query_idx] < sim {
-                        max_sim[query_idx] = sim;
-                    }
+                if max_sim[query_idx] < sim {
+                    max_sim[query_idx] = sim;
                 }
-            });
+            }
+        }
 
         max_sim.into_iter().sum()
     }
@@ -485,11 +486,11 @@ where
             .collect()
     }
 
-    fn for_each_in_batch<F>(&self, _: &[PointOffsetType], _: F)
-    where
-        F: FnMut(usize, &[u8]),
-    {
-        unimplemented!("quantized multi-vector storage does not support `for_each_in_batch`")
+    fn iter_batch(&self, _: &[PointOffsetType]) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
+        unimplemented!("quantized multi-vector storage does not support `iter_batch`");
+
+        #[allow(unreachable_code)]
+        iter::empty()
     }
 
     fn score(&self, _: &Self::EncodedQuery, _: &[u8], _: &HardwareCounterCell) -> f32 {

@@ -48,11 +48,11 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
             .unwrap_or_default()
     }
 
-    fn for_each_in_batch<F>(&self, offsets: &[PointOffsetType], callback: F)
-    where
-        F: FnMut(usize, &[u8]),
-    {
-        self.data.for_each_in_batch(offsets, callback);
+    fn iter_batch(
+        &self,
+        offsets: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
+        self.data.iter(offsets)
     }
 
     fn upsert_vector(
