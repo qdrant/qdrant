@@ -5,8 +5,8 @@ mod runtime;
 #[cfg(test)]
 mod tests;
 
-use std::borrow::Cow;
 use std::io::{self, Read as _, Seek as _};
+use std::ops::Range;
 use std::os::fd::AsRawFd as _;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,7 +19,9 @@ use self::error::*;
 use self::pool::*;
 use self::runtime::*;
 use super::*;
+use crate::aligned_buf::{AlignedBuf, AlignedCow};
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::read::UniversalReadPipeline;
 
 #[derive(Debug)]
 pub struct IoUringFile {
@@ -49,10 +51,10 @@ impl UniversalReadFileOps for IoUringFile {
 }
 
 impl UniversalRead for IoUringFile {
-    type ReadPipeline<'a, T, U>
-        = IoUringPipeline<'a, T, U>
+    type ReadPipeline<'a, U>
+        = IoUringPipeline<'a, U>
     where
-        T: bytemuck::Pod,
+        Self: 'a,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -87,20 +89,25 @@ impl UniversalRead for IoUringFile {
         Ok(file)
     }
 
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<AlignedCow<'_>> {
         if self.direct_io {
             // direct_io needs special handling
-            return self
-                .read_iter::<P, T, _>([((), range)])?
-                .next()
-                .expect("there's exactly one read")
-                .map(|(_, data)| data);
+            let mut pipeline = IoUringPipeline::<()>::new()?;
+            pipeline.schedule::<P>((), self, range, align)?;
+            let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
+            return Ok(bytes);
         }
 
-        let mut items = vec![T::zeroed(); range.length as usize];
-        let bytes = bytemuck::cast_slice_mut(&mut items);
-        self.file.read_exact_at(bytes, range.byte_offset)?;
-        Ok(Cow::Owned(items))
+        let len = (range.end - range.start) as usize;
+        let mut data = vec![0u8; len];
+        self.file.read_exact_at(&mut data, range.start)?;
+        let mut buf = AlignedBuf::with_capacity(0, align, len);
+        buf.extend_from_slice(&data);
+        Ok(AlignedCow::Owned(buf))
     }
 
     fn len<T>(&self) -> Result<u64> {
@@ -142,17 +149,15 @@ impl UniversalRead for IoUringFile {
     }
 }
 
-pub struct IoUringPipeline<'file, T, U>
+pub struct IoUringPipeline<'file, U>
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
-    runtime: IoUringRuntime<'file, T, U>,
+    runtime: IoUringRuntime<'file, U>,
 }
 
-impl<'file, T, U> UniversalReadPipeline<'file, T, U> for IoUringPipeline<'file, T, U>
+impl<'file, U> UniversalReadPipeline<'file, U> for IoUringPipeline<'file, U>
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
     type File = IoUringFile;
@@ -168,15 +173,13 @@ where
         self.runtime.in_progress + squeue.len() < IO_URING_QUEUE_LENGTH as _
     }
 
-    fn schedule<P>(
+    fn schedule<P: AccessPattern>(
         &mut self,
         user_data: U,
         file: &'file IoUringFile,
-        range: ReadRange,
-    ) -> Result<()>
-    where
-        P: AccessPattern,
-    {
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<()> {
         let mut squeue = self.runtime.io_uring.submission();
 
         if self.runtime.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
@@ -186,7 +189,7 @@ where
         let entry = self
             .runtime
             .state
-            .read(user_data, file.fd(), range, file.direct_io);
+            .read(user_data, file.fd(), range, align, file.direct_io);
 
         unsafe {
             squeue.push(&entry).expect("submission queue is not full");
@@ -195,7 +198,7 @@ where
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, AlignedCow<'file>)>> {
         let next = self.runtime.completed().next();
 
         let enqueued = self.runtime.enqueued();
@@ -211,7 +214,7 @@ where
         };
 
         let (user_data, resp) = result?;
-        Ok(Some((user_data, Cow::Owned(resp.expect_read()))))
+        Ok(Some((user_data, AlignedCow::Owned(resp.expect_read()))))
     }
 }
 
@@ -235,7 +238,7 @@ impl UniversalWrite for IoUringFile {
                     return Ok(None);
                 };
 
-                let entry = state.write((), self.fd(), byte_offset, items);
+                let entry = state.write((), self.fd(), byte_offset, bytemuck::cast_slice(items));
                 Ok(Some(entry))
             })?;
 
@@ -270,7 +273,7 @@ impl UniversalWrite for IoUringFile {
                     }
                 })?;
 
-                let entry = state.write((), file.fd(), byte_offset, items);
+                let entry = state.write((), file.fd(), byte_offset, bytemuck::cast_slice(items));
                 Ok(Some(entry))
             })?;
 

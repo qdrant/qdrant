@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use bytemuck::TransparentWrapper;
@@ -7,6 +8,7 @@ use super::super::{
     OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
 };
 use super::WrappedReadPipeline;
+use crate::aligned_buf::AlignedCow;
 use crate::generic_consts::AccessPattern;
 
 #[derive(Debug, TransparentWrapper)]
@@ -32,11 +34,10 @@ impl<S> UniversalRead for ReadOnly<S>
 where
     S: UniversalRead,
 {
-    type ReadPipeline<'file, T, U>
-        = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, T, U>>
+    type ReadPipeline<'file, U>
+        = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, U>>
     where
         Self: 'file,
-        T: bytemuck::Pod,
         U: UserData;
 
     #[inline]
@@ -49,6 +50,15 @@ where
     #[inline]
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         self.0.read::<P, T>(range)
+    }
+
+    #[inline]
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<AlignedCow<'_>> {
+        self.0.read_bytes::<P>(range, align)
     }
 
     #[inline]

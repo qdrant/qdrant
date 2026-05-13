@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{fs, slice};
@@ -6,6 +6,7 @@ use std::{fs, slice};
 use memmap2::MmapRaw;
 
 use super::*;
+use crate::aligned_buf::AlignedCow;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 use crate::universal_io::read::UniversalReadPipeline;
@@ -44,10 +45,10 @@ impl UniversalReadFileOps for MmapFile {
 }
 
 impl UniversalRead for MmapFile {
-    type ReadPipeline<'a, T, U>
-        = MmapReadPipeline<'a, T, U>
+    type ReadPipeline<'a, U>
+        = MmapReadPipeline<'a, U>
     where
-        T: bytemuck::Pod,
+        Self: 'a,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -101,10 +102,14 @@ impl UniversalRead for MmapFile {
         Ok(mmap)
     }
 
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _align: usize,
+    ) -> Result<AlignedCow<'_>> {
         let mmap = self.as_bytes::<P>();
-        let items = read(mmap, range)?;
-        Ok(Cow::Borrowed(items))
+        let bytes = read_bytes(mmap, range)?;
+        Ok(AlignedCow::Borrowed(bytes))
     }
 
     fn len<T>(&self) -> Result<u64> {
@@ -130,13 +135,12 @@ impl UniversalRead for MmapFile {
     }
 }
 
-pub struct MmapReadPipeline<'file, T, U> {
-    result: Option<(U, &'file [T])>,
+pub struct MmapReadPipeline<'file, U> {
+    result: Option<(U, &'file [u8])>,
 }
 
-impl<'file, T, U> UniversalReadPipeline<'file, T, U> for MmapReadPipeline<'file, T, U>
+impl<'file, U> UniversalReadPipeline<'file, U> for MmapReadPipeline<'file, U>
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
     type File = MmapFile;
@@ -149,21 +153,24 @@ where
         self.result.is_none()
     }
 
-    fn schedule<P>(&mut self, user_data: U, file: &'file MmapFile, range: ReadRange) -> Result<()>
-    where
-        P: AccessPattern,
-    {
+    fn schedule<P: AccessPattern>(
+        &mut self,
+        user_data: U,
+        file: &'file MmapFile,
+        range: Range<u64>,
+        _align: usize,
+    ) -> Result<()> {
         if self.result.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        self.result = Some((user_data, read(file.as_bytes::<P>(), range)?));
+        self.result = Some((user_data, read_bytes(file.as_bytes::<P>(), range)?));
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, AlignedCow<'file>)>> {
         let result = self.result.take();
-        Ok(result.map(|(user_data, items)| (user_data, Cow::Borrowed(items))))
+        Ok(result.map(|(user_data, bytes)| (user_data, AlignedCow::Borrowed(bytes))))
     }
 }
 
@@ -304,29 +311,14 @@ impl MmapFile {
 }
 
 #[inline]
-fn read<T>(bytes: &[u8], range: ReadRange) -> Result<&[T]>
-where
-    T: bytemuck::Pod,
-{
-    let ReadRange {
-        byte_offset,
-        length: items,
-    } = range;
-
-    let start = byte_offset as usize;
-    let end = start + size_of::<T>() * items as usize;
-
-    let bytes = bytes
-        .get(start..end)
-        .ok_or_else(|| UniversalIoError::OutOfBounds {
-            start: start as _,
-            end: end as _,
-            elements: bytes.len() / size_of::<T>(),
-        })?;
-
-    // `bytemuck::cast_slice` checks that `bytes` size and alignment match `T` requirements
-    let items = bytemuck::cast_slice(bytes);
-    Ok(items)
+fn read_bytes(bytes: &[u8], range: Range<u64>) -> Result<&[u8]> {
+    let start = usize::try_from(range.start).expect("range.start is within usize");
+    let end = usize::try_from(range.end).expect("range.end is within usize");
+    bytes.get(start..end).ok_or(UniversalIoError::OutOfBounds {
+        start: range.start,
+        end: range.end,
+        elements: bytes.len(),
+    })
 }
 
 #[inline]

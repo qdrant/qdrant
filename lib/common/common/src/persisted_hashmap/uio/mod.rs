@@ -123,7 +123,7 @@ where
             return Ok(());
         }
 
-        let mut buf = AlignedBuf::new_for_offset(self.entries_start);
+        let mut buf = AlignedBuf::new_for_offset(self.entries_start, align_of::<u128>());
         let file_len = self.storage.len()?;
         let range = ReadRange {
             byte_offset: self.entries_start,

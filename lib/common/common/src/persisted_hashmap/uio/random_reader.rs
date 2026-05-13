@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::super::read_err;
@@ -6,7 +8,7 @@ use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Random;
 use crate::persisted_hashmap::uio::parse_bucket_offset;
 use crate::universal_io::read::UniversalReadPipeline;
-use crate::universal_io::{ReadRange, Result, UniversalIoError, UniversalRead, UserData};
+use crate::universal_io::{Result, UniversalIoError, UniversalRead, UserData};
 
 pub(super) enum Request<'a, K: Key + ?Sized> {
     /// Request an entry by the given offset with unknown key.
@@ -86,7 +88,12 @@ where
                 else {
                     break;
                 };
-                pipeline.schedule::<Random>(entry, &self.storage.inner, range)?;
+                pipeline.schedule::<Random>(
+                    entry,
+                    &self.storage.inner,
+                    range,
+                    align_of::<u128>(),
+                )?;
             }
             let Some((entry, data)) = pipeline.wait()? else {
                 break;
@@ -97,7 +104,7 @@ where
     }
 }
 
-type ScheduledEntry<'key, U, K> = (Entry<'key, U, K>, ReadRange);
+type ScheduledEntry<'key, U, K> = (Entry<'key, U, K>, Range<u64>);
 
 impl<'map, 'key, U, K, V, S> PipelineDriver<'map, 'key, U, K, V, S>
 where
@@ -138,15 +145,12 @@ where
                     expected_len,
                     requested_key: _,
                 } => {
-                    let range = ReadRange::new(
-                        byte_offset.saturating_add(buf.len() as u64),
-                        expected_len.saturating_sub(buf.len() as u64),
-                    )
-                    .clamp::<u8>(self.file_len);
-                    if range.length == 0 {
+                    let start = byte_offset.saturating_add(buf.len() as u64);
+                    let end = byte_offset.saturating_add(*expected_len).min(self.file_len);
+                    if end <= start {
                         return Err(E::from(UniversalIoError::Io(read_err("unexpected eof"))));
                     }
-                    return Ok(Some((entry, range)));
+                    return Ok(Some((entry, start..end)));
                 }
             };
         }
@@ -158,14 +162,11 @@ where
                     let byte_offset = self.map.entries_start + offset;
                     state = State::ReadingEntry {
                         byte_offset,
-                        buf: AlignedBuf::new_for_offset(byte_offset),
+                        buf: AlignedBuf::new_for_offset(byte_offset, align_of::<u128>()),
                         expected_len: self.entry_read_size_est,
                         requested_key: None,
                     };
-                    range = ReadRange {
-                        byte_offset,
-                        length: self.entry_read_size_est,
-                    };
+                    range = byte_offset..byte_offset + self.entry_read_size_est;
                 }
                 Request::Key(requested_key) => {
                     // PHF miss: no stored entry; report immediately and continue.
@@ -178,14 +179,13 @@ where
                     let bucket_byte_offset =
                         self.map.header.buckets_pos + hash * size_of::<BucketOffset>() as u64;
                     state = State::ReadingOffset { requested_key };
-                    range = ReadRange {
-                        byte_offset: bucket_byte_offset,
-                        length: size_of::<BucketOffset>() as u64,
-                    };
+                    range =
+                        bucket_byte_offset..bucket_byte_offset + size_of::<BucketOffset>() as u64;
                 }
             }
             let entry = Entry { user_data, state };
-            return Ok(Some((entry, range.clamp::<u8>(self.file_len))));
+            let range = range.start.min(self.file_len)..range.end.min(self.file_len);
+            return Ok(Some((entry, range)));
         }
 
         Ok(None)
@@ -204,7 +204,7 @@ where
                     user_data: entry.user_data,
                     state: State::ReadingEntry {
                         byte_offset,
-                        buf: AlignedBuf::new_for_offset(byte_offset),
+                        buf: AlignedBuf::new_for_offset(byte_offset, align_of::<u128>()),
                         expected_len: self.entry_read_size_est,
                         requested_key: Some(requested_key),
                     },

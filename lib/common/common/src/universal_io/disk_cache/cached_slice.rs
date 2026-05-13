@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, CacheRead, FileId};
+use crate::aligned_buf::{AlignedBuf, AlignedCow};
 
 /// View over a cached file, simulating a `&[T]` backed by the block cache.
 ///
@@ -38,46 +39,49 @@ impl CachedSlice {
     ///
     /// The `range` is in **elements of T**, not bytes. For `T = u8` this is
     /// equivalent to a byte range.
+    pub fn get_range<T: bytemuck::Pod>(&self, range: Range<usize>) -> io::Result<Cow<'_, [T]>> {
+        let t_size = size_of::<T>();
+        debug_assert!(t_size != 0, "cannot use zero-sized type");
+        let byte_range = range.start * t_size..range.end * t_size;
+        let cow_bytes = self.get_range_bytes(byte_range, align_of::<T>())?;
+        Ok(cow_bytes.try_cast_bytemuck()?)
+    }
+
+    /// Read a byte range, returning a [`CowBytes`] view.
     ///
     /// If the range is contained in a single block, it will return a borrowed
     /// reference into the mmap. Otherwise, it will allocate a `Vec<T>` and copy
     /// block data into it. Allocating as `Vec<T>` (rather than `Vec<u8>`)
     /// guarantees correct alignment for any `T`.
-    pub fn get_range<T: bytemuck::Pod>(&self, range: Range<usize>) -> io::Result<Cow<'_, [T]>> {
-        let t_size = size_of::<T>();
-        debug_assert!(t_size != 0, "cannot use zero-sized type");
+    pub fn get_range_bytes(&self, range: Range<usize>, align: usize) -> io::Result<AlignedCow<'_>> {
+        debug_assert!(range.end <= self.len_bytes);
 
-        let total_elements = range.end - range.start;
-        if total_elements == 0 {
-            return Ok(Cow::Borrowed(&[]));
+        if range.is_empty() {
+            return Ok(AlignedCow::Borrowed(&[]));
         }
 
-        let byte_range = range.start * t_size..range.end * t_size;
-        let mut blocks_iter = self.blocks_for(byte_range);
+        let file_offset = range.start as u64;
+        let mut blocks_iter = self.blocks_for(range);
 
         // TODO(perf): if blocks are consecutive in the big cache file, we can still return without allocating.
         if blocks_iter.len() == 1 {
             let req = blocks_iter.next().expect("We just checked len() == 1");
             let result = self.controller.get_from_cache(req, |bytes| {
-                let mut vec_t = vec![T::zeroed(); bytes.len() / t_size];
-                bytemuck::cast_slice_mut::<T, u8>(&mut vec_t).copy_from_slice(bytes);
-                vec_t
+                let mut buf = AlignedBuf::new_for_offset(file_offset, align);
+                buf.extend_from_slice(bytes);
+                buf
             })?;
 
             return Ok(match result {
-                CacheRead::Hit(bytes) => Cow::Borrowed(bytemuck::cast_slice(bytes)),
-                CacheRead::Miss(vec_t) => Cow::Owned(vec_t),
+                CacheRead::Hit(bytes) => AlignedCow::Borrowed(bytes),
+                CacheRead::Miss(buf) => AlignedCow::Owned(buf),
             });
         }
 
-        // Multi-block: allocate Vec<T> directly for correct alignment.
-        let mut result = vec![T::zeroed(); total_elements];
-        let result_bytes = bytemuck::cast_slice_mut::<T, u8>(&mut result);
-        let mut copied = 0;
+        // Multi-block: allocate AlignedBuf directly so block bytes go straight in.
+        let mut buf = AlignedBuf::new_for_offset(file_offset, align);
         let mut copy_block = |slice: &[u8]| {
-            let end = copied + slice.len();
-            result_bytes[copied..end].copy_from_slice(slice);
-            copied = end;
+            buf.extend_from_slice(slice);
         };
         for req in blocks_iter {
             let read = self.controller.get_from_cache(req, &mut copy_block)?;
@@ -85,7 +89,7 @@ impl CachedSlice {
                 copy_block(slice);
             }
         }
-        Ok(Cow::Owned(result))
+        Ok(AlignedCow::Owned(buf))
     }
 
     /// Try to make every block this file spans present in the cache.

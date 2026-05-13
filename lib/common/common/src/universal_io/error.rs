@@ -12,6 +12,9 @@ pub enum UniversalIoError {
     #[error("Bytemuck cast error: {0:?}")]
     BytemuckCast(bytemuck::PodCastError),
 
+    #[error("AlignedBuf cast error: {0:?}")]
+    AlignedBufCast(crate::aligned_buf::CastError),
+
     #[error("Zerocopy size error: {0:?}")]
     ZerocopySize(String),
 
