@@ -2,69 +2,18 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use common::bitvec::BitSliceExt;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, ReadRange};
-use itertools::Itertools;
 
-use super::mmap_geo_index::StoredGeoMapIndex;
-use super::read_ops::GeoMapIndexRead;
+use super::super::mmap_geo_index::StoredGeoMapIndex;
+use super::{Counts, DELETED_SENTINEL, ImmutableGeoMapIndex, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
-
-const DELETED_SENTINEL: PointOffsetType = PointOffsetType::MAX;
-
-#[derive(Copy, Clone, Debug)]
-struct Counts {
-    hash: GeoHash,
-    points: u32,
-    values: u32,
-}
-
-impl From<super::mmap_geo_index::Counts> for Counts {
-    #[inline]
-    fn from(counts: super::mmap_geo_index::Counts) -> Self {
-        let super::mmap_geo_index::Counts {
-            hash,
-            points,
-            values,
-        } = counts;
-        Self {
-            hash: hash.normalize(),
-            points,
-            values,
-        }
-    }
-}
-
-/// RAM-loaded immutable geo index using flat parallel arrays instead of per-hash
-/// `AHashSet`s. This dramatically reduces memory overhead:
-///
-/// - `points_map_hashes[i]` is the sorted geohash for the i-th entry.
-/// - `points_map_offsets[i]..points_map_offsets[i+1]` is the range in
-///   `points_map_ids` holding the point IDs for that hash.
-/// - Deleted entries in `points_map_ids` are marked with `DELETED_SENTINEL`.
-pub struct ImmutableGeoMapIndex {
-    counts_per_hash: Vec<Counts>,
-    points_map_hashes: Vec<GeoHash>,
-    points_map_offsets: Vec<u32>,
-    points_map_ids: Vec<PointOffsetType>,
-    point_to_values: ImmutablePointToValues<GeoPoint>,
-    points_count: usize,
-    points_values_count: usize,
-    max_values_per_point: usize,
-    storage: Storage,
-    cached_ram_usage_bytes: usize,
-}
-
-enum Storage {
-    Mmap(Box<StoredGeoMapIndex<MmapFile>>),
-}
 
 impl ImmutableGeoMapIndex {
     /// Open and load immutable geo index from mmap storage
@@ -349,7 +298,7 @@ impl ImmutableGeoMapIndex {
             })
     }
 
-    fn decrement_hash_value_counts(&mut self, geo_hash: GeoHash) {
+    pub(super) fn decrement_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
             if let Ok(index) = self
@@ -371,7 +320,7 @@ impl ImmutableGeoMapIndex {
         }
     }
 
-    fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
+    pub(super) fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
         let mut seen_hashes: Vec<GeoHash> = Vec::new();
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
@@ -413,7 +362,7 @@ impl ImmutableGeoMapIndex {
         self.cached_ram_usage_bytes
     }
 
-    fn compute_ram_usage_bytes(&self) -> usize {
+    pub(super) fn compute_ram_usage_bytes(&self) -> usize {
         let Self {
             counts_per_hash,
             points_map_hashes,
@@ -436,106 +385,5 @@ impl ImmutableGeoMapIndex {
             + pm_offsets_bytes
             + pm_ids_bytes
             + point_to_values.ram_usage_bytes()
-    }
-}
-
-impl GeoMapIndexRead for ImmutableGeoMapIndex {
-    fn points_count(&self) -> usize {
-        ImmutableGeoMapIndex::points_count(self)
-    }
-
-    fn points_values_count(&self) -> usize {
-        ImmutableGeoMapIndex::points_values_count(self)
-    }
-
-    fn max_values_per_point(&self) -> usize {
-        ImmutableGeoMapIndex::max_values_per_point(self)
-    }
-
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        Ok(ImmutableGeoMapIndex::points_of_hash(self, hash))
-    }
-
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        Ok(ImmutableGeoMapIndex::values_of_hash(self, hash))
-    }
-
-    fn check_values_any(
-        &self,
-        idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
-        check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
-        ImmutableGeoMapIndex::check_values_any(self, idx, |p| check_fn(p))
-    }
-
-    fn values_count(&self, idx: PointOffsetType) -> usize {
-        ImmutableGeoMapIndex::values_count(self, idx)
-    }
-
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
-        ImmutableGeoMapIndex::get_values(self, idx)
-            .map(|iter| Box::new(iter.copied()) as Box<dyn Iterator<Item = GeoPoint> + '_>)
-    }
-
-    fn iterator(
-        &self,
-        values: Vec<GeoHash>,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        Ok(Box::new(
-            values
-                .into_iter()
-                .flat_map(|top_geo_hash| self.stored_sub_regions(top_geo_hash))
-                .unique(),
-        ))
-    }
-
-    fn points_per_hash_filtered(
-        &self,
-        filter: &dyn Fn(&(GeoHash, usize)) -> bool,
-    ) -> OperationResult<Vec<(GeoHash, usize)>> {
-        Ok(ImmutableGeoMapIndex::points_per_hash(self)
-            .filter(|pair| filter(pair))
-            .collect())
-    }
-
-    fn get_storage_type(&self) -> StorageType {
-        ImmutableGeoMapIndex::storage_type(self)
-    }
-
-    fn ram_usage_bytes(&self) -> usize {
-        ImmutableGeoMapIndex::ram_usage_bytes(self)
-    }
-
-    fn is_on_disk(&self) -> bool {
-        false
-    }
-
-    fn populate(&self) -> OperationResult<()> {
-        Ok(())
-    }
-
-    fn clear_cache(&self) -> OperationResult<()> {
-        ImmutableGeoMapIndex::clear_cache(self)
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        ImmutableGeoMapIndex::files(self)
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        ImmutableGeoMapIndex::immutable_files(self)
-    }
-
-    fn telemetry_index_type(&self) -> &'static str {
-        "immutable_geo"
     }
 }

@@ -3,7 +3,7 @@ pub mod immutable_geo_index;
 pub mod mmap_geo_index;
 pub mod mutable_geo_index;
 mod payload_index;
-pub mod read_only_geo_index;
+pub mod read_only;
 pub mod read_ops;
 #[cfg(test)]
 mod tests;
@@ -20,7 +20,7 @@ pub use self::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mmap_geo_index::StoredGeoMapIndex;
 use self::mutable_geo_index::MutableGeoMapIndex;
-pub use self::read_only_geo_index::ReadOnlyGeoMapIndex;
+pub use self::read_only::ReadOnlyGeoMapIndex;
 pub use self::read_ops::GeoMapIndexRead;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
