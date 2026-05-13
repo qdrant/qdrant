@@ -99,6 +99,27 @@ where
 {
     type TVector = ();
 
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert_eq!(ids.len(), scores.len());
+
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(size_of::<MultivectorOffset>() * ids.len());
+
+        for (idx, offset) in self.quantized_multivector_storage.iter_offsets(ids) {
+            self.hardware_counter.vector_io_read().incr_delta(
+                self.quantized_multivector_storage.quantized_vector_size() * offset.count as usize,
+            );
+
+            // quantized multivector storage handles CPU hardware counter
+            scores[idx] = self.quantized_multivector_storage.score_multi(
+                &self.query,
+                offset,
+                &self.hardware_counter,
+            );
+        }
+    }
+
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
         let sub_vectors_count = multi_vector_offset.count as usize;
