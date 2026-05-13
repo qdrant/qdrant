@@ -8,8 +8,6 @@ use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
-use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 use super::hnsw_index::hnsw::HNSWIndex;
@@ -92,8 +90,6 @@ pub enum VectorIndexEnum {
     Plain(PlainVectorIndex),
     Hnsw(HNSWIndex),
     SparseRam(SparseVectorIndex<InvertedIndexRam>),
-    SparseImmutableRam(SparseVectorIndex<InvertedIndexImmutableRam>),
-    SparseMmap(SparseVectorIndex<InvertedIndexMmap>),
     SparseCompressedImmutableRamF32(SparseVectorIndex<InvertedIndexCompressedImmutableRam<f32>>),
     SparseCompressedImmutableRamF16(SparseVectorIndex<InvertedIndexCompressedImmutableRam<f16>>),
     SparseCompressedImmutableRamU8(
@@ -112,8 +108,6 @@ impl VectorIndexEnum {
             Self::Plain(_) => false,
             Self::Hnsw(index) => index.is_on_disk(),
             Self::SparseRam(index) => index.inverted_index().is_on_disk(),
-            Self::SparseImmutableRam(index) => index.inverted_index().is_on_disk(),
-            Self::SparseMmap(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_on_disk(),
@@ -128,8 +122,6 @@ impl VectorIndexEnum {
             Self::Plain(_) => {}
             Self::Hnsw(index) => index.populate()?,
             Self::SparseRam(_) => {}
-            Self::SparseImmutableRam(_) => {}
-            Self::SparseMmap(index) => index.inverted_index().populate()?,
             Self::SparseCompressedImmutableRamF32(_) => {}
             Self::SparseCompressedImmutableRamF16(_) => {}
             Self::SparseCompressedImmutableRamU8(_) => {}
@@ -145,8 +137,6 @@ impl VectorIndexEnum {
             Self::Plain(_) => {}
             Self::Hnsw(index) => index.clear_cache()?,
             Self::SparseRam(_) => {}
-            Self::SparseImmutableRam(_) => {}
-            Self::SparseMmap(index) => index.inverted_index().clear_cache()?,
             Self::SparseCompressedImmutableRamF32(_) => {}
             Self::SparseCompressedImmutableRamF16(_) => {}
             Self::SparseCompressedImmutableRamU8(_) => {}
@@ -177,12 +167,6 @@ impl VectorIndexRead for VectorIndexEnum {
             VectorIndexEnum::SparseRam(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
-            VectorIndexEnum::SparseImmutableRam(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::SparseMmap(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
@@ -209,8 +193,6 @@ impl VectorIndexRead for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::Hnsw(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::SparseImmutableRam(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::SparseMmap(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
                 index.get_telemetry_data(detail)
             }
@@ -231,8 +213,6 @@ impl VectorIndexRead for VectorIndexEnum {
             Self::Plain(index) => index.indexed_vector_count(),
             Self::Hnsw(index) => index.indexed_vector_count(),
             Self::SparseRam(index) => index.indexed_vector_count(),
-            Self::SparseImmutableRam(index) => index.indexed_vector_count(),
-            Self::SparseMmap(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamU8(index) => index.indexed_vector_count(),
@@ -247,8 +227,6 @@ impl VectorIndexRead for VectorIndexEnum {
             Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseRam(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseImmutableRam(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseMmap(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.size_of_searchable_vectors_in_bytes()
             }
@@ -269,8 +247,6 @@ impl VectorIndexRead for VectorIndexEnum {
             Self::Plain(_) => false,
             Self::Hnsw(_) => true,
             Self::SparseRam(_) => true,
-            Self::SparseImmutableRam(_) => true,
-            Self::SparseMmap(_) => true,
             Self::SparseCompressedImmutableRamF32(_) => true,
             Self::SparseCompressedImmutableRamF16(_) => true,
             Self::SparseCompressedImmutableRamU8(_) => true,
@@ -288,8 +264,6 @@ impl VectorIndexRead for VectorIndexEnum {
         match self {
             Self::Plain(_) | Self::Hnsw(_) => (),
             Self::SparseRam(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf, hw_counter),
-            Self::SparseMmap(index) => index.fill_idf_statistics(idf, hw_counter),
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.fill_idf_statistics(idf, hw_counter)
             }
@@ -312,8 +286,6 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.files(),
             VectorIndexEnum::Hnsw(index) => index.files(),
             VectorIndexEnum::SparseRam(index) => index.files(),
-            VectorIndexEnum::SparseImmutableRam(index) => index.files(),
-            VectorIndexEnum::SparseMmap(index) => index.files(),
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.files(),
             VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.files(),
             VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.files(),
@@ -328,8 +300,6 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.immutable_files(),
             VectorIndexEnum::Hnsw(index) => index.immutable_files(),
             VectorIndexEnum::SparseRam(index) => index.immutable_files(),
-            VectorIndexEnum::SparseImmutableRam(index) => index.immutable_files(),
-            VectorIndexEnum::SparseMmap(index) => index.immutable_files(),
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.immutable_files(),
             VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.immutable_files(),
             VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.immutable_files(),
@@ -349,8 +319,6 @@ impl VectorIndex for VectorIndexEnum {
             Self::Plain(index) => index.update_vector(id, vector, hw_counter),
             Self::Hnsw(index) => index.update_vector(id, vector, hw_counter),
             Self::SparseRam(index) => index.update_vector(id, vector, hw_counter),
-            Self::SparseImmutableRam(index) => index.update_vector(id, vector, hw_counter),
-            Self::SparseMmap(index) => index.update_vector(id, vector, hw_counter),
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.update_vector(id, vector, hw_counter)
             }

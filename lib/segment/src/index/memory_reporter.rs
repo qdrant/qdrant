@@ -24,11 +24,6 @@ impl MemoryReporter for VectorIndexEnum {
                 FileStorageIntent::OnDisk,
                 index.size_of_searchable_vectors_in_bytes() as u64,
             ),
-            VectorIndexEnum::SparseImmutableRam(index) => ComponentMemoryUsage::from_files_and_ram(
-                index.files(),
-                FileStorageIntent::OnDisk,
-                index.size_of_searchable_vectors_in_bytes() as u64,
-            ),
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
                 ComponentMemoryUsage::from_files_and_ram(
                     index.files(),
@@ -53,9 +48,6 @@ impl MemoryReporter for VectorIndexEnum {
 
             // Sparse mmap variants: inverted index is mmap'd but not populated
             // (loaded with populate=false), relies on OS demand-paging
-            VectorIndexEnum::SparseMmap(index) => {
-                ComponentMemoryUsage::from_files(index.files(), FileStorageIntent::OnDisk)
-            }
             VectorIndexEnum::SparseCompressedMmapF32(index) => {
                 ComponentMemoryUsage::from_files(index.files(), FileStorageIntent::OnDisk)
             }
