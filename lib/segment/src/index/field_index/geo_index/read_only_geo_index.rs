@@ -1,6 +1,5 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use common::bitvec::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -29,25 +28,21 @@ use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 /// and surfaces the `S`-generic version of the same data on the read-only side
 /// of `ReadOnlyFieldIndex`.
 ///
+/// Not yet constructible — lifecycle (open / build) lands in the follow-up PR
+/// that wires up the rest of [`ReadOnlyFieldIndex`][5], matching the dead-code
+/// state of `ReadOnlyNullIndex` / `ReadOnlyBoolIndex` / `ReadOnlyMapIndex`.
+///
 /// [1]: super::mutable_geo_index::MutableGeoMapIndex
 /// [2]: super::immutable_geo_index::ImmutableGeoMapIndex
 /// [3]: super::mmap_geo_index::StoredGeoMapIndex
 /// [4]: super::read_ops
+/// [5]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
 pub struct ReadOnlyGeoMapIndex<S: UniversalRead> {
+    #[allow(dead_code)]
     inner: StoredGeoMapIndex<S>,
 }
 
 impl<S: UniversalRead> ReadOnlyGeoMapIndex<S> {
-    /// Open a read-only geo index at the given path. Returns `None` if no
-    /// index exists on disk.
-    pub fn open(
-        path: &Path,
-        is_on_disk: bool,
-        deleted_points: &BitSlice,
-    ) -> OperationResult<Option<Self>> {
-        Ok(StoredGeoMapIndex::open(path, is_on_disk, deleted_points)?.map(|inner| Self { inner }))
-    }
-
     /// Produce a closure that maps a point id to its indexed geo values as
     /// JSON `Value`s. Mirrors `GeoMapIndex::value_retriever`.
     pub fn value_retriever<'a>(
