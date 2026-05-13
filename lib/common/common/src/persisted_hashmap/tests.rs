@@ -182,7 +182,7 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
         struct Entry<KO, V> {
             key: KO,
             values: Option<Vec<V>>,
-            meta: u16,
+            user_data: u16,
         }
 
         let mut rng2 = rng.fork();
@@ -190,12 +190,12 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
             orig.iter().map(|(k, v)| Entry {
                 key: k.clone(),
                 values: Some(v.clone()),
-                meta: rng.random::<u16>(),
+                user_data: rng.random::<u16>(),
             }),
             non_existing_keys.iter().map(|k| Entry {
                 key: k.clone(),
                 values: None,
-                meta: rng2.random::<u16>(),
+                user_data: rng2.random::<u16>(),
             }),
         )
         .collect_vec();
@@ -207,17 +207,17 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
                 let Entry {
                     key,
                     values: _,
-                    meta,
+                    user_data,
                 } = entry;
-                ((*meta, key.clone()), K::as_ref(key))
+                ((*user_data, key.clone()), K::as_ref(key))
             }),
-            |(meta, key), vals| {
+            |(user_data, key), vals| {
                 push_val(
                     &mut collected,
                     Entry {
                         key,
                         values: vals.map(|v| v.to_vec()),
-                        meta,
+                        user_data,
                     },
                 )
             },

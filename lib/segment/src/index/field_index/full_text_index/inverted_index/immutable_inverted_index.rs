@@ -5,6 +5,7 @@ use ahash::AHashMap;
 use common::bitvec::BitSliceExt;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
@@ -349,13 +350,13 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.points_count
     }
 
-    fn for_each_token_id<'a, Meta>(
+    fn for_each_token_id<'a, U: UserData>(
         &self,
-        tokens: impl Iterator<Item = (Meta, &'a str)>,
+        tokens: impl Iterator<Item = (U, &'a str)>,
         _: &HardwareCounterCell,
-        mut f: impl FnMut(Meta, Option<TokenId>),
+        mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
-        tokens.for_each(|(meta, token)| f(meta, self.vocab.get(token).copied()));
+        tokens.for_each(|(user_data, token)| f(user_data, self.vocab.get(token).copied()));
         Ok(())
     }
 }

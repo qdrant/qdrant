@@ -49,10 +49,11 @@ impl UniversalReadFileOps for IoUringFile {
 }
 
 impl UniversalRead for IoUringFile {
-    type ReadPipeline<'a, T, Meta>
-        = IoUringPipeline<'a, T, Meta>
+    type ReadPipeline<'a, T, U>
+        = IoUringPipeline<'a, T, U>
     where
-        T: bytemuck::Pod;
+        T: bytemuck::Pod,
+        U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         // Check that io_uring is supported on this system.
@@ -141,16 +142,18 @@ impl UniversalRead for IoUringFile {
     }
 }
 
-pub struct IoUringPipeline<'file, T, Meta>
+pub struct IoUringPipeline<'file, T, U>
 where
     T: bytemuck::Pod,
+    U: UserData,
 {
-    runtime: IoUringRuntime<'file, T, Meta>,
+    runtime: IoUringRuntime<'file, T, U>,
 }
 
-impl<'file, T, Meta> UniversalReadPipeline<'file, T, Meta> for IoUringPipeline<'file, T, Meta>
+impl<'file, T, U> UniversalReadPipeline<'file, T, U> for IoUringPipeline<'file, T, U>
 where
     T: bytemuck::Pod,
+    U: UserData,
 {
     type File = IoUringFile;
 
@@ -165,7 +168,12 @@ where
         self.runtime.in_progress + squeue.len() < IO_URING_QUEUE_LENGTH as _
     }
 
-    fn schedule<P>(&mut self, meta: Meta, file: &'file IoUringFile, range: ReadRange) -> Result<()>
+    fn schedule<P>(
+        &mut self,
+        user_data: U,
+        file: &'file IoUringFile,
+        range: ReadRange,
+    ) -> Result<()>
     where
         P: AccessPattern,
     {
@@ -178,7 +186,7 @@ where
         let entry = self
             .runtime
             .state
-            .read(meta, file.fd(), range, file.direct_io);
+            .read(user_data, file.fd(), range, file.direct_io);
 
         unsafe {
             squeue.push(&entry).expect("submission queue is not full");
@@ -187,7 +195,7 @@ where
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
         let next = self.runtime.completed().next();
 
         let enqueued = self.runtime.enqueued();
@@ -202,8 +210,8 @@ where
             return Ok(None);
         };
 
-        let (meta, resp) = result?;
-        Ok(Some((meta, Cow::Owned(resp.expect_read()))))
+        let (user_data, resp) = result?;
+        Ok(Some((user_data, Cow::Owned(resp.expect_read()))))
     }
 }
 

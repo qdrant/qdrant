@@ -9,7 +9,7 @@ use common::mmap::{self, Advice, AdviceSetting, MmapSlice, create_and_ensure_len
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions};
+use common::universal_io::{MmapFile, OpenOptions, UserData};
 use types::ZerocopyPostingValue;
 use uio_postings::UniversalPostings;
 
@@ -620,21 +620,21 @@ impl InvertedIndex for MmapInvertedIndex {
         self.active_points_count
     }
 
-    fn for_each_token_id<'a, Meta>(
+    fn for_each_token_id<'a, U: UserData>(
         &self,
-        tokens: impl Iterator<Item = (Meta, &'a str)>,
+        tokens: impl Iterator<Item = (U, &'a str)>,
         hw_counter: &HardwareCounterCell,
-        mut f: impl FnMut(Meta, Option<TokenId>),
+        mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         self.storage
             .vocab
-            .for_each_entry_in_iter(tokens, |meta, token_ids| {
+            .for_each_entry_in_iter(tokens, |user_data, token_ids| {
                 if self.is_on_disk {
                     hw_counter.payload_index_io_read_counter().incr_delta(
                         READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
                     );
                 }
-                f(meta, token_ids.map(unwrap_token));
+                f(user_data, token_ids.map(unwrap_token));
                 Ok(())
             })
     }

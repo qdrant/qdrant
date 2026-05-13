@@ -8,7 +8,7 @@ use crate::generic_consts::{AccessPattern, Random};
 use crate::universal_io::read::UniversalReadPipeline;
 use crate::universal_io::{
     OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    local_file_ops,
+    UserData, local_file_ops,
 };
 
 mod cached_slice;
@@ -67,11 +67,12 @@ impl UniversalReadFileOps for CachedSlice {
 }
 
 impl UniversalRead for CachedSlice {
-    type ReadPipeline<'a, T, Meta>
-        = DiskCacheReadPipeline<'a, T, Meta>
+    type ReadPipeline<'a, T, U>
+        = DiskCacheReadPipeline<'a, T, U>
     where
         Self: 'a,
-        T: bytemuck::Pod;
+        T: bytemuck::Pod,
+        U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let Some(controller) = CacheController::global() else {
@@ -123,16 +124,18 @@ impl UniversalRead for CachedSlice {
     }
 }
 
-pub struct DiskCacheReadPipeline<'file, T, Meta>
+pub struct DiskCacheReadPipeline<'file, T, U>
 where
     T: bytemuck::Pod,
+    U: UserData,
 {
-    result: Option<(Meta, Cow<'file, [T]>)>,
+    result: Option<(U, Cow<'file, [T]>)>,
 }
 
-impl<'file, T, Meta> UniversalReadPipeline<'file, T, Meta> for DiskCacheReadPipeline<'file, T, Meta>
+impl<'file, T, U> UniversalReadPipeline<'file, T, U> for DiskCacheReadPipeline<'file, T, U>
 where
     T: bytemuck::Pod,
+    U: UserData,
 {
     type File = CachedSlice;
 
@@ -144,7 +147,12 @@ where
         self.result.is_none()
     }
 
-    fn schedule<P>(&mut self, meta: Meta, file: &'file CachedSlice, range: ReadRange) -> Result<()>
+    fn schedule<P>(
+        &mut self,
+        user_data: U,
+        file: &'file CachedSlice,
+        range: ReadRange,
+    ) -> Result<()>
     where
         P: AccessPattern,
     {
@@ -152,11 +160,11 @@ where
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        self.result = Some((meta, file.read::<Random, T>(range)?));
+        self.result = Some((user_data, file.read::<Random, T>(range)?));
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
         Ok(self.result.take())
     }
 }

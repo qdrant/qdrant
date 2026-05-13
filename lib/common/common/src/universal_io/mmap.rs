@@ -44,10 +44,11 @@ impl UniversalReadFileOps for MmapFile {
 }
 
 impl UniversalRead for MmapFile {
-    type ReadPipeline<'a, T, Meta>
-        = MmapReadPipeline<'a, T, Meta>
+    type ReadPipeline<'a, T, U>
+        = MmapReadPipeline<'a, T, U>
     where
-        T: bytemuck::Pod;
+        T: bytemuck::Pod,
+        U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let OpenOptions {
@@ -129,13 +130,14 @@ impl UniversalRead for MmapFile {
     }
 }
 
-pub struct MmapReadPipeline<'file, T, Meta> {
-    result: Option<(Meta, &'file [T])>,
+pub struct MmapReadPipeline<'file, T, U> {
+    result: Option<(U, &'file [T])>,
 }
 
-impl<'file, T, Meta> UniversalReadPipeline<'file, T, Meta> for MmapReadPipeline<'file, T, Meta>
+impl<'file, T, U> UniversalReadPipeline<'file, T, U> for MmapReadPipeline<'file, T, U>
 where
     T: bytemuck::Pod,
+    U: UserData,
 {
     type File = MmapFile;
 
@@ -147,7 +149,7 @@ where
         self.result.is_none()
     }
 
-    fn schedule<P>(&mut self, meta: Meta, file: &'file MmapFile, range: ReadRange) -> Result<()>
+    fn schedule<P>(&mut self, user_data: U, file: &'file MmapFile, range: ReadRange) -> Result<()>
     where
         P: AccessPattern,
     {
@@ -155,13 +157,13 @@ where
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        self.result = Some((meta, read(file.as_bytes::<P>(), range)?));
+        self.result = Some((user_data, read(file.as_bytes::<P>(), range)?));
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(Meta, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
         let result = self.result.take();
-        Ok(result.map(|(meta, items)| (meta, Cow::Borrowed(items))))
+        Ok(result.map(|(user_data, items)| (user_data, Cow::Borrowed(items))))
     }
 }
 
