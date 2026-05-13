@@ -1,6 +1,5 @@
 use std::convert::Infallible;
 use std::future::{Ready, ready};
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use actix_web::body::EitherBody;
@@ -209,13 +208,6 @@ impl FromRequest for ActixAuth {
     }
 }
 
-/// Marker trait that names the audit action for an [`ActixAccessManage`]
-/// extractor instance.
-pub trait ManageAction {
-    /// String passed to `Auth::check_global_access` for audit logging.
-    const ACTION_NAME: &'static str;
-}
-
 /// Actix extractor that enforces global `manage` access *before* any other
 /// extractors run.
 ///
@@ -230,13 +222,12 @@ pub trait ManageAction {
 ///
 /// This is the fix for the read-only-key snapshot-upload disk-exhaustion
 /// issue described in GHSA-3v92-w72v-j994.
-pub struct ActixAccessManage<A> {
+pub struct ActixAccessManage {
     pub auth: Auth,
     pub multipass: CollectionMultipass,
-    _action: PhantomData<fn() -> A>,
 }
 
-impl<A: ManageAction + 'static> FromRequest for ActixAccessManage<A> {
+impl FromRequest for ActixAccessManage {
     type Error = HttpError;
     type Future = Ready<Result<Self, Self::Error>>;
 
@@ -245,12 +236,14 @@ impl<A: ManageAction + 'static> FromRequest for ActixAccessManage<A> {
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
         let auth = take_request_auth(req);
-        match auth.check_global_access(AccessRequirements::new().manage(), A::ACTION_NAME) {
-            Ok(multipass) => ready(Ok(Self {
-                auth,
-                multipass,
-                _action: PhantomData,
-            })),
+        // Use the matched route pattern (e.g.
+        // `/collections/{collection_name}/snapshots/upload`) as the audit
+        // action name, falling back to the raw path for unmatched requests.
+        let action = req
+            .match_pattern()
+            .unwrap_or_else(|| req.path().to_string());
+        match auth.check_global_access(AccessRequirements::new().manage(), &action) {
+            Ok(multipass) => ready(Ok(Self { auth, multipass })),
             Err(err) => ready(Err(HttpError::from(err))),
         }
     }

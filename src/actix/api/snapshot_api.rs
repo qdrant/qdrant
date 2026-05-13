@@ -41,7 +41,7 @@ use super::{
     CollectionPath, CollectionShardPath, CollectionShardSnapshotPath, CollectionSnapshotPath,
     StrictCollectionPath,
 };
-use crate::actix::auth::{ActixAccessManage, ActixAuth, ManageAction};
+use crate::actix::auth::{ActixAccessManage, ActixAuth};
 use crate::actix::helpers::{self, HttpError};
 use crate::common;
 use crate::common::auth::Auth;
@@ -69,25 +69,6 @@ pub struct SnapshottingParam {
 #[derive(MultipartForm)]
 pub struct SnapshottingForm {
     snapshot: TempFile,
-}
-
-/// Audit-action markers for the snapshot upload endpoints. Each names the
-/// `Auth::check_global_access(manage())` call that runs *before* the
-/// multipart body is extracted, so unauthorized callers cannot force the
-/// server to spool an upload to disk (GHSA-3v92-w72v-j994).
-pub struct UploadSnapshotAction;
-impl ManageAction for UploadSnapshotAction {
-    const ACTION_NAME: &'static str = "upload_snapshot";
-}
-
-pub struct UploadShardSnapshotAction;
-impl ManageAction for UploadShardSnapshotAction {
-    const ACTION_NAME: &'static str = "upload_shard_snapshot";
-}
-
-pub struct RecoverPartialSnapshotAction;
-impl ManageAction for RecoverPartialSnapshotAction {
-    const ACTION_NAME: &'static str = "recover_partial_snapshot";
 }
 
 // Actix specific code
@@ -214,7 +195,7 @@ async fn upload_snapshot(
     // NOTE: this extractor must come *before* `MultipartForm` so that
     // unauthorized requests are rejected before the body is spooled to disk
     // (GHSA-3v92-w72v-j994).
-    early_auth: ActixAccessManage<UploadSnapshotAction>,
+    early_auth: ActixAccessManage,
     dispatcher: web::Data<Dispatcher>,
     http_client: web::Data<HttpClient>,
     collection: valid::Path<StrictCollectionPath>,
@@ -523,15 +504,13 @@ async fn upload_shard_snapshot(
     // NOTE: this extractor must come *before* `MultipartForm` so that
     // unauthorized requests are rejected before the body is spooled to disk
     // (GHSA-3v92-w72v-j994).
-    early_auth: ActixAccessManage<UploadShardSnapshotAction>,
+    early_auth: ActixAccessManage,
     dispatcher: web::Data<Dispatcher>,
     path: valid::Path<CollectionShardPath>,
     query: web::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
-    let ActixAccessManage {
-        auth, multipass, ..
-    } = early_auth;
+    let ActixAccessManage { auth, multipass } = early_auth;
     // nothing to verify.
     let pass = new_unchecked_verification_pass();
 
@@ -691,15 +670,13 @@ async fn recover_partial_snapshot(
     // NOTE: this extractor must come *before* `MultipartForm` so that
     // unauthorized requests are rejected before the body is spooled to disk
     // (GHSA-3v92-w72v-j994).
-    early_auth: ActixAccessManage<RecoverPartialSnapshotAction>,
+    early_auth: ActixAccessManage,
     dispatcher: web::Data<Dispatcher>,
     path: valid::Path<CollectionShardPath>,
     query: web::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
-    let ActixAccessManage {
-        auth, multipass, ..
-    } = early_auth;
+    let ActixAccessManage { auth, multipass } = early_auth;
     let CollectionShardPath {
         collection_name: collection,
         shard,
