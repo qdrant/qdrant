@@ -1,12 +1,11 @@
-use std::borrow::Cow;
 use std::marker::PhantomData;
+use std::ops::Range;
 
 use bytemuck::TransparentWrapper;
 
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::{
-    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UserData,
-};
+use crate::universal_io::{BorrowedReadPipeline, OwnedReadPipeline, Result, UserData};
 
 /// Default implementation of [`BorrowedReadPipeline`] for wrappers.
 pub struct BorrowedWrappedReadPipeline<'a, File, Inner> {
@@ -14,12 +13,11 @@ pub struct BorrowedWrappedReadPipeline<'a, File, Inner> {
     _phantom: PhantomData<&'a File>,
 }
 
-impl<'a, File, Inner, T, U> BorrowedReadPipeline<'a, T, U>
+impl<'a, File, Inner, U> BorrowedReadPipeline<'a, U>
     for BorrowedWrappedReadPipeline<'a, File, Inner>
 where
-    File: TransparentWrapper<Inner::File>,
-    Inner: BorrowedReadPipeline<'a, T, U>,
-    T: Item,
+    File: TransparentWrapper<Inner::File> + 'a,
+    Inner: BorrowedReadPipeline<'a, U>,
     U: UserData,
 {
     type File = File;
@@ -40,16 +38,19 @@ where
     }
 
     #[inline]
-    fn schedule<P>(&mut self, user_data: U, file: &'a File, range: ReadRange) -> Result<()>
-    where
-        P: AccessPattern,
-    {
+    fn schedule<P: AccessPattern>(
+        &mut self,
+        user_data: U,
+        file: &'a File,
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<()> {
         self.inner
-            .schedule::<P>(user_data, File::peel_ref(file), range)
+            .schedule::<P>(user_data, File::peel_ref(file), range, align)
     }
 
     #[inline]
-    fn wait(&mut self) -> Result<Option<(U, Cow<'a, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, ACow<'a>)>> {
         self.inner.wait()
     }
 }
@@ -60,11 +61,10 @@ pub struct OwnedWrappedReadPipeline<File, Inner> {
     _phantom: PhantomData<File>,
 }
 
-impl<File, Inner, T, U> OwnedReadPipeline<T, U> for OwnedWrappedReadPipeline<File, Inner>
+impl<File, Inner, U> OwnedReadPipeline<U> for OwnedWrappedReadPipeline<File, Inner>
 where
     File: TransparentWrapper<Inner::File>,
-    Inner: OwnedReadPipeline<T, U>,
-    T: Item,
+    Inner: OwnedReadPipeline<U>,
     U: UserData,
 {
     type File = File;
@@ -85,11 +85,13 @@ where
     }
 
     #[inline]
-    fn schedule<P>(&mut self, user_data: U, range: ReadRange) -> Result<()>
-    where
-        P: AccessPattern,
-    {
-        self.inner.schedule::<P>(user_data, range)
+    fn schedule<P: AccessPattern>(
+        &mut self,
+        user_data: U,
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<()> {
+        self.inner.schedule::<P>(user_data, range, align)
     }
 
     #[inline]
@@ -98,7 +100,7 @@ where
     }
 
     #[inline]
-    fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
         self.inner.wait()
     }
 }

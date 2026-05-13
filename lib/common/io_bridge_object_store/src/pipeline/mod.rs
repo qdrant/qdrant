@@ -14,6 +14,7 @@ mod inner;
 mod owned;
 
 pub use borrowed::BorrowedBlobPipeline;
+pub(crate) use buffer::read_into_byte_buffer;
 pub use owned::OwnedBlobPipeline;
 
 pub(crate) const BLOB_PIPELINE_CAPACITY: usize = 256;

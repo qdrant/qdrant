@@ -19,6 +19,7 @@ object_store = { workspace = true }
 slab = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+aligned-vec = "0.6.4"
 
 [dev-dependencies]
 common = { path = "../common", features = ["testing"] }

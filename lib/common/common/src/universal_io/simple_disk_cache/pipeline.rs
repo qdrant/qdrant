@@ -1,20 +1,19 @@
-use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::ops::Range;
 
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache, to_block_range};
 use crate::universal_io::traits::BorrowedReadPipeline;
 use crate::universal_io::{
-    self, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UniversalRead,
-    UniversalReadFs, UserData,
+    self, OwnedReadPipeline, Result, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
 };
 
 struct RemoteMeta<File, U> {
     file: File,
     blocks_range: Range<u32>,
-    read_range: ReadRange,
+    read_range: Range<u64>,
     user_data: U,
 }
 
@@ -23,42 +22,39 @@ struct RemoteMeta<File, U> {
 /// scheduled for `blocks_byte_range` covering `blocks_range`.
 enum Source {
     Local {
-        range: ReadRange,
+        range: Range<u64>,
         is_sequential: bool,
     },
     Remote {
         blocks_range: Range<u32>,
-        blocks_byte_range: ReadRange,
+        blocks_byte_range: Range<u64>,
     },
 }
 
 /// Decide whether `range` can be answered from local mmap or needs a remote fetch.
 ///
 /// Avoids materializing the local file for empty reads.
-fn pick_source<P, T>(local: &LocalState, range: ReadRange) -> Result<Source>
+fn pick_source<P>(local: &LocalState, range: Range<u64>) -> Result<Source>
 where
     P: AccessPattern,
-    T: bytemuck::Pod,
 {
-    if range.length == 0 {
+    if range.is_empty() {
         return Ok(Source::Local {
             range,
             is_sequential: P::IS_SEQUENTIAL,
         });
     }
 
-    let byte_range = range.into_byte_range::<T>();
-
-    if byte_range.end > local.mmap().len::<u8>()? {
+    if range.end > local.mmap().len::<u8>()? {
         // If remote file has grown, and `reopen` hasn't been called, it is OOB
         return Err(UniversalIoError::OutOfBounds {
-            start: byte_range.start,
-            end: byte_range.end,
-            elements: range.length as usize,
+            start: range.start,
+            end: range.end,
+            elements: (range.end - range.start) as usize,
         });
     }
 
-    let blocks_range = to_block_range(byte_range.clone());
+    let blocks_range = to_block_range(range.clone());
 
     // Fast path skips the bitmap mutex once the file is fully populated.
     if local.contains(blocks_range.clone()) {
@@ -69,13 +65,10 @@ where
     }
 
     // BLOCK_SIZE aligned, clamped to EOF.
-    let byte_offset = blocks_range.start as usize * BLOCK_SIZE;
-    let fetch_length = blocks_range.len() * BLOCK_SIZE;
-    let max_length = local.mmap().len::<u8>()?.saturating_sub(byte_offset as u64);
-    let blocks_byte_range = ReadRange {
-        byte_offset: byte_offset as u64,
-        length: max_length.min(fetch_length as u64),
-    };
+    let byte_offset = u64::from(blocks_range.start) * BLOCK_SIZE as u64;
+    let fetch_length = blocks_range.len() as u64 * BLOCK_SIZE as u64;
+    let max_length = local.mmap().len::<u8>()?.saturating_sub(byte_offset);
+    let blocks_byte_range = byte_offset..byte_offset + max_length.min(fetch_length);
 
     Ok(Source::Remote {
         blocks_range,
@@ -90,26 +83,25 @@ where
 /// `byte_range` must correspond to blocks already known to be local (typically
 /// because [`plan_schedule`] returned [`SchedulePlan::Local`] for it, or
 /// [`complete_remote_read`] just fetched them).
-unsafe fn read_local<R, T>(
+unsafe fn read_local<R>(
     file: &DiskCache<R>,
-    range: ReadRange,
+    range: Range<u64>,
     is_sequential: bool,
-) -> universal_io::Result<&[T]>
+) -> universal_io::Result<&[u8]>
 where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<u8, Range<u32>>: Send,
-    T: bytemuck::Pod,
+    R::OwnedReadPipeline<Range<u32>>: Send,
 {
-    if range.length == 0 {
+    if range.is_empty() {
         return Ok(&[]);
     }
     let local = file.local_state()?;
     if is_sequential {
-        unsafe { local.read_mmap_bytes::<Sequential, T>(range) }
+        unsafe { local.read_mmap_bytes::<Sequential>(range) }
     } else {
-        unsafe { local.read_mmap_bytes::<Random, T>(range) }
+        unsafe { local.read_mmap_bytes::<Random>(range) }
     }
 }
 
@@ -117,45 +109,42 @@ where
 ///
 /// # Safety
 /// `blocks_range` and `read_range` must correspond to the `bytes` section of the mmap.
-unsafe fn commit_and_read<'a, R, T>(
+unsafe fn commit_and_read<'a, R>(
     file: &'a DiskCache<R>,
     bytes: &[u8],
     blocks_range: Range<u32>,
-    read_range: ReadRange,
-) -> universal_io::Result<&'a [T]>
+    read_range: Range<u64>,
+) -> universal_io::Result<&'a [u8]>
 where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<u8, Range<u32>>: Send,
-    T: bytemuck::Pod,
+    R::OwnedReadPipeline<Range<u32>>: Send,
 {
     let local = file.local_state()?;
     unsafe {
         local.write_mmap_bytes(bytes, blocks_range);
-        local.read_mmap_bytes::<Random, T>(read_range)
+        local.read_mmap_bytes::<Random>(read_range)
     }
 }
 
 type BorrowedRemotePipeline<'file, R, U> =
-    <R as UniversalRead>::BorrowedReadPipeline<'file, u8, RemoteMeta<&'file DiskCache<R>, U>>;
+    <R as UniversalRead>::BorrowedReadPipeline<'file, RemoteMeta<&'file DiskCache<R>, U>>;
 
-pub struct DiskCachePipeline<'file, R, T, U>
+pub struct DiskCachePipeline<'file, R, U>
 where
     R: UniversalRead,
-    T: bytemuck::Pod,
     U: UserData,
 {
     /// Pipeline for queuing remote reads.
     remote_pipeline: OnceCell<BorrowedRemotePipeline<'file, R, U>>,
     /// A result of (user_data, bytes)
-    result: Option<(U, &'file [T])>,
+    result: Option<(U, &'file [u8])>,
 }
 
-impl<'file, R, T, U> DiskCachePipeline<'file, R, T, U>
+impl<'file, R, U> DiskCachePipeline<'file, R, U>
 where
     R: UniversalRead + 'file,
-    T: bytemuck::Pod,
     U: UserData,
 {
     fn get_or_init_remote_pipeline(
@@ -170,13 +159,13 @@ where
     }
 }
 
-impl<'file, R, T, U> BorrowedReadPipeline<'file, T, U> for DiskCachePipeline<'file, R, T, U>
+impl<'file, R, U> BorrowedReadPipeline<'file, U> for DiskCachePipeline<'file, R, U>
 where
     R: UniversalRead + Clone + 'file,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<u8, Range<u32>>: Send,
-    T: Item,
+    R::OwnedReadPipeline<Range<u32>>: Send,
+    U: UserData,
 {
     type File = DiskCache<R>;
 
@@ -199,15 +188,16 @@ where
         &mut self,
         user_data: U,
         file: &'file DiskCache<R>,
-        range: ReadRange,
+        range: Range<u64>,
+        align: usize,
     ) -> universal_io::Result<()> {
-        match pick_source::<P, T>(file.local_state()?, range)? {
+        match pick_source::<P>(file.local_state()?, range.clone())? {
             Source::Local {
                 range,
                 is_sequential,
             } => {
                 // SAFETY: Source::Local confirms the range is local (or empty).
-                let bytes = unsafe { read_local::<R, T>(file, range, is_sequential)? };
+                let bytes = unsafe { read_local::<R>(file, range, is_sequential)? };
                 self.result = Some((user_data, bytes));
             }
             Source::Remote {
@@ -221,15 +211,20 @@ where
                     user_data,
                 };
                 let remote_pipeline = self.get_or_init_remote_pipeline()?;
-                remote_pipeline.schedule::<P>(remote_meta, file.remote()?, blocks_byte_range)?;
+                remote_pipeline.schedule::<P>(
+                    remote_meta,
+                    file.remote()?,
+                    blocks_byte_range,
+                    align,
+                )?;
             }
         }
         Ok(())
     }
 
-    fn wait(&mut self) -> universal_io::Result<Option<(U, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> universal_io::Result<Option<(U, ACow<'file>)>> {
         if let Some((user_data, slice)) = self.result.take() {
-            return Ok(Some((user_data, Cow::Borrowed(slice))));
+            return Ok(Some((user_data, ACow::Borrowed(slice))));
         }
 
         let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
@@ -247,38 +242,35 @@ where
         } = remote_meta;
 
         // SAFETY: `blocks_range` and `read_range` match what was scheduled.
-        let items = unsafe { commit_and_read::<R, T>(file, &bytes, blocks_range, read_range)? };
-        Ok(Some((user_data, Cow::Borrowed(items))))
+        let items = unsafe { commit_and_read::<R>(file, &bytes, blocks_range, read_range)? };
+        Ok(Some((user_data, ACow::Borrowed(items))))
     }
 }
 
-pub struct OwnedDiskCachePipeline<R, T, U>
+pub struct OwnedDiskCachePipeline<R, U>
 where
     R: UniversalRead,
-    T: bytemuck::Pod,
     U: UserData,
 {
     /// The file being cached.
     file: DiskCache<R>,
     /// Pipeline for queuing remote reads.
-    remote_pipeline: OnceCell<R::OwnedReadPipeline<u8, RemoteMeta<(), U>>>,
+    remote_pipeline: OnceCell<R::OwnedReadPipeline<RemoteMeta<(), U>>>,
     /// A result ready to be read, contains (user_data, byte_range).
-    ready: Option<(U, ReadRange, bool)>,
-    _phantom: std::marker::PhantomData<T>,
+    ready: Option<(U, Range<u64>, bool)>,
 }
 
-impl<R, T, U> OwnedDiskCachePipeline<R, T, U>
+impl<R, U> OwnedDiskCachePipeline<R, U>
 where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<u8, Range<u32>>: Send,
-    T: bytemuck::Pod,
+    R::OwnedReadPipeline<Range<u32>>: Send,
     U: UserData,
 {
     fn get_or_init_remote_pipeline(
         &mut self,
-    ) -> universal_io::Result<&mut R::OwnedReadPipeline<u8, RemoteMeta<(), U>>> {
+    ) -> universal_io::Result<&mut R::OwnedReadPipeline<RemoteMeta<(), U>>> {
         if self.remote_pipeline.get().is_none() {
             let remote = R::OwnedReadPipeline::new(self.file.remote()?.clone())?;
             // We just observed the cell as empty and hold `&mut self`, so set cannot fail.
@@ -288,13 +280,13 @@ where
     }
 }
 
-impl<R, T, U> OwnedReadPipeline<T, U> for OwnedDiskCachePipeline<R, T, U>
+impl<R, U> OwnedReadPipeline<U> for OwnedDiskCachePipeline<R, U>
 where
     R: UniversalRead + Clone,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
-    R::OwnedReadPipeline<u8, Range<u32>>: Send,
-    T: bytemuck::Pod,
+    R::OwnedReadPipeline<Range<u32>>: Send,
+    U: UserData,
 {
     type File = DiskCache<R>;
 
@@ -303,7 +295,6 @@ where
             file,
             remote_pipeline: OnceCell::new(),
             ready: None,
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -315,11 +306,13 @@ where
                 .is_none_or(|remote| remote.can_schedule())
     }
 
-    fn schedule<P>(&mut self, user_data: U, range: ReadRange) -> universal_io::Result<()>
-    where
-        P: AccessPattern,
-    {
-        match pick_source::<P, T>(self.file.local_state()?, range)? {
+    fn schedule<P: AccessPattern>(
+        &mut self,
+        user_data: U,
+        range: Range<u64>,
+        align: usize,
+    ) -> universal_io::Result<()> {
+        match pick_source::<P>(self.file.local_state()?, range.clone())? {
             Source::Local {
                 range,
                 is_sequential,
@@ -337,7 +330,7 @@ where
                     user_data,
                 };
                 let remote_pipeline = self.get_or_init_remote_pipeline()?;
-                remote_pipeline.schedule::<P>(remote_meta, blocks_byte_range)?;
+                remote_pipeline.schedule::<P>(remote_meta, blocks_byte_range, align)?;
             }
         }
         Ok(())
@@ -345,21 +338,15 @@ where
 
     fn schedule_whole(&mut self, user_data: U) -> Result<()> {
         // todo: check if we have the entire file already local, if not, call schedule_whole on self.remote_pipeline
-        let length = self.file.len::<T>()?;
-        self.schedule::<Sequential>(
-            user_data,
-            ReadRange {
-                byte_offset: 0,
-                length,
-            },
-        )
+        let length = self.file.len::<u8>()?;
+        self.schedule::<Sequential>(user_data, 0..length, 1)
     }
 
-    fn wait(&mut self) -> universal_io::Result<Option<(U, Cow<'_, [T]>)>> {
+    fn wait(&mut self) -> universal_io::Result<Option<(U, ACow<'_>)>> {
         if let Some((user_data, range, is_sequential)) = self.ready.take() {
             // SAFETY: being in `pending` confirms the range is local (or empty).
-            let items = unsafe { read_local::<R, T>(&self.file, range, is_sequential)? };
-            return Ok(Some((user_data, Cow::Borrowed(items))));
+            let bytes = unsafe { read_local::<R>(&self.file, range, is_sequential)? };
+            return Ok(Some((user_data, ACow::Borrowed(bytes))));
         }
 
         let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
@@ -376,8 +363,7 @@ where
             user_data,
         } = remote_meta;
 
-        let items =
-            unsafe { commit_and_read::<R, T>(&self.file, &bytes, blocks_range, read_range)? };
-        Ok(Some((user_data, Cow::Borrowed(items))))
+        let items = unsafe { commit_and_read::<R>(&self.file, &bytes, blocks_range, read_range)? };
+        Ok(Some((user_data, ACow::Borrowed(items))))
     }
 }

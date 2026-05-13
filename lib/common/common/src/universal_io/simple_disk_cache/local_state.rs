@@ -11,7 +11,7 @@ use roaring::RoaringBitmap;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
 use crate::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, Result, UniversalIoError, UniversalRead,
+    MmapFile, MmapFs, OpenOptions, Populate, Result, UniversalIoError, UniversalRead,
     UniversalReadFs, UniversalWrite, mmap as mmap_file,
 };
 
@@ -128,12 +128,12 @@ impl LocalState {
     /// # Safety
     /// `byte_range` must have been populated first, caller must ensure `self.fetched` references the
     /// blocks for the byte range.
-    pub(super) unsafe fn read_mmap_bytes<P: AccessPattern, T: bytemuck::Pod>(
+    pub(super) unsafe fn read_mmap_bytes<P: AccessPattern>(
         &self,
-        range: ReadRange,
-    ) -> Result<&[T]> {
+        range: Range<u64>,
+    ) -> Result<&[u8]> {
         let mmap_bytes = self.mmap().as_bytes::<P>();
-        mmap_file::read::<T>(mmap_bytes, range)
+        mmap_file::read_bytes(mmap_bytes, range)
     }
 
     /// # Safety

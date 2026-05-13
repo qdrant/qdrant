@@ -1,10 +1,12 @@
 use std::borrow::Cow;
 use std::fmt;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use bytemuck::TransparentWrapper;
 
 use super::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
+use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
@@ -95,17 +97,15 @@ where
 {
     type Fs = ReadOnlyFs<S::Fs>;
 
-    type BorrowedReadPipeline<'file, T, U>
-        = BorrowedWrappedReadPipeline<'file, Self, S::BorrowedReadPipeline<'file, T, U>>
+    type BorrowedReadPipeline<'file, U>
+        = BorrowedWrappedReadPipeline<'file, Self, S::BorrowedReadPipeline<'file, U>>
     where
         Self: 'file,
-        T: Item,
         U: UserData;
 
-    type OwnedReadPipeline<T, U>
-        = OwnedWrappedReadPipeline<Self, S::OwnedReadPipeline<T, U>>
+    type OwnedReadPipeline<U>
+        = OwnedWrappedReadPipeline<Self, S::OwnedReadPipeline<U>>
     where
-        T: Item,
         U: UserData;
 
     #[inline]
@@ -116,6 +116,11 @@ where
     #[inline]
     fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         self.0.read::<P, T>(range)
+    }
+
+    #[inline]
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+        self.0.read_bytes::<P>(range, align)
     }
 
     #[inline]
