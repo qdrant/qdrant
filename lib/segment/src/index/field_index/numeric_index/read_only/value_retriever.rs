@@ -13,9 +13,9 @@ use common::universal_io::UniversalRead;
 use gridstore::Blob;
 use serde_json::{Number, Value};
 
-use super::ReadOnlyNumericIndex;
 use super::super::Encodable;
 use super::super::numeric_index_read::NumericIndexRead;
+use super::ReadOnlyNumericIndex;
 use crate::common::utils::MultiValue;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
