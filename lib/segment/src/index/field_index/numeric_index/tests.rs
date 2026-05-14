@@ -15,12 +15,14 @@ use tempfile::{Builder, TempDir};
 
 use super::immutable_numeric_index::ImmutableNumericIndex;
 use super::*;
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::json_path::JsonPath;
-use crate::types::FieldCondition;
+use crate::types::{FieldCondition, FloatPayloadType, Range, RangeInterface};
 
 /// Generous default size for the deleted-points bitslice used in tests.
 ///

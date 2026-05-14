@@ -14,7 +14,7 @@ mod read_ops;
 /// Selects across the two read-only storage backends and forwards each
 /// [`NumericIndexRead`] method to the active variant.
 ///
-/// [`NumericIndexRead`]: super::super::read_ops::NumericIndexRead
+/// [`NumericIndexRead`]: super::super::numeric_index_read::NumericIndexRead
 pub enum ReadOnlyNumericIndexInner<
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
     S: UniversalRead,

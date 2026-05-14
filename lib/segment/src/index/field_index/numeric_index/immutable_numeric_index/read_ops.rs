@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::Encodable;
-use super::super::read_ops::NumericIndexRead;
+use super::super::numeric_index_read::NumericIndexRead;
 use super::ImmutableNumericIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;

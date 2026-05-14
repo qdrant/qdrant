@@ -7,9 +7,10 @@ use common::types::PointOffsetType;
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
 
+use super::super::Encodable;
+use super::super::lifecycle::{HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use super::super::mmap_numeric_index::UniversalNumericIndex;
-use super::super::read_ops::NumericIndexRead;
-use super::super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use super::super::numeric_index_read::NumericIndexRead;
 use super::{InMemoryNumericIndex, MutableNumericIndex, default_gridstore_options};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};

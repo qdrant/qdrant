@@ -11,7 +11,7 @@ use common::universal_io::{ReadRange, UniversalRead};
 use itertools::Either;
 
 use super::super::Encodable;
-use super::super::read_ops::NumericIndexRead;
+use super::super::numeric_index_read::NumericIndexRead;
 use super::UniversalNumericIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;

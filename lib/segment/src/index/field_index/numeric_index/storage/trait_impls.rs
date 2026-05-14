@@ -23,7 +23,7 @@ use gridstore::Blob;
 use ordered_float::OrderedFloat;
 use uuid::Uuid;
 
-use super::super::read_ops::NumericIndexRead;
+use super::super::numeric_index_read::NumericIndexRead;
 use super::super::{Encodable, StreamRange};
 use super::NumericIndexInner;
 use crate::common::Flusher;

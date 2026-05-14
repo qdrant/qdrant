@@ -12,7 +12,7 @@ mod read_ops;
 /// Owns the same in-memory state ([`InMemoryNumericIndex`]) but is backed by
 /// [`GridstoreReader`] over generic [`UniversalRead`] instead of a writable
 /// [`gridstore::Gridstore`]. Implements
-/// [`super::super::read_ops::NumericIndexRead`] by forwarding to the
+/// [`super::super::numeric_index_read::NumericIndexRead`] by forwarding to the
 /// in-memory index; provides no mutation surface.
 ///
 /// Loading / lifecycle (constructor, `files`, `populate`, `clear_cache`, …)
