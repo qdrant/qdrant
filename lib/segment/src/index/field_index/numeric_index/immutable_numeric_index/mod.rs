@@ -19,14 +19,10 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + StoredValue + Defa
     pub(super) max_values_per_point: usize,
     pub(super) point_to_values: ImmutablePointToValues<T>,
     // Backing storage, source of state, persists deletions
-    pub(super) storage: Storage<T>,
+    pub(super) storage: Box<MmapNumericIndex<T>>,
     /// Snapshot of approximate RAM usage at construction time.
     /// Not refreshed on `remove_point`.
     pub(super) cached_ram_usage_bytes: usize,
-}
-
-pub(super) enum Storage<T: Encodable + Numericable + StoredValue + Default> {
-    Mmap(Box<MmapNumericIndex<T>>),
 }
 
 pub(super) struct NumericKeySortedVec<T: Encodable + Numericable> {

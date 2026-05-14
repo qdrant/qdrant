@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::Encodable;
-use super::{InMemoryNumericIndex, MutableNumericIndex, Storage};
+use super::{InMemoryNumericIndex, MutableNumericIndex};
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::payload_config::StorageType;
@@ -154,9 +154,7 @@ where
     }
 
     pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Gridstore(_) => StorageType::Gridstore,
-        }
+        StorageType::Gridstore
     }
 
     /// Approximate RAM usage in bytes for in-memory index structures.

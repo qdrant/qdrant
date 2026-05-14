@@ -4,7 +4,7 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::Encodable;
-use super::{ImmutableNumericIndex, Storage};
+use super::ImmutableNumericIndex;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
@@ -98,10 +98,8 @@ where
     }
 
     pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
+        StorageType::Mmap {
+            is_on_disk: self.storage.is_on_disk(),
         }
     }
 }

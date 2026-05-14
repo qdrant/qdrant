@@ -7,7 +7,7 @@ use gridstore::Blob;
 use super::super::Encodable;
 use super::super::mmap_numeric_index::MmapNumericIndex;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
-use super::{ImmutableNumericIndex, NumericKeySortedVec, Storage};
+use super::{ImmutableNumericIndex, NumericKeySortedVec};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
@@ -48,7 +48,7 @@ where
             points_count,
             max_values_per_point,
             point_to_values: ImmutablePointToValues::new(point_to_values),
-            storage: Storage::Mmap(Box::new(index)),
+            storage: Box::new(index),
             cached_ram_usage_bytes: 0,
         };
         result.cached_ram_usage_bytes = result.compute_ram_usage_bytes();
@@ -57,9 +57,7 @@ where
 
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Mmap(index) => index.wipe(),
-        }
+        self.storage.wipe()
     }
 
     /// Clear cache
@@ -67,30 +65,22 @@ where
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match &self.storage {
-            Storage::Mmap(index) => index.clear_cache(),
-        }
+        self.storage.clear_cache()
     }
 
     #[inline]
     pub(in super::super) fn files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Mmap(index) => index.files(),
-        }
+        self.storage.files()
     }
 
     #[inline]
     pub(in super::super) fn immutable_files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Mmap(index) => index.immutable_files(),
-        }
+        self.storage.immutable_files()
     }
 
     #[inline]
     pub(in super::super) fn flusher(&self) -> Flusher {
-        match &self.storage {
-            Storage::Mmap(index) => index.flusher(),
-        }
+        self.storage.flusher()
     }
 
     pub(in super::super) fn remove_point(&mut self, idx: PointOffsetType) {
@@ -101,11 +91,7 @@ where
                 Self::remove_from_map(&mut self.map, &mut self.histogram, &key);
 
                 // Update persisted storage
-                match &mut self.storage {
-                    Storage::Mmap(index) => {
-                        index.remove_point(idx);
-                    }
-                }
+                self.storage.remove_point(idx);
 
                 removed_count += 1;
             }

@@ -9,7 +9,7 @@ use gridstore::{Blob, Gridstore};
 
 use super::super::mmap_numeric_index::MmapNumericIndex;
 use super::super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
-use super::{InMemoryNumericIndex, MutableNumericIndex, Storage, default_gridstore_options};
+use super::{InMemoryNumericIndex, MutableNumericIndex, default_gridstore_options};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
@@ -184,7 +184,7 @@ where
             .unwrap();
 
         Ok(Some(Self {
-            storage: Storage::Gridstore(store),
+            storage: store,
             in_memory_index,
         }))
     }
@@ -195,24 +195,16 @@ where
 
     #[inline]
     pub(in super::super) fn clear(&mut self) -> OperationResult<()> {
-        match &mut self.storage {
-            Storage::Gridstore(store) => store.clear().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear mutable numeric index: {err}",
-                ))
-            }),
-        }
+        self.storage.clear().map_err(|err| {
+            OperationError::service_error(format!("Failed to clear mutable numeric index: {err}",))
+        })
     }
 
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Gridstore(store) => store.wipe().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to wipe mutable numeric index: {err}",
-                ))
-            }),
-        }
+        self.storage.wipe().map_err(|err| {
+            OperationError::service_error(format!("Failed to wipe mutable numeric index: {err}",))
+        })
     }
 
     /// Clear cache
@@ -220,30 +212,22 @@ where
     /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match &self.storage {
-            Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear mutable numeric index gridstore cache: {err}"
-                ))
-            }),
-        }
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear mutable numeric index gridstore cache: {err}"
+            ))
+        })
     }
 
     #[inline]
     pub(in super::super) fn files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Gridstore(store) => store.files(),
-        }
+        self.storage.files()
     }
 
     #[inline]
     pub(in super::super) fn flusher(&self) -> Flusher {
-        match &self.storage {
-            Storage::Gridstore(store) => {
-                let storage_flusher = store.flusher();
-                Box::new(move || storage_flusher().map_err(OperationError::from))
-            }
-        }
+        let storage_flusher = self.storage.flusher();
+        Box::new(move || storage_flusher().map_err(OperationError::from))
     }
 
     pub fn add_many_to_list(
@@ -253,21 +237,18 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Update persisted storage
-        match &mut self.storage {
+        if values.is_empty() {
             // We cannot store empty value, then delete instead
-            Storage::Gridstore(store) if values.is_empty() => {
-                store.delete_value(idx)?;
-            }
-            Storage::Gridstore(store) => {
-                let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
-                store
-                    .put_value(idx, &values, hw_counter_ref)
-                    .map_err(|err| {
-                        OperationError::service_error(format!(
-                            "failed to put value in mutable numeric index gridstore: {err}"
-                        ))
-                    })?;
-            }
+            self.storage.delete_value(idx)?;
+        } else {
+            let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+            self.storage
+                .put_value(idx, &values, hw_counter_ref)
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to put value in mutable numeric index gridstore: {err}"
+                    ))
+                })?;
         }
 
         self.in_memory_index.add_many_to_list(idx, values);
@@ -276,11 +257,7 @@ where
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
-        match &mut self.storage {
-            Storage::Gridstore(store) => {
-                store.delete_value(idx)?;
-            }
-        }
+        self.storage.delete_value(idx)?;
 
         self.in_memory_index.remove_point(idx);
         Ok(())

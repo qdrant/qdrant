@@ -29,15 +29,8 @@ where
     Vec<T>: Blob,
 {
     // Backing storage, source of state, persists deletions
-    pub(super) storage: Storage<T>,
+    pub(super) storage: Gridstore<Vec<T>>,
     pub(super) in_memory_index: InMemoryNumericIndex<T>,
-}
-
-pub(super) enum Storage<T: Encodable + Numericable>
-where
-    Vec<T>: Blob,
-{
-    Gridstore(Gridstore<Vec<T>>),
 }
 
 // Numeric Index with insertions and deletions without persistence
