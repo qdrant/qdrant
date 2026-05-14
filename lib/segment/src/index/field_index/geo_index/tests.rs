@@ -886,6 +886,65 @@ fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
     assert_eq!(index.points_values_count(), 0);
 }
 
+/// Regression: `remove_point` must decrement `values_per_hash` once per value,
+/// not once per unique geohash. When a point has duplicate geo values (same
+/// coordinates producing the same geohash), all increments from `add_many_geo_points`
+/// must be reversed on removal. Otherwise `values_per_hash` drifts upward permanently.
+#[test]
+fn test_values_per_hash_drift_on_duplicate_geo_removal() {
+    let (mut builder, _temp_dir, _db) = create_builder(IndexType::MutableGridstore);
+    let hw_counter = HardwareCounterCell::new();
+
+    // Point 0 has 3 identical geo values (same geohash produced 3 times).
+    let triple_duplicate = json!([
+        {"lon": BERLIN.lon, "lat": BERLIN.lat},
+        {"lon": BERLIN.lon, "lat": BERLIN.lat},
+        {"lon": BERLIN.lon, "lat": BERLIN.lat}
+    ]);
+    builder
+        .add_point(0, &[&triple_duplicate], &hw_counter)
+        .unwrap();
+
+    let mut index = builder.finalize().unwrap();
+
+    assert_eq!(index.points_count(), 1);
+    assert_eq!(index.points_values_count(), 3);
+
+    // After removal, all counters must return to zero.
+    index.remove_point(0).unwrap();
+
+    assert_eq!(index.points_count(), 0);
+    assert_eq!(index.points_values_count(), 0);
+
+    // The root geohash ("") values_of_hash must be 0 — any leftover means
+    // decrement_hash_value_counts was not called the correct number of times.
+    let root_hash = GeoHash::default();
+    let hw_counter = HardwareCounterCell::new();
+    let root_values = index.values_of_hash(root_hash, &hw_counter).unwrap();
+    assert_eq!(
+        root_values, 0,
+        "values_per_hash drifted: expected 0 after removing all points, got {root_values}"
+    );
+
+    // Also verify via cardinality estimation: with an empty index, any geo
+    // query must estimate zero matches.
+    let geo_radius = GeoRadius {
+        center: BERLIN,
+        radius: OrderedFloat(100.0),
+    };
+    let field_condition = condition_for_geo_radius("test", geo_radius);
+    let hw_counter = HardwareCounterCell::new();
+    let card = index
+        .estimate_cardinality(&field_condition, &hw_counter)
+        .unwrap();
+    let card = card.unwrap();
+    assert_eq!(
+        card.exp, 0,
+        "cardinality estimate should be 0 for empty index, got {}",
+        card.exp
+    );
+}
+
 /// Simulate the user's scenario: frequently adding and removing points
 /// with geo payloads.
 #[rstest]
