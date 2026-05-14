@@ -71,7 +71,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead>(
         writeable: false,
         need_sequential: true,
         disk_parallel: None,
-        populate: Populate::Auto,
+        populate: Populate::No,
         advice: None,
         prevent_caching: Some(false),
     };

@@ -123,7 +123,7 @@ where
                 writeable: true,
                 need_sequential: false,
                 disk_parallel: None,
-                populate: Populate::from(populate.unwrap_or_default()),
+                populate: populate.map(Populate::from).unwrap_or_default(),
                 advice: None,
                 prevent_caching: None,
             },
