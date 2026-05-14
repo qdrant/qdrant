@@ -12,13 +12,17 @@
 //! - [`statistics`]: histogram-based cardinality and point-count helpers.
 //! - [`trait_impls`]: [`PayloadFieldIndex`], [`PayloadFieldIndexRead`],
 //!   and [`StreamRange`] implementations.
+//! - [`read_only`]: [`ReadOnlyNumericIndexInner`] — the read-only
+//!   counterpart enum over the appendable and immutable backends.
 //!
 //! [`NumericIndex`]: super::NumericIndex
 //! [`PayloadFieldIndex`]: crate::index::field_index::PayloadFieldIndex
 //! [`PayloadFieldIndexRead`]: crate::index::field_index::PayloadFieldIndexRead
 //! [`StreamRange`]: super::StreamRange
+//! [`ReadOnlyNumericIndexInner`]: read_only::ReadOnlyNumericIndexInner
 
 mod lifecycle;
+pub mod read_only;
 mod read_ops;
 mod statistics;
 mod trait_impls;

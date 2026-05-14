@@ -13,6 +13,7 @@ pub use index::{NumericIndex, NumericIndexIntoInnerValue};
 pub use numeric_field_index::{NumericFieldIndex, NumericFieldIndexRead};
 pub use read_ops::NumericIndexRead;
 pub use storage::NumericIndexInner;
+pub use storage::read_only::ReadOnlyNumericIndexInner;
 
 #[cfg(test)]
 mod tests;
