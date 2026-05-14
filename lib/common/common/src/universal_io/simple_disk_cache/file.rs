@@ -57,8 +57,6 @@ enum InitSource {
     FromScratch,
     /// Wait for the prefill thread to deliver a fully-populated [`LocalState`].
     FromPrefiller(oneshot::Receiver<LocalState>),
-    /// Sentinel left in place after init has been consumed.
-    Consumed,
 }
 
 #[derive(Debug)]
@@ -272,8 +270,9 @@ impl<R: UniversalRead> DiskCache<R> {
         };
 
         let opened = R::open(&self.remote_path, remote_options)?;
-        // Race accepted: if another thread set this concurrently, our handle
-        // is dropped. `R::open` is idempotent for immutable files.
+        // If another thread set this concurrently, let our R be dropped.
+        //
+        // OnceLock::get_or_try_init would be better but it is not available on stable
         let _ = self.remote.set(opened);
         Ok(self.remote.get().expect("just set or already set"))
     }
@@ -290,30 +289,26 @@ impl<R: UniversalRead> DiskCache<R> {
             return Ok(state);
         }
 
-        let state = match &*guard {
+        let state = match std::mem::replace(&mut *guard, InitSource::FromScratch) {
             InitSource::FromScratch => self.init_local_state_from_scratch()?,
-            InitSource::FromPrefiller(_) => {
-                let InitSource::FromPrefiller(rx) =
-                    std::mem::replace(&mut *guard, InitSource::Consumed)
-                else {
-                    unreachable!("just matched FromPrefiller")
-                };
-                let state = rx.blocking_recv().expect(
-                    "todo: we might want to fall back to FromScratch if prefiller channel was closed",
-                );
-                state.mark_fully_populated();
-                state
-            }
-            InitSource::Consumed => {
-                unreachable!("InitSource::Consumed without `local` being set")
+            InitSource::FromPrefiller(recv) => {
+                match recv.blocking_recv() {
+                    Ok(state) => {
+                        state.mark_fully_populated();
+                        state
+                    }
+                    Err(_err) => {
+                        // Channel was closed, try to init from scratch
+                        self.init_local_state_from_scratch()?
+                    }
+                }
             }
         };
 
-        if self.local.set(state).is_err() {
-            unreachable!("OnceLock::set must succeed while holding init_lock");
-        }
-        // Mark the init source as consumed; for FromScratch we only get here on success.
-        *guard = InitSource::Consumed;
+        self.local
+            .set(state)
+            .expect("OnceLock::set must succeed while holding init_lock");
+
         Ok(self.local.get().expect("just initialized"))
     }
 
