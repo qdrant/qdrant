@@ -7,7 +7,7 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap::{MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, TypedStorage};
+use common::universal_io::{MmapFile, OpenOptions, Populate, TypedStorage};
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -118,7 +118,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             writeable: false,
             need_sequential: false,
             disk_parallel: None,
-            populate: Some(do_populate),
+            populate: Populate::from(do_populate),
             advice: None,
             prevent_caching: None,
         };

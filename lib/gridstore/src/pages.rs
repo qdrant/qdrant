@@ -6,7 +6,7 @@ use ahash::{AHashMap, HashSet};
 use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::universal_io::{
-    FileIndex, Flusher, OpenOptions, ReadRange, UniversalRead, UniversalWrite,
+    FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalWrite,
 };
 use itertools::Either;
 
@@ -60,7 +60,7 @@ impl<S: UniversalRead> Pages<S> {
             writeable: true,
             need_sequential: true,
             disk_parallel: None,
-            populate: Some(false),
+            populate: Populate::No,
             advice: None,
             prevent_caching: None,
         };

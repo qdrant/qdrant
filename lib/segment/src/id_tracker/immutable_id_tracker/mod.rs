@@ -16,7 +16,9 @@ use common::bitvec::{BitSlice, BitVec};
 use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, SliceBufferedUpdateWrapper, TypedStorage};
+use common::universal_io::{
+    MmapFile, OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage,
+};
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;
@@ -79,7 +81,7 @@ impl ImmutableIdTracker {
         let deleted_storage = MmapBitSlice::open(
             deleted_path(segment_path),
             OpenOptions {
-                populate: Some(true),
+                populate: Populate::Blocking,
                 ..OpenOptions::default()
             },
         )?;
@@ -95,7 +97,7 @@ impl ImmutableIdTracker {
                 writeable: true,
                 need_sequential: false,
                 disk_parallel: None,
-                populate: Some(true),
+                populate: Populate::Blocking,
                 advice: None,
                 prevent_caching: None,
             },
@@ -172,7 +174,7 @@ impl ImmutableIdTracker {
                 writeable: true,
                 need_sequential: false,
                 disk_parallel: None,
-                populate: Some(false),
+                populate: Populate::No,
                 advice: None,
                 prevent_caching: None,
             },

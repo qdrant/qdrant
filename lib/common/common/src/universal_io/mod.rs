@@ -31,6 +31,29 @@ pub enum UniversalKind {
     DiskCache,
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub enum Populate {
+    /// Let backend choose
+    #[default]
+    Auto,
+    /// Do not populate
+    No,
+    /// Populate on foreground
+    Blocking,
+    /// Populate, but prefer to do it in the background
+    PreferBackground,
+}
+
+impl From<bool> for Populate {
+    fn from(populate: bool) -> Self {
+        if populate {
+            Populate::Blocking
+        } else {
+            Populate::No
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
     pub writeable: bool,
@@ -39,7 +62,7 @@ pub struct OpenOptions {
     /// If `None`, then use implementation-specific default.
     pub disk_parallel: Option<usize>,
     /// Populate RAM cache on open, if applicable for this implementation.
-    pub populate: Option<bool>,
+    pub populate: Populate,
     /// Use specific mmap advice.
     pub advice: Option<AdviceSetting>,
     /// Whether to try to prevent caching for reads.
@@ -52,7 +75,7 @@ impl Default for OpenOptions {
             writeable: true,
             need_sequential: true,
             disk_parallel: None,
-            populate: None,
+            populate: Populate::Auto,
             advice: None,
             prevent_caching: None,
         }
@@ -132,7 +155,7 @@ where
         writeable: false,
         need_sequential: false,
         disk_parallel: None,
-        populate: Some(false),
+        populate: Populate::No,
         advice: Some(AdviceSetting::Advice(Advice::Sequential)),
         prevent_caching: Some(false),
     };
