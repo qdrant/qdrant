@@ -177,7 +177,6 @@ impl MutableFullTextIndex {
             .unwrap()
             .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap())
     }
-
 }
 
 impl ValueIndexer for MutableFullTextIndex {
