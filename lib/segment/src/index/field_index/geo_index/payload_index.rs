@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::path::PathBuf;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -6,16 +5,14 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::{GEO_QUERY_MAX_REGION, GeoMapIndex};
+use super::GeoMapIndex;
+use super::read_ops::{self, GeoMapIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
-use crate::index::field_index::geo_hash::{
-    circle_hashes, geo_hash_to_box, polygon_hashes, polygon_hashes_estimation, rectangle_hashes,
-};
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
-    PrimaryCondition, ValueIndexer,
+    ValueIndexer,
 };
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
@@ -74,7 +71,7 @@ impl GeoMapIndex {
         _hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            self.get_values(point_id)
+            GeoMapIndexRead::get_values(self, point_id)
                 .into_iter()
                 .flatten()
                 .filter_map(|v| serde_json::to_value(v).ok())
@@ -101,19 +98,11 @@ impl PayloadFieldIndex for GeoMapIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        match &self {
-            GeoMapIndex::Mutable(index) => index.files(),
-            GeoMapIndex::Immutable(index) => index.files(),
-            GeoMapIndex::Storage(index) => index.files(),
-        }
+        GeoMapIndexRead::files(self)
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        match &self {
-            GeoMapIndex::Mutable(_) => vec![],
-            GeoMapIndex::Immutable(index) => index.immutable_files(),
-            GeoMapIndex::Storage(index) => index.immutable_files(),
-        }
+        GeoMapIndexRead::immutable_files(self)
     }
 }
 
@@ -127,43 +116,7 @@ impl PayloadFieldIndexRead for GeoMapIndex {
         condition: &FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        if let Some(geo_bounding_box) = &condition.geo_bounding_box {
-            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
-            let geo_condition_copy = *geo_bounding_box;
-            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
-                move |&point| {
-                    self.check_values_any(point, hw_counter, |geo_point| {
-                        geo_condition_copy.check_point(geo_point)
-                    })
-                },
-            ))));
-        }
-
-        if let Some(geo_radius) = &condition.geo_radius {
-            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
-            let geo_condition_copy = *geo_radius;
-            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
-                move |&point| {
-                    self.check_values_any(point, hw_counter, |geo_point| {
-                        geo_condition_copy.check_point(geo_point)
-                    })
-                },
-            ))));
-        }
-
-        if let Some(geo_polygon) = &condition.geo_polygon {
-            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION)?;
-            let geo_condition_copy = geo_polygon.convert();
-            return Ok(Some(Box::new(self.iterator(geo_hashes)?.filter(
-                move |&point| {
-                    self.check_values_any(point, hw_counter, |geo_point| {
-                        geo_condition_copy.check_point(geo_point)
-                    })
-                },
-            ))));
-        }
-
-        Ok(None)
+        read_ops::filter(self, condition, hw_counter)
     }
 
     fn estimate_cardinality(
@@ -171,54 +124,7 @@ impl PayloadFieldIndexRead for GeoMapIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        if let Some(geo_bounding_box) = &condition.geo_bounding_box {
-            let Some(geo_hashes) = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()
-            else {
-                return Ok(None);
-            };
-            let mut estimation = self.match_cardinality(&geo_hashes, hw_counter)?;
-            estimation
-                .primary_clauses
-                .push(PrimaryCondition::Condition(Box::new(condition.clone())));
-            return Ok(Some(estimation));
-        }
-
-        if let Some(geo_radius) = &condition.geo_radius {
-            let Some(geo_hashes) = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok() else {
-                return Ok(None);
-            };
-            let mut estimation = self.match_cardinality(&geo_hashes, hw_counter)?;
-            estimation
-                .primary_clauses
-                .push(PrimaryCondition::Condition(Box::new(condition.clone())));
-            return Ok(Some(estimation));
-        }
-
-        if let Some(geo_polygon) = &condition.geo_polygon {
-            let (exterior_hashes, interior_hashes) =
-                polygon_hashes_estimation(geo_polygon, GEO_QUERY_MAX_REGION);
-            let mut exterior_estimation = self.match_cardinality(&exterior_hashes, hw_counter)?;
-
-            for interior in &interior_hashes {
-                let interior_estimation = self.match_cardinality(interior, hw_counter)?;
-                exterior_estimation.min = max(0, exterior_estimation.min - interior_estimation.max);
-                exterior_estimation.max = max(
-                    exterior_estimation.min,
-                    exterior_estimation.max - interior_estimation.min,
-                );
-                exterior_estimation.exp = max(
-                    exterior_estimation.exp - interior_estimation.exp,
-                    exterior_estimation.min,
-                );
-            }
-
-            exterior_estimation
-                .primary_clauses
-                .push(PrimaryCondition::Condition(Box::new(condition.clone())));
-            return Ok(Some(exterior_estimation));
-        }
-
-        Ok(None)
+        read_ops::estimate_cardinality(self, condition, hw_counter)
     }
 
     fn for_each_payload_block(
@@ -227,16 +133,7 @@ impl PayloadFieldIndexRead for GeoMapIndex {
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.large_hashes(threshold)?
-            .try_for_each(|(geo_hash, size)| {
-                f(PayloadBlockCondition {
-                    condition: FieldCondition::new_geo_bounding_box(
-                        key.clone(),
-                        geo_hash_to_box(geo_hash),
-                    ),
-                    cardinality: size,
-                })
-            })
+        read_ops::for_each_payload_block(self, threshold, key, f)
     }
 
     fn condition_checker<'a>(
@@ -244,40 +141,6 @@ impl PayloadFieldIndexRead for GeoMapIndex {
         condition: &FieldCondition,
         hw_acc: HwMeasurementAcc,
     ) -> Option<ConditionCheckerFn<'a>> {
-        let FieldCondition {
-            key: _,
-            r#match: _,
-            range: _,
-            geo_radius,
-            geo_bounding_box,
-            geo_polygon,
-            values_count: _,
-            is_empty: _,
-            is_null: _,
-        } = condition;
-
-        let hw_counter = hw_acc.get_counter_cell();
-
-        if let Some(geo_radius) = *geo_radius {
-            return Some(Box::new(move |point_id: PointOffsetType| {
-                self.check_values_any(point_id, &hw_counter, |value| geo_radius.check_point(value))
-            }));
-        }
-        if let Some(geo_bounding_box) = *geo_bounding_box {
-            return Some(Box::new(move |point_id: PointOffsetType| {
-                self.check_values_any(point_id, &hw_counter, |value| {
-                    geo_bounding_box.check_point(value)
-                })
-            }));
-        }
-        if let Some(geo_polygon) = geo_polygon.as_ref() {
-            let polygon_wrapper = geo_polygon.convert();
-            return Some(Box::new(move |point_id: PointOffsetType| {
-                self.check_values_any(point_id, &hw_counter, |value| {
-                    polygon_wrapper.check_point(value)
-                })
-            }));
-        }
-        None
+        read_ops::condition_checker(self, condition, hw_acc)
     }
 }
