@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use common::persisted_hashmap::{MmapHashMap, UniversalHashMap, serialize_hashmap};
-use common::universal_io::{IoUringFile, OpenOptions, UniversalIoError};
+use common::universal_io::{OpenOptions, UniversalIoError};
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
 use rand::rngs::StdRng;
@@ -11,6 +11,11 @@ use rand::{RngExt, SeedableRng};
 #[cfg(target_os = "linux")]
 const LIMIT_MEMORY_ENV: &str = "LIMIT_MEMORY";
 const LIMIT_MEMORY_ENV_INTERNAL: &str = "_LIMIT_MEMORY_INTERNAL";
+
+type Backend = cfg_select! {
+    target_os = "linux" => { common::universal_io::IoUringFile }
+    _ => { common::universal_io::MmapFile }
+};
 
 fn bench_mmap_hashmap(c: &mut Criterion) {
     #[cfg(target_os = "linux")]
@@ -46,7 +51,7 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
     let path = make_serialized_hashmap(1_000_000);
 
     let mmap = MmapHashMap::<str, u32>::open(&path, !low_mem).unwrap();
-    let uio = UniversalHashMap::<str, u32, IoUringFile>::open(
+    let uio = UniversalHashMap::<str, u32, Backend>::open(
         &path,
         OpenOptions {
             writeable: false,
