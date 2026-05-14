@@ -18,12 +18,8 @@ pub(super) const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
 pub struct MutableFullTextIndex {
     pub(super) inverted_index: MutableInvertedIndex,
     pub(super) config: TextIndexParams,
-    pub(super) storage: Storage,
+    pub(super) storage: Gridstore<Vec<u8>>,
     pub(super) tokenizer: Tokenizer,
-}
-
-pub(super) enum Storage {
-    Gridstore(Gridstore<Vec<u8>>),
 }
 
 #[cfg(test)]

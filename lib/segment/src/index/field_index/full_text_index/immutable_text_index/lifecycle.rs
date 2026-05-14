@@ -2,19 +2,19 @@ use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 
+use common::universal_io::MmapFile;
+
 use super::super::inverted_index::InvertedIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::mmap_text_index::MmapFullTextIndex;
-use super::{ImmutableFullTextIndex, Storage};
+use super::ImmutableFullTextIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::StorageType;
 
 impl ImmutableFullTextIndex {
     /// Open and load immutable full text index from mmap storage
-    pub fn open_mmap(
-        index: MmapFullTextIndex<common::universal_io::MmapFile>,
-    ) -> OperationResult<Self> {
+    pub fn open_mmap(index: MmapFullTextIndex<MmapFile>) -> OperationResult<Self> {
         let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
 
         // Index is now loaded into memory, clear cache of backing mmap storage
@@ -24,7 +24,7 @@ impl ImmutableFullTextIndex {
 
         let mut result = Self {
             inverted_index,
-            storage: Storage::Mmap(Box::new(index)),
+            storage: Box::new(index),
             cached_ram_usage_bytes: 0,
         };
         result.cached_ram_usage_bytes = result.inverted_index.ram_usage_bytes();
@@ -36,16 +36,12 @@ impl ImmutableFullTextIndex {
     /// sync; not persisted — id-tracker re-supplies on reload).
     pub fn remove_point(&mut self, id: PointOffsetType) {
         if self.inverted_index.remove(id) {
-            match self.storage {
-                Storage::Mmap(ref mut index) => index.remove_point(id),
-            }
+            self.storage.remove_point(id);
         }
     }
 
     pub fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Mmap(index) => index.wipe(),
-        }
+        self.storage.wipe()
     }
 
     /// Clear cache
@@ -53,38 +49,28 @@ impl ImmutableFullTextIndex {
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match &self.storage {
-            Storage::Mmap(index) => index.clear_cache().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear immutable full text index gridstore cache: {err}"
-                ))
-            }),
-        }
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear immutable full text index gridstore cache: {err}"
+            ))
+        })
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        match self.storage {
-            Storage::Mmap(ref index) => index.files(),
-        }
+        self.storage.files()
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        match self.storage {
-            Storage::Mmap(ref index) => index.immutable_files(),
-        }
+        self.storage.immutable_files()
     }
 
     pub fn flusher(&self) -> Flusher {
-        match self.storage {
-            Storage::Mmap(ref index) => index.flusher(),
-        }
+        self.storage.flusher()
     }
 
     pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
+        StorageType::Mmap {
+            is_on_disk: self.storage.is_on_disk(),
         }
     }
 

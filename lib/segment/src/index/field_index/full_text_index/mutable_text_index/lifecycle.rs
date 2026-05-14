@@ -10,7 +10,7 @@ use super::super::inverted_index::mutable_inverted_index_builder::MutableInverte
 use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
 use super::super::text_index::FullTextIndex;
 use super::super::tokenizers::Tokenizer;
-use super::{GRIDSTORE_OPTIONS, MutableFullTextIndex, Storage};
+use super::{GRIDSTORE_OPTIONS, MutableFullTextIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
@@ -71,31 +71,27 @@ impl MutableFullTextIndex {
         Ok(Some(Self {
             inverted_index: builder.build(),
             config,
-            storage: Storage::Gridstore(store),
+            storage: store,
             tokenizer,
         }))
     }
 
     #[inline]
     pub(in super::super) fn init(&mut self) -> OperationResult<()> {
-        match &mut self.storage {
-            Storage::Gridstore(store) => store.clear().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear mutable full text index: {err}",
-                ))
-            }),
-        }
+        self.storage.clear().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear mutable full text index: {err}",
+            ))
+        })
     }
 
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Gridstore(store) => store.wipe().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to wipe mutable full text index: {err}",
-                ))
-            }),
-        }
+        self.storage.wipe().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to wipe mutable full text index: {err}",
+            ))
+        })
     }
 
     /// Clear cache
@@ -103,30 +99,22 @@ impl MutableFullTextIndex {
     /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match &self.storage {
-            Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear mutable full text index gridstore cache: {err}"
-                ))
-            }),
-        }
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear mutable full text index gridstore cache: {err}"
+            ))
+        })
     }
 
     #[inline]
     pub(in super::super) fn files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Gridstore(store) => store.files(),
-        }
+        self.storage.files()
     }
 
     #[inline]
     pub(in super::super) fn flusher(&self) -> Flusher {
-        match &self.storage {
-            Storage::Gridstore(store) => {
-                let storage_flusher = store.flusher();
-                Box::new(move || storage_flusher().map_err(OperationError::from))
-            }
-        }
+        let storage_flusher = self.storage.flusher();
+        Box::new(move || storage_flusher().map_err(OperationError::from))
     }
 
     pub fn add_many(
@@ -176,33 +164,25 @@ impl MutableFullTextIndex {
         let db_document = FullTextIndex::serialize_document(tokens_to_store)?;
 
         // Update persisted storage
-        match &mut self.storage {
-            Storage::Gridstore(store) => {
-                store
-                    .put_value(
-                        idx,
-                        &db_document,
-                        hw_counter.ref_payload_index_io_write_counter(),
-                    )
-                    .map_err(|err| {
-                        OperationError::service_error(format!(
-                            "failed to put value in mutable full text index gridstore: {err}"
-                        ))
-                    })?;
-            }
-        }
+        self.storage
+            .put_value(
+                idx,
+                &db_document,
+                hw_counter.ref_payload_index_io_write_counter(),
+            )
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to put value in mutable full text index gridstore: {err}"
+                ))
+            })?;
 
         Ok(())
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
-        match &mut self.storage {
-            Storage::Gridstore(store) => {
-                if self.inverted_index.remove(id) {
-                    store.delete_value(id)?;
-                }
-            }
+        if self.inverted_index.remove(id) {
+            self.storage.delete_value(id)?;
         }
 
         Ok(())
@@ -212,18 +192,14 @@ impl MutableFullTextIndex {
     #[cfg(test)]
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
         use common::generic_consts::Random;
-        match &self.storage {
-            Storage::Gridstore(gridstore) => gridstore
-                .get_value::<Random>(idx, &HardwareCounterCell::disposable())
-                .unwrap()
-                .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
-        }
+        self.storage
+            .get_value::<Random>(idx, &HardwareCounterCell::disposable())
+            .unwrap()
+            .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap())
     }
 
     pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Gridstore(_) => StorageType::Gridstore,
-        }
+        StorageType::Gridstore
     }
 
     /// Approximate RAM usage in bytes for in-memory structures.

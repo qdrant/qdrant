@@ -5,16 +5,14 @@ use common::universal_io::UserData;
 use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
 use super::super::read_ops::FullTextIndexRead;
 use super::super::tokenizers::Tokenizer;
-use super::{ImmutableFullTextIndex, Storage};
+use super::ImmutableFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl FullTextIndexRead for ImmutableFullTextIndex {
     fn tokenizer(&self) -> &Tokenizer {
-        match &self.storage {
-            Storage::Mmap(mmap_index) => &mmap_index.tokenizer,
-        }
+        &self.storage.tokenizer
     }
 
     fn telemetry_index_type(&self) -> &'static str {
