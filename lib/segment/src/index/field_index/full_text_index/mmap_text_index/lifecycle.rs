@@ -1,28 +1,24 @@
 use std::path::PathBuf;
 
-use common::bitvec::{BitSlice, BitVec};
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalRead};
+use common::universal_io::UniversalRead;
 use fs_err as fs;
 use serde_json::Value;
 
-use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
-use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
-use super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
-use super::text_index::FullTextIndex;
-use super::tokenizers::Tokenizer;
+use super::super::immutable_text_index::ImmutableFullTextIndex;
+use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
+use super::super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
+use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
+use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
+use super::super::text_index::FullTextIndex;
+use super::super::tokenizers::Tokenizer;
+use super::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
-
-pub struct MmapFullTextIndex<S: UniversalRead = MmapFile> {
-    pub(super) inverted_index: MmapInvertedIndex<S>,
-    pub(super) tokenizer: Tokenizer,
-}
 
 impl<S: UniversalRead> MmapFullTextIndex<S> {
     pub fn open(
@@ -96,15 +92,6 @@ impl<S: UniversalRead> MmapFullTextIndex<S> {
         self.inverted_index.clear_cache()?;
         Ok(())
     }
-}
-
-pub struct FullTextMmapIndexBuilder {
-    path: PathBuf,
-    mutable_index: MutableInvertedIndex,
-    config: TextIndexParams,
-    is_on_disk: bool,
-    tokenizer: Tokenizer,
-    deleted_points: BitVec,
 }
 
 impl FullTextMmapIndexBuilder {

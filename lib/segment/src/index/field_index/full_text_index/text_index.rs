@@ -9,8 +9,8 @@ use common::universal_io::UserData;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::immutable_text_index::{ImmutableFullTextIndex, Storage};
-use super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
+use super::immutable_text_index::ImmutableFullTextIndex;
+use super::inverted_index::{ParsedQuery, TokenId};
 use super::mmap_text_index::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
 use super::read_ops::{self, FullTextIndexRead};
@@ -288,43 +288,41 @@ impl PayloadFieldIndex for FullTextIndex {
 impl FullTextIndexRead for FullTextIndex {
     fn tokenizer(&self) -> &Tokenizer {
         match self {
-            Self::Mutable(index) => &index.tokenizer,
-            Self::Immutable(index) => match &index.storage {
-                Storage::Mmap(mmap_index) => &mmap_index.tokenizer,
-            },
-            Self::Mmap(index) => &index.tokenizer,
+            Self::Mutable(index) => index.tokenizer(),
+            Self::Immutable(index) => index.tokenizer(),
+            Self::Mmap(index) => index.tokenizer(),
         }
     }
 
     fn telemetry_index_type(&self) -> &'static str {
         match self {
-            FullTextIndex::Mutable(_) => "mutable_full_text",
-            FullTextIndex::Immutable(_) => "immutable_full_text",
-            FullTextIndex::Mmap(_) => "mmap_full_text",
+            Self::Mutable(index) => index.telemetry_index_type(),
+            Self::Immutable(index) => index.telemetry_index_type(),
+            Self::Mmap(index) => index.telemetry_index_type(),
         }
     }
 
     fn points_count(&self) -> usize {
         match self {
-            Self::Mutable(index) => index.inverted_index.points_count(),
-            Self::Immutable(index) => index.inverted_index.points_count(),
-            Self::Mmap(index) => index.inverted_index.points_count(),
+            Self::Mutable(index) => index.points_count(),
+            Self::Immutable(index) => index.points_count(),
+            Self::Mmap(index) => index.points_count(),
         }
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         match self {
-            Self::Mutable(index) => index.inverted_index.values_count(point_id),
-            Self::Immutable(index) => index.inverted_index.values_count(point_id),
-            Self::Mmap(index) => index.inverted_index.values_count(point_id),
+            Self::Mutable(index) => index.values_count(point_id),
+            Self::Immutable(index) => index.values_count(point_id),
+            Self::Mmap(index) => index.values_count(point_id),
         }
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
-            Self::Mutable(index) => index.inverted_index.values_is_empty(point_id),
-            Self::Immutable(index) => index.inverted_index.values_is_empty(point_id),
-            Self::Mmap(index) => index.inverted_index.values_is_empty(point_id),
+            Self::Mutable(index) => index.values_is_empty(point_id),
+            Self::Immutable(index) => index.values_is_empty(point_id),
+            Self::Mmap(index) => index.values_is_empty(point_id),
         }
     }
 
@@ -335,9 +333,9 @@ impl FullTextIndexRead for FullTextIndex {
         f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
-            Self::Immutable(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
-            Self::Mmap(index) => index.inverted_index.for_each_token_id(iter, hw_counter, f),
+            Self::Mutable(index) => index.for_each_token_id(iter, hw_counter, f),
+            Self::Immutable(index) => index.for_each_token_id(iter, hw_counter, f),
+            Self::Mmap(index) => index.for_each_token_id(iter, hw_counter, f),
         }
     }
 
@@ -347,9 +345,9 @@ impl FullTextIndexRead for FullTextIndex {
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match self {
-            Self::Mutable(index) => index.inverted_index.filter(query, hw_counter),
-            Self::Immutable(index) => index.inverted_index.filter(query, hw_counter),
-            Self::Mmap(index) => index.inverted_index.filter(query, hw_counter),
+            Self::Mutable(index) => index.filter_query(query, hw_counter),
+            Self::Immutable(index) => index.filter_query(query, hw_counter),
+            Self::Mmap(index) => index.filter_query(query, hw_counter),
         }
     }
 
@@ -360,23 +358,19 @@ impl FullTextIndexRead for FullTextIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         match self {
-            Self::Mutable(index) => index
-                .inverted_index
-                .estimate_cardinality(query, condition, hw_counter),
-            Self::Immutable(index) => index
-                .inverted_index
-                .estimate_cardinality(query, condition, hw_counter),
-            Self::Mmap(index) => index
-                .inverted_index
-                .estimate_cardinality(query, condition, hw_counter),
+            Self::Mutable(index) => index.estimate_query_cardinality(query, condition, hw_counter),
+            Self::Immutable(index) => {
+                index.estimate_query_cardinality(query, condition, hw_counter)
+            }
+            Self::Mmap(index) => index.estimate_query_cardinality(query, condition, hw_counter),
         }
     }
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
         match self {
-            Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
-            Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
-            Self::Mmap(index) => index.inverted_index.check_match(query, point_id),
+            Self::Mutable(index) => index.check_match(query, point_id),
+            Self::Immutable(index) => index.check_match(query, point_id),
+            Self::Mmap(index) => index.check_match(query, point_id),
         }
     }
 
@@ -387,15 +381,9 @@ impl FullTextIndexRead for FullTextIndex {
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index
-                .inverted_index
-                .for_each_payload_block(threshold, key, f),
-            Self::Immutable(index) => index
-                .inverted_index
-                .for_each_payload_block(threshold, key, f),
-            Self::Mmap(index) => index
-                .inverted_index
-                .for_each_payload_block(threshold, key, f),
+            Self::Mutable(index) => index.for_each_payload_block_inner(threshold, key, f),
+            Self::Immutable(index) => index.for_each_payload_block_inner(threshold, key, f),
+            Self::Mmap(index) => index.for_each_payload_block_inner(threshold, key, f),
         }
     }
 }

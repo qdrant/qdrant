@@ -2,25 +2,13 @@ use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 
-use super::inverted_index::InvertedIndex;
-use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::mmap_text_index::MmapFullTextIndex;
+use super::super::inverted_index::InvertedIndex;
+use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
+use super::super::mmap_text_index::MmapFullTextIndex;
+use super::{ImmutableFullTextIndex, Storage};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::StorageType;
-
-pub struct ImmutableFullTextIndex {
-    pub(super) inverted_index: ImmutableInvertedIndex,
-    // Backing storage, source of state, persists deletions
-    pub(super) storage: Storage,
-    /// Snapshot of approximate RAM usage at construction time.
-    /// Not refreshed on `remove_point`.
-    cached_ram_usage_bytes: usize,
-}
-
-pub(super) enum Storage {
-    Mmap(Box<MmapFullTextIndex<common::universal_io::MmapFile>>),
-}
 
 impl ImmutableFullTextIndex {
     /// Open and load immutable full text index from mmap storage
