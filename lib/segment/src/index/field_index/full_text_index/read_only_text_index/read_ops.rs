@@ -6,7 +6,6 @@ use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
 use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
-use super::super::mmap_text_index::MmapFullTextIndex;
 use super::super::read_ops::{self, FullTextIndexRead};
 use super::super::tokenizers::Tokenizer;
 use super::ReadOnlyFullTextIndex;
@@ -86,32 +85,34 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            is_on_disk: MmapFullTextIndex::is_on_disk(&self.inner),
+            is_on_disk: self.inner.inverted_index.is_on_disk(),
         }
     }
 
     fn ram_usage_bytes(&self) -> usize {
-        MmapFullTextIndex::ram_usage_bytes(&self.inner)
+        self.inner.inverted_index.ram_usage_bytes()
     }
 
     fn is_on_disk(&self) -> bool {
-        MmapFullTextIndex::is_on_disk(&self.inner)
+        self.inner.inverted_index.is_on_disk()
     }
 
     fn populate(&self) -> OperationResult<()> {
-        MmapFullTextIndex::populate(&self.inner)
+        self.inner.inverted_index.populate()?;
+        Ok(())
     }
 
     fn clear_cache(&self) -> OperationResult<()> {
-        MmapFullTextIndex::clear_cache(&self.inner)
+        self.inner.inverted_index.clear_cache()?;
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        MmapFullTextIndex::files(&self.inner)
+        self.inner.inverted_index.files()
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        MmapFullTextIndex::immutable_files(&self.inner)
+        self.inner.inverted_index.immutable_files()
     }
 }
 

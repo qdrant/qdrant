@@ -14,7 +14,7 @@ impl ImmutableFullTextIndex {
         let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
 
         // Index is now loaded into memory, clear cache of backing mmap storage
-        if let Err(err) = index.clear_cache() {
+        if let Err(err) = index.inverted_index.clear_cache() {
             log::warn!("Failed to clear mmap cache of ram mmap full text index: {err}");
         }
 

@@ -77,31 +77,33 @@ impl<S: UniversalRead> FullTextIndexRead for MmapFullTextIndex<S> {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            is_on_disk: MmapFullTextIndex::is_on_disk(self),
+            is_on_disk: self.inverted_index.is_on_disk(),
         }
     }
 
     fn ram_usage_bytes(&self) -> usize {
-        MmapFullTextIndex::ram_usage_bytes(self)
+        self.inverted_index.ram_usage_bytes()
     }
 
     fn is_on_disk(&self) -> bool {
-        MmapFullTextIndex::is_on_disk(self)
+        self.inverted_index.is_on_disk()
     }
 
     fn populate(&self) -> OperationResult<()> {
-        MmapFullTextIndex::populate(self)
+        self.inverted_index.populate()?;
+        Ok(())
     }
 
     fn clear_cache(&self) -> OperationResult<()> {
-        MmapFullTextIndex::clear_cache(self)
+        self.inverted_index.clear_cache()?;
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        MmapFullTextIndex::files(self)
+        self.inverted_index.files()
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        MmapFullTextIndex::immutable_files(self)
+        self.inverted_index.immutable_files()
     }
 }

@@ -40,25 +40,9 @@ impl<S: UniversalRead> MmapFullTextIndex<S> {
         }))
     }
 
-    pub(crate) fn ram_usage_bytes(&self) -> usize {
-        self.inverted_index.ram_usage_bytes()
-    }
-
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.inverted_index.files()
-    }
-
-    pub fn immutable_files(&self) -> Vec<PathBuf> {
-        self.inverted_index.immutable_files()
-    }
-
-    fn path(&self) -> &PathBuf {
-        &self.inverted_index.path
-    }
-
     pub fn wipe(self) -> OperationResult<()> {
-        let files = self.files();
-        let path = self.path().clone();
+        let files = self.inverted_index.files();
+        let path = self.inverted_index.path.clone();
         // drop mmap handles before deleting files
         drop(self);
         for file in files {
@@ -74,23 +58,6 @@ impl<S: UniversalRead> MmapFullTextIndex<S> {
 
     pub fn flusher(&self) -> Flusher {
         self.inverted_index.flusher()
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        self.inverted_index.is_on_disk()
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.inverted_index.populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.inverted_index.clear_cache()?;
-        Ok(())
     }
 }
 
