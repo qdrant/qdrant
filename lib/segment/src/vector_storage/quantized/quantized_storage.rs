@@ -108,6 +108,10 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         ))
     }
 
+    fn is_in_ram_or_mmap() -> bool {
+        true
+    }
+
     fn is_on_disk(&self) -> bool {
         true
     }

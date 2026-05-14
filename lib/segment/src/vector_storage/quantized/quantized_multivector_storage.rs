@@ -434,15 +434,11 @@ where
     {
         debug_assert_eq!(point_ids.len(), scores.len());
 
-        if self.is_in_ram_or_mmap() {
+        if QuantizedStorage::is_in_ram_or_mmap() {
             self.score_points_batch_mmap(point_ids, scorer, scores, hw_counter);
         } else {
             self.score_points_batch_uring(point_ids, scorer, scores, hw_counter);
         }
-    }
-
-    fn is_in_ram_or_mmap(&self) -> bool {
-        true // TODO
     }
 
     #[inline]
@@ -656,6 +652,10 @@ where
 {
     // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
     type EncodedQuery = Vec<QuantizedStorage::EncodedQuery>;
+
+    fn is_in_ram_or_mmap() -> bool {
+        QuantizedStorage::is_in_ram_or_mmap()
+    }
 
     fn is_on_disk(&self) -> bool {
         self.quantized_storage.is_on_disk()

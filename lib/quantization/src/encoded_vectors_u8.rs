@@ -592,6 +592,10 @@ pub fn get_quantized_vector_size(vector_parameters: &VectorParameters) -> usize 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     type EncodedQuery = EncodedQueryU8;
 
+    fn is_in_ram_or_mmap() -> bool {
+        TStorage::is_in_ram_or_mmap()
+    }
+
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()
     }

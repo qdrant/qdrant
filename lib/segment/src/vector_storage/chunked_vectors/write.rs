@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
 use common::mmap::AdviceSetting;
-use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalWrite};
+use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalKind, UniversalWrite};
 use fs_err as fs;
 use num_traits::AsPrimitive;
 
@@ -44,6 +44,10 @@ where
     T: bytemuck::Pod,
     S: UniversalWrite + Send + 'static,
 {
+    pub fn storage_kind() -> UniversalKind {
+        S::kind()
+    }
+
     pub fn ensure_status_file(directory: &Path) -> OperationResult<PathBuf> {
         let status_file = ChunkedVectorsRead::<T, S>::status_file(directory);
         if !S::exists(&status_file)? {

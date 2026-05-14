@@ -41,6 +41,7 @@ pub struct VectorParameters {
 pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
+    fn is_in_ram_or_mmap() -> bool;
     fn is_on_disk(&self) -> bool;
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
