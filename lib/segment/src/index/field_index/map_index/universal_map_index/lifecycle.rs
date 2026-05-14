@@ -9,7 +9,7 @@ use common::mmap::create_and_ensure_length;
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions};
+use common::universal_io::{MmapFile, OpenOptions, Populate};
 use fs_err as fs;
 
 use super::super::MapIndexKey;
@@ -44,7 +44,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             &hashmap_path,
             OpenOptions {
                 writeable: false,
-                populate: Some(do_populate),
+                populate: Populate::from(do_populate),
                 ..OpenOptions::default()
             },
         )?;

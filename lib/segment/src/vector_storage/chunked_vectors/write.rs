@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
 use common::mmap::AdviceSetting;
-use common::universal_io::{OpenOptions, StoredStruct, UniversalWrite};
+use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalWrite};
 use fs_err as fs;
 use num_traits::AsPrimitive;
 
@@ -123,7 +123,7 @@ where
                 writeable: true,
                 need_sequential: false,
                 disk_parallel: None,
-                populate,
+                populate: populate.map(Populate::from).unwrap_or_default(),
                 advice: None,
                 prevent_caching: None,
             },

@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
-use common::universal_io::{Flusher, OpenOptions, TypedStorage, UniversalWrite};
+use common::universal_io::{Flusher, OpenOptions, Populate, TypedStorage, UniversalWrite};
 use itertools::Itertools;
 
 use super::{RegionId, StorageConfig};
@@ -106,7 +106,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             writeable: true,
             need_sequential: false,
             disk_parallel: None,
-            populate: Some(true),
+            populate: Populate::Blocking,
             advice: None,
             prevent_caching: None,
         };
@@ -129,7 +129,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             writeable: true,
             need_sequential: false,
             disk_parallel: None,
-            populate: Some(false),
+            populate: Populate::Blocking,
             advice: Some(AdviceSetting::Advice(Advice::Normal)),
             prevent_caching: None,
         };
@@ -164,7 +164,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             writeable: true,
             need_sequential: false,
             disk_parallel: None,
-            populate: Some(false),
+            populate: Populate::No,
             advice: Some(AdviceSetting::Advice(Advice::Normal)),
             prevent_caching: None,
         };
