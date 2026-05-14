@@ -15,7 +15,11 @@ pub(super) const PAIRS_PATH: &str = "data.bin";
 pub(super) const DELETED_PATH: &str = "deleted.bin";
 pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
-/// Mmap-backed immutable numeric index.
+/// Immutable numeric index served directly from a [`UniversalRead`] storage
+/// backend.
+///
+/// The storage parameter `S` defaults to [`MmapFile`], but any `UniversalRead`
+/// implementation works — e.g. io_uring or disk-cache wrappers.
 ///
 /// On-disk state (`data.bin`, `deleted.bin`, `point_to_values.*`, etc.) is
 /// written once during [`Self::build`] and not mutated afterwards: `deleted.bin`
@@ -26,9 +30,12 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 /// only updates the in-memory bitvec. Callers must re-supply the authoritative
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
-pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue + 'static> {
+pub struct UniversalNumericIndex<
+    T: Encodable + Numericable + Default + StoredValue + 'static,
+    S: UniversalRead = MmapFile,
+> {
     pub(super) path: PathBuf,
-    pub(super) storage: Storage<T, MmapFile>,
+    pub(super) storage: Storage<T, S>,
     pub(super) histogram: Histogram<T>,
     pub(super) deleted_count: usize,
     pub(super) max_values_per_point: usize,
@@ -37,7 +44,7 @@ pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue +
 
 pub(in super::super) struct Storage<
     T: Encodable + Numericable + Default + StoredValue + 'static,
-    S: UniversalRead,
+    S: UniversalRead = MmapFile,
 > {
     pub(super) deleted: BitVec,
     // sorted pairs (id + value), sorted by value (by id if values are equal)

@@ -14,7 +14,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// Read-only operations supported by every numeric-index storage variant
 /// ([`super::mutable_numeric_index::MutableNumericIndex`],
 /// [`super::immutable_numeric_index::ImmutableNumericIndex`],
-/// [`super::mmap_numeric_index::MmapNumericIndex`]).
+/// [`super::mmap_numeric_index::UniversalNumericIndex`]).
 ///
 /// Signatures are unified across variants so the enum-level dispatcher in
 /// [`NumericIndexInner`] can call them generically. Variants that don't

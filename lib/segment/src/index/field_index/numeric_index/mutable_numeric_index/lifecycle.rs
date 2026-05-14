@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
 
-use super::super::mmap_numeric_index::MmapNumericIndex;
+use super::super::mmap_numeric_index::UniversalNumericIndex;
 use super::super::read_ops::NumericIndexRead;
 use super::super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use super::{InMemoryNumericIndex, MutableNumericIndex, default_gridstore_options};
@@ -64,7 +64,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> InMemoryNumericIndex<T>
     /// # Warning
     ///
     /// Expensive because this reads the full mmap index.
-    pub(in super::super) fn from_mmap(mmap_index: &MmapNumericIndex<T>) -> Self {
+    pub(in super::super) fn from_mmap(mmap_index: &UniversalNumericIndex<T>) -> Self {
         let point_count = mmap_index.storage.point_to_values.len();
 
         (0..point_count as PointOffsetType)

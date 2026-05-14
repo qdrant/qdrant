@@ -7,20 +7,20 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
-use common::universal_io::ReadRange;
+use common::universal_io::{ReadRange, UniversalRead};
 use itertools::Either;
 
 use super::super::Encodable;
 use super::super::read_ops::NumericIndexRead;
-use super::MmapNumericIndex;
+use super::UniversalNumericIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::payload_config::StorageType;
 
-impl<T: Encodable + Numericable + Default + StoredValue + 'static> NumericIndexRead<T>
-    for MmapNumericIndex<T>
+impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
+    NumericIndexRead<T> for UniversalNumericIndex<T, S>
 {
     fn check_values_any(
         &self,
@@ -116,7 +116,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> NumericIndexR
     }
 
     fn ram_usage_bytes(&self) -> usize {
-        MmapNumericIndex::ram_usage_bytes(self)
+        self.histogram.ram_usage_bytes() + self.storage.ram_usage_bytes()
     }
 
     fn telemetry_index_type(&self) -> &'static str {
@@ -124,7 +124,9 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> NumericIndexR
     }
 }
 
-impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIndex<T> {
+impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
+    UniversalNumericIndex<T, S>
+{
     /// Cheap O(log N) size of the range without iterating. Used by
     /// `estimate_points`; not part of the shared [`NumericIndexRead`]
     /// interface because the mutable variant doesn't have a precomputed

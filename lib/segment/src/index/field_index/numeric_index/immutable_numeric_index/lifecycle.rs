@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::Encodable;
-use super::super::mmap_numeric_index::MmapNumericIndex;
+use super::super::mmap_numeric_index::UniversalNumericIndex;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
 use super::{ImmutableNumericIndex, NumericKeySortedVec};
 use crate::common::Flusher;
@@ -27,7 +27,7 @@ where
     /// Numeric's body has no fallible reads to propagate (`from_mmap` is
     /// infallible; `clear_cache` errors are warn-and-continue, matching the
     /// other variants).
-    pub(in super::super) fn open_mmap(index: MmapNumericIndex<T>) -> Self {
+    pub(in super::super) fn open_mmap(index: UniversalNumericIndex<T>) -> Self {
         // Load in-memory index from mmap storage
         let InMemoryNumericIndex {
             map,

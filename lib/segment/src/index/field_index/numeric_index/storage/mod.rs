@@ -28,7 +28,7 @@ use gridstore::Blob;
 
 use super::Encodable;
 use super::immutable_numeric_index::ImmutableNumericIndex;
-use super::mmap_numeric_index::MmapNumericIndex;
+use super::mmap_numeric_index::UniversalNumericIndex;
 use super::mutable_numeric_index::MutableNumericIndex;
 use super::read_ops::NumericIndexRead;
 use crate::common::Flusher;
@@ -43,7 +43,7 @@ where
 {
     Mutable(MutableNumericIndex<T>),
     Immutable(ImmutableNumericIndex<T>),
-    Mmap(MmapNumericIndex<T>),
+    Mmap(UniversalNumericIndex<T>),
 }
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> NumericIndexInner<T>
@@ -63,7 +63,8 @@ where
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
-        let Some(mmap_index) = MmapNumericIndex::open(path, effective_is_on_disk, deleted_points)?
+        let Some(mmap_index) =
+            UniversalNumericIndex::open(path, effective_is_on_disk, deleted_points)?
         else {
             // Files don't exist, cannot load
             return Ok(None);

@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::Encodable;
 use super::index::{NumericIndex, NumericIndexIntoInnerValue};
-use super::mmap_numeric_index::MmapNumericIndex;
+use super::mmap_numeric_index::UniversalNumericIndex;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use super::storage::NumericIndexInner;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -123,7 +123,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let inner = MmapNumericIndex::build(
+        let inner = UniversalNumericIndex::build(
             self.in_memory_index,
             &self.path,
             self.is_on_disk,

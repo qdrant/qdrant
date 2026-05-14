@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
-use super::{CONFIG_PATH, DELETED_PATH, MmapNumericIndex, PAIRS_PATH, Storage};
+use super::{CONFIG_PATH, DELETED_PATH, PAIRS_PATH, Storage, UniversalNumericIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
@@ -22,11 +22,11 @@ use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::{StoredPointToValues, StoredValue};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct MmapNumericIndexConfig {
+struct UniversalNumericIndexConfig {
     max_values_per_point: usize,
 }
 
-impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNumericIndex<T> {
+impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> UniversalNumericIndex<T> {
     pub fn build(
         in_memory_index: InMemoryNumericIndex<T>,
         path: &Path,
@@ -41,7 +41,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
 
         atomic_save_json(
             &config_path,
-            &MmapNumericIndexConfig {
+            &UniversalNumericIndexConfig {
                 max_values_per_point: in_memory_index.max_values_per_point,
             },
         )?;
@@ -91,7 +91,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         }
 
         Self::open(path, is_on_disk, deleted_points)?.ok_or_else(|| {
-            OperationError::service_error("Failed to open MmapNumericIndex after building it")
+            OperationError::service_error("Failed to open UniversalNumericIndex after building it")
         })
     }
 
@@ -111,7 +111,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
         }
 
         let histogram = Histogram::<T>::load(path)?;
-        let config: MmapNumericIndexConfig = read_json(&config_path)?;
+        let config: UniversalNumericIndexConfig = read_json(&config_path)?;
         let do_populate = !is_on_disk;
 
         let pairs_options = OpenOptions {
@@ -155,7 +155,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> MmapNum
     }
 }
 
-impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIndex<T> {
+impl<T: Encodable + Numericable + Default + StoredValue + 'static> UniversalNumericIndex<T> {
     pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let path = self.path.clone();
@@ -191,7 +191,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIn
     }
 
     /// No-op flusher: the on-disk state is build-time only. See the type-level
-    /// docs on [`MmapNumericIndex`] for the deletion durability contract.
+    /// docs on [`UniversalNumericIndex`] for the deletion durability contract.
     pub fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }

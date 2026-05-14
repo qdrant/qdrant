@@ -676,7 +676,7 @@ fn test_numeric_index_reload(#[case] index_type: IndexType) {
 
     // Reload!
     //
-    // Note: `MmapNumericIndex::remove_point` is in-memory only — it doesn't
+    // Note: `UniversalNumericIndex::remove_point` is in-memory only — it doesn't
     // persist to the on-disk deletion bitslice. The reload path picks up
     // deletions from the `&BitSlice` argument, so for this test we have to
     // re-supply the same set of removed points here.
