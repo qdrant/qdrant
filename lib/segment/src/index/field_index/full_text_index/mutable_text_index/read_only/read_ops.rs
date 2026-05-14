@@ -1,23 +1,23 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UserData;
+use common::universal_io::{UniversalRead, UserData};
 
-use super::super::full_text_index_read::FullTextIndexRead;
-use super::super::inverted_index::{ParsedQuery, TokenId};
-use super::super::tokenizers::Tokenizer;
-use super::MutableFullTextIndex;
+use super::super::super::full_text_index_read::FullTextIndexRead;
+use super::super::super::inverted_index::{ParsedQuery, TokenId};
+use super::super::super::tokenizers::Tokenizer;
+use super::ReadOnlyAppendableFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::StorageType;
 use crate::types::{FieldCondition, PayloadKeyType};
 
-impl FullTextIndexRead for MutableFullTextIndex {
+impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> {
     fn tokenizer(&self) -> &Tokenizer {
         self.inner.tokenizer()
     }
 
     fn telemetry_index_type(&self) -> &'static str {
-        "mutable_full_text"
+        "read_only_appendable_full_text"
     }
 
     fn points_count(&self) -> usize {
@@ -73,6 +73,8 @@ impl FullTextIndexRead for MutableFullTextIndex {
     }
 
     fn get_storage_type(&self) -> StorageType {
+        // The on-disk format is Gridstore; the read-only-vs-mutable
+        // distinction is not yet reflected in [`StorageType`].
         StorageType::Gridstore
     }
 

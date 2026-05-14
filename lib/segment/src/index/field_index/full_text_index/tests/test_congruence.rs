@@ -292,6 +292,7 @@ fn test_congruence(
         panic!("Expects mutable full text index as first");
     };
     let mut keywords = index
+        .inner
         .inverted_index
         .vocab
         .keys()

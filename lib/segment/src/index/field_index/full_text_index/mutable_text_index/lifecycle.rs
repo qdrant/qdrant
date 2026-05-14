@@ -10,6 +10,7 @@ use super::super::FullTextIndex;
 use super::super::inverted_index::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
 use super::super::tokenizers::Tokenizer;
+use super::inner::MutableFullTextIndexInner;
 use super::{GRIDSTORE_OPTIONS, MutableFullTextIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -68,10 +69,12 @@ impl MutableFullTextIndex {
             })?;
 
         Ok(Some(Self {
-            inverted_index: builder.build(),
-            config,
+            inner: MutableFullTextIndexInner {
+                inverted_index: builder.build(),
+                config,
+                tokenizer,
+            },
             storage: store,
-            tokenizer,
         }))
     }
 
@@ -127,7 +130,7 @@ impl MutableFullTextIndex {
             return Ok(());
         }
 
-        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+        let phrase_matching = self.inner.config.phrase_matching.unwrap_or_default();
         let insert_boundaries = phrase_matching && values.len() > 1;
 
         let mut str_tokens: Vec<Cow<str>> =
@@ -136,21 +139,23 @@ impl MutableFullTextIndex {
             if insert_boundaries && i > 0 {
                 str_tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
             }
-            self.tokenizer.tokenize_doc(value, |token| {
+            self.inner.tokenizer.tokenize_doc(value, |token| {
                 str_tokens.push(token);
             });
         }
 
-        let tokens = self.inverted_index.register_tokens(&str_tokens);
+        let tokens = self.inner.inverted_index.register_tokens(&str_tokens);
 
         if phrase_matching {
             let document = Document::new(tokens.clone());
-            self.inverted_index
+            self.inner
+                .inverted_index
                 .index_document(idx, document, hw_counter)?;
         }
 
         let token_set = TokenSet::from_iter(tokens);
-        self.inverted_index
+        self.inner
+            .inverted_index
             .index_tokens(idx, token_set, hw_counter)?;
 
         let tokens_to_store = if phrase_matching {
@@ -181,7 +186,7 @@ impl MutableFullTextIndex {
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
-        if self.inverted_index.remove(id) {
+        if self.inner.inverted_index.remove(id) {
             self.storage.delete_value(id)?;
         }
 

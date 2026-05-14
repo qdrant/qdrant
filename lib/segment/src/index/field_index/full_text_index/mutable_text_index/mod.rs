@@ -1,11 +1,11 @@
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
 
-use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
-use super::tokenizers::Tokenizer;
-use crate::data_types::index::TextIndexParams;
+use self::inner::MutableFullTextIndexInner;
 
+pub(super) mod inner;
 mod lifecycle;
+pub mod read_only;
 mod read_ops;
 #[cfg(test)]
 mod tests;
@@ -18,8 +18,6 @@ pub(super) const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
 };
 
 pub struct MutableFullTextIndex {
-    pub(super) inverted_index: MutableInvertedIndex,
-    pub(super) config: TextIndexParams,
+    pub(super) inner: MutableFullTextIndexInner,
     pub(super) storage: Gridstore<Vec<u8>>,
-    pub(super) tokenizer: Tokenizer,
 }
