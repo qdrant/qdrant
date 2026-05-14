@@ -1,61 +1,20 @@
 use std::collections::BTreeSet;
-use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::config::StorageOptions;
 use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
 
-use super::mmap_numeric_index::MmapNumericIndex;
-use super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use super::super::mmap_numeric_index::MmapNumericIndex;
+use super::super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use super::{InMemoryNumericIndex, MutableNumericIndex, Storage, default_gridstore_options};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
-use crate::index::payload_config::StorageType;
-
-/// Default options for Gridstore storage
-const fn default_gridstore_options<T: Sized>() -> StorageOptions {
-    let block_size = size_of::<T>();
-    StorageOptions {
-        // Size of numeric values in index
-        block_size_bytes: Some(block_size),
-        // Compressing numeric values is unreasonable
-        compression: Some(gridstore::config::Compression::None),
-        // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
-        page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
-        region_size_blocks: None,
-    }
-}
-
-pub struct MutableNumericIndex<T: Encodable + Numericable>
-where
-    Vec<T>: Blob,
-{
-    // Backing storage, source of state, persists deletions
-    storage: Storage<T>,
-    in_memory_index: InMemoryNumericIndex<T>,
-}
-
-enum Storage<T: Encodable + Numericable>
-where
-    Vec<T>: Blob,
-{
-    Gridstore(Gridstore<Vec<T>>),
-}
-
-// Numeric Index with insertions and deletions without persistence
-pub struct InMemoryNumericIndex<T: Encodable + Numericable> {
-    pub map: BTreeSet<Point<T>>,
-    pub histogram: Histogram<T>,
-    pub points_count: usize,
-    pub max_values_per_point: usize,
-    pub point_to_values: Vec<Vec<T>>,
-}
 
 impl<T: Encodable + Numericable> Default for InMemoryNumericIndex<T> {
     fn default() -> Self {
@@ -104,7 +63,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> InMemoryNumericIndex<T>
     /// # Warning
     ///
     /// Expensive because this reads the full mmap index.
-    pub(super) fn from_mmap(mmap_index: &MmapNumericIndex<T>) -> Self {
+    pub(in super::super) fn from_mmap(mmap_index: &MmapNumericIndex<T>) -> Self {
         let point_count = mmap_index.storage.point_to_values.len();
 
         (0..point_count as PointOffsetType)
@@ -115,49 +74,6 @@ impl<T: Encodable + Numericable + Default + StoredValue> InMemoryNumericIndex<T>
 }
 
 impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
-        self.point_to_values
-            .get(idx as usize)
-            .map(|values| values.iter().any(check_fn))
-            .unwrap_or(false)
-    }
-
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        Some(Box::new(
-            self.point_to_values
-                .get(idx as usize)
-                .map(|v| v.iter().cloned())?,
-        ))
-    }
-
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        self.point_to_values.get(idx as usize).map(Vec::len)
-    }
-
-    pub fn total_unique_values_count(&self) -> usize {
-        self.map.len()
-    }
-
-    pub fn values_range(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> impl Iterator<Item = PointOffsetType> {
-        self.map
-            .range((start_bound, end_bound))
-            .map(|point| point.idx)
-    }
-
-    pub fn orderable_values_range(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
-        self.map
-            .range((start_bound, end_bound))
-            .map(|point| (point.val, point.idx))
-    }
-
     pub fn add_many_to_list(&mut self, idx: PointOffsetType, values: Vec<T>) {
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize_with(idx as usize + 1, Vec::new)
@@ -186,7 +102,11 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         }
     }
 
-    fn add_to_map(map: &mut BTreeSet<Point<T>>, histogram: &mut Histogram<T>, key: Point<T>) {
+    pub(super) fn add_to_map(
+        map: &mut BTreeSet<Point<T>>,
+        histogram: &mut Histogram<T>,
+        key: Point<T>,
+    ) {
         let was_added = map.insert(key);
         // Histogram works with unique values (idx + value) only, so we need to
         // make sure that we don't add the same value twice.
@@ -217,18 +137,6 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
 
     fn get_histogram_right_neighbor(map: &BTreeSet<Point<T>>, key: Point<T>) -> Option<Point<T>> {
         map.range((Excluded(key), Unbounded)).next().copied()
-    }
-
-    pub fn get_histogram(&self) -> &Histogram<T> {
-        &self.histogram
-    }
-
-    pub fn get_points_count(&self) -> usize {
-        self.points_count
-    }
-
-    pub fn get_max_values_per_point(&self) -> usize {
-        self.max_values_per_point
     }
 }
 
@@ -286,7 +194,7 @@ where
     }
 
     #[inline]
-    pub(super) fn clear(&mut self) -> OperationResult<()> {
+    pub(in super::super) fn clear(&mut self) -> OperationResult<()> {
         match &mut self.storage {
             Storage::Gridstore(store) => store.clear().map_err(|err| {
                 OperationError::service_error(format!(
@@ -297,7 +205,7 @@ where
     }
 
     #[inline]
-    pub(super) fn wipe(self) -> OperationResult<()> {
+    pub(in super::super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
             Storage::Gridstore(store) => store.wipe().map_err(|err| {
                 OperationError::service_error(format!(
@@ -322,14 +230,14 @@ where
     }
 
     #[inline]
-    pub(super) fn files(&self) -> Vec<PathBuf> {
+    pub(in super::super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
             Storage::Gridstore(store) => store.files(),
         }
     }
 
     #[inline]
-    pub(super) fn flusher(&self) -> Flusher {
+    pub(in super::super) fn flusher(&self) -> Flusher {
         match &self.storage {
             Storage::Gridstore(store) => {
                 let storage_flusher = store.flusher();
@@ -376,102 +284,5 @@ where
 
         self.in_memory_index.remove_point(idx);
         Ok(())
-    }
-
-    pub fn map(&self) -> &BTreeSet<Point<T>> {
-        &self.in_memory_index.map
-    }
-
-    #[inline]
-    pub fn total_unique_values_count(&self) -> usize {
-        self.in_memory_index.total_unique_values_count()
-    }
-
-    #[inline]
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
-        self.in_memory_index.check_values_any(idx, check_fn)
-    }
-
-    #[inline]
-    pub fn get_points_count(&self) -> usize {
-        self.in_memory_index.get_points_count()
-    }
-
-    #[inline]
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        self.in_memory_index.get_values(idx)
-    }
-
-    #[inline]
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        self.in_memory_index.values_count(idx)
-    }
-
-    #[inline]
-    pub fn values_range(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> impl Iterator<Item = PointOffsetType> {
-        self.in_memory_index.values_range(start_bound, end_bound)
-    }
-
-    #[inline]
-    pub fn orderable_values_range(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
-        self.in_memory_index
-            .orderable_values_range(start_bound, end_bound)
-    }
-
-    #[inline]
-    pub fn get_histogram(&self) -> &Histogram<T> {
-        self.in_memory_index.get_histogram()
-    }
-
-    #[inline]
-    pub fn get_max_values_per_point(&self) -> usize {
-        self.in_memory_index.get_max_values_per_point()
-    }
-
-    pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Gridstore(_) => StorageType::Gridstore,
-        }
-    }
-
-    /// Approximate RAM usage in bytes for in-memory index structures.
-    pub fn ram_usage_bytes(&self) -> usize {
-        let Self {
-            storage: _, // disk-backed, accounted via files
-            in_memory_index,
-        } = self;
-        in_memory_index.ram_usage_bytes()
-    }
-}
-
-impl<T: Encodable + Numericable> InMemoryNumericIndex<T> {
-    /// Approximate RAM usage in bytes.
-    pub fn ram_usage_bytes(&self) -> usize {
-        let Self {
-            map,
-            histogram,
-            points_count: _,         // scalar
-            max_values_per_point: _, // scalar
-            point_to_values,
-        } = self;
-
-        // BTreeSet: ~3 pointers overhead per entry
-        let btree_entry_overhead = std::mem::size_of::<usize>() * 3;
-        let map_bytes = map.len() * (std::mem::size_of::<Point<T>>() + btree_entry_overhead);
-        let histogram_bytes = histogram.ram_usage_bytes();
-        let ptv_bytes: usize = point_to_values.capacity() * std::mem::size_of::<Vec<T>>()
-            + point_to_values
-                .iter()
-                .map(|v| v.capacity() * std::mem::size_of::<T>())
-                .sum::<usize>();
-        map_bytes + histogram_bytes + ptv_bytes
     }
 }
