@@ -1,7 +1,9 @@
 use posting_list::{PostingValue, UnsizedHandler, UnsizedValue};
 use zerocopy::{FromBytes, IntoBytes};
 
-use crate::index::field_index::full_text_index::inverted_index::{Document, TokenId};
+use crate::index::field_index::full_text_index::inverted_index::{
+    Document, FuzzyDocument, TokenId,
+};
 
 /// Represents a list of positions of a token in a document.
 #[derive(Default, Clone, Debug)]
@@ -50,7 +52,7 @@ impl UnsizedValue for Positions {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct TokenPosition {
     token_id: TokenId,
     position: u32,
@@ -84,6 +86,24 @@ impl PartialDocument {
                 seq_window
                     .zip(phrase)
                     .all(|(doc_token, query_token)| &doc_token == query_token)
+            }),
+        }
+    }
+
+    /// Returns true if any sequential window of tokens matches the given fuzzy phrase.
+    ///
+    /// Each position *i* in the phrase may be satisfied by any token in `phrase.groups()[i]`.
+    pub fn has_fuzzy_phrase(&self, phrase: &FuzzyDocument) -> bool {
+        match phrase.groups() {
+            [] => false,
+            [group] => self
+                .0
+                .iter()
+                .any(|tok_pos| group.contains(&tok_pos.token_id)),
+            groups => self.sequential_windows(groups.len()).any(|seq_window| {
+                seq_window
+                    .zip(groups.iter())
+                    .all(|(token_id, group)| group.contains(&token_id))
             }),
         }
     }
