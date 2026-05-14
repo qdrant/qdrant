@@ -5,7 +5,7 @@ use fs_err as fs;
 
 use super::{BLOCK_SIZE, DiskCache, DiskCacheConfig};
 use crate::generic_consts::Sequential;
-use crate::universal_io::{OpenOptions, ReadRange, UniversalRead};
+use crate::universal_io::{OpenOptions, Populate, ReadRange, UniversalRead};
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
     (0..n_bytes).map(|i| (i % 251) as u8).collect()
@@ -45,10 +45,16 @@ impl Scenario {
         self.config.local_path_for(&self.remote_path).unwrap()
     }
 
-    fn open<R>(&self) -> DiskCache<R>
+    fn open<R>(&self, prefill: bool) -> DiskCache<R>
     where
         R: UniversalRead,
     {
+        let populate = if prefill {
+            Populate::PreferBackground
+        } else {
+            Populate::No
+        };
+
         DiskCache::new(
             &self.remote_path,
             self.config
@@ -56,6 +62,7 @@ impl Scenario {
                 .unwrap(),
             OpenOptions {
                 writeable: false,
+                populate,
                 ..OpenOptions::default()
             },
         )
@@ -63,9 +70,10 @@ impl Scenario {
 }
 
 #[duplicate::duplicate_item(
-    tests_mod       R               cfg_predicate;
-    [tests_mmap]    [MmapFile]      [cfg(all())];
-    [tests_uring]   [IoUringFile]   [cfg(target_os = "linux")];
+    tests_mod       R               cfg_predicate               prefill;
+    [tests_prefill] [MmapFile]      [cfg(all())]                [true];
+    [tests_mmap]    [MmapFile]      [cfg(all())]                [false];
+    [tests_uring]   [IoUringFile]   [cfg(target_os = "linux")]  [false];
 )]
 #[cfg_predicate]
 #[cfg(test)]
@@ -73,10 +81,11 @@ mod tests_mod {
     use super::*;
     #[cfg_predicate]
     use crate::universal_io::R;
+
     #[test]
     fn basic_read_returns_remote_bytes() {
         let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
-        let file = scn.open::<R>();
+        let file = scn.open::<R>(prefill);
 
         // Read inside the first block.
         let bytes = file
@@ -101,7 +110,7 @@ mod tests_mod {
     #[test]
     fn read_spanning_multiple_blocks_is_contiguous() {
         let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
-        let file = scn.open::<R>();
+        let file = scn.open::<R>(prefill);
 
         let start = (BLOCK_SIZE - 50) as u64;
         let len = (BLOCK_SIZE + 100) as u64;
@@ -122,7 +131,7 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE * 2);
         let expected_local = scn.expected_local_path();
 
-        let file = scn.open::<R>();
+        let file = scn.open::<R>(prefill);
 
         // Before the first read, the local file doesn't exist yet.
         assert!(
@@ -154,7 +163,7 @@ mod tests_mod {
     fn empty_read_does_not_materialize_local_file() {
         let scn = Scenario::new(BLOCK_SIZE);
         let expected_local = scn.expected_local_path();
-        let file = scn.open::<R>();
+        let file = scn.open::<R>(prefill);
 
         let bytes = file
             .read::<Sequential, u8>(ReadRange {
@@ -172,7 +181,7 @@ mod tests_mod {
     #[test]
     fn populate_fetches_every_block() {
         let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
-        let file = scn.open::<R>();
+        let file = scn.open::<R>(prefill);
 
         file.populate().unwrap();
 
@@ -188,7 +197,7 @@ mod tests_mod {
     #[test]
     fn read_past_end_returns_out_of_bounds() {
         let scn = Scenario::new(1024);
-        let file = scn.open::<R>();
+        let file = scn.open::<R>(prefill);
 
         let err = file
             .read::<Sequential, u8>(ReadRange {

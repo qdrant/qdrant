@@ -11,9 +11,10 @@ use crate::universal_io::{
     OpenOptions, Populate, ReadRange, Result, UniversalRead, UniversalReadPipeline,
 };
 
+// TODO: choose appropriate default backend
 type PrefillBackend = cfg_select! {
-    target_os = "linux" => {crate::universal_io::IoUringFile}
-    _ => {crate::universal_io::MmapFile}
+    target_os = "linux" => { crate::universal_io::IoUringFile }
+    _ => { crate::universal_io::MmapFile }
 };
 
 pub static GLOBAL_PREFILL_THREAD: LazyLock<DiskPrefiller<PrefillBackend>> =
