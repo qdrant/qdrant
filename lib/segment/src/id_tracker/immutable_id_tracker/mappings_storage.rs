@@ -15,7 +15,7 @@ use crate::types::{ExtendedPointId, PointIdType};
 
 pub const MAPPINGS_FILE_NAME: &str = "id_tracker.mappings";
 
-pub(crate) fn mappings_path(base: &Path) -> PathBuf {
+pub fn mappings_path(base: &Path) -> PathBuf {
     base.join(MAPPINGS_FILE_NAME)
 }
 

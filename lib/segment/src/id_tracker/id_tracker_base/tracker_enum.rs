@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 
 use super::point_mappings_ref::PointMappingsRefEnum;
 use super::trait_def::{IdTracker, IdTrackerRead};
@@ -16,7 +17,7 @@ use crate::types::{PointIdType, SeqNumberType};
 #[allow(clippy::large_enum_variant)]
 pub enum IdTrackerEnum {
     MutableIdTracker(MutableIdTracker),
-    ImmutableIdTracker(ImmutableIdTracker),
+    ImmutableIdTracker(ImmutableIdTracker<MmapFile>),
     InMemoryIdTracker(InMemoryIdTracker),
 }
 
