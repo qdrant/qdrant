@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -8,7 +6,7 @@ use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
 use super::super::read_ops::FullTextIndexRead;
 use super::super::tokenizers::Tokenizer;
 use super::MutableFullTextIndex;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::StorageType;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -85,25 +83,5 @@ impl FullTextIndexRead for MutableFullTextIndex {
 
     fn is_on_disk(&self) -> bool {
         false
-    }
-
-    fn populate(&self) -> OperationResult<()> {
-        Ok(())
-    }
-
-    fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.clear_cache().map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to clear mutable full text index gridstore cache: {err}"
-            ))
-        })
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        self.storage.files()
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new()
     }
 }

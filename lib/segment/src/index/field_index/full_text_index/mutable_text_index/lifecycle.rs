@@ -97,6 +97,26 @@ impl MutableFullTextIndex {
         Box::new(move || storage_flusher().map_err(OperationError::from))
     }
 
+    pub fn populate(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear mutable full text index gridstore cache: {err}"
+            ))
+        })
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     pub fn add_many(
         &mut self,
         idx: PointOffsetType,

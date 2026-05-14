@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::path::PathBuf;
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -89,14 +88,6 @@ pub trait FullTextIndexRead {
     fn ram_usage_bytes(&self) -> usize;
 
     fn is_on_disk(&self) -> bool;
-
-    fn populate(&self) -> OperationResult<()>;
-
-    fn clear_cache(&self) -> OperationResult<()>;
-
-    fn files(&self) -> Vec<PathBuf>;
-
-    fn immutable_files(&self) -> Vec<PathBuf>;
 
     /// Parse as [`TokenizerTextKind::Document`] and return [`ParsedQuery::Phrase`].
     /// Returns [`None`] if there are any unseen tokens.

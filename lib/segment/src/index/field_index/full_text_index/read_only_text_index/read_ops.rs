@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -95,24 +93,6 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
 
     fn is_on_disk(&self) -> bool {
         self.inner.inverted_index.is_on_disk()
-    }
-
-    fn populate(&self) -> OperationResult<()> {
-        self.inner.inverted_index.populate()?;
-        Ok(())
-    }
-
-    fn clear_cache(&self) -> OperationResult<()> {
-        self.inner.inverted_index.clear_cache()?;
-        Ok(())
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        self.inner.inverted_index.files()
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        self.inner.inverted_index.immutable_files()
     }
 }
 

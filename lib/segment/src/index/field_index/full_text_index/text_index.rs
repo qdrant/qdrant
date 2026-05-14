@@ -166,6 +166,38 @@ impl FullTextIndex {
             FullTextIndex::Mmap(_) => IndexMutability::Immutable,
         }
     }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.populate(),
+            Self::Immutable(index) => index.populate(),
+            Self::Mmap(index) => index.populate(),
+        }
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.clear_cache(),
+            Self::Immutable(index) => index.clear_cache(),
+            Self::Mmap(index) => index.clear_cache(),
+        }
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Mutable(index) => index.files(),
+            Self::Immutable(index) => index.files(),
+            Self::Mmap(index) => index.files(),
+        }
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Mutable(_) => Vec::new(),
+            Self::Immutable(index) => index.immutable_files(),
+            Self::Mmap(index) => index.immutable_files(),
+        }
+    }
 }
 
 impl ValueIndexer for FullTextIndex {
@@ -220,11 +252,11 @@ impl PayloadFieldIndex for FullTextIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        FullTextIndexRead::files(self)
+        FullTextIndex::files(self)
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        FullTextIndexRead::immutable_files(self)
+        FullTextIndex::immutable_files(self)
     }
 }
 
@@ -351,38 +383,6 @@ impl FullTextIndexRead for FullTextIndex {
             Self::Mutable(index) => FullTextIndexRead::is_on_disk(index),
             Self::Immutable(index) => FullTextIndexRead::is_on_disk(index),
             Self::Mmap(index) => FullTextIndexRead::is_on_disk(index.as_ref()),
-        }
-    }
-
-    fn populate(&self) -> OperationResult<()> {
-        match self {
-            Self::Mutable(index) => FullTextIndexRead::populate(index),
-            Self::Immutable(index) => FullTextIndexRead::populate(index),
-            Self::Mmap(index) => FullTextIndexRead::populate(index.as_ref()),
-        }
-    }
-
-    fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            Self::Mutable(index) => FullTextIndexRead::clear_cache(index),
-            Self::Immutable(index) => FullTextIndexRead::clear_cache(index),
-            Self::Mmap(index) => FullTextIndexRead::clear_cache(index.as_ref()),
-        }
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        match self {
-            Self::Mutable(index) => FullTextIndexRead::files(index),
-            Self::Immutable(index) => FullTextIndexRead::files(index),
-            Self::Mmap(index) => FullTextIndexRead::files(index.as_ref()),
-        }
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        match self {
-            Self::Mutable(_) => Vec::new(),
-            Self::Immutable(index) => FullTextIndexRead::immutable_files(index),
-            Self::Mmap(index) => FullTextIndexRead::immutable_files(index.as_ref()),
         }
     }
 }

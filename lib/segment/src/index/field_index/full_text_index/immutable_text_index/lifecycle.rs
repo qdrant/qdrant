@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 
@@ -6,7 +8,7 @@ use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedInd
 use super::super::mmap_text_index::MmapFullTextIndex;
 use super::ImmutableFullTextIndex;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 impl ImmutableFullTextIndex {
     /// Open and load immutable full text index from mmap storage
@@ -42,5 +44,25 @@ impl ImmutableFullTextIndex {
 
     pub fn flusher(&self) -> Flusher {
         self.storage.flusher()
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear immutable full text index gridstore cache: {err}"
+            ))
+        })
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        self.storage.immutable_files()
     }
 }

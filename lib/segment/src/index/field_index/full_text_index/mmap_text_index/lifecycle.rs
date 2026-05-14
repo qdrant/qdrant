@@ -59,6 +59,24 @@ impl<S: UniversalRead> MmapFullTextIndex<S> {
     pub fn flusher(&self) -> Flusher {
         self.inverted_index.flusher()
     }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.inverted_index.populate()?;
+        Ok(())
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.inverted_index.clear_cache()?;
+        Ok(())
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.inverted_index.files()
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        self.inverted_index.immutable_files()
+    }
 }
 
 impl FullTextMmapIndexBuilder {

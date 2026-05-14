@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
@@ -87,23 +85,5 @@ impl<S: UniversalRead> FullTextIndexRead for MmapFullTextIndex<S> {
 
     fn is_on_disk(&self) -> bool {
         self.inverted_index.is_on_disk()
-    }
-
-    fn populate(&self) -> OperationResult<()> {
-        self.inverted_index.populate()?;
-        Ok(())
-    }
-
-    fn clear_cache(&self) -> OperationResult<()> {
-        self.inverted_index.clear_cache()?;
-        Ok(())
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        self.inverted_index.files()
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        self.inverted_index.immutable_files()
     }
 }
