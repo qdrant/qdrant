@@ -106,19 +106,12 @@ where
             .vector_io_read()
             .incr_delta(size_of::<MultivectorOffset>() * ids.len());
 
-        let score_multi_vector = |idx, multi_vector: &[Cow<'_, _>]| {
-            // `score_point_max_similarity` handles CPU hardware counter
-            scores[idx] = self
-                .quantized_multivector_storage
-                .score_vector_max_similarity(&self.query, multi_vector, &self.hardware_counter);
-        };
-
-        // `for_each_in_multi_batch` handles multi-vector I/O hardware counter
-        self.quantized_multivector_storage.for_each_in_multi_batch(
+        self.quantized_multivector_storage.score_points_batch(
             ids,
-            score_multi_vector,
+            |score_fn| score_fn(&self.query),
+            scores,
             &self.hardware_counter,
-        );
+        )
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
