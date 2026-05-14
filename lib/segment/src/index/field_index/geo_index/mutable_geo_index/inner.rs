@@ -287,7 +287,7 @@ impl GeoMapIndexRead for InMemoryGeoMapIndex {
     ) -> bool {
         self.point_to_values
             .get(idx as usize)
-            .map(|values| values.iter().any(|v| check_fn(v)))
+            .map(|values| values.iter().any(check_fn))
             .unwrap_or(false)
     }
 
