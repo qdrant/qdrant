@@ -274,7 +274,7 @@ impl CollectionsTelemetry {
                 // - in stage 2 (migrate points) of resharding up we don't rely on the replica
                 //   to be available yet. In this stage, these replicas will have the `Resharding`
                 //   state.
-                // - in stage 3 (replicate) of resharding up we activate the the replica and
+                // - in stage 3 (replicate) of resharding up we activate the replica and
                 //   replicate to match the configuration replication factor. From this point on we
                 //   do rely on the replica to be available. Now one replica will be `Active`, and
                 //   the other replicas will be in a transfer state. No replica will have `Resharding`

@@ -133,7 +133,7 @@ pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
 ///
 /// This does not check the length of the name.
 pub fn validate_collection_name_legacy(value: &str) -> Result<(), ValidationError> {
-    // Disallowed characters on on both Linux/Windows, sourced from: <https://stackoverflow.com/a/31976060/1000145>
+    // Disallowed characters on both Linux/Windows, sourced from: <https://stackoverflow.com/a/31976060/1000145>
     const INVALID_CHARS: [char; 2] = ['/', '\0'];
 
     match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
