@@ -1,100 +1,139 @@
-//! Construction-time constants and the [`Encodable`] key-format trait.
-//!
-//! `Encodable` defines the on-disk key encoding/decoding shared by every
-//! numeric-index storage variant; the `HISTOGRAM_*` constants seed the
-//! per-index histogram at construction time.
+//! Construction, cache control, and storage-introspection surface for
+//! [`NumericIndex`], plus the histogram seed constants.
 
-use chrono::DateTime;
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
+
+use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use gridstore::Blob;
 
-use crate::index::key_encoding::{
-    decode_f64_key_ascending, decode_i64_key_ascending, decode_u128_key_ascending,
-    encode_f64_key_ascending, encode_i64_key_ascending, encode_u128_key_ascending,
+use super::numeric_index_read::NumericIndexRead;
+use super::storage::NumericIndexInner;
+use super::{
+    Encodable, NumericIndex, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue,
+    NumericIndexMmapBuilder,
 };
-use crate::types::{DateTimePayloadType, FloatPayloadType, IntPayloadType};
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::numeric_point::Numericable;
+use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
+use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::telemetry::PayloadIndexTelemetry;
 
 pub(super) const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 pub(super) const HISTOGRAM_PRECISION: f64 = 0.01;
 
-pub trait Encodable: Copy + Serialize + DeserializeOwned + 'static {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
+impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P> NumericIndex<T, P>
+where
+    Vec<T>: Blob,
+{
+    /// Load immutable mmap based index, either in RAM or on disk
+    pub fn new_mmap(
+        path: &Path,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
+        let index = NumericIndexInner::new_mmap(path, is_on_disk, deleted_points)?;
 
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self);
-
-    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering;
-}
-
-impl Encodable for IntPayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_i64_key_ascending(*self, id)
+        Ok(index.map(|inner| Self {
+            inner,
+            _phantom: PhantomData,
+        }))
     }
 
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        decode_i64_key_ascending(key)
+    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+        let index = NumericIndexInner::new_gridstore(dir, create_if_missing)?;
+
+        Ok(index.map(|inner| Self {
+            inner,
+            _phantom: PhantomData,
+        }))
     }
 
-    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
-        self.cmp(other)
-    }
-}
-
-impl Encodable for u128 {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_u128_key_ascending(*self, id)
-    }
-
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        decode_u128_key_ascending(key)
+    pub fn builder_mmap(
+        path: &Path,
+        is_on_disk: bool,
+        deleted_points: &BitSlice,
+    ) -> NumericIndexMmapBuilder<T, P>
+    where
+        Self: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
+    {
+        NumericIndexMmapBuilder::new(path.to_owned(), is_on_disk, deleted_points.to_owned())
     }
 
-    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
-        self.cmp(other)
-    }
-}
-
-impl Encodable for FloatPayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_f64_key_ascending(*self, id)
+    pub fn builder_gridstore(dir: PathBuf) -> NumericIndexGridstoreBuilder<T, P>
+    where
+        Self: ValueIndexer<ValueType = P>,
+    {
+        NumericIndexGridstoreBuilder::new(dir)
     }
 
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        decode_f64_key_ascending(key)
+    pub fn inner(&self) -> &NumericIndexInner<T> {
+        &self.inner
     }
 
-    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
-        if self.is_nan() && other.is_nan() {
-            return std::cmp::Ordering::Equal;
+    pub fn mut_inner(&mut self) -> &mut NumericIndexInner<T> {
+        &mut self.inner
+    }
+
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        match &self.inner {
+            NumericIndexInner::Mutable(_) => IndexMutability::Mutable,
+            NumericIndexInner::Immutable(_) => IndexMutability::Immutable,
+            NumericIndexInner::Mmap(_) => IndexMutability::Immutable,
         }
-        if self.is_nan() {
-            return std::cmp::Ordering::Less;
+    }
+
+    pub fn get_storage_type(&self) -> StorageType {
+        match &self.inner {
+            NumericIndexInner::Mutable(index) => index.storage_type(),
+            NumericIndexInner::Immutable(index) => index.storage_type(),
+            NumericIndexInner::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
         }
-        if other.is_nan() {
-            return std::cmp::Ordering::Greater;
-        }
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-/// Encodes timestamps as i64 in microseconds
-impl Encodable for DateTimePayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_i64_key_ascending(self.timestamp(), id)
     }
 
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        let (id, timestamp) = decode_i64_key_ascending(key);
-        let datetime =
-            DateTime::from_timestamp(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000)
-                .unwrap_or_else(|| {
-                    log::warn!("Failed to decode timestamp {timestamp}, fallback to UNIX_EPOCH");
-                    DateTime::UNIX_EPOCH
-                });
-        (id, datetime.into())
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&T) -> bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        self.inner.check_values_any(idx, check_fn, hw_counter)
     }
 
-    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
-        self.timestamp().cmp(&other.timestamp())
+    pub fn wipe(self) -> OperationResult<()> {
+        self.inner.wipe()
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        self.inner.get_telemetry_data()
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        self.inner.values_count(idx).unwrap_or_default()
+    }
+
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+        self.inner.get_values(idx)
+    }
+
+    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
+        self.inner.values_is_empty(idx)
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.inner.is_on_disk()
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.inner.populate()
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.inner.clear_cache()
     }
 }
