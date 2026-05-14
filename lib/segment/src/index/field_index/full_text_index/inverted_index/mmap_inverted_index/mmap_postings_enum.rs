@@ -1,18 +1,18 @@
 #[cfg(test)]
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::UniversalRead;
 
 use super::super::positions::Positions;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
 use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::uio_postings::UniversalPostings;
 
-pub enum MmapPostingsEnum {
-    Ids(UniversalPostings<(), MmapFile>),
-    WithPositions(UniversalPostings<Positions, MmapFile>),
+pub enum MmapPostingsEnum<S: UniversalRead> {
+    Ids(UniversalPostings<(), S>),
+    WithPositions(UniversalPostings<Positions, S>),
 }
 
-impl MmapPostingsEnum {
+impl<S: UniversalRead> MmapPostingsEnum<S> {
     pub fn populate(&self) -> OperationResult<()> {
         match self {
             MmapPostingsEnum::Ids(postings) => postings.populate(),

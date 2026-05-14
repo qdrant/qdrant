@@ -561,7 +561,7 @@ mod tests {
 
         MmapInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
-        let mmap = MmapInvertedIndex::open(
+        let mmap: MmapInvertedIndex = MmapInvertedIndex::open(
             mmap_dir.path().into(),
             false,
             phrase_matching,
@@ -604,6 +604,12 @@ mod tests {
             assert_eq!(mutable_ids, imm_mmap_ids);
         }
 
+        let mmap_counts = mmap
+            .storage
+            .point_to_tokens_count
+            .read_whole()
+            .unwrap()
+            .into_owned();
         for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
             // Check same deleted points
             assert_eq!(
@@ -613,10 +619,7 @@ mod tests {
             );
 
             // Check same count
-            assert_eq!(
-                *mmap.storage.point_to_tokens_count.get(point_id).unwrap(),
-                *count
-            );
+            assert_eq!(mmap_counts[point_id], *count);
             assert_eq!(imm_mmap.point_to_tokens_count[point_id], *count);
         }
 

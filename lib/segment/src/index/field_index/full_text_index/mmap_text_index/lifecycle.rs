@@ -1,29 +1,26 @@
 use std::path::PathBuf;
 
-use common::bitvec::{BitSlice, BitVec};
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 use fs_err as fs;
 use serde_json::Value;
 
-use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
-use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
-use super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
-use super::text_index::FullTextIndex;
-use super::tokenizers::Tokenizer;
+use super::super::FullTextIndex;
+use super::super::immutable_text_index::ImmutableFullTextIndex;
+use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
+use super::super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
+use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
+use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
+use super::super::tokenizers::Tokenizer;
+use super::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
-pub struct MmapFullTextIndex {
-    pub(super) inverted_index: MmapInvertedIndex,
-    pub(super) tokenizer: Tokenizer,
-}
-
-impl MmapFullTextIndex {
+impl<S: UniversalRead> MmapFullTextIndex<S> {
     pub fn open(
         path: PathBuf,
         config: TextIndexParams,
@@ -36,32 +33,16 @@ impl MmapFullTextIndex {
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
         let inverted_index =
-            MmapInvertedIndex::open(path, populate, has_positions, deleted_points)?;
+            MmapInvertedIndex::<S>::open(path, populate, has_positions, deleted_points)?;
         Ok(inverted_index.map(|inverted_index| Self {
             inverted_index,
             tokenizer,
         }))
     }
 
-    pub(crate) fn ram_usage_bytes(&self) -> usize {
-        self.inverted_index.ram_usage_bytes()
-    }
-
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.inverted_index.files()
-    }
-
-    pub fn immutable_files(&self) -> Vec<PathBuf> {
-        self.inverted_index.immutable_files()
-    }
-
-    fn path(&self) -> &PathBuf {
-        &self.inverted_index.path
-    }
-
     pub fn wipe(self) -> OperationResult<()> {
-        let files = self.files();
-        let path = self.path().clone();
+        let files = self.inverted_index.files();
+        let path = self.inverted_index.path.clone();
         // drop mmap handles before deleting files
         drop(self);
         for file in files {
@@ -79,31 +60,23 @@ impl MmapFullTextIndex {
         self.inverted_index.flusher()
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.inverted_index.is_on_disk()
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         self.inverted_index.populate()?;
         Ok(())
     }
 
-    /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.inverted_index.clear_cache()?;
         Ok(())
     }
-}
 
-pub struct FullTextMmapIndexBuilder {
-    path: PathBuf,
-    mutable_index: MutableInvertedIndex,
-    config: TextIndexParams,
-    is_on_disk: bool,
-    tokenizer: Tokenizer,
-    deleted_points: BitVec,
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.inverted_index.files()
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        self.inverted_index.immutable_files()
+    }
 }
 
 impl FullTextMmapIndexBuilder {

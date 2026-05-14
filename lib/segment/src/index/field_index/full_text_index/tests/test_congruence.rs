@@ -13,14 +13,13 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
 use crate::fixtures::payload_fixtures::random_full_text_payload;
 use crate::index::field_index::field_index_base::{PayloadFieldIndex, PayloadFieldIndexRead};
+use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
 use crate::index::field_index::full_text_index::inverted_index::{
     ARRAY_BOUNDARY_SENTINEL, Document, ParsedQuery, TokenId, TokenSet,
 };
 use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::full_text_index::mutable_text_index::MutableFullTextIndex;
-use crate::index::field_index::full_text_index::text_index::{
-    FullTextGridstoreIndexBuilder, FullTextIndex,
-};
+use crate::index::field_index::full_text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 use crate::json_path::JsonPath;
 use crate::types::{FieldCondition, ValuesCount};
@@ -293,6 +292,7 @@ fn test_congruence(
         panic!("Expects mutable full text index as first");
     };
     let mut keywords = index
+        .inner
         .inverted_index
         .vocab
         .keys()
