@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
-
 use common::universal_io::MmapFile;
 
 use super::super::inverted_index::InvertedIndex;

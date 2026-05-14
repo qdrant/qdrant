@@ -79,18 +79,16 @@ impl MutableFullTextIndex {
     #[inline]
     pub(in super::super) fn init(&mut self) -> OperationResult<()> {
         self.storage.clear().map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to clear mutable full text index: {err}",
-            ))
+            OperationError::service_error(
+                format!("Failed to clear mutable full text index: {err}",),
+            )
         })
     }
 
     #[inline]
     pub(in super::super) fn wipe(self) -> OperationResult<()> {
         self.storage.wipe().map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to wipe mutable full text index: {err}",
-            ))
+            OperationError::service_error(format!("Failed to wipe mutable full text index: {err}",))
         })
     }
 
