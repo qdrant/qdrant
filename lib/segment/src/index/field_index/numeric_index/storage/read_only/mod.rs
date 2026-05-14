@@ -8,6 +8,7 @@ use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
 
 mod read_ops;
+mod trait_impls;
 
 /// Read-only counterpart to [`super::NumericIndexInner`].
 ///
