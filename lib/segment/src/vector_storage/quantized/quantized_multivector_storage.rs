@@ -355,6 +355,8 @@ where
     multi_vector_config: MultiVectorConfig,
 }
 
+pub type DynScore<'a, Query> = dyn Fn(&Vec<Query>) -> ScoreType + 'a;
+
 impl<QuantizedStorage, TMultivectorOffsetsStorage>
     QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
 where
@@ -383,7 +385,76 @@ where
         }
     }
 
-    pub fn for_each_in_multi_batch(
+    #[inline]
+    pub fn score_points_batch<F>(
+        &self,
+        point_ids: &[PointOffsetType],
+        scorer: F,
+        scores: &mut [ScoreType],
+        hw_counter: &HardwareCounterCell,
+    ) where
+        F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
+    {
+        debug_assert_eq!(point_ids.len(), scores.len());
+
+        if self.is_in_ram_or_mmap() {
+            self.score_points_batch_mmap(point_ids, scorer, scores, hw_counter);
+        } else {
+            self.score_points_batch_uring(point_ids, scorer, scores, hw_counter);
+        }
+    }
+
+    fn is_in_ram_or_mmap(&self) -> bool {
+        true // TODO
+    }
+
+    #[inline]
+    fn score_points_batch_mmap<F>(
+        &self,
+        point_ids: &[PointOffsetType],
+        scorer: F,
+        scores: &mut [ScoreType],
+        hw_counter: &HardwareCounterCell,
+    ) where
+        F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
+    {
+        match self.multi_vector_config.comparator {
+            MultiVectorComparator::MaxSim => (),
+        }
+
+        for (index, &point_id) in point_ids.iter().enumerate() {
+            scores[index] = scorer(&|query| {
+                self.score_point_max_similarity(query, point_id, hw_counter) // inhibit rustfmt
+            });
+        }
+    }
+
+    #[inline]
+    fn score_points_batch_uring<F>(
+        &self,
+        point_ids: &[PointOffsetType],
+        scorer: F,
+        scores: &mut [ScoreType],
+        hw_counter: &HardwareCounterCell,
+    ) where
+        F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
+    {
+        match self.multi_vector_config.comparator {
+            MultiVectorComparator::MaxSim => (),
+        }
+
+        self.for_each_in_multi_batch(
+            point_ids,
+            |index, multi_vector| {
+                scores[index] = scorer(&|query| {
+                    self.score_vector_max_similarity(query, multi_vector, hw_counter)
+                });
+            },
+            hw_counter,
+        );
+    }
+
+    fn for_each_in_multi_batch(
         &self,
         point_ids: &[PointOffsetType],
         mut callback: impl FnMut(usize, &[Cow<'_, [u8]>]),
@@ -440,8 +511,9 @@ where
         debug_assert!(multi_vectors.is_empty());
     }
 
-    /// Custom `score_max_similarity` implementation for quantized vectors
-    pub fn score_vector_max_similarity(
+    /// Custom `score_max_similarity` implementation for quantized vectors.
+    /// Efficient for io_uring storage implementation.
+    fn score_vector_max_similarity(
         &self,
         query: &[QuantizedStorage::EncodedQuery],
         multi_vector: &[Cow<'_, [u8]>],
@@ -470,7 +542,8 @@ where
         sum
     }
 
-    /// Custom `score_max_similarity` implementation for quantized vectors
+    /// Custom `score_max_similarity` implementation for quantized vectors.
+    /// Efficient for in-RAM and mmap storage implementations.
     fn score_point_max_similarity(
         &self,
         query: &[QuantizedStorage::EncodedQuery],
