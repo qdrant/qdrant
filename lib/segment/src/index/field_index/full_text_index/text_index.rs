@@ -159,60 +159,11 @@ impl FullTextIndex {
         self.filter_query(parsed_query, hw_counter)
     }
 
-    /// Approximate RAM usage in bytes for in-memory structures.
-    pub fn ram_usage_bytes(&self) -> usize {
-        match self {
-            FullTextIndex::Mutable(index) => index.ram_usage_bytes(),
-            FullTextIndex::Immutable(index) => index.ram_usage_bytes(),
-            FullTextIndex::Mmap(index) => index.ram_usage_bytes(),
-        }
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            FullTextIndex::Mutable(_) => false,
-            FullTextIndex::Immutable(_) => false,
-            FullTextIndex::Mmap(index) => index.is_on_disk(),
-        }
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            FullTextIndex::Mutable(_) => {}   // Not a mmap
-            FullTextIndex::Immutable(_) => {} // Not a mmap
-            FullTextIndex::Mmap(index) => index.populate()?,
-        }
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            // Only clears backing mmap storage if used, not in-memory representation
-            FullTextIndex::Mutable(index) => index.clear_cache(),
-            // Only clears backing mmap storage if used, not in-memory representation
-            FullTextIndex::Immutable(index) => index.clear_cache(),
-            FullTextIndex::Mmap(index) => index.clear_cache(),
-        }
-    }
-
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
             FullTextIndex::Mutable(_) => IndexMutability::Mutable,
             FullTextIndex::Immutable(_) => IndexMutability::Immutable,
             FullTextIndex::Mmap(_) => IndexMutability::Immutable,
-        }
-    }
-
-    pub fn get_storage_type(&self) -> StorageType {
-        match self {
-            FullTextIndex::Mutable(index) => index.storage_type(),
-            FullTextIndex::Immutable(index) => index.storage_type(),
-            FullTextIndex::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
         }
     }
 }
@@ -269,19 +220,11 @@ impl PayloadFieldIndex for FullTextIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        match self {
-            Self::Mutable(index) => index.files(),
-            Self::Immutable(index) => index.files(),
-            Self::Mmap(index) => index.files(),
-        }
+        FullTextIndexRead::files(self)
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        match self {
-            Self::Mutable(_) => vec![],
-            Self::Immutable(index) => index.immutable_files(),
-            Self::Mmap(index) => index.immutable_files(),
-        }
+        FullTextIndexRead::immutable_files(self)
     }
 }
 
@@ -384,6 +327,62 @@ impl FullTextIndexRead for FullTextIndex {
             Self::Mutable(index) => index.for_each_payload_block_inner(threshold, key, f),
             Self::Immutable(index) => index.for_each_payload_block_inner(threshold, key, f),
             Self::Mmap(index) => index.for_each_payload_block_inner(threshold, key, f),
+        }
+    }
+
+    fn get_storage_type(&self) -> StorageType {
+        match self {
+            Self::Mutable(index) => FullTextIndexRead::get_storage_type(index),
+            Self::Immutable(index) => FullTextIndexRead::get_storage_type(index),
+            Self::Mmap(index) => FullTextIndexRead::get_storage_type(index.as_ref()),
+        }
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
+        match self {
+            Self::Mutable(index) => FullTextIndexRead::ram_usage_bytes(index),
+            Self::Immutable(index) => FullTextIndexRead::ram_usage_bytes(index),
+            Self::Mmap(index) => FullTextIndexRead::ram_usage_bytes(index.as_ref()),
+        }
+    }
+
+    fn is_on_disk(&self) -> bool {
+        match self {
+            Self::Mutable(index) => FullTextIndexRead::is_on_disk(index),
+            Self::Immutable(index) => FullTextIndexRead::is_on_disk(index),
+            Self::Mmap(index) => FullTextIndexRead::is_on_disk(index.as_ref()),
+        }
+    }
+
+    fn populate(&self) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => FullTextIndexRead::populate(index),
+            Self::Immutable(index) => FullTextIndexRead::populate(index),
+            Self::Mmap(index) => FullTextIndexRead::populate(index.as_ref()),
+        }
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => FullTextIndexRead::clear_cache(index),
+            Self::Immutable(index) => FullTextIndexRead::clear_cache(index),
+            Self::Mmap(index) => FullTextIndexRead::clear_cache(index.as_ref()),
+        }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Mutable(index) => FullTextIndexRead::files(index),
+            Self::Immutable(index) => FullTextIndexRead::files(index),
+            Self::Mmap(index) => FullTextIndexRead::files(index.as_ref()),
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Mutable(_) => Vec::new(),
+            Self::Immutable(index) => FullTextIndexRead::immutable_files(index),
+            Self::Mmap(index) => FullTextIndexRead::immutable_files(index.as_ref()),
         }
     }
 }

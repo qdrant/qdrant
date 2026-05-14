@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 
@@ -8,8 +6,7 @@ use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedInd
 use super::super::mmap_text_index::MmapFullTextIndex;
 use super::ImmutableFullTextIndex;
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::payload_config::StorageType;
+use crate::common::operation_error::OperationResult;
 
 impl ImmutableFullTextIndex {
     /// Open and load immutable full text index from mmap storage
@@ -43,38 +40,7 @@ impl ImmutableFullTextIndex {
         self.storage.wipe()
     }
 
-    /// Clear cache
-    ///
-    /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
-    /// index.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.clear_cache().map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to clear immutable full text index gridstore cache: {err}"
-            ))
-        })
-    }
-
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.storage.files()
-    }
-
-    pub fn immutable_files(&self) -> Vec<PathBuf> {
-        self.storage.immutable_files()
-    }
-
     pub fn flusher(&self) -> Flusher {
         self.storage.flusher()
-    }
-
-    pub fn storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.storage.is_on_disk(),
-        }
-    }
-
-    /// Approximate RAM usage in bytes (cached at construction).
-    pub fn ram_usage_bytes(&self) -> usize {
-        self.cached_ram_usage_bytes
     }
 }

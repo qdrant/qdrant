@@ -10,6 +10,7 @@ use super::value_indexer::ValueIndexer;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::bool_index::{BoolIndex, BoolIndexRead};
+use crate::index::field_index::full_text_index::read_ops::FullTextIndexRead;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::{GeoMapIndex, GeoMapIndexRead};
 use crate::index::field_index::map_index::MapIndex;

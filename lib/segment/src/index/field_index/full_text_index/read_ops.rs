@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::PathBuf;
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -12,6 +13,7 @@ use super::text_index::PayloadMatchQueryType;
 use super::tokenizers::{Tokenizer, TokenizerTextKind};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, ValueIndexer};
+use crate::index::payload_config::StorageType;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::types::{
     FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
@@ -65,6 +67,20 @@ pub trait FullTextIndexRead {
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()>;
+
+    fn get_storage_type(&self) -> StorageType;
+
+    fn ram_usage_bytes(&self) -> usize;
+
+    fn is_on_disk(&self) -> bool;
+
+    fn populate(&self) -> OperationResult<()>;
+
+    fn clear_cache(&self) -> OperationResult<()>;
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 
     /// Parse as [`TokenizerTextKind::Document`] and return [`ParsedQuery::Phrase`].
     /// Returns [`None`] if there are any unseen tokens.

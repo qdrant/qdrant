@@ -15,7 +15,6 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::ValueIndexer;
-use crate::index::payload_config::StorageType;
 
 impl MutableFullTextIndex {
     /// Open and load mutable full text index from Gridstore storage
@@ -90,23 +89,6 @@ impl MutableFullTextIndex {
         self.storage.wipe().map_err(|err| {
             OperationError::service_error(format!("Failed to wipe mutable full text index: {err}",))
         })
-    }
-
-    /// Clear cache
-    ///
-    /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
-    /// index.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.clear_cache().map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to clear mutable full text index gridstore cache: {err}"
-            ))
-        })
-    }
-
-    #[inline]
-    pub(in super::super) fn files(&self) -> Vec<PathBuf> {
-        self.storage.files()
     }
 
     #[inline]
@@ -196,20 +178,6 @@ impl MutableFullTextIndex {
             .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap())
     }
 
-    pub fn storage_type(&self) -> StorageType {
-        StorageType::Gridstore
-    }
-
-    /// Approximate RAM usage in bytes for in-memory structures.
-    pub fn ram_usage_bytes(&self) -> usize {
-        let Self {
-            inverted_index,
-            config: _,
-            storage: _,
-            tokenizer: _,
-        } = self;
-        inverted_index.ram_usage_bytes()
-    }
 }
 
 impl ValueIndexer for MutableFullTextIndex {

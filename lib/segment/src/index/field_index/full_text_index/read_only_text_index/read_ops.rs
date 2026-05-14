@@ -1,9 +1,12 @@
+use std::path::PathBuf;
+
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
 use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
+use super::super::mmap_text_index::MmapFullTextIndex;
 use super::super::read_ops::{self, FullTextIndexRead};
 use super::super::tokenizers::Tokenizer;
 use super::ReadOnlyFullTextIndex;
@@ -11,6 +14,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
+use crate::index::payload_config::StorageType;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -78,6 +82,36 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         self.inner
             .inverted_index
             .for_each_payload_block(threshold, key, f)
+    }
+
+    fn get_storage_type(&self) -> StorageType {
+        StorageType::Mmap {
+            is_on_disk: MmapFullTextIndex::is_on_disk(&self.inner),
+        }
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
+        MmapFullTextIndex::ram_usage_bytes(&self.inner)
+    }
+
+    fn is_on_disk(&self) -> bool {
+        MmapFullTextIndex::is_on_disk(&self.inner)
+    }
+
+    fn populate(&self) -> OperationResult<()> {
+        MmapFullTextIndex::populate(&self.inner)
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        MmapFullTextIndex::clear_cache(&self.inner)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        MmapFullTextIndex::files(&self.inner)
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        MmapFullTextIndex::immutable_files(&self.inner)
     }
 }
 

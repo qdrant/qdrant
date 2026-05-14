@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
@@ -8,6 +10,7 @@ use super::super::tokenizers::Tokenizer;
 use super::MmapFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::payload_config::StorageType;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> FullTextIndexRead for MmapFullTextIndex<S> {
@@ -70,5 +73,35 @@ impl<S: UniversalRead> FullTextIndexRead for MmapFullTextIndex<S> {
     ) -> OperationResult<()> {
         self.inverted_index
             .for_each_payload_block(threshold, key, f)
+    }
+
+    fn get_storage_type(&self) -> StorageType {
+        StorageType::Mmap {
+            is_on_disk: MmapFullTextIndex::is_on_disk(self),
+        }
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
+        MmapFullTextIndex::ram_usage_bytes(self)
+    }
+
+    fn is_on_disk(&self) -> bool {
+        MmapFullTextIndex::is_on_disk(self)
+    }
+
+    fn populate(&self) -> OperationResult<()> {
+        MmapFullTextIndex::populate(self)
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        MmapFullTextIndex::clear_cache(self)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        MmapFullTextIndex::files(self)
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        MmapFullTextIndex::immutable_files(self)
     }
 }
