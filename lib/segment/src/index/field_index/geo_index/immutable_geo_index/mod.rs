@@ -50,10 +50,6 @@ pub struct ImmutableGeoMapIndex {
     pub(super) points_count: usize,
     pub(super) points_values_count: usize,
     pub(super) max_values_per_point: usize,
-    pub(super) storage: Storage,
+    pub(super) storage: Box<StoredGeoMapIndex<MmapFile>>,
     pub(super) cached_ram_usage_bytes: usize,
-}
-
-pub(super) enum Storage {
-    Mmap(Box<StoredGeoMapIndex<MmapFile>>),
 }

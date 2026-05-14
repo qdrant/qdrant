@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, ReadRange};
 
 use super::super::mmap_geo_index::StoredGeoMapIndex;
-use super::{Counts, DELETED_SENTINEL, ImmutableGeoMapIndex, Storage};
+use super::{Counts, DELETED_SENTINEL, ImmutableGeoMapIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
@@ -111,7 +111,7 @@ impl ImmutableGeoMapIndex {
             points_count: index.points_count(),
             points_values_count: index.points_values_count(),
             max_values_per_point: index.max_values_per_point(),
-            storage: Storage::Mmap(Box::new(index)),
+            storage: Box::new(index),
             cached_ram_usage_bytes: 0,
         };
 
@@ -136,15 +136,11 @@ impl ImmutableGeoMapIndex {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        match self.storage {
-            Storage::Mmap(ref index) => index.files(),
-        }
+        self.storage.files()
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Mmap(index) => index.immutable_files(),
-        }
+        self.storage.immutable_files()
     }
 
     /// Clear cache
@@ -152,25 +148,19 @@ impl ImmutableGeoMapIndex {
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match &self.storage {
-            Storage::Mmap(index) => index.clear_cache().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear immutable geo index gridstore cache: {err}"
-                ))
-            }),
-        }
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear immutable geo index gridstore cache: {err}"
+            ))
+        })
     }
 
     pub fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Mmap(index) => index.wipe(),
-        }
+        self.storage.wipe()
     }
 
     pub fn flusher(&self) -> Flusher {
-        match self.storage {
-            Storage::Mmap(ref index) => index.flusher(),
-        }
+        self.storage.flusher()
     }
 
     pub fn points_count(&self) -> usize {
@@ -247,11 +237,7 @@ impl ImmutableGeoMapIndex {
                 encode_max_precision(removed_geo_point.lon.0, removed_geo_point.lat.0)?;
             removed_geo_hashes.push(removed_geo_hash);
 
-            match self.storage {
-                Storage::Mmap(ref mut index) => {
-                    index.remove_point(idx);
-                }
-            }
+            self.storage.remove_point(idx);
 
             if let Ok(hash_idx) = self
                 .points_map_hashes
@@ -350,10 +336,8 @@ impl ImmutableGeoMapIndex {
     }
 
     pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
+        StorageType::Mmap {
+            is_on_disk: self.storage.is_on_disk(),
         }
     }
 

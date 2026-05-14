@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
-use itertools::Itertools;
 
 use super::super::super::read_ops::GeoMapIndexRead;
 use super::ReadOnlyAppendableGeoMapIndex;
@@ -14,40 +13,41 @@ use crate::types::GeoPoint;
 
 impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyAppendableGeoMapIndex<S> {
     fn points_count(&self) -> usize {
-        self.in_memory_index.points_count
+        self.in_memory_index.points_count()
     }
 
     fn points_values_count(&self) -> usize {
-        self.in_memory_index.points_values_count
+        self.in_memory_index.points_values_count()
     }
 
     fn max_values_per_point(&self) -> usize {
-        self.in_memory_index.max_values_per_point
+        self.in_memory_index.max_values_per_point()
     }
 
     fn points_of_hash(
         &self,
         hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        Ok(self.in_memory_index.points_of_hash(hash))
+        self.in_memory_index.points_of_hash(hash, hw_counter)
     }
 
     fn values_of_hash(
         &self,
         hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        Ok(self.in_memory_index.values_of_hash(hash))
+        self.in_memory_index.values_of_hash(hash, hw_counter)
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> bool {
-        self.in_memory_index.check_values_any(idx, |p| check_fn(p))
+        self.in_memory_index
+            .check_values_any(idx, hw_counter, check_fn)
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {
@@ -55,33 +55,21 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyAppendableGeoMapIndex<S> {
     }
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
-        self.in_memory_index
-            .point_to_values
-            .get(idx as usize)
-            .map(|v| Box::new(v.iter().copied()) as Box<dyn Iterator<Item = GeoPoint> + '_>)
+        self.in_memory_index.get_values(idx)
     }
 
     fn iterator(
         &self,
         values: Vec<GeoHash>,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        Ok(Box::new(
-            values
-                .into_iter()
-                .flat_map(|top_geo_hash| self.in_memory_index.stored_sub_regions(top_geo_hash))
-                .unique(),
-        ))
+        self.in_memory_index.iterator(values)
     }
 
     fn points_per_hash_filtered(
         &self,
         filter: &dyn Fn(&(GeoHash, usize)) -> bool,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
-        Ok(self
-            .in_memory_index
-            .points_per_hash()
-            .filter(|pair| filter(pair))
-            .collect())
+        self.in_memory_index.points_per_hash_filtered(filter)
     }
 
     fn get_storage_type(&self) -> StorageType {

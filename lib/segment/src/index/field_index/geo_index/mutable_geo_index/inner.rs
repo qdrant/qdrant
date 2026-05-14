@@ -1,11 +1,15 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Itertools;
 
+use super::super::read_ops::GeoMapIndexRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
+use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
 /// In-memory state shared by [`super::MutableGeoMapIndex`] and
@@ -13,8 +17,7 @@ use crate::types::GeoPoint;
 ///
 /// Both wrappers add a different backing storage (`Gridstore` vs
 /// `GridstoreReader`); the in-memory layout that serves every
-/// [`super::super::read_ops::GeoMapIndexRead`] method is the same, so it
-/// lives here once.
+/// [`GeoMapIndexRead`] method is the same, so it lives here once.
 pub struct InMemoryGeoMapIndex {
     /*
     {
@@ -60,38 +63,6 @@ impl InMemoryGeoMapIndex {
             points_values_count: 0,
             max_values_per_point: 0,
         }
-    }
-
-    pub fn check_values_any(
-        &self,
-        idx: PointOffsetType,
-        check_fn: impl Fn(&GeoPoint) -> bool,
-    ) -> bool {
-        self.point_to_values
-            .get(idx as usize)
-            .map(|values| values.iter().any(check_fn))
-            .unwrap_or(false)
-    }
-
-    pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        self.point_to_values
-            .get(idx as usize)
-            .map(Vec::len)
-            .unwrap_or_default()
-    }
-
-    pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
-        self.points_per_hash
-            .iter()
-            .map(|(&hash, &count)| (hash, count))
-    }
-
-    pub fn points_of_hash(&self, hash: GeoHash) -> usize {
-        self.points_per_hash.get(&hash).copied().unwrap_or(0)
-    }
-
-    pub fn values_of_hash(&self, hash: GeoHash) -> usize {
-        self.values_per_hash.get(&hash).copied().unwrap_or(0)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
@@ -192,7 +163,7 @@ impl InMemoryGeoMapIndex {
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    pub fn stored_sub_regions(&self, geo: GeoHash) -> impl Iterator<Item = PointOffsetType> + '_ {
+    fn stored_sub_regions(&self, geo: GeoHash) -> impl Iterator<Item = PointOffsetType> + '_ {
         self.points_map
             .range(geo..)
             .take_while(move |(p, _h)| p.starts_with(geo))
@@ -277,9 +248,96 @@ impl InMemoryGeoMapIndex {
             }
         }
     }
+}
 
-    /// Approximate RAM usage in bytes.
-    pub fn ram_usage_bytes(&self) -> usize {
+impl GeoMapIndexRead for InMemoryGeoMapIndex {
+    fn points_count(&self) -> usize {
+        self.points_count
+    }
+
+    fn points_values_count(&self) -> usize {
+        self.points_values_count
+    }
+
+    fn max_values_per_point(&self) -> usize {
+        self.max_values_per_point
+    }
+
+    fn points_of_hash(
+        &self,
+        hash: GeoHash,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        Ok(self.points_per_hash.get(&hash).copied().unwrap_or(0))
+    }
+
+    fn values_of_hash(
+        &self,
+        hash: GeoHash,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        Ok(self.values_per_hash.get(&hash).copied().unwrap_or(0))
+    }
+
+    fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+        check_fn: &dyn Fn(&GeoPoint) -> bool,
+    ) -> bool {
+        self.point_to_values
+            .get(idx as usize)
+            .map(|values| values.iter().any(|v| check_fn(v)))
+            .unwrap_or(false)
+    }
+
+    fn values_count(&self, idx: PointOffsetType) -> usize {
+        self.point_to_values
+            .get(idx as usize)
+            .map(Vec::len)
+            .unwrap_or_default()
+    }
+
+    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+        self.point_to_values
+            .get(idx as usize)
+            .map(|v| Box::new(v.iter().copied()) as Box<dyn Iterator<Item = GeoPoint> + '_>)
+    }
+
+    fn iterator(
+        &self,
+        values: Vec<GeoHash>,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        Ok(Box::new(
+            values
+                .into_iter()
+                .flat_map(|top_geo_hash| self.stored_sub_regions(top_geo_hash))
+                .unique(),
+        ))
+    }
+
+    fn points_per_hash_filtered(
+        &self,
+        filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+    ) -> OperationResult<Vec<(GeoHash, usize)>> {
+        Ok(self
+            .points_per_hash
+            .iter()
+            .map(|(&hash, &count)| (hash, count))
+            .filter(|pair| filter(pair))
+            .collect())
+    }
+
+    /// Placeholder — both wrappers ([`super::MutableGeoMapIndex`] and
+    /// [`super::read_only::ReadOnlyAppendableGeoMapIndex`]) override this
+    /// on their own [`GeoMapIndexRead`] impls to report the concrete
+    /// storage. The inner is never consumed as a bare
+    /// `&dyn GeoMapIndexRead`, so this value is unobservable in practice.
+    fn get_storage_type(&self) -> StorageType {
+        StorageType::Gridstore
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
         let Self {
             points_per_hash,
             values_per_hash,
@@ -317,5 +375,35 @@ impl InMemoryGeoMapIndex {
                 .map(|v| v.capacity() * std::mem::size_of::<GeoPoint>())
                 .sum::<usize>();
         pph_bytes + vph_bytes + pm_bytes + ptv_bytes
+    }
+
+    fn is_on_disk(&self) -> bool {
+        false
+    }
+
+    fn populate(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    /// Placeholder — no cache to clear at the in-memory level. Wrappers
+    /// override this to clear their storage caches.
+    fn clear_cache(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    /// Placeholder — no files at the in-memory level. Wrappers override
+    /// this to report their storage files.
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    /// Placeholder — wrappers override this with their concrete tag
+    /// (e.g. `"mutable_geo"`, `"read_only_appendable_geo"`).
+    fn telemetry_index_type(&self) -> &'static str {
+        "in_memory_geo"
     }
 }
