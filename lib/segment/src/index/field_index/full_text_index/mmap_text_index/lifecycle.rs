@@ -7,12 +7,12 @@ use common::universal_io::UniversalRead;
 use fs_err as fs;
 use serde_json::Value;
 
+use super::super::FullTextIndex;
 use super::super::immutable_text_index::ImmutableFullTextIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
 use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
-use super::super::text_index::FullTextIndex;
 use super::super::tokenizers::Tokenizer;
 use super::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use crate::common::Flusher;

@@ -648,7 +648,7 @@ mod tests {
 
         use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
         use crate::index::field_index::ValueIndexer;
-        use crate::index::field_index::full_text_index::text_index::FullTextIndex;
+        use crate::index::field_index::full_text_index::FullTextIndex;
         use crate::types::{Condition, MatchTextAny, Nested, NestedCondition};
 
         let hw_counter = HardwareCounterCell::new();

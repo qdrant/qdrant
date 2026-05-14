@@ -1,7 +1,7 @@
 use common::types::PointOffsetType;
 use tempfile::Builder;
 
-use super::super::text_index::FullTextIndex;
+use super::super::FullTextIndex;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::json_path::JsonPath;
 use crate::types::{FieldCondition, Match};

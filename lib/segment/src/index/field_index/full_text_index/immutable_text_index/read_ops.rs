@@ -2,8 +2,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
+use super::super::full_text_index_read::FullTextIndexRead;
 use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
-use super::super::read_ops::FullTextIndexRead;
 use super::super::tokenizers::Tokenizer;
 use super::ImmutableFullTextIndex;
 use crate::common::operation_error::OperationResult;

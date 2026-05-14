@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex;
-use crate::index::field_index::full_text_index::read_ops::FullTextIndexRead;
+use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
 use crate::index::field_index::geo_index::GeoMapIndexRead;
 use crate::index::field_index::map_index::read_ops::MapIndexRead;
 use crate::index::field_index::null_index::NullIndexRead;

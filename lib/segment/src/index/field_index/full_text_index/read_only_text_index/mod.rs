@@ -23,7 +23,7 @@ mod read_ops;
 /// [2]: super::immutable_text_index::ImmutableFullTextIndex
 /// [3]: super::mmap_text_index::MmapFullTextIndex
 /// [4]: crate::index::field_index::PayloadFieldIndexRead
-/// [5]: super::read_ops::FullTextIndexRead
+/// [5]: super::full_text_index_read::FullTextIndexRead
 /// [6]: super::read_ops
 /// [7]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
 pub struct ReadOnlyFullTextIndex<S: UniversalRead> {

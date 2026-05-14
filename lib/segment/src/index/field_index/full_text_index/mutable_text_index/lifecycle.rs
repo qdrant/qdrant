@@ -6,9 +6,9 @@ use common::types::PointOffsetType;
 use gridstore::Gridstore;
 use itertools::Itertools;
 
+use super::super::FullTextIndex;
 use super::super::inverted_index::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
-use super::super::text_index::FullTextIndex;
 use super::super::tokenizers::Tokenizer;
 use super::{GRIDSTORE_OPTIONS, MutableFullTextIndex};
 use crate::common::Flusher;
