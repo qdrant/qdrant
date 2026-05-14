@@ -53,6 +53,22 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
         end_bound: Bound<Point<T>>,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
 
+    /// Number of `(value, point)` pairs in the given range.
+    ///
+    /// The default counts [`Self::values_range`]; variants with a
+    /// precomputed sorted container (`Immutable` / `Mmap`) override it with
+    /// an `O(log n)` boundary search.
+    fn values_range_size(
+        &self,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        Ok(self
+            .values_range(start_bound, end_bound, hw_counter)?
+            .count())
+    }
+
     fn get_histogram(&self) -> &Histogram<T>;
 
     fn get_points_count(&self) -> usize;

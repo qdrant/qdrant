@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::ops::Bound;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -167,17 +166,5 @@ where
 
     fn telemetry_index_type(&self) -> &'static str {
         "mutable_numeric"
-    }
-}
-
-impl<T: Encodable + Numericable + Send + Sync + Default> MutableNumericIndex<T>
-where
-    Vec<T>: Blob,
-{
-    /// Mutable-only direct access to the in-memory `BTreeSet<Point<T>>` used
-    /// by `estimate_points` to cheaply compute the size of a range. Not part
-    /// of the shared [`NumericIndexRead`] interface.
-    pub fn map(&self) -> &BTreeSet<Point<T>> {
-        &self.in_memory_index.map
     }
 }

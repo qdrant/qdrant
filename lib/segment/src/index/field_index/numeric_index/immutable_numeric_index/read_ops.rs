@@ -79,6 +79,18 @@ where
             .map(|Point { val, idx, .. }| (val, idx)))
     }
 
+    /// Cheap `O(log n)` boundary search over the precomputed sorted vector.
+    /// In-memory, so `hw_counter` is unused.
+    fn values_range_size(
+        &self,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        let iterator = self.map.values_range(start_bound, end_bound);
+        Ok(iterator.end_index - iterator.start_index)
+    }
+
     fn get_histogram(&self) -> &Histogram<T> {
         &self.histogram
     }
@@ -104,23 +116,5 @@ where
 
     fn telemetry_index_type(&self) -> &'static str {
         "immutable_numeric"
-    }
-}
-
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> ImmutableNumericIndex<T>
-where
-    Vec<T>: Blob,
-{
-    /// Cheap O(log N) size of the range without iterating. Used by
-    /// `estimate_points`; not part of the shared [`NumericIndexRead`]
-    /// interface because the mutable variant doesn't have a precomputed
-    /// container to range over.
-    pub(in super::super) fn values_range_size(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> usize {
-        let iterator = self.map.values_range(start_bound, end_bound);
-        iterator.end_index - iterator.start_index
     }
 }

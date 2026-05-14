@@ -115,7 +115,7 @@ where
         // We have to do 2 times binary search in mmap and immutable storage.
         .incr_delta(2 * ((index.total_unique_values_count()? as f32).log2().ceil() as usize));
 
-    let range_size = index.values_range(start, end, hw_counter)?.count();
+    let range_size = index.values_range_size(start, end, hw_counter)?;
     if range_size == 0 {
         return Ok(0);
     }

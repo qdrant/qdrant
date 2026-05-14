@@ -9,9 +9,9 @@
 //!   control, and `remove_point`.
 //! - [`read_ops`]: read-path forwarding — value lookups, telemetry,
 //!   RAM accounting, `is_on_disk`.
-//! - [`statistics`]: histogram-based cardinality and point-count helpers.
 //! - [`trait_impls`]: [`PayloadFieldIndex`], [`PayloadFieldIndexRead`],
-//!   and [`StreamRange`] implementations.
+//!   and [`StreamRange`] implementations (the query logic itself lives
+//!   in the shared [`query`](super::query) helpers).
 //! - [`read_only`]: [`ReadOnlyNumericIndexInner`] — the read-only
 //!   counterpart enum over the appendable and immutable backends.
 //!
@@ -24,7 +24,6 @@
 mod lifecycle;
 pub mod read_only;
 mod read_ops;
-mod statistics;
 mod trait_impls;
 
 use gridstore::Blob;

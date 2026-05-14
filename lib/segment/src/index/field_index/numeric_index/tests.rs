@@ -172,10 +172,8 @@ fn cardinality_request(
         lte: query.lte.map(OrderedFloat::from),
     };
 
-    let estimation = index
-        .inner()
-        .range_cardinality(&RangeInterface::Float(ordered_range))
-        .unwrap();
+    let estimation =
+        query::range_cardinality(index.inner(), &RangeInterface::Float(ordered_range)).unwrap();
 
     let result = index
         .inner()
