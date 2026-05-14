@@ -183,13 +183,7 @@ impl<S: UniversalRead> FieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::BoolIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::GeoIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::UuidIndex(idx) => idx.get_telemetry_data(),
-            ReadOnlyFieldIndex::FullTextIndex(idx) => PayloadIndexTelemetry {
-                field_name: None,
-                index_type: FullTextIndexRead::telemetry_index_type(idx),
-                points_values_count: FullTextIndexRead::points_count(idx),
-                points_count: FullTextIndexRead::points_count(idx),
-                histogram_bucket_size: None,
-            },
+            ReadOnlyFieldIndex::FullTextIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::NullIndex(idx) => idx.get_telemetry_data(),
         }

@@ -15,6 +15,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, ValueIndexer};
 use crate::index::payload_config::StorageType;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
     PayloadKeyType,
@@ -31,6 +32,21 @@ use crate::types::{
 pub trait FullTextIndexRead {
     fn tokenizer(&self) -> &Tokenizer;
     fn telemetry_index_type(&self) -> &'static str;
+
+    /// Telemetry shared between [`FullTextIndex`] and `ReadOnlyFullTextIndex<S>`.
+    /// Full-text indexes track a single per-point count, so `points_values_count`
+    /// and `points_count` are both reported as [`Self::points_count`].
+    ///
+    /// [`FullTextIndex`]: super::text_index::FullTextIndex
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            index_type: self.telemetry_index_type(),
+            points_values_count: self.points_count(),
+            points_count: self.points_count(),
+            histogram_bucket_size: None,
+        }
+    }
 
     fn points_count(&self) -> usize;
     fn values_count(&self, point_id: PointOffsetType) -> usize;
