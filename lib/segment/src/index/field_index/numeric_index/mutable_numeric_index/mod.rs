@@ -8,6 +8,7 @@ use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 
 mod lifecycle;
+pub mod read_only;
 mod read_ops;
 
 /// Default options for Gridstore storage
