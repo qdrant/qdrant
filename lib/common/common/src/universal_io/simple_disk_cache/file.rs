@@ -14,7 +14,8 @@ use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::{AdviceSetting, Madviseable};
 use crate::universal_io::pipeline::DiskCachePipeline;
 use crate::universal_io::{
-    OpenOptions, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps
+    OpenOptions, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
+    UniversalReadFileOps,
 };
 
 /// A lazily-populated local mirror of an immutable remote file.
