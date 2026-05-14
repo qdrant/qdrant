@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, UniversalKind};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -64,6 +64,22 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
         self.data
             .insert(id as VectorOffsetType, vector, hw_counter)
             .map_err(std::io::Error::other)
+    }
+
+    fn is_in_ram_or_mmap() -> bool {
+        type StorageType = ChunkedVectors<u8, MmapFile>;
+
+        // This should produce compilation error, if `QuantizedChunkedMmapStorage::data` type is changed,
+        // to ensure that we always use correct type for this check
+        fn _static_assert_storage_type(storage: QuantizedChunkedMmapStorage) {
+            let _: StorageType = storage.data;
+        }
+
+        match StorageType::storage_kind() {
+            UniversalKind::Mmap => true,
+            UniversalKind::IoUring => false,
+            UniversalKind::DiskCache => false,
+        }
     }
 
     fn is_on_disk(&self) -> bool {

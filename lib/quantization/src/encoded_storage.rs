@@ -30,6 +30,7 @@ pub trait EncodedStorage {
             .enumerate()
     }
 
+    fn is_in_ram_or_mmap() -> bool;
     fn is_on_disk(&self) -> bool;
 
     fn upsert_vector(
@@ -137,6 +138,10 @@ impl EncodedStorage for TestEncodedStorage {
         }
         self.data[offset..offset + self.quantized_vector_size.get()].copy_from_slice(vector);
         Ok(())
+    }
+
+    fn is_in_ram_or_mmap() -> bool {
+        true
     }
 
     fn is_on_disk(&self) -> bool {

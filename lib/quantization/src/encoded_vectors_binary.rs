@@ -826,6 +826,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 {
     type EncodedQuery = EncodedQueryBQ<TBitsStoreType>;
 
+    fn is_in_ram_or_mmap() -> bool {
+        TStorage::is_in_ram_or_mmap()
+    }
+
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()
     }
