@@ -15,12 +15,14 @@ use tempfile::{Builder, TempDir};
 
 use super::immutable_numeric_index::ImmutableNumericIndex;
 use super::*;
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::json_path::JsonPath;
-use crate::types::FieldCondition;
+use crate::types::{FieldCondition, FloatPayloadType, Range, RangeInterface};
 
 /// Generous default size for the deleted-points bitslice used in tests.
 ///
@@ -170,10 +172,8 @@ fn cardinality_request(
         lte: query.lte.map(OrderedFloat::from),
     };
 
-    let estimation = index
-        .inner()
-        .range_cardinality(&RangeInterface::Float(ordered_range))
-        .unwrap();
+    let estimation =
+        query::range_cardinality(index.inner(), &RangeInterface::Float(ordered_range)).unwrap();
 
     let result = index
         .inner()
@@ -676,7 +676,7 @@ fn test_numeric_index_reload(#[case] index_type: IndexType) {
 
     // Reload!
     //
-    // Note: `MmapNumericIndex::remove_point` is in-memory only — it doesn't
+    // Note: `UniversalNumericIndex::remove_point` is in-memory only — it doesn't
     // persist to the on-disk deletion bitslice. The reload path picks up
     // deletions from the `&BitSlice` argument, so for this test we have to
     // re-supply the same set of removed points here.

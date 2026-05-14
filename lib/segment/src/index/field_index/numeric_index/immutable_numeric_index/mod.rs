@@ -1,58 +1,28 @@
-use std::collections::BTreeSet;
 use std::ops::Bound;
-use std::path::PathBuf;
 
 use common::bitvec::{BitSliceExt as _, BitVec};
-use common::types::PointOffsetType;
-use gridstore::Blob;
 
 use super::Encodable;
-use super::mmap_numeric_index::MmapNumericIndex;
-use super::mutable_numeric_index::InMemoryNumericIndex;
-use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use super::mmap_numeric_index::UniversalNumericIndex;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
-use crate::index::payload_config::StorageType;
+
+mod lifecycle;
+mod read_ops;
 
 pub struct ImmutableNumericIndex<T: Encodable + Numericable + StoredValue + Default> {
-    map: NumericKeySortedVec<T>,
-    histogram: Histogram<T>,
-    points_count: usize,
-    max_values_per_point: usize,
-    point_to_values: ImmutablePointToValues<T>,
+    pub(super) map: NumericKeySortedVec<T>,
+    pub(super) histogram: Histogram<T>,
+    pub(super) points_count: usize,
+    pub(super) max_values_per_point: usize,
+    pub(super) point_to_values: ImmutablePointToValues<T>,
     // Backing storage, source of state, persists deletions
-    storage: Storage<T>,
+    pub(super) storage: Box<UniversalNumericIndex<T>>,
     /// Snapshot of approximate RAM usage at construction time.
     /// Not refreshed on `remove_point`.
-    cached_ram_usage_bytes: usize,
-}
-
-impl<T: Encodable + Numericable + StoredValue + Default> ImmutableNumericIndex<T> {
-    /// Approximate RAM usage in bytes for in-memory structures (cached at construction).
-    pub fn ram_usage_bytes(&self) -> usize {
-        self.cached_ram_usage_bytes
-    }
-
-    fn compute_ram_usage_bytes(&self) -> usize {
-        let Self {
-            map,
-            histogram,
-            points_count: _,
-            max_values_per_point: _,
-            point_to_values,
-            storage: _,
-            cached_ram_usage_bytes: _,
-        } = self;
-
-        map.ram_usage_bytes() + histogram.ram_usage_bytes() + point_to_values.ram_usage_bytes()
-    }
-}
-
-enum Storage<T: Encodable + Numericable + StoredValue + Default> {
-    Mmap(Box<MmapNumericIndex<T>>),
+    pub(super) cached_ram_usage_bytes: usize,
 }
 
 pub(super) struct NumericKeySortedVec<T: Encodable + Numericable> {
@@ -63,8 +33,8 @@ pub(super) struct NumericKeySortedVec<T: Encodable + Numericable> {
 
 pub(super) struct NumericKeySortedVecIterator<'a, T: Encodable + Numericable> {
     set: &'a NumericKeySortedVec<T>,
-    start_index: usize,
-    end_index: usize,
+    pub(super) start_index: usize,
+    pub(super) end_index: usize,
 }
 
 impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
@@ -77,7 +47,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         data.capacity() * size_of::<Point<T>>() + deleted.capacity().div_ceil(u8::BITS as usize)
     }
 
-    fn from_btree_set(map: BTreeSet<Point<T>>) -> Self {
+    pub(super) fn from_btree_set(map: std::collections::BTreeSet<Point<T>>) -> Self {
         let result = Self {
             deleted: BitVec::repeat(false, map.len()),
             data: map.into_iter().collect(),
@@ -88,11 +58,11 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         result
     }
 
-    fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.data.len() - self.deleted_count
     }
 
-    fn remove(&mut self, key: &Point<T>) -> bool {
+    pub(super) fn remove(&mut self, key: &Point<T>) -> bool {
         if let Ok(index) = self.data.binary_search(key)
             && let Some(is_deleted) = self.deleted.get_mut(index).as_deref_mut()
         {
@@ -105,7 +75,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         false
     }
 
-    fn values_range(
+    pub(super) fn values_range(
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
@@ -181,210 +151,9 @@ impl<T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIter
     }
 }
 
-impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> ImmutableNumericIndex<T>
-where
-    Vec<T>: Blob,
-{
-    /// Open and load immutable numeric index from mmap storage.
-    ///
-    /// NOTE: returns `Self` (infallible) while sibling
-    /// `ImmutableMapIndex::open_mmap` / `ImmutableGeoMapIndex::open_mmap` /
-    /// `ImmutableFullTextIndex::open_mmap` return `OperationResult<Self>`.
-    /// Numeric's body has no fallible reads to propagate (`from_mmap` is
-    /// infallible; `clear_cache` errors are warn-and-continue, matching the
-    /// other variants).
-    pub(super) fn open_mmap(index: MmapNumericIndex<T>) -> Self {
-        // Load in-memory index from mmap storage
-        let InMemoryNumericIndex {
-            map,
-            histogram,
-            points_count,
-            max_values_per_point,
-            point_to_values,
-        } = InMemoryNumericIndex::from_mmap(&index);
-
-        // Index is now loaded into memory, clear cache of backing mmap storage
-        if let Err(err) = index.clear_cache() {
-            log::warn!("Failed to clear mmap cache of ram mmap numeric index: {err}");
-        }
-
-        let mut result = Self {
-            map: NumericKeySortedVec::from_btree_set(map),
-            histogram,
-            points_count,
-            max_values_per_point,
-            point_to_values: ImmutablePointToValues::new(point_to_values),
-            storage: Storage::Mmap(Box::new(index)),
-            cached_ram_usage_bytes: 0,
-        };
-        result.cached_ram_usage_bytes = result.compute_ram_usage_bytes();
-        result
-    }
-
-    #[inline]
-    pub(super) fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Mmap(index) => index.wipe(),
-        }
-    }
-
-    /// Clear cache
-    ///
-    /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
-    /// index.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match &self.storage {
-            Storage::Mmap(index) => index.clear_cache(),
-        }
-    }
-
-    #[inline]
-    pub(super) fn files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Mmap(index) => index.files(),
-        }
-    }
-
-    #[inline]
-    pub(super) fn immutable_files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Mmap(index) => index.immutable_files(),
-        }
-    }
-
-    #[inline]
-    pub(super) fn flusher(&self) -> Flusher {
-        match &self.storage {
-            Storage::Mmap(index) => index.flusher(),
-        }
-    }
-
-    pub(super) fn check_values_any(
-        &self,
-        idx: PointOffsetType,
-        check_fn: impl Fn(&T) -> bool,
-    ) -> bool {
-        self.point_to_values.check_values_any(idx, |v| check_fn(v))
-    }
-
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        let iter = self.point_to_values.get_values(idx)?;
-        Some(Box::new(iter.copied()))
-    }
-
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        self.point_to_values.get_values_count(idx)
-    }
-
-    pub(super) fn total_unique_values_count(&self) -> usize {
-        self.map.len()
-    }
-
-    pub(super) fn values_range_size(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> usize {
-        let iterator = self.map.values_range(start_bound, end_bound);
-        iterator.end_index - iterator.start_index
-    }
-
-    pub(super) fn values_range(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> impl Iterator<Item = PointOffsetType> {
-        self.map
-            .values_range(start_bound, end_bound)
-            .map(|Point { idx, .. }| idx)
-    }
-
-    pub(super) fn orderable_values_range(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
-        self.map
-            .values_range(start_bound, end_bound)
-            .map(|Point { val, idx, .. }| (val, idx))
-    }
-
-    pub(super) fn remove_point(&mut self, idx: PointOffsetType) {
-        if let Some(removed_values) = self.point_to_values.get_values(idx) {
-            let mut removed_count = 0;
-            for value in removed_values {
-                let key = Point::new(*value, idx);
-                Self::remove_from_map(&mut self.map, &mut self.histogram, &key);
-
-                // Update persisted storage
-                match &mut self.storage {
-                    Storage::Mmap(index) => {
-                        index.remove_point(idx);
-                    }
-                }
-
-                removed_count += 1;
-            }
-            if removed_count > 0 {
-                self.points_count = self.points_count.saturating_sub(1);
-            }
-        }
-        self.point_to_values.remove_point(idx);
-    }
-
-    pub(super) fn get_histogram(&self) -> &Histogram<T> {
-        &self.histogram
-    }
-
-    pub(super) fn get_points_count(&self) -> usize {
-        self.points_count
-    }
-
-    pub(super) fn get_max_values_per_point(&self) -> usize {
-        self.max_values_per_point
-    }
-
-    fn remove_from_map(
-        map: &mut NumericKeySortedVec<T>,
-        histogram: &mut Histogram<T>,
-        key: &Point<T>,
-    ) {
-        if map.remove(key) {
-            histogram.remove(
-                key,
-                |x| Self::get_histogram_left_neighbor(map, x),
-                |x| Self::get_histogram_right_neighbor(map, x),
-            );
-        }
-    }
-
-    fn get_histogram_left_neighbor(
-        map: &NumericKeySortedVec<T>,
-        point: &Point<T>,
-    ) -> Option<Point<T>> {
-        map.values_range(Bound::Unbounded, Bound::Excluded(*point))
-            .next_back()
-    }
-
-    fn get_histogram_right_neighbor(
-        map: &NumericKeySortedVec<T>,
-        point: &Point<T>,
-    ) -> Option<Point<T>> {
-        map.values_range(Bound::Excluded(*point), Bound::Unbounded)
-            .next()
-    }
-
-    pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::ops::Bound;
 
     use super::*;

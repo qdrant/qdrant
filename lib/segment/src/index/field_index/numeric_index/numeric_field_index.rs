@@ -1,28 +1,54 @@
 use common::types::PointOffsetType;
 use itertools::Either;
 
-use super::{NumericIndexInner, StreamRange};
+use super::numeric_index_read::NumericIndexRead;
+use super::{NumericIndexInner, ReadOnlyNumericIndexInner, StreamRange};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::order_by::OrderValue;
 use crate::types::{FloatPayloadType, IntPayloadType, RangeInterface};
 
-pub enum NumericFieldIndex<'a> {
-    IntIndex(&'a NumericIndexInner<IntPayloadType>),
-    FloatIndex(&'a NumericIndexInner<FloatPayloadType>),
+/// Type-erased Int/Float numeric index view for order-by reads.
+///
+/// Generic over the two concrete storage backends — `I` serves the
+/// `i64`-typed index, `F` the `f64`-typed one — so the writable and
+/// read-only index hierarchies share one set of impls. Use the
+/// [`NumericFieldIndex`] / [`ReadOnlyNumericFieldIndex`] aliases rather
+/// than spelling out the backend types.
+pub enum NumericFieldIndexView<'a, I, F> {
+    IntIndex(&'a I),
+    FloatIndex(&'a F),
 }
 
-impl<'a> StreamRange<OrderValue> for NumericFieldIndex<'a> {
+/// [`NumericFieldIndexView`] over the writable storage enum.
+pub type NumericFieldIndex<'a> = NumericFieldIndexView<
+    'a,
+    NumericIndexInner<IntPayloadType>,
+    NumericIndexInner<FloatPayloadType>,
+>;
+
+/// [`NumericFieldIndexView`] over the read-only storage enum.
+pub type ReadOnlyNumericFieldIndex<'a, S> = NumericFieldIndexView<
+    'a,
+    ReadOnlyNumericIndexInner<IntPayloadType, S>,
+    ReadOnlyNumericIndexInner<FloatPayloadType, S>,
+>;
+
+impl<'a, I, F> StreamRange<OrderValue> for NumericFieldIndexView<'a, I, F>
+where
+    I: NumericIndexRead<IntPayloadType> + StreamRange<IntPayloadType>,
+    F: NumericIndexRead<FloatPayloadType> + StreamRange<FloatPayloadType>,
+{
     fn stream_range(
         &self,
         range: &RangeInterface,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + '_> {
         Ok(match self {
-            NumericFieldIndex::IntIndex(index) => Either::Left(
+            NumericFieldIndexView::IntIndex(index) => Either::Left(
                 index
                     .stream_range(range)?
                     .map(|(v, p)| (OrderValue::from(v), p)),
             ),
-            NumericFieldIndex::FloatIndex(index) => Either::Right(
+            NumericFieldIndexView::FloatIndex(index) => Either::Right(
                 index
                     .stream_range(range)?
                     .map(|(v, p)| (OrderValue::from(v), p)),
@@ -31,20 +57,24 @@ impl<'a> StreamRange<OrderValue> for NumericFieldIndex<'a> {
     }
 }
 
-impl<'a> NumericFieldIndex<'a> {
+impl<'a, I, F> NumericFieldIndexView<'a, I, F>
+where
+    I: NumericIndexRead<IntPayloadType>,
+    F: NumericIndexRead<FloatPayloadType>,
+{
     pub fn get_ordering_values(
         &self,
         idx: PointOffsetType,
     ) -> impl Iterator<Item = OrderValue> + 'a {
         match self {
-            NumericFieldIndex::IntIndex(index) => Either::Left(
+            NumericFieldIndexView::IntIndex(index) => Either::Left(
                 index
                     .get_values(idx)
                     .into_iter()
                     .flatten()
                     .map(OrderValue::Int),
             ),
-            NumericFieldIndex::FloatIndex(index) => Either::Right(
+            NumericFieldIndexView::FloatIndex(index) => Either::Right(
                 index
                     .get_values(idx)
                     .into_iter()
@@ -57,9 +87,9 @@ impl<'a> NumericFieldIndex<'a> {
 
 /// Read-only abstraction over a per-key numeric index.
 ///
-/// Implemented by the appendable [`NumericFieldIndex`] today; a future
-/// `ReadOnlySegment` will provide its own concrete numeric-index type with
-/// the same shape, so order-by reads can share one implementation.
+/// Implemented by [`NumericFieldIndexView`] over any pair of storage
+/// backends, so the writable and read-only index hierarchies (and a
+/// future `ReadOnlySegment`) share one order-by implementation.
 ///
 /// Returned iterators borrow from `&self` — callers hold them within the
 /// scope of the borrow.
@@ -72,9 +102,13 @@ pub trait NumericFieldIndexRead {
     ) -> OperationResult<impl DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + '_>;
 }
 
-impl<'a> NumericFieldIndexRead for NumericFieldIndex<'a> {
+impl<'a, I, F> NumericFieldIndexRead for NumericFieldIndexView<'a, I, F>
+where
+    I: NumericIndexRead<IntPayloadType> + StreamRange<IntPayloadType>,
+    F: NumericIndexRead<FloatPayloadType> + StreamRange<FloatPayloadType>,
+{
     fn get_ordering_values(&self, idx: PointOffsetType) -> impl Iterator<Item = OrderValue> + '_ {
-        NumericFieldIndex::get_ordering_values(self, idx)
+        NumericFieldIndexView::get_ordering_values(self, idx)
     }
 
     fn stream_range(

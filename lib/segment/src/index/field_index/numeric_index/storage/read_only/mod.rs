@@ -1,0 +1,29 @@
+use common::universal_io::UniversalRead;
+use gridstore::Blob;
+
+use super::super::Encodable;
+use super::super::mmap_numeric_index::UniversalNumericIndex;
+use super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;
+use crate::index::field_index::numeric_point::Numericable;
+use crate::index::field_index::stored_point_to_values::StoredValue;
+
+mod read_ops;
+mod trait_impls;
+
+/// Read-only counterpart to [`super::NumericIndexInner`].
+///
+/// Selects across the two read-only storage backends and forwards each
+/// [`NumericIndexRead`] method to the active variant.
+///
+/// [`NumericIndexRead`]: super::super::numeric_index_read::NumericIndexRead
+pub enum ReadOnlyNumericIndexInner<
+    T: Encodable + Numericable + StoredValue + Send + Sync + Default,
+    S: UniversalRead,
+> where
+    Vec<T>: Blob,
+{
+    /// Loads into RAM from appendable (Gridstore) storage format
+    Appendable(ReadOnlyAppendableNumericIndex<T, S>),
+    /// Directly reads from storage in immutable format
+    Immutable(UniversalNumericIndex<T, S>),
+}

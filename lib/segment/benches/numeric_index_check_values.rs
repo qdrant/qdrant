@@ -5,7 +5,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 use segment::common::operation_error::OperationResult;
-use segment::index::field_index::numeric_index::mmap_numeric_index::MmapNumericIndex;
+use segment::index::field_index::numeric_index::NumericIndexRead;
+use segment::index::field_index::numeric_index::mmap_numeric_index::UniversalNumericIndex;
 use segment::index::field_index::numeric_index::mutable_numeric_index::InMemoryNumericIndex;
 use tempfile::Builder;
 
@@ -56,16 +57,13 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
     });
 
     let mmap_index =
-        MmapNumericIndex::build(mutable_index, dir.path(), false, &deleted_points).unwrap();
+        UniversalNumericIndex::build(mutable_index, dir.path(), false, &deleted_points).unwrap();
 
     group.bench_function("mmap-numeric-index", |b| {
         b.iter(|| {
             let random_index = rng.random_range(0..NUM_POINTS) as PointOffsetType;
 
-            if mmap_index
-                .check_values_any(random_index, |value| *value > 0.5, &hw_counter)
-                .unwrap()
-            {
+            if mmap_index.check_values_any(random_index, |value| *value > 0.5, &hw_counter) {
                 count += 1;
             }
         })
