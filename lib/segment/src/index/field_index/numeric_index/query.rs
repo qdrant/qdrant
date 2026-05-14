@@ -1,5 +1,6 @@
 //! Generic query helpers over [`NumericIndexRead`]: cardinality
-//! estimation, filtering, payload-block iteration, and condition checking.
+//! estimation, filtering, payload-block iteration, condition checking,
+//! and ordered range streaming.
 //!
 //! These free functions are written purely against the
 //! [`NumericIndexRead`] interface, so every index variant — writable,
@@ -14,6 +15,7 @@ use std::str::FromStr;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Either;
 use ordered_float::OrderedFloat;
 use uuid::Uuid;
 
@@ -341,4 +343,35 @@ where
             &hw_counter,
         )
     }))
+}
+
+/// Stream `(value, point)` pairs of the given range in ascending order.
+///
+/// The iterator is double-ended, so callers can also walk it in
+/// descending order.
+pub(super) fn stream_range<'a, T, I>(
+    index: &'a I,
+    range: &RangeInterface,
+) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + 'a>
+where
+    T: Encodable + Numericable + StoredValue + Send + Sync + Default,
+    I: NumericIndexRead<T>,
+{
+    let range = match range {
+        RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+        RangeInterface::DateTime(datetime_range) => {
+            datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
+        }
+    };
+    let (start_bound, end_bound) = range.as_index_key_bounds();
+
+    // map.range
+    // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
+    if !check_boundaries(&start_bound, &end_bound) {
+        return Ok(Either::Left(std::iter::empty()));
+    }
+
+    Ok(Either::Right(
+        index.orderable_values_range(start_bound, end_bound)?,
+    ))
 }

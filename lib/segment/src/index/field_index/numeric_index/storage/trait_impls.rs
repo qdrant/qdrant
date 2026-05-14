@@ -15,7 +15,6 @@ use std::path::PathBuf;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::either_variant::EitherVariant;
 use common::types::PointOffsetType;
 use gridstore::Blob;
 
@@ -26,7 +25,6 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
-use crate::index::field_index::utils::check_boundaries;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
 };
@@ -111,30 +109,6 @@ where
         &self,
         range: &RangeInterface,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        let range = match range {
-            RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
-            RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
-            }
-        };
-        let (start_bound, end_bound) = range.as_index_key_bounds();
-
-        // map.range
-        // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
-        if !check_boundaries(&start_bound, &end_bound) {
-            return Ok(EitherVariant::A(std::iter::empty()));
-        }
-
-        Ok(match self {
-            NumericIndexInner::Mutable(index) => {
-                EitherVariant::B(index.orderable_values_range(start_bound, end_bound)?)
-            }
-            NumericIndexInner::Immutable(index) => {
-                EitherVariant::C(index.orderable_values_range(start_bound, end_bound)?)
-            }
-            NumericIndexInner::Mmap(index) => {
-                EitherVariant::D(index.orderable_values_range(start_bound, end_bound)?)
-            }
-        })
+        query::stream_range(self, range)
     }
 }

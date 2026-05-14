@@ -1,4 +1,5 @@
-//! [`NumericIndexRead`] dispatch for [`ReadOnlyNumericIndexInner`].
+//! [`NumericIndexRead`] and [`StreamRange`] dispatch for
+//! [`ReadOnlyNumericIndexInner`].
 //!
 //! Forwards every read-path method to the active read-only storage
 //! variant; the `values_is_empty` / `get_telemetry_data` helpers come
@@ -11,14 +12,15 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use gridstore::Blob;
 
-use super::super::super::Encodable;
 use super::super::super::numeric_index_read::NumericIndexRead;
+use super::super::super::{Encodable, StreamRange, query};
 use super::ReadOnlyNumericIndexInner;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::payload_config::StorageType;
+use crate::types::RangeInterface;
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, S: UniversalRead>
     NumericIndexRead<T> for ReadOnlyNumericIndexInner<T, S>
@@ -135,5 +137,18 @@ where
             ReadOnlyNumericIndexInner::Appendable(index) => index.telemetry_index_type(),
             ReadOnlyNumericIndexInner::Immutable(index) => index.telemetry_index_type(),
         }
+    }
+}
+
+impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, S: UniversalRead>
+    StreamRange<T> for ReadOnlyNumericIndexInner<T, S>
+where
+    Vec<T>: Blob,
+{
+    fn stream_range(
+        &self,
+        range: &RangeInterface,
+    ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
+        query::stream_range(self, range)
     }
 }

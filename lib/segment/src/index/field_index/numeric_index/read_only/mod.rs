@@ -9,6 +9,7 @@ use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::stored_point_to_values::StoredValue;
 
 mod read_ops;
+mod value_retriever;
 
 /// Read-only counterpart to [`super::NumericIndex`].
 ///
@@ -25,4 +26,14 @@ pub struct ReadOnlyNumericIndex<
 {
     pub(super) inner: ReadOnlyNumericIndexInner<T, S>,
     pub(super) _phantom: PhantomData<P>,
+}
+
+impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P, S: UniversalRead>
+    ReadOnlyNumericIndex<T, P, S>
+where
+    Vec<T>: Blob,
+{
+    pub fn inner(&self) -> &ReadOnlyNumericIndexInner<T, S> {
+        &self.inner
+    }
 }

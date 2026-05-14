@@ -17,7 +17,9 @@ use std::marker::PhantomData;
 pub use builders::{NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder};
 pub use encodable::Encodable;
 use gridstore::Blob;
-pub use numeric_field_index::{NumericFieldIndex, NumericFieldIndexRead};
+pub use numeric_field_index::{
+    NumericFieldIndex, NumericFieldIndexRead, ReadOnlyNumericFieldIndex,
+};
 pub use numeric_index_read::NumericIndexRead;
 pub use read_only::ReadOnlyNumericIndex;
 pub use read_ops::StreamRange;
