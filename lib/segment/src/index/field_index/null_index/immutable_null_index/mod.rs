@@ -1,175 +1,23 @@
-use std::path::{Path, PathBuf};
-
-use common::bitvec::BitSlice;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
-
 use super::mutable_null_index::MutableNullIndex;
-use super::read_ops::{self, NullIndexRead};
-use crate::common::flags::roaring_flags::RoaringFlags;
-use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::{
-    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
-    PayloadFieldIndexRead,
-};
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
-use crate::types::{FieldCondition, PayloadKeyType};
 
-pub struct ImmutableNullIndex(MutableNullIndex);
+mod lifecycle;
+mod read_ops;
 
-impl ImmutableNullIndex {
-    pub fn builder(
-        path: &Path,
-        total_point_count: usize,
-    ) -> OperationResult<ImmutableNullIndexBuilder> {
-        Ok(ImmutableNullIndexBuilder(
-            MutableNullIndex::open(path, total_point_count, true)?.ok_or_else(|| {
-                OperationError::service_error("Failed to create and open MutableNullIndex")
-            })?,
-        ))
-    }
+pub use self::lifecycle::ImmutableNullIndexBuilder;
 
-    pub fn from_mutable(mutable_index: MutableNullIndex) -> OperationResult<Self> {
-        mutable_index.flusher()()?;
-        Ok(Self(mutable_index))
-    }
-
-    pub fn open(
-        path: &Path,
-        total_point_count: usize,
-        deleted: &BitSlice,
-    ) -> OperationResult<Option<Self>> {
-        Ok(MutableNullIndex::open_immutable(path, total_point_count, deleted)?.map(Self))
-    }
-
-    #[inline]
-    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.0.remove_point_immutable(id);
-        Ok(())
-    }
-}
-
-impl NullIndexRead for ImmutableNullIndex {
-    type Flags = RoaringFlags<MmapFile>;
-
-    fn has_values_flags(&self) -> &Self::Flags {
-        self.0.has_values_flags()
-    }
-
-    fn is_null_flags(&self) -> &Self::Flags {
-        self.0.is_null_flags()
-    }
-
-    fn total_point_count(&self) -> usize {
-        self.0.total_point_count()
-    }
-
-    fn telemetry_index_type(&self) -> &'static str {
-        "immutable_null_index"
-    }
-}
-
-impl PayloadFieldIndexRead for ImmutableNullIndex {
-    #[inline]
-    fn count_indexed_points(&self) -> usize {
-        self.indexed_points_count()
-    }
-
-    #[inline]
-    fn filter<'a>(
-        &'a self,
-        condition: &'a FieldCondition,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        Ok(read_ops::filter(self, condition))
-    }
-
-    #[inline]
-    fn estimate_cardinality(
-        &self,
-        condition: &FieldCondition,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<CardinalityEstimation>> {
-        Ok(read_ops::estimate_cardinality(self, condition))
-    }
-
-    #[inline]
-    fn for_each_payload_block(
-        &self,
-        _threshold: usize,
-        _key: PayloadKeyType,
-        _f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        // No payload blocks
-        Ok(())
-    }
-
-    fn condition_checker<'a>(
-        &'a self,
-        condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        read_ops::condition_checker(self, condition, hw_acc)
-    }
-}
-
-impl PayloadFieldIndex for ImmutableNullIndex {
-    #[inline]
-    fn wipe(self) -> OperationResult<()> {
-        self.0.wipe()
-    }
-
-    #[inline]
-    fn files(&self) -> Vec<PathBuf> {
-        NullIndexRead::files(self)
-    }
-
-    #[inline]
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        NullIndexRead::files(self) // All the files are immutable in this index.
-    }
-
-    #[inline]
-    fn flusher(&self) -> crate::common::Flusher {
-        Box::new(|| Ok(())) // No op for an immutable index.
-    }
-}
-
-pub struct ImmutableNullIndexBuilder(MutableNullIndex);
-
-impl FieldIndexBuilderTrait for ImmutableNullIndexBuilder {
-    type FieldIndexType = ImmutableNullIndex;
-
-    fn init(&mut self) -> OperationResult<()> {
-        // After Self is created, it is already initialized
-        Ok(())
-    }
-
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&serde_json::Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
-    }
-
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        self.0.flusher()()?; // Immutable index has noop flusher, so we have to ensure the data is flushed now.
-        Ok(ImmutableNullIndex(self.0))
-    }
-}
+pub struct ImmutableNullIndex(pub(super) MutableNullIndex);
 
 #[cfg(test)]
 mod tests {
     use common::bitvec::BitVec;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools as _;
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
+    use super::super::read_ops::NullIndexRead;
     use super::*;
+    use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndexRead};
     use crate::json_path::JsonPath;
     use crate::types::FieldCondition;
 
