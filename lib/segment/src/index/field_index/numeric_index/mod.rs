@@ -21,7 +21,7 @@ pub use numeric_field_index::{
     NumericFieldIndex, NumericFieldIndexRead, ReadOnlyNumericFieldIndex,
 };
 pub use numeric_index_read::NumericIndexRead;
-pub use read_only::ReadOnlyNumericIndex;
+pub use read_only::{NumericValueToJson, ReadOnlyNumericIndex};
 pub use read_ops::StreamRange;
 pub use storage::NumericIndexInner;
 pub use storage::read_only::ReadOnlyNumericIndexInner;

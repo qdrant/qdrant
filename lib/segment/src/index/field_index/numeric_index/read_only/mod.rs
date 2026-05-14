@@ -11,6 +11,8 @@ use crate::index::field_index::stored_point_to_values::StoredValue;
 mod read_ops;
 mod value_retriever;
 
+pub use value_retriever::NumericValueToJson;
+
 /// Read-only counterpart to [`super::NumericIndex`].
 ///
 /// Thin typed wrapper around [`ReadOnlyNumericIndexInner`]: adds the
