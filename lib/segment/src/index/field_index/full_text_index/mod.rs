@@ -13,7 +13,7 @@ mod inverted_index;
 mod lifecycle;
 pub mod mmap_text_index;
 mod mutable_text_index;
-pub mod read_only_text_index;
+pub mod read_only;
 mod read_ops;
 pub mod stop_words;
 pub mod tokenizers;

@@ -46,10 +46,6 @@ impl ImmutableFullTextIndex {
         self.storage.flusher()
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        Ok(())
-    }
-
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.storage.clear_cache().map_err(|err| {
             OperationError::service_error(format!(

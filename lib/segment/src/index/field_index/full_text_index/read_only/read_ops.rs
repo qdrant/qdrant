@@ -4,7 +4,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
 use super::super::full_text_index_read::FullTextIndexRead;
-use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
+use super::super::inverted_index::{ParsedQuery, TokenId};
 use super::super::read_ops;
 use super::super::tokenizers::Tokenizer;
 use super::ReadOnlyFullTextIndex;
@@ -16,25 +16,44 @@ use crate::index::payload_config::StorageType;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::types::{FieldCondition, PayloadKeyType};
 
+/// Dispatcher impl: forwards every [`FullTextIndexRead`] method to the active
+/// variant. The default trait methods (`parse_*`, `check_payload_match`,
+/// `get_telemetry_data`) are picked up automatically — they only depend on the
+/// required methods, so no per-variant dispatch is needed for them.
 impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
     fn tokenizer(&self) -> &Tokenizer {
-        &self.inner.tokenizer
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.tokenizer(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.tokenizer(),
+        }
     }
 
     fn telemetry_index_type(&self) -> &'static str {
-        "read_only_full_text"
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.telemetry_index_type(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.telemetry_index_type(),
+        }
     }
 
     fn points_count(&self) -> usize {
-        self.inner.inverted_index.points_count()
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.points_count(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.points_count(),
+        }
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.inner.inverted_index.values_count(point_id)
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.values_count(point_id),
+            ReadOnlyFullTextIndex::Immutable(index) => index.values_count(point_id),
+        }
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.inner.inverted_index.values_is_empty(point_id)
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.values_is_empty(point_id),
+            ReadOnlyFullTextIndex::Immutable(index) => index.values_is_empty(point_id),
+        }
     }
 
     fn for_each_token_id<'a, U: UserData>(
@@ -43,9 +62,12 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         hw_counter: &HardwareCounterCell,
         f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
-        self.inner
-            .inverted_index
-            .for_each_token_id(iter, hw_counter, f)
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => {
+                index.for_each_token_id(iter, hw_counter, f)
+            }
+            ReadOnlyFullTextIndex::Immutable(index) => index.for_each_token_id(iter, hw_counter, f),
+        }
     }
 
     fn filter_query<'a>(
@@ -53,7 +75,10 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         query: ParsedQuery,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.inner.inverted_index.filter(query, hw_counter)
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.filter_query(query, hw_counter),
+            ReadOnlyFullTextIndex::Immutable(index) => index.filter_query(query, hw_counter),
+        }
     }
 
     fn estimate_query_cardinality(
@@ -62,13 +87,21 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        self.inner
-            .inverted_index
-            .estimate_cardinality(query, condition, hw_counter)
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => {
+                index.estimate_query_cardinality(query, condition, hw_counter)
+            }
+            ReadOnlyFullTextIndex::Immutable(index) => {
+                index.estimate_query_cardinality(query, condition, hw_counter)
+            }
+        }
     }
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
-        self.inner.inverted_index.check_match(query, point_id)
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.check_match(query, point_id),
+            ReadOnlyFullTextIndex::Immutable(index) => index.check_match(query, point_id),
+        }
     }
 
     fn for_each_payload_block_inner(
@@ -77,23 +110,35 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.inner
-            .inverted_index
-            .for_each_payload_block(threshold, key, f)
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => {
+                index.for_each_payload_block_inner(threshold, key, f)
+            }
+            ReadOnlyFullTextIndex::Immutable(index) => {
+                index.for_each_payload_block_inner(threshold, key, f)
+            }
+        }
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.inner.inverted_index.is_on_disk(),
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.get_storage_type(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.get_storage_type(),
         }
     }
 
     fn ram_usage_bytes(&self) -> usize {
-        self.inner.inverted_index.ram_usage_bytes()
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.ram_usage_bytes(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.ram_usage_bytes(),
+        }
     }
 
     fn is_on_disk(&self) -> bool {
-        self.inner.inverted_index.is_on_disk()
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.is_on_disk(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.is_on_disk(),
+        }
     }
 }
 

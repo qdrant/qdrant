@@ -120,8 +120,9 @@ impl FullTextIndex {
 
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.populate(),
-            Self::Immutable(index) => index.populate(),
+            // Mutable / Immutable keep their inverted index fully in RAM —
+            // there is nothing to populate.
+            Self::Mutable(_) | Self::Immutable(_) => Ok(()),
             Self::Mmap(index) => index.populate(),
         }
     }
