@@ -83,9 +83,9 @@ impl LocalState {
             writeable: _,       // always needs to be writeable
             need_sequential: _, // TODO: add sequential mmap
             disk_parallel: _,   // unsupported
-            populate: _,        // this is handled in populate() function
+            populate: _,        // this is handled externally to LocalState
             advice,
-            prevent_caching: _, // TODO: use o_direct
+            prevent_caching: _, // unsupported
         } = options;
 
         let file = fs::OpenOptions::new()
