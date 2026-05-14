@@ -1,13 +1,17 @@
 use std::collections::BTreeSet;
 use std::ops::Bound;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::Encodable;
+use super::super::read_ops::NumericIndexRead;
 use super::{InMemoryNumericIndex, MutableNumericIndex};
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
+use crate::index::field_index::stored_point_to_values::StoredValue;
 use crate::index::payload_config::StorageType;
 
 impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
@@ -91,78 +95,89 @@ impl<T: Encodable + Numericable> InMemoryNumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable + Send + Sync + Default> MutableNumericIndex<T>
+impl<T: Encodable + Numericable + Send + Sync + Default + StoredValue> NumericIndexRead<T>
+    for MutableNumericIndex<T>
 where
     Vec<T>: Blob,
 {
-    pub fn map(&self) -> &BTreeSet<Point<T>> {
-        &self.in_memory_index.map
-    }
-
-    #[inline]
-    pub fn total_unique_values_count(&self) -> usize {
-        self.in_memory_index.total_unique_values_count()
-    }
-
-    #[inline]
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
+    fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&T) -> bool,
+        _hw_counter: &HardwareCounterCell,
+    ) -> bool {
         self.in_memory_index.check_values_any(idx, check_fn)
     }
 
-    #[inline]
-    pub fn get_points_count(&self) -> usize {
-        self.in_memory_index.get_points_count()
-    }
-
-    #[inline]
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         self.in_memory_index.get_values(idx)
     }
 
-    #[inline]
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         self.in_memory_index.values_count(idx)
     }
 
-    #[inline]
-    pub fn values_range(
+    fn total_unique_values_count(&self) -> OperationResult<usize> {
+        Ok(self.in_memory_index.total_unique_values_count())
+    }
+
+    fn values_range<'a>(
+        &'a self,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
+        Ok(self.in_memory_index.values_range(start_bound, end_bound))
+    }
+
+    fn orderable_values_range(
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-    ) -> impl Iterator<Item = PointOffsetType> {
-        self.in_memory_index.values_range(start_bound, end_bound)
+    ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
+        Ok(self
+            .in_memory_index
+            .orderable_values_range(start_bound, end_bound))
     }
 
-    #[inline]
-    pub fn orderable_values_range(
-        &self,
-        start_bound: Bound<Point<T>>,
-        end_bound: Bound<Point<T>>,
-    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
-        self.in_memory_index
-            .orderable_values_range(start_bound, end_bound)
-    }
-
-    #[inline]
-    pub fn get_histogram(&self) -> &Histogram<T> {
+    fn get_histogram(&self) -> &Histogram<T> {
         self.in_memory_index.get_histogram()
     }
 
-    #[inline]
-    pub fn get_max_values_per_point(&self) -> usize {
+    fn get_points_count(&self) -> usize {
+        self.in_memory_index.get_points_count()
+    }
+
+    fn get_max_values_per_point(&self) -> usize {
         self.in_memory_index.get_max_values_per_point()
     }
 
-    pub fn storage_type(&self) -> StorageType {
+    fn storage_type(&self) -> StorageType {
         StorageType::Gridstore
     }
 
     /// Approximate RAM usage in bytes for in-memory index structures.
-    pub fn ram_usage_bytes(&self) -> usize {
+    fn ram_usage_bytes(&self) -> usize {
         let Self {
             storage: _, // disk-backed, accounted via files
             in_memory_index,
         } = self;
         in_memory_index.ram_usage_bytes()
+    }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        "mutable_numeric"
+    }
+}
+
+impl<T: Encodable + Numericable + Send + Sync + Default> MutableNumericIndex<T>
+where
+    Vec<T>: Blob,
+{
+    /// Mutable-only direct access to the in-memory `BTreeSet<Point<T>>` used
+    /// by `estimate_points` to cheaply compute the size of a range. Not part
+    /// of the shared [`NumericIndexRead`] interface.
+    pub fn map(&self) -> &BTreeSet<Point<T>> {
+        &self.in_memory_index.map
     }
 }

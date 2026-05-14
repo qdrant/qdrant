@@ -13,6 +13,7 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 
 use super::super::Encodable;
+use super::super::read_ops::NumericIndexRead;
 use super::NumericIndexInner;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::CardinalityEstimation;
@@ -43,11 +44,11 @@ where
     }
 
     pub(super) fn total_unique_values_count(&self) -> OperationResult<usize> {
-        Ok(match self {
+        match self {
             NumericIndexInner::Mutable(index) => index.total_unique_values_count(),
             NumericIndexInner::Immutable(index) => index.total_unique_values_count(),
-            NumericIndexInner::Mmap(index) => index.total_unique_values_count()?,
-        })
+            NumericIndexInner::Mmap(index) => index.total_unique_values_count(),
+        }
     }
 
     pub(in crate::index::field_index::numeric_index) fn range_cardinality(

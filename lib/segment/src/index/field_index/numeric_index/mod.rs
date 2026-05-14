@@ -4,12 +4,14 @@ mod index;
 pub mod mmap_numeric_index;
 pub mod mutable_numeric_index;
 mod numeric_field_index;
+pub mod read_ops;
 mod storage;
 mod value_indexer;
 
 pub use builders::{NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder};
 pub use index::{NumericIndex, NumericIndexIntoInnerValue};
 pub use numeric_field_index::{NumericFieldIndex, NumericFieldIndexRead};
+pub use read_ops::NumericIndexRead;
 pub use storage::NumericIndexInner;
 
 #[cfg(test)]

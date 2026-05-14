@@ -30,6 +30,7 @@ use super::Encodable;
 use super::immutable_numeric_index::ImmutableNumericIndex;
 use super::mmap_numeric_index::MmapNumericIndex;
 use super::mutable_numeric_index::MutableNumericIndex;
+use super::read_ops::NumericIndexRead;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::{Numericable, Point};
@@ -123,13 +124,14 @@ where
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
+        // FIXME: don't silently ignore mmap-read errors; promote the trait
+        // method's return type to `OperationResult<bool>` and propagate.
         match self {
-            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn),
-            NumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
-            // FIXME: don't silently ignore error, change output of this function and propagate
-            NumericIndexInner::Mmap(index) => index
-                .check_values_any(idx, check_fn, hw_counter)
-                .unwrap_or(false),
+            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn, hw_counter),
+            NumericIndexInner::Immutable(index) => {
+                index.check_values_any(idx, check_fn, hw_counter)
+            }
+            NumericIndexInner::Mmap(index) => index.check_values_any(idx, check_fn, hw_counter),
         }
     }
 
@@ -148,9 +150,13 @@ where
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
-        Ok(match &self {
-            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
-            NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
+        Ok(match self {
+            NumericIndexInner::Mutable(mutable) => {
+                Box::new(mutable.values_range(start, end, hw_counter)?)
+            }
+            NumericIndexInner::Immutable(immutable) => {
+                Box::new(immutable.values_range(start, end, hw_counter)?)
+            }
             NumericIndexInner::Mmap(mmap) => Box::new(mmap.values_range(start, end, hw_counter)?),
         })
     }

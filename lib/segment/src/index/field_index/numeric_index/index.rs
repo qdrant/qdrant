@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use gridstore::Blob;
 use serde_json::Value;
 
+use super::read_ops::NumericIndexRead;
 use super::storage::NumericIndexInner;
 use super::{Encodable, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder};
 use crate::common::operation_error::OperationResult;

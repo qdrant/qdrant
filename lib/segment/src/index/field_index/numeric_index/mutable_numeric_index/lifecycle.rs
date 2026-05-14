@@ -8,6 +8,7 @@ use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
 
 use super::super::mmap_numeric_index::MmapNumericIndex;
+use super::super::read_ops::NumericIndexRead;
 use super::super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use super::{InMemoryNumericIndex, MutableNumericIndex, default_gridstore_options};
 use crate::common::Flusher;

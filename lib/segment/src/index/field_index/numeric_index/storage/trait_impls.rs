@@ -23,6 +23,7 @@ use gridstore::Blob;
 use ordered_float::OrderedFloat;
 use uuid::Uuid;
 
+use super::super::read_ops::NumericIndexRead;
 use super::super::{Encodable, StreamRange};
 use super::NumericIndexInner;
 use crate::common::Flusher;
@@ -111,12 +112,11 @@ where
 
         let result: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
             NumericIndexInner::Mutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound))
+                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
             }
             NumericIndexInner::Immutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound))
+                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
             }
-
             NumericIndexInner::Mmap(index) => {
                 Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
             }
@@ -307,10 +307,10 @@ where
 
         Ok(match self {
             NumericIndexInner::Mutable(index) => {
-                EitherVariant::B(index.orderable_values_range(start_bound, end_bound))
+                EitherVariant::B(index.orderable_values_range(start_bound, end_bound)?)
             }
             NumericIndexInner::Immutable(index) => {
-                EitherVariant::C(index.orderable_values_range(start_bound, end_bound))
+                EitherVariant::C(index.orderable_values_range(start_bound, end_bound)?)
             }
             NumericIndexInner::Mmap(index) => {
                 EitherVariant::D(index.orderable_values_range(start_bound, end_bound)?)

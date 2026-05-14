@@ -11,31 +11,38 @@ use common::universal_io::ReadRange;
 use itertools::Either;
 
 use super::super::Encodable;
+use super::super::read_ops::NumericIndexRead;
 use super::MmapNumericIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stored_point_to_values::StoredValue;
+use crate::index::payload_config::StorageType;
 
-impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIndex<T> {
-    pub fn check_values_any(
+impl<T: Encodable + Numericable + Default + StoredValue + 'static> NumericIndexRead<T>
+    for MmapNumericIndex<T>
+{
+    fn check_values_any(
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
+    ) -> bool {
+        // FIXME: don't silently ignore error — propagate it once
+        // [`NumericIndexRead::check_values_any`] returns `OperationResult`.
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         if self.storage.deleted.get_bit(idx as usize) == Some(false) {
             self.storage
                 .point_to_values
                 .check_values_any(idx, |v| check_fn(v), &hw_counter)
+                .unwrap_or(false)
         } else {
-            Ok(false)
+            false
         }
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         if self.storage.deleted.get_bit(idx as usize) == Some(false) {
             Some(Box::new(
                 self.storage
@@ -50,7 +57,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIn
         }
     }
 
-    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         if self.storage.deleted.get_bit(idx as usize) == Some(false) {
             self.storage.point_to_values.get_values_count(idx).ok()?
         } else {
@@ -60,11 +67,11 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIn
 
     /// Returns the number of key-value pairs in the index.
     /// Note that is doesn't count deleted pairs.
-    pub(in super::super) fn total_unique_values_count(&self) -> OperationResult<usize> {
+    fn total_unique_values_count(&self) -> OperationResult<usize> {
         Ok(self.storage.pairs.len()? as usize)
     }
 
-    pub(in super::super) fn values_range<'a>(
+    fn values_range<'a>(
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
@@ -80,7 +87,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIn
             }))
     }
 
-    pub(in super::super) fn orderable_values_range(
+    fn orderable_values_range(
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
@@ -90,18 +97,38 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIn
             .map(|Point { val, idx, .. }| (val, idx)))
     }
 
-    pub(in super::super) fn get_histogram(&self) -> &Histogram<T> {
+    fn get_histogram(&self) -> &Histogram<T> {
         &self.histogram
     }
 
-    pub(in super::super) fn get_points_count(&self) -> usize {
+    fn get_points_count(&self) -> usize {
         self.storage.point_to_values.len() - self.deleted_count
     }
 
-    pub(in super::super) fn get_max_values_per_point(&self) -> usize {
+    fn get_max_values_per_point(&self) -> usize {
         self.max_values_per_point
     }
 
+    fn storage_type(&self) -> StorageType {
+        StorageType::Mmap {
+            is_on_disk: self.is_on_disk,
+        }
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
+        MmapNumericIndex::ram_usage_bytes(self)
+    }
+
+    fn telemetry_index_type(&self) -> &'static str {
+        "mmap_numeric"
+    }
+}
+
+impl<T: Encodable + Numericable + Default + StoredValue + 'static> MmapNumericIndex<T> {
+    /// Cheap O(log N) size of the range without iterating. Used by
+    /// `estimate_points`; not part of the shared [`NumericIndexRead`]
+    /// interface because the mutable variant doesn't have a precomputed
+    /// container to range over.
     pub(in super::super) fn values_range_size(
         &self,
         start_bound: Bound<Point<T>>,
