@@ -6,62 +6,14 @@ use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, ReadRange};
 
-use super::mmap_geo_index::StoredGeoMapIndex;
+use super::super::mmap_geo_index::StoredGeoMapIndex;
+use super::{Counts, DELETED_SENTINEL, ImmutableGeoMapIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
-
-const DELETED_SENTINEL: PointOffsetType = PointOffsetType::MAX;
-
-#[derive(Copy, Clone, Debug)]
-struct Counts {
-    hash: GeoHash,
-    points: u32,
-    values: u32,
-}
-
-impl From<super::mmap_geo_index::Counts> for Counts {
-    #[inline]
-    fn from(counts: super::mmap_geo_index::Counts) -> Self {
-        let super::mmap_geo_index::Counts {
-            hash,
-            points,
-            values,
-        } = counts;
-        Self {
-            hash: hash.normalize(),
-            points,
-            values,
-        }
-    }
-}
-
-/// RAM-loaded immutable geo index using flat parallel arrays instead of per-hash
-/// `AHashSet`s. This dramatically reduces memory overhead:
-///
-/// - `points_map_hashes[i]` is the sorted geohash for the i-th entry.
-/// - `points_map_offsets[i]..points_map_offsets[i+1]` is the range in
-///   `points_map_ids` holding the point IDs for that hash.
-/// - Deleted entries in `points_map_ids` are marked with `DELETED_SENTINEL`.
-pub struct ImmutableGeoMapIndex {
-    counts_per_hash: Vec<Counts>,
-    points_map_hashes: Vec<GeoHash>,
-    points_map_offsets: Vec<u32>,
-    points_map_ids: Vec<PointOffsetType>,
-    point_to_values: ImmutablePointToValues<GeoPoint>,
-    points_count: usize,
-    points_values_count: usize,
-    max_values_per_point: usize,
-    storage: Storage,
-    cached_ram_usage_bytes: usize,
-}
-
-enum Storage {
-    Mmap(Box<StoredGeoMapIndex<MmapFile>>),
-}
 
 impl ImmutableGeoMapIndex {
     /// Open and load immutable geo index from mmap storage
@@ -159,7 +111,7 @@ impl ImmutableGeoMapIndex {
             points_count: index.points_count(),
             points_values_count: index.points_values_count(),
             max_values_per_point: index.max_values_per_point(),
-            storage: Storage::Mmap(Box::new(index)),
+            storage: Box::new(index),
             cached_ram_usage_bytes: 0,
         };
 
@@ -184,15 +136,11 @@ impl ImmutableGeoMapIndex {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        match self.storage {
-            Storage::Mmap(ref index) => index.files(),
-        }
+        self.storage.files()
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        match &self.storage {
-            Storage::Mmap(index) => index.immutable_files(),
-        }
+        self.storage.immutable_files()
     }
 
     /// Clear cache
@@ -200,25 +148,19 @@ impl ImmutableGeoMapIndex {
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match &self.storage {
-            Storage::Mmap(index) => index.clear_cache().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear immutable geo index gridstore cache: {err}"
-                ))
-            }),
-        }
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear immutable geo index gridstore cache: {err}"
+            ))
+        })
     }
 
     pub fn wipe(self) -> OperationResult<()> {
-        match self.storage {
-            Storage::Mmap(index) => index.wipe(),
-        }
+        self.storage.wipe()
     }
 
     pub fn flusher(&self) -> Flusher {
-        match self.storage {
-            Storage::Mmap(ref index) => index.flusher(),
-        }
+        self.storage.flusher()
     }
 
     pub fn points_count(&self) -> usize {
@@ -295,11 +237,7 @@ impl ImmutableGeoMapIndex {
                 encode_max_precision(removed_geo_point.lon.0, removed_geo_point.lat.0)?;
             removed_geo_hashes.push(removed_geo_hash);
 
-            match self.storage {
-                Storage::Mmap(ref mut index) => {
-                    index.remove_point(idx);
-                }
-            }
+            self.storage.remove_point(idx);
 
             if let Ok(hash_idx) = self
                 .points_map_hashes
@@ -346,7 +284,7 @@ impl ImmutableGeoMapIndex {
             })
     }
 
-    fn decrement_hash_value_counts(&mut self, geo_hash: GeoHash) {
+    pub(super) fn decrement_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
             if let Ok(index) = self
@@ -368,7 +306,7 @@ impl ImmutableGeoMapIndex {
         }
     }
 
-    fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
+    pub(super) fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
         let mut seen_hashes: Vec<GeoHash> = Vec::new();
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
@@ -398,10 +336,8 @@ impl ImmutableGeoMapIndex {
     }
 
     pub fn storage_type(&self) -> StorageType {
-        match &self.storage {
-            Storage::Mmap(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
-            },
+        StorageType::Mmap {
+            is_on_disk: self.storage.is_on_disk(),
         }
     }
 
@@ -410,7 +346,7 @@ impl ImmutableGeoMapIndex {
         self.cached_ram_usage_bytes
     }
 
-    fn compute_ram_usage_bytes(&self) -> usize {
+    pub(super) fn compute_ram_usage_bytes(&self) -> usize {
         let Self {
             counts_per_hash,
             points_map_hashes,

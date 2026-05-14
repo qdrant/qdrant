@@ -17,6 +17,7 @@ use tempfile::{Builder, TempDir};
 use super::builders::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::immutable_geo_index::ImmutableGeoMapIndex;
 use super::mmap_geo_index::StoredGeoMapIndex;
+use super::read_ops::GeoMapIndexRead;
 use super::{GEO_QUERY_MAX_REGION, GeoMapIndex};
 use crate::fixtures::payload_fixtures::random_geo_payload;
 use crate::index::field_index::geo_hash::{GeoHash, circle_hashes, polygon_hashes};
@@ -357,7 +358,7 @@ fn geo_indexed_filtering(#[case] index_type: IndexType) {
         let hw_counter = HardwareCounterCell::new();
         let mut matched_points = (0..field_index.count_indexed_points() as PointOffsetType)
             .filter_map(|idx| {
-                if field_index.check_values_any(idx, &hw_counter, check_fn.clone()) {
+                if field_index.check_values_any(idx, &hw_counter, &check_fn.clone()) {
                     Some(idx as PointOffsetType)
                 } else {
                     None
