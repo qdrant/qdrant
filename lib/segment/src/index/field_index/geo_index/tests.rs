@@ -890,10 +890,9 @@ fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
 /// not once per unique geohash. When a point has duplicate geo values (same
 /// coordinates producing the same geohash), all increments from `add_many_geo_points`
 /// must be reversed on removal. Otherwise `values_per_hash` drifts upward permanently.
-#[rstest]
-#[case(IndexType::MutableGridstore)]
-fn test_values_per_hash_drift_on_duplicate_geo_removal(#[case] index_type: IndexType) {
-    let (mut builder, _temp_dir, _db) = create_builder(index_type);
+#[test]
+fn test_values_per_hash_drift_on_duplicate_geo_removal() {
+    let (mut builder, _temp_dir, _db) = create_builder(IndexType::MutableGridstore);
     let hw_counter = HardwareCounterCell::new();
 
     // Point 0 has 3 identical geo values (same geohash produced 3 times).

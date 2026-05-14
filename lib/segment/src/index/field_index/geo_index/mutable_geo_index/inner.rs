@@ -85,6 +85,13 @@ impl InMemoryGeoMapIndex {
                 encode_max_precision(removed_geo_point.lon.0, removed_geo_point.lat.0).map_err(
                     |e| OperationError::service_error(format!("Malformed geo points: {e}")),
                 )?;
+            // `values_per_hash` is incremented once per value in `add_many_geo_points`,
+            // so it must be decremented once per value here too — including duplicates
+            // that produce the same geohash. Otherwise the counters drift upward.
+            self.decrement_hash_value_counts(removed_geo_hash);
+
+            // `points_map` and `points_per_hash` track points, not values, so they must
+            // only be updated once per unique geohash.
             if !removed_geo_hashes.insert(removed_geo_hash) {
                 continue;
             }
@@ -103,8 +110,6 @@ impl InMemoryGeoMapIndex {
             if is_last {
                 self.points_map.remove(&removed_geo_hash);
             }
-
-            self.decrement_hash_value_counts(removed_geo_hash);
         }
 
         self.decrement_hash_point_counts(removed_geo_hashes);
