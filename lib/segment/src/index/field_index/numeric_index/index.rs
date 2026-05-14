@@ -124,7 +124,7 @@ where
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        self.inner.values_count(idx)
+        self.inner.values_count(idx).unwrap_or_default()
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {

@@ -88,7 +88,7 @@ where
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let value = T::from_u128(uuid.as_u128());
-                return Ok(Some(self.point_ids_by_value(value, hw_counter)?));
+                return Ok(Some(Box::new(self.point_ids_by_value(value, hw_counter)?)));
             }
         }
 

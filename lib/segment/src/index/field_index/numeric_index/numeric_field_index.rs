@@ -1,6 +1,7 @@
 use common::types::PointOffsetType;
 use itertools::Either;
 
+use super::read_ops::NumericIndexRead;
 use super::{NumericIndexInner, StreamRange};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::order_by::OrderValue;

@@ -17,7 +17,6 @@ use super::super::read_ops::NumericIndexRead;
 use super::NumericIndexInner;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::CardinalityEstimation;
-use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::stored_point_to_values::StoredValue;
@@ -27,35 +26,11 @@ impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default> NumericIn
 where
     Vec<T>: Blob,
 {
-    pub(super) fn get_histogram(&self) -> &Histogram<T> {
-        match self {
-            NumericIndexInner::Mutable(index) => index.get_histogram(),
-            NumericIndexInner::Immutable(index) => index.get_histogram(),
-            NumericIndexInner::Mmap(index) => index.get_histogram(),
-        }
-    }
-
-    pub(in crate::index::field_index::numeric_index) fn get_points_count(&self) -> usize {
-        match self {
-            NumericIndexInner::Mutable(index) => index.get_points_count(),
-            NumericIndexInner::Immutable(index) => index.get_points_count(),
-            NumericIndexInner::Mmap(index) => index.get_points_count(),
-        }
-    }
-
-    pub(super) fn total_unique_values_count(&self) -> OperationResult<usize> {
-        match self {
-            NumericIndexInner::Mutable(index) => index.total_unique_values_count(),
-            NumericIndexInner::Immutable(index) => index.total_unique_values_count(),
-            NumericIndexInner::Mmap(index) => index.total_unique_values_count(),
-        }
-    }
-
     pub(in crate::index::field_index::numeric_index) fn range_cardinality(
         &self,
         range: &RangeInterface,
     ) -> OperationResult<CardinalityEstimation> {
-        let max_values_per_point = self.max_values_per_point();
+        let max_values_per_point = self.get_max_values_per_point();
         if max_values_per_point == 0 {
             return Ok(CardinalityEstimation::exact(0));
         }
