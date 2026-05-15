@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
@@ -13,13 +14,13 @@ use memmap2::MmapMut;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 #[derive(Debug)]
-pub struct QuantizedStorage<S: UniversalRead = MmapFile> {
+pub struct QuantizedStorage<S: UniversalRead> {
     storage: ReadOnly<S>,
     quantized_vector_size: NonZeroUsize,
     path: PathBuf,
 }
 
-impl QuantizedStorage {
+impl<S: UniversalRead> QuantizedStorage<S> {
     pub fn populate(&self) {
         if let Err(err) = self.storage.populate() {
             log::warn!("Failed to populate quantized storage: {err}")
@@ -38,11 +39,12 @@ impl QuantizedStorage {
     }
 }
 
-pub struct QuantizedMmapStorageBuilder {
+pub struct QuantizedMmapStorageBuilder<S> {
     mmap: MmapMut,
     cursor_pos: usize,
     quantized_vector_size: NonZeroUsize,
     path: PathBuf,
+    output_storage: PhantomData<S>,
 }
 
 impl<S: UniversalRead> QuantizedStorage<S> {
@@ -83,7 +85,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 }
 
-impl quantization::EncodedStorage for QuantizedStorage {
+impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         let start = (self.quantized_vector_size.get() * index as usize) as u64;
         let length = self.quantized_vector_size.get() as u64;
@@ -139,10 +141,10 @@ impl quantization::EncodedStorage for QuantizedStorage {
     }
 }
 
-impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
-    type Storage = QuantizedStorage;
+impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder<S> {
+    type Storage = QuantizedStorage<S>;
 
-    fn build(self) -> std::io::Result<QuantizedStorage> {
+    fn build(self) -> std::io::Result<QuantizedStorage<S>> {
         self.mmap.flush()?;
 
         let storage = ReadOnly::open(&self.path, Self::Storage::open_options())
@@ -174,7 +176,7 @@ impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
     }
 }
 
-impl QuantizedMmapStorageBuilder {
+impl<S> QuantizedMmapStorageBuilder<S> {
     pub fn new(
         path: &Path,
         vectors_count: usize,
@@ -217,6 +219,7 @@ impl QuantizedMmapStorageBuilder {
                 )
             })?,
             path: path.to_path_buf(),
+            output_storage: PhantomData,
         })
     }
 }
