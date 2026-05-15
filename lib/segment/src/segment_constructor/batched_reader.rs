@@ -29,7 +29,17 @@ pub struct PointData {
 /// and then iterate over them.
 pub struct BatchedVectorReader<'a> {
     points_to_insert: &'a [PointData],
-    source_vector_storages: &'a [AtomicRef<'a, VectorStorageEnum>],
+    /// `None` for source segments that do not have this named vector
+    /// (e.g. segments persisted before `create_vector_name` was called).
+    /// Points coming from such segments yield `missing_vector_placeholder`
+    /// with `deleted = true`.
+    source_vector_storages: &'a [Option<AtomicRef<'a, VectorStorageEnum>>],
+    /// Correctly-typed, correctly-sized stand-in for points whose source
+    /// segment lacks the target vector. Always paired with `deleted = true`,
+    /// so the data itself is never read — it only exists to keep the
+    /// receiving storage layout consistent (some `update_from` impls write
+    /// raw bytes regardless of the deleted flag).
+    missing_vector_placeholder: CowVector<'a>,
     buffer: Vec<(CowVector<'a>, bool)>,
     seg_to_points_buffer: AHashMap<U24, Vec<(&'a PointData, usize)>>,
     /// Global position of the iterator.
@@ -40,7 +50,8 @@ pub struct BatchedVectorReader<'a> {
 impl<'a> BatchedVectorReader<'a> {
     pub fn new(
         points_to_insert: &'a [PointData],
-        source_vector_storages: &'a [AtomicRef<'a, VectorStorageEnum>],
+        source_vector_storages: &'a [Option<AtomicRef<'a, VectorStorageEnum>>],
+        missing_vector_placeholder: CowVector<'a>,
     ) -> BatchedVectorReader<'a> {
         // We need to allocate the buffer with the size of the batch,
         // but we don't know the size of the vectors.
@@ -50,6 +61,7 @@ impl<'a> BatchedVectorReader<'a> {
         BatchedVectorReader {
             points_to_insert,
             source_vector_storages,
+            missing_vector_placeholder,
             buffer,
             seg_to_points_buffer: AHashMap::default(),
             position: 0,
@@ -82,12 +94,26 @@ impl<'a> BatchedVectorReader<'a> {
         }
 
         for (segment_index, points) in self.seg_to_points_buffer.drain() {
-            let source_vector_storage = &self.source_vector_storages[segment_index.get() as usize];
-            for (point_data, offset_in_batch) in points {
-                let vec = source_vector_storage.get_vector::<Sequential>(point_data.internal_id);
-                let vector_deleted =
-                    source_vector_storage.is_deleted_vector(point_data.internal_id);
-                self.buffer[offset_in_batch] = (vec, vector_deleted);
+            match &self.source_vector_storages[segment_index.get() as usize] {
+                Some(source_vector_storage) => {
+                    for (point_data, offset_in_batch) in points {
+                        let vec =
+                            source_vector_storage.get_vector::<Sequential>(point_data.internal_id);
+                        let vector_deleted =
+                            source_vector_storage.is_deleted_vector(point_data.internal_id);
+                        self.buffer[offset_in_batch] = (vec, vector_deleted);
+                    }
+                }
+                None => {
+                    // Source segment was persisted before the target named vector
+                    // existed; emit a typed placeholder marked as deleted so the
+                    // merged segment records "no data for this vector" on these
+                    // points without corrupting storage layout.
+                    for (_point_data, offset_in_batch) in points {
+                        self.buffer[offset_in_batch] =
+                            (self.missing_vector_placeholder.clone(), true);
+                    }
+                }
             }
         }
     }
