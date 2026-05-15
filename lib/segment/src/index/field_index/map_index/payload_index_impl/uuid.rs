@@ -192,13 +192,7 @@ fn filter_impl<'a, T: MapIndexRead<UuidIntType>>(
                 })?;
                 Some(Box::new(points.into_iter()))
             }
-            AnyVariants::Integers(other) => {
-                if other.is_empty() {
-                    Some(Box::new(iter::empty()))
-                } else {
-                    None
-                }
-            }
+            AnyVariants::Integers(_) => None,
         },
         _ => None,
     };
@@ -275,15 +269,7 @@ fn estimate_cardinality_impl<T: MapIndexRead<UuidIntType>>(
 
                 Some(index.except_cardinality(excluded_uuids.iter(), hw_counter))
             }
-            AnyVariants::Integers(other) => {
-                if other.is_empty() {
-                    Some(CardinalityEstimation::exact(0).with_primary_clause(
-                        PrimaryCondition::Condition(Box::new(condition.clone())),
-                    ))
-                } else {
-                    None
-                }
-            }
+            AnyVariants::Integers(_) => None,
         },
         _ => None,
     })

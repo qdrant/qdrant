@@ -159,13 +159,7 @@ fn filter_impl<'a, T: MapIndexRead<str>>(
         },
         Some(Match::Except(MatchExcept { except })) => match except {
             AnyVariants::Strings(keywords) => Some(index.except_set(keywords, hw_counter)?),
-            AnyVariants::Integers(other) => {
-                if other.is_empty() {
-                    Some(Box::new(iter::empty()))
-                } else {
-                    None
-                }
-            }
+            AnyVariants::Integers(_) => None,
         },
         _ => None,
     };
@@ -221,15 +215,7 @@ fn estimate_cardinality_impl<T: MapIndexRead<str>>(
             AnyVariants::Strings(keywords) => {
                 Some(index.except_cardinality(keywords.iter().map(|k| k.as_str()), hw_counter))
             }
-            AnyVariants::Integers(others) => {
-                if others.is_empty() {
-                    Some(CardinalityEstimation::exact(0).with_primary_clause(
-                        PrimaryCondition::Condition(Box::new(condition.clone())),
-                    ))
-                } else {
-                    None
-                }
-            }
+            AnyVariants::Integers(_) => None,
         },
         _ => None,
     }
