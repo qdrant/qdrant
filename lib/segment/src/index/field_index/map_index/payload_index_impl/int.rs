@@ -1,4 +1,3 @@
-use std::iter;
 use std::path::PathBuf;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -157,13 +156,7 @@ fn filter_impl<'a, T: MapIndexRead<IntPayloadType>>(
             )),
         },
         Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(other) => {
-                if other.is_empty() {
-                    Some(Box::new(iter::empty()))
-                } else {
-                    None
-                }
-            }
+            AnyVariants::Strings(_) => None,
             AnyVariants::Integers(integers) => Some(index.except_set(integers, hw_counter)?),
         },
         _ => None,
@@ -217,15 +210,7 @@ fn estimate_cardinality_impl<T: MapIndexRead<IntPayloadType>>(
             }
         },
         Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(others) => {
-                if others.is_empty() {
-                    Some(CardinalityEstimation::exact(0).with_primary_clause(
-                        PrimaryCondition::Condition(Box::new(condition.clone())),
-                    ))
-                } else {
-                    None
-                }
-            }
+            AnyVariants::Strings(_) => None,
             AnyVariants::Integers(integers) => {
                 Some(index.except_cardinality(integers.iter(), hw_counter))
             }
