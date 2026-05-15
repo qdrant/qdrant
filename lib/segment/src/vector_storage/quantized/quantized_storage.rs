@@ -7,7 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{MmapFlusher, advice};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead};
 use fs_err as fs;
 use memmap2::MmapMut;
 

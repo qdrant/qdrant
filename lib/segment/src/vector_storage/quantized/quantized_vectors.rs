@@ -9,6 +9,7 @@ use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::low_memory::low_memory_mode;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_u8::{self, ScalarQuantizationMethod};
 use quantization::turboquant::{self as encoded_vectors_tq, EncodedVectorsTQ, TQBits, TQMode};
@@ -34,9 +35,6 @@ use crate::types::{
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
     QuantizedChunkedMmapStorage, QuantizedChunkedMmapStorageBuilder,
 };
-use crate::vector_storage::quantized::quantized_mmap_storage::{
-    QuantizedStorageBuilder, QuantizedStorage,
-};
 use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
     MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageRam,
@@ -46,6 +44,9 @@ use crate::vector_storage::quantized::quantized_query_scorer::{
 };
 use crate::vector_storage::quantized::quantized_ram_storage::{
     QuantizedRamStorage, QuantizedRamStorageBuilder,
+};
+use crate::vector_storage::quantized::quantized_storage::{
+    QuantizedStorage, QuantizedStorageBuilder,
 };
 use crate::vector_storage::{
     DenseVectorStorage, MultiVectorStorage, RawScorer, RawScorerImpl, VectorStorageEnum,
