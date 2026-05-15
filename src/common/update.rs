@@ -7,12 +7,15 @@ use collection::collection::Collection;
 use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::point_ops::*;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{CollectionError, CollectionResult, UpdateResult};
+use collection::operations::types::{
+    CollectionError, CollectionResult, UpdateResult, VectorsConfig,
+};
 use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
 use serde::{Deserialize, Serialize};
@@ -24,7 +27,7 @@ use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, Auth};
+use storage::rbac::{Access, AccessRequirements, Auth};
 use validator::Validate;
 
 use crate::common::inference::params::InferenceParams;
@@ -308,6 +311,152 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
+/// Validate vector dimensions in an upsert operation against the collection config.
+///
+/// This performs an early O(n) check before the operation is written to WAL,
+/// ensuring that dimension mismatches are reported even for async (wait=false) operations.
+fn validate_vector_dimensions(
+    operation: &PointInsertOperationsInternal,
+    vectors_config: &VectorsConfig,
+) -> Result<(), StorageError> {
+    match operation {
+        PointInsertOperationsInternal::PointsBatch(batch) => {
+            validate_batch_vectors(&batch.vectors, vectors_config)?;
+        }
+        PointInsertOperationsInternal::PointsList(points) => {
+            for point in points {
+                validate_point_vectors(&point.vector, vectors_config)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_batch_vectors(
+    batch_vectors: &BatchVectorStructPersisted,
+    vectors_config: &VectorsConfig,
+) -> Result<(), StorageError> {
+    match batch_vectors {
+        BatchVectorStructPersisted::Single(vectors) => {
+            let Some(params) = vectors_config.get_params(DEFAULT_VECTOR_NAME) else {
+                return Ok(());
+            };
+            let expected_dim = params.size.get() as usize;
+            for vector in vectors {
+                if vector.len() != expected_dim {
+                    return Err(StorageError::bad_input(format!(
+                        "Vector dimension error: expected dim: {expected_dim}, got {}",
+                        vector.len()
+                    )));
+                }
+            }
+        }
+        BatchVectorStructPersisted::MultiDense(vectors) => {
+            let Some(params) = vectors_config.get_params(DEFAULT_VECTOR_NAME) else {
+                return Ok(());
+            };
+            let expected_dim = params.size.get() as usize;
+            for multi_vec in vectors {
+                for vector in multi_vec {
+                    if vector.len() != expected_dim {
+                        return Err(StorageError::bad_input(format!(
+                            "Vector dimension error: expected dim: {expected_dim}, got {}",
+                            vector.len()
+                        )));
+                    }
+                }
+            }
+        }
+        BatchVectorStructPersisted::Named(named_vectors) => {
+            for (name, vectors) in named_vectors {
+                let Some(params) = vectors_config.get_params(name) else {
+                    continue;
+                };
+                let expected_dim = params.size.get() as usize;
+                for vector in vectors {
+                    validate_single_vector_dim(vector, name, expected_dim)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_point_vectors(
+    vector: &VectorStructPersisted,
+    vectors_config: &VectorsConfig,
+) -> Result<(), StorageError> {
+    match vector {
+        VectorStructPersisted::Single(vec) => {
+            let Some(params) = vectors_config.get_params(DEFAULT_VECTOR_NAME) else {
+                return Ok(());
+            };
+            let expected_dim = params.size.get() as usize;
+            if vec.len() != expected_dim {
+                return Err(StorageError::bad_input(format!(
+                    "Vector dimension error: expected dim: {expected_dim}, got {}",
+                    vec.len()
+                )));
+            }
+        }
+        VectorStructPersisted::MultiDense(multi_vec) => {
+            let Some(params) = vectors_config.get_params(DEFAULT_VECTOR_NAME) else {
+                return Ok(());
+            };
+            let expected_dim = params.size.get() as usize;
+            for vec in multi_vec {
+                if vec.len() != expected_dim {
+                    return Err(StorageError::bad_input(format!(
+                        "Vector dimension error: expected dim: {expected_dim}, got {}",
+                        vec.len()
+                    )));
+                }
+            }
+        }
+        VectorStructPersisted::Named(named_vectors) => {
+            for (name, vector) in named_vectors {
+                let Some(params) = vectors_config.get_params(name) else {
+                    continue;
+                };
+                let expected_dim = params.size.get() as usize;
+                validate_single_vector_dim(vector, name, expected_dim)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_single_vector_dim(
+    vector: &VectorPersisted,
+    name: &str,
+    expected_dim: usize,
+) -> Result<(), StorageError> {
+    match vector {
+        VectorPersisted::Dense(vec) => {
+            if vec.len() != expected_dim {
+                return Err(StorageError::bad_input(format!(
+                    "Vector dimension error: expected dim: {expected_dim}, got {} for vector '{name}'",
+                    vec.len()
+                )));
+            }
+        }
+        VectorPersisted::MultiDense(multi_vec) => {
+            for vec in multi_vec {
+                if vec.len() != expected_dim {
+                    return Err(StorageError::bad_input(format!(
+                        "Vector dimension error: expected dim: {expected_dim}, got {} for vector '{name}'",
+                        vec.len()
+                    )));
+                }
+            }
+        }
+        VectorPersisted::Sparse(_) => {
+            // Sparse vectors don't have a fixed dimension, skip validation
+        }
+    }
+    Ok(())
+}
+
 #[expect(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc_provider: impl CheckedTocProvider,
@@ -358,6 +507,18 @@ pub async fn do_upsert_points(
             (operation, shard_key, usage, update_filter, update_mode)
         }
     };
+
+    // Validate vector dimensions early, before writing to WAL.
+    // This ensures that dimension mismatches are reported even for async (wait=false) operations,
+    // rather than being silently discarded during background processing.
+    {
+        let collection_pass = auth
+            .unlogged_access()
+            .check_collection_access(&collection_name, AccessRequirements::new())?;
+        let collection = toc.get_collection(&collection_pass).await?;
+        let vectors_config = collection.vectors_config().await;
+        validate_vector_dimensions(&operation, &vectors_config)?;
+    }
 
     // Decide which operation to use based on update_filter and update_mode
     let operation = match (update_filter, update_mode) {
