@@ -8,19 +8,18 @@ use common::mmap::{MmapFlusher, advice};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead};
 use fs_err as fs;
-
 use memmap2::MmapMut;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
 #[derive(Debug)]
-pub struct QuantizedMmapStorage<S: UniversalRead = MmapFile> {
+pub struct QuantizedStorage<S: UniversalRead = MmapFile> {
     storage: ReadOnly<S>,
     quantized_vector_size: NonZeroUsize,
     path: PathBuf,
 }
 
-impl QuantizedMmapStorage {
+impl QuantizedStorage {
     pub fn populate(&self) {
         if let Err(err) = self.storage.populate() {
             log::warn!("Failed to populate quantized storage: {err}")
@@ -46,7 +45,7 @@ pub struct QuantizedMmapStorageBuilder {
     path: PathBuf,
 }
 
-impl<S: UniversalRead> QuantizedMmapStorage<S> {
+impl<S: UniversalRead> QuantizedStorage<S> {
     fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
@@ -61,7 +60,7 @@ impl<S: UniversalRead> QuantizedMmapStorage<S> {
     pub fn from_file(
         path: &Path,
         quantized_vector_size: usize,
-    ) -> OperationResult<QuantizedMmapStorage<S>> {
+    ) -> OperationResult<QuantizedStorage<S>> {
         let storage = ReadOnly::open(path, Self::open_options())?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
@@ -84,7 +83,7 @@ impl<S: UniversalRead> QuantizedMmapStorage<S> {
     }
 }
 
-impl quantization::EncodedStorage for QuantizedMmapStorage {
+impl quantization::EncodedStorage for QuantizedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         let start = (self.quantized_vector_size.get() * index as usize) as u64;
         let length = self.quantized_vector_size.get() as u64;
@@ -141,15 +140,15 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
 }
 
 impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
-    type Storage = QuantizedMmapStorage;
+    type Storage = QuantizedStorage;
 
-    fn build(self) -> std::io::Result<QuantizedMmapStorage> {
+    fn build(self) -> std::io::Result<QuantizedStorage> {
         self.mmap.flush()?;
 
         let storage = ReadOnly::open(&self.path, Self::Storage::open_options())
             .expect("todo: switch to UniversalIoError");
 
-        Ok(QuantizedMmapStorage {
+        Ok(QuantizedStorage {
             storage,
             quantized_vector_size: self.quantized_vector_size,
             path: self.path,
