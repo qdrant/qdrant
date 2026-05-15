@@ -20,16 +20,17 @@ use fs_err::File;
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]>;
 
-    fn for_each_in_batch<F>(&self, offsets: &[PointOffsetType], mut callback: F)
-    where
-        F: FnMut(usize, &[u8]),
-    {
-        for (idx, &offset) in offsets.iter().enumerate() {
-            let vector = self.get_vector_data(offset);
-            callback(idx, &vector);
-        }
+    fn iter_batch(
+        &self,
+        offsets: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
+        offsets
+            .iter()
+            .map(move |&offset| self.get_vector_data(offset))
+            .enumerate()
     }
 
+    fn is_in_ram_or_mmap() -> bool;
     fn is_on_disk(&self) -> bool;
 
     fn upsert_vector(
@@ -137,6 +138,10 @@ impl EncodedStorage for TestEncodedStorage {
         }
         self.data[offset..offset + self.quantized_vector_size.get()].copy_from_slice(vector);
         Ok(())
+    }
+
+    fn is_in_ram_or_mmap() -> bool {
+        true
     }
 
     fn is_on_disk(&self) -> bool {

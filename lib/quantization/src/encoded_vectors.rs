@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -40,13 +41,15 @@ pub struct VectorParameters {
 pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
+    fn is_in_ram_or_mmap() -> bool;
     fn is_on_disk(&self) -> bool;
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
 
-    fn for_each_in_batch<F>(&self, offsets: &[PointOffsetType], callback: F)
-    where
-        F: FnMut(usize, &[u8]);
+    fn iter_batch(
+        &self,
+        offsets: &[PointOffsetType],
+    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)>;
 
     fn score(
         &self,

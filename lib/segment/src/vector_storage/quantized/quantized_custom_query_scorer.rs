@@ -99,11 +99,11 @@ where
             .vector_io_read()
             .incr_delta(ids.len() * storage.quantized_vector_size());
 
-        storage.for_each_in_batch(ids, |idx, vector| {
+        for (idx, vector) in storage.iter_batch(ids) {
             scores[idx] = self.query.score_by(|query| {
-                storage.score(query, vector, &self.hardware_counter) // inhibit `rustfmt`
+                storage.score(query, &vector, &self.hardware_counter) // inhibit `rustfmt`
             });
-        });
+        }
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
