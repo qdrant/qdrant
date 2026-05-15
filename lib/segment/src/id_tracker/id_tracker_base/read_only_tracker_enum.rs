@@ -1,5 +1,6 @@
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracker;
@@ -7,12 +8,12 @@ use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 #[allow(clippy::large_enum_variant)]
-pub enum ReadOnlyIdTrackerEnum {
+pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
     Appendable(ReadOnlyAppendableIdTracker),
-    Immutable(ReadOnlyImmutableIdTracker),
+    Immutable(ReadOnlyImmutableIdTracker<S>),
 }
 
-impl IdTrackerRead for ReadOnlyIdTrackerEnum {
+impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
     fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.point_mappings(),
