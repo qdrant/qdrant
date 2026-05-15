@@ -26,11 +26,22 @@ pub struct MergedPointId {
     pub internal_id: PointOffsetType,
     /// The version of the point within the [`IdTracker`] that contains it.
     pub version: u64,
+    /// Whether the point is marked deleted in the source tracker. Used by
+    /// [`for_each_unique_point`] to skip yielding a point whose
+    /// highest-versioned copy is a tombstone — without this filter,
+    /// `segment_builder` would resurrect deletes that were applied to a source
+    /// segment between when it was first picked for optimization and when the
+    /// merge actually reads from it (e.g. via snapshot teardown's
+    /// `propagate_to_wrapped`).
+    pub is_deleted: bool,
 }
 
 /// Calls a closure for each unique point from multiple ID trackers.
 ///
-/// Discard points that have no version.
+/// Discards points that have no version (their flush was interrupted) and
+/// points whose highest-versioned copy across the input trackers is marked
+/// deleted (so deletes applied to a source between optimization start and
+/// merge are not silently dropped).
 pub fn for_each_unique_point<'a>(
     id_trackers: impl Iterator<Item = &'a (impl IdTracker + ?Sized + 'a)>,
     mut f: impl FnMut(MergedPointId),
@@ -41,12 +52,14 @@ pub fn for_each_unique_point<'a>(
             id_tracker.point_mappings().iter_from(None).filter_map(
                 move |(external_id, internal_id)| {
                     let version = id_tracker.internal_version(internal_id);
+                    let is_deleted = id_tracker.is_deleted_point(internal_id);
                     // a point without a version had an interrupted flush sequence and should be discarded
                     version.map(|version| MergedPointId {
                         external_id,
                         tracker_index: segment_index,
                         internal_id,
                         version,
+                        is_deleted,
                     })
                 },
             )
@@ -63,11 +76,15 @@ pub fn for_each_unique_point<'a>(
                 best_item = item;
             }
         } else {
-            f(best_item);
+            if !best_item.is_deleted {
+                f(best_item);
+            }
             best_item = item;
         }
     }
-    f(best_item);
+    if !best_item.is_deleted {
+        f(best_item);
+    }
 }
 
 impl From<&ExtendedPointId> for PointIdType {
@@ -105,11 +122,13 @@ mod tests {
         for (tracker_index, id_tracker) in id_trackers.iter().enumerate() {
             for (external_id, internal_id) in id_tracker.point_mappings().iter_from(None) {
                 let version = id_tracker.internal_version(internal_id).unwrap();
+                let is_deleted = id_tracker.is_deleted_point(internal_id);
                 let merged_point_id = MergedPointId {
                     external_id,
                     tracker_index,
                     internal_id,
                     version,
+                    is_deleted,
                 };
                 match expected.entry(external_id) {
                     hash_map::Entry::Occupied(mut entry) => {
@@ -137,11 +156,16 @@ mod tests {
             assert!(expected.is_empty());
         }
 
+        // `for_each_unique_point` skips winners whose source has them marked
+        // deleted, so drop those from the expected set before comparing.
+        expected.retain(|_, v| !v.is_deleted);
+
         for_each_unique_point(id_trackers.iter(), |merged_point_id| {
             let v = expected.remove(&merged_point_id.external_id).unwrap();
             assert_eq!(merged_point_id.tracker_index, v.tracker_index);
             assert_eq!(merged_point_id.internal_id, v.internal_id);
             assert_eq!(merged_point_id.version, v.version);
+            assert!(!merged_point_id.is_deleted);
         });
 
         assert!(expected.is_empty());
