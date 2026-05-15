@@ -37,7 +37,6 @@ pub struct ProxySegment {
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
     deleted_points: DeletedPoints,
-    deleted_deferred_count: usize,
     wrapped_config: SegmentConfig,
 
     /// Version of the last change in this proxy, considering point deletes and payload index
@@ -70,7 +69,6 @@ impl ProxySegment {
             changed_indexes: ProxyIndexChanges::default(),
             changed_vector_names: ProxyVectorNameChanges::default(),
             deleted_points: AHashMap::new(),
-            deleted_deferred_count: 0,
             wrapped_config,
             version,
         }
@@ -173,13 +171,26 @@ impl ProxySegment {
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
     pub fn propagate_to_wrapped(&mut self) -> OperationResult<()> {
-        // Important: we must not keep a write lock on the wrapped segment for the duration of this
+        let target = self.wrapped_segment.clone();
+        self.propagate_to(&target)
+    }
+
+    /// Propagate accumulated changes to an arbitrary target segment, instead of
+    /// the wrapped segment. Used during `SegmentHolder::swap_new` to redirect a
+    /// concurrent snapshot's pending changes onto the newly-committed optimized
+    /// segment, before the proxy's wrapped reference becomes orphaned.
+    ///
+    /// On success the proxy's pending state (changed indexes, changed vector
+    /// names, deleted points) is drained, so a subsequent
+    /// `propagate_to_wrapped` becomes a no-op for already-drained categories.
+    pub fn propagate_to(&mut self, target: &LockedSegment) -> OperationResult<()> {
+        // Important: we must not keep a write lock on the target segment for the duration of this
         // function to prevent a deadlock. The search functions conflict with it trying to take a
-        // read lock on the wrapped segment as well while already holding the deleted points lock
+        // read lock on the target segment as well while already holding the deleted points lock
         // (or others). Careful locking management is very important here. Instead we just take an
         // upgradable read lock, upgrading to a write lock on demand.
         // See: <https://github.com/qdrant/qdrant/pull/4206>
-        let wrapped_segment = self.wrapped_segment.get();
+        let wrapped_segment = target.get();
         let mut wrapped_segment = wrapped_segment.upgradable_read();
 
         // Propagate index changes before point deletions
@@ -259,11 +270,17 @@ impl ProxySegment {
             if !self.deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (point_id, versions) in self.deleted_points.iter() {
-                        // Note:
-                        // Queued deletes may have an older version than what is currently in the
-                        // wrapped segment. Such deletes are ignored because the point in the
-                        // wrapped segment is considered to be newer. This is possible because
-                        // different proxy segments can share state through a common write segment.
+                        // Note: This is a best-effort re-apply. The wrapped's
+                        // `delete_point` may return `Ok(false)` because either:
+                        //  - The point has already been removed (e.g. the
+                        //    eager-forward in `ProxySegment::delete_point`
+                        //    already applied this delete, or a sibling proxy
+                        //    sharing the same write segment did so).
+                        //  - The queued delete's `operation_version` is older
+                        //    than what's currently in the wrapped segment.
+                        // Both are harmless — the canonical state is in the
+                        // wrapped's `id_tracker`, and we just need to make sure
+                        // every recorded delete *eventually* reaches there.
                         // See: <https://github.com/qdrant/qdrant/pull/7208>
                         wrapped_segment.delete_point(
                             versions.operation_version,
@@ -274,7 +291,6 @@ impl ProxySegment {
                     OperationResult::Ok(())
                 })?;
                 self.deleted_points.clear();
-                self.deleted_deferred_count = 0;
 
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.

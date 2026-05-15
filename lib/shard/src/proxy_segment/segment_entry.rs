@@ -459,29 +459,26 @@ impl ReadSegmentEntry for ProxySegment {
     }
 
     fn available_point_count(&self) -> usize {
-        let deleted_points_count = self.deleted_points.len();
-        let wrapped_segment_count = self.wrapped_segment.get().read().available_point_count();
-        wrapped_segment_count.saturating_sub(deleted_points_count)
+        // `ProxySegment::delete_point` applies the delete to the wrapped
+        // segment's id_tracker eagerly, so the wrapped's `available_point_count`
+        // already excludes everything in `self.deleted_points`. Don't subtract
+        // it again.
+        self.wrapped_segment.get().read().available_point_count()
     }
 
     fn available_point_count_without_deferred(&self) -> usize {
-        let wrapped_segment_visible_count = self
-            .wrapped_segment
+        // Same as `available_point_count`: the wrapped already reflects every
+        // delete recorded in `self.deleted_points`.
+        self.wrapped_segment
             .get()
             .read()
-            .available_point_count_without_deferred();
-
-        // Amount of visible points that are deleted in this proxy.
-        let deleted_visible = self
-            .deleted_points
-            .len()
-            .saturating_sub(self.deleted_deferred_count);
-
-        wrapped_segment_visible_count.saturating_sub(deleted_visible)
+            .available_point_count_without_deferred()
     }
 
     fn deleted_point_count(&self) -> usize {
-        self.wrapped_segment.get().read().deleted_point_count() + self.deleted_points.len()
+        // Same as above: the wrapped's `deleted_point_count` already counts
+        // everything we recorded in `self.deleted_points`.
+        self.wrapped_segment.get().read().deleted_point_count()
     }
 
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
@@ -497,18 +494,17 @@ impl ReadSegmentEntry for ProxySegment {
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
         let wrapped_size = wrapped_segment_guard.available_vectors_size_in_bytes(vector_name)?;
+        // `available_vectors_size_in_bytes` is derived from `vector_storage`,
+        // which `Segment::delete_point` does NOT touch (only `id_tracker` is
+        // updated). The wrapped's available point count from `id_tracker`
+        // already reflects the eager-forward, but the size hasn't been
+        // adjusted, so we scale by the live-point ratio.
         let wrapped_count = wrapped_segment_guard.available_point_count();
         drop(wrapped_segment_guard);
 
-        let stored_points = wrapped_count;
-        // because we don't know the exact size of deleted vectors, we assume that they are the same avg size as the wrapped ones
+        let stored_points = wrapped_count + self.deleted_points.len();
         if stored_points > 0 {
-            let deleted_points_count = self.deleted_points.len();
-            let available_points = stored_points.saturating_sub(deleted_points_count);
-            Ok(
-                ((wrapped_size as u128) * available_points as u128 / stored_points as u128)
-                    as usize,
-            )
+            Ok(((wrapped_size as u128) * wrapped_count as u128 / stored_points as u128) as usize)
         } else {
             Ok(0)
         }
@@ -521,40 +517,13 @@ impl ReadSegmentEntry for ProxySegment {
     ) -> OperationResult<CardinalityEstimation> {
         let filter = filter.map(|f| self.changed_vector_names.redact_filter(f));
 
-        let deleted_point_count = self
-            .deleted_points
-            .len()
-            .saturating_sub(self.deleted_deferred_count);
-
-        let (wrapped_segment_est, total_wrapped_size) = {
-            let wrapped_segment = self.wrapped_segment.get();
-            let wrapped_segment_guard = wrapped_segment.read();
-            (
-                wrapped_segment_guard.estimate_point_count(filter.as_deref(), hw_counter)?,
-                wrapped_segment_guard.available_point_count_without_deferred(),
-            )
-        };
-
-        let expected_deleted_count = if total_wrapped_size > 0 {
-            (wrapped_segment_est.exp as f64
-                * (deleted_point_count as f64 / total_wrapped_size as f64)) as usize
-        } else {
-            0
-        };
-
-        let CardinalityEstimation {
-            primary_clauses,
-            min,
-            exp,
-            max,
-        } = wrapped_segment_est;
-
-        Ok(CardinalityEstimation {
-            primary_clauses,
-            min: min.saturating_sub(deleted_point_count),
-            exp: exp.saturating_sub(expected_deleted_count),
-            max,
-        })
+        // Eager-forward delete keeps the wrapped's id_tracker in sync with
+        // `self.deleted_points`, so the wrapped's estimate already excludes
+        // anything the proxy deleted; no extra subtraction needed.
+        self.wrapped_segment
+            .get()
+            .read()
+            .estimate_point_count(filter.as_deref(), hw_counter)
     }
 
     fn segment_uuid(&self) -> Uuid {
@@ -591,12 +560,14 @@ impl ReadSegmentEntry for ProxySegment {
             }
         });
 
+        // `num_vectors` / `num_indexed_vectors` come from `vector_storage`,
+        // which `Segment::delete_point` does NOT touch (only `id_tracker` and
+        // the payload index are updated). So the proxy still has to subtract
+        // its per-point deletions × remaining vector names to surface the
+        // user-visible "available vectors" count.
         let vector_name_count = vector_data.len();
         let deleted_points_count = self.deleted_points.len();
 
-        // Best estimate: start from wrapped aggregate, subtract what we just
-        // removed (stale vectors) and what the proxy deleted (per-point
-        // deletions × remaining vector names).
         let num_vectors = wrapped_info
             .num_vectors
             .saturating_sub(removed_num_vectors)
@@ -611,10 +582,12 @@ impl ReadSegmentEntry for ProxySegment {
             0
         };
 
+        // `num_deleted_vectors` already reflects the eager-forward delete via
+        // `id_tracker.deleted_point_count()`; just strip the stale-vector
+        // adjustment.
         let num_deleted_vectors = wrapped_info
             .num_deleted_vectors
-            .saturating_sub(removed_num_deleted)
-            + deleted_points_count * vector_name_count;
+            .saturating_sub(removed_num_deleted);
 
         SegmentInfo {
             uuid: wrapped_info.uuid,
@@ -623,11 +596,7 @@ impl ReadSegmentEntry for ProxySegment {
             num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deferred_points: Some(self.deferred_point_count()),
-            num_deleted_deferred_points: wrapped_info.num_deleted_deferred_points.map(
-                |num_deleted_deferred_points| {
-                    num_deleted_deferred_points.saturating_add(self.deleted_deferred_count)
-                },
-            ),
+            num_deleted_deferred_points: wrapped_info.num_deleted_deferred_points,
             num_deleted_vectors,
             vectors_size_bytes: wrapped_info.vectors_size_bytes,
             payloads_size_bytes: wrapped_info.payloads_size_bytes,
@@ -698,11 +667,9 @@ impl ReadSegmentEntry for ProxySegment {
     }
 
     fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let mut ids = self.wrapped_segment.get().read().deferred_point_ids();
-        if self.deleted_deferred_count > 0 {
-            ids.retain(|point_id| !self.deleted_points.contains_key(point_id));
-        }
-        ids
+        // Eager-forward delete drops deleted points from the wrapped's
+        // id_tracker, so wrapped's `deferred_point_ids` already excludes them.
+        self.wrapped_segment.get().read().deferred_point_ids()
     }
 
     fn has_deferred_points(&self) -> bool {
@@ -710,11 +677,9 @@ impl ReadSegmentEntry for ProxySegment {
     }
 
     fn deferred_point_count(&self) -> usize {
-        self.wrapped_segment
-            .get()
-            .read()
-            .deferred_point_count()
-            .saturating_sub(self.deleted_deferred_count)
+        // Same as `deferred_point_ids`: wrapped's count already reflects every
+        // delete this proxy has issued.
+        self.wrapped_segment.get().read().deferred_point_count()
     }
 }
 
@@ -833,78 +798,66 @@ impl NonAppendableSegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let mut was_deleted = false;
-        let was_deferred_point;
+        // Apply the delete to the wrapped segment IMMEDIATELY (in addition to
+        // recording it in `self.deleted_points` for `propagate_to_wrapped` to
+        // re-apply later). This makes the delete durable regardless of whether
+        // this proxy's `propagate_to_wrapped` ever runs — important because the
+        // proxy can be dropped without a final propagate when an in-flight
+        // `apply_points` captured this proxy's Arc and lands a `delete_point`
+        // *after* the snapshot's first propagate (e.g. between propagate and
+        // slot replacement in `try_unproxy_segment`, or after the proxy has
+        // already been removed from the holder via `swap_new`).
+        //
+        // Without an immediate forward, the late delete sits in
+        // `deleted_points` on a proxy that nobody will drain again — surfaced
+        // as duplicate-point inflation by the `crasher` chaos test, since the
+        // COW source-delete is lost.
+        //
+        // The `propagate_to_wrapped` path still iterates `self.deleted_points`
+        // and calls `wrapped.delete_point` again; on that second call the
+        // wrapped's `id_tracker` no longer has the mapping, so it returns
+        // `Ok(false)`. Harmless — the canonical state lives in the wrapped
+        // segment's `id_tracker`, and `deleted_points` remains as an in-memory
+        // cache used by other read paths on the proxy.
+        //
+        // Read the internal_id BEFORE the eager forward, because the forward
+        // calls `drop_internal` which removes the mapping. Only the
+        // single-proxy-over-Original case has an internal_id we can put in
+        // the deleted_mask fast-path; an inner Proxy hides its mapping.
+        let point_offset = match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => raw_segment.read().get_internal_id(point_id),
+            LockedSegment::Proxy(_) => None,
+        };
+
+        let was_deleted_in_wrapped = self
+            .wrapped_segment
+            .get()
+            .write()
+            .delete_point(op_num, point_id, hw_counter)?;
 
         self.version = cmp::max(self.version, op_num);
 
-        let point_offset = match &self.wrapped_segment {
-            LockedSegment::Original(raw_segment) => {
-                let (point_offset, is_deferred) = {
-                    let read_segment = raw_segment.read();
-                    (
-                        read_segment.get_internal_id(point_id),
-                        read_segment.point_is_deferred(point_id),
-                    )
-                };
-                was_deferred_point = is_deferred;
-
-                if point_offset.is_some() {
-                    let prev = self.deleted_points.insert(
-                        point_id,
-                        ProxyDeletedPoint {
-                            local_version: op_num,
-                            operation_version: op_num,
-                        },
-                    );
-                    was_deleted = prev.is_none();
-                    if let Some(prev) = prev {
-                        debug_assert!(
-                            prev.operation_version < op_num,
-                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                        )
-                    }
-                }
-                point_offset
+        let mut was_deleted = false;
+        if was_deleted_in_wrapped {
+            let prev = self.deleted_points.insert(
+                point_id,
+                ProxyDeletedPoint {
+                    local_version: op_num,
+                    operation_version: op_num,
+                },
+            );
+            was_deleted = prev.is_none();
+            if let Some(prev) = prev {
+                debug_assert!(
+                    prev.operation_version < op_num,
+                    "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                )
             }
-            LockedSegment::Proxy(proxy) => {
-                let (has_point, is_deferred) = {
-                    let read_proxy = proxy.read();
-                    (
-                        read_proxy.has_point(point_id),
-                        read_proxy.point_is_deferred(point_id),
-                    )
-                };
-                was_deferred_point = is_deferred;
-
-                if has_point {
-                    let prev = self.deleted_points.insert(
-                        point_id,
-                        ProxyDeletedPoint {
-                            local_version: op_num,
-                            operation_version: op_num,
-                        },
-                    );
-                    was_deleted = prev.is_none();
-                    if let Some(prev) = prev {
-                        debug_assert!(
-                            prev.operation_version < op_num,
-                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                        )
-                    }
-                }
-                None
-            }
-        };
+        }
 
         self.set_deleted_offset(point_offset);
-
-        // Increase delete counter for deferred point.
-        if was_deleted && was_deferred_point {
-            self.deleted_deferred_count += 1;
-        }
 
         Ok(was_deleted)
     }
