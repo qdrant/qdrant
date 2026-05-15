@@ -4,9 +4,9 @@ mod tests {
     use std::time::Duration;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_pq::EncodedVectorsPQ;
+    use quantization::encoded_vectors_pq::{self, EncodedVectorsPQ};
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
@@ -31,10 +31,7 @@ mod tests {
             invert: false,
         };
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                1,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -72,10 +69,7 @@ mod tests {
             invert: false,
         };
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                1,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -113,10 +107,7 @@ mod tests {
             invert: false,
         };
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                1,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -154,10 +145,7 @@ mod tests {
             invert: true,
         };
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                1,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -195,10 +183,7 @@ mod tests {
             invert: true,
         };
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                1,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -236,10 +221,7 @@ mod tests {
             invert: true,
         };
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                1,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -276,10 +258,7 @@ mod tests {
             invert: false,
         };
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                1,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -315,10 +294,7 @@ mod tests {
             invert: true,
         };
         let quantized_vector_size =
-            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                &vector_parameters,
-                1,
-            );
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -365,10 +341,7 @@ mod tests {
                 invert: false,
             };
             let quantized_vector_size =
-                EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
-                    &vector_parameters,
-                    1,
-                );
+                encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
 
             let result = std::thread::spawn(move || {
                 EncodedVectorsPQ::encode(

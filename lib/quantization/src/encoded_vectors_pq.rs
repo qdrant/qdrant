@@ -151,13 +151,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         Ok(result)
     }
 
-    pub fn get_quantized_vector_size(
-        vector_parameters: &VectorParameters,
-        chunk_size: usize,
-    ) -> usize {
-        (0..vector_parameters.dim).step_by(chunk_size).count()
-    }
-
     fn get_vector_division(dim: usize, chunk_size: usize) -> Vec<Range<usize>> {
         (0..dim)
             .step_by(chunk_size)
@@ -697,4 +690,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
         self.score_point_simple(query, bytes)
     }
+}
+
+pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, chunk_size: usize) -> usize {
+    (0..vector_parameters.dim).step_by(chunk_size).count()
 }

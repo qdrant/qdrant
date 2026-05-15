@@ -523,7 +523,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         encoding: Encoding,
     ) -> EncodedBinVector<TBitsStoreType> {
         let encoded_vector_size =
-            Self::get_quantized_vector_size_from_params(vector.len(), encoding)
+            get_quantized_vector_size_from_params::<TBitsStoreType>(vector.len(), encoding)
                 / std::mem::size_of::<TBitsStoreType>();
         let mut encoded_vector = vec![Default::default(); encoded_vector_size];
 
@@ -741,18 +741,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
     }
 
-    pub fn get_quantized_vector_size_from_params(dim: usize, encoding: Encoding) -> usize {
-        let extended_dim = match encoding {
-            Encoding::OneBit => dim,
-            Encoding::TwoBits => dim * 2,
-            Encoding::OneAndHalfBits => (dim * 3).div_ceil(2), // ceil(dim * 1.5)
-        };
-        TBitsStoreType::get_storage_size(extended_dim.max(1))
-            * std::mem::size_of::<TBitsStoreType>()
-    }
-
     fn get_quantized_vector_size(&self) -> usize {
-        Self::get_quantized_vector_size_from_params(
+        get_quantized_vector_size_from_params::<TBitsStoreType>(
             self.metadata.vector_parameters.dim,
             self.metadata.encoding,
         )
@@ -819,6 +809,18 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     pub fn get_vector_parameters(&self) -> &VectorParameters {
         &self.metadata.vector_parameters
     }
+}
+
+pub fn get_quantized_vector_size_from_params<TBitsStoreType: BitsStoreType>(
+    dim: usize,
+    encoding: Encoding,
+) -> usize {
+    let extended_dim = match encoding {
+        Encoding::OneBit => dim,
+        Encoding::TwoBits => dim * 2,
+        Encoding::OneAndHalfBits => (dim * 3).div_ceil(2), // ceil(dim * 1.5)
+    };
+    TBitsStoreType::get_storage_size(extended_dim.max(1)) * std::mem::size_of::<TBitsStoreType>()
 }
 
 impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
