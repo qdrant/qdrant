@@ -375,20 +375,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         Ok(result)
     }
 
-    // Get quantized vector size in bytes
-    pub fn get_quantized_vector_size(
-        vector_parameters: &VectorParameters,
-        bits: TQBits,
-        mode: TQMode,
-    ) -> usize {
-        TurboQuantizer::quantized_size_for(
-            vector_parameters.dim,
-            bits,
-            vector_parameters.distance_type,
-            mode,
-        )
-    }
-
     fn encode_vector(
         vector_data: &[f32],
         turbo_quantizer: &TurboQuantizer,
@@ -408,6 +394,20 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn get_metadata(&self) -> &Metadata {
         &self.metadata
     }
+}
+
+/// Get quantized vector size in bytes
+pub fn get_quantized_vector_size(
+    vector_parameters: &VectorParameters,
+    bits: TQBits,
+    mode: TQMode,
+) -> usize {
+    TurboQuantizer::quantized_size_for(
+        vector_parameters.dim,
+        bits,
+        vector_parameters.distance_type,
+        mode,
+    )
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
@@ -468,7 +468,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     fn quantized_vector_size(&self) -> usize {
-        Self::get_quantized_vector_size(
+        get_quantized_vector_size(
             &self.metadata.vector_parameters,
             self.metadata.bits,
             self.metadata.mode,

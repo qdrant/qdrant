@@ -148,7 +148,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         assert_eq!(method, ScalarQuantizationMethod::Int8);
-        let actual_dim = Self::get_actual_dim(vector_parameters);
+        let actual_dim = get_actual_dim(vector_parameters);
 
         if count == 0 {
             let metadata = Metadata::Int8(MetadataInt8 {
@@ -529,11 +529,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         (offset, code)
     }
 
-    pub fn get_quantized_vector_size(vector_parameters: &VectorParameters) -> usize {
-        let actual_dim = Self::get_actual_dim(vector_parameters);
-        actual_dim + ADDITIONAL_CONSTANT_SIZE
-    }
-
     pub fn get_multiplier(&self) -> f32 {
         match &self.metadata {
             Metadata::Int8(meta) => meta.multiplier,
@@ -544,10 +539,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         match &self.metadata {
             Metadata::Int8(metadata) => metadata.get_shift(),
         }
-    }
-
-    pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
-        vector_parameters.dim + (ALIGNMENT - vector_parameters.dim % ALIGNMENT) % ALIGNMENT
     }
 
     fn encode_int8_query(metadata: &MetadataInt8, query: &[f32]) -> EncodedQueryU8 {
@@ -587,6 +578,15 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             encoded_query: query,
         }
     }
+}
+
+pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
+    vector_parameters.dim + (ALIGNMENT - vector_parameters.dim % ALIGNMENT) % ALIGNMENT
+}
+
+pub fn get_quantized_vector_size(vector_parameters: &VectorParameters) -> usize {
+    let actual_dim = get_actual_dim(vector_parameters);
+    actual_dim + ADDITIONAL_CONSTANT_SIZE
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
