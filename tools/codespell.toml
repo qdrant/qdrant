@@ -20,4 +20,5 @@ ignore-words-list = [
     "inout",               # Rust inline-asm operand keyword
     "mmapped",             # Memory mapped
     "ser",                 # Serde package
+    "crasher"              # Internal tool for testing
 ]
