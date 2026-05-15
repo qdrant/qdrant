@@ -124,6 +124,7 @@ impl QuantizedChunkedMmapStorageBuilder {
 
 impl quantization::EncodedStorageBuilder for QuantizedChunkedMmapStorageBuilder {
     type Storage = QuantizedChunkedMmapStorage;
+    type Error = std::io::Error;
 
     fn build(self) -> std::io::Result<QuantizedChunkedMmapStorage> {
         let Self {

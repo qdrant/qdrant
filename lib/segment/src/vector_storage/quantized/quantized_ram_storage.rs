@@ -105,6 +105,7 @@ impl QuantizedRamStorageBuilder {
 
 impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
     type Storage = QuantizedRamStorage;
+    type Error = std::io::Error;
 
     fn build(self) -> std::io::Result<QuantizedRamStorage> {
         if let Some(dir) = self.path.parent() {

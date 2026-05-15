@@ -35,7 +35,7 @@ use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
     QuantizedChunkedMmapStorage, QuantizedChunkedMmapStorageBuilder,
 };
 use crate::vector_storage::quantized::quantized_mmap_storage::{
-    QuantizedMmapStorageBuilder, QuantizedStorage,
+    QuantizedStorageBuilder, QuantizedStorage,
 };
 use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
@@ -1581,7 +1581,7 @@ impl QuantizedVectors {
                 stopped,
             )?))
         } else {
-            let storage_builder = QuantizedMmapStorageBuilder::new(
+            let storage_builder = QuantizedStorageBuilder::new(
                 data_path.as_path(),
                 vectors_count,
                 quantized_vector_size,
@@ -1654,7 +1654,7 @@ impl QuantizedVectors {
                 ),
             ))
         } else {
-            let storage_builder = QuantizedMmapStorageBuilder::new(
+            let storage_builder = QuantizedStorageBuilder::new(
                 data_path.as_path(),
                 inner_vectors_count,
                 quantized_vector_size,
@@ -1723,7 +1723,7 @@ impl QuantizedVectors {
                 stopped,
             )?))
         } else {
-            let storage_builder = QuantizedMmapStorageBuilder::new(
+            let storage_builder = QuantizedStorageBuilder::new(
                 data_path.as_path(),
                 vectors_count,
                 quantized_vector_size,
@@ -1795,7 +1795,7 @@ impl QuantizedVectors {
                 ),
             ))
         } else {
-            let storage_builder = QuantizedMmapStorageBuilder::new(
+            let storage_builder = QuantizedStorageBuilder::new(
                 data_path.as_path(),
                 inner_vectors_count,
                 quantized_vector_size,
@@ -1881,7 +1881,7 @@ impl QuantizedVectors {
                 ))
             }
             (false, QuantizedVectorsStorageType::Immutable) => {
-                let storage_builder = QuantizedMmapStorageBuilder::new(
+                let storage_builder = QuantizedStorageBuilder::new(
                     data_path.as_path(),
                     vectors_count,
                     quantized_vector_size,
@@ -1978,7 +1978,7 @@ impl QuantizedVectors {
                 ))
             }
             (false, QuantizedVectorsStorageType::Immutable) => {
-                let storage_builder = QuantizedMmapStorageBuilder::new(
+                let storage_builder = QuantizedStorageBuilder::new(
                     data_path.as_path(),
                     inner_vectors_count,
                     quantized_vector_size,
@@ -2066,7 +2066,7 @@ impl QuantizedVectors {
                 )?))
             }
             (false, QuantizedVectorsStorageType::Immutable) => {
-                let storage_builder = QuantizedMmapStorageBuilder::new(
+                let storage_builder = QuantizedStorageBuilder::new(
                     data_path.as_path(),
                     vectors_count,
                     quantized_vector_size,
@@ -2167,7 +2167,7 @@ impl QuantizedVectors {
                 ))
             }
             (false, QuantizedVectorsStorageType::Immutable) => {
-                let storage_builder = QuantizedMmapStorageBuilder::new(
+                let storage_builder = QuantizedStorageBuilder::new(
                     data_path.as_path(),
                     inner_vectors_count,
                     quantized_vector_size,

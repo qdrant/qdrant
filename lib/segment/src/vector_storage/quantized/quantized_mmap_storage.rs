@@ -39,7 +39,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 }
 
-pub struct QuantizedMmapStorageBuilder<S> {
+pub struct QuantizedStorageBuilder<S> {
     mmap: MmapMut,
     cursor_pos: usize,
     quantized_vector_size: NonZeroUsize,
@@ -141,14 +141,14 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     }
 }
 
-impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder<S> {
+impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedStorageBuilder<S> {
     type Storage = QuantizedStorage<S>;
+    type Error = OperationError;
 
-    fn build(self) -> std::io::Result<QuantizedStorage<S>> {
+    fn build(self) -> OperationResult<QuantizedStorage<S>> {
         self.mmap.flush()?;
 
-        let storage = ReadOnly::open(&self.path, Self::Storage::open_options())
-            .expect("todo: switch to UniversalIoError");
+        let storage = ReadOnly::open(&self.path, Self::Storage::open_options())?;
 
         Ok(QuantizedStorage {
             storage,
@@ -157,7 +157,7 @@ impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedMmapStor
         })
     }
 
-    fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
+    fn push_vector_data(&mut self, other: &[u8]) -> OperationResult<()> {
         debug_assert_eq!(
             self.quantized_vector_size.get(),
             other.len(),
@@ -176,7 +176,7 @@ impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedMmapStor
     }
 }
 
-impl<S> QuantizedMmapStorageBuilder<S> {
+impl<S> QuantizedStorageBuilder<S> {
     pub fn new(
         path: &Path,
         vectors_count: usize,

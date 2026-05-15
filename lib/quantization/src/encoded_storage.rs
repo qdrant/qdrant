@@ -54,10 +54,11 @@ pub trait EncodedStorage {
 
 pub trait EncodedStorageBuilder {
     type Storage: EncodedStorage;
+    type Error: std::fmt::Display;
 
-    fn build(self) -> std::io::Result<Self::Storage>;
+    fn build(self) -> Result<Self::Storage, Self::Error>;
 
-    fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()>;
+    fn push_vector_data(&mut self, other: &[u8]) -> Result<(), Self::Error>;
 }
 
 #[cfg(feature = "testing")]
@@ -197,6 +198,7 @@ impl TestEncodedStorageBuilder {
 #[cfg(feature = "testing")]
 impl EncodedStorageBuilder for TestEncodedStorageBuilder {
     type Storage = TestEncodedStorage;
+    type Error = std::io::Error;
 
     fn build(self) -> std::io::Result<Self::Storage> {
         if let Some(path) = &self.path {
