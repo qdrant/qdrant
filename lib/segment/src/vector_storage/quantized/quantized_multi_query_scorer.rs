@@ -51,7 +51,7 @@ where
             let inner_prequantized = TElement::quantization_preprocess(
                 quantization_config,
                 TMetric::distance(),
-                inner_converted.as_ref(),
+                inner_converted,
             );
             query.extend_from_slice(&inner_prequantized);
         }

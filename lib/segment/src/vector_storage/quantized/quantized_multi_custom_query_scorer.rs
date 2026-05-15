@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -72,7 +74,7 @@ where
                 let original_vector_prequantized = TElement::quantization_preprocess(
                     quantization_config,
                     TMetric::distance(),
-                    &original_vector.flattened_vectors,
+                    Cow::Borrowed(&original_vector.flattened_vectors),
                 );
                 Ok(quantized_multivector_storage.encode_query(&original_vector_prequantized))
             })

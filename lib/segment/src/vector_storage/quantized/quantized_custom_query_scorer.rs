@@ -60,7 +60,7 @@ where
                 let original_vector_prequantized = TElement::quantization_preprocess(
                     quantization_config,
                     TMetric::distance(),
-                    &original_vector,
+                    Cow::Borrowed(&original_vector),
                 );
                 Ok(quantized_storage.encode_query(&original_vector_prequantized))
             })
