@@ -8,7 +8,7 @@ use common::cow::BoxCow;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::progress_tracker::ProgressTracker;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
 use log::{debug, trace};
 use rand::Rng;
@@ -623,7 +623,7 @@ fn condition_points(
             &cardinality_estimation,
             &disposed_hw_counter,
             stopped,
-            None,
+            DeferredBehavior::IncludeAll,
         )?
         .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
         .collect())

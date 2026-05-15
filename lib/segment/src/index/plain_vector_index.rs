@@ -137,13 +137,14 @@ impl VectorIndexRead for PlainVectorIndex {
             query_context.hardware_counter(),
         )?;
 
-        let deferred_internal_id = query_context.deferred_internal_id();
+        let deferred_internal_id = id_tracker.deferred_internal_id();
 
         let mut search_results = match filter {
             Some(filter) => {
-                let filtered_ids_vec = self.payload_index.borrow().with_view(|v| {
-                    v.query_points(filter, &hw_counter, &is_stopped, deferred_internal_id)
-                })?;
+                let filtered_ids_vec = self
+                    .payload_index
+                    .borrow()
+                    .with_view(|v| v.query_points(filter, &hw_counter, &is_stopped))?;
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => batch_searcher.peek_top_all(&is_stopped, deferred_internal_id)?,

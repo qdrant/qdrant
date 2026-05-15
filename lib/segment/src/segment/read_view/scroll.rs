@@ -59,12 +59,14 @@ where
         limit: Option<usize>,
         deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
-        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
+        let point_mappings = self.id_tracker.point_mappings();
+        let iter = if deferred_behavior.include_all_points() {
+            point_mappings.iter_from(offset)
+        } else {
+            point_mappings.iter_from_visible(offset)
+        };
 
-        self.id_tracker
-            .point_mappings()
-            .iter_from_visible(offset, effective_deferred_id)
-            .map(|x| x.0)
+        iter.map(|x| x.0)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
     }
@@ -78,8 +80,6 @@ where
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
-        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
-
         let cardinality_estimation = self
             .payload_index
             .estimate_cardinality(condition, hw_counter)?;
@@ -94,7 +94,7 @@ where
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
-                effective_deferred_id,
+                deferred_behavior,
             )?
             .filter_map(|internal_id| {
                 let external_id = self.id_tracker.external_id(internal_id)?;
@@ -121,13 +121,15 @@ where
         hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
-        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
-
         let filter_context = self.payload_index.filter_context(condition, hw_counter)?;
-        Ok(self
-            .id_tracker
-            .point_mappings()
-            .iter_from_visible(offset, effective_deferred_id)
+        let point_mappings = self.id_tracker.point_mappings();
+        let iter = if deferred_behavior.include_all_points() {
+            point_mappings.iter_from(offset)
+        } else {
+            point_mappings.iter_from_visible(offset)
+        };
+
+        Ok(iter
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)

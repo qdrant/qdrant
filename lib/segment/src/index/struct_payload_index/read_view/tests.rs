@@ -55,7 +55,7 @@ fn smoke_view_over_in_memory_backends() {
     // `query_points` over an empty filter on an empty tracker returns nothing.
     let empty_filter = Filter::default();
     let result = view
-        .query_points(&empty_filter, &hw_counter, &is_stopped, None)
+        .query_points(&empty_filter, &hw_counter, &is_stopped)
         .expect("query_points");
     assert!(result.is_empty(), "no points in tracker");
 

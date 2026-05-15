@@ -14,6 +14,7 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
+use crate::id_tracker::IdTrackerRead;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::{VectorIndex, VectorIndexRead};
@@ -33,12 +34,6 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
-
-        debug_assert_eq!(
-            self.deferred_internal_id,
-            query_context.deferred_internal_id(),
-            "SparseIndex and VectorQueryContext deferred_internal_id consistency violated."
-        );
 
         for vector in vectors {
             check_process_stopped(&query_context.is_stopped())?;
@@ -173,7 +168,9 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         }
 
         let point_is_deferred = self
-            .deferred_internal_id
+            .id_tracker
+            .borrow()
+            .deferred_internal_id()
             .is_some_and(|deferred| id >= deferred);
 
         if point_is_deferred {

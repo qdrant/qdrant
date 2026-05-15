@@ -46,8 +46,6 @@ where
 
         let start_from = order_by.start_from();
 
-        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id());
-
         let point_mappings = self.id_tracker.point_mappings();
         let values_ids_iterator = self
             .payload_index
@@ -58,7 +56,7 @@ where
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
-                effective_deferred_id,
+                deferred_behavior,
             )?
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has.

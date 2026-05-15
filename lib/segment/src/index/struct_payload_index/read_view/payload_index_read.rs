@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::either_variant::EitherVariant;
 use common::iterator_ext::IteratorExt;
-use common::types::{PointOffsetType, ScoreType};
+use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
@@ -68,7 +68,6 @@ where
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Vec<PointOffsetType>> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(filter, hw_counter)?;
@@ -81,7 +80,7 @@ where
                 &query_cardinality,
                 hw_counter,
                 is_stopped,
-                deferred_internal_id,
+                DeferredBehavior::Exclude,
             )?
             .collect();
         Ok(result)
@@ -151,10 +150,14 @@ where
         query_cardinality: &'b CardinalityEstimation,
         hw_counter: &'b HardwareCounterCell,
         is_stopped: &'b AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'b> {
+        // Primary clause iterators come from field indexes and don't go through the
+        // mapping, so the visibility threshold must be applied to them explicitly.
+        let primary_clause_cutoff = point_mappings.external_iter_cutoff(deferred_behavior);
+
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
+            let full_scan_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
             // Worst case: query expected to return few matches, but index can't be used
@@ -186,7 +189,7 @@ where
                     // This iterator (and each primary iterator too) can yield items in non sorted order, depending on the type of index and primary condition.
                     .flatten()
                     .filter(move |&internal_id| {
-                        internal_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+                        internal_id < primary_clause_cutoff.unwrap_or(PointOffsetType::MAX)
                     })
                     .stop_if(is_stopped);
 
@@ -212,7 +215,7 @@ where
             // and applying full filter.
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
 
-            let id_tracker_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
+            let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
             let iter = id_tracker_iterator
                 .stop_if(is_stopped)

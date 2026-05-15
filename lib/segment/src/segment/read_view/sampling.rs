@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
+use common::types::DeferredBehavior;
 use rand::seq::{IteratorRandom, SliceRandom};
 
 use crate::common::operation_error::OperationResult;
@@ -22,7 +23,7 @@ where
     pub fn read_by_random_id(&self, limit: usize) -> Vec<PointIdType> {
         self.id_tracker
             .point_mappings()
-            .iter_random_visible(self.deferred_internal_id())
+            .iter_random_visible()
             .map(|x| x.0)
             .take(limit)
             .collect()
@@ -48,7 +49,7 @@ where
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
-                self.deferred_internal_id(),
+                DeferredBehavior::Exclude,
             )?
             .filter_map(|internal_id| self.id_tracker.external_id(internal_id));
 
@@ -69,7 +70,7 @@ where
         Ok(self
             .id_tracker
             .point_mappings()
-            .iter_random_visible(self.deferred_internal_id())
+            .iter_random_visible()
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
