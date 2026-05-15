@@ -41,7 +41,7 @@ where
         let original_query_prequantized = TElement::quantization_preprocess(
             quantization_config,
             TMetric::distance(),
-            original_query.as_ref(),
+            original_query,
         );
         let query = quantized_data.encode_query(&original_query_prequantized);
 
