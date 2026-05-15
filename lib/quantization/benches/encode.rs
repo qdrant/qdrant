@@ -2,9 +2,9 @@ use std::sync::atomic::AtomicBool;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use permutation_iterator::Permutor;
-use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
+use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
+use quantization::encoded_vectors_u8::{self, EncodedVectorsU8, ScalarQuantizationMethod};
 use rand::RngExt;
 
 fn encode_dot_bench(c: &mut Criterion) {
@@ -25,8 +25,7 @@ fn encode_dot_bench(c: &mut Criterion) {
         distance_type: DistanceType::Dot,
         invert: false,
     };
-    let quantized_vector_size =
-        EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
+    let quantized_vector_size = encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -130,8 +129,7 @@ fn encode_l1_bench(c: &mut Criterion) {
         distance_type: DistanceType::L1,
         invert: true,
     };
-    let quantized_vector_size =
-        EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
+    let quantized_vector_size = encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),

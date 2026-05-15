@@ -3,10 +3,10 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::{
-        BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
+        self, BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
     };
     use rand::{RngExt, SeedableRng};
     use strum::IntoEnumIterator;
@@ -68,11 +68,9 @@ mod tests {
         let encoded: Vec<_> = encodings
             .iter()
             .map(|&encoding| {
-                let quantized_vector_size = EncodedVectorsBin::<
-                        TBitsStoreType,
-                        TestEncodedStorage,
-                    >::get_quantized_vector_size_from_params(
-                        vector_dim, encoding
+                let quantized_vector_size =
+                    encoded_vectors_binary::get_quantized_vector_size_from_params::<TBitsStoreType>(
+                        vector_dim, encoding,
                     );
 
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
@@ -172,11 +170,9 @@ mod tests {
 
         let encoded: Vec<_> = QueryEncoding::iter()
             .map(|query_encoding| {
-                let quantized_vector_size = EncodedVectorsBin::<
-                        TBitsStoreType,
-                        TestEncodedStorage,
-                    >::get_quantized_vector_size_from_params(
-                        vector_dim, encoding
+                let quantized_vector_size =
+                    encoded_vectors_binary::get_quantized_vector_size_from_params::<TBitsStoreType>(
+                        vector_dim, encoding,
                     );
 
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(

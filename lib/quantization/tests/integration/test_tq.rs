@@ -3,9 +3,9 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::turboquant::{EncodedVectorsTQ, TQBits, TQMode};
+    use quantization::turboquant::{self as encoded_vectors_tq, EncodedVectorsTQ, TQBits, TQMode};
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
@@ -124,11 +124,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -182,11 +178,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -237,11 +229,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -292,11 +280,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -352,11 +336,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -407,11 +387,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -471,11 +447,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -528,11 +500,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -582,11 +550,7 @@ mod tests {
                 invert: false,
             };
             let quantized_vector_size =
-                EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                    &vector_parameters,
-                    bits,
-                    mode,
-                );
+                encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
             let encoded = EncodedVectorsTQ::encode(
                 vector_data.iter(),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -640,11 +604,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -695,11 +655,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -750,11 +706,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -805,11 +757,7 @@ mod tests {
                     invert: false,
                 };
                 let quantized_vector_size =
-                    EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(
-                        &vector_parameters,
-                        bits,
-                        mode,
-                    );
+                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
@@ -875,8 +823,7 @@ mod tests {
                 invert: false,
                 deprecated_count: None,
             };
-            let qsize =
-                EncodedVectorsTQ::<TestEncodedStorage>::get_quantized_vector_size(&vp, bits, mode);
+            let qsize = encoded_vectors_tq::get_quantized_vector_size(&vp, bits, mode);
             let encoded = EncodedVectorsTQ::encode(
                 vectors.iter(),
                 TestEncodedStorageBuilder::new(None, qsize),
