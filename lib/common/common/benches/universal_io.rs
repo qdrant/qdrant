@@ -1,7 +1,6 @@
 use std::hint::black_box;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
@@ -161,32 +160,23 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
         })
     });
 
-    // `read_batch_full` - read the whole file
-    // Since it can be very slow, run only a single iteration first.
-    let read_batch_full = || {
-        let mut sum = 0u64;
-        storage
-            .read_batch::<Sequential, T, ()>(ranges_full_file::<T>(), |(), chunk| {
-                for &item in bytemuck::cast_slice::<T, u64>(chunk) {
-                    sum = sum.wrapping_add(item);
-                }
-                Ok(())
+    let is_very_slow = impl_name == "io_uring" && elem_size == "8bytes";
+    if !is_very_slow {
+        group.bench_function("read_batch_full", |b| {
+            b.iter(|| {
+                let mut sum = 0u64;
+                storage
+                    .read_batch::<Sequential, T, ()>(ranges_full_file::<T>(), |(), chunk| {
+                        for &item in bytemuck::cast_slice::<T, u64>(chunk) {
+                            sum = sum.wrapping_add(item);
+                        }
+                        Ok(())
+                    })
+                    .unwrap();
+                black_box(sum);
             })
-            .unwrap();
-        black_box(sum);
-    };
-    let duration = time_it(read_batch_full);
-    if duration.as_secs_f64() <= 1.0 {
-        group.bench_function("read_batch_full", |b| b.iter(read_batch_full));
-    } else {
-        eprintln!("{group_name}/read_batch_full: {duration:.2?} (single iteration)");
+        });
     }
-}
-
-fn time_it<F: FnOnce()>(f: F) -> Duration {
-    let start = Instant::now();
-    f();
-    start.elapsed()
 }
 
 fn ranges_full_file<T>() -> impl Iterator<Item = ((), ReadRange)> {
