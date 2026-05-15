@@ -71,23 +71,17 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     // `prefiltered_points` always contains visible points only so we don't need additional filtering here.
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
-                        let filtered_points = self.payload_index.borrow().with_view(|v| {
-                            v.query_points(
-                                filter,
-                                &hw_counter,
-                                &is_stopped,
-                                vector_query_context.deferred_internal_id(),
-                            )
-                        })?;
+                        let filtered_points = self
+                            .payload_index
+                            .borrow()
+                            .with_view(|v| v.query_points(filter, &hw_counter, &is_stopped))?;
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
                 };
                 searcher.peek_top_iter(filtered_points, &is_stopped)?
             }
-            None => {
-                searcher.peek_top_all(&is_stopped, vector_query_context.deferred_internal_id())?
-            }
+            None => searcher.peek_top_all(&is_stopped, id_tracker.deferred_internal_id())?,
         };
         let res = results.pop().expect("single element results");
         Ok(res)
@@ -119,14 +113,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // so no additional filtering is required in that case.
             Some(filtered_points) => filtered_points.iter(),
             None => {
-                let filtered_points = self.payload_index.borrow().with_view(|v| {
-                    v.query_points(
-                        filter,
-                        &hw_counter,
-                        &is_stopped,
-                        vector_query_context.deferred_internal_id(),
-                    )
-                })?;
+                let filtered_points = self
+                    .payload_index
+                    .borrow()
+                    .with_view(|v| v.query_points(filter, &hw_counter, &is_stopped))?;
                 *prefiltered_points = Some(filtered_points);
                 prefiltered_points.as_ref().unwrap().iter()
             }

@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoreType};
+use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 use serde_json::Value;
 
 use super::field_index::numeric_index::NumericFieldIndexRead;
@@ -66,7 +66,6 @@ pub trait PayloadIndexRead {
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Vec<PointOffsetType>>;
 
     /// Return number of points, indexed by this field
@@ -118,7 +117,7 @@ pub trait PayloadIndexRead {
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`

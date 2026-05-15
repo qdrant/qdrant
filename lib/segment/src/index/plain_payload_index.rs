@@ -7,7 +7,7 @@ use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::types::{PointOffsetType, ScoreType};
+use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 use fs_err as fs;
 use schemars::_serde_json::Value;
 
@@ -111,12 +111,11 @@ impl PayloadIndexRead for PlainPayloadIndex {
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Vec<PointOffsetType>> {
         let filter_context = self.filter_context(filter, hw_counter)?;
         let id_tracker = self.id_tracker.borrow();
         let point_mappings = id_tracker.point_mappings();
-        let all_points_iter = point_mappings.iter_internal_visible(deferred_internal_id);
+        let all_points_iter = point_mappings.iter_internal_visible();
         Ok(all_points_iter
             .stop_if(is_stopped)
             .filter(|id| filter_context.check(*id))
@@ -198,10 +197,10 @@ impl PayloadIndexRead for PlainPayloadIndex {
         _query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         let filter_context = self.filter_context(filter, hw_counter)?;
-        let all_points_iter = point_mappings.iter_internal_visible(deferred_internal_id);
+        let all_points_iter = point_mappings.iter_internal_with_behavior(deferred_behavior);
         Ok(all_points_iter
             .stop_if(is_stopped)
             .filter(move |id| filter_context.check(*id)))

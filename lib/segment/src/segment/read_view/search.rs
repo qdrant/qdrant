@@ -226,8 +226,7 @@ where
             .vector_data
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let vector_query_context =
-            query_context.get_vector_context(vector_name, self.deferred_internal_id());
+        let vector_query_context = query_context.get_vector_context(vector_name);
         let internal_results = vector_data.vector_index().search(
             query_vectors,
             filter,

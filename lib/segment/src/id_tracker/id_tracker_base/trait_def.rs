@@ -174,4 +174,16 @@ pub trait IdTrackerRead {
     fn iter_internal_versions(
         &self,
     ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>;
+
+    /// Internal-id threshold above which points are hidden from reads.
+    ///
+    /// Only appendable trackers can carry a non-`None` value.
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        None
+    }
+
+    /// Number of soft-deleted points at or above the deferred threshold.
+    fn deferred_deleted_count(&self) -> usize {
+        0
+    }
 }

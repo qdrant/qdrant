@@ -6,7 +6,7 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::SimpleCow;
-use common::types::{PointOffsetType, ScoreType};
+use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
@@ -142,11 +142,7 @@ impl<'a> SegmentQueryContext<'a> {
         self.query_context.available_point_count()
     }
 
-    pub fn get_vector_context(
-        &self,
-        vector_name: &VectorName,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> VectorQueryContext<'_> {
+    pub fn get_vector_context(&self, vector_name: &VectorName) -> VectorQueryContext<'_> {
         VectorQueryContext {
             search_optimized_threshold_kb: self.query_context.search_optimized_threshold_kb,
             is_stopped: Some(&self.query_context.is_stopped),
@@ -159,7 +155,6 @@ impl<'a> SegmentQueryContext<'a> {
                 .copied(),
             deleted_points: self.deleted_points,
             hardware_counter: self.hardware_counter.fork(),
-            deferred_internal_id,
         }
     }
 
@@ -197,8 +192,6 @@ pub struct VectorQueryContext<'a> {
     deleted_points: Option<&'a BitSlice>,
 
     hardware_counter: HardwareCounterCell,
-
-    deferred_internal_id: Option<PointOffsetType>,
 }
 
 impl VectorQueryContext<'_> {
@@ -249,10 +242,6 @@ impl VectorQueryContext<'_> {
     pub fn is_require_idf(&self) -> bool {
         self.idf.is_some() && self.indexed_vectors.is_some()
     }
-
-    pub fn deferred_internal_id(&self) -> Option<PointOffsetType> {
-        self.deferred_internal_id
-    }
 }
 
 #[cfg(feature = "testing")]
@@ -265,7 +254,6 @@ impl Default for VectorQueryContext<'_> {
             indexed_vectors: None,
             deleted_points: None,
             hardware_counter: HardwareCounterCell::new(),
-            deferred_internal_id: None,
         }
     }
 }

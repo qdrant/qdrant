@@ -1,7 +1,7 @@
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 
 use super::HNSWIndex;
 use crate::common::operation_error::OperationResult;
@@ -312,7 +312,7 @@ impl HNSWIndex {
                 hw_counter,
                 is_stopped,
                 // No deferred filtering here since it's HNSW index.
-                None,
+                DeferredBehavior::IncludeAll,
             )
             .map(|it| it.collect())
         })?;

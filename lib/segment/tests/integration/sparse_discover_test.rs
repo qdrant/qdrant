@@ -184,7 +184,6 @@ fn sparse_index_discover_test() {
         path: index_dir.path(),
         stopped: &stopped,
         tick_progress: || (),
-        deferred_internal_id: None,
     })
     .unwrap();
 
@@ -219,7 +218,7 @@ fn sparse_index_discover_test() {
 
         let query_context = QueryContext::default();
         let segment_query_context = query_context.get_segment_query_context();
-        let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, None);
+        let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
 
         let sparse_search_result = sparse_index
             .search(&[&sparse_query], None, top, None, &vector_context)
@@ -302,7 +301,6 @@ fn sparse_index_hardware_measurement_test() {
         path: index_dir.path(),
         stopped: &stopped,
         tick_progress: || (),
-        deferred_internal_id: None,
     })
     .unwrap();
 
@@ -312,7 +310,7 @@ fn sparse_index_hardware_measurement_test() {
 
     let query_context = QueryContext::default();
     let segment_query_context = query_context.get_segment_query_context();
-    let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, None);
+    let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
 
     let cpu_usage = query_context.hardware_usage_accumulator().get_cpu();
     assert_eq!(cpu_usage, 0);

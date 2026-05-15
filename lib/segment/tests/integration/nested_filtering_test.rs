@@ -146,7 +146,7 @@ fn test_filtering_context_consistency() {
         let nested_filter_0 = Filter::new_must(nested_condition_0);
         let (res0, check_res0) = index.with_view(|v| {
             let res0 = v
-                .query_points(&nested_filter_0, &hw_counter, &is_stopped, None)
+                .query_points(&nested_filter_0, &hw_counter, &is_stopped)
                 .unwrap();
             let filter_context = v.filter_context(&nested_filter_0, &hw_counter).unwrap();
             let check_res0: Vec<_> = (0..NUM_POINTS as PointOffsetType)
@@ -187,7 +187,7 @@ fn test_filtering_context_consistency() {
 
         let (res1, check_res1) = index.with_view(|v| {
             let res1 = v
-                .query_points(&nested_filter_1, &hw_counter, &is_stopped, None)
+                .query_points(&nested_filter_1, &hw_counter, &is_stopped)
                 .unwrap();
             let filter_context = v.filter_context(&nested_filter_1, &hw_counter).unwrap();
             let check_res1: Vec<_> = (0..NUM_POINTS as PointOffsetType)
@@ -225,7 +225,7 @@ fn test_filtering_context_consistency() {
 
         let (res2, check_res2) = index.with_view(|v| {
             let res2 = v
-                .query_points(&nested_filter_2, &hw_counter, &is_stopped, None)
+                .query_points(&nested_filter_2, &hw_counter, &is_stopped)
                 .unwrap();
             let filter_context = v.filter_context(&nested_filter_2, &hw_counter).unwrap();
             let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
@@ -273,7 +273,7 @@ fn test_filtering_context_consistency() {
 
         let (res3, check_res3) = index.with_view(|v| {
             let res3 = v
-                .query_points(&nested_filter_3, &hw_counter, &is_stopped, None)
+                .query_points(&nested_filter_3, &hw_counter, &is_stopped)
                 .unwrap();
             let filter_context = v.filter_context(&nested_filter_3, &hw_counter).unwrap();
             let check_res3: Vec<_> = (0..NUM_POINTS as PointOffsetType)
