@@ -30,6 +30,7 @@ use super::{
 };
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::data_types::named_vectors::CowVector;
 use crate::entry::ReadSegmentEntry;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
@@ -327,26 +328,38 @@ impl SegmentBuilder {
         for (vector_name, vector_data) in &mut self.vector_data {
             check_process_stopped(stopped)?;
 
+            // Build per-source storage references. Source segments that lack
+            // this named vector contribute `None` — their points will be
+            // recorded in the merged segment as having no data for the vector
+            // (the same state `create_vector_name` leaves on a freshly added
+            // vector). Skip pushing to `old_indices` for those: HNSW reuse is
+            // an optimization keyed on present indices only.
             let other_vector_storages = vector_storages
                 .iter()
-                .map(|i| {
-                    let other_vector_data = i.get(vector_name).ok_or_else(|| {
-                        OperationError::service_error(format!(
-                            "Cannot update from other segment because it is \
-                             missing vector name {vector_name}"
-                        ))
-                    })?;
-
-                    vector_data
-                        .old_indices
-                        .push(Arc::clone(&other_vector_data.vector_index));
-
-                    Ok(other_vector_data.vector_storage.borrow())
+                .map(|i| match i.get(vector_name) {
+                    Some(other_vector_data) => {
+                        vector_data
+                            .old_indices
+                            .push(Arc::clone(&other_vector_data.vector_index));
+                        Some(other_vector_data.vector_storage.borrow())
+                    }
+                    None => None,
                 })
-                .collect::<Result<Vec<_>, OperationError>>()?;
+                .collect::<Vec<_>>();
 
-            let mut vectors_iter: BatchedVectorReader =
-                BatchedVectorReader::new(&points_to_insert, &other_vector_storages);
+            // Owned, correctly-typed placeholder for points whose source
+            // segment is `None` for this vector. Paired with `deleted = true`
+            // inside the reader so the data is never read; it only keeps the
+            // storage layout intact for impls that write raw bytes regardless
+            // of the deleted flag.
+            let missing_vector_placeholder =
+                CowVector::from(vector_data.vector_storage.default_vector());
+
+            let mut vectors_iter: BatchedVectorReader = BatchedVectorReader::new(
+                &points_to_insert,
+                &other_vector_storages,
+                missing_vector_placeholder,
+            );
 
             let internal_range = vector_data
                 .vector_storage
@@ -753,6 +766,17 @@ impl SegmentBuilder {
             if let Some(quantization_config) = config.quantization_config(vector_name) {
                 // Don't build quantization for appendable vectors if quantization method does not support it
                 if is_appendable && !quantization_config.supports_appendable() {
+                    continue;
+                }
+
+                // Skip quantization training when there is no live data for this
+                // vector yet. Happens right after `create_vector_name` on a
+                // collection that already has data: every merged point is marked
+                // deleted for this vector. Training on all-deleted (placeholder)
+                // data would feed k-means/scale-fit with zero/garbage samples
+                // and either panic or produce a useless quantization. The next
+                // optimization pass after points get backfilled will build it.
+                if vector_info.vector_storage.available_vector_count() == 0 {
                     continue;
                 }
 
