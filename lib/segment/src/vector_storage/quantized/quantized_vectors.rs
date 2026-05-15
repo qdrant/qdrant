@@ -754,22 +754,8 @@ impl QuantizedVectors {
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
         let vectors = (0..count as PointOffsetType).map(|i| {
-            match vector_storage.get_dense::<Sequential>(i) {
-                Cow::Borrowed(slice) => PrimitiveVectorElement::quantization_preprocess(
-                    quantization_config,
-                    distance,
-                    slice,
-                ),
-                Cow::Owned(vec) => Cow::Owned(
-                    // TODO: Preprocess without reallocating
-                    PrimitiveVectorElement::quantization_preprocess(
-                        quantization_config,
-                        distance,
-                        &vec,
-                    )
-                    .into_owned(),
-                ),
-            }
+            let vector = vector_storage.get_dense::<Sequential>(i);
+            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
@@ -867,21 +853,8 @@ impl QuantizedVectors {
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
         let multi_vector_config = *vector_storage.multi_vector_config();
-        let vectors = vector_storage.iterate_inner_vectors().map(|v| match v {
-            Cow::Borrowed(slice) => PrimitiveVectorElement::quantization_preprocess(
-                quantization_config,
-                distance,
-                slice,
-            ),
-            // TODO: avoid reallocation by accepting Cow in quantization_preprocess
-            Cow::Owned(vec) => Cow::Owned(
-                PrimitiveVectorElement::quantization_preprocess(
-                    quantization_config,
-                    distance,
-                    &vec,
-                )
-                .into_owned(),
-            ),
+        let vectors = vector_storage.iterate_inner_vectors().map(|vector| {
+            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
         let inner_vectors_count = vectors.clone().count();
         let vectors_count = vector_storage.total_vector_count();
