@@ -540,8 +540,7 @@ fn test_building_cancellation() {
 ///
 ///   `Cannot update from other segment because it is missing vector name X`
 ///
-/// Surfaced by the `crasher` chaos-test harness with no crash needed —
-/// triggered by the steady-state interaction between dynamic vector creation
+/// Triggered by the steady-state interaction between dynamic vector creation
 /// and concurrent segment work that provokes an optimization pass.
 #[test]
 fn test_building_segment_with_added_vector_name() {
