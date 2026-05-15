@@ -133,7 +133,5 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
 
     assert r.status_code == 400
     error = r.json()["status"]["error"]
-    # The dimension error may be caught early (before WAL/shard distribution) or at shard level.
-    # Early validation returns a direct dimension error; shard-level returns a wrapped error.
-    assert "Vector dimension error: expected dim" in error or "1 out of 2 shards failed to apply operation" in error
+    assert "Vector dimension error: expected dim: 4, got 3" in error
 
