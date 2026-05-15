@@ -917,3 +917,78 @@ fn test_remove_reopen() {
     assert_eq!(index.values_count(2), 1);
     assert_eq!(index.values_count(3), 0);
 }
+
+/// Regression test for #9049: fractional `f64` range bounds were truncated
+/// toward zero when converted to the integer index's storage type, so a
+/// `gte: 1.5` predicate (meaning `>= 1.5`) wrongly matched the integer
+/// value `1`. The indexed path must agree with the documented
+/// `f64`-comparison semantics for every fractional bound.
+#[test]
+fn test_integer_index_fractional_range_bounds() {
+    use crate::types::IntPayloadType;
+
+    let temp_dir = Builder::new()
+        .prefix("test_integer_index_fractional_range_bounds")
+        .tempdir()
+        .unwrap();
+
+    let mut builder = NumericIndex::<IntPayloadType, IntPayloadType>::builder_gridstore(
+        temp_dir.path().to_path_buf(),
+    );
+    builder.init().unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let v1 = Value::from(1_i64);
+    let v2 = Value::from(2_i64);
+    builder.add_point(0, &[&v1], &hw_counter).unwrap();
+    builder.add_point(1, &[&v2], &hw_counter).unwrap();
+    let index = builder.finalize().unwrap();
+
+    let run = |range: Range<FloatPayloadType>| -> Vec<PointOffsetType> {
+        let cond = FieldCondition::new_range(JsonPath::new("price"), range.map(OrderedFloat::from));
+        let hw = HardwareCounterCell::new();
+        let mut ids: Vec<_> = index.inner().filter(&cond, &hw).unwrap().unwrap().collect();
+        ids.sort();
+        ids
+    };
+
+    // `gte: 1.5` ⇒ `>= 1.5` ⇒ integer 1 must NOT match, integer 2 must match.
+    assert_eq!(
+        run(Range {
+            gte: Some(1.5),
+            ..Default::default()
+        }),
+        vec![1],
+        "gte: 1.5 must exclude integer 1",
+    );
+
+    // `gt: 1.5` ⇒ `> 1.5` ⇒ integer 1 must NOT match, integer 2 must match.
+    assert_eq!(
+        run(Range {
+            gt: Some(1.5),
+            ..Default::default()
+        }),
+        vec![1],
+        "gt: 1.5 must exclude integer 1",
+    );
+
+    // `lt: 1.5` ⇒ `< 1.5` ⇒ integer 1 must match, integer 2 must NOT.
+    assert_eq!(
+        run(Range {
+            lt: Some(1.5),
+            ..Default::default()
+        }),
+        vec![0],
+        "lt: 1.5 must include integer 1 and exclude 2",
+    );
+
+    // `lte: 1.5` ⇒ `<= 1.5` ⇒ integer 1 must match, integer 2 must NOT.
+    assert_eq!(
+        run(Range {
+            lte: Some(1.5),
+            ..Default::default()
+        }),
+        vec![0],
+        "lte: 1.5 must include integer 1 and exclude 2",
+    );
+}
