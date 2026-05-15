@@ -8,23 +8,24 @@ pub(super) mod tests;
 #[allow(dead_code)]
 pub mod read_only;
 
+use std::fmt::Debug;
 use std::io::{BufReader, BufWriter, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
 use common::mmap::create_and_ensure_length;
-use common::stored_bitslice::MmapBitSlice;
+use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage,
+    OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage, UniversalWrite,
 };
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;
 use self::deleted_storage::deleted_path;
-pub use self::mappings_storage::MAPPINGS_FILE_NAME;
-use self::mappings_storage::{load_mapping, mappings_path, store_mapping};
+pub use self::mappings_storage::{MAPPINGS_FILE_NAME, mappings_path};
+use self::mappings_storage::{load_mapping, store_mapping};
 pub use self::versions_storage::VERSION_MAPPING_FILE_NAME;
 use self::versions_storage::{mmap_size, version_mapping_path};
 use crate::common::Flusher;
@@ -37,18 +38,21 @@ use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMa
 use crate::types::{PointIdType, SeqNumberType};
 
 #[derive(Debug)]
-pub struct ImmutableIdTracker {
+pub struct ImmutableIdTracker<S: UniversalWrite> {
     path: PathBuf,
 
-    deleted_wrapper: BufferedUpdateBitSlice<MmapFile>,
+    deleted_wrapper: BufferedUpdateBitSlice<S>,
 
     pub(super) internal_to_version: CompressedVersions,
-    internal_to_version_wrapper: SliceBufferedUpdateWrapper<MmapFile, SeqNumberType>,
+    internal_to_version_wrapper: SliceBufferedUpdateWrapper<S, SeqNumberType>,
 
     pub(super) mappings: CompressedPointMappings,
 }
 
-impl ImmutableIdTracker {
+impl<S> ImmutableIdTracker<S>
+where
+    S: UniversalWrite + Send + Sync + 'static,
+{
     /// Approximate RAM usage in bytes for in-memory data structures.
     ///
     /// ImmutableIdTracker loads all mappings and versions into compressed
@@ -78,7 +82,7 @@ impl ImmutableIdTracker {
     }
 
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
-        let deleted_storage = MmapBitSlice::open(
+        let deleted_storage = StoredBitSlice::open(
             deleted_path(segment_path),
             OpenOptions {
                 populate: Populate::Blocking,
@@ -91,7 +95,7 @@ impl ImmutableIdTracker {
 
         let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
-        let internal_to_version_file = TypedStorage::<MmapFile, SeqNumberType>::open(
+        let internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
             version_mapping_path(segment_path),
             OpenOptions {
                 writeable: true,
@@ -139,7 +143,7 @@ impl ImmutableIdTracker {
                 .next_multiple_of(size_of::<u64>()),
         )?;
 
-        let mut deleted_storage = MmapBitSlice::open(&deleted_filepath, OpenOptions::default())?;
+        let mut deleted_storage = StoredBitSlice::open(&deleted_filepath, OpenOptions::default())?;
 
         // Set bits for deleted points from the mappings,
         deleted_storage.write_bitslice(mappings.deleted())?;
@@ -168,7 +172,7 @@ impl ImmutableIdTracker {
             create_and_ensure_length(&version_filepath, version_size)?;
         }
 
-        let mut internal_to_version_file = TypedStorage::<MmapFile, SeqNumberType>::open(
+        let mut internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
             &version_filepath,
             OpenOptions {
                 writeable: true,
@@ -210,13 +214,9 @@ impl ImmutableIdTracker {
             mappings,
         })
     }
-
-    pub(crate) fn mappings_file_path(base: &Path) -> PathBuf {
-        mappings_path(base)
-    }
 }
 
-impl IdTrackerRead for ImmutableIdTracker {
+impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTracker<S> {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id)
     }
@@ -264,7 +264,7 @@ impl IdTrackerRead for ImmutableIdTracker {
     }
 }
 
-impl IdTracker for ImmutableIdTracker {
+impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableIdTracker<S> {
     fn set_internal_version(
         &mut self,
         internal_id: PointOffsetType,

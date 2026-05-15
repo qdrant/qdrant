@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
-use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
+use crate::id_tracker::immutable_id_tracker::{self, ImmutableIdTracker};
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::VectorIndexEnum;
@@ -227,12 +227,6 @@ pub(crate) fn create_mutable_id_tracker(segment_path: &Path) -> OperationResult<
     MutableIdTracker::open(segment_path)
 }
 
-pub(crate) fn create_immutable_id_tracker(
-    segment_path: &Path,
-) -> OperationResult<ImmutableIdTracker> {
-    ImmutableIdTracker::open(segment_path)
-}
-
 pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
     segment_path.join(PAYLOAD_INDEX_PATH)
 }
@@ -429,7 +423,7 @@ fn create_segment(
     let deferred_internal_id = deferred_internal_id.filter(|_| appendable_flag);
 
     let use_mutable_id_tracker =
-        appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
+        appendable_flag || !immutable_id_tracker::mappings_path(segment_path).is_file();
     let started = Instant::now();
     let id_tracker = create_segment_id_tracker(use_mutable_id_tracker, segment_path)?;
     log_load_timing(segment_path, "id_tracker", started);
@@ -637,7 +631,7 @@ fn create_segment_id_tracker(
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
     if !mutable_id_tracker {
         return Ok(sp(IdTrackerEnum::ImmutableIdTracker(
-            create_immutable_id_tracker(segment_path)?,
+            ImmutableIdTracker::open(segment_path)?,
         )));
     }
 
