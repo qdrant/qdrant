@@ -47,7 +47,7 @@ where
     }
 
     let range = match range {
-        RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
         RangeInterface::DateTime(datetime_range) => {
             datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
         }
@@ -158,7 +158,7 @@ where
     };
 
     let (start_bound, end_bound) = match range_cond {
-        RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
         RangeInterface::DateTime(datetime_range) => {
             datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
         }
@@ -325,11 +325,13 @@ where
 
     let range = range.as_ref()?;
     // Convert the range bounds into the index's storage type `T`.
-    // `T::from_f64` / `T::from_u128` are total functions provided by
+    // `T::from_f64_range` / `T::from_u128` are total functions provided by
     // `Numericable`, so every numeric variant (Int / Float / Datetime /
-    // Uuid) can serve any `RangeInterface` shape.
+    // Uuid) can serve any `RangeInterface` shape. For integer `T`, the
+    // float-range conversion rounds each bound *away* from the matching
+    // set so fractional bounds keep their `f64`-comparison semantics.
     let typed_range = match range {
-        RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
         RangeInterface::DateTime(datetime_range) => {
             datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
         }
@@ -358,7 +360,7 @@ where
     I: NumericIndexRead<T>,
 {
     let range = match range {
-        RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
         RangeInterface::DateTime(datetime_range) => {
             datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
         }
