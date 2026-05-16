@@ -21,3 +21,4 @@ venv
 .env
 .python-version
 .claude/
+/docs/plans/
