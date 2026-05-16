@@ -1,51 +1,69 @@
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::{Madviseable, MmapFlusher, advice};
+use common::generic_consts::Random;
+use common::mmap::{MmapFlusher, advice};
 use common::types::PointOffsetType;
+use common::universal_io::{OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead};
 use fs_err as fs;
-use fs_err::OpenOptions;
-use memmap2::{Mmap, MmapMut};
+use memmap2::MmapMut;
+
+use crate::common::operation_error::{OperationError, OperationResult};
 
 #[derive(Debug)]
-pub struct QuantizedMmapStorage {
-    mmap: Mmap,
+pub struct QuantizedStorage<S: UniversalRead> {
+    storage: ReadOnly<S>,
     quantized_vector_size: NonZeroUsize,
     path: PathBuf,
 }
 
-impl QuantizedMmapStorage {
+impl<S: UniversalRead> QuantizedStorage<S> {
     pub fn populate(&self) {
-        self.mmap.populate();
+        if let Err(err) = self.storage.populate() {
+            log::warn!("Failed to populate quantized storage: {err}")
+        };
     }
 
     pub fn clear_cache(&self) {
         let Self {
-            mmap,
+            storage: mmap,
             quantized_vector_size: _,
             path: _,
         } = self;
-        mmap.clear_cache();
+        if let Err(err) = mmap.clear_ram_cache() {
+            log::warn!("Failed to clear quantized storage RAM cache: {err}")
+        }
     }
 }
 
-pub struct QuantizedMmapStorageBuilder {
+pub struct QuantizedStorageBuilder<S> {
     mmap: MmapMut,
     cursor_pos: usize,
     quantized_vector_size: NonZeroUsize,
     path: PathBuf,
+    output_storage: PhantomData<S>,
 }
 
-impl QuantizedMmapStorage {
+impl<S: UniversalRead> QuantizedStorage<S> {
+    fn open_options() -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: true,
+            disk_parallel: None,
+            populate: Populate::No,
+            advice: None,
+            prevent_caching: None,
+        }
+    }
+
     pub fn from_file(
         path: &Path,
         quantized_vector_size: usize,
-    ) -> std::io::Result<QuantizedMmapStorage> {
-        let file = OpenOptions::new().read(true).open(path)?;
-        let mmap = unsafe { Mmap::map(&file)? };
-        advice::madvise(&mmap, advice::get_global())?;
+    ) -> OperationResult<QuantizedStorage<S>> {
+        let storage = ReadOnly::open(path, Self::open_options())?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -53,29 +71,30 @@ impl QuantizedMmapStorage {
                 "`quantized_vector_size` must be non-zero",
             )
         })?;
-        if !mmap.len().is_multiple_of(quantized_vector_size.get()) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "Encoded file size ({}) is not a multiple of quantized_vector_size ({})",
-                    mmap.len(),
-                    quantized_vector_size
-                ),
-            ));
+        let len = storage.len::<u8>()? as usize;
+        if !len.is_multiple_of(quantized_vector_size.get()) {
+            return Err(OperationError::inconsistent_storage(format!(
+                "Encoded file size ({len}) is not a multiple of quantized_vector_size ({quantized_vector_size})",
+            )));
         }
         Ok(Self {
-            mmap,
+            storage,
             quantized_vector_size,
             path: path.to_path_buf(),
         })
     }
 }
 
-impl quantization::EncodedStorage for QuantizedMmapStorage {
+impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        let start = self.quantized_vector_size.get() * index as usize;
-        let end = self.quantized_vector_size.get() * (index + 1) as usize;
-        Cow::Borrowed(self.mmap.get(start..end).unwrap_or(&[]))
+        let start = (self.quantized_vector_size.get() * index as usize) as u64;
+        let length = self.quantized_vector_size.get() as u64;
+        self.storage
+            .read::<Random, u8>(ReadRange {
+                byte_offset: start,
+                length,
+            })
+            .expect("vector exists")
     }
 
     fn upsert_vector(
@@ -95,7 +114,7 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
     }
 
     fn vectors_count(&self) -> usize {
-        self.mmap.len() / self.quantized_vector_size.get()
+        self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size.get()
     }
 
     fn flusher(&self) -> MmapFlusher {
@@ -113,7 +132,7 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
 
     fn heap_size_bytes(&self) -> usize {
         let Self {
-            mmap: _,
+            storage: _,
             quantized_vector_size: _,
             path: _,
         } = self;
@@ -122,20 +141,23 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
     }
 }
 
-impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
-    type Storage = QuantizedMmapStorage;
+impl<S: UniversalRead> quantization::EncodedStorageBuilder for QuantizedStorageBuilder<S> {
+    type Storage = QuantizedStorage<S>;
+    type Error = OperationError;
 
-    fn build(self) -> std::io::Result<QuantizedMmapStorage> {
+    fn build(self) -> OperationResult<QuantizedStorage<S>> {
         self.mmap.flush()?;
-        let mmap = self.mmap.make_read_only()?;
-        Ok(QuantizedMmapStorage {
-            mmap,
+
+        let storage = ReadOnly::open(&self.path, Self::Storage::open_options())?;
+
+        Ok(QuantizedStorage {
+            storage,
             quantized_vector_size: self.quantized_vector_size,
             path: self.path,
         })
     }
 
-    fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
+    fn push_vector_data(&mut self, other: &[u8]) -> OperationResult<()> {
         debug_assert_eq!(
             self.quantized_vector_size.get(),
             other.len(),
@@ -154,7 +176,7 @@ impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
     }
 }
 
-impl QuantizedMmapStorageBuilder {
+impl<S> QuantizedStorageBuilder<S> {
     pub fn new(
         path: &Path,
         vectors_count: usize,
@@ -176,7 +198,7 @@ impl QuantizedMmapStorageBuilder {
             })
             .and_then(fs::create_dir_all)?;
 
-        let file = OpenOptions::new()
+        let file = fs_err::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -197,6 +219,7 @@ impl QuantizedMmapStorageBuilder {
                 )
             })?,
             path: path.to_path_buf(),
+            output_storage: PhantomData,
         })
     }
 }
