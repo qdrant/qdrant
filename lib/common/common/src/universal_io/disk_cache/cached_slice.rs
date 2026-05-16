@@ -12,6 +12,7 @@ use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, Cac
 /// through the [`CacheController`]. Blocks that are already cached are returned
 /// as zero-copy borrows from the mmap; multi-block reads allocate a `Vec<T>`
 /// (not `Vec<u8>`) so alignment is always correct.
+#[derive(Debug)]
 pub struct CachedSlice {
     /// The id assigned by the controller for this file.
     file_id: FileId,

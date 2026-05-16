@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
@@ -16,12 +17,20 @@ use crate::generic_consts::AccessPattern;
 /// The underlying read/write methods are generic over `T` per call. This
 /// wrapper forwards them with `T` fixed, acting as a fail-safe against
 /// accidentally reading or writing the wrong type from a generic storage.
-#[derive(Debug, TransparentWrapper)]
+#[derive(TransparentWrapper)]
 #[repr(transparent)]
 #[transparent(S)]
 pub struct TypedStorage<S, T> {
     pub inner: S,
     _phantom: PhantomData<T>,
+}
+
+impl<S: fmt::Debug, T> fmt::Debug for TypedStorage<S, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TypedStorage")
+            .field("inner", &self.inner)
+            .finish()
+    }
 }
 
 impl<S, T> TypedStorage<S, T> {
