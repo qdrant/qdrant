@@ -1,8 +1,9 @@
+use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use super::*;
 
-pub trait UniversalReadFileOps: Sized {
+pub trait UniversalReadFileOps: Sized + Debug {
     /// List files in the storage with the given prefix.
     /// The prefix is used to filter files, e.g. by directory or filename pattern.
     ///
