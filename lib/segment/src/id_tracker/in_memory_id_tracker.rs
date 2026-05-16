@@ -100,6 +100,14 @@ impl IdTrackerRead for InMemoryIdTracker {
         "in memory id tracker"
     }
 
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.mappings.deferred_internal_id()
+    }
+
+    fn deferred_deleted_count(&self) -> usize {
+        self.mappings.deferred_deleted_count()
+    }
+
     fn iter_internal_versions(
         &self,
     ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {

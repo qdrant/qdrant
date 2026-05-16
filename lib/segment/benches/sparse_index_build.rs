@@ -93,7 +93,6 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
                     path: index_dir.path(),
                     stopped: &stopped,
                     tick_progress: || (),
-                    deferred_internal_id: None,
                 })
                 .unwrap();
             assert_eq!(sparse_vector_index.indexed_vector_count(), NUM_VECTORS);
@@ -110,7 +109,6 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
             path: index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
-            deferred_internal_id: None,
         })
         .unwrap();
 

@@ -1,5 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
@@ -71,14 +71,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     // `prefiltered_points` always contains visible points only so we don't need additional filtering here.
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
-                        let filtered_points = self.payload_index.borrow().with_view(|v| {
-                            v.query_points(
-                                filter,
-                                &hw_counter,
-                                &is_stopped,
-                                vector_query_context.deferred_internal_id(),
-                            )
-                        })?;
+                        let filtered_points = self
+                            .payload_index
+                            .borrow()
+                            .with_view(|v| v.query_points(filter, &hw_counter, &is_stopped))?;
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
@@ -86,7 +82,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 searcher.peek_top_iter(filtered_points, &is_stopped)?
             }
             None => {
-                searcher.peek_top_all(&is_stopped, vector_query_context.deferred_internal_id())?
+                let iter = id_tracker
+                    .point_mappings()
+                    .filter_deferred(searcher.iter_not_deleted(), DeferredBehavior::Exclude);
+                searcher.peek_top_iter(iter, &is_stopped)?
             }
         };
         let res = results.pop().expect("single element results");
@@ -119,14 +118,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // so no additional filtering is required in that case.
             Some(filtered_points) => filtered_points.iter(),
             None => {
-                let filtered_points = self.payload_index.borrow().with_view(|v| {
-                    v.query_points(
-                        filter,
-                        &hw_counter,
-                        &is_stopped,
-                        vector_query_context.deferred_internal_id(),
-                    )
-                })?;
+                let filtered_points = self
+                    .payload_index
+                    .borrow()
+                    .with_view(|v| v.query_points(filter, &hw_counter, &is_stopped))?;
                 *prefiltered_points = Some(filtered_points);
                 prefiltered_points.as_ref().unwrap().iter()
             }

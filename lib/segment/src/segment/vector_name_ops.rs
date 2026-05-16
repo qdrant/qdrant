@@ -169,7 +169,6 @@ impl Segment {
             path: &vector_index_path,
             stopped: &stopped,
             tick_progress: || (),
-            deferred_internal_id: None,
         })?;
 
         // Register the new storage with the payload index so `has_vector`

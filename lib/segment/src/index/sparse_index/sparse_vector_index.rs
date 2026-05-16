@@ -8,7 +8,6 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::StorageVersion as _;
-use common::types::PointOffsetType;
 use fs_err as fs;
 use semver::Version;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
@@ -41,7 +40,6 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     searches_telemetry: SparseSearchesTelemetry,
     indices_tracker: IndicesTracker,
     scores_memory_pool: ScoresMemoryPool,
-    deferred_internal_id: Option<PointOffsetType>,
 }
 
 /// Getters for internals, used for testing.
@@ -76,7 +74,6 @@ pub struct SparseVectorIndexOpenArgs<'a, F: FnMut()> {
     pub path: &'a Path,
     pub stopped: &'a AtomicBool,
     pub tick_progress: F,
-    pub deferred_internal_id: Option<PointOffsetType>,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -90,7 +87,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             path,
             stopped,
             tick_progress,
-            deferred_internal_id,
         } = args;
 
         let config_path = SparseIndexConfig::get_config_path(path);
@@ -153,7 +149,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             searches_telemetry,
             indices_tracker,
             scores_memory_pool,
-            deferred_internal_id,
         })
     }
 

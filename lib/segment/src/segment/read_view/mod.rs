@@ -18,8 +18,8 @@ use crate::index::field_index::FieldIndex;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::segment::VectorData;
 use crate::segment::vector_data_read::VectorDataRead;
-use crate::segment::{DeferredPointStatus, VectorData};
 use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
 
@@ -41,7 +41,6 @@ where
     pub(crate) payload_storage: &'s TPayloadStorage,
     pub(crate) vector_data: &'s HashMap<VectorNameBuf, TVectorData>,
     pub(crate) segment_config: &'s SegmentConfig,
-    pub(crate) deferred_point_status: Option<&'s DeferredPointStatus>,
     pub(crate) appendable_flag: bool,
 }
 

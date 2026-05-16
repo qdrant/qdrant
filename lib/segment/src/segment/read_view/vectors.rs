@@ -1,8 +1,5 @@
-use std::sync::atomic::AtomicBool;
-
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
-use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 
 use crate::common::check_vector_name;
@@ -35,9 +32,9 @@ where
         let mut result = None;
         self.vectors_by_offsets(
             vector_name,
-            std::iter::once(point_offset),
+            std::iter::once(((), point_offset)),
             hw_counter,
-            |_, vector_internal| {
+            |(), _, vector_internal| {
                 result = Some(vector_internal);
             },
         )?;
@@ -45,12 +42,19 @@ where
     }
 
     /// Retrieve multiple vectors by internal ID.
-    pub fn vectors_by_offsets(
+    ///
+    /// Each input is tagged with caller-supplied user data `U` (any `Copy`
+    /// type — the external id, the input position, …). The data is threaded
+    /// back to the callback unchanged, so callers can map results into a
+    /// parallel input array without keeping a separate `offset → ...` lookup
+    /// table. Deleted points are filtered out lazily — entries with deleted
+    /// vectors or deleted points are simply not delivered to the callback.
+    pub fn vectors_by_offsets<U: Copy>(
         &self,
         vector_name: &VectorName,
-        point_offsets: impl IntoIterator<Item = PointOffsetType>,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         hw_counter: &HardwareCounterCell,
-        mut callback: impl FnMut(PointOffsetType, VectorInternal),
+        mut callback: impl FnMut(U, PointOffsetType, VectorInternal),
     ) -> OperationResult<()> {
         check_vector_name(vector_name, self.segment_config)?;
         let vector_data = self
@@ -61,7 +65,9 @@ where
         let total_vectors = vector_storage.total_vector_count();
 
         let id_tracker = self.id_tracker;
-        let non_deleted_offsets = point_offsets.into_iter().filter(|&point_offset| {
+        // The user-data tag rides alongside each offset, so the deletion
+        // filter stays lazy — no parallel `Vec<(orig_idx, offset)>` needed.
+        let live_keys = keys.into_iter().filter(|&(_, point_offset)| {
             if total_vectors <= point_offset as usize {
                 debug_assert!(
                     false,
@@ -70,59 +76,23 @@ where
                 );
                 return false;
             }
-
             let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
             let is_point_deleted = id_tracker.is_deleted_point(point_offset);
             !is_vector_deleted && !is_point_deleted
         });
 
-        vector_storage.read_vectors::<Random>(non_deleted_offsets, |point_offset, cow_vector| {
-            if vector_storage.is_on_disk() {
-                hw_counter
-                    .vector_io_read()
-                    .incr_delta(cow_vector.estimate_size_in_bytes());
-            }
-            callback(point_offset, cow_vector.to_owned());
-        });
-
-        Ok(())
-    }
-
-    /// Retrieve named vectors for a list of external point IDs, invoking the
-    /// callback for each (point_id, vector) pair.
-    pub fn read_vectors(
-        &self,
-        vector_name: &VectorName,
-        point_ids: &[PointIdType],
-        hw_counter: &HardwareCounterCell,
-        is_stopped: &AtomicBool,
-        mut callback: impl FnMut(PointIdType, VectorInternal),
-    ) -> OperationResult<()> {
-        let mut error = None;
-        let internal_ids = point_ids
-            .iter()
-            .copied()
-            .stop_if(is_stopped)
-            .filter_map(|point_id| match self.lookup_internal_id(point_id) {
-                Ok(point_offset) => Some(point_offset),
-                Err(err) => {
-                    error = Some(err);
-                    None
+        vector_storage.read_vectors::<Random, U>(
+            live_keys,
+            |user_data, point_offset, cow_vector| {
+                if vector_storage.is_on_disk() {
+                    hw_counter
+                        .vector_io_read()
+                        .incr_delta(cow_vector.estimate_size_in_bytes());
                 }
-            });
-        self.vectors_by_offsets(
-            vector_name,
-            internal_ids,
-            hw_counter,
-            |point_offset, vector_internal| {
-                if let Some(point_id) = self.id_tracker.external_id(point_offset) {
-                    callback(point_id, vector_internal);
-                }
+                callback(user_data, point_offset, cow_vector.to_owned());
             },
-        )?;
-        if let Some(err) = error {
-            return Err(err);
-        }
+        );
+
         Ok(())
     }
 

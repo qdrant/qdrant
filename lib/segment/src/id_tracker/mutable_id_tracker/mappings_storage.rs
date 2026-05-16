@@ -128,12 +128,15 @@ fn write_mapping_changes<W: Write>(
 /// Returns loaded point mappings and the number of bytes read from the file.
 ///
 /// If the file ends with an incomplete entry, it is truncated from the file.
-pub(super) fn load_mappings(mappings_path: &Path) -> OperationResult<(PointMappings, u64)> {
+pub(super) fn load_mappings(
+    mappings_path: &Path,
+    deferred_internal_id: Option<PointOffsetType>,
+) -> OperationResult<(PointMappings, u64)> {
     let file = OneshotFile::open(mappings_path)?;
     let file_len = file.metadata()?.len();
     let mut reader = BufReader::new(file);
 
-    let mappings = read_mappings(&mut reader)?;
+    let mappings = read_mappings(&mut reader, deferred_internal_id)?;
 
     let read_to = reader.stream_position()?;
     reader.into_inner().drop_cache()?;
@@ -198,7 +201,10 @@ where
 /// Read point mappings from the given reader
 ///
 /// Returns loaded point mappings.
-pub(super) fn read_mappings<R>(reader: R) -> OperationResult<PointMappings>
+pub(super) fn read_mappings<R>(
+    reader: R,
+    deferred_internal_id: Option<PointOffsetType>,
+) -> OperationResult<PointMappings>
 where
     R: Read + Seek,
 {
@@ -285,6 +291,7 @@ where
         internal_to_external,
         external_to_internal_num,
         external_to_internal_uuid,
+        deferred_internal_id,
     );
 
     Ok(mappings)

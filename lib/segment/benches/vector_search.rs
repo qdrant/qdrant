@@ -77,7 +77,7 @@ fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: 
                     id_tracker.deleted_point_bitslice(),
                     10,
                 )
-                .peek_top_all(&DEFAULT_STOPPED, None)
+                .peek_top_all(&DEFAULT_STOPPED)
                 .expect("points scored")
             },
             BatchSize::SmallInput,

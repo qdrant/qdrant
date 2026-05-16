@@ -35,6 +35,14 @@ pub struct PointMappings {
     // Having two separate maps allows us iterating only over one type at a time without having to filter.
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
+
+    /// Points with internal id >= this value are hidden from reads.
+    /// Only set for appendable segments with deferred points.
+    deferred_internal_id: Option<PointOffsetType>,
+
+    /// Number of deleted deferred points. Maintained incrementally so we can
+    /// derive the visible deferred count without re-scanning the deleted bitslice.
+    deferred_deleted_count: usize,
 }
 
 impl PointMappings {
@@ -43,12 +51,25 @@ impl PointMappings {
         internal_to_external: Vec<PointIdType>,
         external_to_internal_num: BTreeMap<u64, PointOffsetType>,
         external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> Self {
+        let deferred_deleted_count = deferred_internal_id
+            .map(|deferred_from| {
+                let total = deleted.len();
+                if total <= deferred_from as usize {
+                    0
+                } else {
+                    deleted[deferred_from as usize..total].count_ones()
+                }
+            })
+            .unwrap_or(0);
         Self {
             deleted,
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
+            deferred_internal_id,
+            deferred_deleted_count,
         }
     }
 
@@ -109,7 +130,22 @@ impl PointMappings {
         }
 
         if let Some(internal_id) = &internal_id {
+            let was_already_deleted = *self
+                .deleted
+                .get(*internal_id as usize)
+                .as_deref()
+                .unwrap_or(&true);
             self.deleted.set(*internal_id as usize, true);
+
+            // Count newly-deleted deferred points so we can report visible deferred totals
+            // without rescanning the deleted bitslice.
+            if !was_already_deleted
+                && self
+                    .deferred_internal_id
+                    .is_some_and(|deferred_from| *internal_id >= deferred_from)
+            {
+                self.deferred_deleted_count += 1;
+            }
         }
 
         internal_id
@@ -268,6 +304,14 @@ impl PointMappings {
         self.internal_to_external.len()
     }
 
+    pub(crate) fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.deferred_internal_id
+    }
+
+    pub(crate) fn deferred_deleted_count(&self) -> usize {
+        self.deferred_deleted_count
+    }
+
     /// Generate a random [`PointMappings`].
     #[cfg(test)]
     pub fn random(rand: &mut StdRng, total_size: u32) -> Self {
@@ -326,6 +370,8 @@ impl PointMappings {
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
+            deferred_internal_id: None,
+            deferred_deleted_count: 0,
         }
     }
 
@@ -349,6 +395,8 @@ impl PointMappings {
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
+            deferred_internal_id: _,
+            deferred_deleted_count: _,
         } = self;
 
         let deleted_bytes = deleted.capacity().div_ceil(u8::BITS as usize);

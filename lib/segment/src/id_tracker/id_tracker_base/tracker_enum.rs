@@ -111,6 +111,22 @@ impl IdTrackerRead for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
         }
     }
+
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deferred_internal_id(),
+        }
+    }
+
+    fn deferred_deleted_count(&self) -> usize {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deferred_deleted_count(),
+        }
+    }
 }
 
 impl IdTracker for IdTrackerEnum {
