@@ -465,7 +465,7 @@ fn test_building_cancellation() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    for idx in 0..2000 {
+    for idx in 0..15000 {
         baseline_segment
             .upsert_point(
                 1,

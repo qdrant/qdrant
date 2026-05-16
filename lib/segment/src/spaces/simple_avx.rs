@@ -124,7 +124,7 @@ pub(crate) unsafe fn manhattan_similarity_avx(
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-pub(crate) unsafe fn cosine_preprocess_avx(vector: DenseVector) -> DenseVector {
+pub(crate) unsafe fn cosine_preprocess_avx(mut vector: DenseVector) -> DenseVector {
     unsafe {
         let n = vector.len();
         let m = n - (n % 32);
@@ -159,8 +159,32 @@ pub(crate) unsafe fn cosine_preprocess_avx(vector: DenseVector) -> DenseVector {
         if is_length_zero_or_normalized(length) {
             return vector;
         }
-        length = length.sqrt();
-        vector.into_iter().map(|x| x / length).collect()
+
+        let inv_length = 1.0 / length.sqrt();
+        let v_inv_length = _mm256_set1_ps(inv_length);
+        let mut_ptr: *mut f32 = vector.as_mut_ptr();
+
+        let mut i: usize = 0;
+
+        while i + 15 < n {
+            let v1 = _mm256_loadu_ps(mut_ptr.add(i));
+            let v2 = _mm256_loadu_ps(mut_ptr.add(i + 8));
+            _mm256_storeu_ps(mut_ptr.add(i), _mm256_mul_ps(v1, v_inv_length));
+            _mm256_storeu_ps(mut_ptr.add(i + 8), _mm256_mul_ps(v2, v_inv_length));
+            i += 16;
+        }
+
+        while i + 7 < n {
+            let v = _mm256_loadu_ps(mut_ptr.add(i));
+            _mm256_storeu_ps(mut_ptr.add(i), _mm256_mul_ps(v, v_inv_length));
+            i += 8;
+        }
+
+        for v in vector.iter_mut().take(n).skip(i) {
+            *v *= inv_length;
+        }
+
+        vector
     }
 }
 
@@ -249,7 +273,10 @@ mod tests {
 
             let cosine_simd = unsafe { cosine_preprocess_avx(v1.clone()) };
             let cosine = cosine_preprocess(v1);
-            assert_eq!(cosine_simd, cosine);
+            for (a, b) in cosine_simd.iter().zip(cosine.iter()) {
+                let tol = 1e-6_f32.max(8.0 * f32::EPSILON * a.abs().max(b.abs()).max(1.0));
+                assert!((a - b).abs() <= tol, "Cosine SIMD mismatch: {a} vs {b}",);
+            }
         } else {
             println!("avx test skipped");
         }
