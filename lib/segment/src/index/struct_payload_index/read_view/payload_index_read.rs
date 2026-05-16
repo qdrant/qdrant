@@ -148,9 +148,6 @@ where
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'b> {
         let point_mappings = self.id_tracker.point_mappings();
-        // Primary clause iterators come from field indexes and don't go through the
-        // mapping, so the visibility threshold must be applied to them explicitly.
-        let primary_clause_cutoff = point_mappings.external_iter_cutoff(deferred_behavior);
 
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
@@ -179,14 +176,12 @@ where
                     .iter_conditions()
                     .all(|condition| query_cardinality.is_primary(condition));
 
-                let joined_primary_iterator = primary_iterators
-                    .into_iter()
-                    // Filter out deferred points.
-                    // This iterator (and each primary iterator too) can yield items in non sorted order, depending on the type of index and primary condition.
-                    .flatten()
-                    .filter(move |&internal_id| {
-                        internal_id < primary_clause_cutoff.unwrap_or(PointOffsetType::MAX)
-                    })
+                // Primary clause iterators come from field indexes and don't go through
+                // the mapping, so deferred filtering must be applied to them explicitly.
+                // Each primary iterator (and the flattened stream) can yield items in
+                // non-sorted order depending on the field-index type and primary condition.
+                let joined_primary_iterator = point_mappings
+                    .filter_deferred(primary_iterators.into_iter().flatten(), deferred_behavior)
                     .stop_if(is_stopped);
 
                 return Ok(if all_conditions_are_primary {
