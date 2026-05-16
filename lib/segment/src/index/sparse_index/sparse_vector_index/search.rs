@@ -1,5 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
@@ -81,7 +81,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 };
                 searcher.peek_top_iter(filtered_points, &is_stopped)?
             }
-            None => searcher.peek_top_all(&is_stopped, id_tracker.deferred_internal_id())?,
+            None => {
+                let iter = id_tracker
+                    .point_mappings()
+                    .filter_deferred(searcher.iter_not_deleted(), DeferredBehavior::Exclude);
+                searcher.peek_top_iter(iter, &is_stopped)?
+            }
         };
         let res = results.pop().expect("single element results");
         Ok(res)

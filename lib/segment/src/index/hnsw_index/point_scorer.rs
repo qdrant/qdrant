@@ -347,21 +347,34 @@ impl<'a> BatchFilteredSearcher<'a> {
         }
     }
 
-    pub fn peek_top_all(
-        self,
-        is_stopped: &AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
-    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let iter = self
-            .filters
+    /// Iterator over every internal point ID that isn't soft-deleted in this
+    /// searcher's `point_deleted` bitslice.
+    ///
+    /// Does not apply deferred-point filtering — wrap with
+    /// `PointMappingsRefEnum::filter_deferred` (or compose otherwise) before
+    /// passing to [`Self::peek_top_iter`] when deferred awareness is needed.
+    ///
+    /// The returned iterator borrows the underlying bitslice (lifetime `'a`),
+    /// independent of `&self`, so it can be composed and then passed into
+    /// `peek_top_iter(self, ...)` which consumes the searcher.
+    pub fn iter_not_deleted(&self) -> impl Iterator<Item = PointOffsetType> + 'a {
+        self.filters
             .point_deleted
             .iter_zeros()
             .map(|p| p as PointOffsetType)
-            .take_while(|&point_id| {
-                // Early exit if we hit the max point ID (e.g. a deferred point).
-                point_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
-            });
+    }
 
+    /// Score every non-deleted point without deferred filtering.
+    ///
+    /// Production paths compose `iter_not_deleted` with
+    /// `PointMappingsRefEnum::filter_deferred` and call
+    /// [`Self::peek_top_iter`] directly.
+    #[cfg(feature = "testing")]
+    pub fn peek_top_all(
+        self,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let iter = self.iter_not_deleted();
         self.peek_top_iter(iter, is_stopped)
     }
 
