@@ -527,13 +527,19 @@ fn test_proxy_segment_flush() {
 
     let flushed_version_2 = proxy_segment.flush(false).unwrap();
 
-    assert_eq!(flushed_version_2, flushed_version_1);
+    // `ProxySegment::delete_point` eagerly applies to the wrapped segment, so
+    // the delete IS persisted by flushing the wrapped. The flushed version
+    // advances to the delete's op_num (100).
+    assert!(
+        flushed_version_2 > flushed_version_1,
+        "delete should advance the flushed version (was {flushed_version_1}, now {flushed_version_2})",
+    );
 
     let version_after_delete = proxy_segment.version();
 
-    // We can never fully persist proxy segment, as list of deleted points is always in-memory only.
-    // So we have to keep WAL for deleted points.
-    assert!(version_after_delete > flushed_version_2);
+    // Proxy's reported version mirrors the wrapped's after the eager forward,
+    // so it equals what we just flushed.
+    assert_eq!(version_after_delete, flushed_version_2);
 }
 
 #[test]

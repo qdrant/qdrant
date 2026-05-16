@@ -195,6 +195,16 @@ impl SegmentHolder {
     /// Pair of (id of newly inserted segment, Vector of replaced segments)
     ///
     /// The inserted segment gets assigned a new unique ID.
+    ///
+    /// If any of the `remove_ids` slots is currently occupied by an outer
+    /// proxy (e.g. a snapshot proxy wrapping an optimization's inner proxy),
+    /// the outer proxy's accumulated pending changes — deleted points, payload
+    /// index changes, named-vector changes — are drained into the new segment
+    /// *before* the proxy is removed. Without this, the outer proxy's later
+    /// `propagate_to_wrapped` lands on a segment that is no longer in the
+    /// holder, silently losing the data. Surfaced as duplicate-point inflation
+    /// by the `crasher` chaos-test tool when snapshotting overlaps with an
+    /// optimization commit.
     pub fn swap_new<T>(
         &mut self,
         segment: T,
@@ -203,7 +213,20 @@ impl SegmentHolder {
     where
         T: Into<LockedSegment>,
     {
-        let new_id = self.add_new(segment);
+        let new_segment: LockedSegment = segment.into();
+
+        for &remove_id in remove_ids {
+            if let Some(LockedSegment::Proxy(outer_proxy)) = self.get(remove_id).cloned()
+                && let Err(err) = outer_proxy.write().propagate_to(&new_segment)
+            {
+                log::warn!(
+                    "swap_new: failed to drain outer-proxy state for segment \
+                     {remove_id} into new segment, ignoring: {err}",
+                );
+            }
+        }
+
+        let new_id = self.add_new_locked(new_segment);
         (new_id, self.remove(remove_ids))
     }
 
