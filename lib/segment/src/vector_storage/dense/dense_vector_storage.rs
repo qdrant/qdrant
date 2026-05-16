@@ -250,8 +250,7 @@ where
         // Split into parallel arrays in one pass: `for_each_in_batch` needs an
         // offsets slice (it chunks it for batched reads), but we still want
         // `user_data[idx]` available inside the callback.
-        let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) =
-            keys.into_iter().unzip();
+        let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.vectors
             .as_ref()
