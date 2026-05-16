@@ -8,6 +8,7 @@ use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
+use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use super::posting_list_common::{
     GenericPostingElement, PostingElement, PostingElementEx, PostingListIter,
@@ -47,9 +48,9 @@ pub struct CompressedPostingListView<'a, W: Weight> {
     hw_counter: &'a HardwareCounterCell,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
-pub struct CompressedPostingChunk<W> {
+pub struct CompressedPostingChunk<W: Weight> {
     /// Initial data point id. Used for decompression.
     initial: PointOffsetType,
 

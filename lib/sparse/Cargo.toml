@@ -32,6 +32,7 @@ validator = { workspace = true }
 itertools = { workspace = true }
 parking_lot = { workspace = true }
 log = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

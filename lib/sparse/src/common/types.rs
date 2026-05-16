@@ -2,14 +2,15 @@ use std::fmt::Debug;
 
 use half::slice::HalfFloatSliceExt;
 use itertools::{Itertools, MinMaxResult};
+use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 pub type DimOffset = u32;
 pub type DimId = u32;
 pub type DimId64 = u64;
 pub type DimWeight = f32;
 
-pub trait Weight: PartialEq + Copy + Debug + 'static {
-    type QuantizationParams: Copy + PartialEq + Debug;
+pub trait Weight: PartialEq + Copy + Debug + FromBytes + Immutable + KnownLayout + 'static {
+    type QuantizationParams: Copy + PartialEq + Debug + FromBytes + Immutable + KnownLayout;
 
     fn quantization_params_for(
         values: impl ExactSizeIterator<Item = DimWeight> + Clone,
@@ -97,7 +98,8 @@ impl Weight for u8 {
     }
 }
 
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug, FromBytes, Immutable, KnownLayout)]
+#[repr(transparent)]
 pub struct QuantizedU8(u8);
 
 impl From<QuantizedU8> for DimWeight {
@@ -106,7 +108,8 @@ impl From<QuantizedU8> for DimWeight {
     }
 }
 
-#[derive(PartialEq, Default, Copy, Clone, Debug)]
+#[derive(PartialEq, Default, Copy, Clone, Debug, FromBytes, Immutable, KnownLayout)]
+#[repr(C)]
 pub struct QuantizedU8Params {
     /// Minimum value in the range
     min: f32,

@@ -7,20 +7,18 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
-use common::mmap::{Advice, AdviceSetting, Madviseable};
+use common::mmap::{Advice, AdviceSetting, Madviseable, create_and_ensure_length, open_read_mmap};
 #[expect(deprecated, reason = "legacy code")]
-use common::mmap::{
-    create_and_ensure_length, open_read_mmap, transmute_from_u8_to_slice, transmute_to_u8,
-    transmute_to_u8_slice,
-};
+use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{Result, UniversalIoError};
+use common::universal_io::Result;
 use memmap2::Mmap;
 use serde::{Deserialize, Serialize};
+use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use super::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
-use super::{INDEX_FILE_NAME, out_of_bounds};
+use super::{INDEX_FILE_NAME, corrupted_index, out_of_bounds};
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
@@ -62,7 +60,7 @@ pub struct InvertedIndexCompressedMmap<W> {
     _phantom: PhantomData<W>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct PostingListFileHeader<W: Weight> {
     pub ids_start: u64,
@@ -191,14 +189,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             return Err(out_of_bounds(id, self.file_header.posting_count));
         }
 
-        // TODO Safety.
-        let header: PostingListFileHeader<W> = unsafe {
-            self.slice_part::<PostingListFileHeader<W>>(
-                u64::from(id) * Self::HEADER_SIZE as u64,
-                1u32,
-            )
-        }[0]
-        .clone();
+        let header = self.read_header(id)?.clone();
 
         hw_counter.vector_io_read().incr_delta(Self::HEADER_SIZE);
 
@@ -207,14 +198,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             + u64::from(header.chunks_count) * size_of::<CompressedPostingChunk<W>>() as u64;
 
         let remainders_end = if id + 1 < self.file_header.posting_count as DimId {
-            // TODO Safety
-            (unsafe {
-                self.slice_part::<PostingListFileHeader<W>>(
-                    u64::from(id + 1) * Self::HEADER_SIZE as u64,
-                    1u32,
-                )
-            })[0]
-                .ids_start
+            self.read_header(id + 1)?.ids_start
         } else {
             self.mmap.len() as u64
         };
@@ -223,44 +207,43 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             .checked_sub(remainders_start)
             .is_some_and(|len| len % size_of::<GenericPostingElement<W>>() as u64 != 0)
         {
-            return Err(UniversalIoError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Sparse index is corrupted",
-            )));
+            return Err(corrupted_index());
         }
 
+        let id_data = self.byte_slice(header.ids_start, u64::from(header.ids_len))?;
+        let chunks = <[CompressedPostingChunk<W>]>::ref_from_bytes(self.byte_slice(
+            header.ids_start + u64::from(header.ids_len),
+            u64::from(header.chunks_count) * size_of::<CompressedPostingChunk<W>>() as u64,
+        )?)
+        .map_err(|_| corrupted_index())?;
+        let remainders = <[GenericPostingElement<W>]>::ref_from_bytes(
+            &self.mmap[remainders_start as usize..remainders_end as usize],
+        )
+        .map_err(|_| corrupted_index())?;
+
         Ok(CompressedPostingListView::new(
-            // TODO Safety
-            unsafe { self.slice_part(header.ids_start, header.ids_len) },
-            // TODO Safety
-            unsafe {
-                self.slice_part(
-                    header.ids_start + u64::from(header.ids_len),
-                    header.chunks_count,
-                )
-            },
-            // TODO Safety
-            unsafe {
-                #[expect(deprecated, reason = "legacy code")]
-                transmute_from_u8_to_slice(
-                    &self.mmap[remainders_start as usize..remainders_end as usize],
-                )
-            },
+            id_data,
+            chunks,
+            remainders,
             header.last_id.checked_sub(1),
             header.quantization_params,
             hw_counter,
         ))
     }
 
-    // TODO Safety
-    unsafe fn slice_part<T>(&self, start: impl Into<u64>, count: impl Into<u64>) -> &[T] {
-        let start = start.into() as usize;
-        let end = start + count.into() as usize * size_of::<T>();
-        // Safety: safe because of the method safety invariants.
-        #[expect(deprecated, reason = "legacy code")]
-        unsafe {
-            transmute_from_u8_to_slice(&self.mmap[start..end])
-        }
+    fn read_header(&self, id: DimId) -> Result<&PostingListFileHeader<W>> {
+        let start = id as usize * Self::HEADER_SIZE;
+        let end = start + Self::HEADER_SIZE;
+        let bytes = self.mmap.get(start..end).ok_or_else(corrupted_index)?;
+        PostingListFileHeader::<W>::ref_from_bytes(bytes).map_err(|_| corrupted_index())
+    }
+
+    fn byte_slice(&self, start: u64, len: u64) -> Result<&[u8]> {
+        let start = start as usize;
+        let end = start
+            .checked_add(len as usize)
+            .ok_or_else(corrupted_index)?;
+        self.mmap.get(start..end).ok_or_else(corrupted_index)
     }
 
     pub fn convert_and_save<P: AsRef<Path>>(
