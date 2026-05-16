@@ -548,9 +548,9 @@ def test_shard_wal_delta_transfer_fallback(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # WAL delta transfer should fail because the shard does not exist on the
-    # target node, assert we fall back to the streaming records method
+    # target node, assert we fall back to the snapshot method
     # Then wait for the transfer to finish
-    wait_for_collection_shard_transfer_method(peer_api_uris[0], COLLECTION_NAME, "stream_records")
+    wait_for_collection_shard_transfer_method(peer_api_uris[0], COLLECTION_NAME, "snapshot")
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
