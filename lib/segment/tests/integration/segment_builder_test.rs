@@ -23,6 +23,7 @@ use segment::types::{
     Distance, HnswGlobalConfig, Indexes, PayloadContainer, PayloadFieldSchema, PayloadKeyType,
     PayloadSchemaType, PayloadStorageType, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
+use segment::vector_storage::VectorStorageRead;
 use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
@@ -526,6 +527,146 @@ fn test_building_cancellation() {
     assert!(
         time_fast < time_long,
         "time_early: {time_fast}, time_later: {time_long}, was_cancelled_later: {was_cancelled_later}",
+    );
+}
+
+/// Regression test: adding a named vector to a collection with pre-existing
+/// segments must not break segment merge.
+///
+/// When `create_vector_name` is called on a live collection, segments that
+/// were persisted earlier do not carry the new named vector. The merge code
+/// iterates the *target* segment's `vector_data` and fetches each name from
+/// every source segment, failing with:
+///
+///   `Cannot update from other segment because it is missing vector name X`
+///
+/// Triggered by the steady-state interaction between dynamic vector creation
+/// and concurrent segment work that provokes an optimization pass.
+#[test]
+fn test_building_segment_with_added_vector_name() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let segment1 = build_segment_1(dir.path());
+
+    // Target schema after `create_vector_name` added a vector that the source
+    // segment was persisted without.
+    let added_vector_name = "added_vec";
+    let mut target_config = segment1.segment_config.clone();
+    target_config.vector_data.insert(
+        added_vector_name.to_owned(),
+        VectorDataConfig {
+            size: 4,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        },
+    );
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    builder.update(&[&segment1], &stopped, &hw_counter).expect(
+        "segment merge must tolerate a target schema that adds a named vector \
+             not present in the source segments",
+    );
+
+    let merged_segment: Segment = builder.build_for_test(dir.path());
+
+    // All source points are present in the merged segment.
+    assert_eq!(
+        merged_segment.available_point_count(),
+        segment1.iter_points().count(),
+    );
+
+    // For points coming from a segment that lacked the added vector, the
+    // merged segment must mark every slot as having no data — same state
+    // `create_vector_name` leaves on the collection. The legacy default
+    // vector is still present and complete.
+    let added_storage = merged_segment.vector_data[added_vector_name]
+        .vector_storage
+        .borrow();
+    let default_storage = merged_segment.vector_data[DEFAULT_VECTOR_NAME]
+        .vector_storage
+        .borrow();
+    assert_eq!(
+        added_storage.available_vector_count(),
+        0,
+        "added named vector must have no live data after merge",
+    );
+    assert_eq!(
+        added_storage.total_vector_count(),
+        default_storage.total_vector_count(),
+        "added named vector storage must have one slot per merged point",
+    );
+}
+
+/// Same scenario as [`test_building_segment_with_added_vector_name`], but the
+/// added named vector has a quantization config set. Without the live-count
+/// guard in `update_quantization`, training would run over all-deleted
+/// placeholder data and either panic (PQ k-means) or produce a degenerate
+/// scale (SQ).
+#[test]
+fn test_building_segment_with_added_quantized_vector_name() {
+    use segment::types::{
+        QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+    };
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let segment1 = build_segment_1(dir.path());
+
+    let added_vector_name = "added_quantized_vec";
+    let mut target_config = segment1.segment_config.clone();
+    target_config.vector_data.insert(
+        added_vector_name.to_owned(),
+        VectorDataConfig {
+            size: 4,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
+                scalar: ScalarQuantizationConfig {
+                    r#type: ScalarType::Int8,
+                    quantile: None,
+                    always_ram: None,
+                },
+            })),
+            multivector_config: None,
+            datatype: None,
+        },
+    );
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    builder
+        .update(&[&segment1], &stopped, &hw_counter)
+        .expect("segment merge must succeed with a quantized added vector");
+
+    let merged_segment: Segment = builder.build_for_test(dir.path());
+
+    assert_eq!(
+        merged_segment.available_point_count(),
+        segment1.iter_points().count(),
     );
 }
 
