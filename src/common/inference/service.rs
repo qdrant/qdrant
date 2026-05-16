@@ -407,7 +407,7 @@ mod test {
 
     use super::*;
     use crate::common::inference::api_keys::InferenceApiKeys;
-    use crate::common::inference::bm25::Bm25;
+    use crate::common::inference::bm25_inference::Bm25;
     use crate::common::inference::inference_input::InferenceDataType;
 
     const BM25_LOCAL_MODEL_NAME: &str = "bm25";
@@ -509,7 +509,9 @@ mod test {
                 let bm25_config = InferenceInput::parse_bm25_config(input.options).unwrap();
 
                 // Re-run bm25 and check that response is correct.
-                let bm25 = Bm25::new(bm25_config).doc_embed(input.data.as_str().unwrap());
+                let bm25 = Bm25::new(bm25_config)
+                    .unwrap()
+                    .doc_embed(input.data.as_str().unwrap());
                 assert_eq!(response, bm25);
             } else {
                 let expected_vector = VectorPersisted::Dense(vec![0.0; idx]);
