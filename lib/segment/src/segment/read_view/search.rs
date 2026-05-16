@@ -77,20 +77,15 @@ where
                     .zip(&resolved_offsets)
                     .map(|(&id, &offset)| (id, offset))
                     .stop_if(is_stopped);
-                self.vectors_by_offsets(
-                    vector_name,
-                    keys,
-                    hw_counter,
-                    |id, _offset, vec| {
-                        if let Some(record) = records.get_mut(&id) {
-                            record
-                                .vectors
-                                .as_mut()
-                                .expect("needs_vectors path keeps vectors as Some")
-                                .push((vector_name.clone(), vec));
-                        }
-                    },
-                )
+                self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vec| {
+                    if let Some(record) = records.get_mut(&id) {
+                        record
+                            .vectors
+                            .as_mut()
+                            .expect("needs_vectors path keeps vectors as Some")
+                            .push((vector_name.clone(), vec));
+                    }
+                })
             };
 
             match with_vector {

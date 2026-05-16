@@ -118,8 +118,12 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::DenseChunkedByte(s) => s.read_vectors::<P, U>(keys, callback),
             VectorStorageReadEnum::DenseChunkedHalf(s) => s.read_vectors::<P, U>(keys, callback),
             VectorStorageReadEnum::MultiDenseChunked(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.read_vectors::<P, U>(keys, callback),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
+                s.read_vectors::<P, U>(keys, callback)
+            }
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
+                s.read_vectors::<P, U>(keys, callback)
+            }
             VectorStorageReadEnum::Sparse(s) => s.read_vectors::<P, U>(keys, callback),
         }
     }

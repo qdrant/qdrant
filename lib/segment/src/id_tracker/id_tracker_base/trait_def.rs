@@ -213,11 +213,11 @@ pub trait IdTrackerRead {
         let mut ids = Vec::with_capacity(point_ids.len());
         let mut offsets = Vec::with_capacity(point_ids.len());
         for &point_id in point_ids {
-            let internal_id =
-                self.internal_id(point_id)
-                    .ok_or(OperationError::PointIdError {
-                        missed_point_id: point_id,
-                    })?;
+            let internal_id = self
+                .internal_id(point_id)
+                .ok_or(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                })?;
             if deferred_cutoff.is_some_and(|cutoff| internal_id >= cutoff) {
                 continue;
             }

@@ -807,8 +807,12 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseUringHalf(v) => v.read_vectors::<P, U>(keys, callback),
 
             VectorStorageEnum::DenseAppendableMemmap(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                v.read_vectors::<P, U>(keys, callback)
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                v.read_vectors::<P, U>(keys, callback)
+            }
             VectorStorageEnum::SparseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
             VectorStorageEnum::SparseMmap(v) => v.read_vectors::<P, U>(keys, callback),
             VectorStorageEnum::MultiDenseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
@@ -816,7 +820,9 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::MultiDenseVolatileByte(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatileHalf(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                v.read_vectors::<P, U>(keys, callback)
+            }
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
                 v.read_vectors::<P, U>(keys, callback)
             }
