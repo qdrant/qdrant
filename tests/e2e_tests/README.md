@@ -20,3 +20,13 @@ Follow those steps to recreate the reference storage data and snapshot.
 1. run `PROJECT_ROOT/tests/e2e_tests/test_data/compatibility/gen_storage_compat_data.sh`
 2. make sure to pick the right version when asked for which system generated the files
 3. push the new archives to the GCP bucket (ask for the credentials if you don't have them)
+
+# Local buildx cache
+
+When no pre-built `qdrant/qdrant:e2e-tests` exists locally, the `qdrant_image` fixture builds one
+via a dedicated `qdrant-e2e-builder` (docker-container driver) with a persistent cache at `~/.cache/qdrant-e2e-buildx`.
+
+- First run is cold; subsequent runs reuse the `cargo chef cook` layer while `Cargo.lock` is unchanged.
+- Cache is shared across checkouts and worktrees.
+- Reset: `rm -rf ~/.cache/qdrant-e2e-buildx`. Remove builder: `docker buildx rm qdrant-e2e-builder`.
+- CI never builds here — it loads the image from the `build-e2e-image` artifact.
