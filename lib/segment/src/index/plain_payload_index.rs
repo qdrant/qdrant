@@ -15,7 +15,7 @@ use super::field_index::FieldIndex;
 use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, FacetIndex, PayloadBlockCondition};
@@ -189,21 +189,26 @@ impl PayloadIndexRead for PlainPayloadIndex {
         ))
     }
 
-    fn iter_filtered_points<'a, I: IdTrackerRead>(
+    fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
-        _id_tracker: &'a I,
-        point_mappings: &'a PointMappingsRefEnum<'a>,
         _query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         let filter_context = self.filter_context(filter, hw_counter)?;
-        let all_points_iter = point_mappings.iter_internal_with_behavior(deferred_behavior);
-        Ok(all_points_iter
+        // `self.id_tracker` is an `Arc<AtomicRefCell<_>>`, so the mapping borrow is
+        // local; collect eagerly to detach the iterator from the borrow.
+        let matched: Vec<PointOffsetType> = self
+            .id_tracker
+            .borrow()
+            .point_mappings()
+            .iter_internal_with_behavior(deferred_behavior)
             .stop_if(is_stopped)
-            .filter(move |id| filter_context.check(*id)))
+            .filter(|id| filter_context.check(*id))
+            .collect();
+        Ok(matched.into_iter())
     }
 }
 

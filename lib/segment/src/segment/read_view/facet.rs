@@ -67,13 +67,10 @@ where
 
             if use_iterative_approach {
                 // Go over the filtered points and aggregate the values (read from other indexes).
-                let point_mappings = self.id_tracker.point_mappings();
                 let points = self
                     .payload_index
                     .iter_filtered_points(
                         filter,
-                        self.id_tracker,
-                        &point_mappings,
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
@@ -150,14 +147,11 @@ where
             let filter_cardinality = self
                 .payload_index
                 .estimate_cardinality(filter, hw_counter)?;
-            let point_mappings = self.id_tracker.point_mappings();
 
             let points = self
                 .payload_index
                 .iter_filtered_points(
                     filter,
-                    self.id_tracker,
-                    &point_mappings,
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,

@@ -36,7 +36,6 @@ where
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
-        let point_mappings = self.id_tracker.point_mappings();
         let cardinality_estimation = self
             .payload_index
             .estimate_cardinality(condition, hw_counter)?;
@@ -44,8 +43,6 @@ where
             .payload_index
             .iter_filtered_points(
                 condition,
-                self.id_tracker,
-                &point_mappings,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,

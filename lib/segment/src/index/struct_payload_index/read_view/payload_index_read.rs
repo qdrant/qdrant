@@ -10,7 +10,7 @@ use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::field_index::{
@@ -71,12 +71,9 @@ where
     ) -> OperationResult<Vec<PointOffsetType>> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(filter, hw_counter)?;
-        let point_mappings = self.id_tracker.point_mappings();
         let result = self
             .iter_filtered_points(
                 filter,
-                self.id_tracker,
-                &point_mappings,
                 &query_cardinality,
                 hw_counter,
                 is_stopped,
@@ -142,16 +139,15 @@ where
         ))
     }
 
-    fn iter_filtered_points<'b, IT: IdTrackerRead>(
+    fn iter_filtered_points<'b>(
         &'b self,
         filter: &'b Filter,
-        id_tracker: &'b IT,
-        point_mappings: &'b PointMappingsRefEnum<'b>,
         query_cardinality: &'b CardinalityEstimation,
         hw_counter: &'b HardwareCounterCell,
         is_stopped: &'b AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'b> {
+        let point_mappings = self.id_tracker.point_mappings();
         // Primary clause iterators come from field indexes and don't go through the
         // mapping, so the visibility threshold must be applied to them explicitly.
         let primary_clause_cutoff = point_mappings.external_iter_cutoff(deferred_behavior);
@@ -168,7 +164,7 @@ where
             Ok(EitherVariant::A(matched_points))
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
-            let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
+            let mut visited_list = self.visited_pool.get(self.id_tracker.total_point_count());
 
             // If even one iterator is None, we should replace the whole thing with
             // an iterator over all ids.

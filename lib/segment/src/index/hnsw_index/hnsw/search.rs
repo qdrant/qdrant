@@ -298,16 +298,12 @@ impl HNSWIndex {
         let hw_counter = &vector_query_context.hardware_counter();
         let is_stopped = &vector_query_context.is_stopped();
 
-        let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
-        let point_mappings = id_tracker.point_mappings();
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let filtered_points: Vec<PointOffsetType> = payload_index.with_view(|v| {
             let query_cardinality = v.estimate_cardinality(filter, hw_counter)?;
             v.iter_filtered_points(
                 filter,
-                &*id_tracker,
-                &point_mappings,
                 &query_cardinality,
                 hw_counter,
                 is_stopped,

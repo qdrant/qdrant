@@ -46,13 +46,10 @@ where
 
         let start_from = order_by.start_from();
 
-        let point_mappings = self.id_tracker.point_mappings();
         let values_ids_iterator = self
             .payload_index
             .iter_filtered_points(
                 condition,
-                self.id_tracker,
-                &point_mappings,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
