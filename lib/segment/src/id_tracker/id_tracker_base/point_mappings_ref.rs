@@ -1,6 +1,7 @@
 use atomic_refcell::AtomicRef;
 use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::types::{DeferredBehavior, PointOffsetType};
+use itertools::Either;
 use self_cell::self_cell;
 
 use super::tracker_enum::IdTrackerEnum;
@@ -105,17 +106,25 @@ impl<'a> PointMappingsRefEnum<'a> {
         }
     }
 
-    /// Cutoff to apply when filtering iterators sourced outside the mapping
-    /// (e.g., field-index outputs), under the given [`DeferredBehavior`].
+    /// Wrap an iterator of internal IDs so that points at or above the
+    /// mapping's deferred threshold are excluded.
     ///
-    /// Returns the deferred threshold to drop points at or above, or `None`
-    /// when no cutoff applies (either the mapping has no deferred threshold or
-    /// the behavior is [`DeferredBehavior::IncludeAll`]).
-    pub fn external_iter_cutoff(
+    /// For [`DeferredBehavior::IncludeAll`] — or when the mapping has no
+    /// deferred threshold — the iterator is returned unchanged. Intended for
+    /// iterators sourced outside the mapping (e.g., field-index outputs) where
+    /// the threshold isn't applied implicitly.
+    pub fn filter_deferred<I>(
         self,
+        iter: I,
         deferred_behavior: DeferredBehavior,
-    ) -> Option<PointOffsetType> {
-        deferred_behavior.apply(self.deferred_internal_id())
+    ) -> impl Iterator<Item = PointOffsetType>
+    where
+        I: Iterator<Item = PointOffsetType>,
+    {
+        match deferred_behavior.apply(self.deferred_internal_id()) {
+            None => Either::Left(iter),
+            Some(cutoff) => Either::Right(iter.filter(move |&id| id < cutoff)),
+        }
     }
 
     /// Iterate starting from a given ID, filtering deferred points using the
