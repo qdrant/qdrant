@@ -3,8 +3,8 @@ import itertools
 import requests
 
 
-def assert_http_ok(response: requests.Response):
-    if response.status_code != 200:
+def assert_http_ok(response: requests.Response, ok_status_code: int = 200):
+    if response.status_code != ok_status_code:
         base_msg = f"HTTP request to {response.url} failed with status code {response.status_code} after {response.elapsed.total_seconds()}s"
         if not response.content:
             raise Exception(f"{base_msg} and without response body")
