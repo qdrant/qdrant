@@ -47,7 +47,7 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += plain_index
-                .query_points(&filter, &hw_counter, &is_stopped, None)
+                .query_points(&filter, &hw_counter, &is_stopped)
                 .unwrap()
                 .len();
             query_count += 1;
@@ -77,7 +77,7 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += struct_index
-                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                 .unwrap()
                 .len();
             query_count += 1;
@@ -131,7 +131,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += index
-                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                 .unwrap()
                 .len();
             query_count += 1;
