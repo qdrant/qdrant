@@ -1,14 +1,14 @@
-use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use fs_err as fs;
 
-use crate::generic_consts::{AccessPattern, Random};
+use crate::aligned_buf::AlignedCow;
+use crate::generic_consts::AccessPattern;
 use crate::universal_io::read::UniversalReadPipeline;
 use crate::universal_io::{
-    OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UserData, local_file_ops,
+    OpenOptions, Result, UniversalIoError, UniversalRead, UniversalReadFileOps, UserData,
+    local_file_ops,
 };
 
 mod cached_slice;
@@ -67,11 +67,10 @@ impl UniversalReadFileOps for CachedSlice {
 }
 
 impl UniversalRead for CachedSlice {
-    type ReadPipeline<'a, T, U>
-        = DiskCacheReadPipeline<'a, T, U>
+    type ReadPipeline<'a, U>
+        = DiskCacheReadPipeline<'a, U>
     where
         Self: 'a,
-        T: bytemuck::Pod,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
@@ -96,14 +95,14 @@ impl UniversalRead for CachedSlice {
         Ok(CachedSlice::open(controller, path.as_ref())?)
     }
 
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let elem_start = usize::try_from(range.byte_offset).expect("range.start is within usize")
-            / size_of::<T>();
-        let elem_length = usize::try_from(range.length).expect("range.length is within usize");
-
-        let range = elem_start..elem_start + elem_length;
-
-        Ok(self.get_range(range)?)
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<AlignedCow<'_>> {
+        let start = usize::try_from(range.start).expect("range.start is within usize");
+        let end = usize::try_from(range.end).expect("range.end is within usize");
+        Ok(self.get_range_bytes(start..end, align)?)
     }
 
     fn len<T>(&self) -> Result<u64> {
@@ -124,17 +123,15 @@ impl UniversalRead for CachedSlice {
     }
 }
 
-pub struct DiskCacheReadPipeline<'file, T, U>
+pub struct DiskCacheReadPipeline<'file, U>
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
-    result: Option<(U, Cow<'file, [T]>)>,
+    result: Option<(U, AlignedCow<'file>)>,
 }
 
-impl<'file, T, U> UniversalReadPipeline<'file, T, U> for DiskCacheReadPipeline<'file, T, U>
+impl<'file, U> UniversalReadPipeline<'file, U> for DiskCacheReadPipeline<'file, U>
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
     type File = CachedSlice;
@@ -151,7 +148,8 @@ where
         &mut self,
         user_data: U,
         file: &'file CachedSlice,
-        range: ReadRange,
+        range: Range<u64>,
+        align: usize,
     ) -> Result<()>
     where
         P: AccessPattern,
@@ -160,11 +158,12 @@ where
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        self.result = Some((user_data, file.read::<Random, T>(range)?));
+        let byte_range = range.start as usize..range.end as usize;
+        self.result = Some((user_data, file.get_range_bytes(byte_range, align)?));
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+    fn wait(&mut self) -> Result<Option<(U, AlignedCow<'file>)>> {
         Ok(self.result.take())
     }
 }

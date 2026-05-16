@@ -1,7 +1,9 @@
 use std::borrow::Cow;
+use std::ops::Range;
 use std::path::Path;
 
 use super::*;
+use crate::aligned_buf::AlignedCow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::file_ops::UniversalReadFileOps;
 
@@ -9,16 +11,25 @@ use crate::universal_io::file_ops::UniversalReadFileOps;
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 #[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead: UniversalReadFileOps {
-    type ReadPipeline<'file, T, U>: UniversalReadPipeline<'file, T, U, File = Self>
+    type ReadPipeline<'file, U>: UniversalReadPipeline<'file, U, File = Self>
     where
         Self: 'file,
-        T: bytemuck::Pod,
         U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>>;
+    fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+        self.read_bytes::<P>(range.as_byte_range::<T>(), align_of::<T>())?
+            .try_cast_bytemuck()
+            .map_err(UniversalIoError::AlignedBufCast)
+    }
+
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<AlignedCow<'_>>;
 
     /// Read the entire file in one logical access.
     ///
@@ -111,7 +122,7 @@ pub trait UniversalRead: UniversalReadFileOps {
         U: UserData,
         Self: 'a,
     {
-        let mut pipeline = Self::ReadPipeline::<'a, T, U>::new()?;
+        let mut pipeline = Self::ReadPipeline::<'a, U>::new()?;
         let mut reads = reads.into_iter();
 
         let iter = std::iter::from_fn(move || {
@@ -119,13 +130,13 @@ pub trait UniversalRead: UniversalReadFileOps {
                 && let Some(read) = reads.next()
             {
                 let (user_data, file, range) = read;
-
-                if let Err(err) = pipeline.schedule::<P>(user_data, file, range) {
+                let range = range.as_byte_range::<T>();
+                if let Err(err) = pipeline.schedule::<P>(user_data, file, range, align_of::<T>()) {
                     return Some(Err(err));
                 }
             }
 
-            pipeline.wait().transpose()
+            pipeline.wait_bytemuck().transpose()
         });
 
         Ok(iter)
@@ -136,9 +147,8 @@ pub trait UniversalRead: UniversalReadFileOps {
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }
 
-pub trait UniversalReadPipeline<'file, T, U>: Sized
+pub trait UniversalReadPipeline<'file, U>: Sized
 where
-    T: bytemuck::Pod,
     U: UserData,
 {
     type File: 'file;
@@ -154,18 +164,27 @@ where
     ///
     /// Should be called only when [`UniversalReadPipeline::can_schedule()`] is
     /// `true`. Returns [`UniversalIoError::QueueIsFull`] otherwise.
-    fn schedule<P>(
+    fn schedule<P: AccessPattern>(
         &mut self,
         user_data: U,
         file: &'file Self::File,
-        range: ReadRange,
-    ) -> Result<()>
-    where
-        P: AccessPattern;
+        range: Range<u64>,
+        align: usize,
+    ) -> Result<()>;
 
     /// Block until any of the scheduled operations is completed and consume its
     /// result.
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>>;
+    fn wait(&mut self) -> Result<Option<(U, AlignedCow<'file>)>>;
+
+    fn wait_bytemuck<T: bytemuck::Pod>(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+        let Some((user_data, bytes)) = self.wait()? else {
+            return Ok(None);
+        };
+        let cow = bytes
+            .try_cast_bytemuck()
+            .map_err(UniversalIoError::AlignedBufCast)?;
+        Ok(Some((user_data, cow)))
+    }
 }
 
 /// An arbitrary value to distinguish requests.
