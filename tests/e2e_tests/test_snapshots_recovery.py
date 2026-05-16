@@ -31,9 +31,10 @@ def _create_snapshot_config(storage_method: str, tmp_path: Path) -> Path:
         config = yaml.safe_load(f)
 
     snapshots_config = config.setdefault('storage', {}).setdefault('snapshots_config', {})
-    snapshots_config['snapshots_storage'] = storage_method
     if storage_method == "s3":
-        snapshots_config['s3_config'] = _s3_config()
+        snapshots_config['snapshots_storage'] = {'s3': _s3_config()}
+    else:
+        snapshots_config['snapshots_storage'] = storage_method
 
     temp_config = tmp_path / "config.yaml"
     with open(temp_config, 'w') as f:
