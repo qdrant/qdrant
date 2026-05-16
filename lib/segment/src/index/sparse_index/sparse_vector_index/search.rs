@@ -152,7 +152,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             memory_handle,
             &is_stopped,
             &hw_counter,
-        );
+        )?;
         let search_result = search_context.plain_search(&ids);
         Ok(search_result)
     }
@@ -195,7 +195,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             memory_handle,
             &is_stopped,
             &hw_counter,
-        );
+        )?;
 
         match filter {
             Some(filter) => self.payload_index.borrow().with_view(|v| {

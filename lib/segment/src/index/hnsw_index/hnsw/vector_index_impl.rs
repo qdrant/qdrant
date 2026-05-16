@@ -207,8 +207,9 @@ impl VectorIndexRead for HNSWIndex {
         &self,
         _idf: &mut HashMap<DimId, usize>,
         _hw_counter: &HardwareCounterCell,
-    ) {
+    ) -> OperationResult<()> {
         // HNSW (dense) index doesn't track IDF.
+        Ok(())
     }
 
     fn is_index(&self) -> bool {

@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoredPointOffset};
+use common::universal_io::Result;
 
 use super::posting_list_common::PostingListIter;
 use crate::common::scores_memory_pool::PooledScoresHandle;
@@ -44,16 +45,15 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
         hardware_counter: &'a HardwareCounterCell,
-    ) -> SearchContext<'a, 'b, T> {
+    ) -> Result<SearchContext<'a, 'b, T>> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
         let mut max_record_id = 0;
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            if let Some(mut it) = inverted_index.get(*id, hardware_counter)
-                && let (Some(first), Some(last_id)) = (it.peek(), it.last_id())
-            {
+            let mut it = inverted_index.get(*id, hardware_counter)?;
+            if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
                 // check if new min
                 let min_record_id_posting = first.record_id;
                 min_record_id = min(min_record_id, min_record_id_posting);
@@ -79,7 +79,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         // This is a limitation of the current pruning implementation.
         let use_pruning = T::reliable_max_next_weight() && query.values.iter().all(|v| *v >= 0.0);
         let min_record_id = Some(min_record_id);
-        SearchContext {
+        Ok(SearchContext {
             postings_iterators,
             query,
             top,
@@ -90,7 +90,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             pooled,
             use_pruning,
             hardware_counter,
-        }
+        })
     }
 
     const DEFAULT_SCORE: f32 = 0.0;
