@@ -326,6 +326,10 @@ impl Collection {
             .clone()
     }
 
+    pub async fn vectors_config(&self) -> VectorsConfig {
+        self.collection_config.read().await.params.vectors.clone()
+    }
+
     pub async fn info(
         &self,
         shard_selection: &ShardSelectorInternal,
