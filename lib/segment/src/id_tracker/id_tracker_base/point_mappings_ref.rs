@@ -79,7 +79,7 @@ impl<'a> PointMappingsRefEnum<'a> {
 
     /// Iterate over all internal IDs, filtering deferred points using the
     /// mapping's own threshold.
-    pub fn iter_internal_visible(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    pub fn iter_internal_visible(self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match self.deferred_internal_id() {
             None => self.iter_internal(),
             Some(deferred_internal_id) => Box::new(
@@ -95,9 +95,9 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// - [`DeferredBehavior::IncludeAll`] yields every point regardless of the
     ///   threshold.
     pub fn iter_internal_with_behavior(
-        &self,
+        self,
         deferred_behavior: DeferredBehavior,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         if deferred_behavior.include_all_points() {
             self.iter_internal()
         } else {
@@ -112,7 +112,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// when no cutoff applies (either the mapping has no deferred threshold or
     /// the behavior is [`DeferredBehavior::IncludeAll`]).
     pub fn external_iter_cutoff(
-        &self,
+        self,
         deferred_behavior: DeferredBehavior,
     ) -> Option<PointOffsetType> {
         deferred_behavior.apply(self.deferred_internal_id())
@@ -121,9 +121,9 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate starting from a given ID, filtering deferred points using the
     /// mapping's own threshold.
     pub fn iter_from_visible(
-        &self,
+        self,
         external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
         match self.deferred_internal_id() {
             None => self.iter_from(external_id),
             Some(deferred_internal_id) => Box::new(
@@ -136,8 +136,8 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over internal IDs in random order, filtering deferred points
     /// using the mapping's own threshold.
     pub fn iter_random_visible(
-        &self,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        self,
+    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
         match self.deferred_internal_id() {
             None => self.iter_random(),
             Some(deferred_internal_id) => Box::new(
@@ -157,7 +157,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Kept private so callers go through the dispatch helpers
     /// ([`Self::iter_internal_with_behavior`], [`Self::external_iter_cutoff`])
     /// instead of leaking the raw threshold.
-    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+    fn deferred_internal_id(self) -> Option<PointOffsetType> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.deferred_internal_id(),
             PointMappingsRefEnum::Compressed(_) => None,

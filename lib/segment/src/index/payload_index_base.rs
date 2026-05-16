@@ -13,7 +13,6 @@ use super::query_optimization::rescore_formula::FormulaScorer;
 use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
@@ -105,15 +104,12 @@ pub trait PayloadIndexRead {
 
     /// Iterate point offsets that match the filter.
     ///
-    /// Generic over `I: IdTrackerRead` so callers pass their concrete tracker
-    /// without dynamic dispatch; the iterator return uses RPITIT so each impl
-    /// keeps its own zero-cost concrete chain.
-    #[allow(clippy::too_many_arguments)]
-    fn iter_filtered_points<'a, I: IdTrackerRead>(
+    /// The iterator return uses RPITIT so each impl keeps its own zero-cost
+    /// concrete chain. The id tracker is read from `&self`, so impls reach it
+    /// through their own field rather than receiving a separate parameter.
+    fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
-        id_tracker: &'a I,
-        point_mappings: &'a PointMappingsRefEnum<'a>,
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
