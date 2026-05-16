@@ -1,5 +1,6 @@
 mod pipeline;
 
+use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -222,6 +223,32 @@ impl UniversalRead for MmapFile {
         Ok(ACow::Borrowed(bytes))
     }
 
+    /// Override the default pipeline-based for better performance.
+    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
+        &self,
+        ranges: impl IntoIterator<Item = (U, ReadRange)>,
+    ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>> {
+        let bytes = self.as_bytes::<P>();
+        Ok(ranges.into_iter().map(move |(user_data, range)| {
+            let items = read_bytemuck::<T>(bytes, range)?;
+            Ok((user_data, Cow::Borrowed(items)))
+        }))
+    }
+
+    /// Override the default pipeline-based for better performance.
+    fn read_multi_iter<'a, P: AccessPattern, T: Item, U: UserData>(
+        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
+    ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
+    where
+        Self: 'a,
+    {
+        Ok(reads.into_iter().map(|(user_data, file, range)| {
+            let bytes = file.as_bytes::<P>();
+            let items = read_bytemuck::<T>(bytes, range)?;
+            Ok((user_data, Cow::Borrowed(items)))
+        }))
+    }
+
     fn len<T>(&self) -> Result<u64> {
         let len = self.len / size_of::<T>();
         Ok(len as u64)
@@ -393,6 +420,29 @@ pub(crate) fn read_bytes(bytes: &[u8], range: Range<u64>) -> Result<&[u8]> {
             end: range.end,
             elements: bytes.len(),
         })
+}
+
+#[inline]
+pub(crate) fn read_bytemuck<T: Item>(bytes: &[u8], range: ReadRange) -> Result<&[T]> {
+    let ReadRange {
+        byte_offset,
+        length: items,
+    } = range;
+
+    let start = byte_offset as usize;
+    let end = start + size_of::<T>() * items as usize;
+
+    let bytes = bytes
+        .get(start..end)
+        .ok_or_else(|| UniversalIoError::OutOfBounds {
+            start: start as _,
+            end: end as _,
+            elements: bytes.len() / size_of::<T>(),
+        })?;
+
+    // `bytemuck::cast_slice` checks that `bytes` size and alignment match `T` requirements
+    let items = bytemuck::cast_slice(bytes);
+    Ok(items)
 }
 
 #[inline]
