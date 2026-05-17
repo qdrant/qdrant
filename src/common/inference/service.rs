@@ -14,6 +14,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 
+use super::inference_input::InferenceDataType;
 pub use super::inference_input::InferenceInput;
 use super::local_model;
 use crate::common::inference::api_keys::{InferenceApiKeys, convert_to_reqwest_headers};
@@ -166,6 +167,11 @@ impl InferenceService {
                 usage: None, // No usage since everything was processed locally.
             });
         }
+
+        let mut remote_inference_inputs = remote_inference_inputs;
+        remote_inference_inputs
+            .iter_mut()
+            .for_each(|input| apply_remote_text_preprocessing(input, inference_type));
 
         let remote_result = self
             .infer_remote(remote_inference_inputs, inference_type, inference_params)
@@ -371,6 +377,39 @@ impl InferenceService {
     }
 }
 
+fn apply_remote_text_preprocessing(input: &mut InferenceInput, inference_type: InferenceType) {
+    if !matches!(&input.data_type, InferenceDataType::Text) || !is_e5_model(&input.model) {
+        return;
+    }
+
+    let Some(text) = input.data.as_str() else {
+        return;
+    };
+
+    if has_e5_prefix(text) {
+        return;
+    }
+
+    let prefix = match inference_type {
+        InferenceType::Update => "passage: ",
+        InferenceType::Search => "query: ",
+    };
+
+    input.data = format!("{prefix}{text}").into();
+}
+
+fn is_e5_model(model: &str) -> bool {
+    model
+        .to_lowercase()
+        .split('/')
+        .any(|part| part == "e5" || part.starts_with("e5-") || part.contains("-e5-"))
+}
+
+fn has_e5_prefix(text: &str) -> bool {
+    let text = text.trim_start();
+    text.starts_with("query:") || text.starts_with("passage:")
+}
+
 /// 2-way merge of lists with `PositionItems`. Also checks for skipped items and returns `None` in case an item is left out.
 fn merge_position_items<I>(
     left: impl IntoIterator<Item = I>,
@@ -411,6 +450,7 @@ mod test {
     use crate::common::inference::inference_input::InferenceDataType;
 
     const BM25_LOCAL_MODEL_NAME: &str = "bm25";
+    const E5_REMOTE_MODEL_NAME: &str = "intfloat/multilingual-e5-small";
 
     #[test]
     fn test_merge_position_items() {
@@ -432,6 +472,43 @@ mod test {
 
         // We were missing an item and therefore expect `None`.
         assert_eq!(merged, None);
+    }
+
+    #[test]
+    fn test_e5_update_inputs_use_passage_prefix() {
+        let mut input = make_text_inference_input("hello world", E5_REMOTE_MODEL_NAME);
+
+        apply_remote_text_preprocessing(&mut input, InferenceType::Update);
+
+        assert_eq!(input.data, json!("passage: hello world"));
+    }
+
+    #[test]
+    fn test_e5_search_inputs_use_query_prefix() {
+        let mut input = make_text_inference_input("hello world", E5_REMOTE_MODEL_NAME);
+
+        apply_remote_text_preprocessing(&mut input, InferenceType::Search);
+
+        assert_eq!(input.data, json!("query: hello world"));
+    }
+
+    #[test]
+    fn test_e5_preprocessing_keeps_explicit_prefixes() {
+        let mut input = make_text_inference_input("passage: hello world", E5_REMOTE_MODEL_NAME);
+
+        apply_remote_text_preprocessing(&mut input, InferenceType::Search);
+
+        assert_eq!(input.data, json!("passage: hello world"));
+    }
+
+    #[test]
+    fn test_e5_preprocessing_ignores_non_e5_models() {
+        let mut input =
+            make_text_inference_input("hello world", "sentence-transformers/all-MiniLM-L6-v2");
+
+        apply_remote_text_preprocessing(&mut input, InferenceType::Search);
+
+        assert_eq!(input.data, json!("hello world"));
     }
 
     #[tokio::test]
@@ -481,6 +558,15 @@ mod test {
             data_type: InferenceDataType::Text,
             model: "anyModel".to_string(),
             options,
+        }
+    }
+
+    fn make_text_inference_input(input: &str, model: &str) -> InferenceInput {
+        InferenceInput {
+            data: Value::String(input.to_string()),
+            data_type: InferenceDataType::Text,
+            model: model.to_string(),
+            options: None,
         }
     }
 
