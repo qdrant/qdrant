@@ -7,6 +7,7 @@ pub mod io_uring;
 pub mod local_file_ops;
 pub mod mmap;
 pub mod read;
+pub mod simple_disk_cache;
 pub mod wrappers;
 pub mod write;
 
@@ -20,6 +21,7 @@ pub use self::file_ops::UniversalReadFileOps;
 pub use self::io_uring::*;
 pub use self::mmap::*;
 pub use self::read::*;
+pub use self::simple_disk_cache::*;
 pub use self::wrappers::*;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
@@ -29,6 +31,7 @@ pub enum UniversalKind {
     Mmap,
     IoUring,
     DiskCache,
+    SimpleDiskCache,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -132,6 +135,22 @@ impl ReadRange {
         let max_len = max_end_offset.saturating_sub(self.byte_offset) / size_of::<T>() as u64;
         self.length = self.length.min(max_len);
         self
+    }
+
+    /// Turn into a range of bytes, considering the read length, and size of T
+    fn into_byte_range<T: bytemuck::Pod>(self) -> std::ops::Range<u64> {
+        let ReadRange {
+            byte_offset,
+            length,
+        } = self;
+
+        let t_size = size_of::<T>() as u64;
+        let byte_len = length.checked_mul(t_size).expect("length overflow");
+        let byte_end = byte_offset
+            .checked_add(byte_len)
+            .expect("byte offset overflow");
+
+        byte_offset..byte_end
     }
 }
 
