@@ -34,7 +34,6 @@ use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
-use wal::WalOptions;
 
 use crate::config::shard::EDGE_CONFIG_FILE;
 
@@ -59,7 +58,7 @@ impl EdgeShard {
             ));
         }
 
-        let (wal, segments_path) = ensure_dirs_and_open_wal(path)?;
+        let (wal, segments_path) = ensure_dirs_and_open_wal(path, default_wal_options())?;
         config.save(path)?;
 
         let mut segments = SegmentHolder::default();
@@ -85,8 +84,29 @@ impl EdgeShard {
     ///   check compatibility, then persist so future loads have it.
     ///
     /// Fails if no segments exist and no config can be loaded or inferred.
+    ///
+    /// Uses the default WAL options (32 MiB segment capacity). To override, use
+    /// [`Self::load_with_wal_options`].
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
-        let (wal, segments_path) = ensure_dirs_and_open_wal(path)?;
+        Self::load_with_wal_options(path, config, default_wal_options())
+    }
+
+    /// Same as [`Self::load`], but with custom [`WalOptions`].
+    ///
+    /// Useful for embedded/mobile deployments where the default 32 MiB WAL
+    /// segment capacity is too large — e.g. a Flutter plugin on iOS/Android
+    /// where the WAL file's visible size (not its physical sparse-file size)
+    /// is surfaced to OS-level backup/size pickers.
+    ///
+    /// WAL options are a runtime hint, not persisted shard state — different
+    /// processes may legitimately open the same shard with different
+    /// [`WalOptions`].
+    pub fn load_with_wal_options(
+        path: &Path,
+        config: Option<EdgeConfig>,
+        wal_options: WalOptions,
+    ) -> OperationResult<Self> {
+        let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
 
         let mut config = resolve_initial_config(path, config)?;
         let mut segments = load_segments(path, &segments_path, &mut config)?;
@@ -208,6 +228,7 @@ fn has_existing_segments(path: &Path) -> bool {
 
 fn ensure_dirs_and_open_wal(
     path: &Path,
+    wal_options: WalOptions,
 ) -> OperationResult<(SerdeWal<CollectionUpdateOperations>, PathBuf)> {
     let wal_path = path.join(WAL_PATH);
     if !wal_path.exists() {
@@ -216,7 +237,7 @@ fn ensure_dirs_and_open_wal(
         })?;
     }
 
-    let wal = SerdeWal::new(&wal_path, default_wal_options()).map_err(|err| {
+    let wal = SerdeWal::new(&wal_path, wal_options).map_err(|err| {
         OperationError::service_error(format!("failed to open WAL {}: {err}", wal_path.display(),))
     })?;
 
