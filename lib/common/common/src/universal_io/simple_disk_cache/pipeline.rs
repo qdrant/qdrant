@@ -109,7 +109,8 @@ where
 
         // Validate byte range
         if byte_range.end > local.mmap.len() as u64 {
-            // TODO: Grow local file if remote file has grown, or OOB
+            // TODO: Grow local file if remote file has grown, or OOB.
+            //       When growing, we need to remember to set `fully_populated` to false
             return Err(UniversalIoError::OutOfBounds {
                 start: byte_range.start,
                 end: byte_range.end,
@@ -119,8 +120,9 @@ where
 
         let blocks_range = to_block_range(byte_range.clone());
 
-        // Check if blocks are already fetched
-        if local.fetched.lock().contains_range(blocks_range.clone()) {
+        // Check if blocks are already fetched (fast path skips the bitmap
+        // mutex once the file is fully populated).
+        if local.contains(blocks_range.clone()) {
             // The range is already local, put into result.
             let bytes = unsafe { local.read_mmap_bytes(byte_range) };
             self.result = Some((meta, bytemuck::cast_slice(bytes)));
@@ -144,7 +146,7 @@ where
         };
 
         let remote_pipeline = self.get_or_init_remote_pipeline()?;
-        remote_pipeline.schedule::<P>(pipelined_meta, &file.remote, blocks_byte_range)?;
+        remote_pipeline.schedule::<P>(pipelined_meta, file.remote()?, blocks_byte_range)?;
 
         Ok(())
     }
