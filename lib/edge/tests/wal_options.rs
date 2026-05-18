@@ -134,12 +134,8 @@ fn reload_with_larger_wal_capacity_after_upsert() {
     {
         let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
         drop(shard);
-        let shard = EdgeShard::load_with_wal_options(
-            dir.path(),
-            None,
-            small_wal_options(),
-        )
-        .unwrap();
+        let shard =
+            EdgeShard::load_with_wal_options(dir.path(), None, small_wal_options()).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(100)]))))
             .unwrap();
