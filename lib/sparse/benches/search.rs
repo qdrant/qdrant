@@ -190,6 +190,7 @@ fn run_bench2(
             || it.next().unwrap().clone().into_remapped(),
             |vec| {
                 SearchContext::new(vec, TOP, index, pool.get(), &stopped, &hardware_counter)
+                    .unwrap()
                     .search(&|_| true)
             },
             criterion::BatchSize::SmallInput,
@@ -204,6 +205,7 @@ fn run_bench2(
             || it.next().unwrap().clone(),
             |vec| {
                 SearchContext::new(vec, TOP, index, pool.get(), &stopped, &hardware_counter)
+                    .unwrap()
                     .search(&|_| true)
             },
             criterion::BatchSize::SmallInput,

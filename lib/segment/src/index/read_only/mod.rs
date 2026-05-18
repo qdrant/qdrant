@@ -176,7 +176,7 @@ impl VectorIndexRead for VectorIndexReadEnum {
         &self,
         _idf: &mut HashMap<DimId, usize>,
         _hw_counter: &HardwareCounterCell,
-    ) {
+    ) -> OperationResult<()> {
         // match self {
         //     Self::Plain(index) => index.fill_idf_statistics(idf, hw_counter),
         //     Self::Hnsw(index) => index.fill_idf_statistics(idf, hw_counter),

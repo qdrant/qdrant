@@ -199,8 +199,9 @@ impl VectorIndexRead for PlainVectorIndex {
         &self,
         _idf: &mut HashMap<DimId, usize>,
         _hw_counter: &HardwareCounterCell,
-    ) {
+    ) -> OperationResult<()> {
         // Plain (dense) index doesn't track IDF.
+        Ok(())
     }
 
     fn is_index(&self) -> bool {

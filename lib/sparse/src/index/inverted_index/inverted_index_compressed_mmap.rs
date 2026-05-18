@@ -15,11 +15,12 @@ use common::mmap::{
 };
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
+use common::universal_io::{Result, UniversalIoError};
 use memmap2::Mmap;
 use serde::{Deserialize, Serialize};
 
-use super::INDEX_FILE_NAME;
 use super::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
+use super::{INDEX_FILE_NAME, out_of_bounds};
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
@@ -83,7 +84,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
         true
     }
 
-    fn open(path: &Path) -> std::io::Result<Self> {
+    fn open(path: &Path) -> Result<Self> {
         Self::load(path)
     }
 
@@ -104,18 +105,16 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
         &'a self,
         id: DimOffset,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<CompressedPostingListIterator<'a, W>> {
-        self.get(id, hw_counter)
-            .map(|posting_list| posting_list.iter())
+    ) -> Result<CompressedPostingListIterator<'a, W>> {
+        Ok(self.get(id, hw_counter)?.iter())
     }
 
     fn len(&self) -> usize {
         self.file_header.posting_count
     }
 
-    fn posting_list_len(&self, id: &DimOffset, hw_counter: &HardwareCounterCell) -> Option<usize> {
-        self.get(*id, hw_counter)
-            .map(|posting_list| posting_list.len())
+    fn posting_list_len(&self, id: DimOffset, hw_counter: &HardwareCounterCell) -> Result<usize> {
+        Ok(self.get(id, hw_counter)?.len())
     }
 
     fn files(path: &Path) -> Vec<PathBuf> {
@@ -186,10 +185,10 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         &'a self,
         id: DimId,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<CompressedPostingListView<'a, W>> {
+    ) -> Result<CompressedPostingListView<'a, W>> {
         // check that the id is not out of bounds (posting_count includes the empty zeroth entry)
         if id >= self.file_header.posting_count as DimId {
-            return None;
+            return Err(out_of_bounds(id, self.file_header.posting_count));
         }
 
         // TODO Safety.
@@ -224,10 +223,13 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             .checked_sub(remainders_start)
             .is_some_and(|len| len % size_of::<GenericPostingElement<W>>() as u64 != 0)
         {
-            return None;
+            return Err(UniversalIoError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Sparse index is corrupted",
+            )));
         }
 
-        Some(CompressedPostingListView::new(
+        Ok(CompressedPostingListView::new(
             // TODO Safety
             unsafe { self.slice_part(header.ids_start, header.ids_len) },
             // TODO Safety
@@ -339,7 +341,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         })
     }
 
-    pub fn load<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         // read index config file
         let config_file_path = Self::index_config_file_path(path.as_ref());
         // if the file header does not exist, the index is malformed
@@ -375,6 +377,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             .filter_map(|id| {
                 self.get(id, hw_counter)
                     .map(|posting| posting.store_size().total)
+                    .ok()
             })
             .sum()
     }
@@ -482,8 +485,8 @@ mod tests {
         assert!(inverted_index_mmap.get(4, &hw_counter).unwrap().is_empty()); // return empty posting list info for intermediary empty ids
         assert_eq!(inverted_index_mmap.get(5, &hw_counter).unwrap().len(), 2);
         // index after the last values are None
-        assert!(inverted_index_mmap.get(6, &hw_counter).is_none());
-        assert!(inverted_index_mmap.get(7, &hw_counter).is_none());
-        assert!(inverted_index_mmap.get(100, &hw_counter).is_none());
+        assert!(inverted_index_mmap.get(6, &hw_counter).is_err());
+        assert!(inverted_index_mmap.get(7, &hw_counter).is_err());
+        assert!(inverted_index_mmap.get(100, &hw_counter).is_err());
     }
 }

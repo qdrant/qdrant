@@ -285,8 +285,8 @@ impl ReadSegmentEntry for Segment {
         })
     }
 
-    fn fill_query_context(&self, query_context: &mut QueryContext) {
-        self.with_view(|view| view.fill_query_context(query_context));
+    fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
+        self.with_view(|view| view.fill_query_context(query_context))
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {

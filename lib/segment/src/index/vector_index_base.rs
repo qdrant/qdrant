@@ -52,7 +52,7 @@ pub trait VectorIndexRead {
         &self,
         idf: &mut HashMap<DimId, usize>,
         hw_counter: &HardwareCounterCell,
-    );
+    ) -> OperationResult<()>;
 
     /// Whether this is a "real" index rather than a plain (full-scan) one.
     ///
@@ -260,9 +260,9 @@ impl VectorIndexRead for VectorIndexEnum {
         &self,
         idf: &mut HashMap<DimId, usize>,
         hw_counter: &HardwareCounterCell,
-    ) {
+    ) -> OperationResult<()> {
         match self {
-            Self::Plain(_) | Self::Hnsw(_) => (),
+            Self::Plain(_) | Self::Hnsw(_) => Ok(()),
             Self::SparseRam(index) => index.fill_idf_statistics(idf, hw_counter),
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.fill_idf_statistics(idf, hw_counter)
