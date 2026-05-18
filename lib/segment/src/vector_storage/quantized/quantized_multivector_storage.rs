@@ -186,14 +186,12 @@ impl MultivectorOffsetsStorageMmap {
         })
     }
 
-    pub fn populate(&self) -> std::io::Result<()> {
-        self.offsets.populate().map_err(std::io::Error::other)
+    pub fn populate(&self) -> OperationResult<()> {
+        Ok(self.offsets.populate()?)
     }
 
-    pub fn clear_cache(&self) -> std::io::Result<()> {
-        self.offsets
-            .clear_ram_cache()
-            .map_err(std::io::Error::other)
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        Ok(self.offsets.clear_ram_cache()?)
     }
 }
 
