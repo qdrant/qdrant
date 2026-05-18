@@ -18,7 +18,7 @@ mod tests;
 
 pub use cached_slice::CachedSlice;
 use controller::{CacheController, CacheRead};
-use pipeline::DiskCacheReadPipeline;
+use pipeline::{BorrowedDiskCacheReadPipeline, OwnedDiskCacheReadPipeline};
 
 use super::UniversalKind;
 
@@ -68,10 +68,16 @@ impl UniversalReadFileOps for CachedSlice {
 }
 
 impl UniversalRead for CachedSlice {
-    type ReadPipeline<'a, T, U>
-        = DiskCacheReadPipeline<'a, T, U>
+    type BorrowedReadPipeline<'a, T, U>
+        = BorrowedDiskCacheReadPipeline<'a, T, U>
     where
         Self: 'a,
+        T: bytemuck::Pod,
+        U: UserData;
+
+    type OwnedReadPipeline<T, U>
+        = OwnedDiskCacheReadPipeline<T, U>
+    where
         T: bytemuck::Pod,
         U: UserData;
 
