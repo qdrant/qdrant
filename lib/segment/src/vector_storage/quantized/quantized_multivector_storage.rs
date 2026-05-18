@@ -6,7 +6,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, OpenOptions, Populate, ReadRange, TypedStorage};
 use fs_err as fs;
 use memmap2::MmapMut;
 use quantization::EncodedVectors;
@@ -153,7 +153,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
 
 #[derive(Debug)]
 pub struct MultivectorOffsetsStorageMmap {
-    offsets: MmapSlice<MultivectorOffset>,
+    offsets: TypedStorage<MmapFile, MultivectorOffset>,
     path: PathBuf,
 }
 
@@ -168,39 +168,76 @@ impl MultivectorOffsetsStorageMmap {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        let offsets_file = fs::OpenOptions::new().read(true).write(true).open(path)?;
-        let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
-        let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
+        let offsets = TypedStorage::<MmapFile, MultivectorOffset>::open(
+            path,
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                disk_parallel: None,
+                populate: Populate::No,
+                advice: None,
+                prevent_caching: None,
+            },
+        )?;
+
         Ok(Self {
             offsets,
             path: path.to_path_buf(),
         })
     }
 
-    pub fn populate(&self) -> std::io::Result<()> {
-        self.offsets.populate()
+    pub fn populate(&self) -> OperationResult<()> {
+        Ok(self.offsets.populate()?)
     }
 
-    pub fn clear_cache(&self) -> std::io::Result<()> {
-        let Self { offsets, path: _ } = self;
-        offsets.clear_cache()
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        Ok(self.offsets.clear_ram_cache()?)
     }
 }
 
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        self.offsets[idx as usize]
+        let offset = self
+            .offsets
+            .read::<Random>(ReadRange::one(
+                u64::from(idx) * size_of::<MultivectorOffset>() as u64,
+            ))
+            .expect("multi-vector offset read");
+
+        let [offset] = offset.as_ref() else {
+            unreachable!("multi-vector offsets are stored as a single-element slice");
+        };
+
+        *offset
     }
 
     fn iter_offsets(
         &self,
         ids: &[PointOffsetType],
     ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
-        ids.iter().map(|&id| self.get_offset(id)).enumerate()
+        let ranges = ids.iter().copied().enumerate().map(|(idx, id)| {
+            let offset = u64::from(id) * size_of::<MultivectorOffset>() as u64;
+            let range = ReadRange::one(offset);
+            (idx, range)
+        });
+
+        self.offsets
+            .read_iter::<Random, _>(ranges)
+            .expect("multi-vector offsets iterator initialized")
+            .map(|result| {
+                let (idx, offset) = result.expect("multi-vector offset read");
+                let [offset] = offset.as_ref() else {
+                    unreachable!("multi-vector offsets are stored as a single-element slice");
+                };
+
+                (idx, *offset)
+            })
     }
 
     fn len(&self) -> usize {
-        self.offsets.len()
+        self.offsets
+            .len()
+            .expect("multi-vector offsets length read") as _
     }
 
     fn upsert_offset(
@@ -233,6 +270,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
             offsets: _,
             path: _,
         } = self;
+
         0
     }
 }
