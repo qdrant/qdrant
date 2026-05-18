@@ -75,7 +75,8 @@ pub mod internal {
 
 /// Re-export WAL configuration for advanced/embedded use cases.
 ///
-/// See [`crate::EdgeShard::load_with_wal_options`].
+/// See [`crate::EdgeShard::load_with_options`] and
+/// [`crate::EdgeShardOptions::with_wal_options`].
 pub use ::wal::WalOptions;
 
 /// Re-export from external crates used by Qdrant.

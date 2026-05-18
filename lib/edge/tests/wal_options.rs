@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::num::NonZero;
 
-use edge::{Distance, EdgeConfig, EdgeShard, EdgeVectorParams, WalOptions};
+use edge::{Distance, EdgeConfig, EdgeShard, EdgeShardOptions, EdgeVectorParams, WalOptions};
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::ExtendedPointId;
 use shard::operations::CollectionUpdateOperations::PointOperation;
@@ -53,7 +53,7 @@ fn point(id: u64) -> PointStructPersisted {
 }
 
 #[test]
-fn load_with_wal_options_accepts_custom_capacity() {
+fn load_with_options_accepts_custom_wal_capacity() {
     let dir = tempfile::Builder::new()
         .prefix("edge-wal-options-custom")
         .tempdir()
@@ -62,7 +62,12 @@ fn load_with_wal_options_accepts_custom_capacity() {
     let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
     drop(shard);
 
-    let shard = EdgeShard::load_with_wal_options(dir.path(), None, small_wal_options()).unwrap();
+    let shard = EdgeShard::load_with_options(
+        dir.path(),
+        None,
+        EdgeShardOptions::new().with_wal_options(small_wal_options()),
+    )
+    .unwrap();
     drop(shard);
 }
 
@@ -103,7 +108,12 @@ fn reload_with_smaller_wal_capacity_after_upsert() {
     }
 
     // Phase 2: reload with custom small 4 MiB WAL.
-    let shard = EdgeShard::load_with_wal_options(dir.path(), None, small_wal_options()).unwrap();
+    let shard = EdgeShard::load_with_options(
+        dir.path(),
+        None,
+        EdgeShardOptions::new().with_wal_options(small_wal_options()),
+    )
+    .unwrap();
     assert_eq!(
         shard.info().points_count,
         1,
@@ -134,8 +144,12 @@ fn reload_with_larger_wal_capacity_after_upsert() {
     {
         let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
         drop(shard);
-        let shard =
-            EdgeShard::load_with_wal_options(dir.path(), None, small_wal_options()).unwrap();
+        let shard = EdgeShard::load_with_options(
+            dir.path(),
+            None,
+            EdgeShardOptions::new().with_wal_options(small_wal_options()),
+        )
+        .unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(100)]))))
             .unwrap();

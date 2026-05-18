@@ -45,6 +45,31 @@ pub struct EdgeShard {
     segments: LockedSegmentHolder,
 }
 
+/// Runtime options for opening an [`EdgeShard`]. Use the builder methods to
+/// set individual options; missing fields fall back to internal defaults.
+///
+/// These options are *runtime hints*, not persisted shard state — different
+/// processes may legitimately open the same shard with different options.
+/// Anything that must round-trip with the shard belongs in [`EdgeConfig`]
+/// instead.
+#[derive(Default, Debug)]
+pub struct EdgeShardOptions {
+    wal_options: Option<WalOptions>,
+}
+
+impl EdgeShardOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Override the default WAL options. Useful for embedded/mobile
+    /// deployments where the default 32 MiB segment capacity is too large.
+    pub fn with_wal_options(mut self, opts: WalOptions) -> Self {
+        self.wal_options = Some(opts);
+        self
+    }
+}
+
 const WAL_PATH: &str = "wal";
 impl EdgeShard {
     /// Create a new edge shard at `path` with the given configuration.
@@ -85,27 +110,30 @@ impl EdgeShard {
     ///
     /// Fails if no segments exist and no config can be loaded or inferred.
     ///
-    /// Uses the default WAL options (32 MiB segment capacity). To override, use
-    /// [`Self::load_with_wal_options`].
+    /// Uses default runtime options (see [`EdgeShardOptions`]). To customize
+    /// any of them — including WAL segment capacity — use
+    /// [`Self::load_with_options`].
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
-        Self::load_with_wal_options(path, config, default_wal_options())
+        Self::load_with_options(path, config, EdgeShardOptions::default())
     }
 
-    /// Same as [`Self::load`], but with custom [`WalOptions`].
+    /// Same as [`Self::load`], but with custom runtime [`EdgeShardOptions`].
     ///
-    /// Useful for embedded/mobile deployments where the default 32 MiB WAL
-    /// segment capacity is too large — e.g. a Flutter plugin on iOS/Android
-    /// where the WAL file's visible size (not its physical sparse-file size)
-    /// is surfaced to OS-level backup/size pickers.
+    /// Currently the only field is WAL options, useful for embedded/mobile
+    /// deployments where the default 32 MiB segment capacity is too large
+    /// — e.g. a Flutter plugin on iOS/Android where the WAL file's visible
+    /// size (not its physical sparse-file size) is surfaced to OS-level
+    /// backup/size pickers.
     ///
-    /// WAL options are a runtime hint, not persisted shard state — different
-    /// processes may legitimately open the same shard with different
-    /// [`WalOptions`].
-    pub fn load_with_wal_options(
+    /// `EdgeShardOptions` are a runtime hint, not persisted shard state —
+    /// different processes may legitimately open the same shard with
+    /// different options.
+    pub fn load_with_options(
         path: &Path,
         config: Option<EdgeConfig>,
-        wal_options: WalOptions,
+        options: EdgeShardOptions,
     ) -> OperationResult<Self> {
+        let wal_options = options.wal_options.unwrap_or_else(default_wal_options);
         let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
 
         let mut config = resolve_initial_config(path, config)?;
