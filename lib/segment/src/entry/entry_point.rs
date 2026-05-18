@@ -236,7 +236,7 @@ pub trait ReadSegmentEntry {
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
 
-    fn fill_query_context(&self, query_context: &mut QueryContext);
+    fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()>;
 
     /// Check whether the point is marked as deferred in the segment
     fn point_is_deferred(&self, point_id: PointIdType) -> bool;

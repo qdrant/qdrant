@@ -115,7 +115,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hw_counter,
-        );
+        )
+        .unwrap();
         assert_eq!(search_context.search(&match_all), Vec::new());
     }
 
@@ -142,7 +143,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             round_scores::<I>(search_context.search(&match_all)),
@@ -200,7 +202,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             round_scores::<I>(search_context.search(&match_all)),
@@ -242,7 +245,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             search_context.search(&match_all),
@@ -296,7 +300,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             round_scores::<I>(search_context.search(&match_all)),
@@ -337,7 +342,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             round_scores::<I>(search_context.search(&match_all)),
@@ -381,15 +387,16 @@ mod tests {
         let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
+                indices: vec![1],
+                values: vec![1.0],
             },
             1,
             &index.index,
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         // assuming we have gathered enough results and want to prune the longest posting list
         assert!(search_context.prune_longest_posting_list(30.0));
@@ -423,7 +430,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         // assuming we have gathered enough results and want to prune the longest posting list
         assert!(search_context.prune_longest_posting_list(30.0));
@@ -462,7 +470,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
         // we should actually check the best score up to `6` - 1 only instead of the max possible score (40.0)
@@ -499,7 +508,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         assert_eq!(search_context.posting_list_len(0), 2);
 
@@ -531,7 +541,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         let scores = search_context.plain_search(&[1, 3, 2]);
         assert_eq!(
@@ -585,7 +596,8 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
-        );
+        )
+        .unwrap();
 
         let scores = search_context.plain_search(&[1, 2, 3]);
         assert_eq!(

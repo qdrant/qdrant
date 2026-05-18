@@ -680,7 +680,7 @@ impl ReadSegmentEntry for ProxySegment {
         self.wrapped_segment.get().read().get_telemetry_data(detail)
     }
 
-    fn fill_query_context(&self, query_context: &mut QueryContext) {
+    fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
         // Information from temporary segment is not too important for query context
         self.wrapped_segment
             .get()

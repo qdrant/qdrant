@@ -42,21 +42,25 @@ impl IndicesTracker {
         self.map.get(&index).copied()
     }
 
+    /// Remap a sparse vector to internal segment-specific indices.
+    ///
+    /// Unknown dimensions ids are filtered out.
     pub fn remap_vector(&self, vector: SparseVector) -> RemappedSparseVector {
-        let mut placeholder_indices = self.map.len() as DimOffset;
         let SparseVector {
             mut indices,
-            values,
+            mut values,
         } = vector;
 
-        indices.iter_mut().for_each(|index| {
-            *index = if let Some(index) = self.remap_index(*index) {
-                index
-            } else {
-                placeholder_indices += 1;
-                placeholder_indices
+        let mut write = 0;
+        for read in 0..indices.len() {
+            if let Some(remapped_index) = self.remap_index(indices[read]) {
+                indices[write] = remapped_index;
+                values[write] = values[read];
+                write += 1;
             }
-        });
+        }
+        indices.truncate(write);
+        values.truncate(write);
 
         let mut remapped_vector = RemappedSparseVector { indices, values };
         remapped_vector.sort_by_indices();

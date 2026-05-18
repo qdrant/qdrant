@@ -254,7 +254,7 @@ where
             .collect()
     }
 
-    pub fn fill_query_context(&self, query_context: &mut QueryContext) {
+    pub fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
         query_context.add_available_point_count(self.available_point_count_without_deferred());
         let hw_acc = query_context.hardware_usage_accumulator();
         let hw_counter = hw_acc.get_counter_cell();
@@ -276,8 +276,9 @@ where
                     indexed_vectors.insert(vector_name.clone(), indexed_vector_count);
                 }
 
-                vector_index.fill_idf_statistics(idf, &hw_counter);
+                vector_index.fill_idf_statistics(idf, &hw_counter)?;
             }
         }
+        Ok(())
     }
 }

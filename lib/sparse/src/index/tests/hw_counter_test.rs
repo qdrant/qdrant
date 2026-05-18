@@ -21,7 +21,8 @@ fn do_search<I: InvertedIndex>(index: &I, query: RemappedSparseVector) -> HwMeas
         get_pooled_scores(),
         &is_stopped,
         &hardware_counter,
-    );
+    )
+    .unwrap();
 
     let result = search_context.search(&match_all);
     // there might be less than `top` result
@@ -47,7 +48,8 @@ fn do_plain_search<I: InvertedIndex>(
         get_pooled_scores(),
         &is_stopped,
         &hardware_counter,
-    );
+    )
+    .unwrap();
 
     let result = search_context.plain_search(docs);
 

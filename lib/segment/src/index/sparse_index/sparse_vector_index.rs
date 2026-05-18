@@ -225,7 +225,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Returns the maximum number of results that can be returned by the index for a given sparse vector
     /// Warning: the cost of this function grows with the number of dimensions in the query vector
     #[cfg(feature = "testing")]
-    pub fn max_result_count(&self, query_vector: &SparseVector) -> usize {
+    pub fn max_result_count(&self, query_vector: &SparseVector) -> OperationResult<usize> {
         use sparse::index::posting_list_common::PostingListIter as _;
 
         // For tests only
@@ -233,14 +233,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let mut unique_record_ids = std::collections::HashSet::new();
         for dim_id in &query_vector.indices {
-            if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id)
-                && let Some(posting_list_iter) = self.inverted_index.get(dim_id, &hw_counter)
-            {
+            if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id) {
+                let posting_list_iter = self.inverted_index.get(dim_id, &hw_counter)?;
                 for element in posting_list_iter.into_std_iter() {
                     unique_record_ids.insert(element.record_id);
                 }
             }
         }
-        unique_record_ids.len()
+        Ok(unique_record_ids.len())
     }
 }
