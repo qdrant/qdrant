@@ -3,8 +3,10 @@ use std::hash;
 use std::iter::Peekable;
 use std::rc::Rc;
 
+use common::math::approx_eq;
 use itertools::Itertools;
 use segment::data_types::facets::{FacetResponse, FacetValue};
+use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{Payload, ScoredPoint};
 use shard::retrieve::record_internal::RecordInternal;
 use tinyvec::TinyVec;
@@ -173,12 +175,26 @@ fn record_eq(this: &RecordInternal, other: &RecordInternal) -> bool {
         && payload_eq(&this.payload, &other.payload)
 }
 
+/// Equality test for identity definition in multi shard resolver.
+///
+/// Accounts for float point difference in scoring and vectors.
 fn scored_point_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
     this.id == other.id
-        && this.score == other.score
+        && approx_eq(this.score, other.score)
         && this.order_value == other.order_value
-        && this.vector == other.vector
+        && approximate_vector_eq(this.vector.as_ref(), other.vector.as_ref())
         && payload_eq(&this.payload, &other.payload)
+}
+
+fn approximate_vector_eq(
+    this: Option<&VectorStructInternal>,
+    other: Option<&VectorStructInternal>,
+) -> bool {
+    match (this, other) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.approx_eq(b),
+        _ => false,
+    }
 }
 
 fn payload_eq(this: &Option<Payload>, other: &Option<Payload>) -> bool {

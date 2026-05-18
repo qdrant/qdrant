@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::hash::Hash;
 
+use common::math::approx_eq_slice;
 use common::types::ScoreType;
 use gridstore::Blob;
 use itertools::Itertools;
@@ -237,6 +238,10 @@ impl SparseVector {
             indices: self.indices,
             values: self.values,
         }
+    }
+
+    pub fn approx_eq(&self, other: &Self) -> bool {
+        self.indices == other.indices && approx_eq_slice(&self.values, &other.values)
     }
 }
 
