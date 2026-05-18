@@ -177,19 +177,16 @@ fn get_match_except_checker(
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'_>> {
     let checker: Option<ConditionCheckerFn> = match (except, index) {
-        (AnyVariants::Strings(list), FieldIndex::KeywordIndex(index)) => {
-            let hw_counter = hw_acc.get_counter_cell();
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        !list.iter().any(|s| s.as_str() == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
-                }))
-            }
+        (AnyVariants::Strings(_), FieldIndex::KeywordIndex(_)) => {
+            // When a keyword index exists for this field, points with non-string
+            // payload values (e.g. bool, number) have no entries in the index.
+            // `check_values_any` returns false for such points, but `except`
+            // semantics require returning true: a non-string value is never equal
+            // to any string in the except list.  We can't distinguish "no keyword
+            // values because the payload is a bool" from "no payload at all" using
+            // only the keyword index, so fall back to the payload condition checker
+            // which correctly handles all value types.
+            return None;
         }
         (AnyVariants::Strings(list), FieldIndex::UuidMapIndex(index)) => {
             let list = list
