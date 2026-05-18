@@ -68,9 +68,9 @@ where
     type File = File;
 
     #[inline]
-    fn new(file: &File) -> Result<Self> {
+    fn new(file: File) -> Result<Self> {
         let wrapper = Self {
-            inner: OwnedReadPipeline::new(File::peel_ref(file))?,
+            inner: OwnedReadPipeline::new(File::peel(file))?,
             _phantom: PhantomData,
         };
 

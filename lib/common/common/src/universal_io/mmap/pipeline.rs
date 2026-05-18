@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::{MmapFile, MmapFileInner, read};
+use super::{MmapFile, read};
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::{
     BorrowedReadPipeline, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UserData,
@@ -33,7 +33,7 @@ where
             return Err(UniversalIoError::QueueIsFull);
         }
 
-        self.result = Some((user_data, read(file.inner.as_bytes::<P>(), range)?));
+        self.result = Some((user_data, read(file.as_bytes::<P>(), range)?));
         Ok(())
     }
 
@@ -44,7 +44,7 @@ where
 }
 
 pub struct OwnedMmapReadPipeline<T, U> {
-    inner: MmapFileInner,
+    file: MmapFile,
     pending: Option<(U, ReadRange, bool)>,
     _phantom: std::marker::PhantomData<T>,
 }
@@ -56,9 +56,9 @@ where
 {
     type File = MmapFile;
 
-    fn new(file: &MmapFile) -> Result<Self> {
+    fn new(file: MmapFile) -> Result<Self> {
         Ok(Self {
-            inner: file.inner.clone(),
+            file,
             pending: None,
             _phantom: std::marker::PhantomData,
         })
@@ -84,9 +84,9 @@ where
             return Ok(None);
         };
         let bytes = if is_sequential {
-            self.inner.as_bytes::<Sequential>()
+            self.file.as_bytes::<Sequential>()
         } else {
-            self.inner.as_bytes::<Random>()
+            self.file.as_bytes::<Random>()
         };
         Ok(Some((user_data, Cow::Borrowed(read::<T>(bytes, range)?))))
     }

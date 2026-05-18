@@ -66,9 +66,9 @@ where
 {
     type File = CachedSlice;
 
-    fn new(file: &CachedSlice) -> Result<Self> {
+    fn new(file: CachedSlice) -> Result<Self> {
         Ok(Self {
-            file: file.clone(),
+            file,
             pending: None,
             phantom: std::marker::PhantomData,
         })

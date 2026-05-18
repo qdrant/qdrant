@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::mem::ManuallyDrop;
-use std::sync::Arc;
 
 use ::io_uring::types::Fd;
 
@@ -71,11 +70,7 @@ where
 {
     type File = IoUringFile;
 
-    fn new(file: &IoUringFile) -> Result<Self> {
-        let file = IoUringFile {
-            file: Arc::clone(&file.file),
-            direct_io: file.direct_io,
-        };
+    fn new(file: IoUringFile) -> Result<Self> {
         let inner = IoUringPipelineInner::new()?;
         Ok(Self {
             file: ManuallyDrop::new(file),

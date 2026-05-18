@@ -64,7 +64,7 @@ where
 {
     type File;
 
-    fn new(file: &Self::File) -> Result<Self>;
+    fn new(file: Self::File) -> Result<Self>;
 
     fn can_schedule(&mut self) -> bool;
 
