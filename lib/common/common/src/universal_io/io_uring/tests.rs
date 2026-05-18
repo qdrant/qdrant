@@ -7,7 +7,6 @@ use rstest::rstest;
 use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
-use crate::universal_io::read::UniversalRead;
 
 #[rstest]
 #[case(false)]

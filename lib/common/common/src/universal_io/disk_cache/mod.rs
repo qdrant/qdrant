@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 use fs_err as fs;
 
 use crate::generic_consts::{AccessPattern, Random};
-use crate::universal_io::read::UniversalReadPipeline;
 use crate::universal_io::{
     OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UserData, local_file_ops,
+    UniversalReadPipeline, UserData, local_file_ops,
 };
 
 mod cached_slice;

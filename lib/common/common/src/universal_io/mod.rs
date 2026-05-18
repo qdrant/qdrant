@@ -1,14 +1,15 @@
 #[cfg(not(target_os = "windows"))]
-pub mod disk_cache;
-pub mod error;
-pub mod file_ops;
+#[expect(dead_code, reason = "Not yet used")]
+mod disk_cache;
+mod error;
+mod file_ops;
 #[cfg(target_os = "linux")]
-pub mod io_uring;
-pub mod local_file_ops;
-pub mod mmap;
-pub mod read;
-pub mod wrappers;
-pub mod write;
+mod io_uring;
+mod local_file_ops;
+mod mmap;
+mod read;
+mod wrappers;
+mod write;
 
 use std::path::Path;
 

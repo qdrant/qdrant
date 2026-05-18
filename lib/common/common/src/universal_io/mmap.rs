@@ -8,7 +8,6 @@ use memmap2::MmapRaw;
 use super::*;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
-use crate::universal_io::read::UniversalReadPipeline;
 
 #[derive(Debug)]
 pub struct MmapFile {

@@ -3,7 +3,6 @@ use std::path::Path;
 
 use super::*;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::file_ops::UniversalReadFileOps;
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
