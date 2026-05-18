@@ -40,12 +40,12 @@ where
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         // Stage 1: resolve external → internal once, into two parallel vectors.
         // The id tracker owns this: deferred filtering happens inline (no
-        // `point_is_deferred` lookup) and missing ids error eagerly. The
-        // parallel-vector shape lets a future batched payload / vector
-        // fetcher consume `&offsets` straight without unzipping first.
+        // `point_is_deferred` lookup). The parallel-vector shape lets
+        // a future batched payload / vector fetcher consume `&offsets`
+        // straight without unzipping first.
         let (resolved_ids, resolved_offsets) = self
             .id_tracker
-            .resolve_external_ids(point_ids, deferred_behavior)?;
+            .resolve_external_ids(point_ids, deferred_behavior);
         debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
 
         // Stage 2: pre-allocate one record per resolved point. The `vectors`

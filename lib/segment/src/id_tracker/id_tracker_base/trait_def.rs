@@ -8,7 +8,7 @@ use rand::{RngExt, SeedableRng};
 
 use super::point_mappings_ref::PointMappingsRefEnum;
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::types::{PointIdType, SeqNumberType};
 
 /// Sampling randomness seed
@@ -191,8 +191,7 @@ pub trait IdTrackerRead {
     /// offsets)` in a single pass.
     ///
     /// Applies deferred filtering according to `deferred_behavior` inline
-    /// (no separate `point_is_deferred` lookup), and errors on the first
-    /// missing id with [`OperationError::PointIdError`].
+    /// (no separate `point_is_deferred` lookup), missing points will be ignored
     ///
     /// The parallel-vector return shape lets downstream batched fetchers
     /// consume `&offsets` directly.
@@ -204,7 +203,7 @@ pub trait IdTrackerRead {
         &self,
         point_ids: &[PointIdType],
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<(Vec<PointIdType>, Vec<PointOffsetType>)> {
+    ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
         // Non-appendable trackers never carry a deferred threshold (it's set
         // only via `MutableIdTracker::open`, guarded by `appendable_flag` in
         // the segment constructor), so we don't need an appendable check here.
@@ -213,17 +212,15 @@ pub trait IdTrackerRead {
         let mut ids = Vec::with_capacity(point_ids.len());
         let mut offsets = Vec::with_capacity(point_ids.len());
         for &point_id in point_ids {
-            let internal_id = self
-                .internal_id(point_id)
-                .ok_or(OperationError::PointIdError {
-                    missed_point_id: point_id,
-                })?;
+            let Some(internal_id) = self.internal_id(point_id) else {
+                continue;
+            };
             if deferred_cutoff.is_some_and(|cutoff| internal_id >= cutoff) {
                 continue;
             }
             ids.push(point_id);
             offsets.push(internal_id);
         }
-        Ok((ids, offsets))
+        (ids, offsets)
     }
 }
