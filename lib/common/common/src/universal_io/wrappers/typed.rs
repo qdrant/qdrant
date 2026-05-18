@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 
 use bytemuck::TransparentWrapper;
 
-use super::super::{
+use crate::generic_consts::AccessPattern;
+use crate::universal_io::{
     ByteOffset, FileIndex, Flusher, OpenOptions, ReadRange, Result, UniversalKind, UniversalRead,
     UniversalReadFileOps, UniversalWrite, UserData,
 };
-use crate::generic_consts::AccessPattern;
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
 /// type to a specific `T`.

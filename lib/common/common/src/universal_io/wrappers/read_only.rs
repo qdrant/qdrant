@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 
 use bytemuck::TransparentWrapper;
 
-use super::super::{
-    OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
-};
 use super::WrappedReadPipeline;
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::{
+    OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
+};
 
 #[derive(Debug, TransparentWrapper)]
 #[repr(transparent)]

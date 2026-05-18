@@ -7,7 +7,6 @@ use slab::Slab;
 
 use super::*;
 use crate::maybe_uninit;
-use crate::universal_io::read::UserData;
 
 const KERNEL_PAGE_SIZE: u64 = 4096; // 4 kB
 

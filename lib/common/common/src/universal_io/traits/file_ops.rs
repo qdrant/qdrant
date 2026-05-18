@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
-use super::*;
+use crate::universal_io::Result;
 
 pub trait UniversalReadFileOps: Sized + Debug {
     /// List files in the storage with the given prefix.

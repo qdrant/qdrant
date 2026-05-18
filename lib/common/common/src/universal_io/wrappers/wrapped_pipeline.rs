@@ -4,8 +4,7 @@ use std::marker::PhantomData;
 use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::read::{UniversalReadPipeline, UserData};
-use crate::universal_io::{ReadRange, Result};
+use crate::universal_io::{ReadRange, Result, UniversalReadPipeline, UserData};
 
 /// Default implementation of [`UniversalReadPipeline`] for wrappers.
 pub struct WrappedReadPipeline<'a, File, Inner> {
