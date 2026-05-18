@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use bytemuck::TransparentWrapper;
 
-use super::WrappedReadPipeline;
+use super::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     OpenOptions, ReadRange, Result, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
@@ -32,10 +32,16 @@ impl<S> UniversalRead for ReadOnly<S>
 where
     S: UniversalRead,
 {
-    type ReadPipeline<'file, T, U>
-        = WrappedReadPipeline<'file, Self, S::ReadPipeline<'file, T, U>>
+    type BorrowedReadPipeline<'file, T, U>
+        = BorrowedWrappedReadPipeline<'file, Self, S::BorrowedReadPipeline<'file, T, U>>
     where
         Self: 'file,
+        T: bytemuck::Pod,
+        U: UserData;
+
+    type OwnedReadPipeline<T, U>
+        = OwnedWrappedReadPipeline<Self, S::OwnedReadPipeline<T, U>>
+    where
         T: bytemuck::Pod,
         U: UserData;
 

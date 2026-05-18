@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use super::{UniversalReadFileOps, UniversalReadPipeline, UserData};
+use super::{BorrowedReadPipeline, OwnedReadPipeline, UniversalReadFileOps, UserData};
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{OpenOptions, ReadRange, Result, UniversalKind};
 
@@ -9,9 +9,14 @@ use crate::universal_io::{OpenOptions, ReadRange, Result, UniversalKind};
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 #[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead: UniversalReadFileOps {
-    type ReadPipeline<'file, T, U>: UniversalReadPipeline<'file, T, U, File = Self>
+    type BorrowedReadPipeline<'file, T, U>: BorrowedReadPipeline<'file, T, U, File = Self>
     where
         Self: 'file,
+        T: bytemuck::Pod,
+        U: UserData;
+
+    type OwnedReadPipeline<T, U>: OwnedReadPipeline<T, U, File = Self>
+    where
         T: bytemuck::Pod,
         U: UserData;
 
@@ -111,7 +116,7 @@ pub trait UniversalRead: UniversalReadFileOps {
         U: UserData,
         Self: 'a,
     {
-        let mut pipeline = Self::ReadPipeline::<'a, T, U>::new()?;
+        let mut pipeline = Self::BorrowedReadPipeline::<'a, T, U>::new()?;
         let mut reads = reads.into_iter();
 
         let iter = std::iter::from_fn(move || {

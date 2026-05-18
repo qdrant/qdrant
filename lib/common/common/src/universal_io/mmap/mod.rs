@@ -7,7 +7,7 @@ use std::{fs, slice};
 
 use memmap2::MmapRaw;
 
-use self::pipeline::MmapReadPipeline;
+use self::pipeline::{BorrowedMmapReadPipeline, OwnedMmapReadPipeline};
 use super::traits::UniversalReadFileOps;
 use super::*;
 use crate::generic_consts::AccessPattern;
@@ -16,10 +16,14 @@ use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as
 #[derive(Debug)]
 pub struct MmapFile {
     path: PathBuf,
+    inner: MmapFileInner,
+}
 
+#[derive(Debug, Clone)]
+struct MmapFileInner {
     // `mmap` and `mmap_seq` own the mmaps.
     mmap: Arc<MmapRaw>,
-    mmap_seq: Option<MmapRaw>,
+    mmap_seq: Option<Arc<MmapRaw>>,
 
     // `len`, `ptr`, `ptr_seq` contain the same values as `mmap`, `mmap_seq`,
     // but duplicated here to avoid `Arc`/`Option` overhead in hot loops.
@@ -47,8 +51,14 @@ impl UniversalReadFileOps for MmapFile {
 }
 
 impl UniversalRead for MmapFile {
-    type ReadPipeline<'a, T, U>
-        = MmapReadPipeline<'a, T, U>
+    type BorrowedReadPipeline<'a, T, U>
+        = BorrowedMmapReadPipeline<'a, T, U>
+    where
+        T: bytemuck::Pod,
+        U: UserData;
+
+    type OwnedReadPipeline<T, U>
+        = OwnedMmapReadPipeline<T, U>
     where
         T: bytemuck::Pod,
         U: UserData;
@@ -91,7 +101,7 @@ impl UniversalRead for MmapFile {
 
             len = std::cmp::min(mmap.len(), mmap_seq_.len());
             ptr_seq = SendSyncPtr(mmap_seq_.as_mut_ptr());
-            mmap_seq = Some(mmap_seq_);
+            mmap_seq = Some(Arc::new(mmap_seq_));
         } else {
             len = mmap.len();
             ptr_seq = ptr;
@@ -100,35 +110,37 @@ impl UniversalRead for MmapFile {
 
         let mmap = Self {
             path: path.as_ref().into(),
-            mmap: Arc::new(mmap),
-            mmap_seq,
-            len,
-            ptr,
-            ptr_seq,
+            inner: MmapFileInner {
+                mmap: Arc::new(mmap),
+                mmap_seq,
+                len,
+                ptr,
+                ptr_seq,
+            },
         };
 
         Ok(mmap)
     }
 
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        let mmap = self.as_bytes::<P>();
+        let mmap = self.inner.as_bytes::<P>();
         let items = read(mmap, range)?;
         Ok(Cow::Borrowed(items))
     }
 
     fn len<T>(&self) -> Result<u64> {
-        let len = self.len / size_of::<T>();
+        let len = self.inner.len / size_of::<T>();
         Ok(len as u64)
     }
 
     fn populate(&self) -> Result<()> {
-        self.mmap.populate();
+        self.inner.mmap.populate();
         Ok(())
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
-        self.mmap.clear_cache();
-        if let Some(mmap_seq) = &self.mmap_seq {
+        self.inner.mmap.clear_cache();
+        if let Some(mmap_seq) = &self.inner.mmap_seq {
             mmap_seq.clear_cache();
         }
         Ok(())
@@ -141,7 +153,7 @@ impl UniversalRead for MmapFile {
 
 impl UniversalWrite for MmapFile {
     fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
-        let mmap = self.as_bytes_mut();
+        let mmap = self.inner.as_bytes_mut();
         write(mmap, byte_offset, items)?;
         Ok(())
     }
@@ -150,7 +162,7 @@ impl UniversalWrite for MmapFile {
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()> {
-        let mmap = self.as_bytes_mut();
+        let mmap = self.inner.as_bytes_mut();
 
         for (byte_offset, items) in offset_data {
             write(mmap, byte_offset, items)?;
@@ -160,7 +172,7 @@ impl UniversalWrite for MmapFile {
     }
 
     fn flusher(&self) -> Flusher {
-        let mmap = self.mmap.clone();
+        let mmap = self.inner.mmap.clone();
         let flusher = move || {
             // flushing empty mmap returns error on some platforms
             if mmap.len() > 0 {
@@ -213,7 +225,7 @@ impl MmapFile {
     /// measured via `mincore`. This is a point-in-time approximation.
     #[cfg(unix)]
     pub fn resident_bytes(&self) -> std::io::Result<u64> {
-        let len = self.len;
+        let len = self.inner.len;
         if len == 0 {
             return Ok(0);
         }
@@ -223,9 +235,10 @@ impl MmapFile {
         let num_pages = len.div_ceil(page_size);
         let mut vec = vec![0u8; num_pages];
 
-        // SAFETY: `self.ptr.as_ptr()` is a valid page-aligned pointer for `len` bytes
+        // SAFETY: `self.inner.ptr.as_ptr()` is a valid page-aligned pointer for `len` bytes
         // (guaranteed by memmap2). `vec` is correctly sized for `num_pages` entries.
-        let ret = unsafe { nix::libc::mincore(self.ptr.0.cast(), len, vec.as_mut_ptr().cast()) };
+        let ret =
+            unsafe { nix::libc::mincore(self.inner.ptr.0.cast(), len, vec.as_mut_ptr().cast()) };
         if ret != 0 {
             return Err(std::io::Error::last_os_error());
         }
@@ -260,8 +273,10 @@ impl MmapFile {
         let resident_bytes = file.resident_bytes()?;
         Ok((disk_bytes, resident_bytes))
     }
+}
 
-    pub(super) fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
+impl MmapFileInner {
+    pub fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
         let ptr = if P::IS_SEQUENTIAL {
             self.ptr_seq
         } else {

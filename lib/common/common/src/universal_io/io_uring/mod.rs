@@ -17,7 +17,7 @@ use fs_err as fs;
 use fs_err::os::unix::fs::{FileExt as _, OpenOptionsExt as _};
 
 use self::error::*;
-use self::pipeline::IoUringPipeline;
+use self::pipeline::{BorrowedIoUringPipeline, OwnedIoUringPipeline};
 use self::pool::*;
 use self::runtime::*;
 use super::traits::UniversalReadFileOps;
@@ -52,8 +52,14 @@ impl UniversalReadFileOps for IoUringFile {
 }
 
 impl UniversalRead for IoUringFile {
-    type ReadPipeline<'a, T, U>
-        = IoUringPipeline<'a, T, U>
+    type BorrowedReadPipeline<'a, T, U>
+        = BorrowedIoUringPipeline<'a, T, U>
+    where
+        T: bytemuck::Pod,
+        U: UserData;
+
+    type OwnedReadPipeline<T, U>
+        = OwnedIoUringPipeline<T, U>
     where
         T: bytemuck::Pod,
         U: UserData;
