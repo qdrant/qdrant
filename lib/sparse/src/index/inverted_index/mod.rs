@@ -13,12 +13,13 @@ use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 pub mod inverted_index_compressed_immutable_ram;
 pub mod inverted_index_compressed_mmap;
-pub mod inverted_index_immutable_ram;
-pub mod inverted_index_mmap;
 pub mod inverted_index_ram;
 pub mod inverted_index_ram_builder;
 
-pub const OLD_INDEX_FILE_NAME: &str = "inverted_index.data";
+// NOTE: index in the original format (Qdrant <=v1.9 / sparse <=v0.1.0) lacks of the
+// version file. To distinguish between index in original format and partially
+// written index in the current format, the index file name is changed from
+// `inverted_index.data` to `inverted_index.dat`.
 pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 
 pub trait InvertedIndex: Sized + Debug + 'static {

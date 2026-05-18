@@ -17,8 +17,6 @@ mod tests {
     use crate::index::inverted_index::InvertedIndex;
     use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
     use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
-    use crate::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
-    use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
     use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
     use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
     use crate::index::posting_list_common::PostingListIter;
@@ -27,12 +25,6 @@ mod tests {
 
     #[instantiate_tests(<InvertedIndexRam>)]
     mod ram {}
-
-    #[instantiate_tests(<InvertedIndexMmap>)]
-    mod mmap {}
-
-    #[instantiate_tests(<InvertedIndexImmutableRam>)]
-    mod iram {}
 
     #[instantiate_tests(<InvertedIndexCompressedImmutableRam<f32>>)]
     mod iram_f32 {}
