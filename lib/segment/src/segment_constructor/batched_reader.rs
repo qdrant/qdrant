@@ -73,10 +73,15 @@ impl<'a> BatchedVectorReader<'a> {
     /// Reading of a single point looks like this:
     ///
     /// ```text
-    ///  let source_vector_storage = &source_vector_storages[point_data.segment_index.get() as usize];
-    ///  let vec = source_vector_storage.get_vector(point_data.internal_id);
-    ///  let vector_deleted = source_vector_storage.is_deleted_vector(point_data.internal_id);
-    ///  (vec, vector_deleted)
+    ///  match &source_vector_storages[point_data.segment_index.get() as usize] {
+    ///      Some(storage) => (
+    ///          storage.get_vector(point_data.internal_id),
+    ///          storage.is_deleted_vector(point_data.internal_id),
+    ///      ),
+    ///      // Source segment lacks this named vector — emit a typed placeholder
+    ///      // marked deleted (see `missing_vector_placeholder`).
+    ///      None => (missing_vector_placeholder.clone(), true),
+    ///  }
     /// ```
     fn refill_buffer(&mut self) {
         let start_pos = self.position;

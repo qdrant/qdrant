@@ -31,6 +31,7 @@ use super::{
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
+use crate::data_types::vectors::VectorRef;
 use crate::entry::ReadSegmentEntry;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
@@ -349,13 +350,17 @@ impl SegmentBuilder {
                 })
                 .collect::<Vec<_>>();
 
-            // Owned, correctly-typed placeholder for points whose source
-            // segment is `None` for this vector. Paired with `deleted = true`
-            // inside the reader so the data is never read; it only keeps the
-            // storage layout intact for impls that write raw bytes regardless
-            // of the deleted flag.
-            let missing_vector_placeholder =
-                CowVector::from(vector_data.vector_storage.default_vector());
+            // Correctly-typed placeholder for points whose source segment is
+            // `None` for this vector. Paired with `deleted = true` inside the
+            // reader so the data is never read; it only keeps the storage
+            // layout intact for impls that write raw bytes regardless of the
+            // deleted flag.
+            //
+            // Held as an owned `VectorInternal` and handed to the reader as a
+            // `CowVector::Borrowed` so per-point `clone()` inside the reader
+            // copies a slice reference rather than allocating a new vector.
+            let placeholder_backing = vector_data.vector_storage.default_vector();
+            let missing_vector_placeholder = CowVector::from(VectorRef::from(&placeholder_backing));
 
             let mut vectors_iter: BatchedVectorReader = BatchedVectorReader::new(
                 &points_to_insert,

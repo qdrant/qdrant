@@ -17,6 +17,7 @@ use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
+use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment_with_payload_storage;
 use segment::types::{
@@ -668,6 +669,102 @@ fn test_building_segment_with_added_quantized_vector_name() {
         merged_segment.available_point_count(),
         segment1.iter_points().count(),
     );
+
+    // The actual guard under test: training was skipped because every point
+    // for this vector is a deleted placeholder. Without the skip, this would
+    // be `Some(_)` built over zero live samples.
+    assert!(
+        merged_segment.vector_data[added_vector_name]
+            .quantized_vectors
+            .borrow()
+            .is_none(),
+        "quantization must not be trained for an all-deleted added vector",
+    );
+}
+
+/// Mixed-source merge: one source segment has the added named vector with
+/// real data, the other doesn't. Exercises the per-source `Option` branching
+/// in `BatchedVectorReader` — points from the source with data must come
+/// through as live, points from the source without it must come through as
+/// the placeholder marked deleted.
+#[test]
+fn test_building_segment_mixed_sources_added_vector() {
+    let dir_a = Builder::new().prefix("segment_a").tempdir().unwrap();
+    let dir_b = Builder::new().prefix("segment_b").tempdir().unwrap();
+    let dir_target = Builder::new().prefix("segment_target").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let added_vector_name = "added_vec";
+
+    // Source A: only the default vector — five points (1..=5).
+    let segment_a = build_segment_1(dir_a.path());
+
+    // Source B: built directly with both vectors so we can populate real data
+    // for the added vector. Uses point IDs disjoint from segment_a.
+    let mut config_b = segment_a.segment_config.clone();
+    config_b.vector_data.insert(
+        added_vector_name.to_owned(),
+        VectorDataConfig {
+            size: 4,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        },
+    );
+    let mut segment_b = build_segment(dir_b.path(), &config_b, None, true).unwrap();
+    for i in 0..5u64 {
+        let vectors = NamedVectors::from_pairs([
+            (DEFAULT_VECTOR_NAME.to_owned(), vec![0.5, 0.5, 0.5, 0.5]),
+            (added_vector_name.to_owned(), vec![1.0, 1.0, 1.0, 1.0]),
+        ]);
+        segment_b
+            .upsert_point(10 + i, (100 + i).into(), vectors, &hw_counter)
+            .unwrap();
+    }
+
+    let target_config = config_b.clone();
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    builder
+        .update(&[&segment_a, &segment_b], &stopped, &hw_counter)
+        .expect("merge must succeed when sources disagree on whether a vector is present");
+
+    let merged_segment: Segment = builder.build_for_test(dir_target.path());
+
+    // Both sources contribute their points.
+    assert_eq!(merged_segment.available_point_count(), 10);
+
+    let added_storage = merged_segment.vector_data[added_vector_name]
+        .vector_storage
+        .borrow();
+    assert_eq!(
+        added_storage.total_vector_count(),
+        10,
+        "one slot per merged point regardless of source coverage",
+    );
+    assert_eq!(
+        added_storage.available_vector_count(),
+        5,
+        "only segment_b's points carry live data for the added vector",
+    );
+
+    // The default vector is unaffected — both sources contribute live data.
+    let default_storage = merged_segment.vector_data[DEFAULT_VECTOR_NAME]
+        .vector_storage
+        .borrow();
+    assert_eq!(default_storage.available_vector_count(), 10);
 }
 
 #[test]
