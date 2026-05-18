@@ -1,12 +1,16 @@
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use quantization::encoded_storage::TestEncodedStorageBuilder;
+    use quantization::encoded_storage::{EncodedStorageBuilder, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::turboquant::{self as encoded_vectors_tq, EncodedVectorsTQ, TQBits, TQMode};
+    use quantization::turboquant::{
+        self as encoded_vectors_tq, CURRENT_TQ_VERSION, EncodedVectorsTQ, Metadata, TQBits, TQMode,
+    };
     use rand::{RngExt, SeedableRng};
+    use tempfile::Builder;
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
 
@@ -81,6 +85,68 @@ mod tests {
             TQBits::Bits4 => 8,
         };
         dim >= min_dim
+    }
+
+    fn metadata_for_version_tests(version: u32) -> Metadata {
+        Metadata {
+            version,
+            vector_parameters: VectorParameters {
+                dim: 16,
+                deprecated_count: None,
+                distance_type: DistanceType::Dot,
+                invert: false,
+            },
+            bits: TQBits::Bits4,
+            mode: TQMode::Normal,
+            error_correction: None,
+        }
+    }
+
+    fn assert_tq_load_rejects_version(version: u32, expected_message: &str) {
+        let dir = Builder::new()
+            .prefix("tq_metadata_version")
+            .tempdir()
+            .unwrap();
+        let meta_path = dir.path().join("meta.json");
+        let metadata = metadata_for_version_tests(version);
+        fs::write(&meta_path, serde_json::to_string(&metadata).unwrap()).unwrap();
+
+        let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
+            &metadata.vector_parameters,
+            metadata.bits,
+            metadata.mode,
+        );
+        let storage = TestEncodedStorageBuilder::new(None, quantized_vector_size)
+            .build()
+            .unwrap();
+        let err = match EncodedVectorsTQ::load(storage, meta_path.as_path()) {
+            Ok(_) => panic!("load should reject TurboQuant metadata version {version}"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains(expected_message));
+    }
+
+    #[test]
+    fn metadata_without_version_deserializes_as_v1() {
+        let mut value =
+            serde_json::to_value(metadata_for_version_tests(CURRENT_TQ_VERSION)).unwrap();
+        value.as_object_mut().unwrap().remove("version");
+
+        let metadata: Metadata = serde_json::from_value(value).unwrap();
+
+        assert_eq!(metadata.version, 1);
+    }
+
+    #[test]
+    fn load_rejects_too_old_metadata_version() {
+        assert_tq_load_rejects_version(0, "minimum supported version");
+    }
+
+    #[test]
+    fn load_rejects_newer_metadata_version() {
+        assert_tq_load_rejects_version(CURRENT_TQ_VERSION + 1, "upgrade Qdrant");
     }
 
     fn l2_norm(v: &[f32]) -> f32 {

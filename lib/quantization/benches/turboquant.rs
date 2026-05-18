@@ -4,7 +4,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use quantization::DistanceType;
 use quantization::encoded_vectors::VectorParameters;
 use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::turboquant::{Metadata, TQBits, TQMode};
+use quantization::turboquant::{CURRENT_TQ_VERSION, Metadata, TQBits, TQMode};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -12,6 +12,7 @@ const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
 
 fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
     let metadata = Metadata {
+        version: CURRENT_TQ_VERSION,
         vector_parameters: VectorParameters {
             dim,
             distance_type: DistanceType::Dot,

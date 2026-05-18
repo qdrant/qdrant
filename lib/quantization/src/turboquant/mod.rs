@@ -140,8 +140,26 @@ pub enum EncodedQueryTQData {
     Bits4(Query4bitSimd),
 }
 
+/// Current version of the TurboQuant persisted format.
+/// Increment when the on-disk representation changes in a way
+/// that is not backward-compatible. Load rejects versions
+/// newer than this constant.
+pub const CURRENT_TQ_VERSION: u32 = 1;
+
+const FIRST_TQ_VERSION: u32 = 1;
+
+fn default_tq_version() -> u32 {
+    FIRST_TQ_VERSION
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Metadata {
+    /// Persisted-format version. Collections written before this field existed
+    /// default to version 1. Load rejects any version greater than
+    /// [`CURRENT_TQ_VERSION`] to guard against downgrading to a binary that
+    /// predates a format change.
+    #[serde(default = "default_tq_version")]
+    pub version: u32,
     pub vector_parameters: VectorParameters,
     pub bits: TQBits,
     pub mode: TQMode,
@@ -155,6 +173,29 @@ pub struct Metadata {
 pub struct ErrorCorrectionMetadata {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
+}
+
+fn validate_metadata_version(version: u32) -> std::io::Result<()> {
+    if version < FIRST_TQ_VERSION {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "TurboQuant metadata version {version} is older than the minimum supported version {FIRST_TQ_VERSION}",
+            ),
+        ));
+    }
+
+    if version > CURRENT_TQ_VERSION {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "TurboQuant metadata version {version} is newer than the maximum supported version {CURRENT_TQ_VERSION} \
+                 (this binary is too old to read this collection; upgrade Qdrant first)",
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 /// Standard normal CDF Φ(x) = (1 + erf(x/√2)) / 2 via the Abramowitz & Stegun
@@ -217,6 +258,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             TQMode::Normal => None,
             TQMode::Plus => {
                 let pre_quantizer = TurboQuantizer::new_from_metadata(&Metadata {
+                    version: CURRENT_TQ_VERSION,
                     vector_parameters: *vector_parameters,
                     bits,
                     mode,
@@ -294,6 +336,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         };
 
         let metadata = Metadata {
+            version: CURRENT_TQ_VERSION,
             vector_parameters: *vector_parameters,
             bits,
             mode,
@@ -361,6 +404,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
         let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
+
+        validate_metadata_version(metadata.version)?;
 
         let quantizer = TurboQuantizer::new_from_metadata(&metadata)?;
 
