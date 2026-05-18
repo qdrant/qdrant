@@ -8,6 +8,7 @@ use crate::turboquant::simd::{
 };
 use crate::turboquant::{
     EncodedQueryTQ, EncodedQueryTQData, ErrorCorrectionMetadata, Metadata, TQBits, TQMode,
+    validate_metadata_version,
 };
 
 /// Quantize vectors using TurboQuant.
@@ -141,6 +142,8 @@ impl TurboQuantizer {
     /// persisted `ErrorCorrection` shift/scale lengths don't match the
     /// expected `padded_dim`.
     pub fn new_from_metadata(metadata: &Metadata) -> std::io::Result<Self> {
+        validate_metadata_version(metadata.version)?;
+
         let padded_dim = Self::padded_dim(metadata.vector_parameters.dim, metadata.bits);
         let error_correction = metadata
             .error_correction

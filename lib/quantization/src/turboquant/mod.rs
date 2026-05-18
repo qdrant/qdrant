@@ -175,7 +175,7 @@ pub struct ErrorCorrectionMetadata {
     pub scale: Vec<f32>,
 }
 
-fn validate_metadata_version(version: u32) -> std::io::Result<()> {
+pub(crate) fn validate_metadata_version(version: u32) -> std::io::Result<()> {
     if version < FIRST_TQ_VERSION {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
