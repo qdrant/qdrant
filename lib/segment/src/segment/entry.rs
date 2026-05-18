@@ -518,15 +518,18 @@ impl NonAppendableSegmentEntry for Segment {
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
-            Some(internal_id) => {
-                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
+            Some(internal_id) => self.handle_point_version_and_failure(
+                op_num,
+                point_id,
+                Some(internal_id),
+                |segment| {
                     segment.delete_point_internal(internal_id, hw_counter)?;
 
                     segment.version_tracker.set_payload(Some(op_num));
 
                     Ok((true, Some(internal_id)))
-                })
-            }
+                },
+            ),
         }
     }
 
@@ -646,16 +649,26 @@ impl SegmentEntry for Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, stored_internal_point, |segment| {
-            if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, op_num, &vectors, hw_counter)?;
-                Ok((true, Some(existing_internal_id)))
-            } else {
-                let new_index =
-                    segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
-                Ok((false, Some(new_index)))
-            }
-        })
+        self.handle_point_version_and_failure(
+            op_num,
+            point_id,
+            stored_internal_point,
+            |segment| {
+                if let Some(existing_internal_id) = stored_internal_point {
+                    segment.replace_all_vectors(
+                        existing_internal_id,
+                        op_num,
+                        &vectors,
+                        hw_counter,
+                    )?;
+                    Ok((true, Some(existing_internal_id)))
+                } else {
+                    let new_index =
+                        segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
+                    Ok((false, Some(new_index)))
+                }
+            },
+        )
     }
 
     fn update_vectors(
@@ -672,12 +685,15 @@ impl SegmentEntry for Segment {
             None => Err(OperationError::PointIdError {
                 missed_point_id: point_id,
             }),
-            Some(internal_id) => {
-                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
+            Some(internal_id) => self.handle_point_version_and_failure(
+                op_num,
+                point_id,
+                Some(internal_id),
+                |segment| {
                     segment.update_vectors(internal_id, op_num, vectors, hw_counter)?;
                     Ok((true, Some(internal_id)))
-                })
-            }
+                },
+            ),
         }
     }
 
@@ -693,8 +709,11 @@ impl SegmentEntry for Segment {
             None => Err(OperationError::PointIdError {
                 missed_point_id: point_id,
             }),
-            Some(internal_id) => {
-                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
+            Some(internal_id) => self.handle_point_version_and_failure(
+                op_num,
+                point_id,
+                Some(internal_id),
+                |segment| {
                     let vector_data = segment
                         .vector_data
                         .get(vector_name)
@@ -709,8 +728,8 @@ impl SegmentEntry for Segment {
                     }
 
                     Ok((is_deleted, Some(internal_id)))
-                })
-            }
+                },
+            ),
         }
     }
 
@@ -722,20 +741,22 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
-            Some(internal_id) => {
-                segment.payload_index.borrow_mut().overwrite_payload(
-                    internal_id,
-                    full_payload,
-                    hw_counter,
-                )?;
-                segment.version_tracker.set_payload(Some(op_num));
+        self.handle_point_version_and_failure(op_num, point_id, internal_id, |segment| {
+            match internal_id {
+                Some(internal_id) => {
+                    segment.payload_index.borrow_mut().overwrite_payload(
+                        internal_id,
+                        full_payload,
+                        hw_counter,
+                    )?;
+                    segment.version_tracker.set_payload(Some(op_num));
 
-                Ok((true, Some(internal_id)))
+                    Ok((true, Some(internal_id)))
+                }
+                None => Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                }),
             }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
         })
     }
 
@@ -748,21 +769,23 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
-            Some(internal_id) => {
-                segment.payload_index.borrow_mut().set_payload(
-                    internal_id,
-                    payload,
-                    key,
-                    hw_counter,
-                )?;
-                segment.version_tracker.set_payload(Some(op_num));
+        self.handle_point_version_and_failure(op_num, point_id, internal_id, |segment| {
+            match internal_id {
+                Some(internal_id) => {
+                    segment.payload_index.borrow_mut().set_payload(
+                        internal_id,
+                        payload,
+                        key,
+                        hw_counter,
+                    )?;
+                    segment.version_tracker.set_payload(Some(op_num));
 
-                Ok((true, Some(internal_id)))
+                    Ok((true, Some(internal_id)))
+                }
+                None => Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                }),
             }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
         })
     }
 
@@ -774,19 +797,21 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
-            Some(internal_id) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .delete_payload(internal_id, key, hw_counter)?;
-                segment.version_tracker.set_payload(Some(op_num));
+        self.handle_point_version_and_failure(op_num, point_id, internal_id, |segment| {
+            match internal_id {
+                Some(internal_id) => {
+                    segment
+                        .payload_index
+                        .borrow_mut()
+                        .delete_payload(internal_id, key, hw_counter)?;
+                    segment.version_tracker.set_payload(Some(op_num));
 
-                Ok((true, Some(internal_id)))
+                    Ok((true, Some(internal_id)))
+                }
+                None => Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                }),
             }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
         })
     }
 
@@ -797,19 +822,21 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
-            Some(internal_id) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .clear_payload(internal_id, hw_counter)?;
-                segment.version_tracker.set_payload(Some(op_num));
+        self.handle_point_version_and_failure(op_num, point_id, internal_id, |segment| {
+            match internal_id {
+                Some(internal_id) => {
+                    segment
+                        .payload_index
+                        .borrow_mut()
+                        .clear_payload(internal_id, hw_counter)?;
+                    segment.version_tracker.set_payload(Some(op_num));
 
-                Ok((true, Some(internal_id)))
+                    Ok((true, Some(internal_id)))
+                }
+                None => Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                }),
             }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
         })
     }
 }
