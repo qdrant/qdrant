@@ -1,14 +1,17 @@
+mod pipeline;
+
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fs, slice};
 
 use memmap2::MmapRaw;
 
+use self::pipeline::MmapReadPipeline;
+use super::traits::UniversalReadFileOps;
 use super::*;
 use crate::generic_consts::AccessPattern;
-use crate::mmap::{MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
-use crate::universal_io::read::UniversalReadPipeline;
+use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
 #[derive(Debug)]
 pub struct MmapFile {
@@ -136,43 +139,6 @@ impl UniversalRead for MmapFile {
     }
 }
 
-pub struct MmapReadPipeline<'file, T, U> {
-    result: Option<(U, &'file [T])>,
-}
-
-impl<'file, T, U> UniversalReadPipeline<'file, T, U> for MmapReadPipeline<'file, T, U>
-where
-    T: bytemuck::Pod,
-    U: UserData,
-{
-    type File = MmapFile;
-
-    fn new() -> Result<Self> {
-        Ok(Self { result: None })
-    }
-
-    fn can_schedule(&mut self) -> bool {
-        self.result.is_none()
-    }
-
-    fn schedule<P>(&mut self, user_data: U, file: &'file MmapFile, range: ReadRange) -> Result<()>
-    where
-        P: AccessPattern,
-    {
-        if self.result.is_some() {
-            return Err(UniversalIoError::QueueIsFull);
-        }
-
-        self.result = Some((user_data, read(file.as_bytes::<P>(), range)?));
-        Ok(())
-    }
-
-    fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
-        let result = self.result.take();
-        Ok(result.map(|(user_data, items)| (user_data, Cow::Borrowed(items))))
-    }
-}
-
 impl UniversalWrite for MmapFile {
     fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
         let mmap = self.as_bytes_mut();
@@ -295,7 +261,7 @@ impl MmapFile {
         Ok((disk_bytes, resident_bytes))
     }
 
-    fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
+    pub(super) fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
         let ptr = if P::IS_SEQUENTIAL {
             self.ptr_seq
         } else {
@@ -310,7 +276,7 @@ impl MmapFile {
 }
 
 #[inline]
-fn read<T>(bytes: &[u8], range: ReadRange) -> Result<&[T]>
+pub(super) fn read<T>(bytes: &[u8], range: ReadRange) -> Result<&[T]>
 where
     T: bytemuck::Pod,
 {

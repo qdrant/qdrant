@@ -57,9 +57,9 @@ use crate::tonic::api::telemetry_wrapper::{
 // Compile-time storage backend selection for StorageRead gRPC service.
 // On Linux, uses io_uring for optimal async I/O; falls back to mmap elsewhere.
 #[cfg(target_os = "linux")]
-type StorageBackend = common::universal_io::io_uring::IoUringFile;
+type StorageBackend = common::universal_io::IoUringFile;
 #[cfg(not(target_os = "linux"))]
-type StorageBackend = common::universal_io::mmap::MmapFile;
+type StorageBackend = common::universal_io::MmapFile;
 
 #[derive(Default)]
 pub struct QdrantService {}

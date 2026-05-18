@@ -137,7 +137,6 @@ impl CachedSlice {
         Ok(cow)
     }
 
-    #[expect(clippy::len_without_is_empty)] // Doesn't make sense to cache 0-length files
     pub fn len<T>(&self) -> usize {
         self.len_bytes / size_of::<T>()
     }

@@ -1,5 +1,5 @@
-use super::read::UniversalRead;
-use super::*;
+use super::UniversalRead;
+use crate::universal_io::{ByteOffset, FileIndex, Flusher, Result, UniversalIoError};
 
 pub trait UniversalWrite: UniversalRead {
     fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()>;
