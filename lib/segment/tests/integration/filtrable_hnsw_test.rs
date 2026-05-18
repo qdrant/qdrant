@@ -136,7 +136,7 @@ fn _test_filterable_hnsw(
     for block in &blocks {
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
         let points = px
-            .with_view(|v| v.query_points(&filter, &hw_counter, &stopped, None))
+            .with_view(|v| v.query_points(&filter, &hw_counter, &stopped))
             .unwrap();
         for point in points {
             coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);

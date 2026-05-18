@@ -39,9 +39,7 @@ use crate::index::sparse_index::sparse_vector_index::{
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::segment::{
-    DeferredPointStatus, SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData,
-};
+use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 use crate::types::{
     Distance, HnswGlobalConfig, Indexes, PayloadStorageType, SegmentConfig, SegmentState,
     SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
@@ -223,8 +221,11 @@ pub(crate) fn create_payload_storage(
     Ok(payload_storage)
 }
 
-pub(crate) fn create_mutable_id_tracker(segment_path: &Path) -> OperationResult<MutableIdTracker> {
-    MutableIdTracker::open(segment_path)
+pub(crate) fn create_mutable_id_tracker(
+    segment_path: &Path,
+    deferred_internal_id: Option<PointOffsetType>,
+) -> OperationResult<MutableIdTracker> {
+    MutableIdTracker::open(segment_path, deferred_internal_id)
 }
 
 pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
@@ -411,7 +412,8 @@ fn create_segment(
     let use_mutable_id_tracker =
         appendable_flag || !immutable_id_tracker::mappings_path(segment_path).is_file();
     let started = Instant::now();
-    let id_tracker = create_segment_id_tracker(use_mutable_id_tracker, segment_path)?;
+    let id_tracker =
+        create_segment_id_tracker(use_mutable_id_tracker, segment_path, deferred_internal_id)?;
     log_load_timing(segment_path, "id_tracker", started);
 
     let mut vector_storages = HashMap::new();
@@ -556,7 +558,6 @@ fn create_segment(
             path: &vector_index_path,
             stopped,
             tick_progress: || (),
-            deferred_internal_id,
         })?);
         log_load_timing(
             segment_path,
@@ -582,7 +583,7 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    let mut segment = Segment {
+    Ok(Segment {
         uuid,
         initial_version,
         version,
@@ -598,22 +599,13 @@ fn create_segment(
         payload_storage,
         segment_config: config.clone(),
         error_status: None,
-        deferred_point_status: None,
-    };
-
-    if let Some(deferred_internal_id) = deferred_internal_id {
-        segment.deferred_point_status = Some(DeferredPointStatus {
-            deferred_internal_id,
-            deferred_deleted_count: segment.calculate_deleted_deferred_point_count(),
-        });
-    }
-
-    Ok(segment)
+    })
 }
 
 fn create_segment_id_tracker(
     mutable_id_tracker: bool,
     segment_path: &Path,
+    deferred_internal_id: Option<PointOffsetType>,
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
     if !mutable_id_tracker {
         return Ok(sp(IdTrackerEnum::ImmutableIdTracker(
@@ -622,7 +614,7 @@ fn create_segment_id_tracker(
     }
 
     Ok(sp(IdTrackerEnum::MutableIdTracker(
-        create_mutable_id_tracker(segment_path)?,
+        create_mutable_id_tracker(segment_path, deferred_internal_id)?,
     )))
 }
 

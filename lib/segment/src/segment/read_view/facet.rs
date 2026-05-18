@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -67,17 +67,14 @@ where
 
             if use_iterative_approach {
                 // Go over the filtered points and aggregate the values (read from other indexes).
-                let point_mappings = self.id_tracker.point_mappings();
                 let points = self
                     .payload_index
                     .iter_filtered_points(
                         filter,
-                        self.id_tracker,
-                        &point_mappings,
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
-                        self.deferred_internal_id(),
+                        DeferredBehavior::Exclude,
                     )?
                     .filter(|&point_id| !self.id_tracker.is_deleted_point(point_id));
                 facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
@@ -150,18 +147,15 @@ where
             let filter_cardinality = self
                 .payload_index
                 .estimate_cardinality(filter, hw_counter)?;
-            let point_mappings = self.id_tracker.point_mappings();
 
             let points = self
                 .payload_index
                 .iter_filtered_points(
                     filter,
-                    self.id_tracker,
-                    &point_mappings,
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,
-                    self.deferred_internal_id(),
+                    DeferredBehavior::Exclude,
                 )?
                 .filter(|&point_id| !self.id_tracker.is_deleted_point(point_id));
             facet_index.for_points_values(points, hw_counter, |_point_id, iter| {

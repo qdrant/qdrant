@@ -69,7 +69,10 @@ pub struct MutableIdTracker {
 }
 
 impl MutableIdTracker {
-    pub fn open(segment_path: impl Into<PathBuf>) -> OperationResult<Self> {
+    pub fn open(
+        segment_path: impl Into<PathBuf>,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<Self> {
         let segment_path = segment_path.into();
 
         let (mappings_path, versions_path) =
@@ -93,11 +96,18 @@ impl MutableIdTracker {
         }
 
         let (mappings, mappings_expected_len) = if has_mappings {
-            load_mappings(&mappings_path).map_err(|err| {
+            load_mappings(&mappings_path, deferred_internal_id).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
             })?
         } else {
-            (PointMappings::default(), 0)
+            let mappings = PointMappings::new(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                deferred_internal_id,
+            );
+            (mappings, 0)
         };
 
         let internal_to_version = if has_versions {
@@ -209,6 +219,14 @@ impl IdTrackerRead for MutableIdTracker {
 
     fn name(&self) -> &'static str {
         "mutable id tracker"
+    }
+
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        self.mappings.deferred_internal_id()
+    }
+
+    fn deferred_deleted_count(&self) -> usize {
+        self.mappings.deferred_deleted_count()
     }
 }
 

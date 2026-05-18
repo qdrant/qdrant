@@ -27,7 +27,7 @@ const DEFAULT_VERSION: SeqNumberType = 42;
 fn test_iterator() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+    let mut id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
 
     id_tracker.set_link(200.into(), 0).unwrap();
     id_tracker.set_link(100.into(), 1).unwrap();
@@ -97,7 +97,7 @@ fn test_load_store() {
         (id_tracker.mappings, id_tracker.internal_to_version)
     };
 
-    let mut loaded_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+    let mut loaded_id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
 
     assert_eq!(
         old_versions.len(),
@@ -155,7 +155,7 @@ fn test_store_load_mutated() {
         (dropped_points, custom_version)
     };
 
-    let id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+    let id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
     for (index, point) in TEST_POINTS.iter().enumerate() {
         let internal_id = index as PointOffsetType;
 
@@ -251,7 +251,7 @@ fn test_point_deletion_persists_reload() {
     };
 
     // Point should still be gone
-    let id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+    let id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
     assert_eq!(id_tracker.internal_id(point_to_delete), None);
 
     old_mappings
@@ -297,28 +297,28 @@ fn test_point_mappings_de_serialization_single() {
 fn test_point_mappings_deserializing_special() {
     // Empty reader creates empty mappings
     let buf = Cursor::new(b"");
-    assert_eq!(read_mappings(buf).unwrap().total_point_count(), 0);
+    assert_eq!(read_mappings(buf, None).unwrap().total_point_count(), 0);
 
     // Corrupt if reading invalid type byte
     let buf = Cursor::new(b"\x00");
     assert!(
-        read_mappings(buf)
+        read_mappings(buf, None)
             .unwrap_err()
             .to_string()
             .contains("Corrupted ID tracker mapping storage")
     );
 
     let buf = Cursor::new(b"malformed!");
-    assert!(read_mappings(buf).is_err());
+    assert!(read_mappings(buf, None).is_err());
 
     // Empty if change is not fully written
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00");
-    assert_eq!(read_mappings(buf).unwrap().total_point_count(), 0);
+    assert_eq!(read_mappings(buf, None).unwrap().total_point_count(), 0);
 
     // Exactly one entry
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00");
     assert_eq!(
-        read_mappings(buf)
+        read_mappings(buf, None)
             .unwrap()
             .internal_id(&PointIdType::NumId(1)),
         Some(2)
@@ -327,7 +327,7 @@ fn test_point_mappings_deserializing_special() {
     // Exactly one entry and a malformed second one
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x01\x00");
     assert!(
-        read_mappings(buf)
+        read_mappings(buf, None)
             .unwrap_err()
             .to_string()
             .contains("Corrupted ID tracker mapping storage")
@@ -335,7 +335,7 @@ fn test_point_mappings_deserializing_special() {
 
     // Exactly one entry and an incomplete second one
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00");
-    let mappings = read_mappings(buf).unwrap();
+    let mappings = read_mappings(buf, None).unwrap();
     assert_eq!(mappings.total_point_count(), 1);
     assert_eq!(mappings.internal_id(&PointIdType::NumId(1)), Some(0));
 }
@@ -397,7 +397,7 @@ fn test_point_mappings_truncation() {
     .unwrap();
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
     assert_eq!(
-        load_mappings(&mappings_path)
+        load_mappings(&mappings_path, None)
             .unwrap()
             .0
             .internal_id(&PointIdType::NumId(1)),
@@ -413,7 +413,7 @@ fn test_point_mappings_truncation() {
     .unwrap();
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 14);
     assert_eq!(
-        load_mappings(&mappings_path)
+        load_mappings(&mappings_path, None)
             .unwrap()
             .0
             .internal_id(&PointIdType::NumId(1)),
@@ -429,7 +429,7 @@ fn test_point_mappings_truncation() {
     .unwrap();
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 16);
     assert_eq!(
-        load_mappings(&mappings_path)
+        load_mappings(&mappings_path, None)
             .unwrap()
             .0
             .internal_id(&PointIdType::NumId(1)),
@@ -444,7 +444,7 @@ fn test_point_mappings_truncation() {
     ).unwrap();
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 28);
     assert_eq!(
-        load_mappings(&mappings_path)
+        load_mappings(&mappings_path, None)
             .unwrap()
             .0
             .internal_id(&PointIdType::NumId(1)),
@@ -468,7 +468,8 @@ fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {
 }
 
 fn make_mutable_tracker(path: &Path) -> MutableIdTracker {
-    let mut id_tracker = MutableIdTracker::open(path).expect("failed to open mutable ID tracker");
+    let mut id_tracker =
+        MutableIdTracker::open(path, None).expect("failed to open mutable ID tracker");
 
     for value in TEST_POINTS.iter() {
         let internal_id = id_tracker.total_point_count() as PointOffsetType;
@@ -537,7 +538,7 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let db = open_db(segment_dir.path(), &[DB_VECTOR_CF]).unwrap();
 
-    let mut mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+    let mut mutable_id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
     let mut simple_id_tracker = SimpleIdTracker::open(db).unwrap();
 
     // Insert 100 random points into id_tracker
@@ -612,7 +613,7 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
     mutable_id_tracker.mapping_flusher()().unwrap();
     mutable_id_tracker.versions_flusher()().unwrap();
     drop(mutable_id_tracker);
-    let mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+    let mutable_id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
 
     check_trackers(&simple_id_tracker, &mutable_id_tracker);
 }

@@ -20,7 +20,6 @@ impl Segment {
                 payload_storage: payload_storage.deref(),
                 vector_data: &self.vector_data,
                 segment_config: &self.segment_config,
-                deferred_point_status: self.deferred_point_status.as_ref(),
                 appendable_flag: self.appendable_flag,
             };
 
