@@ -2,166 +2,23 @@
 #[expect(dead_code, reason = "Not yet used")]
 mod disk_cache;
 mod error;
-mod file_ops;
 #[cfg(target_os = "linux")]
 mod io_uring;
 mod local_file_ops;
 mod mmap;
-mod read;
+mod traits;
+mod types;
 mod wrappers;
-mod write;
-
-use std::path::Path;
-
-use serde::de::DeserializeOwned;
 
 pub use self::error::UniversalIoError;
-pub use self::file_ops::UniversalReadFileOps;
 #[cfg(target_os = "linux")]
-pub use self::io_uring::*;
-pub use self::mmap::*;
-pub use self::read::*;
-pub use self::wrappers::*;
-pub use self::write::UniversalWrite;
-use crate::mmap::{Advice, AdviceSetting};
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum UniversalKind {
-    Mmap,
-    IoUring,
-    DiskCache,
-}
-
-#[derive(Copy, Clone, Debug, Default)]
-pub enum Populate {
-    /// Let backend choose
-    #[default]
-    Auto,
-    /// Do not populate
-    No,
-    /// Populate on foreground
-    Blocking,
-    /// Populate, but prefer to do it in the background
-    PreferBackground,
-}
-
-impl From<bool> for Populate {
-    fn from(populate: bool) -> Self {
-        if populate {
-            Populate::Blocking
-        } else {
-            Populate::No
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct OpenOptions {
-    pub writeable: bool,
-    pub need_sequential: bool,
-    /// How many parallel requests to the disk we can do.
-    /// If `None`, then use implementation-specific default.
-    pub disk_parallel: Option<usize>,
-    /// Populate RAM cache on open, if applicable for this implementation.
-    pub populate: Populate,
-    /// Use specific mmap advice.
-    pub advice: Option<AdviceSetting>,
-    /// Whether to try to prevent caching for reads.
-    pub prevent_caching: Option<bool>,
-}
-
-impl Default for OpenOptions {
-    fn default() -> Self {
-        Self {
-            writeable: true,
-            need_sequential: true,
-            disk_parallel: None,
-            populate: Populate::Auto,
-            advice: None,
-            prevent_caching: None,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct ReadRange {
-    /// Start position in bytes from the beginning of the file/storage.
-    pub byte_offset: u64,
-    /// Number of elements to read.
-    pub length: u64,
-}
-
-impl ReadRange {
-    pub fn new(byte_offset: u64, length: u64) -> ReadRange {
-        ReadRange {
-            byte_offset,
-            length,
-        }
-    }
-
-    pub fn one(byte_offset: u64) -> ReadRange {
-        ReadRange {
-            byte_offset,
-            length: 1,
-        }
-    }
-
-    /// Split the range into a consecutive sequence of smaller ranges of
-    /// reasonable size. Takes `T` as a hint for element size in bytes.
-    pub fn iter_autochunks<T>(self) -> impl Iterator<Item = ReadRange> {
-        // TODO: align chunks. Perhaps this method and `blocks_for_range_in_file`
-        // can be unified.
-        const MAX_CHUNK_BYTES: u64 = 16 * 1024;
-        let chunk_len = (MAX_CHUNK_BYTES / size_of::<T>() as u64).max(1);
-        let Self {
-            byte_offset,
-            length,
-        } = self;
-        (0..)
-            .map(move |i| i * chunk_len)
-            .take_while(move |&start| start < length)
-            .map(move |start| ReadRange {
-                byte_offset: byte_offset + start * size_of::<T>() as u64,
-                length: std::cmp::min(chunk_len, length - start),
-            })
-    }
-
-    /// If the last element is beyond `max_end_offset`, then shorten the length
-    /// to fit into the `0..max_end_offset` range.
-    pub fn clamp<T>(mut self, max_end_offset: u64) -> ReadRange {
-        self.byte_offset = self.byte_offset.min(max_end_offset);
-        let max_len = max_end_offset.saturating_sub(self.byte_offset) / size_of::<T>() as u64;
-        self.length = self.length.min(max_len);
-        self
-    }
-}
-
-pub type ByteOffset = u64;
-
-pub type FileIndex = usize;
-
-pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
-
-pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
-
-/// Open a file via universal io, read it as a whole, and deserialize as JSON.
-///
-/// Uses a single logical read when the backend overrides [`UniversalRead::read_whole`].
-pub fn read_json_via<S, T>(path: impl AsRef<Path>) -> Result<T>
-where
-    S: UniversalRead,
-    T: DeserializeOwned,
-{
-    let options = OpenOptions {
-        writeable: false,
-        need_sequential: false,
-        disk_parallel: None,
-        populate: Populate::No,
-        advice: Some(AdviceSetting::Advice(Advice::Sequential)),
-        prevent_caching: Some(false),
-    };
-
-    let storage = S::open(path, options)?;
-    let bytes = storage.read_whole::<u8>()?;
-    serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
-}
+pub use self::io_uring::IoUringFile;
+pub use self::mmap::MmapFile;
+pub use self::traits::{
+    UniversalRead, UniversalReadFileOps, UniversalReadPipeline, UniversalWrite, UserData,
+};
+pub use self::types::{
+    ByteOffset, FileIndex, Flusher, OpenOptions, Populate, ReadRange, Result, UniversalKind,
+    read_json_via,
+};
+pub use self::wrappers::{ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage};
