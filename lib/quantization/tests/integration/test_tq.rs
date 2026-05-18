@@ -5,6 +5,9 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+    use quantization::turboquant::simd::{
+        score_1bit_internal_scalar, score_2bit_internal_scalar, score_4bit_internal_scalar,
+    };
     use quantization::turboquant::{self as encoded_vectors_tq, EncodedVectorsTQ, TQBits, TQMode};
     use rand::{RngExt, SeedableRng};
 
@@ -94,6 +97,97 @@ mod tests {
 
     fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         dot_similarity(a, b) / (l2_norm(a) * l2_norm(b))
+    }
+
+    fn read_f32(src: &[u8], offset: usize) -> f32 {
+        f32::from_le_bytes(src[offset..offset + size_of::<f32>()].try_into().unwrap())
+    }
+
+    fn score_scalar_reference(v1: &[u8], v2: &[u8], bits: TQBits, distance: DistanceType) -> f32 {
+        let extra_len = match distance {
+            DistanceType::Dot | DistanceType::Cosine => size_of::<f32>(),
+            DistanceType::L2 => 2 * size_of::<f32>(),
+            DistanceType::L1 => unreachable!("L1 reference needs inverse rotation"),
+        };
+        let (data_v1, extra_v1) = v1.split_at(v1.len() - extra_len);
+        let (data_v2, extra_v2) = v2.split_at(v2.len() - extra_len);
+        let raw_dot = match bits {
+            TQBits::Bits1 | TQBits::Bits1_5 => score_1bit_internal_scalar(data_v1, data_v2),
+            TQBits::Bits2 => score_2bit_internal_scalar(data_v1, data_v2),
+            TQBits::Bits4 => score_4bit_internal_scalar(data_v1, data_v2),
+        };
+        let v1_scale = read_f32(extra_v1, 0);
+        let v2_scale = read_f32(extra_v2, 0);
+        match distance {
+            DistanceType::Dot | DistanceType::Cosine => raw_dot * v1_scale * v2_scale,
+            DistanceType::L2 => {
+                let l2_a = read_f32(extra_v1, size_of::<f32>());
+                let l2_b = read_f32(extra_v2, size_of::<f32>());
+                l2_a * l2_a + l2_b * l2_b - 2.0 * v1_scale * v2_scale * raw_dot
+            }
+            DistanceType::L1 => unreachable!("L1 reference needs inverse rotation"),
+        }
+    }
+
+    #[test]
+    fn test_tq_internal_score_matches_reference() {
+        let dim = 128;
+        let vectors_count = 32;
+        let counter = HardwareCounterCell::new();
+
+        for &bits in BITS {
+            for &distance in &[DistanceType::Dot, DistanceType::Cosine, DistanceType::L2] {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+                let vector_data: Vec<Vec<f32>> = (0..vectors_count)
+                    .map(|_| {
+                        let vector: Vec<f32> =
+                            (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                        match distance {
+                            DistanceType::Cosine => normalize(&vector),
+                            _ => vector,
+                        }
+                    })
+                    .collect();
+
+                let vector_parameters = VectorParameters {
+                    dim,
+                    deprecated_count: None,
+                    distance_type: distance,
+                    invert: false,
+                };
+                let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
+                    &vector_parameters,
+                    bits,
+                    TQMode::Normal,
+                );
+                let encoded = EncodedVectorsTQ::encode(
+                    vector_data.iter(),
+                    TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                    &vector_parameters,
+                    vectors_count,
+                    bits,
+                    TQMode::Normal,
+                    1,
+                    None,
+                    &AtomicBool::new(false),
+                )
+                .unwrap();
+
+                for i in 1..vectors_count {
+                    let v1 = encoded.get_quantized_vector(0);
+                    let v2 = encoded.get_quantized_vector(i as u32);
+                    let optimized = encoded.score_internal(0, i as u32, &counter);
+                    let reference = score_scalar_reference(&v1, &v2, bits, distance);
+                    let tolerance = 1e-5 * reference.abs().max(1.0);
+
+                    assert!(
+                        (optimized - reference).abs() <= tolerance,
+                        "bits={bits:?}, distance={distance:?}, i={i}: \
+                         optimized={optimized}, reference={reference}, tolerance={tolerance}"
+                    );
+                }
+            }
+        }
     }
 
     #[rstest::rstest]
