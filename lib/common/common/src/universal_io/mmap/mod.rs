@@ -7,7 +7,7 @@ use std::{fs, slice};
 
 use memmap2::MmapRaw;
 
-use self::pipeline::MmapReadPipeline;
+use self::pipeline::{BorrowedMmapReadPipeline, OwnedMmapReadPipeline};
 use super::traits::UniversalReadFileOps;
 use super::*;
 use crate::generic_consts::AccessPattern;
@@ -47,8 +47,14 @@ impl UniversalReadFileOps for MmapFile {
 }
 
 impl UniversalRead for MmapFile {
-    type ReadPipeline<'a, T, U>
-        = MmapReadPipeline<'a, T, U>
+    type BorrowedReadPipeline<'a, T, U>
+        = BorrowedMmapReadPipeline<'a, T, U>
+    where
+        T: bytemuck::Pod,
+        U: UserData;
+
+    type OwnedReadPipeline<T, U>
+        = OwnedMmapReadPipeline<T, U>
     where
         T: bytemuck::Pod,
         U: UserData;
@@ -260,7 +266,9 @@ impl MmapFile {
         let resident_bytes = file.resident_bytes()?;
         Ok((disk_bytes, resident_bytes))
     }
+}
 
+impl MmapFile {
     pub(super) fn as_bytes<P: AccessPattern>(&self) -> &[u8] {
         let ptr = if P::IS_SEQUENTIAL {
             self.ptr_seq

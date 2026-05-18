@@ -170,7 +170,13 @@ where
 
 #[derive(Debug)]
 pub struct IoUringState<'data, T, U> {
-    requests: Slab<(U, IoUringRequest<'data, T>)>,
+    requests: Slab<PendingRequest<'data, T, U>>,
+}
+
+#[derive(Debug)]
+struct PendingRequest<'data, T, U> {
+    user_data: U,
+    request: IoUringRequest<'data, T>,
 }
 
 impl<'data, T, U> IoUringState<'data, T, U>
@@ -280,12 +286,12 @@ where
     fn init(
         &mut self,
         user_data: U,
-        req: IoUringRequest<'data, T>,
+        request: IoUringRequest<'data, T>,
     ) -> (usize, &mut IoUringRequest<'data, T>) {
         let entry = self.requests.vacant_entry();
         let slot = entry.key();
-        let (_, req) = entry.insert((user_data, req));
-        (slot, req)
+        let pending = entry.insert(PendingRequest { user_data, request });
+        (slot, &mut pending.request)
     }
 
     pub fn finalize(
@@ -293,14 +299,14 @@ where
         slot: usize,
         byte_length: u32,
     ) -> io::Result<(U, IoUringResponse<T>)> {
-        let (user_data, req) = self
+        let PendingRequest { user_data, request } = self
             .requests
             .try_remove(slot)
             .ok_or_else(|| io::Error::other(format!("request in slot {slot} does not exist")))?;
 
         let byte_length = byte_length as usize;
 
-        let resp = match req {
+        let resp = match request {
             IoUringRequest::Read { items } => {
                 assert_eq!(size_of_val(items.as_slice()), byte_length);
 
