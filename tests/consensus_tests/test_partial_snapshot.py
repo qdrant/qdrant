@@ -101,7 +101,7 @@ def test_partial_snapshot(
 def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 10_000)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 3)
     futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait = wait) for _ in range(3)]
@@ -110,24 +110,48 @@ def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     # Single partial snapshot recovery request allowed at the same time
     assert any(response.status_code == 503 for response in responses), "Subsequent partial snapshot recovery requests have to be rejected during partial snapshot recovery"
 
-def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
+
+@pytest.mark.parametrize("wait", [True, False])
+def test_partial_snapshot_read_lock(tmp_path: pathlib.Path, wait: bool):
     assert_project_root()
 
     write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 1)
-    recover_future = executor.submit(recover_partial_snapshot_from, read_peer, write_peer)
+    recover_future = executor.submit(recover_partial_snapshot_from, read_peer, write_peer, wait)
 
     is_search_rejected = False
-    while not recover_future.done():
-        response = try_search_random(read_peer)
+    counter = 0
 
-        # Shard is unavailable during partial snapshot recovery
-        if response.status_code == 500:
+    while wait is False or not recover_future.done():
+        response = try_search_random(read_peer)
+        counter += 1
+        if response.status_code == 500 or response.status_code == 503:
             is_search_rejected = True
             break
 
-    assert is_search_rejected, "Search requests have to be rejected during partial snapshot recovery"
+    assert is_search_rejected, f"Search requests have to be rejected during partial snapshot recovery in {counter} attempts"
+
+
+@pytest.mark.parametrize("wait", [True, False])
+def test_incompatible_snapshot_recovery(tmp_path: pathlib.Path, wait: bool):
+    assert_project_root()
+
+    # setup read and write clusters with different configs (different vector size):
+    read_peer = bootstrap_peer(tmp_path / "read", 63331)
+    create_collection(read_peer, shard_number = 1, replication_factor = 1, indexing_threshold = 1000000, sparse_vectors = False, vector_size=1000)
+    wait_collection_exists_and_active_on_all_peers(COLLECTION, [read_peer])
+
+    write_peer = bootstrap_write_peer(tmp_path, bootstrap_points = 10)
+
+    res = try_recover_partial_snapshot_from(read_peer, write_peer, wait=wait)
+
+    if wait:
+        # When wait=true, the error is returned synchronously
+        assert res.json()["status"] == {'error': 'Wrong input: Vectors configuration is not compatible: origin vector  size: 1000, while other vector size: 4'}
+    else:
+        # TODO: When wait=false, config validation happens asynchronously, so the error is not returned to the client
+        assert res.json()["status"] == "accepted"
 
 def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     assert_project_root()
