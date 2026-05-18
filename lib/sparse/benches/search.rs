@@ -19,7 +19,6 @@ use sparse::common::types::QuantizedU8;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::loaders::{self, Csr};
@@ -133,21 +132,6 @@ pub fn run_bench(
     run_bench2(
         c.benchmark_group(format!("search/ram/{name}")),
         &index,
-        query_vectors,
-        &hottest_query_vectors,
-    );
-
-    run_bench2(
-        c.benchmark_group(format!("search/mmap/{name}")),
-        &InvertedIndexMmap::from_ram_index(
-            Cow::Borrowed(&index),
-            tempfile::Builder::new()
-                .prefix("test_index_dir")
-                .tempdir()
-                .unwrap()
-                .path(),
-        )
-        .unwrap(),
         query_vectors,
         &hottest_query_vectors,
     );

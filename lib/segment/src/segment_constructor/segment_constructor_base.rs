@@ -34,7 +34,7 @@ use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::plain_vector_index::PlainVectorIndex;
 use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::{
-    self, SparseVectorIndex, SparseVectorIndexOpenArgs,
+    SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
@@ -344,41 +344,27 @@ pub(crate) fn create_sparse_vector_index(
     let vector_index = match (
         effective_index_type,
         args.config.datatype.unwrap_or_default(),
-        sparse_vector_index::USE_COMPRESSED,
     ) {
-        (_, a @ (VectorStorageDatatype::Float16 | VectorStorageDatatype::Uint8), false) => Err(
-            OperationError::validation_error(format!("{a:?} datatype is not supported")),
-        )?,
-
-        (SparseIndexType::MutableRam, _, _) => {
+        (SparseIndexType::MutableRam, _) => {
             VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?)
         }
 
-        // Non-compressed
-        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32, false) => {
-            VectorIndexEnum::SparseImmutableRam(SparseVectorIndex::open(args)?)
-        }
-        (SparseIndexType::Mmap, VectorStorageDatatype::Float32, false) => {
-            VectorIndexEnum::SparseMmap(SparseVectorIndex::open(args)?)
-        }
-
-        // Compressed
-        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32, true) => {
+        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
             VectorIndexEnum::SparseCompressedImmutableRamF32(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::Mmap, VectorStorageDatatype::Float32, true) => {
+        (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
             VectorIndexEnum::SparseCompressedMmapF32(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16, true) => {
+        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
             VectorIndexEnum::SparseCompressedImmutableRamF16(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::Mmap, VectorStorageDatatype::Float16, true) => {
+        (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
             VectorIndexEnum::SparseCompressedMmapF16(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8, true) => {
+        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
             VectorIndexEnum::SparseCompressedImmutableRamU8(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::Mmap, VectorStorageDatatype::Uint8, true) => {
+        (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
             VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args)?)
         }
     };

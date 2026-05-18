@@ -10,11 +10,10 @@ use common::generic_consts::Random;
 use common::storage_version::StorageVersion as _;
 use common::types::PointOffsetType;
 use fs_err as fs;
-use semver::Version;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
+use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use sparse::index::inverted_index::{INDEX_FILE_NAME, InvertedIndex, OLD_INDEX_FILE_NAME};
 
 use super::indices_tracker::IndicesTracker;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -26,9 +25,6 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod search;
 mod vector_index_impl;
-
-/// Whether to use the new compressed format.
-pub const USE_COMPRESSED: bool = true;
 
 #[derive(Debug)]
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
@@ -130,10 +126,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 indices_tracker.save(path)?;
 
                 // Save the version as the last step to mark a successful rebuild.
-                // NOTE: index in the original format (Qdrant <=v1.9 / sparse <=v0.1.0) lacks of the
-                // version file. To distinguish between index in original format and partially
-                // written index in the current format, the index file name is changed from
-                // `inverted_index.data` to `inverted_index.dat`.
                 TInvertedIndex::Version::save(path)?;
 
                 OperationResult::Ok((config, inverted_index, indices_tracker))
@@ -160,16 +152,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     fn try_load(
         path: &Path,
     ) -> OperationResult<(SparseIndexConfig, TInvertedIndex, IndicesTracker)> {
-        let mut stored_version = TInvertedIndex::Version::load(path)?;
-
-        // Simple migration mechanism for 0.1.0.
-        let old_path = path.join(OLD_INDEX_FILE_NAME);
-        if TInvertedIndex::Version::current() == Version::new(0, 1, 0) && old_path.exists() {
-            // Didn't have a version file, but uses 0.1.0 index. Create a version file.
-            fs::rename(old_path, path.join(INDEX_FILE_NAME))?;
-            TInvertedIndex::Version::save(path)?;
-            stored_version = Some(TInvertedIndex::Version::current());
-        }
+        let stored_version = TInvertedIndex::Version::load(path)?;
 
         if stored_version != Some(TInvertedIndex::Version::current()) {
             return Err(OperationError::service_error_light(format!(

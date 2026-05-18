@@ -20,8 +20,6 @@ use crate::types::{Filter, SearchParams};
 pub enum VectorIndexReadEnum {
     // Plain(Box<ReadOnlyPlainVectorIndex>),
     // Hnsw(Box<ReadOnlyHNSWIndex>),
-    // SparseImmutableRam(Box<ReadOnlySparseVectorIndex<InvertedIndexImmutableRam>>),
-    // SparseMmap(Box<ReadOnlySparseVectorIndex<InvertedIndexMmap>>),
     // SparseCompressedImmutableRamF32(
     //     Box<ReadOnlySparseVectorIndex<InvertedIndexCompressedImmutableRam<f32>>>,
     // ),
@@ -44,8 +42,6 @@ impl VectorIndexReadEnum {
         // match self {
         //     Self::Plain(_) => false,
         //     Self::Hnsw(index) => index.is_on_disk(),
-        //     Self::SparseImmutableRam(index) => index.is_on_disk(),
-        //     Self::SparseMmap(index) => index.is_on_disk(),
         //     Self::SparseCompressedImmutableRamF32(index) => index.is_on_disk(),
         //     Self::SparseCompressedImmutableRamF16(index) => index.is_on_disk(),
         //     Self::SparseCompressedImmutableRamU8(index) => index.is_on_disk(),
@@ -61,8 +57,6 @@ impl VectorIndexReadEnum {
         // match self {
         //     Self::Plain(_) => {}
         //     Self::Hnsw(index) => index.populate()?,
-        //     Self::SparseImmutableRam(_) => {}
-        //     Self::SparseMmap(index) => index.inner().inverted_index().populate()?,
         //     Self::SparseCompressedImmutableRamF32(_) => {}
         //     Self::SparseCompressedImmutableRamF16(_) => {}
         //     Self::SparseCompressedImmutableRamU8(_) => {}
@@ -79,8 +73,6 @@ impl VectorIndexReadEnum {
         // match self {
         //     Self::Plain(_) => {}
         //     Self::Hnsw(index) => index.clear_cache()?,
-        //     Self::SparseImmutableRam(_) => {}
-        //     Self::SparseMmap(index) => index.inner().inverted_index().clear_cache()?,
         //     Self::SparseCompressedImmutableRamF32(_) => {}
         //     Self::SparseCompressedImmutableRamF16(_) => {}
         //     Self::SparseCompressedImmutableRamU8(_) => {}
@@ -106,10 +98,6 @@ impl VectorIndexRead for VectorIndexReadEnum {
         // match self {
         //     Self::Plain(index) => index.search(vectors, filter, top, params, query_context),
         //     Self::Hnsw(index) => index.search(vectors, filter, top, params, query_context),
-        //     Self::SparseImmutableRam(index) => {
-        //         index.search(vectors, filter, top, params, query_context)
-        //     }
-        //     Self::SparseMmap(index) => index.search(vectors, filter, top, params, query_context),
         //     Self::SparseCompressedImmutableRamF32(index) => {
         //         index.search(vectors, filter, top, params, query_context)
         //     }
@@ -137,8 +125,6 @@ impl VectorIndexRead for VectorIndexReadEnum {
         // match self {
         //     Self::Plain(index) => index.get_telemetry_data(detail),
         //     Self::Hnsw(index) => index.get_telemetry_data(detail),
-        //     Self::SparseImmutableRam(index) => index.get_telemetry_data(detail),
-        //     Self::SparseMmap(index) => index.get_telemetry_data(detail),
         //     Self::SparseCompressedImmutableRamF32(index) => index.get_telemetry_data(detail),
         //     Self::SparseCompressedImmutableRamF16(index) => index.get_telemetry_data(detail),
         //     Self::SparseCompressedImmutableRamU8(index) => index.get_telemetry_data(detail),
@@ -154,8 +140,6 @@ impl VectorIndexRead for VectorIndexReadEnum {
         // match self {
         //     Self::Plain(index) => index.indexed_vector_count(),
         //     Self::Hnsw(index) => index.indexed_vector_count(),
-        //     Self::SparseImmutableRam(index) => index.indexed_vector_count(),
-        //     Self::SparseMmap(index) => index.indexed_vector_count(),
         //     Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
         //     Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
         //     Self::SparseCompressedImmutableRamU8(index) => index.indexed_vector_count(),
@@ -171,8 +155,6 @@ impl VectorIndexRead for VectorIndexReadEnum {
         // match self {
         //     Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
         //     Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
-        //     Self::SparseImmutableRam(index) => index.size_of_searchable_vectors_in_bytes(),
-        //     Self::SparseMmap(index) => index.size_of_searchable_vectors_in_bytes(),
         //     Self::SparseCompressedImmutableRamF32(index) => {
         //         index.size_of_searchable_vectors_in_bytes()
         //     }
@@ -198,8 +180,6 @@ impl VectorIndexRead for VectorIndexReadEnum {
         // match self {
         //     Self::Plain(index) => index.fill_idf_statistics(idf, hw_counter),
         //     Self::Hnsw(index) => index.fill_idf_statistics(idf, hw_counter),
-        //     Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf, hw_counter),
-        //     Self::SparseMmap(index) => index.fill_idf_statistics(idf, hw_counter),
         //     Self::SparseCompressedImmutableRamF32(index) => {
         //         index.fill_idf_statistics(idf, hw_counter)
         //     }
@@ -221,8 +201,6 @@ impl VectorIndexRead for VectorIndexReadEnum {
         // match self {
         //     Self::Plain(index) => index.is_index(),
         //     Self::Hnsw(index) => index.is_index(),
-        //     Self::SparseImmutableRam(index) => index.is_index(),
-        //     Self::SparseMmap(index) => index.is_index(),
         //     Self::SparseCompressedImmutableRamF32(index) => index.is_index(),
         //     Self::SparseCompressedImmutableRamF16(index) => index.is_index(),
         //     Self::SparseCompressedImmutableRamU8(index) => index.is_index(),
