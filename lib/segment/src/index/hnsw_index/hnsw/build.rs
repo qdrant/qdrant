@@ -8,7 +8,7 @@ use common::cow::BoxCow;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::progress_tracker::ProgressTracker;
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
 use log::{debug, trace};
 use rand::Rng;
@@ -459,7 +459,6 @@ impl HNSWIndex {
 
                     let points_to_index = condition_points(
                         payload_block.condition,
-                        id_tracker_ref.deref(),
                         &payload_index_ref,
                         &vector_storage_ref,
                         stopped,
@@ -601,7 +600,6 @@ impl HNSWIndex {
 /// Get list of points for indexing, associated with payload block filtering condition
 fn condition_points(
     condition: FieldCondition,
-    id_tracker: &IdTrackerEnum,
     payload_index: &StructPayloadIndex,
     vector_storage: &VectorStorageEnum,
     stopped: &AtomicBool,
@@ -612,18 +610,14 @@ fn condition_points(
 
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-    let point_mappings = id_tracker.point_mappings();
-
     payload_index.with_view(|v| {
         let cardinality_estimation = v.estimate_cardinality(&filter, &disposed_hw_counter)?;
         Ok(v.iter_filtered_points(
             &filter,
-            id_tracker,
-            &point_mappings,
             &cardinality_estimation,
             &disposed_hw_counter,
             stopped,
-            None,
+            DeferredBehavior::IncludeAll,
         )?
         .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
         .collect())

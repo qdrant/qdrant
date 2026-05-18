@@ -6,11 +6,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::either_variant::EitherVariant;
 use common::iterator_ext::IteratorExt;
-use common::types::{PointOffsetType, ScoreType};
+use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::field_index::{
@@ -68,20 +68,16 @@ where
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Vec<PointOffsetType>> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(filter, hw_counter)?;
-        let point_mappings = self.id_tracker.point_mappings();
         let result = self
             .iter_filtered_points(
                 filter,
-                self.id_tracker,
-                &point_mappings,
                 &query_cardinality,
                 hw_counter,
                 is_stopped,
-                deferred_internal_id,
+                DeferredBehavior::Exclude,
             )?
             .collect();
         Ok(result)
@@ -143,18 +139,18 @@ where
         ))
     }
 
-    fn iter_filtered_points<'b, IT: IdTrackerRead>(
+    fn iter_filtered_points<'b>(
         &'b self,
         filter: &'b Filter,
-        id_tracker: &'b IT,
-        point_mappings: &'b PointMappingsRefEnum<'b>,
         query_cardinality: &'b CardinalityEstimation,
         hw_counter: &'b HardwareCounterCell,
         is_stopped: &'b AtomicBool,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'b> {
+        let point_mappings = self.id_tracker.point_mappings();
+
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
+            let full_scan_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
             // Worst case: query expected to return few matches, but index can't be used
@@ -165,7 +161,7 @@ where
             Ok(EitherVariant::A(matched_points))
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
-            let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
+            let mut visited_list = self.visited_pool.get(self.id_tracker.total_point_count());
 
             // If even one iterator is None, we should replace the whole thing with
             // an iterator over all ids.
@@ -180,14 +176,12 @@ where
                     .iter_conditions()
                     .all(|condition| query_cardinality.is_primary(condition));
 
-                let joined_primary_iterator = primary_iterators
-                    .into_iter()
-                    // Filter out deferred points.
-                    // This iterator (and each primary iterator too) can yield items in non sorted order, depending on the type of index and primary condition.
-                    .flatten()
-                    .filter(move |&internal_id| {
-                        internal_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
-                    })
+                // Primary clause iterators come from field indexes and don't go through
+                // the mapping, so deferred filtering must be applied to them explicitly.
+                // Each primary iterator (and the flattened stream) can yield items in
+                // non-sorted order depending on the field-index type and primary condition.
+                let joined_primary_iterator = point_mappings
+                    .filter_deferred(primary_iterators.into_iter().flatten(), deferred_behavior)
                     .stop_if(is_stopped);
 
                 return Ok(if all_conditions_are_primary {
@@ -212,7 +206,7 @@ where
             // and applying full filter.
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter)?;
 
-            let id_tracker_iterator = point_mappings.iter_internal_visible(deferred_internal_id);
+            let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
             let iter = id_tracker_iterator
                 .stop_if(is_stopped)

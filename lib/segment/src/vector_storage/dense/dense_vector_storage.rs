@@ -242,21 +242,22 @@ where
             .expect("Vector not found")
     }
 
-    fn read_vectors<P: AccessPattern>(
+    fn read_vectors<P: AccessPattern, U: Copy>(
         &self,
-        keys: impl IntoIterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(PointOffsetType, CowVector<'_>),
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
     ) {
-        let point_offsets: Vec<_> = keys.into_iter().collect();
+        // Split into parallel arrays in one pass: `for_each_in_batch` needs an
+        // offsets slice (it chunks it for batched reads), but we still want
+        // `user_data[idx]` available inside the callback.
+        let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.vectors
             .as_ref()
             .unwrap()
             .for_each_in_batch(&point_offsets, |idx, vector| {
-                let point_offset = point_offsets[idx];
                 let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
-
-                callback(point_offset, vector);
+                callback(user_data[idx], point_offsets[idx], vector);
             });
     }
 
@@ -495,7 +496,7 @@ mod tests {
             2,
         );
         let res = searcher
-            .peek_top_all(&DEFAULT_STOPPED, None)
+            .peek_top_all(&DEFAULT_STOPPED)
             .unwrap()
             .into_iter()
             .exactly_one()
@@ -640,7 +641,7 @@ mod tests {
             5,
         );
         let closest = searcher
-            .peek_top_all(&DEFAULT_STOPPED, None)
+            .peek_top_all(&DEFAULT_STOPPED)
             .unwrap()
             .into_iter()
             .exactly_one()

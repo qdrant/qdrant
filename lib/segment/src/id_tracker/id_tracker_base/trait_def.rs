@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -174,4 +174,53 @@ pub trait IdTrackerRead {
     fn iter_internal_versions(
         &self,
     ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>;
+
+    /// Internal-id threshold above which points are hidden from reads.
+    ///
+    /// Only appendable trackers can carry a non-`None` value.
+    fn deferred_internal_id(&self) -> Option<PointOffsetType> {
+        None
+    }
+
+    /// Number of soft-deleted points at or above the deferred threshold.
+    fn deferred_deleted_count(&self) -> usize {
+        0
+    }
+
+    /// Translate external point ids into two parallel vectors of `(ids,
+    /// offsets)` in a single pass.
+    ///
+    /// Applies deferred filtering according to `deferred_behavior` inline
+    /// (no separate `point_is_deferred` lookup), missing points will be ignored
+    ///
+    /// The parallel-vector return shape lets downstream batched fetchers
+    /// consume `&offsets` directly.
+    ///
+    /// Centralising this here keeps the deferred threshold from leaking out
+    /// of the id tracker — callers go through this entry point instead of
+    /// reading `deferred_internal_id()` themselves.
+    fn resolve_external_ids(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
+        // Non-appendable trackers never carry a deferred threshold (it's set
+        // only via `MutableIdTracker::open`, guarded by `appendable_flag` in
+        // the segment constructor), so we don't need an appendable check here.
+        let deferred_cutoff = deferred_behavior.apply(self.deferred_internal_id());
+
+        let mut ids = Vec::with_capacity(point_ids.len());
+        let mut offsets = Vec::with_capacity(point_ids.len());
+        for &point_id in point_ids {
+            let Some(internal_id) = self.internal_id(point_id) else {
+                continue;
+            };
+            if deferred_cutoff.is_some_and(|cutoff| internal_id >= cutoff) {
+                continue;
+            }
+            ids.push(point_id);
+            offsets.push(internal_id);
+        }
+        (ids, offsets)
+    }
 }

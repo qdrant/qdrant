@@ -2,13 +2,14 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, ScoredPointOffset};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
 use crate::data_types::query_context::{QueryContext, QueryIdfStats, SegmentQueryContext};
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
-use crate::data_types::vectors::{QueryVector, VectorInternal, VectorStructInternal};
+use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
@@ -37,89 +38,87 @@ where
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        let mut records = AHashMap::with_capacity(point_ids.len());
+        // Stage 1: resolve external → internal once, into two parallel vectors.
+        // The id tracker owns this: deferred filtering happens inline (no
+        // `point_is_deferred` lookup). The parallel-vector shape lets
+        // a future batched payload / vector fetcher consume `&offsets`
+        // straight without unzipping first.
+        let (resolved_ids, resolved_offsets) = self
+            .id_tracker
+            .resolve_external_ids(point_ids, deferred_behavior);
+        debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
 
-        // Filter out deferred points. This is done in two stages to prevent cloning `point_ids`
-        // and iterating more than needed but still satisfy Rust's ownership constraints.
-        let behavior_allows_filtering = !deferred_behavior.include_all_points();
-        let filter_deferred = self.has_deferred_points() && behavior_allows_filtering;
-        let filtered_point_ids = filter_deferred.then(|| {
-            point_ids
-                .iter()
-                .filter(|&&point_id| !self.point_is_deferred(point_id))
-                .copied()
-                .collect::<Vec<_>>()
-        });
+        // Stage 2: pre-allocate one record per resolved point. The `vectors`
+        // slot is initialised here according to `with_vector`, so the
+        // `WithVector::Bool(false)` path needs no separate clearing pass.
+        let needs_vectors = match with_vector {
+            WithVector::Bool(true) | WithVector::Selector(_) => true,
+            WithVector::Bool(false) => false,
+        };
+        let mut records: AHashMap<ExtendedPointId, SegmentRecord> = resolved_ids
+            .iter()
+            .map(|&id| {
+                let record = SegmentRecord {
+                    id,
+                    vectors: needs_vectors.then(NamedVectorsOwned::default),
+                    payload: None,
+                };
+                (id, record)
+            })
+            .collect();
 
-        // Stage two: select the correct slice and shadow `point_ids`.
-        let point_ids = filtered_point_ids.as_deref().unwrap_or(point_ids);
-
-        let mut update_record_vector =
-            |vector_name: &VectorNameBuf,
-             point_id: PointIdType,
-             vector_internal: VectorInternal| {
-                let point_record = records
-                    .entry(point_id)
-                    .or_insert_with(|| SegmentRecord::empty(point_id));
-
-                point_record
-                    .vectors
-                    .get_or_insert_with(NamedVectorsOwned::default)
-                    .push((vector_name.clone(), vector_internal));
+        // Stage 3: vectors. The external id rides along as the read's user
+        // data — it comes back unchanged in the callback, so no extra
+        // `offset → id` lookup is needed.
+        if needs_vectors {
+            let mut process_vectors = |vector_name: &VectorNameBuf| -> OperationResult<()> {
+                let keys = resolved_ids
+                    .iter()
+                    .zip(&resolved_offsets)
+                    .map(|(&id, &offset)| (id, offset))
+                    .stop_if(is_stopped);
+                self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vec| {
+                    if let Some(record) = records.get_mut(&id) {
+                        record
+                            .vectors
+                            .as_mut()
+                            .expect("needs_vectors path keeps vectors as Some")
+                            .push((vector_name.clone(), vec));
+                    }
+                })
             };
 
-        match with_vector {
-            WithVector::Bool(true) => {
-                for vector_name in self.vector_data.keys() {
-                    self.read_vectors(
-                        vector_name,
-                        point_ids,
-                        hw_counter,
-                        is_stopped,
-                        |point_id, vec| {
-                            update_record_vector(vector_name, point_id, vec);
-                        },
-                    )?;
+            match with_vector {
+                WithVector::Bool(true) => {
+                    for vector_name in self.vector_data.keys() {
+                        process_vectors(vector_name)?;
+                    }
                 }
-            }
-            WithVector::Bool(false) => {
-                // Do not display empty `vectors: {}` if disabled.
-                for &point_id in point_ids {
-                    let point_record = records
-                        .entry(point_id)
-                        .or_insert_with(|| SegmentRecord::empty(point_id));
-                    point_record.vectors = None;
+                WithVector::Selector(names) => {
+                    for vector_name in names {
+                        process_vectors(vector_name)?;
+                    }
                 }
-            }
-            WithVector::Selector(selector) => {
-                for vector_name in selector {
-                    self.read_vectors(
-                        vector_name,
-                        point_ids,
-                        hw_counter,
-                        is_stopped,
-                        |point_id, vec| {
-                            update_record_vector(vector_name, point_id, vec);
-                        },
-                    )?;
-                }
+                WithVector::Bool(false) => unreachable!("guarded by needs_vectors"),
             }
         }
 
-        for &point_id in point_ids {
-            let payload = if with_payload.enable {
-                if let Some(selector) = &with_payload.payload_selector {
-                    Some(selector.process(self.payload(point_id, hw_counter)?))
-                } else {
-                    Some(self.payload(point_id, hw_counter)?)
+        // Stage 4: payload. Use the already-resolved offsets to skip another
+        // external→internal lookup per point. The per-iteration shape here
+        // mirrors what a future batched payload fetcher would consume —
+        // `&resolved_offsets` becomes its input directly.
+        if with_payload.enable {
+            for (&id, &offset) in resolved_ids.iter().zip(&resolved_offsets) {
+                check_stopped(is_stopped)?;
+                let payload = self.payload_by_offset(offset, hw_counter)?;
+                let payload = match &with_payload.payload_selector {
+                    Some(selector) => selector.process(payload),
+                    None => payload,
+                };
+                if let Some(record) = records.get_mut(&id) {
+                    record.payload = Some(payload);
                 }
-            } else {
-                None
-            };
-            let point_record = records
-                .entry(point_id)
-                .or_insert_with(|| SegmentRecord::empty(point_id));
-            point_record.payload = payload;
+            }
         }
 
         Ok(records)
@@ -226,8 +225,7 @@ where
             .vector_data
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let vector_query_context =
-            query_context.get_vector_context(vector_name, self.deferred_internal_id());
+        let vector_query_context = query_context.get_vector_context(vector_name);
         let internal_results = vector_data.vector_index().search(
             query_vectors,
             filter,

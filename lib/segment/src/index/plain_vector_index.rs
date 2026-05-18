@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 use sparse::common::types::DimId;
 
@@ -137,16 +137,20 @@ impl VectorIndexRead for PlainVectorIndex {
             query_context.hardware_counter(),
         )?;
 
-        let deferred_internal_id = query_context.deferred_internal_id();
-
         let mut search_results = match filter {
             Some(filter) => {
-                let filtered_ids_vec = self.payload_index.borrow().with_view(|v| {
-                    v.query_points(filter, &hw_counter, &is_stopped, deferred_internal_id)
-                })?;
+                let filtered_ids_vec = self
+                    .payload_index
+                    .borrow()
+                    .with_view(|v| v.query_points(filter, &hw_counter, &is_stopped))?;
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
-            None => batch_searcher.peek_top_all(&is_stopped, deferred_internal_id)?,
+            None => {
+                let iter = id_tracker
+                    .point_mappings()
+                    .filter_deferred(batch_searcher.iter_not_deleted(), DeferredBehavior::Exclude);
+                batch_searcher.peek_top_iter(iter, &is_stopped)?
+            }
         };
 
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {

@@ -636,7 +636,7 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         .plain_segment
         .payload_index
         .borrow()
-        .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+        .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
         .unwrap();
 
     let real_number = plain_result.len();
@@ -646,7 +646,7 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         .struct_segment
         .payload_index
         .borrow()
-        .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+        .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
         .unwrap()
         .into_iter()
         // null index does not track deleted points, so we need to filter them out here. In callsites,

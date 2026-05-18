@@ -182,7 +182,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
         5,
     );
     let closest = searcher
-        .peek_top_all(&DEFAULT_STOPPED, None)
+        .peek_top_all(&DEFAULT_STOPPED)
         .unwrap()
         .pop()
         .unwrap();

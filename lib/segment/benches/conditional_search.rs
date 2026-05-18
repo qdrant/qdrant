@@ -38,7 +38,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
             result_size += plain_index
-                .query_points(&filter, &hw_counter, &is_stopped, None)
+                .query_points(&filter, &hw_counter, &is_stopped)
                 .unwrap()
                 .len();
             query_count += 1;
@@ -56,7 +56,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 1);
             result_size += plain_index
-                .query_points(&filter, &hw_counter, &is_stopped, None)
+                .query_points(&filter, &hw_counter, &is_stopped)
                 .unwrap()
                 .len();
             query_count += 1;
@@ -156,7 +156,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
             result_size += struct_index
-                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                 .unwrap()
                 .len();
             query_count += 1;

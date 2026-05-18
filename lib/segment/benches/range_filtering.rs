@@ -111,7 +111,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
                 result_size += index
-                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -125,7 +125,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
                 result_size += index
-                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -154,7 +154,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
                 result_size += index
-                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -168,7 +168,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
                 result_size += index
-                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped, None))
+                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
                     .unwrap()
                     .len();
                 query_count += 1;

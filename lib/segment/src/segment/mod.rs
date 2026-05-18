@@ -21,7 +21,6 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::is_alive_lock::IsAliveLock;
 use common::storage_version::StorageVersion;
-use common::types::PointOffsetType;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -87,18 +86,6 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    pub(crate) deferred_point_status: Option<DeferredPointStatus>,
-}
-
-#[derive(Debug)]
-pub struct DeferredPointStatus {
-    /// Points with internal id >= this value are hidden from reads.
-    /// Available for appendable segments only.
-    pub(crate) deferred_internal_id: PointOffsetType,
-
-    /// Amount of deleted deferred points. Must kept track of properly to be able
-    /// to calculate the amount of available deferred and visible points.
-    pub(crate) deferred_deleted_count: usize,
 }
 
 pub struct VectorData {

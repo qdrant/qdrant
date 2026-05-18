@@ -93,15 +93,21 @@ pub trait VectorStorageRead {
     /// Get the vector by the given key with potential optimizations for sequential reads.
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_>;
 
-    /// Get multiple vectors by the given keys
+    /// Get multiple vectors by the given keys.
     /// Potentially optimized for internal parallel reads.
-    fn read_vectors<P: AccessPattern>(
+    ///
+    /// Each input is tagged with caller-supplied user data `U` (e.g., an
+    /// external point id, or the input position). The data is threaded
+    /// straight back to the callback alongside its offset and vector, so
+    /// callers can map results into a parallel input array without keeping a
+    /// separate `offset → ...` lookup table.
+    fn read_vectors<P: AccessPattern, U: Copy>(
         &self,
-        keys: impl IntoIterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(PointOffsetType, CowVector<'_>),
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
     ) {
-        for key in keys {
-            callback(key, self.get_vector::<P>(key));
+        for (user_data, key) in keys {
+            callback(user_data, key, self.get_vector::<P>(key));
         }
     }
 
@@ -778,47 +784,53 @@ impl VectorStorageRead for VectorStorageEnum {
         }
     }
 
-    fn read_vectors<P: AccessPattern>(
+    fn read_vectors<P: AccessPattern, U: Copy>(
         &self,
-        keys: impl IntoIterator<Item = PointOffsetType>,
-        callback: impl FnMut(PointOffsetType, CowVector<'_>),
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
     ) {
         match self {
-            VectorStorageEnum::DenseVolatile(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseVolatileByte(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::DenseMemmap(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::DenseMemmapByte(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseVolatileHalf(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmap(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmapByte(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.read_vectors::<P, U>(keys, callback),
 
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseUring(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseUringByte(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseUringHalf(v) => v.read_vectors::<P, U>(keys, callback),
 
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::SparseVolatile(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::SparseMmap(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                v.read_vectors::<P, U>(keys, callback)
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                v.read_vectors::<P, U>(keys, callback)
+            }
+            VectorStorageEnum::SparseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::SparseMmap(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::MultiDenseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                v.read_vectors::<P, U>(keys, callback)
+            }
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.read_vectors::<P>(keys, callback)
+                v.read_vectors::<P, U>(keys, callback)
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.read_vectors::<P>(keys, callback)
+                v.read_vectors::<P, U>(keys, callback)
             }
-            VectorStorageEnum::EmptyDense(v) => v.read_vectors::<P>(keys, callback),
-            VectorStorageEnum::EmptySparse(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::EmptyDense(v) => v.read_vectors::<P, U>(keys, callback),
+            VectorStorageEnum::EmptySparse(v) => v.read_vectors::<P, U>(keys, callback),
         }
     }
 

@@ -15,11 +15,11 @@ where
     TVD: VectorDataRead,
 {
     pub(super) fn deferred_internal_id(&self) -> Option<PointOffsetType> {
-        self.deferred_point_status.map(|s| s.deferred_internal_id)
+        self.id_tracker.deferred_internal_id()
     }
 
-    pub(super) fn deferred_deleted_count(&self) -> Option<usize> {
-        self.deferred_point_status.map(|s| s.deferred_deleted_count)
+    pub(super) fn deferred_deleted_count(&self) -> usize {
+        self.id_tracker.deferred_deleted_count()
     }
 
     pub fn deferred_point_count(&self) -> usize {
@@ -28,7 +28,7 @@ where
                 .id_tracker
                 .total_point_count()
                 .saturating_sub(internal_id as usize)
-                .saturating_sub(self.deferred_deleted_count().unwrap_or_default()),
+                .saturating_sub(self.deferred_deleted_count()),
             None => 0,
         }
     }
