@@ -23,7 +23,11 @@ pub trait ValueIndexer {
     fn get_values(value: &Value) -> Vec<Self::ValueType> {
         match value {
             Value::Array(values) => values.iter().filter_map(|x| Self::get_value(x)).collect(),
-            _ => Self::get_value(value).map(|x| vec![x]).unwrap_or_default(),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Object(_) => Self::get_value(value).map(|x| vec![x]).unwrap_or_default(),
         }
     }
 
@@ -41,7 +45,11 @@ pub trait ValueIndexer {
                 Value::Array(values) => {
                     flatten_values.extend(values.iter().filter_map(|x| Self::get_value(x)));
                 }
-                _ => {
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::String(_)
+                | Value::Object(_) => {
                     if let Some(x) = Self::get_value(value) {
                         flatten_values.push(x);
                     }

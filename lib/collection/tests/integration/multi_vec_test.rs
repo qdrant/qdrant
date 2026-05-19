@@ -1,3 +1,5 @@
+#![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::path::Path;

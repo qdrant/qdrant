@@ -16,7 +16,7 @@ use segment::types::{
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use sparse::common::sparse_vector::SparseVector;
 use validator::{Validate, ValidationError, ValidationErrors};
 
@@ -160,7 +160,7 @@ impl Validate for VectorStruct {
 pub struct Options {
     /// Parameters for the model
     /// Values of the parameters are model-specific
-    pub options: Option<HashMap<String, Value>>,
+    pub options: Option<HashMap<String, JsonValue>>,
 }
 
 impl Hash for Options {
@@ -259,7 +259,7 @@ pub struct TextPreprocessingConfig {
 }
 
 impl Bm25Config {
-    pub fn to_options(&self) -> HashMap<String, Value> {
+    pub fn to_options(&self) -> HashMap<String, JsonValue> {
         debug_assert!(
             false,
             "this code should never be called, it is only for schema generation",
@@ -269,12 +269,12 @@ impl Bm25Config {
             .expect("conversion of internal structure to JSON should never fail");
 
         match value {
-            Value::Null
-            | Value::Bool(_)
-            | Value::Number(_)
-            | Value::String(_)
-            | Value::Array(_) => HashMap::default(), // not expected
-            Value::Object(map) => map.into_iter().collect(),
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_) => HashMap::default(), // not expected
+            JsonValue::Object(map) => map.into_iter().collect(),
         }
     }
 }
@@ -286,7 +286,7 @@ impl Bm25Config {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum DocumentOptions {
     // This option should go first
-    Common(HashMap<String, Value>),
+    Common(HashMap<String, JsonValue>),
     // This should never be deserialized into, but we keep it for schema generation
     Bm25(Bm25Config),
 }
@@ -309,7 +309,7 @@ mod tests {
 }
 
 impl DocumentOptions {
-    pub fn into_options(self) -> HashMap<String, Value> {
+    pub fn into_options(self) -> HashMap<String, JsonValue> {
         match self {
             DocumentOptions::Common(options) => options,
             DocumentOptions::Bm25(bm25) => bm25.to_options(),
@@ -361,7 +361,7 @@ pub struct Document {
 pub struct Image {
     /// Image data: base64 encoded image or an URL
     #[schemars(example = "image_value_example")]
-    pub image: Value,
+    pub image: JsonValue,
     /// Name of the model used to generate the vector.
     /// List of available models depends on a provider.
     #[validate(length(min = 1))]
@@ -380,7 +380,7 @@ pub struct Image {
 pub struct InferenceObject {
     /// Arbitrary data, used as input for the embedding model.
     /// Used if the model requires more than one input or a custom input.
-    pub object: Value,
+    pub object: JsonValue,
     /// Name of the model used to generate the vector.
     /// List of available models depends on a provider.
     #[validate(length(min = 1))]
@@ -729,7 +729,7 @@ pub struct FormulaQuery {
     pub formula: Expression,
 
     #[serde(default)]
-    pub defaults: HashMap<String, Value>,
+    pub defaults: HashMap<String, JsonValue>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -1488,24 +1488,26 @@ impl<'de> serde::Deserialize<'de> for PointInsertOperations {
     where
         D: serde::Deserializer<'de>,
     {
-        let value = serde_json::Value::deserialize(deserializer)?;
+        let value = JsonValue::deserialize(deserializer)?;
         match value {
-            serde_json::Value::Object(map) => {
-                if map.contains_key("batch") {
-                    PointsBatch::deserialize(serde_json::Value::Object(map))
-                        .map(PointInsertOperations::PointsBatch)
-                        .map_err(serde::de::Error::custom)
-                } else if map.contains_key("points") {
-                    PointsList::deserialize(serde_json::Value::Object(map))
-                        .map(PointInsertOperations::PointsList)
-                        .map_err(serde::de::Error::custom)
-                } else {
-                    Err(serde::de::Error::custom(
-                        "Invalid PointInsertOperations format",
-                    ))
-                }
+            JsonValue::Object(map) if map.contains_key("batch") => {
+                PointsBatch::deserialize(JsonValue::Object(map))
+                    .map(PointInsertOperations::PointsBatch)
+                    .map_err(serde::de::Error::custom)
             }
-            _ => Err(serde::de::Error::custom(
+            JsonValue::Object(map) if map.contains_key("points") => {
+                PointsList::deserialize(JsonValue::Object(map))
+                    .map(PointInsertOperations::PointsList)
+                    .map_err(serde::de::Error::custom)
+            }
+            JsonValue::Object(_) => Err(serde::de::Error::custom(
+                "Invalid PointInsertOperations format",
+            )),
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_) => Err(serde::de::Error::custom(
                 "Invalid PointInsertOperations format",
             )),
         }

@@ -146,6 +146,20 @@ impl VectorIndexEnum {
         };
         Ok(())
     }
+
+    pub fn as_hnsw(&self) -> Option<&HNSWIndex> {
+        match self {
+            VectorIndexEnum::Plain(_) => None,
+            VectorIndexEnum::Hnsw(index) => Some(index),
+            VectorIndexEnum::SparseRam(_) => None,
+            VectorIndexEnum::SparseCompressedImmutableRamF32(_) => None,
+            VectorIndexEnum::SparseCompressedImmutableRamF16(_) => None,
+            VectorIndexEnum::SparseCompressedImmutableRamU8(_) => None,
+            VectorIndexEnum::SparseCompressedMmapF32(_) => None,
+            VectorIndexEnum::SparseCompressedMmapF16(_) => None,
+            VectorIndexEnum::SparseCompressedMmapU8(_) => None,
+        }
+    }
 }
 
 impl VectorIndexRead for VectorIndexEnum {

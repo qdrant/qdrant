@@ -133,6 +133,8 @@ impl EdgeShard {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::collections::HashMap;
     use std::path::Path;
 

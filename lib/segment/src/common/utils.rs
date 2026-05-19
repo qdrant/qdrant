@@ -18,9 +18,9 @@ pub type MultiValue<T> = SmallVec<[T; 1]>;
 
 pub fn check_is_empty<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool {
     values.into_iter().all(|x| match x {
-        serde_json::Value::Null => true,
-        serde_json::Value::Array(arr) => arr.is_empty(),
-        _ => false,
+        Value::Null => true,
+        Value::Array(arr) => arr.is_empty(),
+        Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => false,
     })
 }
 
@@ -43,7 +43,11 @@ pub fn merge_map(
     for (key, value) in source {
         match value {
             Value::Null => dest.remove(key),
-            _ => dest.insert(key.to_owned(), value.to_owned()),
+            Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_)
+            | Value::Object(_) => dest.insert(key.to_owned(), value.to_owned()),
         };
     }
 }

@@ -43,6 +43,7 @@ pub enum UniversalIoError {
 
 impl UniversalIoError {
     pub fn extract_not_found(err: io::Error, path: impl Into<PathBuf>) -> Self {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match err.kind() {
             io::ErrorKind::NotFound => Self::NotFound { path: path.into() },
             _ => Self::Io(err),

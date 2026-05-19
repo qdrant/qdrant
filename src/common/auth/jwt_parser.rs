@@ -36,6 +36,7 @@ impl JwtParser {
         let claims = match decode::<Claims>(token, &self.key, &self.validation) {
             Ok(token_data) => token_data.claims,
             Err(e) => {
+                #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
                 return match e.kind() {
                     ErrorKind::ExpiredSignature | ErrorKind::InvalidSignature => {
                         Some(Err(AuthError::Forbidden(e.to_string())))

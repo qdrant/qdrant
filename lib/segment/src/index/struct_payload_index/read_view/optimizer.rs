@@ -129,7 +129,13 @@ where
                         self.optimize_filter(filter, payload_provider.clone(), total, hw_counter)?;
                     Ok((OptimizedCondition::Filter(optimized_filter), estimation))
                 }
-                _ => {
+                Condition::Field(_)
+                | Condition::IsEmpty(_)
+                | Condition::IsNull(_)
+                | Condition::HasId(_)
+                | Condition::HasVector(_)
+                | Condition::Nested(_)
+                | Condition::CustomIdChecker(_) => {
                     let estimation = self.condition_cardinality(condition, None, hw_counter)?;
                     let condition_checker =
                         self.condition_converter(condition, payload_provider.clone(), hw_counter);

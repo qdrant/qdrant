@@ -229,7 +229,13 @@ where
 {
     match condition {
         Condition::Filter(filter) => estimate_filter(estimator, filter, total),
-        _ => estimator(condition),
+        Condition::Field(_)
+        | Condition::IsEmpty(_)
+        | Condition::IsNull(_)
+        | Condition::HasId(_)
+        | Condition::HasVector(_)
+        | Condition::Nested(_)
+        | Condition::CustomIdChecker(_) => estimator(condition),
     }
 }
 
@@ -348,6 +354,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use super::*;
     use crate::index::field_index::ResolvedHasId;
     use crate::json_path::JsonPath;

@@ -49,7 +49,11 @@ impl ValueIndexer for GeoMapIndex {
                 }
                 None
             }
-            _ => None,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_) => None,
         }
     }
 

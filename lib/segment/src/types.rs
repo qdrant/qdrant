@@ -2845,7 +2845,7 @@ impl ValuesCount {
         let count = match value {
             Value::Null => 0,
             Value::Array(array) => array.len(),
-            _ => 1,
+            Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => 1,
         };
 
         self.check_count(count)
@@ -3647,7 +3647,7 @@ impl WithPayloadInterface {
     pub fn is_required(&self) -> bool {
         match self {
             WithPayloadInterface::Bool(b) => *b,
-            _ => true,
+            WithPayloadInterface::Fields(_) | WithPayloadInterface::Selector(_) => true,
         }
     }
 }
@@ -4094,6 +4094,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json;

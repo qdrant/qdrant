@@ -11,6 +11,7 @@ pub use immutable_bool_index::ImmutableBoolIndex;
 pub use mutable_bool_index::MutableBoolIndex;
 pub use read_only_bool_index::ReadOnlyBoolIndex;
 pub use read_ops::BoolIndexRead;
+use serde_json::Value as JsonValue;
 
 use super::facet_index::FacetIndex;
 use super::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
@@ -299,10 +300,14 @@ impl ValueIndexer for BoolIndex {
         }
     }
 
-    fn get_value(value: &serde_json::Value) -> Option<Self::ValueType> {
+    fn get_value(value: &JsonValue) -> Option<Self::ValueType> {
         match value {
-            serde_json::Value::Bool(value) => Some(*value),
-            _ => None,
+            JsonValue::Bool(value) => Some(*value),
+            JsonValue::Null
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_) => None,
         }
     }
 
