@@ -1,5 +1,6 @@
 pub(crate) mod encoding;
 pub mod lloyd_max;
+mod math;
 mod permutation;
 pub mod quantization;
 pub mod rotation;
@@ -22,6 +23,7 @@ use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
+use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
 use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
 
@@ -157,21 +159,6 @@ pub struct ErrorCorrectionMetadata {
     pub scale: Vec<f32>,
 }
 
-/// Standard normal CDF Φ(x) = (1 + erf(x/√2)) / 2 via the Abramowitz & Stegun
-/// 7.1.26 rational approximation (max error ≈ 1.5e-7). Used once per encode to
-/// turn `c_outer` into the symmetric quantile probability for the TQ+ pre-pass.
-fn phi(x: f64) -> f64 {
-    let z = x / std::f64::consts::SQRT_2;
-    let a = z.abs();
-    let t = 1.0 / (1.0 + 0.3275911 * a);
-    let poly = t
-        * (0.254829592
-            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-    let erf = 1.0 - poly * (-a * a).exp();
-    let erf = if z >= 0.0 { erf } else { -erf };
-    0.5 * (1.0 + erf)
-}
-
 impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
@@ -237,7 +224,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                     .iter()
                     .copied()
                     .fold(0.0_f32, |acc, c| acc.max(c.abs()));
-                let p_outer = phi(f64::from(c_outer));
+                let p_outer = std_normal_cdf(f64::from(c_outer));
                 // `find_interval_per_coordinate` interprets `quantile` as the
                 // symmetric interval `[(1-q)/2, 1-(1-q)/2]`, so 2·p_outer − 1
                 // gives us the `[1-p_outer, p_outer]` pair we want.
