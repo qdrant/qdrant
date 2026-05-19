@@ -6,10 +6,10 @@ mod error;
 mod io_uring;
 mod local_file_ops;
 mod mmap;
+mod simple_disk_cache;
 mod traits;
 mod types;
 mod wrappers;
-mod simple_disk_cache;
 
 pub use self::error::UniversalIoError;
 #[cfg(target_os = "linux")]

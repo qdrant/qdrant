@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use fs_err as fs;
 use memmap2::MmapRaw;
@@ -63,13 +63,11 @@ where
             .field("open_options", &self.open_options)
             .field("local_path", &self.local_path)
             .field("local", &self.local)
-            // .field("init_lock", &self.init_lock)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 /// Where the [`LocalState`] comes from on first init.
-#[derive(Debug)]
 enum InitSource<R: UniversalRead> {
     /// Build an empty local mmap and let reads fill blocks on demand.
     FromScratch,
@@ -225,13 +223,6 @@ where
 
                 let pipeline = R::OwnedReadPipeline::new(remote)?;
 
-                // prefiller.send_request(
-                //     remote_path.as_ref().to_owned(),
-                //     local_path.clone(),
-                //     options,
-                //     finish,
-                // );
-
                 InitSource::FromPrefiller(pipeline)
             }
         };
@@ -360,7 +351,6 @@ where
 impl<R> UniversalRead for DiskCache<R>
 where
     R: UniversalRead + Clone,
-    R::OwnedReadPipeline<u8, ()>: Debug,
 {
     type BorrowedReadPipeline<'a, T, Meta>
         = DiskCachePipeline<'a, R, T, Meta>
