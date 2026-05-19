@@ -123,3 +123,43 @@ def test_validation_iter_batch_named_vectors(collection_name):
     )
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]
+
+
+# Regression for https://github.com/qdrant/qdrant/issues/9045
+#
+# Upserting an empty vector `[]` is rejected on the synchronous (`wait=true`)
+# path but silently accepted on the asynchronous path: the response is HTTP 200
+# `acknowledged`, the point is later discarded, and the zero-length vector can
+# reach internal code paths that assert on non-zero length (see #7967).
+@pytest.mark.parametrize("wait", ["true", "false"])
+def test_validation_empty_vector_upsert(collection_name, wait):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': wait},
+        body={"points": [{"id": 1000, "vector": []}]},
+    )
+    assert not response.ok, (
+        f"empty vector accepted with wait={wait}: "
+        f"status={response.status_code}, body={response.text}"
+    )
+
+
+@pytest.mark.parametrize("wait", ["true", "false"])
+def test_validation_empty_vector_batch_upsert(collection_name, wait):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/batch',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': wait},
+        body={
+            "operations": [
+                {"upsert": {"points": [{"id": 1001, "vector": []}]}},
+            ],
+        },
+    )
+    assert not response.ok, (
+        f"empty vector accepted in batch upsert with wait={wait}: "
+        f"status={response.status_code}, body={response.text}"
+    )
