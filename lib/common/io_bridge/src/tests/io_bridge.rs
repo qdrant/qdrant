@@ -1,7 +1,8 @@
 use std::borrow::Cow;
+use std::path::Path;
 
 use common::generic_consts::Random;
-use common::universal_io::{Flusher, ReadRange, UniversalRead, UniversalWrite};
+use common::universal_io::{Flusher, OpenOptions, ReadRange, UniversalRead, UniversalWrite};
 use tokio::runtime::Runtime;
 
 use super::mock_async_file::MockAsyncFile;
@@ -96,6 +97,25 @@ fn io_bridge_write_batch_applies_each_offset() {
     assert_eq!(&result[0..3], b"AAA");
     assert_eq!(&result[5..8], b"BBB");
     assert_eq!(&result[10..13], b"CCC");
+}
+
+#[test]
+fn io_bridge_open_with_handle_uses_provided_handle() {
+    let runtime = Runtime::new().expect("runtime");
+    let handle = runtime.handle().clone();
+
+    let mut io_bridge = IoBridge::<MockAsyncFile>::open_with_handle(
+        Path::new("/dummy"),
+        OpenOptions::default(),
+        handle,
+    )
+    .expect("open with explicit handle");
+
+    UniversalWrite::write::<u8>(&mut io_bridge, 0, b"abc").expect("write");
+    let bytes = io_bridge
+        .read::<Random, u8>(ReadRange::new(0, 3))
+        .expect("read");
+    assert_eq!(bytes.as_ref(), b"abc");
 }
 
 #[test]

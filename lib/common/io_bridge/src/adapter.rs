@@ -37,6 +37,21 @@ impl<T> IoBridge<T> {
     }
 }
 
+impl<T: AsyncRead> IoBridge<T> {
+    /// Open the underlying async resource using an explicit tokio `Handle` and
+    /// wrap it. Non-trait counterpart of [`UniversalRead::open`] for callers
+    /// that want per-instance handler propagation without relying on
+    /// [`crate::set_global_async_handle`] or an ambient tokio context.
+    pub fn open_with_handle(
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        handle: Handle,
+    ) -> Result<Self> {
+        let inner = handle.block_on(T::open(path.as_ref(), options))?;
+        Ok(Self { inner, handle })
+    }
+}
+
 impl<T: Debug> Debug for IoBridge<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IoBridge")
