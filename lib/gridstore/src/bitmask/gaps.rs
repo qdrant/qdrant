@@ -105,7 +105,6 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
-            disk_parallel: None,
             populate: Populate::Blocking,
             advice: None,
             prevent_caching: None,
@@ -128,7 +127,6 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
-            disk_parallel: None,
             populate: Populate::Blocking,
             advice: Some(AdviceSetting::Advice(Advice::Normal)),
             prevent_caching: None,
@@ -163,7 +161,6 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
-            disk_parallel: None,
             populate: Populate::No,
             advice: Some(AdviceSetting::Advice(Advice::Normal)),
             prevent_caching: None,

@@ -128,7 +128,6 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 OpenOptions {
                     writeable: true,
                     need_sequential: true,
-                    disk_parallel: None,
                     populate: Populate::Auto,
                     advice: None,
                     prevent_caching: None,
@@ -180,7 +179,6 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
         let open_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            disk_parallel: None,
             populate: Populate::from(populate),
             advice: None,
             prevent_caching: None,
@@ -198,7 +196,6 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             OpenOptions {
                 writeable: true,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::Auto,
                 advice: None,
                 prevent_caching: None,

@@ -44,9 +44,6 @@ impl From<bool> for Populate {
 pub struct OpenOptions {
     pub writeable: bool,
     pub need_sequential: bool,
-    /// How many parallel requests to the disk we can do.
-    /// If `None`, then use implementation-specific default.
-    pub disk_parallel: Option<usize>,
     /// Populate RAM cache on open, if applicable for this implementation.
     pub populate: Populate,
     /// Use specific mmap advice.
@@ -62,7 +59,6 @@ impl OpenOptions {
         Self {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::Auto,
             advice: None,
             prevent_caching: None,
@@ -142,7 +138,6 @@ where
     let options = OpenOptions {
         writeable: false,
         need_sequential: false,
-        disk_parallel: None,
         populate: Populate::No,
         advice: Some(AdviceSetting::Advice(Advice::Sequential)),
         prevent_caching: Some(false),

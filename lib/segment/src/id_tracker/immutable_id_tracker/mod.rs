@@ -87,7 +87,6 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::Blocking,
                 advice: None,
                 prevent_caching: None,
@@ -104,7 +103,6 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: Populate::Blocking,
                 advice: None,
                 prevent_caching: None,
@@ -152,7 +150,6 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::Auto,
                 advice: None,
                 prevent_caching: None,
@@ -191,7 +188,6 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: Populate::No,
                 advice: None,
                 prevent_caching: None,

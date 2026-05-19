@@ -59,7 +59,6 @@ impl<S: UniversalRead> Pages<S> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::No,
             advice: None,
             prevent_caching: None,

@@ -70,7 +70,6 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead>(
     let options = OpenOptions {
         writeable: false,
         need_sequential: true,
-        disk_parallel: None,
         populate: Populate::No,
         advice: None,
         prevent_caching: Some(false),

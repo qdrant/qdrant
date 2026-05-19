@@ -92,7 +92,6 @@ impl UniversalRead for CachedSlice {
         let OpenOptions {
             writeable,
             need_sequential: _,
-            disk_parallel: _,
             populate: _,
             advice: _,
             prevent_caching: _, // This is cached in disk, backed by a mmap

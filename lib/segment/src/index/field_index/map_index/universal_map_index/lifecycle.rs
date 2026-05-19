@@ -45,7 +45,6 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             OpenOptions {
                 writeable: false,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::from(do_populate),
                 advice: None,
                 prevent_caching: None,
@@ -60,7 +59,6 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             OpenOptions {
                 writeable: true,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::Auto,
                 advice: None,
                 prevent_caching: None,
@@ -142,7 +140,6 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 OpenOptions {
                     writeable: true,
                     need_sequential: true,
-                    disk_parallel: None,
                     populate: Populate::Auto,
                     advice: None,
                     prevent_caching: None,

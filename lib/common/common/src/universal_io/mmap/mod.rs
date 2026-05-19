@@ -63,7 +63,6 @@ impl UniversalRead for MmapFile {
         let OpenOptions {
             writeable,
             need_sequential,
-            disk_parallel: _,
             populate,
             advice,
             prevent_caching: _, // Whole point of mmap is to cache
@@ -255,7 +254,6 @@ impl MmapFile {
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: Populate::No,
                 advice: Some(AdviceSetting::Advice(Advice::Normal)),
                 prevent_caching: None,

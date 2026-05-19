@@ -115,7 +115,6 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: Populate::No,
                 advice: None,
                 prevent_caching: None,
@@ -161,7 +160,6 @@ where
         let options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::from(populate),
             advice: Some(AdviceSetting::Global),
             prevent_caching: None,

@@ -173,7 +173,6 @@ impl MultivectorOffsetsStorageMmap {
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: Populate::No,
                 advice: None,
                 prevent_caching: None,

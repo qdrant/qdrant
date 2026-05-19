@@ -133,7 +133,6 @@ impl MmapInvertedIndex<MmapFile> {
                 OpenOptions {
                     writeable: true,
                     need_sequential: true,
-                    disk_parallel: None,
                     populate: Populate::Auto,
                     advice: None,
                     prevent_caching: None,
@@ -172,7 +171,6 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
         let postings_open_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            disk_parallel: None,
             populate: Populate::from(populate),
             advice: Some(AdviceSetting::Advice(Advice::Normal)),
             prevent_caching: None,
@@ -192,7 +190,6 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             OpenOptions {
                 writeable: false,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::from(populate),
                 advice: None,
                 prevent_caching: None,
@@ -204,7 +201,6 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             OpenOptions {
                 writeable: false,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::from(populate),
                 advice: None,
                 prevent_caching: None,
@@ -216,7 +212,6 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             OpenOptions {
                 writeable: true,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::Auto,
                 advice: None,
                 prevent_caching: None,

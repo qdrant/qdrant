@@ -128,7 +128,6 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let open_options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::Auto,
             advice: None,
             prevent_caching: None,
@@ -165,7 +164,6 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let open_options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::Auto,
             advice: None,
             prevent_caching: None,
@@ -210,7 +208,6 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let open_options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::Auto,
             advice: None,
             prevent_caching: None,
@@ -275,7 +272,6 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let open_options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::Auto,
             advice: None,
             prevent_caching: None,
@@ -313,7 +309,6 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let open_options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::Auto,
             advice: None,
             prevent_caching: None,
@@ -360,7 +355,6 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let open_options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::Auto,
             advice: None,
             prevent_caching: None,

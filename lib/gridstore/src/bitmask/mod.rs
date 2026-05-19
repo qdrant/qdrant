@@ -21,7 +21,6 @@ const BITMASK_NAME: &str = "bitmask.dat";
 const OPEN_OPTIONS: OpenOptions = OpenOptions {
     writeable: true,
     need_sequential: false,
-    disk_parallel: None,
     populate: Populate::No,
     advice: None,
     prevent_caching: None,
@@ -132,7 +131,6 @@ impl<S: UniversalWrite> Bitmask<S> {
             OpenOptions {
                 writeable: true,
                 need_sequential: true,
-                disk_parallel: None,
                 populate: Populate::Auto,
                 advice: None,
                 prevent_caching: None,

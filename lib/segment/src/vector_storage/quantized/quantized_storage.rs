@@ -52,7 +52,6 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         OpenOptions {
             writeable: false,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::No,
             advice: None,
             prevent_caching: None,

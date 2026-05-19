@@ -71,7 +71,6 @@ impl UniversalRead for IoUringFile {
         let OpenOptions {
             writeable,
             need_sequential: _,
-            disk_parallel: _,
             populate: _,
             advice: _,
             prevent_caching,

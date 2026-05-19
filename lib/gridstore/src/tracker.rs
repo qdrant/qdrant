@@ -20,7 +20,6 @@ fn tracker_open_options() -> OpenOptions {
     OpenOptions {
         writeable: true,
         need_sequential: false,
-        disk_parallel: None,
         populate: Populate::No,
         advice: Some(AdviceSetting::Advice(Advice::Random)),
         prevent_caching: None,
