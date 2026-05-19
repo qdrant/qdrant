@@ -17,7 +17,7 @@ use crate::mmap::{AdviceSetting, Madviseable};
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::{
     OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError, UniversalKind,
-    UniversalRead, UniversalReadFileOps,
+    UniversalRead, UniversalReadFileOps, UserData,
 };
 
 /// A lazily-populated local mirror of an immutable remote file.
@@ -312,15 +312,21 @@ where
             return Ok(state);
         }
 
-        let state = self.init_local_state_from_scratch()?;
-
-        match std::mem::replace(&mut *guard, InitSource::FromScratch) {
-            InitSource::FromScratch => {}
+        let local = match std::mem::replace(&mut *guard, InitSource::FromScratch) {
+            InitSource::FromScratch => self.init_local_state_from_scratch()?,
             InitSource::FromPrefiller(mut pipe) => {
                 match pipe.wait()? {
                     Some((blocks_range, bytes)) => {
-                        unsafe { state.write_mmap_bytes(&bytes, blocks_range) };
-                        state.mark_fully_populated();
+                        let local = LocalState::new(
+                            &self.local_path,
+                            // TODO: if we want partial prefill, we should still create local state with
+                            // entire length of remote file, not the partial data.
+                            bytes.len() as u64,
+                            self.open_options,
+                        )?;
+                        unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
+                        local.mark_fully_populated();
+                        local
                     }
                     None => {
                         debug_assert!(
@@ -328,13 +334,14 @@ where
                             "Looks like the request for prefill bytes was incorrect"
                         );
                         // init from scratch
+                        self.init_local_state_from_scratch()?
                     }
                 }
             }
         };
 
         self.local
-            .set(state)
+            .set(local)
             .expect("OnceLock::set must succeed while holding init_lock");
 
         Ok(self.local.get().expect("just initialized"))
@@ -363,17 +370,18 @@ impl<R> UniversalRead for DiskCache<R>
 where
     R: UniversalRead + Clone,
 {
-    type BorrowedReadPipeline<'a, T, Meta>
-        = DiskCachePipeline<'a, R, T, Meta>
+    type BorrowedReadPipeline<'a, T, U>
+        = DiskCachePipeline<'a, R, T, U>
     where
         R: 'a,
-        T: bytemuck::Pod;
+        T: bytemuck::Pod,
+        U: UserData;
 
     type OwnedReadPipeline<T, U>
         = OwnedDiskCachePipeline<R, T, U>
     where
         T: bytemuck::Pod,
-        U: crate::universal_io::UserData;
+        U: UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let config = DiskCacheConfig::global().ok_or_else(|| {

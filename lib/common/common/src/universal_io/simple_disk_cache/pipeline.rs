@@ -3,18 +3,18 @@ use std::cell::OnceCell;
 use std::ops::Range;
 
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::simple_disk_cache::file::to_block_range;
+use crate::universal_io::simple_disk_cache::file::{LocalState, to_block_range};
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache};
 use crate::universal_io::traits::BorrowedReadPipeline;
 use crate::universal_io::{
-    self, OwnedReadPipeline, ReadRange, UniversalIoError, UniversalRead, UserData,
+    self, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UniversalRead, UserData,
 };
 
 struct RemoteMeta<File, U> {
     file: File,
     blocks_range: Range<u32>,
     read_range: ReadRange,
-    meta: U,
+    user_data: U,
 }
 
 /// Outcome of [`plan_schedule`]: either the requested range is already available
@@ -33,9 +33,11 @@ enum Source {
 /// Decide whether `range` can be answered from local mmap or needs a remote fetch.
 ///
 /// Avoids materializing the local file for empty reads.
-fn pick_source<R, T>(file: &DiskCache<R>, range: ReadRange) -> universal_io::Result<Source>
+fn pick_source<'a, T>(
+    get_local_state: impl Fn() -> Result<&'a LocalState>,
+    range: ReadRange,
+) -> Result<Source>
 where
-    R: UniversalRead,
     T: bytemuck::Pod,
 {
     let byte_range = range.into_byte_range::<T>();
@@ -43,7 +45,7 @@ where
         return Ok(Source::Local { byte_range });
     }
 
-    let local = file.local_state()?;
+    let local = get_local_state()?;
 
     if byte_range.end > local.mmap.len() as u64 {
         // TODO: Grow local file if remote file has grown, or OOB.
@@ -177,42 +179,42 @@ where
 
     fn schedule<P: AccessPattern>(
         &mut self,
-        meta: U,
+        user_data: U,
         file: &'file DiskCache<R>,
         range: ReadRange,
     ) -> universal_io::Result<()> {
-        match pick_source::<R, T>(file, range)? {
+        match pick_source::<T>(|| file.local_state(), range)? {
             Source::Local { byte_range } => {
                 // SAFETY: Source::Local confirms the range is local (or empty).
                 let bytes = unsafe { read_local::<R, T>(file, byte_range)? };
-                self.result = Some((meta, bytes));
+                self.result = Some((user_data, bytes));
             }
             Source::Remote {
                 blocks_range,
                 blocks_byte_range,
             } => {
-                let pipelined_meta = RemoteMeta {
+                let remote_meta = RemoteMeta {
                     file,
                     blocks_range,
                     read_range: range,
-                    meta,
+                    user_data,
                 };
                 let remote_pipeline = self.get_or_init_remote_pipeline()?;
-                remote_pipeline.schedule::<P>(pipelined_meta, file.remote()?, blocks_byte_range)?;
+                remote_pipeline.schedule::<P>(remote_meta, file.remote()?, blocks_byte_range)?;
             }
         }
         Ok(())
     }
 
     fn wait(&mut self) -> universal_io::Result<Option<(U, Cow<'file, [T]>)>> {
-        if let Some((meta, slice)) = self.result.take() {
-            return Ok(Some((meta, Cow::Borrowed(slice))));
+        if let Some((user_data, slice)) = self.result.take() {
+            return Ok(Some((user_data, Cow::Borrowed(slice))));
         }
 
         let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
             return Ok(None);
         };
-        let Some((pipelined_meta, bytes)) = remote_pipeline.wait()? else {
+        let Some((remote_meta, bytes)) = remote_pipeline.wait()? else {
             return Ok(None);
         };
 
@@ -220,12 +222,12 @@ where
             file,
             blocks_range,
             read_range,
-            meta,
-        } = pipelined_meta;
+            user_data,
+        } = remote_meta;
 
         // SAFETY: `blocks_range` and `read_range` match what was scheduled.
         let items = unsafe { commit_and_read::<R, T>(file, &bytes, blocks_range, read_range)? };
-        Ok(Some((meta, Cow::Borrowed(items))))
+        Ok(Some((user_data, Cow::Borrowed(items))))
     }
 }
 
@@ -287,7 +289,7 @@ where
     where
         P: AccessPattern,
     {
-        match pick_source::<R, T>(&self.file, range)? {
+        match pick_source::<T>(|| self.file.local_state(), range)? {
             Source::Local { byte_range } => {
                 self.pending = Some((user_data, byte_range));
             }
@@ -295,14 +297,14 @@ where
                 blocks_range,
                 blocks_byte_range,
             } => {
-                let pipelined_meta = RemoteMeta {
+                let remote_meta = RemoteMeta {
                     file: (),
                     blocks_range,
                     read_range: range,
-                    meta: user_data,
+                    user_data,
                 };
                 let remote_pipeline = self.get_or_init_remote_pipeline()?;
-                remote_pipeline.schedule::<P>(pipelined_meta, blocks_byte_range)?;
+                remote_pipeline.schedule::<P>(remote_meta, blocks_byte_range)?;
             }
         }
         Ok(())
@@ -318,7 +320,7 @@ where
         let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
             return Ok(None);
         };
-        let Some((pipelined_meta, bytes)) = remote_pipeline.wait()? else {
+        let Some((remote_meta, bytes)) = remote_pipeline.wait()? else {
             return Ok(None);
         };
 
@@ -326,11 +328,11 @@ where
             file: _,
             blocks_range,
             read_range,
-            meta,
-        } = pipelined_meta;
+            user_data,
+        } = remote_meta;
 
         let items =
             unsafe { commit_and_read::<R, T>(&self.file, &bytes, blocks_range, read_range)? };
-        Ok(Some((meta, Cow::Borrowed(items))))
+        Ok(Some((user_data, Cow::Borrowed(items))))
     }
 }
