@@ -19,7 +19,7 @@ use tokio::runtime::Handle;
 use crate::async_io::{AsyncRead, AsyncWrite};
 use crate::runtime::resolve_handle;
 
-/// Sync wrapper over an [`AsyncRead`] implementor. Construct with
+/// Sync wrapper over an [`AsyncRead`] implementer. Construct with
 /// [`IoBridge::new`]; the wrapped value provides the async surface and the
 /// handle gives the bridge a runtime to block on.
 pub struct IoBridge<T> {
