@@ -163,7 +163,10 @@ impl From<UniversalIoError> for OperationError {
             | UniversalIoError::OutOfBounds { .. }
             | UniversalIoError::InvalidFileIndex { .. }
             | UniversalIoError::Uninitialized { .. }
-            | UniversalIoError::QueueIsFull => Self::service_error(err.to_string()),
+            | UniversalIoError::QueueIsFull
+            | UniversalIoError::S3(_)
+            | UniversalIoError::S3RuntimeShutDown
+            | UniversalIoError::S3Config { .. } => Self::service_error(err.to_string()),
         }
     }
 }

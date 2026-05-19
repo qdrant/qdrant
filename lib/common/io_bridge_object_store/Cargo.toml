@@ -1,0 +1,22 @@
+[package]
+name = "io_bridge_object_store"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+common = { path = "../common" }
+bytes = { workspace = true }
+bytemuck = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+num_cpus = { workspace = true }
+object_store = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

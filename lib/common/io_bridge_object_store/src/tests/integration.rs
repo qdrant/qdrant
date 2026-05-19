@@ -1,0 +1,123 @@
+#![cfg(test)]
+
+use std::path::Path;
+
+use common::universal_io::{OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFileOps};
+
+use crate::file::S3File;
+use crate::runtime::S3RuntimeHandle;
+use crate::tests::rustfs::{rustfs_enabled, rustfs_s3_config, setup_bucket};
+use crate::{S3Context, S3ContextGuard, push_s3_context};
+
+fn maybe_skip() -> bool {
+    if !rustfs_enabled() {
+        eprintln!("skipping rustfs integration test; set S3_INTEGRATION_TEST=1 to enable");
+        true
+    } else {
+        false
+    }
+}
+
+fn push_test_context(runtime: &S3RuntimeHandle) -> S3ContextGuard {
+    push_s3_context(S3Context {
+        config: rustfs_s3_config(),
+        runtime: Some(runtime.clone()),
+    })
+}
+
+#[test]
+#[ignore]
+fn test_open_and_read_whole() {
+    if maybe_skip() { return; }
+    let runtime = S3RuntimeHandle::global();
+    setup_bucket(&runtime, &[("hello.bin", b"hello rustfs")]);
+    let _guard = push_test_context(&runtime);
+
+    let file = S3File::open("hello.bin", OpenOptions::default()).expect("open");
+    let bytes = file
+        .read_whole::<u8>()
+        .expect("read_whole");
+    assert_eq!(&bytes[..], b"hello rustfs");
+}
+
+#[test]
+#[ignore]
+fn test_read_range() {
+    if maybe_skip() { return; }
+    let runtime = S3RuntimeHandle::global();
+    setup_bucket(&runtime, &[("ranged.bin", &(0u8..=63u8).collect::<Vec<u8>>())]);
+    let _guard = push_test_context(&runtime);
+
+    let file = S3File::open("ranged.bin", OpenOptions::default()).expect("open");
+    let bytes = file
+        .read::<common::generic_consts::Random, u8>(ReadRange::new(16, 16))
+        .expect("read");
+    assert_eq!(bytes.len(), 16);
+    assert_eq!(bytes[0], 16);
+    assert_eq!(bytes[15], 31);
+}
+
+#[test]
+#[ignore]
+fn test_read_batch_parallel() {
+    if maybe_skip() { return; }
+    let runtime = S3RuntimeHandle::global();
+    setup_bucket(&runtime, &[("blob", &(0u8..=255u8).collect::<Vec<u8>>())]);
+    let _guard = push_test_context(&runtime);
+
+    let file = S3File::open("blob", OpenOptions::default()).expect("open");
+    let inputs: Vec<(u32, ReadRange)> = (0u32..16)
+        .map(|i| (i, ReadRange::new(u64::from(i) * 16, 16)))
+        .collect();
+    let mut got: std::collections::HashMap<u32, Vec<u8>> = Default::default();
+    file.read_batch::<common::generic_consts::Random, u8, _>(
+        inputs,
+        |user_data, slice| {
+            got.insert(user_data, slice.to_vec());
+            Ok(())
+        },
+    )
+    .expect("read_batch");
+    assert_eq!(got.len(), 16);
+    for i in 0u32..16 {
+        let chunk = &got[&i];
+        assert_eq!(chunk.len(), 16);
+        assert_eq!(chunk[0], (i * 16) as u8);
+    }
+}
+
+#[test]
+#[ignore]
+fn test_not_found() {
+    if maybe_skip() { return; }
+    let runtime = S3RuntimeHandle::global();
+    let _ = setup_bucket(&runtime, &[]);
+    let _guard = push_test_context(&runtime);
+
+    let err = S3File::open("does-not-exist", OpenOptions::default()).unwrap_err();
+    assert!(matches!(err, UniversalIoError::NotFound { .. }));
+}
+
+#[test]
+#[ignore]
+fn test_list_files() {
+    if maybe_skip() { return; }
+    let runtime = S3RuntimeHandle::global();
+    setup_bucket(
+        &runtime,
+        &[
+            ("listed/a", b"x"),
+            ("listed/b", b"x"),
+            ("listed/c", b"x"),
+            ("other/z", b"x"),
+        ],
+    );
+    let _guard = push_test_context(&runtime);
+
+    let files = <S3File as UniversalReadFileOps>::list_files(Path::new("listed"))
+        .expect("list_files");
+    assert_eq!(files.len(), 3);
+    for f in &files {
+        assert!(f.to_string_lossy().starts_with("listed/"));
+    }
+}
