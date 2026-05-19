@@ -11,10 +11,11 @@ use common::low_memory::low_memory_mode;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
+use quantization::encoded_vectors_tq::{self as encoded_vectors_tq, EncodedVectorsTQ};
 use quantization::encoded_vectors_u8::{self, ScalarQuantizationMethod};
-use quantization::turboquant::{self as encoded_vectors_tq, EncodedVectorsTQ, TQBits, TQMode};
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8, encoded_vectors_pq};
 use serde::{Deserialize, Serialize};
+use turboquant::{TQBits, TQMode};
 
 use super::quantized_multivector_storage::{
     MultivectorOffset, MultivectorOffsetsStorage, MultivectorOffsetsStorageMmap,

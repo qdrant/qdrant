@@ -1,4 +1,4 @@
-use crate::turboquant::TQBits;
+use crate::TQBits;
 
 /// 1-bit (2 centroids): Lloyd-Max for N(0,1)
 const CENTROIDS_1BIT: [f32; 2] = [-0.797_884_6, 0.797_884_6];

@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use quantization::turboquant::rotation::HadamardRotation;
+use turboquant::rotation::HadamardRotation;
 
 const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
 

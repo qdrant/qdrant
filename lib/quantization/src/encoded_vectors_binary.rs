@@ -11,12 +11,12 @@ use common::mmap::MmapFlusher;
 use common::mmap::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use common::typelevel::True;
 use common::types::PointOffsetType;
+use common::vector_stats::{VectorElementStats, VectorStats};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
 use crate::encoded_vectors::validate_vector_parameters;
-use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
     VectorParameters,

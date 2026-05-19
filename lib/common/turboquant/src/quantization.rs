@@ -1,23 +1,20 @@
-use crate::DistanceType;
-use crate::turboquant::encoding::TqVectorExtras;
-use crate::turboquant::rotation::HadamardRotation;
-use crate::turboquant::simd::{
+use crate::encoding::TqVectorExtras;
+use crate::rotation::HadamardRotation;
+use crate::simd::{
     CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query2bitSimd, Query4bitSimd,
     score_1bit_internal, score_2bit_internal, score_2bit_internal_weighted, score_4bit_internal,
     score_4bit_internal_weighted,
 };
-use crate::turboquant::{
-    EncodedQueryTQ, EncodedQueryTQData, ErrorCorrectionMetadata, Metadata, TQBits, TQMode,
-};
+use crate::{DistanceType, EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode};
 
 /// Quantize vectors using TurboQuant.
 pub struct TurboQuantizer {
-    pub(super) rotation: HadamardRotation,
-    pub(super) bits: TQBits,
-    pub(super) mode: TQMode,
-    pub(super) distance: DistanceType,
-    pub(super) padded_dim: usize,
-    pub(super) error_correction: Option<ErrorCorrection>,
+    pub rotation: HadamardRotation,
+    pub bits: TQBits,
+    pub mode: TQMode,
+    pub distance: DistanceType,
+    pub padded_dim: usize,
+    pub error_correction: Option<ErrorCorrection>,
 }
 
 /// TQ+ per-coordinate shift+scale: pulls each rotated, length-rescaled
@@ -35,40 +32,19 @@ pub struct ErrorCorrection {
     /// `_mm256_madd_epi16` / `vmlal_s16` directly — the `i16` element type
     /// makes that contract a type-system invariant. Recomputed from `scale`
     /// rather than persisted — `scale` is the single source of truth.
-    pub(super) d_prime_sq_i16: Vec<i16>,
+    pub d_prime_sq_i16: Vec<i16>,
     /// `(i16::MAX − 1) / max(D'²)` — quantization scale. The 1-bit cap
     /// (vs. full u16) costs ~3e-5 relative precision but lets SIMD use
     /// signed `i16` multiply-adds. `1.0` if all `D'²` are effectively zero
     /// (degenerate quantizer).
-    pub(super) weight_scale: f32,
+    pub weight_scale: f32,
     /// `⟨M, M⟩ = Σ shift²` global constant. Used in symmetric TQ+ scoring to
     /// cancel the double-counted `⟨M, M⟩` from `xm_a + xm_b`.
-    pub(super) mm_const: f32,
+    pub mm_const: f32,
 }
 
 impl ErrorCorrection {
-    /// Reconstruct from persisted metadata, validating that `shift` and
-    /// `scale` have the expected length. Returns an error if the metadata
-    /// has been truncated or otherwise corrupted.
-    pub fn new_from_metadata(
-        metadata: &ErrorCorrectionMetadata,
-        padded_dim: usize,
-    ) -> std::io::Result<Self> {
-        if metadata.shift.len() != padded_dim || metadata.scale.len() != padded_dim {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "ErrorCorrection metadata length mismatch: shift={}, scale={}, expected={}",
-                    metadata.shift.len(),
-                    metadata.scale.len(),
-                    padded_dim,
-                ),
-            ));
-        }
-        Ok(Self::new(metadata.shift.clone(), metadata.scale.clone()))
-    }
-
-    pub(super) fn new(shift: Vec<f32>, scale: Vec<f32>) -> Self {
+    pub fn new(shift: Vec<f32>, scale: Vec<f32>) -> Self {
         debug_assert_eq!(
             shift.len(),
             scale.len(),
@@ -164,25 +140,6 @@ impl TurboQuantizer {
         }
     }
 
-    /// Initialize a new TurboQuantizer from metadata. Returns `Err` if the
-    /// persisted `ErrorCorrection` shift/scale lengths don't match the
-    /// expected `padded_dim`.
-    pub fn new_from_metadata(metadata: &Metadata) -> std::io::Result<Self> {
-        let padded_dim = Self::padded_dim(metadata.vector_parameters.dim, metadata.bits);
-        let error_correction = metadata
-            .error_correction
-            .as_ref()
-            .map(|m| ErrorCorrection::new_from_metadata(m, padded_dim))
-            .transpose()?;
-        Ok(Self::new(
-            metadata.vector_parameters.dim,
-            metadata.bits,
-            metadata.mode,
-            metadata.vector_parameters.distance_type,
-            error_correction,
-        ))
-    }
-
     /// Pad, rotate, and length-rescale `vec` into `buf`. After this call `buf`
     /// holds rotated coordinates whose per-vector L2 norm is `sqrt(padded_dim)`,
     /// matching the Lloyd-Max N(0, 1) centroid grid. Returns the original L2
@@ -190,9 +147,9 @@ impl TurboQuantizer {
     /// Cosine.
     ///
     /// Used both by [`Self::quantize`] and by the TQ+ first pass in
-    /// [`crate::turboquant::EncodedVectorsTQ::encode`] when computing per-
+    /// [`quantization::turboquant::EncodedVectorsTQ::encode`] when computing per-
     /// coordinate stats over rescaled rotated samples.
-    pub(crate) fn preprocess_into(&self, vec: &[f32], buf: &mut [f64]) -> Option<f32> {
+    pub fn preprocess_into(&self, vec: &[f32], buf: &mut [f64]) -> Option<f32> {
         debug_assert!(vec.len() <= self.padded_dim);
         debug_assert_eq!(buf.len(), self.padded_dim);
 
