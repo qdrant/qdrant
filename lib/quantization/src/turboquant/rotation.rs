@@ -45,6 +45,18 @@ impl HadamardRotation {
         }
     }
 
+    /// Heap memory owned by the rotation tables. The permutations are stored
+    /// inline (no heap), so only the chunk metadata vectors are counted.
+    pub(super) fn heap_size_bytes(&self) -> usize {
+        let Self {
+            permutations: _,
+            dim: _,
+            chunk_sizes,
+            chunk_norms,
+        } = self;
+        chunk_sizes.capacity() * size_of::<usize>() + chunk_norms.capacity() * size_of::<f64>()
+    }
+
     pub fn apply(&self, x: &mut [f64]) {
         debug_assert_eq!(x.len(), self.dim);
 

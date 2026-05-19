@@ -93,9 +93,11 @@ pub trait EncodedVectors: Sized {
 
     /// Additional heap memory used by this encoded vectors instance
     /// beyond what's tracked in files (storage heap + metadata).
-    fn heap_size_bytes(&self) -> usize {
-        0
-    }
+    ///
+    /// Required (no default) so every quantizer must account for its own
+    /// heap explicitly — at minimum delegating to the storage backend's
+    /// [`EncodedStorage::heap_size_bytes`].
+    fn heap_size_bytes(&self) -> usize;
 
     type SupportsBytes: TBool;
     fn score_bytes(
