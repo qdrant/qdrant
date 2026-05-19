@@ -1,0 +1,4 @@
+/out/
+/target/
+.build/
+.swiftpm/
