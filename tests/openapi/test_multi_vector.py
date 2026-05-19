@@ -154,7 +154,10 @@ def test_multi_vector_validation(collection_name):
         }
     )
     assert not response.ok
-    assert 'Wrong input: Vector dimension error: expected dim: 4, got 0' in response.json()["status"]["error"]
+    # `Vector` is an untagged enum with `Dense` listed before `MultiDense`, so
+    # `[]` deserializes as an empty dense vector and is rejected at the
+    # validation boundary rather than by the dimension check during apply.
+    assert 'dense vector must not be empty' in response.json()["status"]["error"]
 
     # fails because it uses an empty inner vector
     response = request_with_validation(

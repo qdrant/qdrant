@@ -323,6 +323,13 @@ pub async fn do_upsert_points(
     use point_ops::UpdateMode;
     use segment::types::Filter;
 
+    // The REST handler already runs this via `actix_web_validator::Json`, but the
+    // gRPC handler does not — without this, empty vectors entering through gRPC
+    // would only be rejected on the synchronous (wait=true) apply path.
+    operation
+        .validate()
+        .map_err(|err| StorageError::bad_input(err.to_string()))?;
+
     let toc = toc_provider
         .check_strict_mode(
             &operation,

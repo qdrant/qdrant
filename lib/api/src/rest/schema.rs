@@ -18,9 +18,25 @@ use segment::types::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::rest::validate::validate_relevance_feedback_input;
+
+/// Reject zero-length dense vectors at the API boundary.
+///
+/// Without this check, `wait=false` upserts silently enqueue empty vectors that
+/// later get discarded by the segment dimension check, and can also reach code
+/// that asserts on non-zero length and panics (see qdrant/qdrant#9045, #7967).
+pub(crate) fn validate_non_empty_dense(vector: &[f32]) -> Result<(), ValidationErrors> {
+    if vector.is_empty() {
+        let mut err = ValidationError::new("empty_vector");
+        err.message = Some(Cow::Borrowed("dense vector must not be empty"));
+        let mut errors = ValidationErrors::new();
+        errors.add("vector", err);
+        return Err(errors);
+    }
+    Ok(())
+}
 
 /// Vector Data
 /// Vectors can be described directly with values
@@ -48,7 +64,7 @@ pub enum VectorOutput {
 impl Validate for Vector {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
-            Vector::Dense(_) => Ok(()),
+            Vector::Dense(v) => validate_non_empty_dense(v),
             Vector::Sparse(v) => v.validate(),
             Vector::MultiDense(m) => validate_multi_vector(m),
             Vector::Document(_) => Ok(()),
@@ -130,7 +146,7 @@ impl VectorStruct {
 impl Validate for VectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
-            VectorStruct::Single(_) => Ok(()),
+            VectorStruct::Single(v) => validate_non_empty_dense(v),
             VectorStruct::MultiDense(v) => validate_multi_vector(v),
             VectorStruct::Named(v) => common::validation::validate_iter(v.values()),
             VectorStruct::Document(_) => Ok(()),
