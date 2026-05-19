@@ -36,6 +36,10 @@ impl From<bool> for Populate {
     }
 }
 
+/// Options for [`UniversalRead::open`].
+///
+/// No `#[derive(Default)]`. Prefer specifying all options explicitly. (except
+/// for tests and [`OpenOptions::extra`]).
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
     pub writeable: bool,
@@ -51,8 +55,10 @@ pub struct OpenOptions {
     pub prevent_caching: Option<bool>,
 }
 
-impl Default for OpenOptions {
-    fn default() -> Self {
+impl OpenOptions {
+    /// Default values for [`OpenOptions`].
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new_for_test() -> Self {
         Self {
             writeable: true,
             need_sequential: true,

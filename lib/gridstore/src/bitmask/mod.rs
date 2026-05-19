@@ -127,7 +127,17 @@ impl<S: UniversalWrite> Bitmask<S> {
             )));
         }
 
-        let bitslice = StoredBitSlice::open(&path, OpenOptions::default())?;
+        let bitslice = StoredBitSlice::open(
+            &path,
+            OpenOptions {
+                writeable: true,
+                need_sequential: true,
+                disk_parallel: None,
+                populate: Populate::Auto,
+                advice: None,
+                prevent_caching: None,
+            },
+        )?;
         let regions_gaps = BitmaskGaps::open(dir, config.clone())?;
 
         Ok(Self {

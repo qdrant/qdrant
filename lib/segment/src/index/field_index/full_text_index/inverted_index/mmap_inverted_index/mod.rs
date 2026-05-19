@@ -128,8 +128,17 @@ impl MmapInvertedIndex<MmapFile> {
                     .next_multiple_of(size_of::<u64>()),
             )?;
 
-            let mut deleted_storage =
-                MmapBitSlice::open(&deleted_points_path, OpenOptions::default())?;
+            let mut deleted_storage = MmapBitSlice::open(
+                &deleted_points_path,
+                OpenOptions {
+                    writeable: true,
+                    need_sequential: true,
+                    disk_parallel: None,
+                    populate: Populate::Auto,
+                    advice: None,
+                    prevent_caching: None,
+                },
+            )?;
             deleted_storage.write_bitslice(&deleted_bitslice)?;
             deleted_storage.flusher()()?;
         }
@@ -182,8 +191,11 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             &vocab_path,
             OpenOptions {
                 writeable: false,
+                need_sequential: true,
+                disk_parallel: None,
                 populate: Populate::from(populate),
-                ..OpenOptions::default()
+                advice: None,
+                prevent_caching: None,
             },
         )?;
 
@@ -191,13 +203,25 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             &point_to_tokens_count_path,
             OpenOptions {
                 writeable: false,
+                need_sequential: true,
+                disk_parallel: None,
                 populate: Populate::from(populate),
-                ..OpenOptions::default()
+                advice: None,
+                prevent_caching: None,
             },
         )?;
 
-        let deleted_payload_mmap =
-            MmapBitSlice::open(&deleted_points_path, OpenOptions::default())?;
+        let deleted_payload_mmap = MmapBitSlice::open(
+            &deleted_points_path,
+            OpenOptions {
+                writeable: true,
+                need_sequential: true,
+                disk_parallel: None,
+                populate: Populate::Auto,
+                advice: None,
+                prevent_caching: None,
+            },
+        )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_tokens_count.len()` because it

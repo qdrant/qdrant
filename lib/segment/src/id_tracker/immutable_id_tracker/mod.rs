@@ -85,8 +85,12 @@ where
         let deleted_storage = StoredBitSlice::open(
             deleted_path(segment_path),
             OpenOptions {
+                writeable: true,
+                need_sequential: true,
+                disk_parallel: None,
                 populate: Populate::Blocking,
-                ..OpenOptions::default()
+                advice: None,
+                prevent_caching: None,
             },
         )?;
 
@@ -143,7 +147,17 @@ where
                 .next_multiple_of(size_of::<u64>()),
         )?;
 
-        let mut deleted_storage = StoredBitSlice::open(&deleted_filepath, OpenOptions::default())?;
+        let mut deleted_storage = StoredBitSlice::open(
+            &deleted_filepath,
+            OpenOptions {
+                writeable: true,
+                need_sequential: true,
+                disk_parallel: None,
+                populate: Populate::Auto,
+                advice: None,
+                prevent_caching: None,
+            },
+        )?;
 
         // Set bits for deleted points from the mappings,
         deleted_storage.write_bitslice(mappings.deleted())?;

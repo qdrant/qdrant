@@ -123,7 +123,17 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                     .div_ceil(u8::BITS as usize)
                     .next_multiple_of(size_of::<u64>()),
             )?;
-            let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+            let mut deleted = MmapBitSlice::open(
+                &deleted_path,
+                OpenOptions {
+                    writeable: true,
+                    need_sequential: true,
+                    disk_parallel: None,
+                    populate: Populate::Auto,
+                    advice: None,
+                    prevent_caching: None,
+                },
+            )?;
             deleted.set_ascending_bits_batch(
                 dynamic_index
                     .point_to_values
@@ -183,7 +193,17 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
 
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+        let deleted_payload_mmap = MmapBitSlice::open(
+            &deleted_path,
+            OpenOptions {
+                writeable: true,
+                need_sequential: true,
+                disk_parallel: None,
+                populate: Populate::Auto,
+                advice: None,
+                prevent_caching: None,
+            },
+        )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_values.len()` because it only

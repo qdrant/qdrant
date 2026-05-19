@@ -160,9 +160,11 @@ where
 
         let options = OpenOptions {
             writeable: true,
+            need_sequential: true,
+            disk_parallel: None,
             populate: Populate::from(populate),
             advice: Some(AdviceSetting::Global),
-            ..Default::default()
+            prevent_caching: None,
         };
         let flags = StoredBitSlice::open(&path, options)?;
         Ok(flags)
