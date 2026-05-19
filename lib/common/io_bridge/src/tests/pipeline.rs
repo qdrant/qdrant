@@ -80,6 +80,44 @@ fn pipeline_reads_multi_byte_elements_at_element_offset() {
 }
 
 #[test]
+fn pipeline_uses_each_file_dispatcher_in_same_batch() {
+    let runtime = Runtime::new().expect("runtime");
+    let handle = runtime.handle().clone();
+    let first_file = MockFile {
+        dispatcher: Arc::new(AsyncDispatcher::new(
+            handle.clone(),
+            StaticMockBackend::new(b"first!".to_vec()),
+        )),
+    };
+    let second_file = MockFile {
+        dispatcher: Arc::new(AsyncDispatcher::new(
+            handle,
+            StaticMockBackend::new(b"second".to_vec()),
+        )),
+    };
+
+    let mut pipeline: IoBridgeReadPipeline<'_, MockFile, u8, u64> =
+        IoBridgeReadPipeline::new().expect("pipeline new");
+    pipeline
+        .schedule::<Random>(0, &first_file, ReadRange::new(0, 6))
+        .expect("schedule first file");
+    pipeline
+        .schedule::<Random>(1, &second_file, ReadRange::new(0, 6))
+        .expect("schedule second file");
+
+    let mut results = Vec::new();
+    while let Some((u, bytes)) = pipeline.wait().expect("wait ok") {
+        results.push((u, bytes.into_owned()));
+    }
+    results.sort_by_key(|(u, _)| *u);
+
+    assert_eq!(
+        results,
+        vec![(0, b"first!".to_vec()), (1, b"second".to_vec())],
+    );
+}
+
+#[test]
 fn pipeline_propagates_backend_error_to_wait() {
     let runtime = Runtime::new().expect("runtime");
     let handle = runtime.handle().clone();

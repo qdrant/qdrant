@@ -26,17 +26,15 @@ pub trait IoBridgeFile {
 }
 
 /// Per-batch pipeline that turns sync `schedule` / `wait` calls into async
-/// backend reads via the shared [`AsyncDispatcher`]. The dispatcher reference
-/// is picked up lazily on the first `schedule()` from the file argument, so
-/// `new()` keeps its no-arg signature and the trait's existing default
-/// `read_iter` / `read_multi_iter` implementations still drive us.
+/// backend reads via the [`AsyncDispatcher`] exposed by each scheduled file.
+/// `new()` keeps its no-arg signature, while each `schedule()` uses that file's
+/// dispatcher so one batch can span multiple backend clients.
 pub struct IoBridgeReadPipeline<'file, F, T, U>
 where
     F: IoBridgeFile,
     T: bytemuck::Pod,
     U: UserData,
 {
-    dispatcher: Option<Arc<AsyncDispatcher<F::Backend>>>,
     result_tx: tokio::sync::mpsc::UnboundedSender<DispatchResult>,
     result_rx: tokio::sync::mpsc::UnboundedReceiver<DispatchResult>,
     in_flight: usize,
@@ -57,7 +55,6 @@ where
     pub fn with_max_concurrency(max_concurrency: usize) -> Result<Self> {
         let (result_tx, result_rx) = tokio::sync::mpsc::unbounded_channel();
         Ok(Self {
-            dispatcher: None,
             result_tx,
             result_rx,
             in_flight: 0,
@@ -92,10 +89,7 @@ where
         if !self.can_schedule() {
             return Err(UniversalIoError::QueueIsFull);
         }
-        let dispatcher = self
-            .dispatcher
-            .get_or_insert_with(|| Arc::clone(file.dispatcher()))
-            .clone();
+        let dispatcher = Arc::clone(file.dispatcher());
         let tag = self.next_tag;
         self.next_tag += 1;
         self.user_data.insert(tag, user_data);
