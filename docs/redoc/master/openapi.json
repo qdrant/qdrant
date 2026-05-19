@@ -17763,7 +17763,7 @@
             "description": "Dimensionality of the vectors",
             "type": "integer",
             "format": "uint",
-            "maximum": 65536,
+            "maximum": 65535,
             "minimum": 1
           },
           "distance": {

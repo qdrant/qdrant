@@ -27,7 +27,7 @@ use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
     PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
     SparseVectorStorageType, StrictModeConfigOutput, VectorName, VectorNameBuf,
-    VectorStorageDatatype, WithPayloadInterface, WithVector,
+    VectorStorageDatatype, WithPayloadInterface, WithVector, MAX_DENSE_VECTOR_DIMENSION,
 };
 use semver::Version;
 use serde::{self, Deserialize, Serialize};
@@ -1337,7 +1337,7 @@ impl From<Datatype> for VectorStorageDatatype {
 #[anonymize(false)]
 pub struct VectorParams {
     /// Size of a vectors used
-    #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65536"))]
+    #[validate(custom(function = "validate_nonzerou64_dense_vector_dimension"))]
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
@@ -1374,11 +1374,15 @@ pub struct VectorParams {
     pub multivector_config: Option<MultiVectorConfig>,
 }
 
-/// Validate the value is in `[1, 65536]` or `None`.
-pub fn validate_nonzerou64_range_min_1_max_65536(
+/// Validate the value is in `[1, MAX_DENSE_VECTOR_DIMENSION]`.
+pub fn validate_nonzerou64_dense_vector_dimension(
     value: &NonZeroU64,
 ) -> Result<(), ValidationError> {
-    validate_range_generic(value.get(), Some(1), Some(65536))
+    validate_range_generic(
+        value.get(),
+        Some(1),
+        Some(MAX_DENSE_VECTOR_DIMENSION as u64),
+    )
 }
 
 /// Is considered empty if `None` or if diff has no field specified
@@ -1810,5 +1814,42 @@ impl PeerMetadata {
     /// Whether this metadata has a different version than our current Qdrant instance.
     pub fn is_different_version(&self) -> bool {
         self.version != *defaults::QDRANT_VERSION
+    }
+}
+
+#[cfg(test)]
+mod dense_vector_dimension_tests {
+    use std::num::NonZeroU64;
+
+    use validator::Validate;
+
+    use super::{validate_nonzerou64_dense_vector_dimension, VectorParams, MAX_DENSE_VECTOR_DIMENSION};
+    use crate::operations::types::Distance;
+
+    #[test]
+    fn dense_vector_dimension_boundaries() {
+        for (size, valid) in [
+            (1, true),
+            (MAX_DENSE_VECTOR_DIMENSION as u64, true),
+            (MAX_DENSE_VECTOR_DIMENSION as u64 + 1, false),
+        ] {
+            let value = NonZeroU64::new(size).unwrap();
+            let result = validate_nonzerou64_dense_vector_dimension(&value);
+            assert_eq!(result.is_ok(), valid, "size={size}");
+        }
+    }
+
+    #[test]
+    fn vector_params_rejects_oversized_dimension() {
+        let params = VectorParams {
+            size: NonZeroU64::new(MAX_DENSE_VECTOR_DIMENSION as u64 + 1).unwrap(),
+            distance: Distance::Cosine,
+            hnsw_config: None,
+            quantization_config: None,
+            on_disk: None,
+            datatype: None,
+            multivector_config: None,
+        };
+        assert!(params.validate().is_err());
     }
 }

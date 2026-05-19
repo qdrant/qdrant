@@ -555,6 +555,9 @@ pub const fn default_quantization_oversampling_value() -> Option<f64> {
 /// After change, update docs for GRPC and REST API.
 pub const ACORN_MAX_SELECTIVITY_DEFAULT: f64 = 0.4;
 
+/// Maximum number of dimensions supported for dense vectors (`u16::MAX`).
+pub const MAX_DENSE_VECTOR_DIMENSION: usize = 65535;
+
 /// ACORN-related search parameters
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Copy, PartialEq, Default, Hash,

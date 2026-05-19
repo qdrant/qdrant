@@ -125,12 +125,12 @@ def test_create_vector_rejects_zero_size(collection_name):
 
 
 def test_create_vector_rejects_oversize(collection_name):
-    """size above 65536 must be rejected at the API boundary."""
+    """size above 65535 must be rejected at the API boundary."""
     response = requests.put(
         f"{QDRANT_HOST}/collections/{collection_name}/vectors/vec_huge",
         params={'wait': 'true'},
         headers=qdrant_host_headers(),
-        json={"dense": {"size": 65537, "distance": "Cosine"}},
+        json={"dense": {"size": 65536, "distance": "Cosine"}},
     )
     assert response.status_code == 422, response.text
     assert "size" in response.text
