@@ -3713,6 +3713,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-bridge"
+version = "0.0.0"
+dependencies = [
+ "bytemuck",
+ "common",
+ "tokio",
+]
+
+[[package]]
 name = "io-uring"
 version = "0.7.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,15 @@
+[package]
+name = "io-bridge"
+version = "0.0.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+bytemuck = { workspace = true }
+common = { path = "../common" }
+tokio = { workspace = true }
