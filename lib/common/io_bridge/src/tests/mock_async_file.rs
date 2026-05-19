@@ -44,10 +44,7 @@ impl AsyncReadFileOps for MockAsyncFile {
 }
 
 impl AsyncRead for MockAsyncFile {
-    async fn open(
-        _path: &Path,
-        _options: OpenOptions,
-    ) -> Result<Self, UniversalIoError> {
+    async fn open(_path: &Path, _options: OpenOptions) -> Result<Self, UniversalIoError> {
         Ok(Self::with_contents(Vec::new()))
     }
 
