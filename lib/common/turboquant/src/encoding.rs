@@ -17,19 +17,19 @@ impl<'a> TqVectorExtras<'a> {
     /// `src.len()` against the configuration is the caller's responsibility —
     /// in practice the bytes come from [`TurboQuantizer::split_vector`] or
     /// [`TurboQuantizer::pack_extras_into`].
-    pub fn from_bytes(src: &'a [u8]) -> Self {
+    pub(crate) fn from_bytes(src: &'a [u8]) -> Self {
         Self { src }
     }
 
     /// Raw bytes backing this view. Intended for re-emitting the encoded
     /// extras into a packed vector — prefer the typed getters for inspection.
     #[inline]
-    pub fn as_bytes(&self) -> &'a [u8] {
+    pub(crate) fn as_bytes(&self) -> &'a [u8] {
         self.src
     }
 
     /// Returns the size (in bytes) required for the extras.
-    pub fn size_for(_bits: TQBits, distance: DistanceType, mode: TQMode) -> usize {
+    pub(crate) fn size_for(_bits: TQBits, distance: DistanceType, mode: TQMode) -> usize {
         let scaling_factor_size = match distance {
             // 4 Bytes for merged l2 with re-normalization applied.
             DistanceType::Dot => size_of::<f32>(),
@@ -107,7 +107,7 @@ impl TurboQuantizer {
     ///
     /// Symmetric inverse of [`Self::unpack_vector`]: feeding its yielded f64s
     /// back through `pack_vector` reproduces the same byte layout.
-    pub fn pack_vector<I>(&self, scaled: I, extras: TqVectorExtras<'_>) -> Vec<u8>
+    pub(crate) fn pack_vector<I>(&self, scaled: I, extras: TqVectorExtras<'_>) -> Vec<u8>
     where
         I: IntoIterator<Item = f64>,
     {
@@ -135,7 +135,7 @@ impl TurboQuantizer {
     /// view over the extras stored alongside them. Shared between
     /// [`Self::unpack_vector`] (scalar scoring) and the SIMD scoring paths
     /// that consume the raw packed bytes directly.
-    pub fn split_vector<'a>(&self, vec: &'a [u8]) -> (&'a [u8], TqVectorExtras<'a>) {
+    pub(crate) fn split_vector<'a>(&self, vec: &'a [u8]) -> (&'a [u8], TqVectorExtras<'a>) {
         let extra_len = TqVectorExtras::size_for(self.bits, self.distance, self.mode);
         let (dim_part, extra_part) = vec.split_at(vec.len() - extra_len);
         (dim_part, TqVectorExtras::from_bytes(extra_part))
@@ -199,7 +199,7 @@ impl TurboQuantizer {
 
     /// Computes the L2 length of `rotated_vec` for the distance metrics that
     /// store it. Returns `None` for metrics that don't (Cosine).
-    pub fn compute_l2_length(&self, rotated_vec: &[f64]) -> Option<f32> {
+    pub(crate) fn compute_l2_length(&self, rotated_vec: &[f64]) -> Option<f32> {
         match self.distance {
             DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
                 Some(rotated_vec.iter().map(|&i| i * i).sum::<f64>().sqrt() as f32)
@@ -214,7 +214,7 @@ impl TurboQuantizer {
     /// Dot/Cosine/L2 — for all three it's folded into the merged
     /// `scaling_factor = l2_length / centroid_norm`. L2 additionally stores
     /// the raw `l2_length` separately so scoring can recover the `||v||²` term.
-    pub fn pack_extras_into(
+    pub(crate) fn pack_extras_into(
         &self,
         l2_length: Option<f32>,
         centroid_norm: Option<f32>,

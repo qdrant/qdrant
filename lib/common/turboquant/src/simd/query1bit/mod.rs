@@ -224,7 +224,7 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
     /// no tail; otherwise returns `Some((buf, block_idx))` — the block index
     /// is where the SIMD backend should read plane bytes from.
     #[inline]
-    pub fn tail_block_scratch(&self, vector: &[u8]) -> Option<([u8; BLOCK_BYTES], usize)> {
+    pub(crate) fn tail_block_scratch(&self, vector: &[u8]) -> Option<([u8; BLOCK_BYTES], usize)> {
         if self.tail_bytes == 0 {
             return None;
         }
@@ -238,7 +238,7 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
     /// Number of full 128-dim blocks the SIMD main-loop should iterate over.
     /// Exposed to arch backends so they don't depend on the internal field name.
     #[inline]
-    pub fn num_full_blocks(&self) -> usize {
+    pub(crate) fn num_full_blocks(&self) -> usize {
         self.num_full_blocks
     }
 }
@@ -301,7 +301,7 @@ pub fn score_1bit_internal_scalar(a: &[u8], b: &[u8]) -> f32 {
 /// product.  Shared across scalar and SIMD paths so every backend agrees on
 /// the final rounding.
 #[inline]
-pub fn popcount_to_score(byte_len: usize, popcnt: u64) -> f32 {
+pub(crate) fn popcount_to_score(byte_len: usize, popcnt: u64) -> f32 {
     let total_bits = (byte_len as i64) * 8;
     let sign_sum = total_bits - 2 * (popcnt as i64);
     CENTROID_SQ * sign_sum as f32
