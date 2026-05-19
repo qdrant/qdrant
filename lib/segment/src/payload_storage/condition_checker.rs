@@ -24,7 +24,11 @@ pub trait ValueChecker {
     fn _check(&self, payload: &Value) -> bool {
         match payload {
             Value::Array(values) => values.iter().any(|x| self.check_match(x)),
-            _ => self.check_match(payload),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Object(_) => self.check_match(payload),
         }
     }
 
@@ -163,14 +167,22 @@ impl ValueChecker for Match {
             Match::Text(MatchText { text }) | Match::Phrase(MatchPhrase { phrase: text }) => {
                 match payload {
                     Value::String(stored) => stored.contains(text),
-                    _ => false,
+                    Value::Null
+                    | Value::Bool(_)
+                    | Value::Number(_)
+                    | Value::Array(_)
+                    | Value::Object(_) => false,
                 }
             }
             Match::TextAny(MatchTextAny { text_any }) => match payload {
                 Value::String(stored) => text_any
                     .split_whitespace()
                     .any(|token| stored.contains(token)),
-                _ => false,
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_) => false,
             },
             Match::Any(MatchAny { any }) => match (payload, any) {
                 (Value::String(stored), AnyVariants::Strings(list)) => {
@@ -228,7 +240,11 @@ impl ValueChecker for Range<OrderedFloat<FloatPayloadType>> {
                 .as_f64()
                 .map(|number| self.check_range(OrderedFloat(number)))
                 .unwrap_or(false),
-            _ => false,
+            Value::Null
+            | Value::Bool(_)
+            | Value::String(_)
+            | Value::Array(_)
+            | Value::Object(_) => false,
         }
     }
 }
@@ -254,7 +270,11 @@ impl ValueChecker for GeoBoundingBox {
                 }
                 false
             }
-            _ => false,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_) => false,
         }
     }
 }
@@ -271,7 +291,11 @@ impl ValueChecker for GeoRadius {
                 }
                 false
             }
-            _ => false,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_) => false,
         }
     }
 }
@@ -290,7 +314,11 @@ impl ValueChecker for GeoPolygon {
                 }
                 false
             }
-            _ => false,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_) => false,
         }
     }
 }

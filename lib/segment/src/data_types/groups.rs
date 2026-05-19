@@ -1,6 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value as JsonValue, json};
 
 /// Value of the group_by key, shared across all the hits in the group
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Eq, PartialEq, Clone, Hash)]
@@ -35,33 +35,29 @@ impl From<&str> for GroupId {
     }
 }
 
-impl From<GroupId> for serde_json::Value {
+impl From<GroupId> for JsonValue {
     fn from(key: GroupId) -> Self {
         match key {
-            GroupId::String(s) => serde_json::Value::String(s),
+            GroupId::String(s) => JsonValue::String(s),
             GroupId::NumberU64(n) => json!(n),
             GroupId::NumberI64(n) => json!(n),
         }
     }
 }
 
-impl TryFrom<&serde_json::Value> for GroupId {
+impl TryFrom<&JsonValue> for GroupId {
     type Error = ();
 
     /// Only allows Strings and Numbers to be converted into GroupId
-    fn try_from(value: &serde_json::Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &JsonValue) -> Result<Self, Self::Error> {
         match value {
-            serde_json::Value::String(s) => Ok(Self::String(s.clone())),
-            serde_json::Value::Number(n) => {
-                if let Some(n_u64) = n.as_u64() {
-                    Ok(Self::NumberU64(n_u64))
-                } else if let Some(n_i64) = n.as_i64() {
-                    Ok(Self::NumberI64(n_i64))
-                } else {
-                    Err(())
-                }
+            JsonValue::String(s) => Ok(Self::String(s.clone())),
+            JsonValue::Number(n) if let Some(n_u64) = n.as_u64() => Ok(Self::NumberU64(n_u64)),
+            JsonValue::Number(n) if let Some(n_i64) = n.as_i64() => Ok(Self::NumberI64(n_i64)),
+            JsonValue::Number(_) => Err(()),
+            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+                Err(())
             }
-            _ => Err(()),
         }
     }
 }

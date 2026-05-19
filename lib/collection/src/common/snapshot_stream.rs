@@ -49,6 +49,7 @@ impl Responder for SnapshotStream {
         match self {
             SnapshotStream::LocalFS(stream) => match NamedFile::open(stream.snapshot_path) {
                 Ok(file) => file.into_response(req),
+                #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::NotFound => {
                         HttpResponse::NotFound().body(format!("File not found: {e}"))

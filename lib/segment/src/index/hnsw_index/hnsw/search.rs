@@ -206,8 +206,12 @@ impl HNSWIndex {
                     params,
                     vector_query_context,
                 ),
-                other => {
-                    self.search_with_graph(other, filter, top, params, None, vector_query_context)
+                QueryVector::Nearest(_)
+                | QueryVector::RecommendBestScore(_)
+                | QueryVector::RecommendSumScores(_)
+                | QueryVector::Context(_)
+                | QueryVector::FeedbackNaive(_) => {
+                    self.search_with_graph(vector, filter, top, params, None, vector_query_context)
                 }
             })
             .collect()

@@ -452,6 +452,8 @@ fn context_pair_from_grpc_with_inferred(
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::collections::HashMap;
 
     use api::grpc::qdrant::Value;

@@ -105,7 +105,11 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
     fn get_value(value: &Value) -> Option<String> {
         match value {
             Value::String(s) => Some(s.clone()),
-            _ => None,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::Array(_)
+            | Value::Object(_) => None,
         }
     }
 

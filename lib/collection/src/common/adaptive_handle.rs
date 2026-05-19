@@ -166,7 +166,7 @@ impl AdaptiveSearchHandle {
         let next = match current {
             SearchMode::HighIo if ratio > HIGH_CPU_THRESHOLD => SearchMode::HighCpu,
             SearchMode::HighCpu if ratio < LOW_CPU_THRESHOLD => SearchMode::HighIo,
-            _ => return,
+            SearchMode::HighIo | SearchMode::HighCpu => return,
         };
         self.inner.mode.store(next.as_u8(), Ordering::Relaxed);
         log::debug!(

@@ -300,6 +300,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 }
                 Ok(true)
             }
+            #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
             Err(err) => match err {
                 err @ StorageError::ServiceError { .. } => {
                     return Err(err);

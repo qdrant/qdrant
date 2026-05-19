@@ -178,6 +178,7 @@ pub async fn delete_snapshot(
 ) -> CollectionResult<bool> {
     let s3_path = trim_dot_slash(path)?;
 
+    #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
     client.head(&s3_path).await.map_err(|e| match e {
         object_store::Error::NotFound { .. } => {
             CollectionError::not_found(format!("Snapshot {s3_path:?}"))
@@ -199,6 +200,7 @@ pub async fn download_snapshot(
 ) -> CollectionResult<()> {
     let download_start_time = tokio::time::Instant::now();
     let s3_path = trim_dot_slash(path)?;
+    #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
     let download = client.get(&s3_path).await.map_err(|e| match e {
         object_store::Error::NotFound { .. } => {
             CollectionError::not_found(format!("Snapshot {s3_path:?}"))

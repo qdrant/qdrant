@@ -203,6 +203,7 @@ impl<E> From<AtomicIoError<E>> for OperationError {
 
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match err.kind() {
             ErrorKind::OutOfMemory => {
                 let free_memory = Mem::new().available_memory_bytes();
@@ -291,6 +292,7 @@ pub type OperationResult<T> = Result<T, OperationError>;
 pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {
     match err {
         Ok(_) => None,
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         Err(error) => match error {
             OperationError::ServiceError { .. } => Some(error.clone()),
             _ => None,

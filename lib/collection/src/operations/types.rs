@@ -591,7 +591,7 @@ impl RecommendExample {
     pub fn as_point_id(&self) -> Option<PointIdType> {
         match self {
             RecommendExample::PointId(id) => Some(*id),
-            _ => None,
+            RecommendExample::Dense(_) | RecommendExample::Sparse(_) => None,
         }
     }
 }
@@ -998,6 +998,7 @@ impl CollectionError {
     }
 
     pub fn remote_peer_id(&self) -> Option<PeerId> {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match self {
             Self::ForwardProxyError { peer_id, .. } => Some(*peer_id),
             _ => None,
@@ -1081,6 +1082,7 @@ impl CollectionError {
     }
 
     pub fn is_missing_point(&self) -> bool {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match self {
             Self::NotFound { what } => what.contains("No point with id"),
             Self::PointNotFound { .. } => true,

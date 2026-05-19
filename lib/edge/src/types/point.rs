@@ -1,4 +1,5 @@
 use segment::types::{ExtendedPointId, Payload};
+use serde_json::Value as JsonValue;
 use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 
 use super::Vectors;
@@ -10,11 +11,15 @@ impl PointStruct {
     pub fn new(
         id: impl Into<ExtendedPointId>,
         vectors: impl Into<Vectors>,
-        payload: serde_json::Value,
+        payload: JsonValue,
     ) -> Self {
         let payload = match payload {
-            serde_json::Value::Object(map) => Payload(map.into_iter().collect()),
-            other => panic!("payload must be a JSON object, got {other}"),
+            JsonValue::Object(map) => Payload(map.into_iter().collect()),
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_) => panic!("payload must be a JSON object, got {payload}"),
         };
         Self(PointStructPersisted {
             id: id.into(),

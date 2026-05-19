@@ -761,6 +761,8 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &VectorName) -> Op
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::sync::atomic::AtomicBool;
 
     use ahash::AHashSet;

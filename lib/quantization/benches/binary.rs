@@ -1,3 +1,5 @@
+#![expect(clippy::wildcard_enum_match_arm, reason = "benchmarks")]
+
 use std::hint::black_box;
 use std::sync::atomic::AtomicBool;
 

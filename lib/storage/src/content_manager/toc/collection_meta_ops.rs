@@ -601,7 +601,15 @@ impl TableOfContent {
 
                 match current_state {
                     ReplicaState::PartialSnapshot | ReplicaState::Recovery => (),
-                    _ => {
+                    ReplicaState::Active
+                    | ReplicaState::Dead
+                    | ReplicaState::Partial
+                    | ReplicaState::Initializing
+                    | ReplicaState::Listener
+                    | ReplicaState::Resharding
+                    | ReplicaState::ReshardingScaleDown
+                    | ReplicaState::ActiveRead
+                    | ReplicaState::ManualRecovery => {
                         return Err(StorageError::bad_input(format!(
                             "Replica {} of {collection_id}:{} has unexpected {current_state:?} \
                              (expected {:?} or {:?})",

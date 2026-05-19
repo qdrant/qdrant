@@ -136,7 +136,7 @@ impl Validate for FormulaQuery {
                     let validation = ValidationError::new("Score default must be a number");
                     errors.add("defaults", validation);
                 }
-                _ => (),
+                VariableId::Score(_) | VariableId::Payload(_) | VariableId::Condition(_) => (),
             }
         }
 

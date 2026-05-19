@@ -140,9 +140,12 @@ impl ScoringQuery {
     /// Get the vector name if it is scored against a vector
     pub fn get_vector_name(&self) -> Option<&VectorName> {
         match self {
-            Self::Vector(query) => Some(query.get_vector_name()),
-            Self::Mmr(mmr) => Some(&mmr.using),
-            _ => None,
+            ScoringQuery::Vector(query) => Some(query.get_vector_name()),
+            ScoringQuery::Mmr(mmr) => Some(&mmr.using),
+            ScoringQuery::Fusion(_)
+            | ScoringQuery::OrderBy(_)
+            | ScoringQuery::Formula(_)
+            | ScoringQuery::Sample(_) => None,
         }
     }
 }

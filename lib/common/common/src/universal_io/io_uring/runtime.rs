@@ -383,6 +383,10 @@ pub enum IoUringRequest<'data, T> {
     Write(&'data [T]),
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "matchers for individual variants"
+)]
 impl<'data, T> IoUringRequest<'data, T> {
     pub fn expect_read(&mut self) -> &mut Vec<MaybeUninit<T>> {
         match self {
