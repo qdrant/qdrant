@@ -15,7 +15,7 @@ pub(crate) struct ReadRequest<B: AsyncReadBackend> {
     pub(crate) byte_offset: u64,
     pub(crate) byte_length: u64,
     pub(crate) user_data_tag: u64,
-    pub(crate) result_tx: mpsc::UnboundedSender<DispatchResult>,
+    pub(crate) tx: mpsc::UnboundedSender<DispatchResult>,
 }
 
 /// Internal result a backend worker hands back to the requesting pipeline.
@@ -31,23 +31,23 @@ pub(crate) struct DispatchResult {
 /// `handle.spawn` so multiple in-flight reads can overlap. Pipelines share
 /// dispatchers via [`Arc`].
 pub struct AsyncDispatcher<B: AsyncReadBackend> {
-    work_tx: mpsc::UnboundedSender<ReadRequest<B>>,
+    tx: mpsc::UnboundedSender<ReadRequest<B>>,
 }
 
 impl<B: AsyncReadBackend> AsyncDispatcher<B> {
     pub fn new(handle: Handle, backend: B) -> Self {
         let backend = Arc::new(backend);
-        let (work_tx, mut work_rx) = mpsc::unbounded_channel::<ReadRequest<B>>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<ReadRequest<B>>();
 
         let backend_for_loop = Arc::clone(&backend);
         handle.spawn(async move {
-            while let Some(item) = work_rx.recv().await {
+            while let Some(item) = rx.recv().await {
                 let backend = Arc::clone(&backend_for_loop);
                 tokio::spawn(async move {
                     let bytes = backend
                         .read_bytes(item.location, item.byte_offset, item.byte_length)
                         .await;
-                    let _ = item.result_tx.send(DispatchResult {
+                    let _ = item.tx.send(DispatchResult {
                         user_data_tag: item.user_data_tag,
                         bytes,
                     });
@@ -55,11 +55,11 @@ impl<B: AsyncReadBackend> AsyncDispatcher<B> {
             }
         });
 
-        Self { work_tx }
+        Self { tx }
     }
 
     pub(crate) fn submit(&self, item: ReadRequest<B>) -> Result<()> {
-        self.work_tx
+        self.tx
             .send(item)
             .map_err(|_| Self::dispatcher_closed_error())
     }

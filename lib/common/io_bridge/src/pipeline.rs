@@ -21,7 +21,9 @@ pub(crate) const DEFAULT_MAX_CONCURRENCY: usize = usize::MAX;
 /// each scheduled read.
 pub trait IoBridgeFile {
     type Backend: AsyncReadBackend;
+
     fn dispatcher(&self) -> &Arc<AsyncDispatcher<Self::Backend>>;
+
     fn location(&self) -> <Self::Backend as AsyncReadBackend>::Location;
 }
 
@@ -35,8 +37,8 @@ where
     T: bytemuck::Pod,
     U: UserData,
 {
-    result_tx: tokio::sync::mpsc::UnboundedSender<DispatchResult>,
-    result_rx: tokio::sync::mpsc::UnboundedReceiver<DispatchResult>,
+    tx: tokio::sync::mpsc::UnboundedSender<DispatchResult>,
+    rx: tokio::sync::mpsc::UnboundedReceiver<DispatchResult>,
     in_flight: usize,
     max_concurrency: usize,
     user_data: HashMap<u64, U>,
@@ -53,10 +55,10 @@ where
     /// Build a pipeline with an explicit in-flight cap. The trait-required
     /// no-arg [`UniversalReadPipeline::new`] uses [`DEFAULT_MAX_CONCURRENCY`].
     pub fn with_max_concurrency(max_concurrency: usize) -> Result<Self> {
-        let (result_tx, result_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         Ok(Self {
-            result_tx,
-            result_rx,
+            tx,
+            rx,
             in_flight: 0,
             max_concurrency,
             user_data: HashMap::new(),
@@ -99,7 +101,7 @@ where
             byte_offset: range.byte_offset,
             byte_length,
             user_data_tag: tag,
-            result_tx: self.result_tx.clone(),
+            tx: self.tx.clone(),
         })?;
         self.in_flight += 1;
         Ok(())
@@ -109,7 +111,7 @@ where
         if self.in_flight == 0 {
             return Ok(None);
         }
-        let res = self.result_rx.blocking_recv().ok_or_else(|| {
+        let res = self.rx.blocking_recv().ok_or_else(|| {
             UniversalIoError::uninitialized("dispatcher closed before result received")
         })?;
         self.in_flight -= 1;
