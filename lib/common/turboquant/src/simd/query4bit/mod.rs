@@ -248,7 +248,7 @@ impl Query4bitSimd {
     /// Number of `vector` bytes the encoded query expects: 8 bytes per full
     /// 16-dim chunk plus the packed tail (two 4-bit codes per byte).
     #[inline]
-    pub fn expected_vector_bytes(&self) -> usize {
+    pub(crate) fn expected_vector_bytes(&self) -> usize {
         self.query_data.len() * 8 + (self.tail_dims as usize).div_ceil(2)
     }
 
@@ -328,7 +328,7 @@ impl Query4bitSimd {
     /// have their own tail helpers that feed one zero-padded chunk into the
     /// same kernel used for full chunks.
     #[inline]
-    pub fn dotprod_raw_tail(&self, vector: &[u8]) -> i64 {
+    pub(crate) fn dotprod_raw_tail(&self, vector: &[u8]) -> i64 {
         if self.tail_dims == 0 {
             return 0;
         }
@@ -353,7 +353,7 @@ impl Query4bitSimd {
     /// `tail_low[tail_dims..] = tail_high[tail_dims..] = 0` they contribute
     /// nothing to `maddubs` / `vmull` products.
     #[inline]
-    pub fn tail_chunk_scratch(&self, vector: &[u8]) -> Option<[u8; 8]> {
+    pub(crate) fn tail_chunk_scratch(&self, vector: &[u8]) -> Option<[u8; 8]> {
         if self.tail_dims == 0 {
             return None;
         }
@@ -428,7 +428,7 @@ pub fn score_4bit_internal_scalar(a: &[u8], b: &[u8]) -> f32 {
 /// fold in any bytes that didn't fit a full SIMD chunk (and by
 /// [`score_4bit_internal_scalar`] as its inner loop).
 #[inline]
-pub fn score_4bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
+pub(crate) fn score_4bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
     let mut acc: i64 = 0;
     for (&byte_a, &byte_b) in a.iter().zip(b.iter()) {
         let a_lo = byte_a & 0x0F;

@@ -557,7 +557,7 @@ pub mod simd_arm {
 /// Scalar WHT used as the `n < 8` fallback inside the SIMD routines and
 /// as the cross-platform fallback in [`super::wht_dispatch`]. Mirrors
 /// the reference implementation in `rotation.rs`.
-pub fn scalar_wht(x: &mut [f64]) {
+pub(crate) fn scalar_wht(x: &mut [f64]) {
     let n = x.len();
     let mut h = 1;
     while h < n {
