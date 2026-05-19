@@ -2,25 +2,25 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use quantization::encoded_vectors_binary::BitsStoreType;
-use quantization::turboquant::simd::{
+use rand::prelude::StdRng;
+use rand::seq::SliceRandom;
+use rand::{RngExt, SeedableRng};
+use turboquant::simd::{
     Query1bitSimd, Query2bitSimd, Query4bitSimd, score_1bit_internal, score_1bit_internal_scalar,
     score_2bit_internal, score_2bit_internal_scalar, score_4bit_internal,
     score_4bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
-use quantization::turboquant::simd::{
+use turboquant::simd::{
     score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,
     score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse,
     score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use quantization::turboquant::simd::{
+use turboquant::simd::{
     score_1bit_internal_neon, score_2bit_internal_neon, score_2bit_internal_neon_sdot,
     score_4bit_internal_neon, score_4bit_internal_neon_sdot,
 };
-use rand::prelude::StdRng;
-use rand::seq::SliceRandom;
-use rand::{RngExt, SeedableRng};
 
 /// Two "nicely aligned" dims — `128` (single SIMD block) and `1536` (large,
 /// divisible by every chunk size we ship) — plus a per-bit-width "ugly" dim

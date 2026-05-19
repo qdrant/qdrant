@@ -18,6 +18,7 @@ testing = ["common/testing"]
 cc = { workspace = true }
 
 [dependencies]
+turboquant = { path = "../common/turboquant" }
 fs-err = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

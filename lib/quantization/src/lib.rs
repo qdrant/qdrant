@@ -2,12 +2,11 @@ pub mod encoded_storage;
 pub mod encoded_vectors;
 pub mod encoded_vectors_binary;
 pub mod encoded_vectors_pq;
+pub mod encoded_vectors_tq;
 pub mod encoded_vectors_u8;
 pub mod kmeans;
 pub mod p_square;
 pub mod quantile;
-pub mod turboquant;
-pub mod vector_stats;
 
 use std::fmt::Display;
 use std::sync::{Arc, Condvar, Mutex};

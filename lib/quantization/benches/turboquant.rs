@@ -3,10 +3,11 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use quantization::DistanceType;
 use quantization::encoded_vectors::VectorParameters;
-use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::turboquant::{Metadata, TQBits, TQMode};
+use quantization::encoded_vectors_tq::{Metadata, new_turbo_quantizer_from_metadata};
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
+use turboquant::quantization::TurboQuantizer;
+use turboquant::{TQBits, TQMode};
 
 const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
 
@@ -22,7 +23,7 @@ fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
         mode: TQMode::Normal,
         error_correction: None,
     };
-    TurboQuantizer::new_from_metadata(&metadata).expect("metadata is hand-constructed")
+    new_turbo_quantizer_from_metadata(&metadata).expect("metadata is hand-constructed")
 }
 
 fn random_vector(dim: usize, rng: &mut StdRng) -> Vec<f32> {
