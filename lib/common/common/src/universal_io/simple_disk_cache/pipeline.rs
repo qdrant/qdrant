@@ -183,7 +183,7 @@ where
     ) -> universal_io::Result<()> {
         match pick_source::<R, T>(file, range)? {
             Source::Local { byte_range } => {
-                // SAFETY: plan_schedule confirmed the range is local (or empty).
+                // SAFETY: Source::Local confirms the range is local (or empty).
                 let bytes = unsafe { read_local::<R, T>(file, byte_range)? };
                 self.result = Some((meta, bytes));
             }
@@ -224,8 +224,7 @@ where
         } = pipelined_meta;
 
         // SAFETY: `blocks_range` and `read_range` match what was scheduled.
-        let items =
-            unsafe { commit_and_read::<R, T>(file, &bytes, blocks_range, read_range)? };
+        let items = unsafe { commit_and_read::<R, T>(file, &bytes, blocks_range, read_range)? };
         Ok(Some((meta, Cow::Borrowed(items))))
     }
 }
@@ -311,7 +310,7 @@ where
 
     fn wait(&mut self) -> universal_io::Result<Option<(U, Cow<'_, [T]>)>> {
         if let Some((user_data, byte_range)) = self.pending.take() {
-            // SAFETY: plan_schedule confirmed the range is local (or empty).
+            // SAFETY: being in `pending` confirms the range is local (or empty).
             let items = unsafe { read_local::<R, T>(&self.file, byte_range)? };
             return Ok(Some((user_data, Cow::Borrowed(items))));
         }
@@ -330,7 +329,6 @@ where
             meta,
         } = pipelined_meta;
 
-        // SAFETY: `blocks_range` and `read_range` match what was scheduled.
         let items =
             unsafe { commit_and_read::<R, T>(&self.file, &bytes, blocks_range, read_range)? };
         Ok(Some((meta, Cow::Borrowed(items))))

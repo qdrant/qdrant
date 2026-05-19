@@ -63,7 +63,6 @@ where
     inner: ManuallyDrop<IoUringPipelineInner<'static, T, U>>,
 }
 
-
 impl<T, U> OwnedReadPipeline<T, U> for OwnedIoUringPipeline<T, U>
 where
     T: Item,

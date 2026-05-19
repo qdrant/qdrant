@@ -26,11 +26,11 @@ use crate::universal_io::{
 /// this type implements [`UniversalRead`] only, but not [`UniversalWrite`].
 ///
 /// The local mirror can either be initialized lazily on first read (filling
-/// blocks on demand from the remote) or eagerly via the global prefill thread.
-/// Both paths converge on the same [`LocalState`] held in `local`.
+/// blocks on demand from the remote) or eagerly if populate is set.
 ///
 /// WARN: There should be only a single instance of DiskCache per path.
-/// Initializing multiple instances will not reuse the same mmap and can cause UB.
+/// Initializing multiple instances will try to re-read from remote. Cloning is
+/// safe because of Arcs, though.
 #[derive(Clone)]
 pub struct DiskCache<R>
 where
@@ -40,6 +40,8 @@ where
     remote_path: PathBuf,
     /// Lazily-opened remote handle. Only initialized when needed (cache miss
     /// or `len()` before local is set).
+    ///
+    // We could switch to LazyLock, but there is no fallible initialization
     remote: OnceLock<R>,
     /// Open options for when the local mmap is initialized.
     open_options: OpenOptions,
@@ -48,7 +50,6 @@ where
     /// Lazily-initialized local mirror.
     pub(super) local: Arc<OnceLock<LocalState>>,
     /// Guards initialization of `local` and carries the source of init.
-    /// After `local` is set, the value is left as `Consumed`.
     init_lock: Arc<Mutex<InitSource<R>>>,
 }
 
@@ -71,8 +72,8 @@ where
 enum InitSource<R: UniversalRead> {
     /// Build an empty local mmap and let reads fill blocks on demand.
     FromScratch,
-    /// Wait for the prefill thread to deliver a fully-populated [`LocalState`].
-    FromPrefiller(R::OwnedReadPipeline<u8, ()>),
+    /// Wait for the prefill pipeline.
+    FromPrefiller(R::OwnedReadPipeline<u8, Range<u32>>),
 }
 
 #[derive(Debug)]
@@ -217,45 +218,46 @@ where
                         disk_parallel: None,
                         populate: Populate::No,
                         advice: None,
-                        prevent_caching: None,
+                        prevent_caching: Some(true),
                     },
                 )?;
 
-                let pipeline = R::OwnedReadPipeline::new(remote)?;
+                let remote_len = remote.len::<u8>()?;
+
+                let range = ReadRange {
+                    byte_offset: 0,
+                    length: remote_len,
+                };
+
+                let blocks_range = to_block_range(0..remote_len);
+
+                let mut pipeline = R::OwnedReadPipeline::new(remote)?;
+
+                // FIXME: check `can_schedule` in a loop first
+                pipeline.schedule::<Sequential>(blocks_range, range)?;
 
                 InitSource::FromPrefiller(pipeline)
             }
         };
 
-        let cache = Self::with_init_source(
-            remote_path.as_ref().to_owned(),
-            local_path,
-            options,
-            init_source,
-        );
+        let cache = {
+            let remote_path = remote_path.as_ref().to_owned();
+            Self {
+                remote_path,
+                remote: OnceLock::new(),
+                open_options: options,
+                local_path,
+                local: Arc::new(OnceLock::new()),
+                init_lock: Arc::new(Mutex::new(init_source)),
+            }
+        };
 
         if matches!(populate, Populate::Blocking) {
-            // Force the prefill receiver to resolve before returning.
+            // Force the prefill to resolve before returning.
             cache.local_state()?;
         }
 
         Ok(cache)
-    }
-
-    fn with_init_source(
-        remote_path: PathBuf,
-        local_path: PathBuf,
-        options: OpenOptions,
-        init_source: InitSource<R>,
-    ) -> Self {
-        Self {
-            remote_path,
-            remote: OnceLock::new(),
-            open_options: options,
-            local_path,
-            local: Arc::new(OnceLock::new()),
-            init_lock: Arc::new(Mutex::new(init_source)),
-        }
     }
 
     pub(super) fn new(
@@ -263,12 +265,16 @@ where
         local_path: PathBuf,
         options: OpenOptions,
     ) -> Self {
-        Self::with_init_source(
-            remote_path.as_ref().to_owned(),
-            local_path,
-            options,
-            InitSource::FromScratch,
-        )
+        {
+            Self {
+                remote_path: remote_path.as_ref().to_owned(),
+                remote: OnceLock::new(),
+                open_options: options,
+                local_path,
+                local: Arc::new(OnceLock::new()),
+                init_lock: Arc::new(Mutex::new(InitSource::FromScratch)),
+            }
+        }
     }
 
     /// Lazily open the remote handle. The remote is only needed for cache
@@ -306,19 +312,24 @@ where
             return Ok(state);
         }
 
-        let state = match std::mem::replace(&mut *guard, InitSource::FromScratch) {
-            InitSource::FromScratch => self.init_local_state_from_scratch()?,
+        let state = self.init_local_state_from_scratch()?;
+
+        match std::mem::replace(&mut *guard, InitSource::FromScratch) {
+            InitSource::FromScratch => {}
             InitSource::FromPrefiller(mut pipe) => {
-                let state = self.init_local_state_from_scratch()?;
-                match pipe.wait() {
-                    Ok(Some(((), bytes))) => {
-                        unsafe { state.write_mmap_bytes(&bytes, 0..1) };
+                match pipe.wait()? {
+                    Some((blocks_range, bytes)) => {
+                        unsafe { state.write_mmap_bytes(&bytes, blocks_range) };
                         state.mark_fully_populated();
                     }
-                    Ok(None) => todo!(),
-                    Err(_err) => {}
+                    None => {
+                        debug_assert!(
+                            false,
+                            "Looks like the request for prefill bytes was incorrect"
+                        );
+                        // init from scratch
+                    }
                 }
-                state
             }
         };
 
@@ -395,9 +406,6 @@ where
         let bytes_len = if let Some(local) = self.local.get() {
             local.mmap.len() as u64
         } else {
-            // Pays the cost of opening the remote on first len() call before
-            // any read. TODO: if a prefill is in flight, we could wait on it
-            // instead of opening the remote.
             self.remote()?.len::<u8>()?
         };
 
