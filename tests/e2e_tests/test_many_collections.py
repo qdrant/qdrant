@@ -12,7 +12,7 @@ class TestManyCollections:
     ], indirect=True)
     def test_many_collections_do_not_cause_panic(self, qdrant_compose):
         """Test if creating a lot of collections causes panic."""
-        client = ClientUtils(host=qdrant_compose[0].host, port=qdrant_compose[0].http_port, timeout=600)
+        client = ClientUtils(host=qdrant_compose[0].host, port=qdrant_compose[0].http_port, timeout=10)
         client.wait_for_server()
 
         for i in tqdm(range(800), desc="Creating collections"):
