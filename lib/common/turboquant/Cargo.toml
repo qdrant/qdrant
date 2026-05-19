@@ -1,5 +1,5 @@
 [package]
-name = "issues"
+name = "turboquant"
 version = "0.0.0"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
