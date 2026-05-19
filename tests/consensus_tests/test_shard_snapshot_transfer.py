@@ -301,6 +301,7 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
     upload_process_1.kill()
     upload_process_2.kill()
     upload_process_3.kill()
+    sleep(1)
 
     # Wait for them to terminate
     upload_process_1.join()
@@ -338,7 +339,6 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
             assert_http_ok(r)
             data.append(r.json()["result"]["points"])
         check_data_consistency(data)
-
 
     assert counts[0] == counts[1] == counts[2]
 
