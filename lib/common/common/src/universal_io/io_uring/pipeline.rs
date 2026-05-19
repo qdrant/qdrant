@@ -63,6 +63,19 @@ where
     inner: ManuallyDrop<IoUringPipelineInner<'static, T, U>>,
 }
 
+impl<T, U> std::fmt::Debug for OwnedIoUringPipeline<T, U>
+where
+    T: bytemuck::Pod,
+    U: UserData,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OwnedIoUringPipeline")
+            .field("file", &self.file)
+            // .field("inner", &self.inner)
+            .finish()
+    }
+}
+
 impl<T, U> OwnedReadPipeline<T, U> for OwnedIoUringPipeline<T, U>
 where
     T: Item,

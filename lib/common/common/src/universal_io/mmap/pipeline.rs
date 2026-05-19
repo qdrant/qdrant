@@ -43,6 +43,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct OwnedMmapReadPipeline<T, U> {
     file: MmapFile,
     pending: Option<(U, ReadRange, bool)>,

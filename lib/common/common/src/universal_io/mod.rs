@@ -9,11 +9,13 @@ mod mmap;
 mod traits;
 mod types;
 mod wrappers;
+mod simple_disk_cache;
 
 pub use self::error::UniversalIoError;
 #[cfg(target_os = "linux")]
 pub use self::io_uring::IoUringFile;
 pub use self::mmap::MmapFile;
+pub use self::simple_disk_cache::{DiskCache, DiskCacheConfig};
 pub use self::traits::{
     BorrowedReadPipeline, Item, OwnedReadPipeline, UniversalRead, UniversalReadFileOps,
     UniversalWrite, UserData,

@@ -1,24 +1,23 @@
 use std::borrow::Cow;
+use std::fmt::Debug;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use fs_err as fs;
 use memmap2::MmapRaw;
 use parking_lot::Mutex;
 use roaring::RoaringBitmap;
-use tokio::sync::oneshot;
 
 use super::BLOCK_SIZE;
 use super::config::DiskCacheConfig;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::{AdviceSetting, Madviseable};
-use crate::universal_io::pipeline::DiskCachePipeline;
-use crate::universal_io::prefill::GLOBAL_PREFILL_THREAD;
+use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::{
-    OpenOptions, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
-    UniversalReadFileOps,
+    OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError, UniversalKind,
+    UniversalRead, UniversalReadFileOps,
 };
 
 /// A lazily-populated local mirror of an immutable remote file.
@@ -32,8 +31,11 @@ use crate::universal_io::{
 ///
 /// WARN: There should be only a single instance of DiskCache per path.
 /// Initializing multiple instances will not reuse the same mmap and can cause UB.
-#[derive(Debug)]
-pub struct DiskCache<R> {
+#[derive(Clone)]
+pub struct DiskCache<R>
+where
+    R: UniversalRead,
+{
     /// Path to the remote file. Used to lazily open `remote`.
     remote_path: PathBuf,
     /// Lazily-opened remote handle. Only initialized when needed (cache miss
@@ -44,19 +46,35 @@ pub struct DiskCache<R> {
     /// Path to the local mmap file.
     local_path: PathBuf,
     /// Lazily-initialized local mirror.
-    pub(super) local: OnceLock<LocalState>,
+    pub(super) local: Arc<OnceLock<LocalState>>,
     /// Guards initialization of `local` and carries the source of init.
     /// After `local` is set, the value is left as `Consumed`.
-    init_lock: Mutex<InitSource>,
+    init_lock: Arc<Mutex<InitSource<R>>>,
+}
+
+impl<R> Debug for DiskCache<R>
+where
+    R: UniversalRead,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiskCache")
+            .field("remote_path", &self.remote_path)
+            .field("remote", &self.remote)
+            .field("open_options", &self.open_options)
+            .field("local_path", &self.local_path)
+            .field("local", &self.local)
+            // .field("init_lock", &self.init_lock)
+            .finish()
+    }
 }
 
 /// Where the [`LocalState`] comes from on first init.
 #[derive(Debug)]
-enum InitSource {
+enum InitSource<R: UniversalRead> {
     /// Build an empty local mmap and let reads fill blocks on demand.
     FromScratch,
     /// Wait for the prefill thread to deliver a fully-populated [`LocalState`].
-    FromPrefiller(oneshot::Receiver<LocalState>),
+    FromPrefiller(R::OwnedReadPipeline<u8, ()>),
 }
 
 #[derive(Debug)]
@@ -164,7 +182,10 @@ impl LocalState {
     }
 }
 
-impl<R: UniversalRead> DiskCache<R> {
+impl<R> DiskCache<R>
+where
+    R: UniversalRead,
+{
     /// Open a [`DiskCache`] with an explicit configuration.
     pub fn open_with_config(
         config: &DiskCacheConfig,
@@ -190,18 +211,28 @@ impl<R: UniversalRead> DiskCache<R> {
         let init_source = match populate {
             Populate::Auto | Populate::No => InitSource::FromScratch,
             Populate::Blocking | Populate::PreferBackground => {
-                let prefiller = &*GLOBAL_PREFILL_THREAD;
+                let remote = R::open(
+                    &remote_path,
+                    OpenOptions {
+                        writeable: false,
+                        need_sequential: true,
+                        disk_parallel: None,
+                        populate: Populate::No,
+                        advice: None,
+                        prevent_caching: None,
+                    },
+                )?;
 
-                let (finish, result) = oneshot::channel();
+                let pipeline = R::OwnedReadPipeline::new(remote)?;
 
-                prefiller.send_request(
-                    remote_path.as_ref().to_owned(),
-                    local_path.clone(),
-                    options,
-                    finish,
-                );
+                // prefiller.send_request(
+                //     remote_path.as_ref().to_owned(),
+                //     local_path.clone(),
+                //     options,
+                //     finish,
+                // );
 
-                InitSource::FromPrefiller(result)
+                InitSource::FromPrefiller(pipeline)
             }
         };
 
@@ -219,27 +250,23 @@ impl<R: UniversalRead> DiskCache<R> {
 
         Ok(cache)
     }
-}
 
-impl<R> DiskCache<R> {
     fn with_init_source(
         remote_path: PathBuf,
         local_path: PathBuf,
         options: OpenOptions,
-        init_source: InitSource,
+        init_source: InitSource<R>,
     ) -> Self {
         Self {
             remote_path,
             remote: OnceLock::new(),
             open_options: options,
             local_path,
-            local: OnceLock::new(),
-            init_lock: Mutex::new(init_source),
+            local: Arc::new(OnceLock::new()),
+            init_lock: Arc::new(Mutex::new(init_source)),
         }
     }
-}
 
-impl<R: UniversalRead> DiskCache<R> {
     pub(super) fn new(
         remote_path: impl AsRef<Path>,
         local_path: PathBuf,
@@ -290,17 +317,17 @@ impl<R: UniversalRead> DiskCache<R> {
 
         let state = match std::mem::replace(&mut *guard, InitSource::FromScratch) {
             InitSource::FromScratch => self.init_local_state_from_scratch()?,
-            InitSource::FromPrefiller(recv) => {
-                match recv.blocking_recv() {
-                    Ok(state) => {
+            InitSource::FromPrefiller(mut pipe) => {
+                let state = self.init_local_state_from_scratch()?;
+                match pipe.wait() {
+                    Ok(Some(((), bytes))) => {
+                        unsafe { state.write_mmap_bytes(&bytes, 0..1) };
                         state.mark_fully_populated();
-                        state
                     }
-                    Err(_err) => {
-                        // Channel was closed, try to init from scratch
-                        self.init_local_state_from_scratch()?
-                    }
+                    Ok(None) => todo!(),
+                    Err(_err) => {}
                 }
+                state
             }
         };
 
@@ -317,7 +344,10 @@ impl<R: UniversalRead> DiskCache<R> {
     }
 }
 
-impl<R: UniversalReadFileOps> UniversalReadFileOps for DiskCache<R> {
+impl<R> UniversalReadFileOps for DiskCache<R>
+where
+    R: UniversalRead,
+{
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
         R::list_files(prefix_path)
     }
@@ -329,13 +359,20 @@ impl<R: UniversalReadFileOps> UniversalReadFileOps for DiskCache<R> {
 
 impl<R> UniversalRead for DiskCache<R>
 where
-    R: UniversalRead,
+    R: UniversalRead + Clone,
+    R::OwnedReadPipeline<u8, ()>: Debug,
 {
-    type ReadPipeline<'a, T, Meta>
-        = DiskCachePipeline<'a, T, Meta, R>
+    type BorrowedReadPipeline<'a, T, Meta>
+        = DiskCachePipeline<'a, R, T, Meta>
     where
         R: 'a,
         T: bytemuck::Pod;
+
+    type OwnedReadPipeline<T, U>
+        = OwnedDiskCachePipeline<R, T, U>
+    where
+        T: bytemuck::Pod,
+        U: crate::universal_io::UserData;
 
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let config = DiskCacheConfig::global().ok_or_else(|| {
