@@ -2,13 +2,12 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use object_store::{ObjectStore, ObjectStoreExt};
-
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
     OpenOptions, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
     UniversalReadFileOps,
 };
+use object_store::{ObjectStore, ObjectStoreExt};
 
 use crate::config::build_object_store;
 use crate::pipeline::{BorrowedS3ReadPipeline, OwnedS3ReadPipeline};
@@ -143,10 +142,11 @@ impl UniversalRead for S3File {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::config::{S3Config, S3Credentials};
     use bytes::Bytes;
     use object_store::memory::InMemory;
+
+    use super::*;
+    use crate::config::{S3Config, S3Credentials};
 
     fn make_inmemory_store(
         runtime: &S3RuntimeHandle,
@@ -268,13 +268,16 @@ mod tests {
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
         runtime.block_on(async {
             store
-                .put(&object_store::path::Path::from("merged"), Bytes::from_static(b"helloWORLDxyz").into())
+                .put(
+                    &object_store::path::Path::from("merged"),
+                    Bytes::from_static(b"helloWORLDxyz").into(),
+                )
                 .await
                 .unwrap();
         });
-        let meta = runtime.block_on(async {
-            store.head(&object_store::path::Path::from("merged")).await
-        }).unwrap();
+        let meta = runtime
+            .block_on(async { store.head(&object_store::path::Path::from("merged")).await })
+            .unwrap();
         let file = S3File {
             store,
             key: object_store::path::Path::from("merged"),
@@ -283,18 +286,15 @@ mod tests {
         };
 
         let inputs = vec![
-            (1u32, ReadRange::new(0, 5)),   // "hello"
-            (2u32, ReadRange::new(5, 5)),   // "WORLD"
-            (3u32, ReadRange::new(10, 3)),  // "xyz"
+            (1u32, ReadRange::new(0, 5)),  // "hello"
+            (2u32, ReadRange::new(5, 5)),  // "WORLD"
+            (3u32, ReadRange::new(10, 3)), // "xyz"
         ];
         let mut got: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        file.read_batch::<common::generic_consts::Random, u8, _>(
-            inputs,
-            |user_data, slice| {
-                got.insert(user_data, slice.to_vec());
-                Ok(())
-            },
-        )
+        file.read_batch::<common::generic_consts::Random, u8, _>(inputs, |user_data, slice| {
+            got.insert(user_data, slice.to_vec());
+            Ok(())
+        })
         .expect("read_batch");
 
         assert_eq!(got[&1], b"hello");
@@ -308,5 +308,4 @@ mod tests {
         fn assert_universal_read<R: common::universal_io::UniversalRead>() {}
         assert_universal_read::<ReadOnly<S3File>>();
     }
-
 }

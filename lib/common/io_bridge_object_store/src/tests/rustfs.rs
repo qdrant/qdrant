@@ -25,8 +25,7 @@ pub fn rustfs_s3_config() -> S3Config {
         region: Some("us-east-1".into()),
         endpoint: Some(rustfs_endpoint()),
         credentials: S3Credentials::Static {
-            access_key_id: env::var("RUSTFS_ACCESS_KEY")
-                .unwrap_or_else(|_| "rustfsadmin".into()),
+            access_key_id: env::var("RUSTFS_ACCESS_KEY").unwrap_or_else(|_| "rustfsadmin".into()),
             secret_access_key: env::var("RUSTFS_SECRET_KEY")
                 .unwrap_or_else(|_| "rustfsadmin".into()),
             session_token: None,

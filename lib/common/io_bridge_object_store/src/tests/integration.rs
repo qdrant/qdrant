@@ -2,7 +2,9 @@
 
 use std::path::Path;
 
-use common::universal_io::{OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFileOps};
+use common::universal_io::{
+    OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFileOps,
+};
 
 use crate::file::S3File;
 use crate::runtime::S3RuntimeHandle;
@@ -28,24 +30,29 @@ fn push_test_context(runtime: &S3RuntimeHandle) -> S3ContextGuard {
 #[test]
 #[ignore]
 fn test_open_and_read_whole() {
-    if maybe_skip() { return; }
+    if maybe_skip() {
+        return;
+    }
     let runtime = S3RuntimeHandle::global();
     setup_bucket(&runtime, &[("hello.bin", b"hello rustfs")]);
     let _guard = push_test_context(&runtime);
 
     let file = S3File::open("hello.bin", OpenOptions::default()).expect("open");
-    let bytes = file
-        .read_whole::<u8>()
-        .expect("read_whole");
+    let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], b"hello rustfs");
 }
 
 #[test]
 #[ignore]
 fn test_read_range() {
-    if maybe_skip() { return; }
+    if maybe_skip() {
+        return;
+    }
     let runtime = S3RuntimeHandle::global();
-    setup_bucket(&runtime, &[("ranged.bin", &(0u8..=63u8).collect::<Vec<u8>>())]);
+    setup_bucket(
+        &runtime,
+        &[("ranged.bin", &(0u8..=63u8).collect::<Vec<u8>>())],
+    );
     let _guard = push_test_context(&runtime);
 
     let file = S3File::open("ranged.bin", OpenOptions::default()).expect("open");
@@ -60,7 +67,9 @@ fn test_read_range() {
 #[test]
 #[ignore]
 fn test_read_batch_parallel() {
-    if maybe_skip() { return; }
+    if maybe_skip() {
+        return;
+    }
     let runtime = S3RuntimeHandle::global();
     setup_bucket(&runtime, &[("blob", &(0u8..=255u8).collect::<Vec<u8>>())]);
     let _guard = push_test_context(&runtime);
@@ -70,13 +79,10 @@ fn test_read_batch_parallel() {
         .map(|i| (i, ReadRange::new(u64::from(i) * 16, 16)))
         .collect();
     let mut got: std::collections::HashMap<u32, Vec<u8>> = Default::default();
-    file.read_batch::<common::generic_consts::Random, u8, _>(
-        inputs,
-        |user_data, slice| {
-            got.insert(user_data, slice.to_vec());
-            Ok(())
-        },
-    )
+    file.read_batch::<common::generic_consts::Random, u8, _>(inputs, |user_data, slice| {
+        got.insert(user_data, slice.to_vec());
+        Ok(())
+    })
     .expect("read_batch");
     assert_eq!(got.len(), 16);
     for i in 0u32..16 {
@@ -89,7 +95,9 @@ fn test_read_batch_parallel() {
 #[test]
 #[ignore]
 fn test_not_found() {
-    if maybe_skip() { return; }
+    if maybe_skip() {
+        return;
+    }
     let runtime = S3RuntimeHandle::global();
     let _ = setup_bucket(&runtime, &[]);
     let _guard = push_test_context(&runtime);
@@ -101,7 +109,9 @@ fn test_not_found() {
 #[test]
 #[ignore]
 fn test_list_files() {
-    if maybe_skip() { return; }
+    if maybe_skip() {
+        return;
+    }
     let runtime = S3RuntimeHandle::global();
     setup_bucket(
         &runtime,
@@ -114,8 +124,8 @@ fn test_list_files() {
     );
     let _guard = push_test_context(&runtime);
 
-    let files = <S3File as UniversalReadFileOps>::list_files(Path::new("listed"))
-        .expect("list_files");
+    let files =
+        <S3File as UniversalReadFileOps>::list_files(Path::new("listed")).expect("list_files");
     assert_eq!(files.len(), 3);
     for f in &files {
         assert!(f.to_string_lossy().starts_with("listed/"));

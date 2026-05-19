@@ -6,11 +6,11 @@ mod runtime;
 #[cfg(test)]
 mod tests;
 
+use std::cell::RefCell;
+
 pub use config::{S3Config, S3Credentials};
 pub use file::S3File;
 pub use runtime::S3RuntimeHandle;
-
-use std::cell::RefCell;
 
 #[derive(Clone)]
 pub struct S3Context {

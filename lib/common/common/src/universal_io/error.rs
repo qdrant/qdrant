@@ -108,7 +108,9 @@ mod tests {
         let e = UniversalIoError::S3RuntimeShutDown;
         assert_eq!(e.to_string(), "S3 runtime worker has shut down");
 
-        let e = UniversalIoError::S3Config { description: "missing bucket".into() };
+        let e = UniversalIoError::S3Config {
+            description: "missing bucket".into(),
+        };
         assert!(e.to_string().contains("missing bucket"));
     }
 }
