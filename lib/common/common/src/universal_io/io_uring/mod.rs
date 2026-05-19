@@ -73,10 +73,10 @@ impl UniversalRead for IoUringFile {
             need_sequential: _,
             populate: _,
             advice: _,
-            prevent_caching,
+            extra: OpenOptionsExtra { prevent_caching },
         } = options;
 
-        let direct_io = prevent_caching.unwrap_or(false);
+        let direct_io = prevent_caching;
         let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
 
         let file = fs::OpenOptions::new()

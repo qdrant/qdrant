@@ -175,7 +175,7 @@ impl MultivectorOffsetsStorageMmap {
                 need_sequential: false,
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
 

@@ -85,7 +85,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                     need_sequential: true,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
-                    prevent_caching: None,
+                    extra: Default::default(),
                 },
             )?;
             deleted.set_ascending_bits_batch(
@@ -128,7 +128,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             need_sequential: false,
             populate: Populate::from(do_populate),
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let pairs = TypedStorage::open(pairs_path, pairs_options)?;
 
@@ -142,7 +142,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                 need_sequential: true,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;

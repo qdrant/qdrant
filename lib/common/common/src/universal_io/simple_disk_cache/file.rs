@@ -105,7 +105,7 @@ impl<R: UniversalRead> DiskCache<R> {
 
         let remote_options = OpenOptions {
             writeable: false,
-            prevent_caching: Some(true),
+            extra: OpenOptionsExtra { prevent_caching: true },
             populate: Populate::No,
             need_sequential: false,
             advice: AdviceSetting::Global,

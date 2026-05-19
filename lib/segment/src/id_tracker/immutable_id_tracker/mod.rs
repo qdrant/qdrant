@@ -89,7 +89,7 @@ where
                 need_sequential: true,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
 
@@ -105,7 +105,7 @@ where
                 need_sequential: false,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
 
@@ -152,7 +152,7 @@ where
                 need_sequential: true,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
 
@@ -190,7 +190,7 @@ where
                 need_sequential: false,
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
         internal_to_version_file.write(0, internal_to_version)?;

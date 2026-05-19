@@ -170,7 +170,7 @@ where
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
 
         let store = ReadOnly::open(&file_name, open_options)?;

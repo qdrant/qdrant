@@ -117,7 +117,7 @@ where
                 need_sequential: false,
                 populate: Populate::No,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
 
@@ -162,7 +162,7 @@ where
             need_sequential: true,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let flags = StoredBitSlice::open(&path, options)?;
         Ok(flags)

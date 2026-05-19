@@ -65,7 +65,10 @@ impl UniversalRead for MmapFile {
             need_sequential,
             populate,
             advice,
-            prevent_caching: _, // Whole point of mmap is to cache
+            extra:
+                OpenOptionsExtra {
+                    prevent_caching: _, // Whole point of mmap is to cache
+                },
         } = options;
 
         let populate = match populate {
@@ -251,7 +254,7 @@ impl MmapFile {
                 need_sequential: false,
                 populate: Populate::No,
                 advice: AdviceSetting::Advice(Advice::Normal),
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )
         .map_err(|e| std::io::Error::other(e.to_string()))?;

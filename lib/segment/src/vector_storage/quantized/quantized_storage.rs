@@ -54,7 +54,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             need_sequential: true,
             populate: Populate::No,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         }
     }
 

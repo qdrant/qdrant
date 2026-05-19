@@ -131,7 +131,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: true,
             populate: Populate::Auto,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let length = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
@@ -167,7 +167,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: true,
             populate: Populate::Auto,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
 
         let data = tokio::task::spawn_blocking(move || {
@@ -211,7 +211,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: true,
             populate: Populate::Auto,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let range = ReadRange::new(byte_offset, length);
         let (storage, range) = tokio::task::spawn_blocking(move || {
@@ -275,7 +275,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: true,
             populate: Populate::Auto,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
 
         let data = tokio::task::spawn_blocking(move || {
@@ -312,7 +312,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: true,
             populate: Populate::Auto,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let ranges = ranges
             .iter()
@@ -358,7 +358,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             need_sequential: true,
             populate: Populate::Auto,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
 
         // Resolve all paths and deduplicate into a file index.

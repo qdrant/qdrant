@@ -62,7 +62,7 @@ impl<S: UniversalRead> Pages<S> {
             need_sequential: true,
             populate: Populate::No,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
 
         let page = S::open(path, options)?;

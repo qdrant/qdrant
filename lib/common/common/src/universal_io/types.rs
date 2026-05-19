@@ -48,8 +48,16 @@ pub struct OpenOptions {
     pub populate: Populate,
     /// Use specific mmap advice.
     pub advice: AdviceSetting,
+    /// Rarely used options.
+    pub extra: OpenOptionsExtra,
+}
+
+/// Rarely used options.
+/// Usually [`Default::default()`] is fine.
+#[derive(Copy, Clone, Debug)]
+pub struct OpenOptionsExtra {
     /// Whether to try to prevent caching for reads.
-    pub prevent_caching: Option<bool>,
+    pub prevent_caching: bool,
 }
 
 impl OpenOptions {
@@ -61,7 +69,16 @@ impl OpenOptions {
             need_sequential: true,
             populate: Populate::Auto,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
+        }
+    }
+}
+
+#[expect(clippy::derivable_impls, reason = "be explicit")]
+impl Default for OpenOptionsExtra {
+    fn default() -> Self {
+        OpenOptionsExtra {
+            prevent_caching: false,
         }
     }
 }
@@ -140,7 +157,7 @@ where
         need_sequential: false,
         populate: Populate::No,
         advice: AdviceSetting::Advice(Advice::Sequential),
-        prevent_caching: Some(false),
+        extra: Default::default(),
     };
 
     let storage = S::open(path, options)?;

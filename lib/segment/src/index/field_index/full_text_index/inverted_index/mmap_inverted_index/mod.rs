@@ -135,7 +135,7 @@ impl MmapInvertedIndex<MmapFile> {
                     need_sequential: true,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
-                    prevent_caching: None,
+                    extra: Default::default(),
                 },
             )?;
             deleted_storage.write_bitslice(&deleted_bitslice)?;
@@ -173,7 +173,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Advice(Advice::Normal),
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let postings = match has_positions {
             false => MmapPostingsEnum::Ids(UniversalPostings::<(), S>::open(
@@ -192,7 +192,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 need_sequential: true,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
 
@@ -203,7 +203,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 need_sequential: true,
                 populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
 
@@ -214,7 +214,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 need_sequential: true,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;

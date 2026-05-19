@@ -130,7 +130,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                     need_sequential: true,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
-                    prevent_caching: None,
+                    extra: Default::default(),
                 },
             )?;
             deleted.set_ascending_bits_batch(
@@ -181,7 +181,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             need_sequential: false,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
 
         let counts_per_hash = TypedStorage::open(&counts_per_hash_path, open_options)?;
@@ -198,7 +198,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 need_sequential: true,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;

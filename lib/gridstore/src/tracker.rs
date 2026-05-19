@@ -22,7 +22,7 @@ fn tracker_open_options() -> OpenOptions {
         need_sequential: false,
         populate: Populate::No,
         advice: AdviceSetting::Advice(Advice::Random),
-        prevent_caching: None,
+        extra: Default::default(),
     }
 }
 

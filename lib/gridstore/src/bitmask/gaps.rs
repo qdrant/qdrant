@@ -107,7 +107,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             need_sequential: false,
             populate: Populate::Blocking,
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let mut slice_store = TypedStorage::open(&path, options)?;
 
@@ -129,7 +129,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             need_sequential: false,
             populate: Populate::Blocking,
             advice: AdviceSetting::Advice(Advice::Normal),
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let slice_store = TypedStorage::open(&path, options)?;
 
@@ -163,7 +163,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
-            prevent_caching: None,
+            extra: Default::default(),
         };
         self.slice_store = TypedStorage::open(&self.path, options)?;
 

@@ -61,7 +61,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
             need_sequential: true,
             populate: Populate::from(populate),
             advice: AdviceSetting::Global,
-            prevent_caching: None,
+            extra: Default::default(),
         };
         let storage = TypedStorage::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(

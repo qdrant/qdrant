@@ -73,7 +73,7 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead>(
         need_sequential: true,
         populate: Populate::No,
         advice: AdviceSetting::Global,
-        prevent_caching: Some(false),
+        extra: Default::default(),
     };
     let storage = C::open(path, options).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;

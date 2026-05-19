@@ -6,8 +6,8 @@ use fs_err as fs;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    OpenOptions, ReadRange, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UserData, local_file_ops,
+    OpenOptions, OpenOptionsExtra, ReadRange, Result, UniversalIoError, UniversalRead,
+    UniversalReadFileOps, UserData, local_file_ops,
 };
 
 mod cached_slice;
@@ -94,7 +94,10 @@ impl UniversalRead for CachedSlice {
             need_sequential: _,
             populate: _,
             advice: _,
-            prevent_caching: _, // This is cached in disk, backed by a mmap
+            extra:
+                OpenOptionsExtra {
+                    prevent_caching: _, // This is cached in disk, backed by a mmap
+                },
         } = options;
 
         debug_assert!(!writeable);

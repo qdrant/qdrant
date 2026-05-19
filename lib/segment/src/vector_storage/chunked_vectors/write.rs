@@ -124,7 +124,7 @@ where
                 need_sequential: false,
                 populate: populate.map(Populate::from).unwrap_or_default(),
                 advice: AdviceSetting::Global,
-                prevent_caching: None,
+                extra: Default::default(),
             },
         )?;
 
