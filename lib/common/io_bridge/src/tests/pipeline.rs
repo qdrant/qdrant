@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::generic_consts::Random;
-use common::universal_io::{ReadRange, UniversalIoError, UniversalReadPipeline};
+use common::universal_io::{BorrowedReadPipeline, ReadRange, UniversalIoError};
 use tokio::runtime::Runtime;
 
 use super::mock_backend::{

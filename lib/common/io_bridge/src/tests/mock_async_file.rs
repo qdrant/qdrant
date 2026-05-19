@@ -34,23 +34,21 @@ impl fmt::Debug for MockAsyncFile {
 }
 
 impl AsyncReadFileOps for MockAsyncFile {
-    fn list_files(
-        _prefix_path: &Path,
-    ) -> impl Future<Output = Result<Vec<PathBuf>, UniversalIoError>> {
-        async { Ok(Vec::new()) }
+    async fn list_files(_prefix_path: &Path) -> Result<Vec<PathBuf>, UniversalIoError> {
+        Ok(Vec::new())
     }
 
-    fn exists(_path: &Path) -> impl Future<Output = Result<bool, UniversalIoError>> {
-        async { Ok(false) }
+    async fn exists(_path: &Path) -> Result<bool, UniversalIoError> {
+        Ok(false)
     }
 }
 
 impl AsyncRead for MockAsyncFile {
-    fn open(
+    async fn open(
         _path: &Path,
         _options: OpenOptions,
-    ) -> impl Future<Output = Result<Self, UniversalIoError>> {
-        async { Ok(Self::with_contents(Vec::new())) }
+    ) -> Result<Self, UniversalIoError> {
+        Ok(Self::with_contents(Vec::new()))
     }
 
     fn read<P: AccessPattern, T: bytemuck::Pod>(
@@ -74,12 +72,12 @@ impl AsyncRead for MockAsyncFile {
         async move { Ok(l) }
     }
 
-    fn populate(&self) -> impl Future<Output = Result<(), UniversalIoError>> {
-        async { Ok(()) }
+    async fn populate(&self) -> Result<(), UniversalIoError> {
+        Ok(())
     }
 
-    fn clear_ram_cache(&self) -> impl Future<Output = Result<(), UniversalIoError>> {
-        async { Ok(()) }
+    async fn clear_ram_cache(&self) -> Result<(), UniversalIoError> {
+        Ok(())
     }
 
     fn kind() -> UniversalKind {
@@ -106,9 +104,9 @@ impl AsyncWrite for MockAsyncFile {
         }
     }
 
-    fn write_batch<'a, T: bytemuck::Pod>(
+    fn write_batch<T: bytemuck::Pod>(
         &mut self,
-        offset_data: Vec<(ByteOffset, &'a [T])>,
+        offset_data: Vec<(ByteOffset, &[T])>,
     ) -> impl Future<Output = Result<(), UniversalIoError>> {
         let writes: Vec<(ByteOffset, Vec<u8>)> = offset_data
             .into_iter()

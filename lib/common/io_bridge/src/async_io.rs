@@ -42,6 +42,7 @@ pub trait AsyncReadFileOps: Sized + Debug {
 /// pipeline backed by `block_on`. A backend that wants real per-batch
 /// concurrency in addition to the bridge can layer
 /// [`crate::AsyncReadBackend`] underneath.
+#[expect(clippy::len_without_is_empty)]
 pub trait AsyncRead: AsyncReadFileOps {
     fn open(path: &Path, options: OpenOptions) -> impl Future<Output = Result<Self>>;
 
@@ -76,9 +77,9 @@ pub trait AsyncWrite: AsyncRead {
         data: &[T],
     ) -> impl Future<Output = Result<()>>;
 
-    fn write_batch<'a, T: bytemuck::Pod>(
+    fn write_batch<T: bytemuck::Pod>(
         &mut self,
-        offset_data: Vec<(ByteOffset, &'a [T])>,
+        offset_data: Vec<(ByteOffset, &[T])>,
     ) -> impl Future<Output = Result<()>>;
 
     fn flusher(&self) -> AsyncFlusher;

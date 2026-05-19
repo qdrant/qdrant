@@ -30,7 +30,7 @@ fn io_bridge_resolves_global_handle_outside_tokio_context() {
     let _ = set_global_async_handle(handle);
 
     let exists = <IoBridge<MockAsyncFile> as UniversalReadFileOps>::exists(Path::new("/x"));
-    assert_eq!(exists.expect("exists ok"), false);
+    assert!(!exists.expect("exists ok"));
 }
 
 #[test]

@@ -6,7 +6,7 @@ mod dispatcher;
 mod pipeline;
 mod runtime;
 
-pub use adapter::{BlockingPipeline, IoBridge};
+pub use adapter::{BlockingPipeline, IoBridge, OwnedBlockingPipeline};
 pub use backend::AsyncReadBackend;
 pub use dispatcher::AsyncDispatcher;
 pub use pipeline::{IoBridgeFile, IoBridgeReadPipeline};

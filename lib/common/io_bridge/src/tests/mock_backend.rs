@@ -65,13 +65,13 @@ pub(super) struct FailingMockBackend;
 impl AsyncReadBackend for FailingMockBackend {
     type Location = ();
 
-    fn read_bytes(
+    async fn read_bytes(
         &self,
         _location: Self::Location,
         _byte_offset: u64,
         _byte_length: u64,
-    ) -> impl Future<Output = Result<Vec<u8>, UniversalIoError>> + Send {
-        async { Err(UniversalIoError::uninitialized("simulated backend failure")) }
+    ) -> Result<Vec<u8>, UniversalIoError> {
+        Err(UniversalIoError::uninitialized("simulated backend failure"))
     }
 }
 

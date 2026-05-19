@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use common::generic_consts::AccessPattern;
-use common::universal_io::{ReadRange, Result, UniversalIoError, UniversalReadPipeline, UserData};
+use common::universal_io::{BorrowedReadPipeline, ReadRange, Result, UniversalIoError, UserData};
 
 use crate::backend::AsyncReadBackend;
 use crate::dispatcher::{AsyncDispatcher, DispatchResult, ReadRequest};
@@ -53,7 +53,7 @@ where
     U: UserData,
 {
     /// Build a pipeline with an explicit in-flight cap. The trait-required
-    /// no-arg [`UniversalReadPipeline::new`] uses [`DEFAULT_MAX_CONCURRENCY`].
+    /// no-arg [`BorrowedReadPipeline::new`] uses [`DEFAULT_MAX_CONCURRENCY`].
     pub fn with_max_concurrency(max_concurrency: usize) -> Result<Self> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         Ok(Self {
@@ -68,7 +68,7 @@ where
     }
 }
 
-impl<'file, F, T, U> UniversalReadPipeline<'file, T, U> for IoBridgeReadPipeline<'file, F, T, U>
+impl<'file, F, T, U> BorrowedReadPipeline<'file, T, U> for IoBridgeReadPipeline<'file, F, T, U>
 where
     F: IoBridgeFile + 'file,
     T: bytemuck::Pod,

@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    ByteOffset, Flusher, OpenOptions, ReadRange, Result, UniversalIoError, UniversalKind,
-    UniversalRead, UniversalReadFileOps, UniversalReadPipeline, UniversalWrite, UserData,
+    BorrowedReadPipeline, ByteOffset, Flusher, OpenOptions, OwnedReadPipeline, ReadRange, Result,
+    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UniversalWrite, UserData,
 };
 use tokio::runtime::Handle;
 
@@ -71,10 +71,16 @@ impl<T: AsyncRead + Debug> UniversalReadFileOps for IoBridge<T> {
 }
 
 impl<T: AsyncRead + Debug> UniversalRead for IoBridge<T> {
-    type ReadPipeline<'file, T2, U>
+    type BorrowedReadPipeline<'file, T2, U>
         = BlockingPipeline<'file, T, T2, U>
     where
         Self: 'file,
+        T2: bytemuck::Pod,
+        U: UserData;
+
+    type OwnedReadPipeline<T2, U>
+        = OwnedBlockingPipeline<T, T2, U>
+    where
         T2: bytemuck::Pod,
         U: UserData;
 
@@ -151,7 +157,7 @@ where
     _phantom: PhantomData<&'file T>,
 }
 
-impl<'file, T, T2, U> UniversalReadPipeline<'file, T2, U> for BlockingPipeline<'file, T, T2, U>
+impl<'file, T, T2, U> BorrowedReadPipeline<'file, T2, U> for BlockingPipeline<'file, T, T2, U>
 where
     T: AsyncRead + Debug + 'file,
     T2: bytemuck::Pod,
@@ -183,6 +189,56 @@ where
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T2]>)>> {
+        Ok(self.result.take().map(|(u, items)| (u, Cow::Owned(items))))
+    }
+}
+
+/// Owned counterpart of [`BlockingPipeline`]: holds the file by value so the
+/// returned `Cow` outlives the originating reference. Same single-slot,
+/// eager-execute shape — exists only to satisfy
+/// `UniversalRead::OwnedReadPipeline` for `IoBridge<T>`.
+pub struct OwnedBlockingPipeline<T, T2, U>
+where
+    T: AsyncRead,
+    T2: bytemuck::Pod,
+    U: UserData,
+{
+    file: IoBridge<T>,
+    result: Option<(U, Vec<T2>)>,
+}
+
+impl<T, T2, U> OwnedReadPipeline<T2, U> for OwnedBlockingPipeline<T, T2, U>
+where
+    T: AsyncRead + Debug,
+    T2: bytemuck::Pod,
+    U: UserData,
+{
+    type File = IoBridge<T>;
+
+    fn new(file: IoBridge<T>) -> Result<Self> {
+        Ok(Self { file, result: None })
+    }
+
+    fn can_schedule(&mut self) -> bool {
+        self.result.is_none()
+    }
+
+    fn schedule<P>(&mut self, user_data: U, range: ReadRange) -> Result<()>
+    where
+        P: AccessPattern,
+    {
+        if self.result.is_some() {
+            return Err(UniversalIoError::QueueIsFull);
+        }
+        let cow = self
+            .file
+            .handle
+            .block_on(self.file.inner.read::<P, T2>(range))?;
+        self.result = Some((user_data, cow.into_owned()));
+        Ok(())
+    }
+
+    fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T2]>)>> {
         Ok(self.result.take().map(|(u, items)| (u, Cow::Owned(items))))
     }
 }
