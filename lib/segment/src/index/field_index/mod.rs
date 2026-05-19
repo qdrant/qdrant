@@ -110,17 +110,35 @@ impl CardinalityEstimation {
                     Condition::Field(field_condition) => {
                         primary_field_condition.as_ref() == field_condition
                     }
-                    _ => false,
+                    Condition::IsEmpty(_)
+                    | Condition::IsNull(_)
+                    | Condition::HasId(_)
+                    | Condition::HasVector(_)
+                    | Condition::Nested(_)
+                    | Condition::Filter(_)
+                    | Condition::CustomIdChecker(_) => false,
                 },
                 PrimaryCondition::Ids(ids) => match condition {
                     Condition::HasId(has_id) => ids.point_ids.deref() == has_id.has_id.deref(),
-                    _ => false,
+                    Condition::Field(_)
+                    | Condition::IsEmpty(_)
+                    | Condition::IsNull(_)
+                    | Condition::HasVector(_)
+                    | Condition::Nested(_)
+                    | Condition::Filter(_)
+                    | Condition::CustomIdChecker(_) => false,
                 },
                 PrimaryCondition::HasVector(has_vector) => match condition {
                     Condition::HasVector(vector_condition) => {
                         has_vector == &vector_condition.has_vector
                     }
-                    _ => false,
+                    Condition::Field(_)
+                    | Condition::IsEmpty(_)
+                    | Condition::IsNull(_)
+                    | Condition::HasId(_)
+                    | Condition::Nested(_)
+                    | Condition::Filter(_)
+                    | Condition::CustomIdChecker(_) => false,
                 },
             })
     }

@@ -53,7 +53,11 @@ impl GroupsAggregator {
                     .into_iter()
                     .flat_map(|v| match v {
                         Value::Array(arr) => arr.iter().collect(),
-                        _ => vec![v],
+                        Value::Null
+                        | Value::Bool(_)
+                        | Value::Number(_)
+                        | Value::String(_)
+                        | Value::Object(_) => vec![v],
                     })
                     .collect()
             })

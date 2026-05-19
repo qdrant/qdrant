@@ -847,7 +847,8 @@ mod tests {
                         DistanceType::Cosine => {
                             (normalize_vector(&a_raw), normalize_vector(&b_raw))
                         }
-                        _ => (a_raw, b_raw),
+                        DistanceType::Dot => (a_raw, b_raw),
+                        DistanceType::L1 | DistanceType::L2 => unreachable!(),
                     };
 
                     let true_score = dot_f32_impl(a.iter().copied(), b.iter().copied());
@@ -861,7 +862,8 @@ mod tests {
                     // Cosine scores are bounded in [-1, 1]; Dot scales with ||a||*||b||.
                     let scale = match distance {
                         DistanceType::Cosine => 1.0,
-                        _ => (l2_norm(&a) * l2_norm(&b)) as f32,
+                        DistanceType::Dot => (l2_norm(&a) * l2_norm(&b)) as f32,
+                        DistanceType::L1 | DistanceType::L2 => unreachable!(),
                     };
                     let tol = 0.05 * scale;
 
@@ -896,12 +898,14 @@ mod tests {
                 let raw = random_vector(dim, &mut rng);
                 let v = match distance {
                     DistanceType::Cosine => normalize_vector(&raw),
-                    _ => raw,
+                    DistanceType::Dot => raw,
+                    DistanceType::L1 | DistanceType::L2 => unreachable!(),
                 };
 
                 let expected = match distance {
                     DistanceType::Cosine => 1.0,
-                    _ => (l2_norm(&v) * l2_norm(&v)) as f32,
+                    DistanceType::Dot => (l2_norm(&v) * l2_norm(&v)) as f32,
+                    DistanceType::L1 | DistanceType::L2 => unreachable!(),
                 };
                 let tol = 0.05 * expected.abs().max(1.0);
 
@@ -940,13 +944,15 @@ mod tests {
                 let raw = random_vector(dim, &mut rng);
                 let v = match distance {
                     DistanceType::Cosine => normalize_vector(&raw),
-                    _ => raw,
+                    DistanceType::Dot => raw,
+                    DistanceType::L1 | DistanceType::L2 => unreachable!(),
                 };
                 let neg_v: Vec<f32> = v.iter().map(|&x| -x).collect();
 
                 let expected = match distance {
                     DistanceType::Cosine => -1.0,
-                    _ => -(l2_norm(&v) * l2_norm(&v)) as f32,
+                    DistanceType::Dot => -(l2_norm(&v) * l2_norm(&v)) as f32,
+                    DistanceType::L1 | DistanceType::L2 => unreachable!(),
                 };
                 let tol = 0.05 * expected.abs().max(1.0);
 
@@ -991,7 +997,8 @@ mod tests {
                                 DistanceType::Cosine => {
                                     (normalize_vector(&a_raw), normalize_vector(&b_raw))
                                 }
-                                _ => (a_raw, b_raw),
+                                DistanceType::Dot => (a_raw, b_raw),
+                                DistanceType::L1 | DistanceType::L2 => unreachable!(),
                             };
                             let truth = dot_f32_impl(a.iter().copied(), b.iter().copied());
                             let a_q = tq.quantize(&a, &mut buf);
@@ -1030,7 +1037,8 @@ mod tests {
                     let raw = vec![val; dim];
                     let v = match distance {
                         DistanceType::Cosine => normalize_vector(&raw),
-                        _ => raw,
+                        DistanceType::Dot => raw,
+                        DistanceType::L1 | DistanceType::L2 => unreachable!(),
                     };
 
                     let v_q = tq.quantize(&v, &mut buf);
@@ -1079,13 +1087,15 @@ mod tests {
 
                 let query = match distance {
                     DistanceType::Cosine => normalize_vector(&query_raw),
-                    _ => query_raw,
+                    DistanceType::Dot => query_raw,
+                    DistanceType::L1 | DistanceType::L2 => unreachable!(),
                 };
                 let candidates: Vec<Vec<f32>> = candidates_raw
                     .iter()
                     .map(|c| match distance {
                         DistanceType::Cosine => normalize_vector(c),
-                        _ => c.clone(),
+                        DistanceType::Dot => c.clone(),
+                        DistanceType::L1 | DistanceType::L2 => unreachable!(),
                     })
                     .collect();
 
@@ -1227,7 +1237,8 @@ mod tests {
             let raw = random_vector(dim, &mut rng);
             let v = match distance {
                 DistanceType::Cosine => normalize_vector(&raw),
-                _ => raw,
+                DistanceType::Dot => raw,
+                DistanceType::L1 | DistanceType::L2 => unreachable!(),
             };
             let neg_v: Vec<f32> = v.iter().map(|&x| -x).collect();
 

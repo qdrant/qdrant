@@ -133,7 +133,10 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S> {
         for c in rel.components() {
             match c {
                 Component::Normal(_) => {}
-                _ => {
+                Component::Prefix(_)
+                | Component::RootDir
+                | Component::CurDir
+                | Component::ParentDir => {
                     return Err(Status::invalid_argument(format!(
                         "Invalid path component in '{relative_path}'"
                     )));
@@ -221,13 +224,17 @@ pub fn validate_range(range: ReadRange, data_length: u64) -> common::universal_i
 /// Convert UniversalIoError to tonic Status.
 pub fn io_error_to_status(e: UniversalIoError) -> Status {
     match e {
-        UniversalIoError::Io(e) => match e.kind() {
-            std::io::ErrorKind::NotFound => Status::not_found(format!("File not found: {e}")),
-            std::io::ErrorKind::PermissionDenied => {
-                Status::permission_denied(format!("Permission denied: {e}"))
+        UniversalIoError::Io(e) =>
+        {
+            #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
+            match e.kind() {
+                std::io::ErrorKind::NotFound => Status::not_found(format!("File not found: {e}")),
+                std::io::ErrorKind::PermissionDenied => {
+                    Status::permission_denied(format!("Permission denied: {e}"))
+                }
+                _ => Status::internal(format!("I/O error: {e}")),
             }
-            _ => Status::internal(format!("I/O error: {e}")),
-        },
+        }
         UniversalIoError::Mmap(e) => Status::internal(format!("Mmap error: {e}")),
         UniversalIoError::OutOfBounds {
             start,

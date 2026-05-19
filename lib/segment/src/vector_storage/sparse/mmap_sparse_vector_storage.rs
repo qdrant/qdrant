@@ -352,6 +352,8 @@ pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<
 
 #[cfg(test)]
 mod test {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 

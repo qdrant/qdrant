@@ -1,3 +1,5 @@
+#![expect(clippy::wildcard_enum_match_arm, reason = "benchmarks")]
+
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};

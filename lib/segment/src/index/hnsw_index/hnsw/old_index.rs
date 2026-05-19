@@ -54,10 +54,7 @@ impl<'a> OldIndexCandidate<'a> {
             return None;
         }
 
-        let old_index = AtomicRef::filter_map(old_index.borrow(), |index| match index {
-            VectorIndexEnum::Hnsw(old_index) => Some(old_index),
-            _ => None,
-        })?;
+        let old_index = AtomicRef::filter_map(old_index.borrow(), VectorIndexEnum::as_hnsw)?;
 
         let old_quantized_vectors_ref = old_index.quantized_vectors.borrow();
         let old_quantization_config = old_quantized_vectors_ref

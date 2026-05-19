@@ -246,19 +246,19 @@ where
                 let range = Range {
                     lt: match upper_bound {
                         Excluded(val) => Some(OrderedFloat(val.to_f64())),
-                        _ => None,
+                        Included(_) | Unbounded => None,
                     },
                     gt: match pre_lower_bound {
                         Excluded(val) => Some(OrderedFloat(val.to_f64())),
-                        _ => None,
+                        Included(_) | Unbounded => None,
                     },
                     gte: match pre_lower_bound {
                         Included(val) => Some(OrderedFloat(val.to_f64())),
-                        _ => None,
+                        Excluded(_) | Unbounded => None,
                     },
                     lte: match upper_bound {
                         Included(val) => Some(OrderedFloat(val.to_f64())),
-                        _ => None,
+                        Excluded(_) | Unbounded => None,
                     },
                 };
                 let cardinality = range_cardinality(index, &RangeInterface::Float(range))?;

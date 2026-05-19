@@ -28,7 +28,13 @@ where
 {
     match condition {
         Condition::Filter(filter) => check_filter(checker, filter),
-        _ => checker(condition),
+        Condition::Field(_)
+        | Condition::IsEmpty(_)
+        | Condition::IsNull(_)
+        | Condition::HasId(_)
+        | Condition::HasVector(_)
+        | Condition::Nested(_)
+        | Condition::CustomIdChecker(_) => checker(condition),
     }
 }
 

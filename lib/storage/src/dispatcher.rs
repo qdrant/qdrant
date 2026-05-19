@@ -141,7 +141,20 @@ impl Dispatcher {
                     CollectionMetaOperations::CreateShardKey(op)
                 }
 
-                op => op,
+                CollectionMetaOperations::UpdateCollection(_)
+                | CollectionMetaOperations::DeleteCollection(_)
+                | CollectionMetaOperations::ChangeAliases(_)
+                | CollectionMetaOperations::Resharding(_, _)
+                | CollectionMetaOperations::TransferShard(_, _)
+                | CollectionMetaOperations::SetShardReplicaState(_)
+                | CollectionMetaOperations::DropShardKey(_)
+                | CollectionMetaOperations::CreatePayloadIndex(_)
+                | CollectionMetaOperations::DropPayloadIndex(_)
+                | CollectionMetaOperations::CreateNamedVector(_)
+                | CollectionMetaOperations::DeleteNamedVector(_)
+                | CollectionMetaOperations::Nop { .. } => operation,
+                #[cfg(feature = "staging")]
+                CollectionMetaOperations::TestSlowDown(_) => operation,
             };
 
             let operation_awaiter =
@@ -201,6 +214,7 @@ impl Dispatcher {
             //    ( At this stage we are sure, that all consensus operations are created, but might not be applied everywhere )
             // 3. Wait for all remote peers to have at least the same state as the current peer.
             //    ( So we are sure, that all remote peers have also switched to `Active` state )
+            #[expect(clippy::wildcard_enum_match_arm, reason = "too many enum variants")]
             let create_shard_key = match &op {
                 CollectionMetaOperations::CreateShardKey(op) => {
                     let collection_name: CollectionName = op.collection_name.clone();

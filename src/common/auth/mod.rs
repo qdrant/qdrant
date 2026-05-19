@@ -220,11 +220,14 @@ impl AuthKeys {
                 HwMeasurementAcc::disposable(),
             )
             .await
-            .map_err(|e| match e {
-                StorageError::NotFound { .. } => {
-                    AuthError::Forbidden("Invalid JWT, stateful validation failed".to_string())
+            .map_err(|e| {
+                #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
+                match e {
+                    StorageError::NotFound { .. } => {
+                        AuthError::Forbidden("Invalid JWT, stateful validation failed".to_string())
+                    }
+                    _ => AuthError::StorageError(e),
                 }
-                _ => AuthError::StorageError(e),
             })?;
 
         if res.points.is_empty() {

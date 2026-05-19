@@ -8,6 +8,8 @@ pub use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 

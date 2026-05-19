@@ -205,6 +205,8 @@ impl fmt::Display for PointsSelectorValidationError {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+
     use segment::types::{Payload, PayloadContainer};
     use serde_json::Value;
 

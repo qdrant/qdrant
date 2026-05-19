@@ -424,46 +424,29 @@ impl StorageSegmentEntry for Segment {
 
             let flush_components = || {
                 // Flush mapping first to prevent having orphan internal ids.
-                id_tracker_mapping_flusher().map_err(|err| match err {
+
+                #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
+                let wrap_err = |err, what| match err {
                     OperationError::Cancelled { .. } => err,
-                    _ => OperationError::service_error(format!(
-                        "Failed to flush id_tracker mapping: {err}"
-                    )),
-                })?;
+                    _ => OperationError::service_error(format!("Failed to flush {what}: {err}")),
+                };
+
+                id_tracker_mapping_flusher().map_err(|err| wrap_err(err, "id_tracker mapping"))?;
                 for vector_storage_flusher in vector_storage_flushers {
-                    vector_storage_flusher().map_err(|err| match err {
-                        OperationError::Cancelled { .. } => err,
-                        _ => OperationError::service_error(format!(
-                            "Failed to flush vector_storage: {err}"
-                        )),
-                    })?;
+                    vector_storage_flusher().map_err(|err| wrap_err(err, "vector_storage"))?;
                 }
                 for quantization_flusher in quantization_flushers {
-                    quantization_flusher().map_err(|err| match err {
-                        OperationError::Cancelled { .. } => err,
-                        _ => OperationError::service_error(format!(
-                            "Failed to flush quantized vectors: {err}"
-                        )),
-                    })?;
+                    quantization_flusher().map_err(|err| wrap_err(err, "quantized vectors"))?;
                 }
-                payload_index_flusher().map_err(|err| match err {
-                    OperationError::Cancelled { .. } => err,
-                    _ => OperationError::service_error(format!(
-                        "Failed to flush payload_index: {err}"
-                    )),
-                })?;
+                payload_index_flusher().map_err(|err| wrap_err(err, "payload_index"))?;
                 // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
                 // This is because vector_storage and payload_index flush are not atomic.
                 // If payload or vector flush fails, we will be able to recover data from WAL.
                 // If Id Tracker flush fails, we are also able to recover data from WAL
                 //  by simply overriding data in vector and payload storages.
                 // Once versions are saved - points are considered persisted.
-                id_tracker_versions_flusher().map_err(|err| match err {
-                    OperationError::Cancelled { .. } => err,
-                    _ => OperationError::service_error(format!(
-                        "Failed to flush id_tracker versions: {err}"
-                    )),
-                })?;
+                id_tracker_versions_flusher()
+                    .map_err(|err| wrap_err(err, "id_tracker versions"))?;
 
                 Ok(())
             };

@@ -433,7 +433,8 @@ fn get_collection_telemetry<'a>(
             CollectionTelemetryEnum::Full(coll) if coll.id == collection_id => {
                 Some(Box::as_ref(coll))
             }
-            _ => None,
+            CollectionTelemetryEnum::Full(_) => None,
+            CollectionTelemetryEnum::Aggregated(_) => None,
         })
 }
 
