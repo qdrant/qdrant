@@ -1,6 +1,6 @@
 //! Compares the scalar Walsh–Hadamard Transform
-//! (`quantization::turboquant::rotation::in_place_walsh_hadamard_transform`)
-//! against the SIMD variants in `quantization::turboquant::simd::hadamard`:
+//! (`turboquant::rotation::in_place_walsh_hadamard_transform`)
+//! against the SIMD variants in `turboquant::simd::hadamard`:
 //! AVX2 (`wht_avx2`, `wht_avx2_radix16_4x`) on x86_64 and NEON (`wht_neon`,
 //! `wht_neon_radix16_4x`) on aarch64. Bit-equality between SIMD and scalar is
 //! covered by unit tests in `simd::hadamard::tests` — this bench only measures

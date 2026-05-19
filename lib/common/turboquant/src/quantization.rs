@@ -147,8 +147,8 @@ impl TurboQuantizer {
     /// Cosine.
     ///
     /// Used both by [`Self::quantize`] and by the TQ+ first pass in
-    /// [`quantization::turboquant::EncodedVectorsTQ::encode`] when computing per-
-    /// coordinate stats over rescaled rotated samples.
+    /// `EncodedVectorsTQ::encode` (in the `quantization` crate) when computing
+    /// per-coordinate stats over rescaled rotated samples.
     pub fn preprocess_into(&self, vec: &[f32], buf: &mut [f64]) -> Option<f32> {
         debug_assert!(vec.len() <= self.padded_dim);
         debug_assert_eq!(buf.len(), self.padded_dim);
