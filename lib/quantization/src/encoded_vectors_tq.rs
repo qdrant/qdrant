@@ -50,7 +50,7 @@ pub fn new_turbo_quantizer_from_metadata(metadata: &Metadata) -> std::io::Result
         metadata.vector_parameters.dim,
         metadata.bits,
         metadata.mode,
-        metadata.vector_parameters.distance_type.into(),
+        turboquant::DistanceType::from(metadata.vector_parameters.distance_type),
         error_correction,
     ))
 }
@@ -321,7 +321,7 @@ pub fn get_quantized_vector_size(
     TurboQuantizer::quantized_size_for(
         vector_parameters.dim,
         bits,
-        vector_parameters.distance_type.into(),
+        turboquant::DistanceType::from(vector_parameters.distance_type),
         mode,
     )
 }
