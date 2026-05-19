@@ -47,7 +47,7 @@ pub struct OpenOptions {
     /// Populate RAM cache on open, if applicable for this implementation.
     pub populate: Populate,
     /// Use specific mmap advice.
-    pub advice: Option<AdviceSetting>,
+    pub advice: AdviceSetting,
     /// Whether to try to prevent caching for reads.
     pub prevent_caching: Option<bool>,
 }
@@ -60,7 +60,7 @@ impl OpenOptions {
             writeable: true,
             need_sequential: true,
             populate: Populate::Auto,
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         }
     }
@@ -139,7 +139,7 @@ where
         writeable: false,
         need_sequential: false,
         populate: Populate::No,
-        advice: Some(AdviceSetting::Advice(Advice::Sequential)),
+        advice: AdviceSetting::Advice(Advice::Sequential),
         prevent_caching: Some(false),
     };
 

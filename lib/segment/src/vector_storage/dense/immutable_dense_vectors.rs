@@ -60,7 +60,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
             writeable: false,
             need_sequential: true,
             populate: Populate::from(populate),
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
         let storage = TypedStorage::open(vectors_path, options).map_err(|e| {

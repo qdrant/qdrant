@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use ahash::{AHashMap, HashSet};
 use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
+use common::mmap::AdviceSetting;
 use common::universal_io::{
     FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalWrite,
 };
@@ -60,7 +61,7 @@ impl<S: UniversalRead> Pages<S> {
             writeable: true,
             need_sequential: true,
             populate: Populate::No,
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
 

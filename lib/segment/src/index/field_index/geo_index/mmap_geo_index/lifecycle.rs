@@ -10,7 +10,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
-use common::mmap::{MmapSlice, create_and_ensure_length};
+use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -129,7 +129,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                     writeable: true,
                     need_sequential: true,
                     populate: Populate::Auto,
-                    advice: None,
+                    advice: AdviceSetting::Global,
                     prevent_caching: None,
                 },
             )?;
@@ -180,7 +180,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             writeable: false,
             need_sequential: false,
             populate: Populate::from(populate),
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
 
@@ -197,7 +197,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 writeable: true,
                 need_sequential: true,
                 populate: Populate::Auto,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;

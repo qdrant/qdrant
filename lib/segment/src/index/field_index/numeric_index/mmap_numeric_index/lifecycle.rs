@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitSliceExt};
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap::{MmapSlice, create_and_ensure_length};
+use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, OpenOptions, Populate, TypedStorage};
@@ -84,7 +84,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                     writeable: true,
                     need_sequential: true,
                     populate: Populate::Auto,
-                    advice: None,
+                    advice: AdviceSetting::Global,
                     prevent_caching: None,
                 },
             )?;
@@ -127,7 +127,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
             writeable: false,
             need_sequential: false,
             populate: Populate::from(do_populate),
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
         let pairs = TypedStorage::open(pairs_path, pairs_options)?;
@@ -141,7 +141,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                 writeable: true,
                 need_sequential: true,
                 populate: Populate::Auto,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;

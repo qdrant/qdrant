@@ -108,7 +108,7 @@ impl<R: UniversalRead> DiskCache<R> {
             prevent_caching: Some(true),
             populate: Populate::No,
             need_sequential: false,
-            advice: None,
+            advice: AdviceSetting::Global,
         };
 
         let remote = R::open(remote_path, remote_options)?;

@@ -12,6 +12,7 @@ use api::grpc::qdrant::{
     ReadWholeRequest, ReadWholeResponse,
 };
 use common::generic_consts::Random;
+use common::mmap::AdviceSetting;
 use common::universal_io::{
     FileIndex, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
 };
@@ -129,7 +130,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             writeable: true,
             need_sequential: true,
             populate: Populate::Auto,
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
         let length = tokio::task::spawn_blocking(move || {
@@ -165,7 +166,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             writeable: true,
             need_sequential: true,
             populate: Populate::Auto,
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
 
@@ -209,7 +210,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             writeable: true,
             need_sequential: true,
             populate: Populate::Auto,
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
         let range = ReadRange::new(byte_offset, length);
@@ -273,7 +274,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             writeable: true,
             need_sequential: true,
             populate: Populate::Auto,
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
 
@@ -310,7 +311,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             writeable: true,
             need_sequential: true,
             populate: Populate::Auto,
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
         let ranges = ranges
@@ -356,7 +357,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             writeable: true,
             need_sequential: true,
             populate: Populate::Auto,
-            advice: None,
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
 

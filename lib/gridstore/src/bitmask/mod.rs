@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
 use common::bitvec::BitSlice;
-use common::mmap::create_and_ensure_length;
+use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{MmapFile, OpenOptions, Populate, UniversalWrite};
 use gaps::{BitmaskGaps, RegionGaps};
@@ -22,7 +22,7 @@ const OPEN_OPTIONS: OpenOptions = OpenOptions {
     writeable: true,
     need_sequential: false,
     populate: Populate::No,
-    advice: None,
+    advice: AdviceSetting::Global,
     prevent_caching: None,
 };
 
@@ -132,7 +132,7 @@ impl<S: UniversalWrite> Bitmask<S> {
                 writeable: true,
                 need_sequential: true,
                 populate: Populate::Auto,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;

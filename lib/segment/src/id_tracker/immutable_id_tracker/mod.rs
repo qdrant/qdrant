@@ -14,7 +14,7 @@ use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
-use common::mmap::create_and_ensure_length;
+use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -88,7 +88,7 @@ where
                 writeable: true,
                 need_sequential: true,
                 populate: Populate::Blocking,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;
@@ -104,7 +104,7 @@ where
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::Blocking,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;
@@ -151,7 +151,7 @@ where
                 writeable: true,
                 need_sequential: true,
                 populate: Populate::Auto,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;
@@ -189,7 +189,7 @@ where
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::No,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;

@@ -134,7 +134,7 @@ impl MmapInvertedIndex<MmapFile> {
                     writeable: true,
                     need_sequential: true,
                     populate: Populate::Auto,
-                    advice: None,
+                    advice: AdviceSetting::Global,
                     prevent_caching: None,
                 },
             )?;
@@ -172,7 +172,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             writeable: false,
             need_sequential: false,
             populate: Populate::from(populate),
-            advice: Some(AdviceSetting::Advice(Advice::Normal)),
+            advice: AdviceSetting::Advice(Advice::Normal),
             prevent_caching: None,
         };
         let postings = match has_positions {
@@ -191,7 +191,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 writeable: false,
                 need_sequential: true,
                 populate: Populate::from(populate),
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;
@@ -202,7 +202,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 writeable: false,
                 need_sequential: true,
                 populate: Populate::from(populate),
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;
@@ -213,7 +213,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
                 writeable: true,
                 need_sequential: true,
                 populate: Populate::Auto,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;

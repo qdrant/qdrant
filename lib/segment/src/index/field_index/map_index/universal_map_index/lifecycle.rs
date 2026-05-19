@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use ahash::HashMap;
 use common::bitvec::{BitSlice, BitSliceExt};
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap::create_and_ensure_length;
+use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
@@ -46,7 +46,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 writeable: false,
                 need_sequential: true,
                 populate: Populate::from(do_populate),
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;
@@ -60,7 +60,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 writeable: true,
                 need_sequential: true,
                 populate: Populate::Auto,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;
@@ -141,7 +141,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                     writeable: true,
                     need_sequential: true,
                     populate: Populate::Auto,
-                    advice: None,
+                    advice: AdviceSetting::Global,
                     prevent_caching: None,
                 },
             )?;

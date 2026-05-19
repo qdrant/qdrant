@@ -116,7 +116,7 @@ where
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::No,
-                advice: None,
+                advice: AdviceSetting::Global,
                 prevent_caching: None,
             },
         )?;
@@ -161,7 +161,7 @@ where
             writeable: true,
             need_sequential: true,
             populate: Populate::from(populate),
-            advice: Some(AdviceSetting::Global),
+            advice: AdviceSetting::Global,
             prevent_caching: None,
         };
         let flags = StoredBitSlice::open(&path, options)?;
