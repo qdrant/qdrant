@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -78,8 +79,9 @@ impl<T: PrimitiveVectorElement> AppendableMmapDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVectorStorage<T> {
-    fn vector_dim(&self) -> usize {
-        self.vectors.dim()
+    fn vector_layout(&self) -> Layout {
+        let api_dim = T::api_dim_from_storage_len(self.vectors.dim(), self.distance);
+        T::storage_layout(api_dim, self.distance)
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
@@ -113,14 +115,14 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
             .expect("Vector not found")
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -144,7 +146,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
-        let vector = T::slice_from_float_cow(Cow::from(vector));
+        let vector = T::slice_from_float_cow(Cow::from(vector), self.distance);
         self.vectors
             .insert(key as VectorOffsetType, vector.as_ref(), hw_counter)?;
         self.set_deleted(key, false);
@@ -161,7 +163,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
+            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?, self.distance);
             let new_id = self.vectors.push(other_vector.as_ref(), &disposed_hw)?;
             self.set_deleted(new_id as PointOffsetType, other_deleted);
         }
@@ -240,6 +242,22 @@ pub fn open_appendable_memmap_vector_storage_half(
     )))
 }
 
+pub fn open_appendable_memmap_vector_storage_turbo(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    madvise: AdviceSetting,
+    populate: bool,
+) -> OperationResult<VectorStorageEnum> {
+    let storage = open_appendable_memmap_vector_storage_impl::<
+        crate::data_types::turbo_quant::TurboQuantElement,
+    >(path, dim, distance, madvise, populate)?;
+
+    Ok(VectorStorageEnum::DenseAppendableMemmapTurbo(Box::new(
+        storage,
+    )))
+}
+
 pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     path: &Path,
     dim: usize,
@@ -252,7 +270,8 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
+    let slot_len = T::storage_len_in_elements(dim, distance);
+    let vectors = ChunkedVectors::open(&vectors_path, slot_len, madvise, Some(populate))?;
 
     let deleted = BitvecFlags::new(DynamicStoredFlags::open(&deleted_path, populate)?)?;
     let deleted_count = deleted.count_trues();

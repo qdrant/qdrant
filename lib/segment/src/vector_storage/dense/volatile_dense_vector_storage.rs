@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
@@ -23,7 +24,6 @@ use crate::vector_storage::{
 /// This storage is not persisted and intended for temporary use in tests.
 #[derive(Debug)]
 pub struct VolatileDenseVectorStorage<T: PrimitiveVectorElement> {
-    dim: usize,
     distance: Distance,
     vectors: VolatileChunkedVectors<T>,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
@@ -46,12 +46,20 @@ pub fn new_volatile_dense_half_vector_storage(dim: usize, distance: Distance) ->
     VectorStorageEnum::DenseVolatileHalf(VolatileDenseVectorStorage::new(dim, distance))
 }
 
+#[cfg(test)]
+pub fn new_volatile_dense_turbo_vector_storage(
+    dim: usize,
+    distance: Distance,
+) -> VectorStorageEnum {
+    VectorStorageEnum::DenseVolatileTurbo(VolatileDenseVectorStorage::new(dim, distance))
+}
+
 impl<T: PrimitiveVectorElement> VolatileDenseVectorStorage<T> {
     pub fn new(dim: usize, distance: Distance) -> Self {
+        let slot_len = T::storage_len_in_elements(dim, distance);
         Self {
-            dim,
             distance,
-            vectors: VolatileChunkedVectors::new(dim),
+            vectors: VolatileChunkedVectors::new(slot_len),
             deleted: BitVec::new(),
             deleted_count: 0,
         }
@@ -76,8 +84,9 @@ impl<T: PrimitiveVectorElement> VolatileDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorStorage<T> {
-    fn vector_dim(&self) -> usize {
-        self.dim
+    fn vector_layout(&self) -> Layout {
+        let api_dim = T::api_dim_from_storage_len(self.vectors.dim(), self.distance);
+        T::storage_layout(api_dim, self.distance)
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
@@ -109,9 +118,10 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage
     /// Get vector by key, if it exists.
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         // In memory so no optimization to be done for access pattern
+        let distance = self.distance;
         self.vectors
             .get_opt(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into(), distance)))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -135,7 +145,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
-        let vector = T::slice_from_float_cow(Cow::from(vector));
+        let vector = T::slice_from_float_cow(Cow::from(vector), self.distance);
         self.vectors
             .insert(key as VectorOffsetType, vector.as_ref())?;
         self.set_deleted(key, false);
@@ -151,7 +161,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
+            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?, self.distance);
             let new_id = self.vectors.push(other_vector.as_ref())? as PointOffsetType;
             self.set_deleted(new_id, other_deleted);
         }

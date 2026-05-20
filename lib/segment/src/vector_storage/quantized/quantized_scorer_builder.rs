@@ -85,6 +85,11 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     self.build_with_metric::<VectorElementTypeHalf, ManhattanMetric>()
                 }
             },
+            VectorStorageDatatype::Turbo => Err(
+                crate::common::operation_error::OperationError::service_error(
+                    "TurboQuant datatype does not support secondary quantization",
+                ),
+            ),
         }
     }
 

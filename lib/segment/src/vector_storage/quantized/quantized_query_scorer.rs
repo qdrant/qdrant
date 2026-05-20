@@ -37,7 +37,8 @@ where
         TMetric: Metric<TElement>,
     {
         let raw_preprocessed_query = TMetric::preprocess(raw_query);
-        let original_query = TElement::slice_from_float_cow(Cow::Owned(raw_preprocessed_query));
+        let original_query =
+            TElement::slice_from_float_cow(Cow::Owned(raw_preprocessed_query), TMetric::distance());
         let original_query_prequantized = TElement::quantization_preprocess(
             quantization_config,
             TMetric::distance(),

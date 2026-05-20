@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::borrow::Cow;
 use std::io::{self, BufWriter, Write};
 use std::ops::Range;
@@ -162,6 +163,28 @@ pub fn open_dense_vector_storage_byte(
     Ok(VectorStorageEnum::DenseMemmapByte(Box::new(mmap_storage)))
 }
 
+pub fn open_dense_vector_storage_turbo(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    populate: bool,
+) -> OperationResult<VectorStorageEnum> {
+    #[cfg(target_os = "linux")]
+    if get_async_scorer() {
+        match open_dense_vector_storage_impl(path, dim, distance, populate) {
+            Ok(uring_storage) => {
+                return Ok(VectorStorageEnum::DenseUringTurbo(Box::new(uring_storage)));
+            }
+            Err(err) => {
+                log::error!("failed to open io_uring based vector storage: {err}");
+            }
+        }
+    }
+
+    let mmap_storage = open_dense_vector_storage_impl(path, dim, distance, populate)?;
+    Ok(VectorStorageEnum::DenseMemmapTurbo(Box::new(mmap_storage)))
+}
+
 fn open_dense_vector_storage_impl<T, S>(
     path: &Path,
     dim: usize,
@@ -177,7 +200,8 @@ where
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
 
-    let vectors = ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, populate)?;
+    let slot_len = T::storage_len_in_elements(dim, distance);
+    let vectors = ImmutableDenseVectors::open(&vectors_path, &deleted_path, slot_len, populate)?;
     let storage = DenseVectorStorageImpl {
         vectors_path,
         deleted_path,
@@ -194,8 +218,10 @@ where
     T: PrimitiveVectorElement,
     S: UniversalRead,
 {
-    fn vector_dim(&self) -> usize {
-        self.vectors.as_ref().unwrap().dim
+    fn vector_layout(&self) -> Layout {
+        let slot_len = self.vectors.as_ref().unwrap().dim;
+        let api_dim = T::api_dim_from_storage_len(slot_len, self.distance);
+        T::storage_layout(api_dim, self.distance)
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
@@ -234,11 +260,12 @@ where
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        let distance = self.distance;
         self.vectors
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector).into())
+            .map(|vector| T::slice_to_float_cow(vector, distance).into())
             .expect("Vector not found")
     }
 
@@ -251,22 +278,25 @@ where
         // offsets slice (it chunks it for batched reads), but we still want
         // `user_data[idx]` available inside the callback.
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
+        let distance = self.distance;
 
         self.vectors
             .as_ref()
             .unwrap()
             .for_each_in_batch(&point_offsets, |idx, vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+                let vector =
+                    CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector), distance));
                 callback(user_data[idx], point_offsets[idx], vector);
             });
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        let distance = self.distance;
         self.vectors
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector).into())
+            .map(|vector| T::slice_to_float_cow(vector, distance).into())
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -301,7 +331,7 @@ where
         other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let dim = self.vector_dim();
+        let slot_len = self.vectors.as_ref().unwrap().dim;
         let start_index = self.vectors.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
 
@@ -310,7 +340,7 @@ where
         let mut deleted_ids = vec![];
         for (offset, (other_vector, other_deleted)) in other_vectors.enumerate() {
             check_process_stopped(stopped)?;
-            let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
+            let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?, self.distance);
             // Safety: T implements zerocopy::IntoBytes.
             #[expect(deprecated, reason = "legacy code")]
             let raw_bites = unsafe { mmap::transmute_to_u8_slice(vector.as_ref()) };
@@ -334,7 +364,7 @@ where
         self.vectors.replace(ImmutableDenseVectors::open(
             &self.vectors_path,
             &self.deleted_path,
-            dim,
+            slot_len,
             false, // No need to populate
         )?);
 

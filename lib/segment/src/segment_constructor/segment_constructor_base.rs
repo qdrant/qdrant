@@ -120,6 +120,14 @@ fn open_mmap_vector_storage(
                 vector_config.distance,
                 populate,
             ),
+            VectorStorageDatatype::Turbo => {
+                crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage_turbo(
+                    vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                    populate,
+                )
+            }
         }
     }
 }
@@ -346,6 +354,10 @@ pub(crate) fn create_sparse_vector_index(
         effective_index_type,
         args.config.datatype.unwrap_or_default(),
     ) {
+        (_, VectorStorageDatatype::Turbo) => Err(OperationError::validation_error(
+            "TurboQuant datatype is not supported for sparse vectors",
+        ))?,
+
         (SparseIndexType::MutableRam, _) => {
             VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?)
         }

@@ -1319,6 +1319,7 @@ pub enum Datatype {
     Float32,
     Uint8,
     Float16,
+    Turbo,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1327,6 +1328,7 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Float32 => VectorStorageDatatype::Float32,
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
+            Datatype::Turbo => VectorStorageDatatype::Turbo,
         }
     }
 }

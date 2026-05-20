@@ -194,7 +194,9 @@ impl CollectionParams {
             .map(|params| {
                 let element_bytes = match params.datatype {
                     Some(Datatype::Float16) => 2,
-                    Some(Datatype::Uint8) => 1,
+                    // Turbo is byte-quantized; the metric-specific payload
+                    // is a small per-vector constant, ignored by this estimate.
+                    Some(Datatype::Uint8) | Some(Datatype::Turbo) => 1,
                     Some(Datatype::Float32) | None => 4,
                 };
 

@@ -409,6 +409,16 @@ pub fn open_appendable_memmap_vector_storage(
             madvise,
             populate,
         ),
+        VectorStorageDatatype::Turbo => {
+            crate::vector_storage::dense::appendable_dense_vector_storage::
+                open_appendable_memmap_vector_storage_turbo(
+                vector_storage_path,
+                size,
+                distance,
+                madvise,
+                populate,
+            )
+        }
     }
 }
 
@@ -439,6 +449,14 @@ pub fn open_appendable_memmap_multi_vector_storage(
             populate,
         ),
         VectorStorageDatatype::Float16 => open_appendable_memmap_multi_vector_storage_half(
+            path,
+            dim,
+            distance,
+            multi_vector_config,
+            madvise,
+            populate,
+        ),
+        VectorStorageDatatype::Turbo => open_appendable_memmap_multi_vector_storage_turbo(
             path,
             dim,
             distance,
@@ -511,6 +529,30 @@ pub fn open_appendable_memmap_multi_vector_storage_half(
     )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(
+        storage,
+    )))
+}
+
+pub fn open_appendable_memmap_multi_vector_storage_turbo(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+    madvise: AdviceSetting,
+    populate: bool,
+) -> OperationResult<VectorStorageEnum> {
+    let storage = open_appendable_memmap_multi_vector_storage_impl::<
+        crate::data_types::turbo_quant::TurboQuantElement,
+    >(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        madvise,
+        populate,
+    )?;
+
+    Ok(VectorStorageEnum::MultiDenseAppendableMemmapTurbo(Box::new(
         storage,
     )))
 }

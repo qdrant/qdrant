@@ -46,19 +46,22 @@ impl<
             + TransformInto<TStoredQuery, DenseVector, TypedDenseVector<TElement>>,
     {
         let mut dim = 0;
+        let distance = TMetric::distance();
         let query = query
             .transform(|vector| {
                 dim = vector.len();
                 let preprocessed_vector = TMetric::preprocess(vector);
                 Ok(TypedDenseVector::from(TElement::slice_from_float_cow(
                     Cow::from(preprocessed_vector),
+                    distance,
                 )))
             })
             .unwrap();
 
-        hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
+        let slot_bytes = TElement::storage_layout(dim, distance).size();
+        hardware_counter.set_cpu_multiplier(slot_bytes);
         if vector_storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());
+            hardware_counter.set_vector_io_read_multiplier(slot_bytes);
         } else {
             hardware_counter.set_vector_io_read_multiplier(0);
         }

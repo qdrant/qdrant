@@ -32,6 +32,11 @@ where
     T: PrimitiveVectorElement,
     S: UniversalRead,
 {
+    /// Length of one vector slot in `T`-elements.
+    ///
+    /// For flat `T` this matches the api-level dimension; for `T` carrying side
+    /// payload (see `T::storage_layout`) it is larger. This struct is agnostic
+    /// to api-level dimension — that's tracked by the caller.
     pub dim: usize,
     pub num_vectors: usize,
     /// Vector data storage, providing typed read access for `T`.

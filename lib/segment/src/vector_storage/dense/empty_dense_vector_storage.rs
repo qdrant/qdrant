@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::borrow::Cow;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -11,6 +12,7 @@ use common::types::PointOffsetType;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
+use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::{
@@ -85,8 +87,8 @@ pub fn new_empty_dense_vector_storage(
 }
 
 impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
-    fn vector_dim(&self) -> usize {
-        self.dim
+    fn vector_layout(&self) -> Layout {
+        VectorElementType::storage_layout(self.dim, self.distance)
     }
 
     fn get_dense<P: AccessPattern>(&self, _key: PointOffsetType) -> Cow<'_, [VectorElementType]> {

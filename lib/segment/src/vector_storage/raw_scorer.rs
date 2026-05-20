@@ -60,10 +60,13 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseVolatileByte(vs) => raw_scorer_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileHalf(vs) => raw_scorer_impl(query, vs, hc),
+        #[cfg(test)]
+        VectorStorageEnum::DenseVolatileTurbo(vs) => raw_scorer_impl(query, vs, hc),
 
         VectorStorageEnum::DenseMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseMemmapTurbo(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
 
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
@@ -71,10 +74,15 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseUringByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUringHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUringTurbo(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
 
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseAppendableMemmapTurbo(vs) => {
+            raw_scorer_impl(query, vs.as_ref(), hc)
+        }
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),
@@ -82,6 +90,8 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::MultiDenseVolatileByte(vs) => raw_multi_scorer_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::MultiDenseVolatileHalf(vs) => raw_multi_scorer_impl(query, vs, hc),
+        #[cfg(test)]
+        VectorStorageEnum::MultiDenseVolatileTurbo(vs) => raw_multi_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseAppendableMemmap(vs) => {
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
@@ -89,6 +99,9 @@ pub fn new_raw_scorer<'a>(
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => {
+            raw_multi_scorer_impl(query, vs.as_ref(), hc)
+        }
+        VectorStorageEnum::MultiDenseAppendableMemmapTurbo(vs) => {
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
         VectorStorageEnum::EmptyDense(vs) => raw_scorer_impl(query, vs, hc),

@@ -2148,6 +2148,7 @@ pub enum Datatype {
     Float32 = 1,
     Uint8 = 2,
     Float16 = 3,
+    Turbo = 4,
 }
 impl Datatype {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2160,6 +2161,7 @@ impl Datatype {
             Datatype::Float32 => "Float32",
             Datatype::Uint8 => "Uint8",
             Datatype::Float16 => "Float16",
+            Datatype::Turbo => "Turbo",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2169,6 +2171,7 @@ impl Datatype {
             "Float32" => Some(Self::Float32),
             "Uint8" => Some(Self::Uint8),
             "Float16" => Some(Self::Float16),
+            "Turbo" => Some(Self::Turbo),
             _ => None,
         }
     }

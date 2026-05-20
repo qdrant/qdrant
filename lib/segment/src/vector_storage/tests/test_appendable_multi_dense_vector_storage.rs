@@ -73,17 +73,21 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(_)
             | VectorStorageEnum::DenseVolatileByte(_)
-            | VectorStorageEnum::DenseVolatileHalf(_) => unreachable!(),
+            | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::DenseVolatileTurbo(_) => unreachable!(),
             VectorStorageEnum::DenseMemmap(_)
             | VectorStorageEnum::DenseMemmapByte(_)
-            | VectorStorageEnum::DenseMemmapHalf(_) => unreachable!(),
+            | VectorStorageEnum::DenseMemmapHalf(_)
+            | VectorStorageEnum::DenseMemmapTurbo(_) => unreachable!(),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(_)
             | VectorStorageEnum::DenseUringByte(_)
-            | VectorStorageEnum::DenseUringHalf(_) => unreachable!(),
+            | VectorStorageEnum::DenseUringHalf(_)
+            | VectorStorageEnum::DenseUringTurbo(_) => unreachable!(),
             VectorStorageEnum::DenseAppendableMemmap(_)
             | VectorStorageEnum::DenseAppendableMemmapByte(_)
-            | VectorStorageEnum::DenseAppendableMemmapHalf(_) => unreachable!(),
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::DenseAppendableMemmapTurbo(_) => unreachable!(),
             VectorStorageEnum::SparseMmap(_) => unreachable!(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => unreachable!(),
@@ -93,14 +97,16 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
                 }
             }
             VectorStorageEnum::MultiDenseVolatileByte(_)
-            | VectorStorageEnum::MultiDenseVolatileHalf(_) => unreachable!(),
+            | VectorStorageEnum::MultiDenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileTurbo(_) => unreachable!(),
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
                     assert_eq!(orig, vec.as_ref());
                 }
             }
             VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
-            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => unreachable!(),
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapTurbo(_) => unreachable!(),
             VectorStorageEnum::EmptyDense(_) | VectorStorageEnum::EmptySparse(_) => {
                 unreachable!()
             }

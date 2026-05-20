@@ -36,24 +36,30 @@ impl VectorStorageEnum {
             | VectorStorageEnum::DenseMemmap(_)
             | VectorStorageEnum::DenseMemmapByte(_)
             | VectorStorageEnum::DenseMemmapHalf(_)
+            | VectorStorageEnum::DenseMemmapTurbo(_)
             | VectorStorageEnum::DenseAppendableMemmap(_)
             | VectorStorageEnum::DenseAppendableMemmapByte(_)
             | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::DenseAppendableMemmapTurbo(_)
             | VectorStorageEnum::MultiDenseVolatile(_)
             | VectorStorageEnum::MultiDenseAppendableMemmap(_)
             | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
-            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => {}
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapTurbo(_) => {}
 
             #[cfg(test)]
             VectorStorageEnum::DenseVolatileByte(_)
             | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::DenseVolatileTurbo(_)
             | VectorStorageEnum::MultiDenseVolatileByte(_)
-            | VectorStorageEnum::MultiDenseVolatileHalf(_) => {}
+            | VectorStorageEnum::MultiDenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileTurbo(_) => {}
 
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(_)
             | VectorStorageEnum::DenseUringByte(_)
-            | VectorStorageEnum::DenseUringHalf(_) => {}
+            | VectorStorageEnum::DenseUringHalf(_)
+            | VectorStorageEnum::DenseUringTurbo(_) => {}
 
             VectorStorageEnum::SparseVolatile(_) | VectorStorageEnum::SparseMmap(_) => {
                 let stopped = AtomicBool::new(false);

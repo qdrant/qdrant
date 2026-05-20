@@ -238,6 +238,7 @@ mod tests {
                         1,
                         None,
                         &AtomicBool::new(false),
+                        false,
                     )
                     .unwrap();
                     let ec = encoded.get_metadata().error_correction.as_ref();

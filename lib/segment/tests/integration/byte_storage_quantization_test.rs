@@ -50,6 +50,7 @@ where
             vector
         }
         VectorStorageDatatype::Uint8 => random_dense_byte_vector(rnd_gen, dim),
+        VectorStorageDatatype::Turbo => unreachable!(),
     }
 }
 

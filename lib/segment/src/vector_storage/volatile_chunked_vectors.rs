@@ -8,9 +8,11 @@ use crate::vector_storage::common::CHUNK_SIZE;
 
 #[derive(Debug)]
 pub struct VolatileChunkedVectors<T> {
-    /// Vector's dimension.
+    /// Length of one vector slot in `T`-elements.
     ///
-    /// Each vector will consume `size_of::<T>() * dim` bytes.
+    /// Each vector will consume `size_of::<T>() * dim` bytes. May exceed the
+    /// api-level dimension when `T` carries side payload (see
+    /// `T::storage_layout`); this struct is agnostic to api-level dimension.
     dim: usize,
     /// Number of stored vectors in all chunks.
     len: usize,
@@ -35,6 +37,11 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
 
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    /// Length of one vector slot in `T`-elements. See struct doc.
+    pub fn dim(&self) -> usize {
+        self.dim
     }
 
     pub fn is_empty(&self) -> bool {

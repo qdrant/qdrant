@@ -601,6 +601,15 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileTurbo(v) => Self::create_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             VectorStorageEnum::DenseMemmap(v) => Self::create_impl(
                 v.as_ref(),
                 quantization_config,
@@ -652,6 +661,15 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringTurbo(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             VectorStorageEnum::DenseAppendableMemmap(v) => Self::create_impl(
                 v.as_ref(),
                 quantization_config,
@@ -669,6 +687,22 @@ impl QuantizedVectors {
                 stopped,
             ),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseMemmapTurbo(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseAppendableMemmapTurbo(v) => Self::create_impl(
                 v.as_ref(),
                 quantization_config,
                 storage_type,
@@ -698,6 +732,23 @@ impl QuantizedVectors {
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatileHalf(v) => Self::create_multi_impl(
                 v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileTurbo(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseAppendableMemmapTurbo(v) => Self::create_multi_impl(
+                v.as_ref(),
                 quantization_config,
                 storage_type,
                 path,

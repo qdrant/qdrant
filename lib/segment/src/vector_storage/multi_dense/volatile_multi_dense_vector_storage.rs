@@ -94,6 +94,19 @@ pub fn new_volatile_multi_dense_vector_storage_half(
     ))
 }
 
+#[cfg(test)]
+pub fn new_volatile_multi_dense_vector_storage_turbo(
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+) -> VectorStorageEnum {
+    VectorStorageEnum::MultiDenseVolatileTurbo(VolatileMultiDenseVectorStorage::new(
+        dim,
+        distance,
+        multi_vector_config,
+    ))
+}
+
 impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
     pub fn new(dim: usize, distance: Distance, multi_vector_config: MultiVectorConfig) -> Self {
         Self {

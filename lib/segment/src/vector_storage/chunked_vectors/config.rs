@@ -17,6 +17,9 @@ pub struct Status {
 pub(super) struct ChunkedVectorsConfig {
     pub(super) chunk_size_bytes: usize,
     pub(super) chunk_size_vectors: usize,
+    /// Length of one vector slot in `T`-elements. May exceed the api-level
+    /// dimension when `T` carries side payload (see `T::storage_layout`).
+    /// On-disk JSON key is kept as `"dim"` for backwards compatibility.
     pub(super) dim: usize,
     #[serde(default)]
     pub(super) populate: Option<bool>,

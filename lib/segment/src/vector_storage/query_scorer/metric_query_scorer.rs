@@ -39,18 +39,21 @@ impl<
     ) -> Self {
         let dim = query.len();
         let preprocessed_vector = TMetric::preprocess(query);
+        let distance = TMetric::distance();
 
-        hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
+        let slot_bytes = TElement::storage_layout(dim, distance).size();
+        hardware_counter.set_cpu_multiplier(slot_bytes);
         if vector_storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());
+            hardware_counter.set_vector_io_read_multiplier(slot_bytes);
         } else {
             hardware_counter.set_vector_io_read_multiplier(0);
         }
 
         Self {
-            query: TypedDenseVector::from(TElement::slice_from_float_cow(Cow::from(
-                preprocessed_vector,
-            ))),
+            query: TypedDenseVector::from(TElement::slice_from_float_cow(
+                Cow::from(preprocessed_vector),
+                distance,
+            )),
             vector_storage,
             metric: PhantomData,
             hardware_counter,

@@ -34,6 +34,10 @@ impl MemoryReporter for VectorStorageEnum {
             VectorStorageEnum::DenseVolatileHalf(v) => {
                 ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
             }
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileTurbo(v) => {
+                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
+            }
 
             // Mmap dense variants: intent depends on populate config
             VectorStorageEnum::DenseMemmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
@@ -41,6 +45,9 @@ impl MemoryReporter for VectorStorageEnum {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
             VectorStorageEnum::DenseMemmapHalf(v) => {
+                from_files_with_on_disk(v.files(), v.is_on_disk())
+            }
+            VectorStorageEnum::DenseMemmapTurbo(v) => {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
 
@@ -57,6 +64,10 @@ impl MemoryReporter for VectorStorageEnum {
             VectorStorageEnum::DenseUringHalf(v) => {
                 ComponentMemoryUsage::from_files(v.files(), FileStorageIntent::OnDisk)
             }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringTurbo(v) => {
+                ComponentMemoryUsage::from_files(v.files(), FileStorageIntent::OnDisk)
+            }
 
             // Appendable mmap dense variants: intent depends on populate config
             VectorStorageEnum::DenseAppendableMemmap(v) => {
@@ -66,6 +77,9 @@ impl MemoryReporter for VectorStorageEnum {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                from_files_with_on_disk(v.files(), v.is_on_disk())
+            }
+            VectorStorageEnum::DenseAppendableMemmapTurbo(v) => {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
 
@@ -88,6 +102,10 @@ impl MemoryReporter for VectorStorageEnum {
             VectorStorageEnum::MultiDenseVolatileHalf(v) => {
                 ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
             }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileTurbo(v) => {
+                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
+            }
 
             // Appendable mmap multi-dense: intent depends on populate config
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
@@ -97,6 +115,9 @@ impl MemoryReporter for VectorStorageEnum {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                from_files_with_on_disk(v.files(), v.is_on_disk())
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapTurbo(v) => {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
             VectorStorageEnum::EmptyDense(_) => ComponentMemoryUsage::empty(),

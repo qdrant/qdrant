@@ -346,6 +346,9 @@ impl<'a> NamedVectors<'a> {
             Some(VectorStorageDatatype::Float16) => config
                 .distance
                 .preprocess_vector::<VectorElementTypeHalf>(dense_vector),
+            Some(VectorStorageDatatype::Turbo) => config
+                .distance
+                .preprocess_vector::<VectorElementTypeByte>(dense_vector),
         }
     }
 }

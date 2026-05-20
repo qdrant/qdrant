@@ -51,6 +51,7 @@ where
                 let preprocessed_vector = TMetric::preprocess(raw_vector);
                 let original_vector = TypedDenseVector::from(TElement::slice_from_float_cow(
                     Cow::Owned(preprocessed_vector),
+                    TMetric::distance(),
                 ));
                 Ok(original_vector)
             })
