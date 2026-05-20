@@ -86,7 +86,7 @@ where
             deleted_path(segment_path),
             OpenOptions {
                 writeable: true,
-                need_sequential: true,
+                need_sequential: false,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
@@ -149,7 +149,7 @@ where
             &deleted_filepath,
             OpenOptions {
                 writeable: true,
-                need_sequential: true,
+                need_sequential: false,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
