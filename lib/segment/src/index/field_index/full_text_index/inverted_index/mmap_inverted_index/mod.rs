@@ -212,7 +212,7 @@ impl<S: UniversalRead> MmapInvertedIndex<S> {
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                populate: Populate::Auto,
+                populate: Populate::from(populate),
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
             },
