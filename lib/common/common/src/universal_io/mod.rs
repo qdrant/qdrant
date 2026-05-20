@@ -19,7 +19,7 @@ pub use self::traits::{
     UserData,
 };
 pub use self::types::{
-    ByteOffset, FileIndex, Flusher, OpenOptions, Populate, ReadRange, Result, UniversalKind,
-    read_json_via,
+    ByteOffset, FileIndex, Flusher, OpenOptions, OpenOptionsExtra, Populate, ReadRange, Result,
+    UniversalKind, read_json_via,
 };
 pub use self::wrappers::{ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage};

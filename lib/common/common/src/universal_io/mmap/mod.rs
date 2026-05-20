@@ -63,10 +63,12 @@ impl UniversalRead for MmapFile {
         let OpenOptions {
             writeable,
             need_sequential,
-            disk_parallel: _,
             populate,
             advice,
-            prevent_caching: _, // Whole point of mmap is to cache
+            extra:
+                OpenOptionsExtra {
+                    prevent_caching: _, // Whole point of mmap is to cache
+                },
         } = options;
 
         let populate = match populate {
@@ -75,12 +77,7 @@ impl UniversalRead for MmapFile {
             Populate::Blocking => true,
         };
 
-        let mmap = open_mmap(
-            path.as_ref(),
-            writeable,
-            populate,
-            advice.unwrap_or(AdviceSetting::Global),
-        )?;
+        let mmap = open_mmap(path.as_ref(), writeable, populate, advice)?;
         let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
         let mmap_seq;
@@ -255,10 +252,9 @@ impl MmapFile {
             OpenOptions {
                 writeable: false,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: Populate::No,
-                advice: Some(AdviceSetting::Advice(Advice::Normal)),
-                prevent_caching: None,
+                advice: AdviceSetting::Advice(Advice::Normal),
+                extra: Default::default(),
             },
         )
         .map_err(|e| std::io::Error::other(e.to_string()))?;

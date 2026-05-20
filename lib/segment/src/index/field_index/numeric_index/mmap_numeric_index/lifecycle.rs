@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitSliceExt};
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap::{MmapSlice, create_and_ensure_length};
+use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::MmapBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, OpenOptions, Populate, TypedStorage};
@@ -78,7 +78,16 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
                     .next_multiple_of(size_of::<u64>()),
             )?;
 
-            let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+            let mut deleted = MmapBitSlice::open(
+                &deleted_path,
+                OpenOptions {
+                    writeable: true,
+                    need_sequential: true,
+                    populate: Populate::Auto,
+                    advice: AdviceSetting::Global,
+                    extra: Default::default(),
+                },
+            )?;
             deleted.set_ascending_bits_batch(
                 in_memory_index
                     .point_to_values
@@ -117,17 +126,25 @@ impl<T: Encodable + Numericable + Default + StoredValue + bytemuck::Pod> Univers
         let pairs_options = OpenOptions {
             writeable: false,
             need_sequential: false,
-            disk_parallel: None,
             populate: Populate::from(do_populate),
-            advice: None,
-            prevent_caching: None,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
         };
         let pairs = TypedStorage::open(pairs_path, pairs_options)?;
 
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
+        let deleted_payload_mmap = MmapBitSlice::open(
+            &deleted_path,
+            OpenOptions {
+                writeable: true,
+                need_sequential: true,
+                populate: Populate::Auto,
+                advice: AdviceSetting::Global,
+                extra: Default::default(),
+            },
+        )?;
         let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_values.len()` because it only

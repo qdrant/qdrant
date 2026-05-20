@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use common::generic_consts::{Random, Sequential};
+use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
 use common::universal_io::{MmapFile, OpenOptions, Populate, ReadRange, UniversalRead};
@@ -70,10 +71,9 @@ fn read_benches<T: bytemuck::Pod, C: UniversalRead>(
     let options = OpenOptions {
         writeable: false,
         need_sequential: true,
-        disk_parallel: None,
         populate: Populate::No,
-        advice: None,
-        prevent_caching: Some(false),
+        advice: AdviceSetting::Global,
+        extra: Default::default(),
     };
     let storage = C::open(path, options).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;

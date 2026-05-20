@@ -168,10 +168,9 @@ where
         let open_options = common::universal_io::OpenOptions {
             writeable: false,
             need_sequential: false,
-            disk_parallel: None,
             populate: Populate::from(populate),
-            advice: None,
-            prevent_caching: None,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
         };
 
         let store = ReadOnly::open(&file_name, open_options)?;

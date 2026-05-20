@@ -122,10 +122,9 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: populate.map(Populate::from).unwrap_or_default(),
-                advice: None,
-                prevent_caching: None,
+                advice: AdviceSetting::Global,
+                extra: Default::default(),
             },
         )?;
 

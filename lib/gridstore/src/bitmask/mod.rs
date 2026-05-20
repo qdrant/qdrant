@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
 use common::bitvec::BitSlice;
-use common::mmap::create_and_ensure_length;
+use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{MmapFile, OpenOptions, Populate, UniversalWrite};
 use gaps::{BitmaskGaps, RegionGaps};
@@ -18,14 +18,15 @@ use crate::tracker::{BlockOffset, PageId};
 
 const BITMASK_NAME: &str = "bitmask.dat";
 
-const OPEN_OPTIONS: OpenOptions = OpenOptions {
-    writeable: true,
-    need_sequential: false,
-    disk_parallel: None,
-    populate: Populate::No,
-    advice: None,
-    prevent_caching: None,
-};
+fn open_options() -> OpenOptions {
+    OpenOptions {
+        writeable: true,
+        need_sequential: false,
+        populate: Populate::No,
+        advice: AdviceSetting::Global,
+        extra: Default::default(),
+    }
+}
 
 type RegionId = u32;
 
@@ -92,7 +93,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         let path = Self::bitmask_path(dir);
         create_and_ensure_length(&path, length)?;
 
-        let bitslice = StoredBitSlice::open(&path, OPEN_OPTIONS)?;
+        let bitslice = StoredBitSlice::open(&path, open_options())?;
 
         let bit_len = bitslice.bit_len() as usize;
         assert_eq!(bit_len, length * 8, "Bitmask length mismatch");
@@ -127,7 +128,16 @@ impl<S: UniversalWrite> Bitmask<S> {
             )));
         }
 
-        let bitslice = StoredBitSlice::open(&path, OpenOptions::default())?;
+        let bitslice = StoredBitSlice::open(
+            &path,
+            OpenOptions {
+                writeable: true,
+                need_sequential: true,
+                populate: Populate::Auto,
+                advice: AdviceSetting::Global,
+                extra: Default::default(),
+            },
+        )?;
         let regions_gaps = BitmaskGaps::open(dir, config.clone())?;
 
         Ok(Self {
@@ -198,7 +208,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         let new_length = (previous_bit_len / u8::BITS as usize) + extra_length;
         create_and_ensure_length(&self.path, new_length)?;
 
-        self.bitslice = StoredBitSlice::open(&self.path, OPEN_OPTIONS)?;
+        self.bitslice = StoredBitSlice::open(&self.path, open_options())?;
 
         let current_bit_len = self.bitslice.bit_len() as usize;
 

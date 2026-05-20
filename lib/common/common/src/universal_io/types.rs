@@ -36,30 +36,49 @@ impl From<bool> for Populate {
     }
 }
 
+/// Options for [`UniversalRead::open`].
+///
+/// No `#[derive(Default)]`. Prefer specifying all options explicitly. (except
+/// for tests and [`OpenOptions::extra`]).
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
     pub writeable: bool,
     pub need_sequential: bool,
-    /// How many parallel requests to the disk we can do.
-    /// If `None`, then use implementation-specific default.
-    pub disk_parallel: Option<usize>,
     /// Populate RAM cache on open, if applicable for this implementation.
     pub populate: Populate,
     /// Use specific mmap advice.
-    pub advice: Option<AdviceSetting>,
-    /// Whether to try to prevent caching for reads.
-    pub prevent_caching: Option<bool>,
+    pub advice: AdviceSetting,
+    /// Rarely used options.
+    pub extra: OpenOptionsExtra,
 }
 
-impl Default for OpenOptions {
-    fn default() -> Self {
+/// Rarely used options.
+/// Usually [`Default::default()`] is fine.
+#[derive(Copy, Clone, Debug)]
+pub struct OpenOptionsExtra {
+    /// Whether to try to prevent caching for reads.
+    pub prevent_caching: bool,
+}
+
+impl OpenOptions {
+    /// Default values for [`OpenOptions`].
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new_for_test() -> Self {
         Self {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::Auto,
-            advice: None,
-            prevent_caching: None,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
+        }
+    }
+}
+
+#[expect(clippy::derivable_impls, reason = "be explicit")]
+impl Default for OpenOptionsExtra {
+    fn default() -> Self {
+        OpenOptionsExtra {
+            prevent_caching: false,
         }
     }
 }
@@ -136,10 +155,9 @@ where
     let options = OpenOptions {
         writeable: false,
         need_sequential: false,
-        disk_parallel: None,
         populate: Populate::No,
-        advice: Some(AdviceSetting::Advice(Advice::Sequential)),
-        prevent_caching: Some(false),
+        advice: AdviceSetting::Advice(Advice::Sequential),
+        extra: Default::default(),
     };
 
     let storage = S::open(path, options)?;

@@ -9,7 +9,7 @@ use super::fixtures::{Group, TestKey, TestReport, TestValue};
 use super::{Key, MmapHashMap, UniversalHashMap, serialize_hashmap};
 #[cfg(target_os = "linux")]
 use crate::universal_io::IoUringFile;
-use crate::universal_io::{self, MmapFile, UniversalRead};
+use crate::universal_io::{self, MmapFile, OpenOptions, UniversalRead};
 
 #[rustfmt::skip] #[test] fn test_k_str_v_i64()   { run_checks::<str,  i64 >(); }
 #[rustfmt::skip] #[test] fn test_k_str_v_u128()  { run_checks::<str,  u128>(); }
@@ -77,7 +77,7 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
     run_uio_checks(
         r.group("uio:mmap"),
         &mut rng,
-        &UniversalHashMap::<K, V, MmapFile>::open(&path, Default::default()).unwrap(),
+        &UniversalHashMap::<K, V, MmapFile>::open(&path, OpenOptions::new_for_test()).unwrap(),
         &orig,
         &non_existing_keys,
     );
@@ -85,7 +85,7 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
     run_uio_checks(
         r.group("uio:io_uring"),
         &mut rng,
-        &UniversalHashMap::<K, V, IoUringFile>::open(&path, Default::default()).unwrap(),
+        &UniversalHashMap::<K, V, IoUringFile>::open(&path, OpenOptions::new_for_test()).unwrap(),
         &orig,
         &non_existing_keys,
     );
