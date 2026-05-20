@@ -127,7 +127,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
-            populate: Populate::Blocking,
+            populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
             extra: Default::default(),
         };
