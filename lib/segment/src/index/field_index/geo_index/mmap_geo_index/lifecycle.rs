@@ -127,7 +127,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
-                    need_sequential: true,
+                    need_sequential: false,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                     extra: Default::default(),
@@ -195,7 +195,7 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
             &deleted_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: true,
+                need_sequential: false,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
