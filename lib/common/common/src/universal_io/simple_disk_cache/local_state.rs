@@ -63,7 +63,7 @@ impl LocalState {
     /// Cheap when the file is fully populated (one relaxed atomic load);
     /// otherwise locks `fetched` and checks the bitmap.
     pub(super) fn contains(&self, blocks_range: Range<u32>) -> bool {
-        if self.fully_populated.load(Ordering::Relaxed) {
+        if self.fully_populated.load(Ordering::Acquire) {
             return true;
         }
         self.fetched.lock().contains_range(blocks_range)
@@ -72,7 +72,7 @@ impl LocalState {
     /// Mark the local mirror as fully populated. Subsequent reads can skip
     /// the `fetched` bitmap check.
     pub(super) fn mark_fully_populated(&self) {
-        self.fully_populated.store(true, Ordering::Relaxed);
+        self.fully_populated.store(true, Ordering::Release);
     }
 
     /// # Safety
@@ -90,7 +90,7 @@ impl LocalState {
     ///
     /// Assumes the bytes slice covers the entirety of `blocks_range`.
     pub(super) unsafe fn write_mmap_bytes(&self, bytes: &[u8], blocks_range: Range<u32>) {
-        if self.fully_populated.load(Ordering::Relaxed) {
+        if self.fully_populated.load(Ordering::Acquire) {
             return;
         }
 
