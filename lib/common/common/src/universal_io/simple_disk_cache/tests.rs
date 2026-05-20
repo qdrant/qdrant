@@ -5,6 +5,7 @@ use fs_err as fs;
 
 use super::{BLOCK_SIZE, DiskCache, DiskCacheConfig};
 use crate::generic_consts::Sequential;
+use crate::mmap::AdviceSetting;
 use crate::universal_io::{OpenOptions, Populate, ReadRange, UniversalRead};
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
@@ -63,7 +64,9 @@ impl Scenario {
             OpenOptions {
                 writeable: false,
                 populate,
-                ..OpenOptions::default()
+                need_sequential: false,
+                advice: AdviceSetting::Global,
+                extra: Default::default(),
             },
         )
     }

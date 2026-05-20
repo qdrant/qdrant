@@ -16,8 +16,7 @@ use crate::generic_consts::{AccessPattern, Sequential};
 use crate::mmap::{AdviceSetting, Madviseable};
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::{
-    OpenOptions, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError, UniversalKind,
-    UniversalRead, UniversalReadFileOps, UserData,
+    OpenOptions, OpenOptionsExtra, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UserData
 };
 
 /// A lazily-populated local mirror of an immutable remote file.
@@ -99,10 +98,9 @@ impl LocalState {
         let OpenOptions {
             writeable: _,       // always needs to be writeable
             need_sequential: _, // TODO: add sequential mmap
-            disk_parallel: _,   // unsupported
             populate: _,        // this is handled externally to LocalState
             advice,
-            prevent_caching: _, // unsupported
+            extra: _, // unsupported
         } = options;
 
         let file = fs::OpenOptions::new()
@@ -115,7 +113,7 @@ impl LocalState {
         file.set_len(len)?;
         let mmap = MmapRaw::map_raw(&file)?;
 
-        mmap.madvise(advice.unwrap_or(AdviceSetting::Global).resolve())?;
+        mmap.madvise(advice.resolve())?;
 
         Ok(LocalState {
             mmap,
@@ -215,10 +213,11 @@ where
                     OpenOptions {
                         writeable: false,
                         need_sequential: true,
-                        disk_parallel: None,
                         populate: Populate::No,
-                        advice: None,
-                        prevent_caching: Some(true),
+                        advice: AdviceSetting::Global,
+                        extra: OpenOptionsExtra {
+                            prevent_caching: true,
+                        },
                     },
                 )?;
 
@@ -286,7 +285,9 @@ where
 
         let remote_options = OpenOptions {
             writeable: false,
-            extra: OpenOptionsExtra { prevent_caching: true },
+            extra: OpenOptionsExtra {
+                prevent_caching: true,
+            },
             populate: Populate::No,
             need_sequential: false,
             advice: AdviceSetting::Global,
