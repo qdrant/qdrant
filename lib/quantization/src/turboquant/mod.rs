@@ -462,6 +462,22 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         )
     }
 
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            encoded_vectors,
+            metadata: _,
+            metadata_path: _,
+            quantizer,
+            encoding_buffer,
+        } = self;
+        // Storage backend (the quantized vectors themselves; non-zero for the
+        // RAM-backed variants), plus the always-resident quantizer tables and
+        // the per-instance encoding scratch buffer.
+        encoded_vectors.heap_size_bytes()
+            + quantizer.heap_size_bytes()
+            + encoding_buffer.capacity() * size_of::<f64>()
+    }
+
     fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {
         // Turbo quant is asymmetric, so we cannot encode internal vectors, only queries.
         // This method is used for symmetric quantization,

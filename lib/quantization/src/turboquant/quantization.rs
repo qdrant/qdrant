@@ -117,6 +117,33 @@ impl ErrorCorrection {
 }
 
 impl TurboQuantizer {
+    /// Heap memory owned by the quantizer: the rotation tables and, in TQ+
+    /// mode, the per-coordinate error-correction vectors. Resident in RAM
+    /// regardless of whether the encoded vectors are stored in RAM or mmap.
+    pub(super) fn heap_size_bytes(&self) -> usize {
+        let Self {
+            rotation,
+            bits: _,
+            mode: _,
+            distance: _,
+            padded_dim: _,
+            error_correction,
+        } = self;
+        rotation.heap_size_bytes()
+            + error_correction.as_ref().map_or(0, |ec| {
+                let ErrorCorrection {
+                    shift,
+                    scale,
+                    d_prime_sq_i16,
+                    weight_scale: _,
+                    mm_const: _,
+                } = ec;
+                shift.capacity() * size_of::<f32>()
+                    + scale.capacity() * size_of::<f32>()
+                    + d_prime_sq_i16.capacity() * size_of::<i16>()
+            })
+    }
+
     /// Initialize a new TurboQuantizer.
     pub fn new(
         dim: usize,
