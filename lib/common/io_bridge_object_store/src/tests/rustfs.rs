@@ -2,9 +2,11 @@ use std::env;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use object_store::{ObjectStore, ObjectStoreExt as _};
+use object_store::ObjectStoreExt as _;
+use object_store::aws::AmazonS3;
 
-use crate::config::{S3Config, S3Credentials};
+use crate::backend::BlobBackend;
+use crate::backends::aws::{AwsConfig, AwsCredentials};
 use crate::runtime::BridgeRuntime;
 
 pub fn rustfs_enabled() -> bool {
@@ -19,12 +21,12 @@ pub fn rustfs_bucket() -> String {
     env::var("RUSTFS_BUCKET").unwrap_or_else(|_| "test-bucket".into())
 }
 
-pub fn rustfs_s3_config() -> S3Config {
-    S3Config {
+pub fn rustfs_aws_config() -> AwsConfig {
+    AwsConfig {
         bucket: rustfs_bucket(),
         region: Some("us-east-1".into()),
         endpoint: Some(rustfs_endpoint()),
-        credentials: S3Credentials::Static {
+        credentials: AwsCredentials::Static {
             access_key_id: env::var("RUSTFS_ACCESS_KEY").unwrap_or_else(|_| "rustfsadmin".into()),
             secret_access_key: env::var("RUSTFS_SECRET_KEY")
                 .unwrap_or_else(|_| "rustfsadmin".into()),
@@ -33,9 +35,9 @@ pub fn rustfs_s3_config() -> S3Config {
     }
 }
 
-pub fn setup_bucket(runtime: &BridgeRuntime, objects: &[(&str, &[u8])]) -> Arc<dyn ObjectStore> {
-    let config = rustfs_s3_config();
-    let store = crate::config::build_object_store(&config).expect("build store");
+pub fn setup_bucket(runtime: &BridgeRuntime, objects: &[(&str, &[u8])]) -> Arc<AmazonS3> {
+    let config = rustfs_aws_config();
+    let store = Arc::new(AmazonS3::build_store(&config).expect("build store"));
     runtime.block_on(async {
         for (key, bytes) in objects {
             store

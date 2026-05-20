@@ -1,5 +1,6 @@
-//! S3 backend on top of `object_store::aws`. Provides a single concrete
-//! [`AsyncRead`] implementation; sync access lands through [`BlobFile<S3Source>`].
+//! Generic per-object handle over an [`ObjectStore`] backend. Wraps any
+//! [`BlobBackend`] implementation; sync access lands through
+//! [`BlobFile<BlobSource<S>>`].
 
 // We map `object_store::Error::NotFound` specifically and intentionally bucket
 // every other variant into `UniversalIoError::s3(other)`. Enumerating every
@@ -13,24 +14,36 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalIoError, UniversalKind};
-use object_store::{ObjectStore, ObjectStoreExt};
+use object_store::ObjectStoreExt;
 
-use crate::config::{S3Config, build_object_store};
+use crate::backend::BlobBackend;
 use crate::file::BlobFile;
 use crate::read::{AsyncRead, resolve_runtime};
 use crate::runtime::BridgeRuntime;
 
-/// Per-object handle held inside a [`BlobFile`]: store, object key, cached
-/// length. The cached length is populated by HEAD inside [`Self::open`].
-#[derive(Clone)]
-pub struct S3Source {
-    pub(crate) store: Arc<dyn ObjectStore>,
+/// Per-object handle held inside a [`BlobFile`]: a typed store, an object key,
+/// and a cached length populated by HEAD inside [`Self::open`]. Generic over
+/// any [`BlobBackend`] — the store is held as `Arc<S>`, not `Arc<dyn ObjectStore>`.
+pub struct BlobSource<S: BlobBackend> {
+    pub(crate) store: Arc<S>,
     pub(crate) key: object_store::path::Path,
     pub(crate) len_bytes: u64,
 }
 
-impl S3Source {
-    pub fn store(&self) -> &Arc<dyn ObjectStore> {
+// Manual Clone impl: `Arc<S>` is always Clone regardless of `S: Clone`, so we
+// don't propagate a `S: Clone` bound (most `ObjectStore` impls aren't Clone).
+impl<S: BlobBackend> Clone for BlobSource<S> {
+    fn clone(&self) -> Self {
+        Self {
+            store: Arc::clone(&self.store),
+            key: self.key.clone(),
+            len_bytes: self.len_bytes,
+        }
+    }
+}
+
+impl<S: BlobBackend> BlobSource<S> {
+    pub fn store(&self) -> &Arc<S> {
         &self.store
     }
 
@@ -39,8 +52,8 @@ impl S3Source {
     }
 }
 
-impl AsyncRead for S3Source {
-    type Config = S3Config;
+impl<S: BlobBackend> AsyncRead for BlobSource<S> {
+    type Config = S::Config;
 
     fn open(
         runtime: Option<BridgeRuntime>,
@@ -48,7 +61,7 @@ impl AsyncRead for S3Source {
         key: &Path,
     ) -> Result<BlobFile<Self>> {
         let runtime = resolve_runtime(runtime);
-        let store = build_object_store(config)?;
+        let store = Arc::new(S::build_store(config)?);
         let key = build_key(key);
         let meta = runtime
             .block_on(async { store.head(&key).await })
@@ -74,7 +87,7 @@ impl AsyncRead for S3Source {
         prefix: &Path,
     ) -> Result<Vec<PathBuf>> {
         let runtime = resolve_runtime(runtime);
-        let store = build_object_store(config)?;
+        let store = S::build_store(config)?;
         let prefix_path = prefix.to_path_buf();
         let prefix = build_key(prefix);
         let entries: Vec<object_store::ObjectMeta> = runtime
@@ -96,7 +109,7 @@ impl AsyncRead for S3Source {
 
     fn exists(runtime: Option<BridgeRuntime>, config: &Self::Config, path: &Path) -> Result<bool> {
         let runtime = resolve_runtime(runtime);
-        let store = build_object_store(config)?;
+        let store = S::build_store(config)?;
         let key = build_key(path);
         match runtime.block_on(async { store.head(&key).await }) {
             Ok(_) => Ok(true),
@@ -126,7 +139,7 @@ impl AsyncRead for S3Source {
     }
 
     fn kind() -> UniversalKind {
-        UniversalKind::S3
+        <S as BlobBackend>::kind()
     }
 }
 
@@ -138,22 +151,40 @@ fn build_key(path: &Path) -> object_store::path::Path {
 mod tests {
     use bytes::Bytes;
     use common::universal_io::{ReadRange, UniversalRead};
+    use object_store::ObjectStoreExt as _;
     use object_store::memory::InMemory;
-    use object_store::{ObjectStore, ObjectStoreExt as _};
 
     use super::*;
 
+    /// Test-only backend: an in-memory store with a no-op config so that
+    /// unit tests exercise the full `BlobSource<S>` → `BlobFile` → pipeline
+    /// stack without needing a network mock.
+    #[derive(Clone, Debug, Default)]
+    pub struct InMemoryConfig;
+
+    impl BlobBackend for InMemory {
+        type Config = InMemoryConfig;
+
+        fn build_store(_config: &Self::Config) -> Result<Self> {
+            Ok(InMemory::new())
+        }
+
+        fn kind() -> UniversalKind {
+            UniversalKind::S3
+        }
+    }
+
     fn make_file(
         runtime: BridgeRuntime,
-        store: Arc<dyn ObjectStore>,
+        store: Arc<InMemory>,
         key: &str,
-    ) -> BlobFile<S3Source> {
+    ) -> BlobFile<BlobSource<InMemory>> {
         let key = object_store::path::Path::from(key);
         let meta = runtime
             .block_on(async { store.head(&key).await })
             .expect("head");
         BlobFile::new(
-            S3Source {
+            BlobSource::<InMemory> {
                 store,
                 key,
                 len_bytes: meta.size,
@@ -162,11 +193,8 @@ mod tests {
         )
     }
 
-    fn inmemory_with(
-        runtime: &BridgeRuntime,
-        objects: &[(&str, &'static [u8])],
-    ) -> Arc<dyn ObjectStore> {
-        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+    fn inmemory_with(runtime: &BridgeRuntime, objects: &[(&str, &'static [u8])]) -> Arc<InMemory> {
+        let store = Arc::new(InMemory::new());
         runtime.block_on(async {
             for (k, v) in objects {
                 store
@@ -226,8 +254,11 @@ mod tests {
     }
 
     #[test]
-    fn kind_is_s3() {
-        assert_eq!(<S3Source as AsyncRead>::kind(), UniversalKind::S3);
+    fn kind_is_inmemory_tagged_as_s3() {
+        assert_eq!(
+            <BlobSource<InMemory> as AsyncRead>::kind(),
+            UniversalKind::S3
+        );
     }
 
     #[test]
@@ -244,14 +275,15 @@ mod tests {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"\x01\x00\x02\x00")]);
         let file = make_file(runtime, store, "obj");
-        let len: u64 = <BlobFile<S3Source> as UniversalRead>::len::<u16>(&file).unwrap();
+        let len: u64 =
+            <BlobFile<BlobSource<InMemory>> as UniversalRead>::len::<u16>(&file).unwrap();
         assert_eq!(len, 2);
     }
 
     #[test]
-    fn read_only_wrapper_compiles_with_blob_file_s3() {
+    fn read_only_wrapper_compiles_with_blob_file() {
         use common::universal_io::ReadOnly;
         fn assert_universal_read<R: UniversalRead>() {}
-        assert_universal_read::<ReadOnly<BlobFile<S3Source>>>();
+        assert_universal_read::<ReadOnly<BlobFile<BlobSource<InMemory>>>>();
     }
 }

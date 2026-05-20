@@ -3,11 +3,12 @@
 use std::path::Path;
 
 use common::universal_io::{ReadRange, UniversalIoError, UniversalRead};
+use object_store::aws::AmazonS3;
 
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
-use crate::s3::S3Source;
-use crate::tests::rustfs::{rustfs_enabled, rustfs_s3_config, setup_bucket};
+use crate::source::BlobSource;
+use crate::tests::rustfs::{rustfs_aws_config, rustfs_enabled, setup_bucket};
 
 fn maybe_skip() -> bool {
     if !rustfs_enabled() {
@@ -28,7 +29,8 @@ fn test_open_and_read_whole() {
     setup_bucket(&runtime, &[("hello.bin", b"hello rustfs")]);
 
     let file =
-        S3Source::open(Some(runtime), &rustfs_s3_config(), Path::new("hello.bin")).expect("open");
+        BlobSource::<AmazonS3>::open(Some(runtime), &rustfs_aws_config(), Path::new("hello.bin"))
+            .expect("open");
     let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], b"hello rustfs");
 }
@@ -46,7 +48,8 @@ fn test_read_range() {
     );
 
     let file =
-        S3Source::open(Some(runtime), &rustfs_s3_config(), Path::new("ranged.bin")).expect("open");
+        BlobSource::<AmazonS3>::open(Some(runtime), &rustfs_aws_config(), Path::new("ranged.bin"))
+            .expect("open");
     let bytes = file
         .read::<common::generic_consts::Random, u8>(ReadRange::new(16, 16))
         .expect("read");
@@ -64,7 +67,8 @@ fn test_read_batch_parallel() {
     let runtime = BridgeRuntime::global();
     setup_bucket(&runtime, &[("blob", &(0u8..=255u8).collect::<Vec<u8>>())]);
 
-    let file = S3Source::open(Some(runtime), &rustfs_s3_config(), Path::new("blob")).expect("open");
+    let file = BlobSource::<AmazonS3>::open(Some(runtime), &rustfs_aws_config(), Path::new("blob"))
+        .expect("open");
     let inputs: Vec<(u32, ReadRange)> = (0u32..16)
         .map(|i| (i, ReadRange::new(u64::from(i) * 16, 16)))
         .collect();
@@ -91,9 +95,9 @@ fn test_not_found() {
     let runtime = BridgeRuntime::global();
     let _ = setup_bucket(&runtime, &[]);
 
-    let err = S3Source::open(
+    let err = BlobSource::<AmazonS3>::open(
         Some(runtime),
-        &rustfs_s3_config(),
+        &rustfs_aws_config(),
         Path::new("does-not-exist"),
     )
     .unwrap_err();
@@ -117,8 +121,12 @@ fn test_list_files() {
         ],
     );
 
-    let files = S3Source::list_files(Some(runtime), &rustfs_s3_config(), Path::new("listed"))
-        .expect("list_files");
+    let files = BlobSource::<AmazonS3>::list_files(
+        Some(runtime),
+        &rustfs_aws_config(),
+        Path::new("listed"),
+    )
+    .expect("list_files");
     assert_eq!(files.len(), 3);
     for f in &files {
         assert!(f.to_string_lossy().starts_with("listed/"));

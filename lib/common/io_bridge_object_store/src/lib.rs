@@ -1,15 +1,22 @@
 //! Sync ↔ async bridge that lets the sync [`common::universal_io::UniversalRead`]
-//! surface wrap inherently async object-store backends (S3, GCS, …).
+//! surface wrap inherently async object-store backends (AWS S3, GCS, Azure,
+//! local filesystem).
 //!
 //! # Components
 //!
 //! | Type             | Role                                                      |
 //! |------------------|-----------------------------------------------------------|
-//! | [`AsyncRead`]    | Trait implemented per backend; defines `read_range` etc.  |
-//! | [`S3Source`]     | Concrete `AsyncRead` impl over `object_store::aws`.       |
+//! | [`AsyncRead`]    | Trait implemented per source; defines `read_range` etc.   |
+//! | [`BlobBackend`]  | Trait: a typed `ObjectStore` + a builder from a `Config`. |
+//! | [`BlobSource<S>`]| Per-object handle; generic over any [`BlobBackend`].      |
 //! | [`BlobFile<A>`]  | Sync `UniversalRead` wrapper over an `AsyncRead`.         |
 //! | [`BridgeRuntime`]| Owns a Tokio runtime + a worker thread + request channel. |
 //! | `PipelineInner`  | Per-pipeline reply channel and slot bookkeeping.          |
+//!
+//! Concrete backends live under [`backends`]: [`backends::aws`],
+//! [`backends::gcp`], [`backends::azure`], [`backends::local`]. Each one
+//! declares its own `Config` struct and is wired up via the
+//! [`impl_blob_backend!`] macro.
 //!
 //! # Data flow
 //!
@@ -17,7 +24,7 @@
 //!  ┌──────────────────────── caller thread ─────────────────────────┐
 //!  │                                                                │
 //!  │   BlobFile<A>                                                  │
-//!  │     ├─ inner   : A           (e.g. S3Source)                   │
+//!  │     ├─ inner   : A           (e.g. BlobSource<AmazonS3>)       │
 //!  │     └─ runtime : BridgeRuntime                                 │
 //!  │                                                                │
 //!  │   single read   ── runtime.block_on(inner.read_range(r)) ──┐   │
@@ -41,7 +48,7 @@
 //!  │   worker_loop:                                             │   │
 //!  │     while let Some(req) = request_rx.recv().await {        │   │
 //!  │         tokio::spawn(async move {                          │   │
-//!  │             let bytes = req.future.await; // S3 GET runs   │   │
+//!  │             let bytes = req.future.await; // network GET   │   │
 //!  │             req.tx                                         │   │
 //!  │                .send(BridgeResponse { slot, bytes })       │   │
 //!  │                .await;                                     │   │
@@ -67,7 +74,7 @@
 //! - **Two channels.** Each [`BridgeRuntime`] owns one request channel; each
 //!   pipeline owns one reply channel. A [`BridgeRequest`] carries the reply
 //!   sender as a return address, so the worker has no routing table — it
-//!   simply replies on the sender it was handed.
+//!   replies on the sender it was handed.
 //!
 //! - **Runtime decoupling.** A pipeline does not store a [`BridgeRuntime`].
 //!   The runtime is supplied per `schedule` call, allowing one pipeline to
@@ -78,25 +85,25 @@
 //!   responses arriving out of order can still be paired with their caller
 //!   context.
 //!
-//! - **Type erasure at the channel boundary only.** [`AsyncRead::read_range`]
-//!   returns an unboxed `impl Future<Output = Result<Bytes>> + Send + 'static`.
-//!   Boxing into `Pin<Box<dyn Future>>` happens once, inside `schedule`,
-//!   because the [`BridgeRequest::future`] struct field cannot hold
-//!   `impl Trait`.
+//! - **No `dyn` in the source.** [`BlobSource<S>`] holds `Arc<S>`, not
+//!   `Arc<dyn ObjectStore>`. The only remaining type erasure is the boxed
+//!   future in [`BridgeRequest::future`] — required because struct fields
+//!   cannot hold `impl Trait` and the channel must carry one concrete type.
 
-mod config;
+mod backend;
+pub mod backends;
 mod file;
 mod pipeline;
 mod read;
 mod runtime;
-pub mod s3;
+mod source;
 
 #[cfg(test)]
 mod tests;
 
-pub use config::{S3Config, S3Credentials, build_object_store};
+pub use backend::BlobBackend;
 pub use file::BlobFile;
 pub use pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
 pub use read::AsyncRead;
 pub use runtime::{BridgeRequest, BridgeResponse, BridgeRuntime};
-pub use s3::S3Source;
+pub use source::BlobSource;
