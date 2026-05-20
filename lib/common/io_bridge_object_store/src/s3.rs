@@ -1,3 +1,12 @@
+//! S3 backend on top of `object_store::aws`. Provides a single concrete
+//! [`BlobRead`] implementation; sync access lands through [`BlobFile<S3Source>`].
+
+// We map `object_store::Error::NotFound` specifically and intentionally bucket
+// every other variant into `UniversalIoError::s3(other)`. Enumerating every
+// variant just to silence the lint would couple us to upstream's variant set
+// with no real benefit.
+#![allow(clippy::wildcard_enum_match_arm)]
+
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
