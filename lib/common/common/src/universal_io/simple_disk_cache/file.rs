@@ -42,9 +42,9 @@ where
     // We could switch to LazyLock, but there is no fallible initialization
     remote: OnceLock<R>,
     /// Open options for when the local mmap is initialized.
-    open_options: OpenOptions,
+    pub(super) open_options: OpenOptions,
     /// Path to the local mmap file.
-    local_path: PathBuf,
+    pub(super) local_path: PathBuf,
     /// Lazily-initialized local mirror.
     pub(super) local: Arc<OnceLock<LocalState>>,
     /// Guards initialization of `local` and carries the source of init.
@@ -220,8 +220,8 @@ where
                             bytes.len() as u64,
                             self.open_options,
                         )?;
-                        unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
-                        local.mark_fully_populated();
+                        unsafe { local.write_mmap_bytes(&bytes, blocks_range.clone()) };
+                        local.mark_fully_populated(blocks_range.end);
                         local
                     }
                     None => {
@@ -242,7 +242,6 @@ where
 
         Ok(self.local.get().expect("just initialized"))
     }
-
     fn init_local_state_from_scratch(&self) -> Result<LocalState> {
         let len = self.remote()?.len::<u8>()?;
         LocalState::new(&self.local_path, len, self.open_options)
@@ -338,9 +337,9 @@ where
             result?;
         }
 
-        if let Some(local) = self.local.get() {
-            local.mark_fully_populated();
-        }
+        let local = self.local.get().expect("just populated it");
+        let last_block = remote_len.div_ceil(BLOCK_SIZE as u64) as u32;
+        local.mark_fully_populated(last_block);
 
         Ok(())
     }

@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,7 +10,7 @@ use roaring::RoaringBitmap;
 
 use crate::mmap::Madviseable;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
-use crate::universal_io::{OpenOptions, Result};
+use crate::universal_io::{OpenOptions, Result, UniversalIoError};
 
 #[derive(Debug)]
 pub(super) struct LocalState {
@@ -58,6 +59,48 @@ impl LocalState {
         })
     }
 
+    pub(super) fn reopen(
+        &mut self,
+        local_path: impl AsRef<Path>,
+        new_len: u64,
+        options: OpenOptions,
+    ) -> Result<()> {
+        let current_len = self.mmap.len();
+        if current_len == new_len as usize {
+            return Ok(());
+        }
+        if current_len > new_len as usize {
+            return Err(UniversalIoError::Io(std::io::Error::new(
+                ErrorKind::Unsupported,
+                "Shrinking the file is not supported",
+            )));
+        }
+
+        let OpenOptions {
+            writeable: _,       // always needs to be writeable
+            need_sequential: _, // TODO: add sequential mmap
+            populate: _,        // this is handled externally to LocalState
+            advice,
+            extra: _, // unsupported
+        } = options;
+
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(false)
+            .open(local_path.as_ref())?;
+
+        file.set_len(new_len)?;
+        let new_mmap = MmapRaw::map_raw(&file)?;
+
+        new_mmap.madvise(advice.resolve())?;
+
+        self.mmap = new_mmap;
+        self.fully_populated.store(false, Ordering::Release);
+
+        Ok(())
+    }
+
     /// Whether `blocks_range` is already cached locally.
     ///
     /// Cheap when the file is fully populated (one relaxed atomic load);
@@ -71,8 +114,9 @@ impl LocalState {
 
     /// Mark the local mirror as fully populated. Subsequent reads can skip
     /// the `fetched` bitmap check.
-    pub(super) fn mark_fully_populated(&self) {
+    pub(super) fn mark_fully_populated(&self, last_block: u32) {
         self.fully_populated.store(true, Ordering::Release);
+        self.fetched.lock().insert_range(0..last_block);
     }
 
     /// # Safety

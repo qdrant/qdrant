@@ -3,7 +3,6 @@ use std::cell::OnceCell;
 use std::ops::Range;
 
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache, to_block_range};
 use crate::universal_io::traits::BorrowedReadPipeline;
 use crate::universal_io::{
@@ -36,6 +35,7 @@ enum Source {
 fn pick_source<T>(local_state: &LocalState, range: ReadRange) -> Result<Source>
 where
     T: bytemuck::Pod,
+    R: UniversalRead,
 {
     let byte_range = range.into_byte_range::<T>();
     if range.length == 0 {
@@ -43,8 +43,7 @@ where
     }
 
     if byte_range.end > local_state.mmap.len() as u64 {
-        // TODO: Grow local file if remote file has grown, or OOB.
-        //       When growing, we need to remember to set `fully_populated` to false
+        // If remote file has grown, and `reopen` hasn't been called, it is OOB
         return Err(UniversalIoError::OutOfBounds {
             start: byte_range.start,
             end: byte_range.end,
