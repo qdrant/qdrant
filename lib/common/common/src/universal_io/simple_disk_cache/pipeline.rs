@@ -3,8 +3,8 @@ use std::cell::OnceCell;
 use std::ops::Range;
 
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::simple_disk_cache::file::{LocalState, to_block_range};
-use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache};
+use crate::universal_io::simple_disk_cache::local_state::LocalState;
+use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCache, to_block_range};
 use crate::universal_io::traits::BorrowedReadPipeline;
 use crate::universal_io::{
     self, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UniversalRead, UserData,
