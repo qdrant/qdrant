@@ -321,6 +321,27 @@ impl SegmentBuilder {
 
         let vector_storages: Vec<_> = segments.iter().map(|i| &i.vector_data).collect();
 
+        // Every named vector present on any source segment must also be in the
+        // target schema. The merge loop below iterates `self.vector_data`
+        // (target) and would otherwise silently drop source vectors that
+        // aren't in target — the harm behind the optimizer-vs-CreateVectorName
+        // race: an optimizer launched with a pre-`CreateVectorName(V)` config
+        // would observe sources that gained V mid-flight and emit a merged
+        // segment without V at version >= V_opnum, breaking the next
+        // optimization round that uses the refreshed config (which has V).
+        // By erroring here the optimization aborts cleanly and the next
+        // round, picking up the refreshed config, merges correctly.
+        for vector_storage in &vector_storages {
+            for source_vector_name in vector_storage.keys() {
+                if !self.vector_data.contains_key(source_vector_name) {
+                    return Err(OperationError::service_error(format!(
+                        "Cannot update from other segment because it has an extra \
+                         vector name {source_vector_name} not in the target schema"
+                    )));
+                }
+            }
+        }
+
         let internal_range_start = self.id_tracker.available_point_count() as PointOffsetType;
         let internal_range_end = internal_range_start + points_to_insert.len() as PointOffsetType;
 

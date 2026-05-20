@@ -441,15 +441,10 @@ fn finish_optimization(
 ) -> OperationResult<usize> {
     // This block locks all write operations with collection. It should be fast.
 
-    // Acquire `updates_lock` before `upgradable_read` to match the order used
-    // at the start of `execute_optimization` and by `CollectionUpdater::update`.
-    // The reverse order would deadlock when two optimizer threads run
-    // concurrently: thread A here holding `upgradable_read` waits on
-    // `updates_lock`, while thread B at the top of `execute_optimization`
-    // holds `updates_lock` and waits on `upgradable_read` (parking_lot allows
-    // only one upgradable reader at a time).
-    let update_guard = segment_holder.acquire_updates_lock();
     let upgradable_segment_holder = segment_holder.upgradable_read();
+
+    // This mutex prevents update operations, which could create inconsistency during transition.
+    let update_guard = segment_holder.acquire_updates_lock();
 
     // Apply vector name changes before index and point changes
     // New named vectors must exist before indexes or points reference them
@@ -692,17 +687,6 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     let mut timer = ScopeDurationMeasurer::new(telemetry_counter);
     timer.set_success(false);
 
-    // Hold the segment-holder updates lock across the proxy installation
-    // window. `CollectionUpdater::update` takes this same lock before
-    // processing any shard update (point writes, schema changes via
-    // `CreateVectorName`), so concurrent writers wait until our proxies are
-    // in place — at which point further mutations hit the proxies (recorded
-    // as intent and propagated to the merged segment in
-    // `finish_optimization`) instead of the originals our `target_config`
-    // was frozen against. Released right after proxy install so the slow
-    // build does not extend it.
-    let proxy_install_guard = segment_holder.acquire_updates_lock();
-
     let segment_holder_read = segment_holder.upgradable_read();
 
     // Determine if we need a separate COW segment for writes
@@ -805,11 +789,6 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
         (proxy_ids, cow_segment_id_opt, counter_handler)
     };
-
-    // Proxies are installed. From here on, shard updates targeting these
-    // segments go through the proxies (recorded as intent), so it is safe
-    // to release the update-operation lock and let writers proceed.
-    drop(proxy_install_guard);
 
     // SLOW PART: create single optimized segment and propagate all new changes to it
     let build_result = optimize_segment_propagate_changes(
