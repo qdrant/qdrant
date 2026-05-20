@@ -52,6 +52,22 @@ impl Collection {
         })
         .await?;
 
+        // Flush every local shard's segments before applying the schema mutation.
+        //
+        // The shard-level `DeleteVectorName` op (sent below via `update_all_local`)
+        // synchronously persists each segment's mutated `SegmentConfig` to disk
+        // (see `Segment::delete_vector_name_impl`). If a previously-applied Upsert
+        // referencing `vector_name` is still in the un-truncated WAL, a crash or
+        // reopen between the mutation and the next periodic flush would re-apply
+        // that historical Upsert against the post-mutation segment config and the
+        // upsert would be rejected with `VectorNameNotExists`, silently dropping
+        // the point. Forcing a flush here advances the WAL truncation index past
+        // those historical operations and closes that window.
+        //
+        // Regression test: `tests::delete_vector_name_replay::
+        // delete_named_vector_then_reload_loses_points`.
+        self.flush_all_local().await?;
+
         let operation = CollectionUpdateOperations::VectorNameOperation(
             VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name }),
         );
@@ -69,6 +85,20 @@ impl Collection {
         // using the old config.
         self.recreate_optimizers_blocking().await?;
 
+        Ok(())
+    }
+
+    /// Synchronously flush every local shard's segments.
+    ///
+    /// Used by schema-mutation paths to ensure historical operations are on disk
+    /// before the schema is mutated, so reopen-time WAL replay never has to apply
+    /// operations against a since-mutated config.
+    async fn flush_all_local(&self) -> CollectionResult<()> {
+        let shards_holder = self.shards_holder();
+        let holder = shards_holder.read().await;
+        for replica_set in holder.all_shards() {
+            replica_set.flush_local().await?;
+        }
         Ok(())
     }
 

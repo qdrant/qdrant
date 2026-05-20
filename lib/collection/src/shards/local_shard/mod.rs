@@ -704,6 +704,17 @@ impl LocalShard {
         Ok(())
     }
 
+    /// Synchronously flush all segments to disk.
+    ///
+    /// This is used by schema-mutation paths to advance the WAL truncation point
+    /// past every previously-applied operation, so a subsequent reopen does not
+    /// replay them against a now-mutated segment config.
+    pub fn full_flush_segments(&self) -> CollectionResult<()> {
+        let segments = self.segments.read();
+        segments.flush_all(true, true)?;
+        Ok(())
+    }
+
     /// Loads latest collection operations from WAL
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;

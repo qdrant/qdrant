@@ -1,18 +1,25 @@
-//! Reproducer for the WAL replay bug introduced by `delete_named_vector`.
+//! Regression tests for the WAL replay bug around `delete_named_vector`.
 //!
-//! Hypothesis: `Collection::delete_named_vector` removes the vector from the persisted
-//! `CollectionParams` but does NOT reconcile the WAL. Historical Upsert entries that
-//! still reference the deleted vector name fail at WAL replay on reload, dropping
-//! their target points entirely.
+//! Bug shape (now fixed): `Collection::delete_named_vector` removed the vector from
+//! the persisted `CollectionParams` and synchronously persisted each segment's
+//! mutated `SegmentConfig`, but did NOT advance the WAL truncation point first.
+//! Historical Upsert entries still in the un-truncated WAL would, on reload, be
+//! re-applied against the post-mutation segment config and rejected with
+//! `VectorNameNotExists`, silently dropping their target points.
 //!
-//! Procedure:
+//! Fix: `delete_named_vector` now flushes every local shard's segments before
+//! sending the `DeleteVectorName` op, so the WAL is truncated past every Upsert
+//! that referenced the soon-to-be-deleted vector.
+//!
+//! Procedure of the primary regression test:
 //!   1. Build a collection with two named dense vectors `a` and `b`.
 //!   2. Upsert a single point that populates both `a` and `b`.
 //!   3. Call `delete_named_vector("b")`.
 //!   4. Close the collection and reopen it.
 //!   5. Assert the point survives reload.
 //!
-//! If the test fails, the bug is confirmed.
+//! The two paired flush-based tests double-pin the intended semantics and guard
+//! against regressions in the manual-flush variant of the same workload.
 
 use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroU32;
@@ -56,7 +63,10 @@ async fn force_flush_all_local(collection: &Collection) {
     let shards_holder = collection.shards_holder();
     let holder = shards_holder.read().await;
     for replica_set in holder.all_shards() {
-        replica_set.force_flush_local_for_test().await;
+        replica_set
+            .flush_local()
+            .await
+            .expect("flush_local failed in test helper");
     }
 }
 

@@ -374,15 +374,19 @@ impl ShardReplicaSet {
         }
     }
 
-    /// Synchronously flush every segment in the local shard. Test-only — `stop_gracefully`
-    /// signals the periodic flush worker to stop but never triggers a final flush, so
-    /// tests that need on-disk consistency without waiting for the periodic tick use this.
-    #[cfg(test)]
-    pub(crate) async fn force_flush_local_for_test(&self) {
+    /// Synchronously flush every segment in the local shard, if there is one.
+    ///
+    /// Used by schema-mutation paths (e.g. `delete_named_vector`) that need every
+    /// historical operation already applied to the segment to be on disk before the
+    /// schema mutation lands. Without this, a crash/reopen between the schema
+    /// mutation and the next periodic flush would replay those historical operations
+    /// against the post-mutation segment config and silently drop them.
+    pub(crate) async fn flush_local(&self) -> CollectionResult<()> {
         use crate::shards::shard::Shard;
         if let Some(Shard::Local(local)) = &*self.local.read().await {
-            local.full_flush();
+            local.full_flush_segments()?;
         }
+        Ok(())
     }
 
     pub fn shard_key(&self) -> Option<ShardKey> {
