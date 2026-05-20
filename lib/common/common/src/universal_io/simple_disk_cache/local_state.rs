@@ -2,14 +2,14 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use fs_err as fs;
 use memmap2::MmapRaw;
 use parking_lot::Mutex;
 use roaring::RoaringBitmap;
-use fs_err as fs;
 
 use crate::mmap::Madviseable;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
-use crate::universal_io::{Result, OpenOptions};
+use crate::universal_io::{OpenOptions, Result};
 
 #[derive(Debug)]
 pub(super) struct LocalState {

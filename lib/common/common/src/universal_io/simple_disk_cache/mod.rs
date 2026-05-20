@@ -1,10 +1,10 @@
 mod config;
 mod file;
 
+mod local_state;
 pub mod pipeline;
 #[cfg(test)]
 mod tests;
-mod local_state;
 
 use std::ops::Range;
 

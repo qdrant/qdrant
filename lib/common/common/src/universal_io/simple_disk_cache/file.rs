@@ -14,7 +14,8 @@ use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::pipeline::{DiskCachePipeline, OwnedDiskCachePipeline};
 use crate::universal_io::simple_disk_cache::to_block_range;
 use crate::universal_io::{
-    OpenOptions, OpenOptionsExtra, OwnedReadPipeline, Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UserData
+    OpenOptions, OpenOptionsExtra, OwnedReadPipeline, Populate, ReadRange, Result,
+    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UserData,
 };
 
 /// A lazily-populated local mirror of an immutable remote file.

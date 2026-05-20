@@ -133,7 +133,9 @@ where
     T: bytemuck::Pod,
     U: UserData,
 {
+    /// Pipeline for queuing remote reads.
     remote_pipeline: OnceCell<BorrowedRemotePipeline<'file, R, U>>,
+    /// A result of (user_data, bytes)
     result: Option<(U, &'file [T])>,
 }
 
@@ -237,9 +239,12 @@ where
     T: bytemuck::Pod,
     U: UserData,
 {
+    /// The file being cached.
     file: DiskCache<R>,
+    /// Pipeline for queuing remote reads.
     remote_pipeline: OnceCell<R::OwnedReadPipeline<u8, RemoteMeta<(), U>>>,
-    pending: Option<(U, Range<u64>)>,
+    /// A result ready to be read, contains (user_data, byte_range).
+    ready: Option<(U, Range<u64>)>,
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -272,13 +277,13 @@ where
         Ok(Self {
             file,
             remote_pipeline: OnceCell::new(),
-            pending: None,
+            ready: None,
             _phantom: std::marker::PhantomData,
         })
     }
 
     fn can_schedule(&mut self) -> bool {
-        self.pending.is_none()
+        self.ready.is_none()
             && self
                 .remote_pipeline
                 .get_mut()
@@ -291,7 +296,7 @@ where
     {
         match pick_source::<T>(|| self.file.local_state(), range)? {
             Source::Local { byte_range } => {
-                self.pending = Some((user_data, byte_range));
+                self.ready = Some((user_data, byte_range));
             }
             Source::Remote {
                 blocks_range,
@@ -311,7 +316,7 @@ where
     }
 
     fn wait(&mut self) -> universal_io::Result<Option<(U, Cow<'_, [T]>)>> {
-        if let Some((user_data, byte_range)) = self.pending.take() {
+        if let Some((user_data, byte_range)) = self.ready.take() {
             // SAFETY: being in `pending` confirms the range is local (or empty).
             let items = unsafe { read_local::<R, T>(&self.file, byte_range)? };
             return Ok(Some((user_data, Cow::Borrowed(items))));
