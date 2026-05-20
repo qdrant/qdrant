@@ -169,10 +169,7 @@ where
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
-        Ok(self
-            .inner
-            .wait::<T>()?
-            .map(|(u, v)| (u, Cow::Owned(v))))
+        Ok(self.inner.wait::<T>()?.map(|(u, v)| (u, Cow::Owned(v))))
     }
 }
 

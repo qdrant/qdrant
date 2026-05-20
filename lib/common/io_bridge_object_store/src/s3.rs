@@ -7,94 +7,27 @@ use bytes::Bytes;
 use common::universal_io::{Result, UniversalIoError, UniversalKind};
 use object_store::{ObjectStore, ObjectStoreExt};
 
+use crate::config::{S3Config, build_object_store};
 use crate::file::BlobFile;
 use crate::read::{BlobRead, resolve_runtime};
-use crate::config::{S3Config, build_object_store};
 use crate::runtime::BridgeRuntime;
 
+/// Per-object handle held inside a [`BlobFile`]: store, object key, cached
+/// length. The cached length is populated by HEAD inside [`Self::open`].
 #[derive(Clone)]
 pub struct S3Source {
-    store: Arc<dyn ObjectStore>,
-    key: object_store::path::Path,
-    len_bytes: u64,
+    pub(crate) store: Arc<dyn ObjectStore>,
+    pub(crate) key: object_store::path::Path,
+    pub(crate) len_bytes: u64,
 }
 
 impl S3Source {
-    pub fn new(store: Arc<dyn ObjectStore>, key: object_store::path::Path, len_bytes: u64) -> Self {
-        Self {
-            store,
-            key,
-            len_bytes,
-        }
-    }
-
     pub fn store(&self) -> &Arc<dyn ObjectStore> {
         &self.store
     }
 
     pub fn key(&self) -> &object_store::path::Path {
         &self.key
-    }
-
-    /// Open against a pre-built [`Arc<dyn ObjectStore>`]. Useful for tests with
-    /// `InMemory` and for callers that want to share a store across many
-    /// `BlobFile` instances without re-running the AWS builder.
-    pub fn open_with_store(
-        runtime: Option<BridgeRuntime>,
-        store: Arc<dyn ObjectStore>,
-        key: &Path,
-    ) -> Result<BlobFile<Self>> {
-        let runtime = resolve_runtime(runtime);
-        let key = build_key(key);
-        let meta = runtime
-            .block_on(async { store.head(&key).await })
-            .map_err(|err| match err {
-                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
-                    path: PathBuf::from(key.to_string()),
-                },
-                other => UniversalIoError::s3(other),
-            })?;
-        let source = Self::new(store, key, meta.size);
-        Ok(BlobFile::new(source, runtime))
-    }
-
-    pub fn list_files_with_store(
-        runtime: Option<BridgeRuntime>,
-        store: Arc<dyn ObjectStore>,
-        prefix: &Path,
-    ) -> Result<Vec<PathBuf>> {
-        let runtime = resolve_runtime(runtime);
-        let prefix_path = prefix.to_path_buf();
-        let prefix = build_key(prefix);
-        let entries: Vec<object_store::ObjectMeta> = runtime
-            .block_on(async {
-                use futures::TryStreamExt;
-                store.list(Some(&prefix)).try_collect().await
-            })
-            .map_err(|err| match err {
-                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
-                    path: prefix_path,
-                },
-                other => UniversalIoError::s3(other),
-            })?;
-        Ok(entries
-            .into_iter()
-            .map(|e| PathBuf::from(e.location.to_string()))
-            .collect())
-    }
-
-    pub fn exists_with_store(
-        runtime: Option<BridgeRuntime>,
-        store: Arc<dyn ObjectStore>,
-        path: &Path,
-    ) -> Result<bool> {
-        let runtime = resolve_runtime(runtime);
-        let key = build_key(path);
-        match runtime.block_on(async { store.head(&key).await }) {
-            Ok(_) => Ok(true),
-            Err(object_store::Error::NotFound { .. }) => Ok(false),
-            Err(other) => Err(UniversalIoError::s3(other)),
-        }
     }
 }
 
@@ -106,8 +39,25 @@ impl BlobRead for S3Source {
         config: &Self::Config,
         key: &Path,
     ) -> Result<BlobFile<Self>> {
+        let runtime = resolve_runtime(runtime);
         let store = build_object_store(config)?;
-        Self::open_with_store(runtime, store, key)
+        let key = build_key(key);
+        let meta = runtime
+            .block_on(async { store.head(&key).await })
+            .map_err(|err| match err {
+                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
+                    path: PathBuf::from(key.to_string()),
+                },
+                other => UniversalIoError::s3(other),
+            })?;
+        Ok(BlobFile::new(
+            Self {
+                store,
+                key,
+                len_bytes: meta.size,
+            },
+            runtime,
+        ))
     }
 
     fn list_files(
@@ -115,17 +65,36 @@ impl BlobRead for S3Source {
         config: &Self::Config,
         prefix: &Path,
     ) -> Result<Vec<PathBuf>> {
+        let runtime = resolve_runtime(runtime);
         let store = build_object_store(config)?;
-        Self::list_files_with_store(runtime, store, prefix)
+        let prefix_path = prefix.to_path_buf();
+        let prefix = build_key(prefix);
+        let entries: Vec<object_store::ObjectMeta> = runtime
+            .block_on(async {
+                use futures::TryStreamExt;
+                store.list(Some(&prefix)).try_collect().await
+            })
+            .map_err(|err| match err {
+                object_store::Error::NotFound { .. } => {
+                    UniversalIoError::NotFound { path: prefix_path }
+                }
+                other => UniversalIoError::s3(other),
+            })?;
+        Ok(entries
+            .into_iter()
+            .map(|e| PathBuf::from(e.location.to_string()))
+            .collect())
     }
 
-    fn exists(
-        runtime: Option<BridgeRuntime>,
-        config: &Self::Config,
-        path: &Path,
-    ) -> Result<bool> {
+    fn exists(runtime: Option<BridgeRuntime>, config: &Self::Config, path: &Path) -> Result<bool> {
+        let runtime = resolve_runtime(runtime);
         let store = build_object_store(config)?;
-        Self::exists_with_store(runtime, store, path)
+        let key = build_key(path);
+        match runtime.block_on(async { store.head(&key).await }) {
+            Ok(_) => Ok(true),
+            Err(object_store::Error::NotFound { .. }) => Ok(false),
+            Err(other) => Err(UniversalIoError::s3(other)),
+        }
     }
 
     fn read_range(
@@ -166,6 +135,25 @@ mod tests {
 
     use super::*;
 
+    fn make_file(
+        runtime: BridgeRuntime,
+        store: Arc<dyn ObjectStore>,
+        key: &str,
+    ) -> BlobFile<S3Source> {
+        let key = object_store::path::Path::from(key);
+        let meta = runtime
+            .block_on(async { store.head(&key).await })
+            .expect("head");
+        BlobFile::new(
+            S3Source {
+                store,
+                key,
+                len_bytes: meta.size,
+            },
+            runtime,
+        )
+    }
+
     fn inmemory_with(
         runtime: &BridgeRuntime,
         objects: &[(&str, &'static [u8])],
@@ -186,10 +174,10 @@ mod tests {
     }
 
     #[test]
-    fn open_with_store_then_read_full() {
+    fn read_full_range() {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
-        let file = S3Source::open_with_store(Some(runtime), store, Path::new("obj")).expect("open");
+        let file = make_file(runtime, store, "obj");
         let cow = file
             .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
             .expect("read");
@@ -197,10 +185,10 @@ mod tests {
     }
 
     #[test]
-    fn open_with_store_then_read_subrange() {
+    fn read_subrange() {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
-        let file = S3Source::open_with_store(Some(runtime), store, Path::new("obj")).expect("open");
+        let file = make_file(runtime, store, "obj");
         let cow = file
             .read::<common::generic_consts::Random, u8>(ReadRange::new(6, 5))
             .expect("read");
@@ -208,29 +196,10 @@ mod tests {
     }
 
     #[test]
-    fn open_with_store_uses_global_when_runtime_none() {
-        let global = BridgeRuntime::global();
-        let store = inmemory_with(&global, &[("obj", b"abc")]);
-        let file = S3Source::open_with_store(None, store, Path::new("obj")).expect("open");
-        let cow = file
-            .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 3))
-            .expect("read");
-        assert_eq!(&cow[..], b"abc");
-    }
-
-    #[test]
-    fn open_with_store_not_found_maps_to_not_found_error() {
-        let runtime = BridgeRuntime::global();
-        let store = inmemory_with(&runtime, &[]);
-        let err = S3Source::open_with_store(Some(runtime), store, Path::new("missing")).unwrap_err();
-        assert!(matches!(err, UniversalIoError::NotFound { .. }));
-    }
-
-    #[test]
     fn read_batch_returns_all_pairs() {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("merged", b"helloWORLDxyz")]);
-        let file = S3Source::open_with_store(Some(runtime), store, Path::new("merged")).expect("open");
+        let file = make_file(runtime, store, "merged");
 
         let inputs = vec![
             (1u32, ReadRange::new(0, 5)),
@@ -249,50 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn read_batch_uses_explicit_runtime_when_given() {
-        let custom = BridgeRuntime::new().expect("custom runtime");
-        let store = inmemory_with(&custom, &[("x", b"AAAAA")]);
-        let file = S3Source::open_with_store(Some(custom), store, Path::new("x")).expect("open");
-        let cow = file
-            .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 5))
-            .expect("read");
-        assert_eq!(&cow[..], b"AAAAA");
-    }
-
-    #[test]
-    fn list_files_with_store_lists_matching_prefix() {
-        let runtime = BridgeRuntime::global();
-        let store = inmemory_with(
-            &runtime,
-            &[
-                ("listed/a", b"x"),
-                ("listed/b", b"x"),
-                ("other/z", b"x"),
-            ],
-        );
-        let files = S3Source::list_files_with_store(Some(runtime), store, Path::new("listed"))
-            .expect("list");
-        assert_eq!(files.len(), 2);
-        for f in &files {
-            assert!(f.to_string_lossy().starts_with("listed/"));
-        }
-    }
-
-    #[test]
-    fn exists_with_store_true_and_false() {
-        let runtime = BridgeRuntime::global();
-        let store = inmemory_with(&runtime, &[("here", b"x")]);
-        assert!(
-            S3Source::exists_with_store(Some(runtime.clone()), store.clone(), Path::new("here"))
-                .unwrap()
-        );
-        assert!(
-            !S3Source::exists_with_store(Some(runtime), store, Path::new("not-here")).unwrap()
-        );
-    }
-
-    #[test]
-    fn s3_source_kind_is_s3() {
+    fn kind_is_s3() {
         assert_eq!(<S3Source as BlobRead>::kind(), UniversalKind::S3);
     }
 
@@ -300,13 +226,22 @@ mod tests {
     fn populate_and_clear_are_noops() {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("o", b"x")]);
-        let file = S3Source::open_with_store(Some(runtime), store, Path::new("o")).expect("open");
+        let file = make_file(runtime, store, "o");
         file.populate().unwrap();
         file.clear_ram_cache().unwrap();
     }
 
     #[test]
-    fn read_only_wrapper_compiles_with_bridge_s3() {
+    fn len_divides_by_type_size() {
+        let runtime = BridgeRuntime::global();
+        let store = inmemory_with(&runtime, &[("obj", b"\x01\x00\x02\x00")]);
+        let file = make_file(runtime, store, "obj");
+        let len: u64 = <BlobFile<S3Source> as UniversalRead>::len::<u16>(&file).unwrap();
+        assert_eq!(len, 2);
+    }
+
+    #[test]
+    fn read_only_wrapper_compiles_with_blob_file_s3() {
         use common::universal_io::ReadOnly;
         fn assert_universal_read<R: UniversalRead>() {}
         assert_universal_read::<ReadOnly<BlobFile<S3Source>>>();

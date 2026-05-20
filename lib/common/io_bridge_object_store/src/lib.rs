@@ -14,11 +14,3 @@ pub use pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
 pub use read::BlobRead;
 pub use runtime::{BridgeRequest, BridgeResponse, BridgeRuntime};
 pub use s3::S3Source;
-
-#[cfg(test)]
-mod smoke {
-    #[test]
-    fn crate_links() {
-        assert_eq!(2 + 2, 4);
-    }
-}

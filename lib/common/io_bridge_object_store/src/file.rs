@@ -115,7 +115,6 @@ impl<A: BlobRead> UniversalRead for BlobFile<A> {
 mod tests {
     use std::future::Future;
     use std::ops::Range;
-    use std::path::PathBuf;
     use std::pin::Pin;
 
     use bytes::Bytes;
@@ -152,7 +151,7 @@ mod tests {
             _runtime: Option<BridgeRuntime>,
             _config: &(),
             _prefix: &Path,
-        ) -> Result<Vec<PathBuf>> {
+        ) -> Result<Vec<std::path::PathBuf>> {
             Ok(vec![])
         }
 

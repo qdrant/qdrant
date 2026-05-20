@@ -9,17 +9,16 @@ use common::universal_io::{Result, UniversalKind};
 use crate::file::BlobFile;
 use crate::runtime::BridgeRuntime;
 
-/// A read-capable blob backend (S3, GCS, …). One implementation per backend.
+/// Read-capable blob backend (S3, GCS, …). One impl per backend.
 ///
 /// - Static methods (`open`, `list_files`, `exists`) are the backend's entry
 ///   points. They take an optional [`BridgeRuntime`] — `None` falls back to
 ///   [`BridgeRuntime::global`] — and a backend-specific [`Config`](BlobRead::Config).
 /// - Per-instance methods (`read_range`, `len`, `is_empty`) describe a single
-///   opened object. The returned future from `read_range` is `'static`, so it
-///   can be shipped through the bridge runtime's worker channel.
+///   opened object. The future returned by `read_range` is `'static` so it can
+///   be shipped through the runtime worker's MPSC channel.
 ///
-/// A future `BlobWrite` trait will sit next to this one and a backend type
-/// (e.g. `S3Source`) impls both, with `BlobFile<A>` exposing the sync `UniversalRead` view.
+/// A future `BlobWrite` trait will live next to this one in `write.rs`.
 pub trait BlobRead: Send + Sync + Sized + 'static {
     type Config;
 
