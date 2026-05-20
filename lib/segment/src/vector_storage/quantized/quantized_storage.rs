@@ -51,7 +51,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
-            need_sequential: true,
+            need_sequential: false,
             populate: Populate::No,
             advice: AdviceSetting::Global,
             extra: Default::default(),
