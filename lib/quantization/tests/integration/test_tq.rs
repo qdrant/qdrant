@@ -212,7 +212,7 @@ mod tests {
                             (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
                         match distance {
                             DistanceType::Cosine => normalize(&vector),
-                            _ => vector,
+                            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => vector,
                         }
                     })
                     .collect();
