@@ -59,7 +59,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                populate: Populate::Auto,
+                populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
             },
