@@ -25,20 +25,14 @@ where
     /// `Self::storage_len_in_elements(api_dim, distance)` — for flat `T` they
     /// coincide, for `T` carrying metric-dependent side payload the output is
     /// longer and the payload elements live past the api-dim prefix.
-    fn slice_from_float_cow(
-        vector: Cow<[VectorElementType]>,
-        distance: Distance,
-    ) -> Cow<[Self]>;
+    fn slice_from_float_cow(vector: Cow<[VectorElementType]>, distance: Distance) -> Cow<[Self]>;
 
     /// Decode a single on-storage slot back into the api-level float vector.
     ///
     /// Inverse of `slice_from_float_cow`: input length is
     /// `Self::storage_len_in_elements(api_dim, distance)`, output length is
     /// `api_dim`.
-    fn slice_to_float_cow(
-        vector: Cow<[Self]>,
-        distance: Distance,
-    ) -> Cow<[VectorElementType]>;
+    fn slice_to_float_cow(vector: Cow<[Self]>, distance: Distance) -> Cow<[VectorElementType]>;
 
     /// Decode a slot for use as input to a downstream quantizer.
     ///
@@ -115,17 +109,11 @@ where
 }
 
 impl PrimitiveVectorElement for VectorElementType {
-    fn slice_from_float_cow(
-        vector: Cow<[VectorElementType]>,
-        _distance: Distance,
-    ) -> Cow<[Self]> {
+    fn slice_from_float_cow(vector: Cow<[VectorElementType]>, _distance: Distance) -> Cow<[Self]> {
         vector
     }
 
-    fn slice_to_float_cow(
-        vector: Cow<[Self]>,
-        _distance: Distance,
-    ) -> Cow<[VectorElementType]> {
+    fn slice_to_float_cow(vector: Cow<[Self]>, _distance: Distance) -> Cow<[VectorElementType]> {
         vector
     }
 
@@ -155,17 +143,11 @@ impl PrimitiveVectorElement for VectorElementType {
 }
 
 impl PrimitiveVectorElement for VectorElementTypeHalf {
-    fn slice_from_float_cow(
-        vector: Cow<[VectorElementType]>,
-        _distance: Distance,
-    ) -> Cow<[Self]> {
+    fn slice_from_float_cow(vector: Cow<[VectorElementType]>, _distance: Distance) -> Cow<[Self]> {
         Cow::Owned(vector.iter().map(|&x| f16::from_f32(x)).collect())
     }
 
-    fn slice_to_float_cow(
-        vector: Cow<[Self]>,
-        _distance: Distance,
-    ) -> Cow<[VectorElementType]> {
+    fn slice_to_float_cow(vector: Cow<[Self]>, _distance: Distance) -> Cow<[VectorElementType]> {
         Cow::Owned(vector.iter().map(|&x| f16::to_f32(x)).collect_vec())
     }
 
@@ -211,17 +193,11 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
 }
 
 impl PrimitiveVectorElement for VectorElementTypeByte {
-    fn slice_from_float_cow(
-        vector: Cow<[VectorElementType]>,
-        _distance: Distance,
-    ) -> Cow<[Self]> {
+    fn slice_from_float_cow(vector: Cow<[VectorElementType]>, _distance: Distance) -> Cow<[Self]> {
         Cow::Owned(vector.iter().map(|&x| x as u8).collect())
     }
 
-    fn slice_to_float_cow(
-        vector: Cow<[Self]>,
-        _distance: Distance,
-    ) -> Cow<[VectorElementType]> {
+    fn slice_to_float_cow(vector: Cow<[Self]>, _distance: Distance) -> Cow<[VectorElementType]> {
         Cow::Owned(
             vector
                 .iter()

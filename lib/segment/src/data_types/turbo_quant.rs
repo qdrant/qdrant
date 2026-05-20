@@ -9,9 +9,8 @@ use std::borrow::Cow;
 use bytemuck::{Pod, Zeroable};
 use common::types::ScoreType;
 use serde::{Deserialize, Serialize};
-use turboquant::DistanceType;
 use turboquant::quantization::TurboQuantizer;
-use turboquant::{TQBits, TQMode};
+use turboquant::{DistanceType, TQBits, TQMode};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::data_types::named_vectors::CowMultiVector;
@@ -59,13 +58,9 @@ fn to_tq_distance(distance: Distance) -> DistanceType {
 pub struct TurboQuantElement(pub u8);
 
 impl PrimitiveVectorElement for TurboQuantElement {
-    fn slice_from_float_cow(
-        vector: Cow<[VectorElementType]>,
-        distance: Distance,
-    ) -> Cow<[Self]> {
+    fn slice_from_float_cow(vector: Cow<[VectorElementType]>, distance: Distance) -> Cow<[Self]> {
         let api_dim = vector.len();
-        let quantizer =
-            TurboQuantizer::new(api_dim, BITS, MODE, to_tq_distance(distance), None);
+        let quantizer = TurboQuantizer::new(api_dim, BITS, MODE, to_tq_distance(distance), None);
         let mut buf = vec![0.0_f64; quantizer.padded_dim];
         let bytes = quantizer.quantize(&vector, &mut buf);
         // `Vec<u8>` → `Vec<TurboQuantElement>` is sound because the element is
@@ -74,10 +69,7 @@ impl PrimitiveVectorElement for TurboQuantElement {
         Cow::Owned(bytemuck::allocation::cast_vec(bytes))
     }
 
-    fn slice_to_float_cow(
-        vector: Cow<[Self]>,
-        distance: Distance,
-    ) -> Cow<[VectorElementType]> {
+    fn slice_to_float_cow(vector: Cow<[Self]>, distance: Distance) -> Cow<[VectorElementType]> {
         // Public/API path: always returns vectors in the original basis.
         decode(&vector, distance, /* apply_inverse_rotation */ true)
     }
@@ -204,8 +196,7 @@ fn turbo_score_symmetric(
         "TurboQuant symmetric score requires matching slot lengths"
     );
     let api_dim = TurboQuantElement::api_dim_from_storage_len(v1.len(), distance);
-    let quantizer =
-        TurboQuantizer::new(api_dim, BITS, MODE, to_tq_distance(distance), None);
+    let quantizer = TurboQuantizer::new(api_dim, BITS, MODE, to_tq_distance(distance), None);
     let v1_bytes: &[u8] = bytemuck::cast_slice(v1);
     let v2_bytes: &[u8] = bytemuck::cast_slice(v2);
     quantizer.score_symmetric(v1_bytes, v2_bytes)

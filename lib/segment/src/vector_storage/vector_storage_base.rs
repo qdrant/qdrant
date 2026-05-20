@@ -303,9 +303,7 @@ pub enum VectorStorageEnum {
     MultiDenseAppendableMemmapHalf(
         Box<AppendableMmapMultiDenseVectorStorage<VectorElementTypeHalf>>,
     ),
-    MultiDenseAppendableMemmapTurbo(
-        Box<AppendableMmapMultiDenseVectorStorage<TurboQuantElement>>,
-    ),
+    MultiDenseAppendableMemmapTurbo(Box<AppendableMmapMultiDenseVectorStorage<TurboQuantElement>>),
     EmptyDense(EmptyDenseVectorStorage),
     EmptySparse(EmptySparseVectorStorage),
 }
@@ -389,7 +387,9 @@ impl VectorStorageEnum {
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringHalf(v) => VectorInternal::from(vec![1.0; v.vector_dim()]),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringTurbo(v) => VectorInternal::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::DenseUringTurbo(v) => {
+                VectorInternal::from(vec![1.0; v.vector_dim()])
+            }
 
             VectorStorageEnum::DenseAppendableMemmap(v) => {
                 VectorInternal::from(vec![1.0; v.vector_dim()])

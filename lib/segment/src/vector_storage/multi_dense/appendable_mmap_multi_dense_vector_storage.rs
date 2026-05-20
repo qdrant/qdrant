@@ -543,18 +543,11 @@ pub fn open_appendable_memmap_multi_vector_storage_turbo(
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl::<
         crate::data_types::turbo_quant::TurboQuantElement,
-    >(
-        path,
-        dim,
-        distance,
-        multi_vector_config,
-        madvise,
-        populate,
-    )?;
+    >(path, dim, distance, multi_vector_config, madvise, populate)?;
 
-    Ok(VectorStorageEnum::MultiDenseAppendableMemmapTurbo(Box::new(
-        storage,
-    )))
+    Ok(VectorStorageEnum::MultiDenseAppendableMemmapTurbo(
+        Box::new(storage),
+    ))
 }
 
 pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElement>(
