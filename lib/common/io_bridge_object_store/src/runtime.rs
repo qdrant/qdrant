@@ -8,12 +8,29 @@ use tokio::sync::mpsc;
 
 const REQUEST_CHANNEL_CAPACITY: usize = 1024;
 
+/// Envelope shipped from a pipeline (or single-shot caller) to the bridge
+/// worker. Carries the async work to perform, the return-address sender on
+/// the pipeline's reply channel, and the slot id used to reunite the response
+/// with the pipeline's pending-bookkeeping entry.
 pub struct BridgeRequest {
+    /// The boxed async operation the worker will `.await`. Type-erased so that
+    /// futures from different backends can share the same request channel.
+    /// Boxing happens at the channel boundary because struct fields cannot
+    /// hold `impl Future` directly; the trait surface (`AsyncRead::read_range`)
+    /// returns an unboxed `impl Future`.
     pub future: Pin<Box<dyn Future<Output = Result<Bytes, UniversalIoError>> + Send>>,
+    /// Reply-channel sender cloned from the originating pipeline. The worker
+    /// uses this to ship the [`BridgeResponse`] back, so the request itself
+    /// carries its own return address — no global routing table is needed.
     pub tx: mpsc::Sender<BridgeResponse>,
+    /// Slot id assigned by the pipeline at schedule time. Echoed unchanged in
+    /// the [`BridgeResponse`] so the pipeline can look up the matching
+    /// `user_data` even when responses arrive out of order.
     pub slot: u64,
 }
 
+/// Reply shipped from the worker back to the originating pipeline. The slot
+/// is the correlation id; the bytes are the future's result.
 #[derive(Debug)]
 pub struct BridgeResponse {
     pub slot: u64,

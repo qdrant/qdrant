@@ -11,6 +11,6 @@ mod tests;
 pub use config::{S3Config, S3Credentials, build_object_store};
 pub use file::BlobFile;
 pub use pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
-pub use read::BlobRead;
+pub use read::AsyncRead;
 pub use runtime::{BridgeRequest, BridgeResponse, BridgeRuntime};
 pub use s3::S3Source;

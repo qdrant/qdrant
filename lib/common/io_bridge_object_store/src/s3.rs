@@ -1,5 +1,5 @@
 //! S3 backend on top of `object_store::aws`. Provides a single concrete
-//! [`BlobRead`] implementation; sync access lands through [`BlobFile<S3Source>`].
+//! [`AsyncRead`] implementation; sync access lands through [`BlobFile<S3Source>`].
 
 // We map `object_store::Error::NotFound` specifically and intentionally bucket
 // every other variant into `UniversalIoError::s3(other)`. Enumerating every
@@ -9,7 +9,6 @@
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -18,7 +17,7 @@ use object_store::{ObjectStore, ObjectStoreExt};
 
 use crate::config::{S3Config, build_object_store};
 use crate::file::BlobFile;
-use crate::read::{BlobRead, resolve_runtime};
+use crate::read::{AsyncRead, resolve_runtime};
 use crate::runtime::BridgeRuntime;
 
 /// Per-object handle held inside a [`BlobFile`]: store, object key, cached
@@ -40,7 +39,7 @@ impl S3Source {
     }
 }
 
-impl BlobRead for S3Source {
+impl AsyncRead for S3Source {
     type Config = S3Config;
 
     fn open(
@@ -109,17 +108,17 @@ impl BlobRead for S3Source {
     fn read_range(
         &self,
         range: std::ops::Range<u64>,
-    ) -> Pin<Box<dyn Future<Output = Result<Bytes>> + Send + 'static>> {
+    ) -> impl Future<Output = Result<Bytes>> + Send + 'static {
         let store = self.store.clone();
         let key = self.key.clone();
-        Box::pin(async move {
+        async move {
             store.get_range(&key, range).await.map_err(|err| match err {
                 object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
                     path: PathBuf::from(key.to_string()),
                 },
                 other => UniversalIoError::s3(other),
             })
-        })
+        }
     }
 
     fn len(&self) -> u64 {
@@ -228,7 +227,7 @@ mod tests {
 
     #[test]
     fn kind_is_s3() {
-        assert_eq!(<S3Source as BlobRead>::kind(), UniversalKind::S3);
+        assert_eq!(<S3Source as AsyncRead>::kind(), UniversalKind::S3);
     }
 
     #[test]

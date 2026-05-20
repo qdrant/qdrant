@@ -8,20 +8,20 @@ use common::universal_io::{
 };
 
 use crate::pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
-use crate::read::BlobRead;
+use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
 
-/// Sync wrapper around a [`BlobRead`] backend that implements [`UniversalRead`].
+/// Sync wrapper around a [`AsyncRead`] backend that implements [`UniversalRead`].
 ///
 /// The backend's async reads are routed through a [`BridgeRuntime`]:
 ///   * single reads via `block_on`,
 ///   * batched/pipelined reads via the runtime's worker thread (MPSC channel).
-pub struct BlobFile<A: BlobRead> {
+pub struct BlobFile<A: AsyncRead> {
     pub(crate) inner: A,
     pub(crate) runtime: BridgeRuntime,
 }
 
-impl<A: BlobRead> std::fmt::Debug for BlobFile<A> {
+impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlobFile")
             .field("runtime", &self.runtime)
@@ -30,7 +30,7 @@ impl<A: BlobRead> std::fmt::Debug for BlobFile<A> {
     }
 }
 
-impl<A: BlobRead> BlobFile<A> {
+impl<A: AsyncRead> BlobFile<A> {
     pub fn new(inner: A, runtime: BridgeRuntime) -> Self {
         Self { inner, runtime }
     }
@@ -44,7 +44,7 @@ impl<A: BlobRead> BlobFile<A> {
     }
 }
 
-impl<A: BlobRead> UniversalReadFileOps for BlobFile<A> {
+impl<A: AsyncRead> UniversalReadFileOps for BlobFile<A> {
     fn list_files(_prefix_path: &Path) -> Result<Vec<std::path::PathBuf>> {
         Err(UniversalIoError::S3Config {
             description: "BlobFile does not expose static list_files via UniversalReadFileOps; \
@@ -62,7 +62,7 @@ impl<A: BlobRead> UniversalReadFileOps for BlobFile<A> {
     }
 }
 
-impl<A: BlobRead> UniversalRead for BlobFile<A> {
+impl<A: AsyncRead> UniversalRead for BlobFile<A> {
     type BorrowedReadPipeline<'a, T, U>
         = BorrowedBlobPipeline<'a, A, T, U>
     where
@@ -115,7 +115,6 @@ impl<A: BlobRead> UniversalRead for BlobFile<A> {
 mod tests {
     use std::future::Future;
     use std::ops::Range;
-    use std::pin::Pin;
 
     use bytes::Bytes;
 
@@ -134,7 +133,7 @@ mod tests {
         }
     }
 
-    impl BlobRead for MockSource {
+    impl AsyncRead for MockSource {
         type Config = ();
 
         fn open(
@@ -162,9 +161,9 @@ mod tests {
         fn read_range(
             &self,
             range: Range<u64>,
-        ) -> Pin<Box<dyn Future<Output = Result<Bytes>> + Send + 'static>> {
+        ) -> impl Future<Output = Result<Bytes>> + Send + 'static {
             let bytes = self.data.slice(range.start as usize..range.end as usize);
-            Box::pin(async move { Ok(bytes) })
+            async move { Ok(bytes) }
         }
 
         fn len(&self) -> u64 {

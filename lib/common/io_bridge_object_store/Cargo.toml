@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 common = { path = "../common" }
+ahash = { workspace = true }
 bytes = { workspace = true }
 bytemuck = { workspace = true }
 futures = { workspace = true }

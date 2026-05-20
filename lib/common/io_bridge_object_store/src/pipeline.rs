@@ -1,9 +1,8 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::pin::Pin;
 
+use ahash::AHashMap;
 use bytes::Bytes;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
@@ -12,19 +11,33 @@ use common::universal_io::{
 use tokio::sync::mpsc;
 
 use crate::file::BlobFile;
-use crate::read::BlobRead;
+use crate::read::AsyncRead;
 use crate::runtime::{BridgeRequest, BridgeResponse, BridgeRuntime};
 
 pub(crate) const BLOB_PIPELINE_CAPACITY: usize = 256;
 
-/// Pipeline-side bookkeeping. Owns only the *reply* channel and an optional
-/// default runtime. Every `schedule` call resolves which runtime to dispatch
-/// onto using: caller-supplied override → pipeline default → global.
+/// Pipeline-side bookkeeping.
+///
+/// Owns only the reply channel and per-request slot tracking. The
+/// [`BridgeRuntime`] is intentionally not stored here — callers supply it on
+/// every `schedule` call. This keeps the pipeline cheap (one channel + a map)
+/// and lets the same pipeline collect replies from multiple runtimes if
+/// desired.
 pub(crate) struct PipelineInner<U> {
-    default_runtime: Option<BridgeRuntime>,
+    /// Sender for the reply channel. Cloned into every outgoing
+    /// [`BridgeRequest`] as the worker's return address.
     tx: mpsc::Sender<BridgeResponse>,
+    /// Receiver for the reply channel. `wait` blocks on this.
     rx: mpsc::Receiver<BridgeResponse>,
-    pub(crate) pending: HashMap<u64, U>,
+    /// `slot -> user_data` map. Keyed by the slot assigned at `schedule` time
+    /// so out-of-order completion still reunites bytes with the right caller
+    /// context. `AHashMap` is used over `std::collections::HashMap` for its
+    /// faster hashing on small integer keys.
+    pub(crate) pending: AHashMap<u64, U>,
+    /// Monotonic counter that assigns a fresh slot id to every scheduled
+    /// request. Wraps around on overflow — collisions only occur if more than
+    /// `u64::MAX` requests are simultaneously pending, which is structurally
+    /// impossible given the channel capacity.
     next_slot: u64,
 }
 
@@ -32,27 +45,42 @@ impl<U> PipelineInner<U>
 where
     U: UserData,
 {
-    pub(crate) fn new(default_runtime: Option<BridgeRuntime>) -> Self {
-        let (tx, rx) = mpsc::channel(BLOB_PIPELINE_CAPACITY);
+    /// Build a pipeline over an existing reply channel pair. The caller owns
+    /// channel construction so that, if needed, the same channel can be shared
+    /// across pipelines or sized independently of [`BLOB_PIPELINE_CAPACITY`].
+    /// Use [`PipelineInner::default_channel`] to get the standard pair.
+    pub(crate) fn new(
+        tx: mpsc::Sender<BridgeResponse>,
+        rx: mpsc::Receiver<BridgeResponse>,
+    ) -> Self {
         Self {
-            default_runtime,
             tx,
             rx,
-            pending: HashMap::new(),
+            pending: AHashMap::new(),
             next_slot: 0,
         }
+    }
+
+    /// Standard `(tx, rx)` pair sized to [`BLOB_PIPELINE_CAPACITY`]. Most
+    /// pipelines should use this and feed it directly into [`Self::new`].
+    pub(crate) fn default_channel() -> (mpsc::Sender<BridgeResponse>, mpsc::Receiver<BridgeResponse>)
+    {
+        mpsc::channel(BLOB_PIPELINE_CAPACITY)
     }
 
     pub(crate) fn can_schedule(&self) -> bool {
         self.pending.len() < BLOB_PIPELINE_CAPACITY
     }
 
-    pub(crate) fn schedule(
+    pub(crate) fn schedule<F>(
         &mut self,
-        runtime: Option<&BridgeRuntime>,
+        runtime: &BridgeRuntime,
         user_data: U,
-        future: Pin<Box<dyn Future<Output = Result<Bytes>> + Send + 'static>>,
-    ) -> Result<()> {
+        future: F,
+    ) -> Result<()>
+    where
+        F: Future<Output = Result<Bytes>> + Send + 'static,
+    {
         if !self.can_schedule() {
             return Err(UniversalIoError::QueueIsFull);
         }
@@ -61,18 +89,13 @@ where
         self.pending.insert(slot, user_data);
 
         let req = BridgeRequest {
-            future,
+            future: Box::pin(future),
             tx: self.tx.clone(),
             slot,
         };
-        let tx = if let Some(rt) = runtime {
-            rt.tx()
-        } else if let Some(rt) = &self.default_runtime {
-            rt.tx()
-        } else {
-            BridgeRuntime::global().tx()
-        };
-        tx.try_send(req)
+        runtime
+            .tx()
+            .try_send(req)
             .map_err(|_| UniversalIoError::S3RuntimeShutDown)
     }
 
@@ -94,14 +117,14 @@ where
     }
 }
 
-pub struct BorrowedBlobPipeline<'file, A: BlobRead, T, U> {
+pub struct BorrowedBlobPipeline<'file, A: AsyncRead, T, U> {
     inner: Option<PipelineInner<U>>,
     _phantom: PhantomData<(&'file BlobFile<A>, T)>,
 }
 
 impl<'file, A, T, U> BorrowedReadPipeline<'file, T, U> for BorrowedBlobPipeline<'file, A, T, U>
 where
-    A: BlobRead,
+    A: AsyncRead,
     T: bytemuck::Pod,
     U: UserData,
 {
@@ -124,12 +147,15 @@ where
         file: &'file BlobFile<A>,
         range: ReadRange,
     ) -> Result<()> {
-        let inner = self.inner.get_or_insert_with(|| PipelineInner::new(None));
+        let inner = self.inner.get_or_insert_with(|| {
+            let (tx, rx) = PipelineInner::<U>::default_channel();
+            PipelineInner::new(tx, rx)
+        });
         let item_size = size_of::<T>() as u64;
         let start = range.byte_offset;
         let end = start + range.length * item_size;
         let future = file.inner.read_range(start..end);
-        inner.schedule(Some(&file.runtime), user_data, future)
+        inner.schedule(&file.runtime, user_data, future)
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
@@ -140,7 +166,7 @@ where
     }
 }
 
-pub struct OwnedBlobPipeline<A: BlobRead, T, U> {
+pub struct OwnedBlobPipeline<A: AsyncRead, T, U> {
     file: BlobFile<A>,
     inner: PipelineInner<U>,
     _phantom: PhantomData<T>,
@@ -148,17 +174,17 @@ pub struct OwnedBlobPipeline<A: BlobRead, T, U> {
 
 impl<A, T, U> OwnedReadPipeline<T, U> for OwnedBlobPipeline<A, T, U>
 where
-    A: BlobRead,
+    A: AsyncRead,
     T: bytemuck::Pod,
     U: UserData,
 {
     type File = BlobFile<A>;
 
     fn new(file: BlobFile<A>) -> Result<Self> {
-        let default_runtime = Some(file.runtime.clone());
+        let (tx, rx) = PipelineInner::<U>::default_channel();
         Ok(Self {
             file,
-            inner: PipelineInner::new(default_runtime),
+            inner: PipelineInner::new(tx, rx),
             _phantom: PhantomData,
         })
     }
@@ -172,7 +198,7 @@ where
         let start = range.byte_offset;
         let end = start + range.length * item_size;
         let future = self.file.inner.read_range(start..end);
-        self.inner.schedule(None, user_data, future)
+        self.inner.schedule(&self.file.runtime, user_data, future)
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
@@ -186,7 +212,8 @@ mod tests {
 
     #[test]
     fn pipeline_can_schedule_starts_true_and_blocks_when_full() {
-        let mut inner: PipelineInner<u32> = PipelineInner::new(None);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         assert!(inner.can_schedule());
         for i in 0..BLOB_PIPELINE_CAPACITY as u64 {
             inner.pending.insert(i, i as u32);
@@ -197,16 +224,13 @@ mod tests {
     #[test]
     fn pipeline_schedule_returns_queue_full_when_capacity_reached() {
         let runtime = BridgeRuntime::global();
-        let mut inner: PipelineInner<u32> = PipelineInner::new(None);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         for i in 0..BLOB_PIPELINE_CAPACITY as u64 {
             inner.pending.insert(i, i as u32);
         }
         let err = inner
-            .schedule(
-                Some(&runtime),
-                999,
-                Box::pin(async { Ok(Bytes::from_static(b"x")) }),
-            )
+            .schedule(&runtime, 999, async { Ok(Bytes::from_static(b"x")) })
             .unwrap_err();
         assert!(matches!(err, UniversalIoError::QueueIsFull));
     }
@@ -214,13 +238,10 @@ mod tests {
     #[test]
     fn pipeline_schedule_and_wait_round_trip() {
         let runtime = BridgeRuntime::global();
-        let mut inner: PipelineInner<u32> = PipelineInner::new(None);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         inner
-            .schedule(
-                Some(&runtime),
-                111,
-                Box::pin(async { Ok(Bytes::from_static(b"hello")) }),
-            )
+            .schedule(&runtime, 111, async { Ok(Bytes::from_static(b"hello")) })
             .expect("schedule");
         let (user, bytes) = inner.wait::<u8>().expect("wait ok").expect("some");
         assert_eq!(user, 111);
@@ -230,7 +251,8 @@ mod tests {
     #[test]
     fn pipeline_out_of_order_completion_preserves_user_data() {
         let runtime = BridgeRuntime::global();
-        let mut inner: PipelineInner<u32> = PipelineInner::new(None);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         for (i, bytes) in [b"aaaa".as_slice(), b"bb".as_slice(), b"cccccc".as_slice()]
             .iter()
             .enumerate()
@@ -238,9 +260,9 @@ mod tests {
             let bytes = *bytes;
             inner
                 .schedule(
-                    Some(&runtime),
+                    &runtime,
                     i as u32,
-                    Box::pin(async move { Ok(Bytes::from_static(bytes)) }),
+                    async move { Ok(Bytes::from_static(bytes)) },
                 )
                 .unwrap();
         }
@@ -259,53 +281,20 @@ mod tests {
     fn pipeline_collects_replies_from_multiple_runtimes() {
         let rt_a = BridgeRuntime::new().expect("rt_a");
         let rt_b = BridgeRuntime::new().expect("rt_b");
-        let mut inner: PipelineInner<u32> = PipelineInner::new(None);
+        let (tx, rx) = PipelineInner::<u32>::default_channel();
+        let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
         inner
-            .schedule(
-                Some(&rt_a),
-                1,
-                Box::pin(async { Ok(Bytes::from_static(b"AAAA")) }),
-            )
+            .schedule(&rt_a, 1, async { Ok(Bytes::from_static(b"AAAA")) })
             .unwrap();
         inner
-            .schedule(
-                Some(&rt_b),
-                2,
-                Box::pin(async { Ok(Bytes::from_static(b"BB")) }),
-            )
+            .schedule(&rt_b, 2, async { Ok(Bytes::from_static(b"BB")) })
             .unwrap();
-        let mut seen: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
+        let mut seen: AHashMap<u32, Vec<u8>> = AHashMap::new();
         for _ in 0..2 {
             let (user, bytes) = inner.wait::<u8>().unwrap().unwrap();
             seen.insert(user, bytes);
         }
         assert_eq!(seen[&1], b"AAAA");
         assert_eq!(seen[&2], b"BB");
-    }
-
-    /// When schedule's override is None, the pipeline default runtime is used.
-    #[test]
-    fn pipeline_uses_default_runtime_when_override_is_none() {
-        let rt_default = BridgeRuntime::new().expect("default rt");
-        let mut inner: PipelineInner<u32> = PipelineInner::new(Some(rt_default));
-        inner
-            .schedule(None, 42, Box::pin(async { Ok(Bytes::from_static(b"def")) }))
-            .expect("schedule");
-        let (user, bytes) = inner.wait::<u8>().expect("wait ok").expect("some");
-        assert_eq!(user, 42);
-        assert_eq!(&bytes[..], b"def");
-    }
-
-    /// When both schedule override and pipeline default are None, the global
-    /// runtime is used.
-    #[test]
-    fn pipeline_falls_back_to_global_when_both_none() {
-        let mut inner: PipelineInner<u32> = PipelineInner::new(None);
-        inner
-            .schedule(None, 7, Box::pin(async { Ok(Bytes::from_static(b"glb")) }))
-            .expect("schedule");
-        let (user, bytes) = inner.wait::<u8>().expect("wait ok").expect("some");
-        assert_eq!(user, 7);
-        assert_eq!(&bytes[..], b"glb");
     }
 }

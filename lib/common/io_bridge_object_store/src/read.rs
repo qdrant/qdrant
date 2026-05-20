@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalKind};
@@ -13,13 +12,14 @@ use crate::runtime::BridgeRuntime;
 ///
 /// - Static methods (`open`, `list_files`, `exists`) are the backend's entry
 ///   points. They take an optional [`BridgeRuntime`] — `None` falls back to
-///   [`BridgeRuntime::global`] — and a backend-specific [`Config`](BlobRead::Config).
+///   [`BridgeRuntime::global`] — and a backend-specific [`Config`](AsyncRead::Config).
 /// - Per-instance methods (`read_range`, `len`, `is_empty`) describe a single
 ///   opened object. The future returned by `read_range` is `'static` so it can
-///   be shipped through the runtime worker's MPSC channel.
+///   be shipped through the runtime worker's MPSC channel after being boxed at
+///   the channel boundary.
 ///
-/// A future `BlobWrite` trait will live next to this one in `write.rs`.
-pub trait BlobRead: Send + Sync + Sized + 'static {
+/// A future `AsyncWrite` trait will live next to this one in `write.rs`.
+pub trait AsyncRead: Send + Sync + Sized + 'static {
     type Config;
 
     fn open(
@@ -36,10 +36,8 @@ pub trait BlobRead: Send + Sync + Sized + 'static {
 
     fn exists(runtime: Option<BridgeRuntime>, config: &Self::Config, path: &Path) -> Result<bool>;
 
-    fn read_range(
-        &self,
-        range: Range<u64>,
-    ) -> Pin<Box<dyn Future<Output = Result<Bytes>> + Send + 'static>>;
+    fn read_range(&self, range: Range<u64>)
+    -> impl Future<Output = Result<Bytes>> + Send + 'static;
 
     fn len(&self) -> u64;
 

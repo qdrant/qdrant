@@ -4,7 +4,7 @@ use std::path::Path;
 
 use common::universal_io::{ReadRange, UniversalIoError, UniversalRead};
 
-use crate::read::BlobRead;
+use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
 use crate::s3::S3Source;
 use crate::tests::rustfs::{rustfs_enabled, rustfs_s3_config, setup_bucket};
