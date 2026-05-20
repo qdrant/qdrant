@@ -1,18 +1,29 @@
-//! Reproducer for the WAL replay bug introduced by `delete_named_vector`.
+//! Regression tests for the WAL replay bug around `delete_named_vector`.
 //!
-//! Hypothesis: `Collection::delete_named_vector` removes the vector from the persisted
-//! `CollectionParams` but does NOT reconcile the WAL. Historical Upsert entries that
-//! still reference the deleted vector name fail at WAL replay on reload, dropping
-//! their target points entirely.
+//! Bug shape (now fixed): `Collection::delete_named_vector` removed the vector
+//! from the persisted `CollectionParams` and synchronously persisted each
+//! segment's mutated `SegmentConfig`, but did NOT reconcile the WAL.
+//! Historical Upsert entries still in the un-truncated WAL would, on reload,
+//! be re-applied against the post-mutation segment config and rejected with
+//! `VectorNameNotExists`, silently dropping their target points.
 //!
-//! Procedure:
+//! Fix in this branch (Approach B): WAL replay now filters out references to
+//! vector names that are no longer in the live `CollectionParams` before
+//! dispatching each operation to `CollectionUpdater::update`. Sub-vectors
+//! against still-live names are preserved; references to removed names are
+//! dropped (and logged at debug level). Operations that become entirely empty
+//! after filtering are skipped.
+//!
+//! Procedure of the primary regression test:
 //!   1. Build a collection with two named dense vectors `a` and `b`.
 //!   2. Upsert a single point that populates both `a` and `b`.
 //!   3. Call `delete_named_vector("b")`.
 //!   4. Close the collection and reopen it.
-//!   5. Assert the point survives reload.
+//!   5. Assert the point survives reload (with vector `a` only).
 //!
-//! If the test fails, the bug is confirmed.
+//! The two paired flush-based tests pin the symmetric semantics for the
+//! "user manually flushed before delete" path — they passed before this fix
+//! and continue to pass after it.
 
 use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroU32;

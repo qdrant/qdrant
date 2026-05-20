@@ -19,6 +19,7 @@ pub mod indexed_only;
 #[cfg(feature = "testing")]
 pub mod testing;
 mod wal_ops;
+mod wal_replay_filter;
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -777,8 +778,17 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
+        // Snapshot the live `CollectionParams` once before iterating the WAL so
+        // we can drop references to vector names that have been removed from
+        // the schema since this WAL entry was written. Without this, a
+        // historical Upsert that referenced a since-deleted vector name would
+        // be rejected as `VectorNameNotExists` by `check_named_vectors` and the
+        // entire operation (including still-valid sub-vectors) would be
+        // silently dropped by the replay loop's error swallowing below.
+        let collection_params_snapshot = self.collection_config.read().await.params.clone();
+
         for entry in wal.read_range(from..to) {
-            let (op_num, update) = entry.map_err(|e| {
+            let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
                     "Failed to read WAL during recovery of {}: {e}",
                     self.path.display(),
@@ -786,6 +796,27 @@ impl LocalShard {
             })?;
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
+            }
+
+            match wal_replay_filter::filter_replay_operation(
+                &mut update.operation,
+                &collection_params_snapshot,
+            ) {
+                wal_replay_filter::FilteredReplayOp::Unchanged => {}
+                wal_replay_filter::FilteredReplayOp::Filtered { dropped_names } => {
+                    log::debug!(
+                        "WAL replay (op_num:{op_num}): dropped references to removed vector \
+                         names {dropped_names:?} from operation",
+                    );
+                }
+                wal_replay_filter::FilteredReplayOp::Empty { dropped_names } => {
+                    log::debug!(
+                        "WAL replay (op_num:{op_num}): operation became empty after dropping \
+                         references to removed vector names {dropped_names:?}, skipping",
+                    );
+                    bar.inc(1);
+                    continue;
+                }
             }
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
