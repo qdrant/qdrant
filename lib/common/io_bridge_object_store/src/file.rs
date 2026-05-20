@@ -177,7 +177,8 @@ mod tests {
 
     #[test]
     fn open_via_universal_read_trait_errors() {
-        let result = <BlobFile<MockSource> as UniversalRead>::open("k", OpenOptions::default());
+        let result =
+            <BlobFile<MockSource> as UniversalRead>::open("k", OpenOptions::new_for_test());
         assert!(matches!(
             result.unwrap_err(),
             UniversalIoError::S3Config { .. }
