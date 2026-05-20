@@ -97,14 +97,28 @@ where
     fn storage_len_in_elements(api_dim: usize, distance: Distance) -> usize {
         Self::storage_layout(api_dim, distance).size() / size_of::<Self>()
     }
+}
 
-    /// Recover the api-level dimension from a slot length in `Self`-elements.
-    ///
-    /// Inverse of `storage_len_in_elements`. Default is identity (flat
-    /// layout); metric-aware types subtract the payload elements.
-    fn api_dim_from_storage_len(storage_len: usize, distance: Distance) -> usize {
-        let _ = distance;
-        storage_len
+/// Truncate a decoded api-level vector to the originally requested `api_dim`.
+///
+/// Some `T` (TurboQuant) round the slot length up to a codebook-aligned
+/// `padded_dim` and thus `slice_to_float_cow` produces a `padded_dim`-long
+/// `Cow`. Storage / quantization layers know the canonical `api_dim` and use
+/// this helper to drop the trailing padding before exposing the floats.
+/// For flat `T` the input is already at `api_dim` and this is a no-op.
+pub fn truncate_to_api_dim(
+    v: Cow<'_, [VectorElementType]>,
+    api_dim: usize,
+) -> Cow<'_, [VectorElementType]> {
+    if v.len() <= api_dim {
+        return v;
+    }
+    match v {
+        Cow::Borrowed(s) => Cow::Borrowed(&s[..api_dim]),
+        Cow::Owned(mut v) => {
+            v.truncate(api_dim);
+            Cow::Owned(v)
+        }
     }
 }
 

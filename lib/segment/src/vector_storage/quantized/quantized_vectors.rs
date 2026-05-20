@@ -24,7 +24,7 @@ use super::quantized_multivector_storage::{
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::primitive::{PrimitiveVectorElement, truncate_to_api_dim};
 use crate::data_types::vectors::{QueryVector, VectorElementType, VectorRef};
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding,
@@ -808,7 +808,14 @@ impl QuantizedVectors {
         let datatype = vector_storage.datatype();
         let vectors = (0..count as PointOffsetType).map(|i| {
             let vector = vector_storage.get_dense::<Sequential>(i);
-            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
+            let preprocessed = PrimitiveVectorElement::quantization_preprocess(
+                quantization_config,
+                distance,
+                vector,
+            );
+            // Storage may decode to a `padded_dim`-long Cow (TurboQuant); the
+            // downstream quantizer expects api-level vectors. Trim to `dim`.
+            truncate_to_api_dim(preprocessed, dim)
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
@@ -870,7 +877,7 @@ impl QuantizedVectors {
                 on_disk_vector_storage,
                 max_threads,
                 stopped,
-                TElement::is_prerotated_for_quantization(distance),
+                false,
             )?,
         };
 
@@ -908,7 +915,12 @@ impl QuantizedVectors {
         let datatype = vector_storage.datatype();
         let multi_vector_config = *vector_storage.multi_vector_config();
         let vectors = vector_storage.iterate_inner_vectors().map(|vector| {
-            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
+            let preprocessed = PrimitiveVectorElement::quantization_preprocess(
+                quantization_config,
+                distance,
+                vector,
+            );
+            truncate_to_api_dim(preprocessed, dim)
         });
         let inner_vectors_count = vectors.clone().count();
         let vectors_count = vector_storage.total_vector_count();
@@ -1000,7 +1012,7 @@ impl QuantizedVectors {
                 on_disk_vector_storage,
                 max_threads,
                 stopped,
-                TElement::is_prerotated_for_quantization(distance),
+                false,
             )?,
         };
 

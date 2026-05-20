@@ -1,7 +1,14 @@
 //! Storage element wrapping a TurboQuant-encoded byte. Layout queries delegate
 //! to [`turboquant::quantization::TurboQuantizer`] so the on-storage size and
-//! padding stays consistent with the encoder. Encoding / decoding / scoring are
-//! still stubbed.
+//! padding stays consistent with the encoder.
+//!
+//! Decoded outputs (`slice_to_float_cow`, `decode_for_quantization`) return the
+//! full `padded_dim` of floats in the original (un-rotated) basis. The caller
+//! — typically the surrounding [`crate::vector_storage::DenseVectorStorage`]
+//! impl which carries the original `api_dim` — is responsible for truncating
+//! back to the requested length. Keeping the slice truncation at the storage
+//! layer (rather than threading `api_dim` through every trait method) keeps
+//! the `PrimitiveVectorElement` API metric-aware but otherwise unchanged.
 
 use std::alloc::Layout;
 use std::borrow::Cow;
@@ -70,26 +77,9 @@ impl PrimitiveVectorElement for TurboQuantElement {
     }
 
     fn slice_to_float_cow(vector: Cow<[Self]>, distance: Distance) -> Cow<[VectorElementType]> {
-        // Public/API path: always returns vectors in the original basis.
-        decode(&vector, distance, /* apply_inverse_rotation */ true)
-    }
-
-    fn decode_for_quantization(
-        vector: Cow<[Self]>,
-        distance: Distance,
-    ) -> Cow<[VectorElementType]> {
-        // For L2/Cosine/Dot the score is rotation-invariant, so we keep the
-        // data in TurboQuant's rotated basis — the downstream quantizer is
-        // expected to skip its own rotation step. L1 is not invariant under
-        // rotation; revert before passing to the next stage.
-        let revert = matches!(distance, Distance::Manhattan);
-        decode(&vector, distance, revert)
-    }
-
-    fn is_prerotated_for_quantization(distance: Distance) -> bool {
-        // Symmetric to `decode_for_quantization`: rotated basis exposed for
-        // every rotation-invariant metric; not for L1.
-        !matches!(distance, Distance::Manhattan)
+        // Output length is `padded_dim` — caller (storage layer with access to
+        // the original `api_dim`) is expected to trim before exposing to API.
+        decode(&vector, distance)
     }
 
     fn quantization_preprocess<'a>(
@@ -97,6 +87,9 @@ impl PrimitiveVectorElement for TurboQuantElement {
         distance: Distance,
         vector: Cow<'a, [Self]>,
     ) -> Cow<'a, [f32]> {
+        // Same contract as `slice_to_float_cow`: padded_dim, original basis.
+        // The quantization pipeline truncates to `api_dim` before handing the
+        // floats to the downstream encoder.
         Self::decode_for_quantization(vector, distance)
     }
 
@@ -124,45 +117,28 @@ impl PrimitiveVectorElement for TurboQuantElement {
             TurboQuantizer::quantized_size_for(api_dim, BITS, to_tq_distance(distance), MODE);
         Layout::from_size_align(bytes, align_of::<f32>()).expect("valid layout")
     }
-
-    /// Recover api-level dimension from the slot length. TQ rounds the
-    /// requested `dim` up to a `bit_size`-aligned `padded_dim`; once rounded
-    /// up we cannot tell the original dim apart from any other dim mapping to
-    /// the same padded_dim. By convention this returns `padded_dim` — the
-    /// effective api_dim after TQ's rounding.
-    fn api_dim_from_storage_len(storage_len: usize, distance: Distance) -> usize {
-        // `quantized_size_for(0, …)` returns only the extras trailer (since
-        // padded_dim(0) == 0 yields zero packed bytes). Subtract it off to
-        // recover the packed-data byte count.
-        let extras_size =
-            TurboQuantizer::quantized_size_for(0, BITS, to_tq_distance(distance), MODE);
-        let packed_bytes = storage_len
-            .checked_sub(extras_size)
-            .expect("storage_len shorter than TurboQuant extras trailer");
-        // `padded_bytes_to_dim` is implemented locally rather than via a
-        // `TQBits` getter because `TQBits::bit_size` is crate-private. Two
-        // public `quantized_size_for` calls let us infer the relationship.
-        padded_bytes_to_dim(packed_bytes)
-    }
 }
 
-/// Shared decode helper for [`TurboQuantElement::slice_to_float_cow`] and
-/// [`TurboQuantElement::decode_for_quantization`]. Builds a stateless
-/// quantizer, calls `dequantize`, optionally applies the inverse rotation,
-/// and downcasts to `f32`. The output length is `padded_dim` (see
-/// `api_dim_from_storage_len` for the dim convention).
-fn decode(
-    vector: &[TurboQuantElement],
-    distance: Distance,
-    apply_inverse_rotation: bool,
-) -> Cow<'static, [VectorElementType]> {
-    let api_dim = TurboQuantElement::api_dim_from_storage_len(vector.len(), distance);
-    let quantizer = TurboQuantizer::new(api_dim, BITS, MODE, to_tq_distance(distance), None);
+/// Build a quantizer from a slot length. The slot encodes `padded_dim`
+/// elements plus the metric-specific extras trailer; we strip the trailer,
+/// recover `padded_dim` from the remaining packed bytes, and hand that as
+/// `dim` to `TurboQuantizer::new` (which is idempotent under further padding).
+fn quantizer_for_slot(slot_len: usize, distance: Distance) -> TurboQuantizer {
+    let tq_distance = to_tq_distance(distance);
+    let extras_size = TurboQuantizer::quantized_size_for(0, BITS, tq_distance, MODE);
+    let packed_bytes = slot_len
+        .checked_sub(extras_size)
+        .expect("slot shorter than TurboQuant extras trailer");
+    let padded_dim = padded_bytes_to_dim(packed_bytes);
+    TurboQuantizer::new(padded_dim, BITS, MODE, tq_distance, None)
+}
+
+/// Decode a slot into `padded_dim` `f32`s in the original (un-rotated) basis.
+fn decode(vector: &[TurboQuantElement], distance: Distance) -> Cow<'static, [VectorElementType]> {
+    let quantizer = quantizer_for_slot(vector.len(), distance);
     let bytes: &[u8] = bytemuck::cast_slice(vector);
     let mut deq = quantizer.dequantize(bytes);
-    if apply_inverse_rotation {
-        quantizer.rotation.apply_inverse(&mut deq);
-    }
+    quantizer.rotation.apply_inverse(&mut deq);
     Cow::Owned(deq.into_iter().map(|x| x as f32).collect())
 }
 
@@ -183,8 +159,8 @@ fn padded_bytes_to_dim(packed_bytes: usize) -> usize {
 }
 
 /// Symmetric score helper shared by every `Metric<TurboQuantElement>` impl.
-/// Recovers `api_dim` from the slot length, builds a stateless quantizer,
-/// reinterprets both slices as bytes, and delegates to `score_symmetric`.
+/// Builds a stateless quantizer from the slot length, reinterprets both
+/// slices as bytes, and delegates to `score_symmetric`.
 fn turbo_score_symmetric(
     v1: &[TurboQuantElement],
     v2: &[TurboQuantElement],
@@ -195,8 +171,7 @@ fn turbo_score_symmetric(
         v2.len(),
         "TurboQuant symmetric score requires matching slot lengths"
     );
-    let api_dim = TurboQuantElement::api_dim_from_storage_len(v1.len(), distance);
-    let quantizer = TurboQuantizer::new(api_dim, BITS, MODE, to_tq_distance(distance), None);
+    let quantizer = quantizer_for_slot(v1.len(), distance);
     let v1_bytes: &[u8] = bytemuck::cast_slice(v1);
     let v2_bytes: &[u8] = bytemuck::cast_slice(v2);
     quantizer.score_symmetric(v1_bytes, v2_bytes)

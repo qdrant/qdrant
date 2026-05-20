@@ -17,7 +17,7 @@ use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::primitive::{PrimitiveVectorElement, truncate_to_api_dim};
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
@@ -30,6 +30,11 @@ const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Debug)]
 pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
+    /// Api-level vector dimension as requested by the collection config. The
+    /// underlying `ChunkedVectors` slot may be longer (e.g. TurboQuant pads up
+    /// to the codebook alignment); `api_dim` is the canonical "vector length"
+    /// reported to callers and used to truncate decoded outputs.
+    api_dim: usize,
     vectors: ChunkedVectors<T, MmapFile>,
     /// Flags marking deleted vectors
     ///
@@ -79,9 +84,12 @@ impl<T: PrimitiveVectorElement> AppendableMmapDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVectorStorage<T> {
+    fn vector_dim(&self) -> usize {
+        self.api_dim
+    }
+
     fn vector_layout(&self) -> Layout {
-        let api_dim = T::api_dim_from_storage_len(self.vectors.dim(), self.distance);
-        T::storage_layout(api_dim, self.distance)
+        T::storage_layout(self.api_dim, self.distance)
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
@@ -115,14 +123,18 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
+            .map(|slice| {
+                let decoded = T::slice_to_float_cow(slice, self.distance);
+                CowVector::from(truncate_to_api_dim(decoded, self.api_dim))
+            })
             .expect("Vector not found")
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.vectors
-            .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice, self.distance)))
+        self.vectors.get::<P>(key as VectorOffsetType).map(|slice| {
+            let decoded = T::slice_to_float_cow(slice, self.distance);
+            CowVector::from(truncate_to_api_dim(decoded, self.api_dim))
+        })
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -277,6 +289,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapDenseVectorStorage {
+        api_dim: dim,
         vectors,
         deleted,
         distance,

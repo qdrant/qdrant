@@ -87,6 +87,10 @@ pub fn new_empty_dense_vector_storage(
 }
 
 impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
+    fn vector_dim(&self) -> usize {
+        self.dim
+    }
+
     fn vector_layout(&self) -> Layout {
         VectorElementType::storage_layout(self.dim, self.distance)
     }

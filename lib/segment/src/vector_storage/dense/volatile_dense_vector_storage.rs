@@ -11,7 +11,7 @@ use common::types::PointOffsetType;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::primitive::{PrimitiveVectorElement, truncate_to_api_dim};
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
@@ -24,6 +24,9 @@ use crate::vector_storage::{
 /// This storage is not persisted and intended for temporary use in tests.
 #[derive(Debug)]
 pub struct VolatileDenseVectorStorage<T: PrimitiveVectorElement> {
+    /// Api-level vector dimension. The chunked slot may be longer when `T`
+    /// pads (TurboQuant); `api_dim` is the canonical "vector length".
+    api_dim: usize,
     distance: Distance,
     vectors: VolatileChunkedVectors<T>,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
@@ -58,6 +61,7 @@ impl<T: PrimitiveVectorElement> VolatileDenseVectorStorage<T> {
     pub fn new(dim: usize, distance: Distance) -> Self {
         let slot_len = T::storage_len_in_elements(dim, distance);
         Self {
+            api_dim: dim,
             distance,
             vectors: VolatileChunkedVectors::new(slot_len),
             deleted: BitVec::new(),
@@ -84,9 +88,12 @@ impl<T: PrimitiveVectorElement> VolatileDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorStorage<T> {
+    fn vector_dim(&self) -> usize {
+        self.api_dim
+    }
+
     fn vector_layout(&self) -> Layout {
-        let api_dim = T::api_dim_from_storage_len(self.vectors.dim(), self.distance);
-        T::storage_layout(api_dim, self.distance)
+        T::storage_layout(self.api_dim, self.distance)
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
@@ -119,9 +126,11 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         // In memory so no optimization to be done for access pattern
         let distance = self.distance;
-        self.vectors
-            .get_opt(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into(), distance)))
+        let api_dim = self.api_dim;
+        self.vectors.get_opt(key as VectorOffsetType).map(|slice| {
+            let decoded = T::slice_to_float_cow(slice.into(), distance);
+            CowVector::from(truncate_to_api_dim(decoded, api_dim))
+        })
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {

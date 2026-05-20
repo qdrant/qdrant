@@ -180,19 +180,15 @@ pub trait VectorStorage: VectorStorageRead {
 }
 
 pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorageRead {
+    /// Api-level dimension of vectors stored here — the "vector length"
+    /// callers passed in via the collection config. May be strictly smaller
+    /// than the slot's `T`-element count when `T` rounds up internally
+    /// (TurboQuant pads to the codebook alignment).
+    fn vector_dim(&self) -> usize;
+
     /// Memory layout of a single on-storage vector slot. Source of truth for
     /// the slot's byte size and `T`-element count.
     fn vector_layout(&self) -> Layout;
-
-    /// Api-level dimension of vectors stored here.
-    ///
-    /// Derived from `vector_layout()` via `T::api_dim_from_storage_len`.
-    fn vector_dim(&self) -> usize {
-        T::api_dim_from_storage_len(
-            self.vector_layout().size() / std::mem::size_of::<T>(),
-            self.distance(),
-        )
-    }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]>;
 

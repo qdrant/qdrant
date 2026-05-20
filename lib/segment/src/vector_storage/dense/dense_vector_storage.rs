@@ -17,7 +17,7 @@ use fs_err::{File, OpenOptions};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::primitive::{PrimitiveVectorElement, truncate_to_api_dim};
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 #[cfg(target_os = "linux")]
@@ -44,6 +44,11 @@ where
 {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
+    /// Api-level vector dimension. The on-disk slot may be longer when `T`
+    /// rounds the requested dim up (TurboQuant). `api_dim` is the canonical
+    /// "vector length" callers see and the upper bound used to truncate
+    /// decoded slots back to the originally requested size.
+    api_dim: usize,
     vectors: Option<ImmutableDenseVectors<T, S>>,
     distance: Distance,
     populated: bool,
@@ -67,6 +72,7 @@ where
         let Self {
             vectors_path: _,
             deleted_path: _,
+            api_dim: _,
             vectors,
             distance: _,
             populated: _,
@@ -205,6 +211,7 @@ where
     let storage = DenseVectorStorageImpl {
         vectors_path,
         deleted_path,
+        api_dim: dim,
         vectors: Some(vectors),
         distance,
         populated: populate,
@@ -218,10 +225,12 @@ where
     T: PrimitiveVectorElement,
     S: UniversalRead,
 {
+    fn vector_dim(&self) -> usize {
+        self.api_dim
+    }
+
     fn vector_layout(&self) -> Layout {
-        let slot_len = self.vectors.as_ref().unwrap().dim;
-        let api_dim = T::api_dim_from_storage_len(slot_len, self.distance);
-        T::storage_layout(api_dim, self.distance)
+        T::storage_layout(self.api_dim, self.distance)
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
@@ -261,11 +270,15 @@ where
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         let distance = self.distance;
+        let api_dim = self.api_dim;
         self.vectors
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector, distance).into())
+            .map(|vector| {
+                let decoded = T::slice_to_float_cow(vector, distance);
+                CowVector::from(truncate_to_api_dim(decoded, api_dim))
+            })
             .expect("Vector not found")
     }
 
@@ -279,24 +292,29 @@ where
         // `user_data[idx]` available inside the callback.
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
         let distance = self.distance;
+        let api_dim = self.api_dim;
 
         self.vectors
             .as_ref()
             .unwrap()
             .for_each_in_batch(&point_offsets, |idx, vector| {
-                let vector =
-                    CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector), distance));
+                let decoded = T::slice_to_float_cow(Cow::Borrowed(vector), distance);
+                let vector = CowVector::from(truncate_to_api_dim(decoded, api_dim));
                 callback(user_data[idx], point_offsets[idx], vector);
             });
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         let distance = self.distance;
+        let api_dim = self.api_dim;
         self.vectors
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector, distance).into())
+            .map(|vector| {
+                let decoded = T::slice_to_float_cow(vector, distance);
+                CowVector::from(truncate_to_api_dim(decoded, api_dim))
+            })
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -331,7 +349,7 @@ where
         other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let slot_len = self.vectors.as_ref().unwrap().dim;
+        let slot_len = T::storage_len_in_elements(self.api_dim, self.distance);
         let start_index = self.vectors.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
 
