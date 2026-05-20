@@ -18,7 +18,7 @@ use crate::index::field_index::FieldIndexRead;
 use crate::index::payload_config::PayloadConfig;
 use crate::index::visited_pool::VisitedPool;
 use crate::payload_storage::PayloadStorageRead;
-use crate::types::{PayloadKeyType, VectorNameBuf};
+use crate::types::{FieldCondition, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageRead;
 
 /// Read-only view over a [`StructPayloadIndex`].
@@ -69,4 +69,15 @@ where
     pub fn available_point_count(&self) -> usize {
         self.id_tracker.available_point_count()
     }
+}
+
+pub(super) fn has_only_match_and_range(condition: &FieldCondition) -> bool {
+    condition.r#match.is_some()
+        && condition.range.is_some()
+        && condition.geo_radius.is_none()
+        && condition.geo_bounding_box.is_none()
+        && condition.geo_polygon.is_none()
+        && condition.values_count.is_none()
+        && condition.is_empty.is_none()
+        && condition.is_null.is_none()
 }

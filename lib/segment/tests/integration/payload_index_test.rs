@@ -45,7 +45,8 @@ use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString,
     GeoPoint, GeoPolygon, GeoRadius, HnswConfig, HnswGlobalConfig, Indexes, IsEmptyCondition,
     Match, Payload, PayloadField, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-    Range, SegmentConfig, ValueVariants, VectorDataConfig, VectorStorageType, WithPayload,
+    Range, RangeInterface, SegmentConfig, ValueVariants, VectorDataConfig, VectorStorageType,
+    WithPayload,
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tempfile::{Builder, TempDir};
@@ -725,6 +726,117 @@ fn test_integer_index_types(test_segments: &TestSegments) -> Result<()> {
         ensure!(!has_map_index);
         ensure!(has_int_index);
     }
+    Ok(())
+}
+
+#[test]
+fn test_integer_match_and_range_same_field_condition_uses_both_indexes() -> Result<()> {
+    let plain_dir = Builder::new().prefix("plain_segment").tempdir()?;
+    let indexed_dir = Builder::new().prefix("indexed_segment").tempdir()?;
+    let lookup_only_dir = Builder::new().prefix("lookup_only_segment").tempdir()?;
+    let mut plain_segment = build_simple_segment(plain_dir.path(), DIM, Distance::Dot)?;
+    let mut indexed_segment = build_simple_segment(indexed_dir.path(), DIM, Distance::Dot)?;
+    let mut lookup_only_segment = build_simple_segment(lookup_only_dir.path(), DIM, Distance::Dot)?;
+
+    let hw_counter = HardwareCounterCell::new();
+    let key = JsonPath::new("n");
+    let mut opnum = 0;
+
+    for (point_id, value) in [(0_u64, 5_i64), (1_u64, 999_i64), (2_u64, 42_i64)] {
+        let vector = vec![point_id as f32; DIM];
+        let payload = payload_json! {"n": value};
+        let point_id = point_id.into();
+
+        for segment in [
+            &mut plain_segment,
+            &mut indexed_segment,
+            &mut lookup_only_segment,
+        ] {
+            segment.upsert_point(opnum, point_id, only_default_vector(&vector), &hw_counter)?;
+            segment.set_full_payload(opnum, point_id, &payload, &hw_counter)?;
+        }
+        opnum += 1;
+    }
+
+    let integer_params = |lookup, range| {
+        FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+            r#type: IntegerIndexType::Integer,
+            lookup: Some(lookup),
+            range: Some(range),
+            is_principal: None,
+            on_disk: None,
+            enable_hnsw: None,
+        }))
+    };
+
+    indexed_segment.create_field_index(
+        opnum,
+        &key,
+        Some(&integer_params(true, true)),
+        &hw_counter,
+    )?;
+    opnum += 1;
+    lookup_only_segment.create_field_index(
+        opnum,
+        &key,
+        Some(&integer_params(true, false)),
+        &hw_counter,
+    )?;
+
+    let mut field_condition = FieldCondition::new_match(key, 999.into());
+    field_condition.range = Some(RangeInterface::Float(Range {
+        lt: None,
+        gt: None,
+        gte: Some(OrderedFloat(0.)),
+        lte: Some(OrderedFloat(10.)),
+    }));
+    let filter = Filter::new_must(Condition::Field(field_condition));
+
+    let query_external_ids = |segment: &Segment| -> Result<Vec<u64>> {
+        let is_stopped = AtomicBool::new(false);
+        let internal_ids = segment
+            .payload_index
+            .borrow()
+            .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))?;
+
+        let id_tracker = segment.id_tracker.borrow();
+        let mut external_ids = internal_ids
+            .into_iter()
+            .map(|internal_id| id_tracker.external_id(internal_id).unwrap().as_u64())
+            .collect::<Vec<_>>();
+        external_ids.sort_unstable();
+        Ok(external_ids)
+    };
+
+    let plain_ids = query_external_ids(&plain_segment)?;
+    let indexed_ids = query_external_ids(&indexed_segment)?;
+    let lookup_only_ids = query_external_ids(&lookup_only_segment)?;
+
+    assert_eq!(plain_ids, vec![0, 1]);
+    assert_eq!(indexed_ids, plain_ids);
+    assert_eq!(lookup_only_ids, plain_ids);
+
+    let check_filter_context = |segment: &Segment| {
+        let (range_match_id, exact_match_id, non_match_id) = {
+            let id_tracker = segment.id_tracker.borrow();
+            (
+                id_tracker.internal_id(0.into()).unwrap(),
+                id_tracker.internal_id(1.into()).unwrap(),
+                id_tracker.internal_id(2.into()).unwrap(),
+            )
+        };
+
+        segment.payload_index.borrow().with_view(|v| {
+            let filter_context = v.filter_context(&filter, &hw_counter).unwrap();
+            assert!(filter_context.check(range_match_id));
+            assert!(filter_context.check(exact_match_id));
+            assert!(!filter_context.check(non_match_id));
+        });
+    };
+
+    check_filter_context(&indexed_segment);
+    check_filter_context(&lookup_only_segment);
+
     Ok(())
 }
 
