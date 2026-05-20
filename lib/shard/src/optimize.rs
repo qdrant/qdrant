@@ -441,10 +441,15 @@ fn finish_optimization(
 ) -> OperationResult<usize> {
     // This block locks all write operations with collection. It should be fast.
 
-    let upgradable_segment_holder = segment_holder.upgradable_read();
-
-    // This mutex prevents update operations, which could create inconsistency during transition.
+    // Acquire `updates_lock` before `upgradable_read` to match the order used
+    // at the start of `execute_optimization` and by `CollectionUpdater::update`.
+    // The reverse order would deadlock when two optimizer threads run
+    // concurrently: thread A here holding `upgradable_read` waits on
+    // `updates_lock`, while thread B at the top of `execute_optimization`
+    // holds `updates_lock` and waits on `upgradable_read` (parking_lot allows
+    // only one upgradable reader at a time).
     let update_guard = segment_holder.acquire_updates_lock();
+    let upgradable_segment_holder = segment_holder.upgradable_read();
 
     // Apply vector name changes before index and point changes
     // New named vectors must exist before indexes or points reference them
