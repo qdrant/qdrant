@@ -329,14 +329,20 @@ impl SegmentBuilder {
         // would observe sources that gained V mid-flight and emit a merged
         // segment without V at version >= V_opnum, breaking the next
         // optimization round that uses the refreshed config (which has V).
-        // By erroring here the optimization aborts cleanly and the next
-        // round, picking up the refreshed config, merges correctly.
+        //
+        // Use `Cancelled` rather than `ServiceError` so the optimization
+        // worker treats this as a recoverable cancellation (logged at debug,
+        // tracker marked Cancelled, no shard-level optimizer_errors set, no
+        // RED status). The follow-up `recreate_optimizers_blocking` will
+        // restart workers with a refreshed `target_config` that matches the
+        // sources, and the retry merges cleanly.
         for vector_storage in &vector_storages {
             for source_vector_name in vector_storage.keys() {
                 if !self.vector_data.contains_key(source_vector_name) {
-                    return Err(OperationError::service_error(format!(
+                    return Err(OperationError::cancelled(format!(
                         "Cannot update from other segment because it has an extra \
-                         vector name {source_vector_name} not in the target schema"
+                         vector name {source_vector_name} not in the target schema; \
+                         retry after optimizer config refresh"
                     )));
                 }
             }
