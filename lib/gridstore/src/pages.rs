@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use ahash::{AHashMap, HashSet};
 use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
+use common::mmap::AdviceSetting;
 use common::universal_io::{
     FileIndex, Flusher, OpenOptions, Populate, ReadRange, UniversalRead, UniversalWrite,
 };
@@ -59,10 +60,9 @@ impl<S: UniversalRead> Pages<S> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: true,
-            disk_parallel: None,
             populate: Populate::No,
-            advice: None,
-            prevent_caching: None,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
         };
 
         let page = S::open(path, options)?;

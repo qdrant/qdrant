@@ -55,7 +55,7 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
         &path,
         OpenOptions {
             writeable: false,
-            ..Default::default()
+            ..OpenOptions::new_for_test()
         },
     )
     .unwrap();

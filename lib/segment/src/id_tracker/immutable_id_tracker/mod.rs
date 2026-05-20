@@ -14,7 +14,7 @@ use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
-use common::mmap::create_and_ensure_length;
+use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -85,8 +85,11 @@ where
         let deleted_storage = StoredBitSlice::open(
             deleted_path(segment_path),
             OpenOptions {
+                writeable: true,
+                need_sequential: true,
                 populate: Populate::Blocking,
-                ..OpenOptions::default()
+                advice: AdviceSetting::Global,
+                extra: Default::default(),
             },
         )?;
 
@@ -100,10 +103,9 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: Populate::Blocking,
-                advice: None,
-                prevent_caching: None,
+                advice: AdviceSetting::Global,
+                extra: Default::default(),
             },
         )?;
 
@@ -143,7 +145,16 @@ where
                 .next_multiple_of(size_of::<u64>()),
         )?;
 
-        let mut deleted_storage = StoredBitSlice::open(&deleted_filepath, OpenOptions::default())?;
+        let mut deleted_storage = StoredBitSlice::open(
+            &deleted_filepath,
+            OpenOptions {
+                writeable: true,
+                need_sequential: true,
+                populate: Populate::Auto,
+                advice: AdviceSetting::Global,
+                extra: Default::default(),
+            },
+        )?;
 
         // Set bits for deleted points from the mappings,
         deleted_storage.write_bitslice(mappings.deleted())?;
@@ -177,10 +188,9 @@ where
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
-                disk_parallel: None,
                 populate: Populate::No,
-                advice: None,
-                prevent_caching: None,
+                advice: AdviceSetting::Global,
+                extra: Default::default(),
             },
         )?;
         internal_to_version_file.write(0, internal_to_version)?;

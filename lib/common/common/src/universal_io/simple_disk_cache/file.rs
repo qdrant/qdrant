@@ -105,11 +105,10 @@ impl<R: UniversalRead> DiskCache<R> {
 
         let remote_options = OpenOptions {
             writeable: false,
-            prevent_caching: Some(true),
+            extra: OpenOptionsExtra { prevent_caching: true },
             populate: Populate::No,
             need_sequential: false,
-            disk_parallel: None,
-            advice: None,
+            advice: AdviceSetting::Global,
         };
 
         let remote = R::open(remote_path, remote_options)?;
@@ -150,7 +149,6 @@ impl<R: UniversalRead> DiskCache<R> {
         let OpenOptions {
             writeable: _,       // always needs to be writeable
             need_sequential: _, // TODO: add sequential mmap
-            disk_parallel: _,   // unsupported
             populate: _,        // this is handled in populate() function
             advice,
             prevent_caching: _, // TODO: use o_direct

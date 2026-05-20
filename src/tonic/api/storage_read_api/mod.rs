@@ -12,8 +12,9 @@ use api::grpc::qdrant::{
     ReadWholeRequest, ReadWholeResponse,
 };
 use common::generic_consts::Random;
+use common::mmap::AdviceSetting;
 use common::universal_io::{
-    FileIndex, MmapFile, OpenOptions, ReadRange, UniversalIoError, UniversalRead,
+    FileIndex, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
 };
 use futures::Stream;
 use storage::dispatcher::Dispatcher;
@@ -125,7 +126,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
 
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: true,
+            need_sequential: true,
+            populate: Populate::Auto,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
+        };
         let length = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             storage.len::<u8>().map_err(io_error_to_status)
@@ -155,7 +162,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_bytes")
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: true,
+            need_sequential: true,
+            populate: Populate::Auto,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
+        };
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
@@ -193,7 +206,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_bytes_stream")
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: true,
+            need_sequential: true,
+            populate: Populate::Auto,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
+        };
         let range = ReadRange::new(byte_offset, length);
         let (storage, range) = tokio::task::spawn_blocking(move || {
             let s = S::open(&path, open_options).map_err(io_error_to_status)?;
@@ -251,7 +270,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_whole")
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: true,
+            need_sequential: true,
+            populate: Populate::Auto,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
+        };
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
@@ -282,7 +307,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
             .await?;
         let path = Self::resolve_path(&base, &collections_root, &path)?;
 
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: true,
+            need_sequential: true,
+            populate: Populate::Auto,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
+        };
         let ranges = ranges
             .iter()
             .map(|r| ReadRange::new(r.byte_offset, r.length))
@@ -322,7 +353,13 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageRead for StorageReadServic
         let (base, collections_root) = self
             .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_multi")
             .await?;
-        let open_options = OpenOptions::default();
+        let open_options = OpenOptions {
+            writeable: true,
+            need_sequential: true,
+            populate: Populate::Auto,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
+        };
 
         // Resolve all paths and deduplicate into a file index.
         let mut path_to_index = HashMap::<PathBuf, FileIndex>::new();

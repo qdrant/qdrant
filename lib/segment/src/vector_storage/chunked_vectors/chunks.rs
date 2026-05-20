@@ -55,10 +55,9 @@ pub fn read_chunks<T: bytemuck::Pod, S: UniversalRead>(
             OpenOptions {
                 writeable,
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
-                disk_parallel: None,
                 populate: Populate::from(populate),
-                advice: Some(advice),
-                prevent_caching: None,
+                advice,
+                extra: Default::default(),
             },
         )?;
 
@@ -86,10 +85,9 @@ pub fn create_chunk<T: bytemuck::Pod, S: UniversalWrite>(
         OpenOptions {
             writeable: true,
             need_sequential: *MULTI_MMAP_IS_SUPPORTED,
-            disk_parallel: None,
             populate: Populate::No, // don't populate newly created chunk, as it's empty and will be filled later
-            advice: None,
-            prevent_caching: None,
+            advice: AdviceSetting::Global,
+            extra: Default::default(),
         },
     )
 }
