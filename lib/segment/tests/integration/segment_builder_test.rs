@@ -529,6 +529,171 @@ fn test_building_cancellation() {
     );
 }
 
+/// `SegmentBuilder::update` refuses to merge when the target schema lists a
+/// vector that a source segment lacks. This is the failure mode the optimizer
+/// hits when a `CreateVectorName(V)` runs concurrently with an in-flight
+/// optimization whose `target_config` was frozen before V was added (and the
+/// source segments got V mid-flight). Documents the precondition the new
+/// proxy-install lock in `execute_optimization` is meant to guarantee.
+#[test]
+fn test_segment_builder_rejects_target_with_added_vector_name() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let segment1 = build_segment_1(dir.path());
+
+    let added_vector_name = "added_vec";
+    let mut target_config = segment1.segment_config.clone();
+    target_config.vector_data.insert(
+        added_vector_name.to_owned(),
+        VectorDataConfig {
+            size: 4,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        },
+    );
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    let err = builder
+        .update(&[&segment1], &stopped, &hw_counter)
+        .expect_err("merge must reject sources missing a target vector");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing vector name") && msg.contains(added_vector_name),
+        "unexpected error message: {msg}",
+    );
+}
+
+/// Same precondition as
+/// [`test_segment_builder_rejects_target_with_added_vector_name`], but with a
+/// quantized vector in the target — the error path is reached before any
+/// quantization training, so behavior is identical.
+#[test]
+fn test_segment_builder_rejects_target_with_added_quantized_vector_name() {
+    use segment::types::{
+        QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+    };
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let segment1 = build_segment_1(dir.path());
+
+    let added_vector_name = "added_quantized_vec";
+    let mut target_config = segment1.segment_config.clone();
+    target_config.vector_data.insert(
+        added_vector_name.to_owned(),
+        VectorDataConfig {
+            size: 4,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
+                scalar: ScalarQuantizationConfig {
+                    r#type: ScalarType::Int8,
+                    quantile: None,
+                    always_ram: None,
+                },
+            })),
+            multivector_config: None,
+            datatype: None,
+        },
+    );
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    let err = builder
+        .update(&[&segment1], &stopped, &hw_counter)
+        .expect_err("merge must reject sources missing a target vector even when quantized");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing vector name") && msg.contains(added_vector_name),
+        "unexpected error message: {msg}",
+    );
+}
+
+/// Mixed-source variant: even with one source segment that *does* carry the
+/// added vector, the merge still errors as soon as it encounters a source
+/// that doesn't. The strict precondition is per-source, not a quorum.
+#[test]
+fn test_segment_builder_rejects_mixed_sources_for_added_vector() {
+    use segment::segment_constructor::build_segment;
+
+    let dir_a = Builder::new().prefix("segment_a").tempdir().unwrap();
+    let dir_b = Builder::new().prefix("segment_b").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let added_vector_name = "added_vec";
+
+    let segment_a = build_segment_1(dir_a.path());
+
+    let mut config_b = segment_a.segment_config.clone();
+    config_b.vector_data.insert(
+        added_vector_name.to_owned(),
+        VectorDataConfig {
+            size: 4,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        },
+    );
+    let mut segment_b = build_segment(dir_b.path(), &config_b, None, true).unwrap();
+    for i in 0..5u64 {
+        let vectors = NamedVectors::from_pairs([
+            (DEFAULT_VECTOR_NAME.to_owned(), vec![0.5, 0.5, 0.5, 0.5]),
+            (added_vector_name.to_owned(), vec![1.0, 1.0, 1.0, 1.0]),
+        ]);
+        segment_b
+            .upsert_point(10 + i, (100 + i).into(), vectors, &hw_counter)
+            .unwrap();
+    }
+
+    let target_config = config_b.clone();
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    let err = builder
+        .update(&[&segment_a, &segment_b], &stopped, &hw_counter)
+        .expect_err("merge must reject the source that lacks the added vector");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing vector name") && msg.contains(added_vector_name),
+        "unexpected error message: {msg}",
+    );
+}
+
 #[test]
 fn test_building_new_segment_with_mmap_payload() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
