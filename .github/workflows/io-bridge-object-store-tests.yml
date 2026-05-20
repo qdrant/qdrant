@@ -34,14 +34,16 @@ jobs:
 
       - name: Wait for rustfs to be ready
         run: |
-          for _ in $(seq 1 30); do
-            if curl -sf http://localhost:9000/minio/health/ready >/dev/null; then
+          for _ in $(seq 1 60); do
+            if docker run --rm --network host minio/mc \
+                 alias set local http://localhost:9000 rustfsadmin rustfsadmin \
+                 >/dev/null 2>&1; then
               echo "rustfs is up"
               exit 0
             fi
             sleep 1
           done
-          echo "rustfs did not become ready in 30s" >&2
+          echo "rustfs did not become ready in 60s" >&2
           exit 1
 
       - name: Create test bucket
