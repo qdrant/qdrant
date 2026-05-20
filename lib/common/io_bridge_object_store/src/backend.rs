@@ -1,6 +1,6 @@
 //! Backend abstraction: a concrete [`ObjectStore`] type plus a config that can
-//! produce it. Generic over all four supported backends (AWS S3, GCS, Azure,
-//! local filesystem) so [`crate::BlobSource<S>`] stays free of `dyn`.
+//! produce it. Implemented for AWS S3, GCS, and Azure (see [`crate::backends`])
+//! so [`crate::BlobSource<S>`] stays free of `dyn`.
 
 use common::universal_io::{Result, UniversalKind};
 use object_store::ObjectStore;

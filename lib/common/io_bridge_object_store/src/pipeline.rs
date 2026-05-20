@@ -117,6 +117,9 @@ where
     }
 }
 
+/// `BorrowedReadPipeline` impl over a [`BlobFile`]. Lazy: no channel / map is
+/// allocated until the first `schedule` call, so creating one is cheap even
+/// if the caller ends up not issuing any reads.
 pub struct BorrowedBlobPipeline<'file, A: AsyncRead, T, U> {
     inner: Option<PipelineInner<U>>,
     _phantom: PhantomData<(&'file BlobFile<A>, T)>,
@@ -166,6 +169,9 @@ where
     }
 }
 
+/// `OwnedReadPipeline` impl that takes ownership of a [`BlobFile`] and routes
+/// every `schedule` call through the file's [`BridgeRuntime`]. Allocates its
+/// channel up-front in `new`, unlike [`BorrowedBlobPipeline`] which is lazy.
 pub struct OwnedBlobPipeline<A: AsyncRead, T, U> {
     file: BlobFile<A>,
     inner: PipelineInner<U>,

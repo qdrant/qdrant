@@ -43,6 +43,11 @@ pub(crate) struct BridgeRuntimeInner {
     _worker: std::thread::JoinHandle<()>,
 }
 
+/// Cheap-to-clone handle to a dedicated Tokio runtime plus a worker thread
+/// driving the request channel. Construct one explicitly with [`Self::new`]
+/// for an isolated execution domain, or call [`Self::global`] for the
+/// process-wide singleton. Internally an `Arc<Inner>`, so clones share the
+/// same runtime, worker thread, and request channel.
 #[derive(Clone)]
 pub struct BridgeRuntime(Arc<BridgeRuntimeInner>);
 

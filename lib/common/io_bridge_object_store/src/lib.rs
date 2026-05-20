@@ -1,6 +1,5 @@
 //! Sync ↔ async bridge that lets the sync [`common::universal_io::UniversalRead`]
-//! surface wrap inherently async object-store backends (AWS S3, GCS, Azure,
-//! local filesystem).
+//! surface wrap inherently async object-store backends (AWS S3, GCS, Azure).
 //!
 //! # Components
 //!
@@ -14,59 +13,56 @@
 //! | `PipelineInner`  | Per-pipeline reply channel and slot bookkeeping.          |
 //!
 //! Concrete backends live under [`backends`]: [`backends::aws`],
-//! [`backends::gcp`], [`backends::azure`], [`backends::local`]. Each one
-//! declares its own `Config` struct and is wired up via the
-//! [`impl_blob_backend!`] macro.
+//! [`backends::gcp`], and [`backends::azure`]. Each module declares its own
+//! `Config` struct and a manual [`BlobBackend`] impl.
 //!
 //! # Data flow
 //!
+//! The caller (sync) lives on the left, the [`BridgeRuntime`] worker thread
+//! (async) lives on the right. The two MPSC channels run between them, with
+//! request going right and reply going left.
+//!
 //! ```text
-//!  ┌──────────────────────── caller thread ─────────────────────────┐
-//!  │                                                                │
-//!  │   BlobFile<A>                                                  │
-//!  │     ├─ inner   : A           (e.g. BlobSource<AmazonS3>)       │
-//!  │     └─ runtime : BridgeRuntime                                 │
-//!  │                                                                │
-//!  │   single read   ── runtime.block_on(inner.read_range(r)) ──┐   │
-//!  │                                                            │   │
-//!  │   batched read  ── PipelineInner<U>::schedule ─┐           │   │
-//!  │     ├─ tx, rx     : reply channel              │           │   │
-//!  │     ├─ pending    : AHashMap<slot, user_data>  │           │   │
-//!  │     └─ next_slot  : u64                        │           │   │
-//!  │                                                ▼           │   │
-//!  │                                  BridgeRequest {           │   │
-//!  │                                    future,                 │   │
-//!  │                                    tx: reply_tx.clone(),   │   │
-//!  │                                    slot,                   │   │
-//!  │                                  }                         │   │
-//!  └────────────────────────────────────────┬───────────────────┼───┘
-//!                                           │                   │
-//!         request channel (per runtime) ────┤                   │
-//!                                           ▼                   │
-//!  ┌──────────────────── BridgeRuntime worker ──────────────────┼───┐
-//!  │                                                            │   │
-//!  │   worker_loop:                                             │   │
-//!  │     while let Some(req) = request_rx.recv().await {        │   │
-//!  │         tokio::spawn(async move {                          │   │
-//!  │             let bytes = req.future.await; // network GET   │   │
-//!  │             req.tx                                         │   │
-//!  │                .send(BridgeResponse { slot, bytes })       │   │
-//!  │                .await;                                     │   │
-//!  │         });                                                │   │
-//!  │     }                                                      │   │
-//!  └────────────────────────────────────────┬───────────────────┼───┘
-//!                                           │                   │
-//!           reply channel (per pipeline) ───┤                   │
-//!                                           ▼                   ▼
-//!  ┌──────────────────────── caller thread ─────────────────────────┐
-//!  │                                                                │
-//!  │   wait():                                                      │
-//!  │     let response  = rx.blocking_recv();                        │
-//!  │     let user_data = pending.remove(&response.slot);            │
-//!  │     let items     = bytemuck::try_cast_slice(&response.bytes?);│
-//!  │     return Some((user_data, items));                           │
-//!  │                                                                │
-//!  └────────────────────────────────────────────────────────────────┘
+//!     CALLER THREAD  (sync)                         WORKER THREAD  (async, Tokio)
+//!     ═════════════════════                         ═════════════════════════════
+//!
+//!   ┌────────────────────────────────┐
+//!   │ BlobFile<A>                    │
+//!   │   inner   : A                  │
+//!   │   runtime : BridgeRuntime      │
+//!   └────────────────────────────────┘
+//!                  │
+//!                  ▼
+//!   ┌────────────────────────────────┐
+//!   │ PipelineInner<U>               │
+//!   │   tx, rx  : reply channel      │
+//!   │   pending : AHashMap<u64, U>   │
+//!   │   next_slot : u64              │
+//!   └────────────────────────────────┘
+//!                  │ schedule(rt, user_data, future)
+//!                  ▼
+//!   ┌────────────────────────────────┐                    ┌────────────────────────────────┐
+//!   │ BridgeRequest {                │   request channel  │ worker_loop:                   │
+//!   │   future,                      │ ─────────────────► │   req = request_rx             │
+//!   │   tx: reply_tx.clone(),        │ rt.tx().try_send() │           .recv().await        │
+//!   │   slot,                        │                    │                                │
+//!   │ }                              │                    │   tokio::spawn(async move {    │
+//!   └────────────────────────────────┘                    │     bytes = req.future.await   │
+//!                                                         │     req.tx.send(               │
+//!                                                         │       BridgeResponse {         │
+//!   ┌────────────────────────────────┐                    │         slot,                  │
+//!   │ wait():                        │    reply channel   │         bytes,                 │
+//!   │   response =                   │ ◄───────────────── │       },                       │
+//!   │     reply_rx.blocking_recv()   │  spawned task uses │     ).await                    │
+//!   │   user_data =                  │  req.tx (clone of  │   })                           │
+//!   │     pending.remove(&slot)      │  pipeline reply_tx)└────────────────────────────────┘
+//!   │   items = cast(response.bytes?)│
+//!   │   return Some((user_data,      │
+//!   │                items))         │
+//!   └────────────────────────────────┘
+//!
+//!   Single-read fast path: BlobFile::read calls runtime.block_on(inner.read_range(..))
+//!   directly on the Tokio handle — no pipeline, no slot, no worker hop.
 //! ```
 //!
 //! # Design notes

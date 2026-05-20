@@ -5,21 +5,30 @@ use object_store::gcp::{GoogleCloudStorage, GoogleCloudStorageBuilder};
 
 use crate::backend::BlobBackend;
 
+/// Connection parameters for [`GoogleCloudStorage`]. Fed into
+/// [`GoogleCloudStorageBuilder`] by the [`BlobBackend`] impl below.
 #[derive(Clone, Debug)]
 pub struct GcsConfig {
+    /// GCS bucket name.
     pub bucket: String,
+    /// How to authenticate to GCS.
     pub credentials: GcsCredentials,
 }
 
+/// Authentication mode for Google Cloud Storage.
 #[derive(Clone, Debug)]
 pub enum GcsCredentials {
-    /// Application default credentials (ADC: env, gcloud, metadata server).
+    /// Application default credentials (ADC): env vars, gcloud config,
+    /// metadata server (GCE / GKE workload identity), etc.
     Default,
-    /// Path to a service-account JSON key file.
+    /// Filesystem path to a service-account JSON key file.
     ServiceAccountPath(String),
-    /// Inline service-account JSON key contents.
+    /// Inline contents of a service-account JSON key — same shape as the
+    /// `*.json` you would download from the Cloud Console, but passed as a
+    /// string instead of a path.
     ServiceAccountKey(String),
-    /// Path to an application_default_credentials.json file.
+    /// Filesystem path to an `application_default_credentials.json` file
+    /// (typically `~/.config/gcloud/application_default_credentials.json`).
     ApplicationCredentialsPath(String),
 }
 
