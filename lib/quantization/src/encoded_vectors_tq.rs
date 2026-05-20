@@ -10,6 +10,7 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
+use turboquant::math::std_normal_cdf;
 use turboquant::quantization::{ErrorCorrection, TurboQuantizer};
 use turboquant::{EncodedQueryTQ, TQBits, TQMode};
 

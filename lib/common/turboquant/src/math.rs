@@ -1,6 +1,6 @@
 /// Standard normal CDF Φ(x) = (1 + erf(x/√2)) / 2 via the Abramowitz & Stegun
 /// 7.1.26 rational approximation (max error ≈ 1.5e-7).
-pub(crate) fn std_normal_cdf(x: f64) -> f64 {
+pub fn std_normal_cdf(x: f64) -> f64 {
     0.5 * (1.0 + erf_approx(x / std::f64::consts::SQRT_2))
 }
 
