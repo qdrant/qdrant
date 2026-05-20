@@ -48,8 +48,8 @@ jobs:
 
       - name: Create test bucket
         run: |
-          docker run --rm --network host minio/mc \
-            sh -c "mc alias set local http://localhost:9000 rustfsadmin rustfsadmin \
+          docker run --rm --network host --entrypoint sh minio/mc -c \
+            "mc alias set local http://localhost:9000 rustfsadmin rustfsadmin \
               && mc mb --ignore-existing local/test-bucket"
 
       - name: Install Rust toolchain
