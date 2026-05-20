@@ -58,7 +58,7 @@ impl TQBits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::turboquant::math::std_normal_cdf;
+    use crate::math::std_normal_cdf;
 
     /// Standard normal PDF: φ(x) = exp(-x²/2) / √(2π).
     fn std_normal_pdf(x: f64) -> f64 {

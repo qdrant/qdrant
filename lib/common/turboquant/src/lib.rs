@@ -5,6 +5,7 @@ use crate::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
 mod distance;
 pub mod encoding;
 pub mod lloyd_max;
+pub mod math;
 mod permutation;
 pub mod quantization;
 pub mod rotation;

@@ -96,7 +96,7 @@ impl TurboQuantizer {
     /// Heap memory owned by the quantizer: the rotation tables and, in TQ+
     /// mode, the per-coordinate error-correction vectors. Resident in RAM
     /// regardless of whether the encoded vectors are stored in RAM or mmap.
-    pub(super) fn heap_size_bytes(&self) -> usize {
+    pub fn heap_size_bytes(&self) -> usize {
         let Self {
             rotation,
             bits: _,
