@@ -359,10 +359,20 @@ impl SegmentBuilder {
             let other_vector_storages = vector_storages
                 .iter()
                 .map(|i| {
+                    // Symmetric counterpart to the source-superset check above:
+                    // when target has a vector name a source lacks, the
+                    // optimizer-vs-`DeleteVectorName` race is the typical
+                    // cause (V was removed from originals before the proxy
+                    // wrap, but the frozen `target_config` still has V).
+                    // Use `Cancelled` so the optimization worker treats this
+                    // as a recoverable cancellation — no shard-level
+                    // `optimizer_errors`, no RED status — and the next round
+                    // with refreshed config merges cleanly.
                     let other_vector_data = i.get(vector_name).ok_or_else(|| {
-                        OperationError::service_error(format!(
+                        OperationError::cancelled(format!(
                             "Cannot update from other segment because it is \
-                             missing vector name {vector_name}"
+                             missing vector name {vector_name}; \
+                             retry after optimizer config refresh"
                         ))
                     })?;
 
