@@ -132,7 +132,7 @@ impl<S: UniversalWrite> Bitmask<S> {
             &path,
             OpenOptions {
                 writeable: true,
-                need_sequential: true,
+                need_sequential: false,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
