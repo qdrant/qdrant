@@ -150,6 +150,22 @@ impl TurboQuantizer {
     /// `EncodedVectorsTQ::encode` (in the `quantization` crate) when computing
     /// per-coordinate stats over rescaled rotated samples.
     pub fn preprocess_into(&self, vec: &[f32], buf: &mut [f64]) -> Option<f32> {
+        self.preprocess_into_with_rotation(vec, buf, true)
+    }
+
+    /// Like [`Self::preprocess_into`] but assumes `vec` is already in this
+    /// quantizer's rotated basis (e.g. the upstream stage was another
+    /// TurboQuant of matching `padded_dim`). Pad + length-rescale only.
+    pub fn preprocess_into_prerotated(&self, vec: &[f32], buf: &mut [f64]) -> Option<f32> {
+        self.preprocess_into_with_rotation(vec, buf, false)
+    }
+
+    fn preprocess_into_with_rotation(
+        &self,
+        vec: &[f32],
+        buf: &mut [f64],
+        rotate: bool,
+    ) -> Option<f32> {
         debug_assert!(vec.len() <= self.padded_dim);
         debug_assert_eq!(buf.len(), self.padded_dim);
 
@@ -162,8 +178,10 @@ impl TurboQuantizer {
             *b = v;
         }
 
-        // Rotate the vector.
-        self.rotation.apply(buf);
+        // Rotate the vector — skipped when the caller already pre-rotated.
+        if rotate {
+            self.rotation.apply(buf);
+        }
 
         let l2_length = self.compute_l2_length(buf);
 
@@ -185,7 +203,17 @@ impl TurboQuantizer {
 
     /// Quantize a given vector with TurboQuant.
     pub fn quantize(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
-        let l2_length = self.preprocess_into(vec, buf);
+        self.quantize_with_rotation(vec, buf, true)
+    }
+
+    /// Like [`Self::quantize`] but assumes `vec` is already rotated. See
+    /// [`Self::preprocess_into_prerotated`] for the contract.
+    pub fn quantize_prerotated(&self, vec: &[f32], buf: &mut [f64]) -> Vec<u8> {
+        self.quantize_with_rotation(vec, buf, false)
+    }
+
+    fn quantize_with_rotation(&self, vec: &[f32], buf: &mut [f64], rotate: bool) -> Vec<u8> {
+        let l2_length = self.preprocess_into_with_rotation(vec, buf, rotate);
         // After `preprocess_into` the rescale is already in `buf`; from here on
         // we treat `buf` as the rescaled vector and don't re-multiply by
         // `scale`. Centroid-norm and packing operate on `buf` directly.

@@ -300,6 +300,7 @@ mod tests {
                     num_threads,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
@@ -354,6 +355,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
@@ -405,6 +407,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
 
@@ -456,6 +459,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
 
@@ -512,6 +516,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
@@ -563,6 +568,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
@@ -623,6 +629,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
@@ -676,6 +683,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
@@ -726,6 +734,7 @@ mod tests {
                 1,
                 None,
                 &AtomicBool::new(false),
+                false,
             )
             .unwrap();
             let query_u8 = encoded.encode_query(&query);
@@ -780,6 +789,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
@@ -831,6 +841,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
 
@@ -882,6 +893,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
@@ -933,6 +945,7 @@ mod tests {
                     1,
                     None,
                     &AtomicBool::new(false),
+                    false,
                 )
                 .unwrap();
 
@@ -999,6 +1012,7 @@ mod tests {
                 1,
                 None,
                 &AtomicBool::new(false),
+                false,
             )
             .unwrap();
             let counter = HardwareCounterCell::new();

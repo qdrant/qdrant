@@ -870,6 +870,7 @@ impl QuantizedVectors {
                 on_disk_vector_storage,
                 max_threads,
                 stopped,
+                TElement::is_prerotated_for_quantization(distance),
             )?,
         };
 
@@ -999,6 +1000,7 @@ impl QuantizedVectors {
                 on_disk_vector_storage,
                 max_threads,
                 stopped,
+                TElement::is_prerotated_for_quantization(distance),
             )?,
         };
 
@@ -2060,6 +2062,7 @@ impl QuantizedVectors {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn create_turbo<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
         vector_parameters: &quantization::VectorParameters,
@@ -2070,6 +2073,7 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
+        pre_rotated: bool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
         let mode = TQMode::Plus;
@@ -2097,6 +2101,7 @@ impl QuantizedVectors {
                         max_threads,
                         Some(meta_path.as_path()),
                         stopped,
+                        pre_rotated,
                     )?,
                 ))
             }
@@ -2116,6 +2121,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    pre_rotated,
                 )?))
             }
             (false, QuantizedVectorsStorageType::Immutable) => {
@@ -2134,6 +2140,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    pre_rotated,
                 )?))
             }
         }
@@ -2153,6 +2160,7 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
+        pre_rotated: bool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
         let mode = TQMode::Plus;
@@ -2180,6 +2188,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    pre_rotated,
                 )?;
                 let offsets =
                     MultivectorOffsetsStorageChunkedMmap::create(&offsets_path, offsets, in_ram)?;
@@ -2208,6 +2217,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    pre_rotated,
                 )?;
                 let offsets = MultivectorOffsetsStorageRam::create(&offsets_path, offsets)?;
                 Ok(QuantizedVectorStorage::TQRamMulti(
@@ -2235,6 +2245,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    pre_rotated,
                 )?;
                 let offsets =
                     MultivectorOffsetsStorageMmap::create(&offsets_path, offsets, vectors_count)?;

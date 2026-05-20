@@ -78,16 +78,26 @@ impl PrimitiveVectorElement for TurboQuantElement {
         vector: Cow<[Self]>,
         distance: Distance,
     ) -> Cow<[VectorElementType]> {
-        let api_dim = Self::api_dim_from_storage_len(vector.len(), distance);
-        let quantizer =
-            TurboQuantizer::new(api_dim, BITS, MODE, to_tq_distance(distance), None);
-        // `&[TurboQuantElement]` ≡ `&[u8]` byte-wise; safe via `cast_slice`.
-        let bytes: &[u8] = bytemuck::cast_slice(&vector);
-        let mut deq = quantizer.dequantize(bytes);
-        // `dequantize` yields padded_dim values in rotated space; we owe the
-        // caller a vector in the original-coordinate basis.
-        quantizer.rotation.apply_inverse(&mut deq);
-        Cow::Owned(deq.into_iter().map(|x| x as f32).collect())
+        // Public/API path: always returns vectors in the original basis.
+        decode(&vector, distance, /* apply_inverse_rotation */ true)
+    }
+
+    fn decode_for_quantization(
+        vector: Cow<[Self]>,
+        distance: Distance,
+    ) -> Cow<[VectorElementType]> {
+        // For L2/Cosine/Dot the score is rotation-invariant, so we keep the
+        // data in TurboQuant's rotated basis — the downstream quantizer is
+        // expected to skip its own rotation step. L1 is not invariant under
+        // rotation; revert before passing to the next stage.
+        let revert = matches!(distance, Distance::Manhattan);
+        decode(&vector, distance, revert)
+    }
+
+    fn is_prerotated_for_quantization(distance: Distance) -> bool {
+        // Symmetric to `decode_for_quantization`: rotated basis exposed for
+        // every rotation-invariant metric; not for L1.
+        !matches!(distance, Distance::Manhattan)
     }
 
     fn quantization_preprocess<'a>(
@@ -95,9 +105,7 @@ impl PrimitiveVectorElement for TurboQuantElement {
         distance: Distance,
         vector: Cow<'a, [Self]>,
     ) -> Cow<'a, [f32]> {
-        // Stacked-quantization path: produce the same api-level floats the
-        // downstream quantizer would see for any other `T`.
-        Self::slice_to_float_cow(vector, distance)
+        Self::decode_for_quantization(vector, distance)
     }
 
     fn datatype() -> VectorStorageDatatype {
@@ -144,6 +152,26 @@ impl PrimitiveVectorElement for TurboQuantElement {
         // public `quantized_size_for` calls let us infer the relationship.
         padded_bytes_to_dim(packed_bytes)
     }
+}
+
+/// Shared decode helper for [`TurboQuantElement::slice_to_float_cow`] and
+/// [`TurboQuantElement::decode_for_quantization`]. Builds a stateless
+/// quantizer, calls `dequantize`, optionally applies the inverse rotation,
+/// and downcasts to `f32`. The output length is `padded_dim` (see
+/// `api_dim_from_storage_len` for the dim convention).
+fn decode(
+    vector: &[TurboQuantElement],
+    distance: Distance,
+    apply_inverse_rotation: bool,
+) -> Cow<'static, [VectorElementType]> {
+    let api_dim = TurboQuantElement::api_dim_from_storage_len(vector.len(), distance);
+    let quantizer = TurboQuantizer::new(api_dim, BITS, MODE, to_tq_distance(distance), None);
+    let bytes: &[u8] = bytemuck::cast_slice(vector);
+    let mut deq = quantizer.dequantize(bytes);
+    if apply_inverse_rotation {
+        quantizer.rotation.apply_inverse(&mut deq);
+    }
+    Cow::Owned(deq.into_iter().map(|x| x as f32).collect())
 }
 
 /// `padded_dim` from the number of bytes a TurboQuant slot devotes to packed

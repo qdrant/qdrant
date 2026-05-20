@@ -40,6 +40,30 @@ where
         distance: Distance,
     ) -> Cow<[VectorElementType]>;
 
+    /// Decode a slot for use as input to a downstream quantizer.
+    ///
+    /// Default delegates to `slice_to_float_cow`. Types that store in a
+    /// distance-invariant rotated basis (e.g. TurboQuant) skip the inverse
+    /// rotation here when the metric tolerates it (L2/Cosine/Dot), so the
+    /// downstream quantizer can operate in the same rotated basis and skip
+    /// its own rotation step. L1 is rotation-sensitive — those types still
+    /// revert to the original basis when `distance == Manhattan`.
+    fn decode_for_quantization(
+        vector: Cow<[Self]>,
+        distance: Distance,
+    ) -> Cow<[VectorElementType]> {
+        Self::slice_to_float_cow(vector, distance)
+    }
+
+    /// Whether [`Self::decode_for_quantization`] returns vectors in a rotated
+    /// basis for this metric. Downstream quantizers that have their own
+    /// rotation step (TurboQuant) should query this to decide whether to
+    /// skip it.
+    fn is_prerotated_for_quantization(distance: Distance) -> bool {
+        let _ = distance;
+        false
+    }
+
     /// Preprocess a single on-storage slot into the api-level float vector
     /// expected by downstream quantization.
     ///

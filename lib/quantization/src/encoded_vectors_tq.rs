@@ -117,6 +117,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         num_threads: usize,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
+        // When `true`, the caller has already applied this quantizer's
+        // Hadamard rotation (e.g. the source storage is itself a
+        // TurboQuant-encoded one). Both the TQ+ stats pre-pass and the
+        // per-vector quantize step then skip rotation.
+        pre_rotated: bool,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
@@ -176,7 +181,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                     num_threads,
                     bits.sample_size(),
                     move |raw, scratch| {
-                        pre_quantizer_ref.preprocess_into(raw, scratch);
+                        if pre_rotated {
+                            pre_quantizer_ref.preprocess_into_prerotated(raw, scratch);
+                        } else {
+                            pre_quantizer_ref.preprocess_into(raw, scratch);
+                        }
                     },
                     stopped,
                 )?;
@@ -232,8 +241,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector: Vec<u8> =
-                Self::encode_vector(vector.as_ref(), &quantizer, &mut buf);
+            let encoded_vector: Vec<u8> = if pre_rotated {
+                quantizer.quantize_prerotated(vector.as_ref(), &mut buf)
+            } else {
+                Self::encode_vector(vector.as_ref(), &quantizer, &mut buf)
+            };
 
             storage_builder
                 .push_vector_data(&encoded_vector)
