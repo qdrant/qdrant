@@ -13,44 +13,44 @@ def setup(on_disk_vectors, collection_name):
 
 def test_search_with_threshold(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 3
+    assert len(response.json()['result']['points']) == 3
 
-    more_than_second_score = response.json()['result'][1]['score'] + 0.0001
-    less_than_second_score = response.json()['result'][1]['score'] - 0.0001
+    more_than_second_score = response.json()['result']['points'][1]['score'] + 0.0001
+    less_than_second_score = response.json()['result']['points'][1]['score'] - 0.0001
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "score_threshold": more_than_second_score
         }
     )
 
     assert response.ok
-    assert len(response.json()['result']) == 1
+    assert len(response.json()['result']['points']) == 1
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "score_threshold": less_than_second_score
         }
     )
 
     assert response.ok
-    assert len(response.json()['result']) == 2
+    assert len(response.json()['result']['points']) == 2

@@ -43,11 +43,11 @@ def test_min_should_never(collection_name):
 
 def test_min_should(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "with_payload": ["city", "color", "count", "price"],
             "limit": 6,
             "filter": {
@@ -81,9 +81,9 @@ def test_min_should(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 6
+    assert len(json['result']['points']) == 6
 
-    ids = [x['id'] for x in json['result']]
+    ids = [x['id'] for x in json['result']['points']]
     assert 1 in ids
     assert 4 in ids
     assert 5 in ids
@@ -94,11 +94,11 @@ def test_min_should(collection_name):
 
 def test_min_should_combined_with_must(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "with_payload": ["city", "color", "count", "price"],
             "limit": 2,
             "filter": {
@@ -142,20 +142,20 @@ def test_min_should_combined_with_must(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 2
+    assert len(json['result']['points']) == 2
 
-    ids = [x['id'] for x in json['result']]
+    ids = [x['id'] for x in json['result']['points']]
     assert 7 in ids
     assert 8 in ids
 
 
 def test_nested_min_should(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "with_payload": ["city", "color", "count", "price"],
             "limit": 2,
             "filter": {
@@ -192,20 +192,20 @@ def test_nested_min_should(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 2
+    assert len(json['result']['points']) == 2
 
-    ids = [x['id'] for x in json['result']]
+    ids = [x['id'] for x in json['result']['points']]
     assert 2 in ids
     assert 3 in ids
 
 
 def test_missing_min_count(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "min_should": {

@@ -124,28 +124,28 @@ def test_alias_operations(collection_name):
     assert first_alias['collection_name'] == collection_name
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 3
+    assert len(response.json()['result']['points']) == 3
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': "test_alias"},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 3
+    assert len(response.json()['result']['points']) == 3
 
     response = request_with_validation(
         api='/collections/aliases',
@@ -170,11 +170,11 @@ def test_alias_operations(collection_name):
     assert len(response.json()['result']['aliases']) == 0
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': "alias"},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3
         }
     )
