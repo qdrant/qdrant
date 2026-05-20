@@ -5,7 +5,7 @@ use bytes::Bytes;
 use object_store::{ObjectStore, ObjectStoreExt as _};
 
 use crate::config::{S3Config, S3Credentials};
-use crate::runtime::S3RuntimeHandle;
+use crate::runtime::BridgeRuntime;
 
 pub fn rustfs_enabled() -> bool {
     env::var("S3_INTEGRATION_TEST").as_deref() == Ok("1")
@@ -33,7 +33,7 @@ pub fn rustfs_s3_config() -> S3Config {
     }
 }
 
-pub fn setup_bucket(runtime: &S3RuntimeHandle, objects: &[(&str, &[u8])]) -> Arc<dyn ObjectStore> {
+pub fn setup_bucket(runtime: &BridgeRuntime, objects: &[(&str, &[u8])]) -> Arc<dyn ObjectStore> {
     let config = rustfs_s3_config();
     let store = crate::config::build_object_store(&config).expect("build store");
     runtime.block_on(async {
