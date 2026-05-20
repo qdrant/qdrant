@@ -120,6 +120,24 @@ impl Access {
         Self::Global(GlobalAccessMode::Read)
     }
 
+    /// Restrict the access object to read-only permissions while preserving
+    /// collection scoping where possible.
+    pub fn into_read_only(self) -> Self {
+        match self {
+            Self::Global(_) => Self::Global(GlobalAccessMode::Read),
+            Self::Collection(collections) => Self::Collection(CollectionAccessList(
+                collections
+                    .0
+                    .into_iter()
+                    .map(|mut collection| {
+                        collection.access = CollectionAccessMode::Read;
+                        collection
+                    })
+                    .collect(),
+            )),
+        }
+    }
+
     /// Check if the user has global access.
     pub fn check_global_access(
         &self,
@@ -382,5 +400,45 @@ impl AccessCollectionBuilder {
 impl From<AccessCollectionBuilder> for Access {
     fn from(builder: AccessCollectionBuilder) -> Self {
         Access::Collection(CollectionAccessList(builder.0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_access_can_be_restricted_to_read_only() {
+        let access = Access::full("test").into_read_only();
+
+        assert_eq!(access, Access::full_ro("test"));
+    }
+
+    #[test]
+    fn collection_access_can_be_restricted_to_read_only() {
+        let access = Access::Collection(CollectionAccessList(vec![
+            CollectionAccess {
+                collection: "first".to_string(),
+                access: CollectionAccessMode::ReadWrite,
+                #[expect(deprecated)]
+                payload: None,
+            },
+            CollectionAccess {
+                collection: "second".to_string(),
+                access: CollectionAccessMode::PointsReadWrite,
+                #[expect(deprecated)]
+                payload: None,
+            },
+        ]))
+        .into_read_only();
+
+        let Access::Collection(collections) = access else {
+            panic!("expected collection access");
+        };
+
+        assert!(collections
+            .0
+            .iter()
+            .all(|collection| collection.access == CollectionAccessMode::Read));
     }
 }
