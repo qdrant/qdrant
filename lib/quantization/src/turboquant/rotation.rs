@@ -16,85 +16,32 @@ pub struct HadamardRotation {
 
     /// Original dimension.
     dim: usize,
-
-    /// Sequence of power-of-2 chunk sizes that exactly cover `dim`.
-    /// Produced by greedily taking the largest power-of-2 that fits the remainder.
-    chunk_sizes: Vec<usize>,
-
-    /// Precomputed normalization factors: `1.0 / sqrt(chunk_size)` for each chunk.
-    chunk_norms: Vec<f64>,
 }
 
 impl HadamardRotation {
     pub fn new(dim: usize) -> Self {
-        let chunk_sizes = compute_chunk_sizes(dim);
-
-        let chunk_norms: Vec<f64> = chunk_sizes
-            .iter()
-            .map(|&s| 1.0 / (s as f64).sqrt())
-            .collect();
-
         let permutations: [_; N_PERMUTATIONS] =
-            std::array::from_fn(|index| Permutation::new(PERMUTATION_SEEDS[index], dim));
+            std::array::from_fn(|index| Permutation::new_reversible(PERMUTATION_SEEDS[index], dim));
 
-        Self {
-            permutations,
-            dim,
-            chunk_sizes,
-            chunk_norms,
-        }
-    }
-
-    /// Heap memory owned by the rotation tables. The permutations are stored
-    /// inline (no heap), so only the chunk metadata vectors are counted.
-    pub(super) fn heap_size_bytes(&self) -> usize {
-        let Self {
-            permutations: _,
-            dim: _,
-            chunk_sizes,
-            chunk_norms,
-        } = self;
-        chunk_sizes.capacity() * size_of::<usize>() + chunk_norms.capacity() * size_of::<f64>()
+        Self { permutations, dim }
     }
 
     pub fn apply(&self, x: &mut [f64]) {
         debug_assert_eq!(x.len(), self.dim);
-
-        // Apply WHT + normalize to each variable-size chunk.
-        self.wht_normalized_chunks(x);
-
-        // Permute then WHT+normalize for each permutation.
-        for permutation in &self.permutations {
-            permutation.permute(x);
-            self.wht_normalized_chunks(x);
-        }
+        apply_rotation_with_permutations(x, &self.permutations);
     }
 
     pub fn apply_inverse(&self, y: &mut [f64]) {
         debug_assert_eq!(y.len(), self.dim);
 
         // WHT + normalize
-        self.wht_normalized_chunks(y);
+        wht_normalized_chunks(y);
 
         // Apply inverse permutations backwards.
         for permutation in self.permutations.iter().rev() {
             permutation.unpermute(y);
-            self.wht_normalized_chunks(y);
+            wht_normalized_chunks(y);
         }
-    }
-
-    /// Apply WHT + normalization to variable-size chunks.
-    fn wht_normalized_chunks(&self, buf: &mut [f64]) {
-        let mut offset = 0;
-        for (&size, &norm) in self.chunk_sizes.iter().zip(&self.chunk_norms) {
-            let chunk = &mut buf[offset..offset + size];
-            simd::hadamard::wht_dispatch(chunk);
-            for v in chunk.iter_mut() {
-                *v *= norm;
-            }
-            offset += size;
-        }
-        debug_assert_eq!(offset, buf.len());
     }
 }
 
@@ -121,6 +68,18 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
     }
 }
 
+/// Randomly rotates `x` in place. Produces bit-identical output to
+/// [`HadamardRotation::apply`]; invert with [`HadamardRotation::apply_inverse`].
+pub fn random_vector_rotation(x: &mut [f64]) {
+    let dim = x.len();
+
+    // Building the permutations on every call is cheap: `new_one_way` skips the LCG warm-up.
+    let permutations: [_; N_PERMUTATIONS] =
+        std::array::from_fn(|index| Permutation::new_one_way(PERMUTATION_SEEDS[index], dim));
+
+    apply_rotation_with_permutations(x, &permutations);
+}
+
 /// Decompose `dim` into a sequence of decreasing power-of-2 chunk sizes
 /// that sum to exactly `dim`. No padding is needed.
 ///
@@ -135,16 +94,50 @@ pub fn in_place_walsh_hadamard_transform(x: &mut [f64]) {
 ///  1536 | [1024, 512]
 ///  4096 | [4096]
 /// ```
-fn compute_chunk_sizes(dim: usize) -> Vec<usize> {
+fn compute_chunk_sizes(dim: usize) -> impl Iterator<Item = usize> {
     debug_assert!(dim > 0);
-    let mut sizes = Vec::with_capacity(dim.count_ones() as usize);
+
     let mut bits = dim;
-    while bits != 0 {
+    std::iter::from_fn(move || {
+        if bits == 0 {
+            return None;
+        }
+
         let highest = 1 << bits.ilog2();
-        sizes.push(highest);
         bits ^= highest;
+        Some(highest)
+    })
+}
+
+/// Apply a Hadamard rotation to `x` using the given `permutations`.
+fn apply_rotation_with_permutations(x: &mut [f64], permutations: &[Permutation; N_PERMUTATIONS]) {
+    // Apply WHT + normalize to each variable-size chunk.
+    wht_normalized_chunks(x);
+
+    // Permute then WHT+normalize for each permutation.
+    for permutation in permutations {
+        permutation.permute(x);
+        wht_normalized_chunks(x);
     }
-    sizes
+}
+
+/// Apply WHT + normalization to variable-size chunks.
+fn wht_normalized_chunks(buf: &mut [f64]) {
+    let mut offset = 0;
+
+    for size in compute_chunk_sizes(buf.len()) {
+        let chunk = &mut buf[offset..offset + size];
+
+        simd::hadamard::wht_dispatch(chunk);
+
+        let norm = 1.0 / (size as f64).sqrt();
+        for v in chunk.iter_mut() {
+            *v *= norm;
+        }
+
+        offset += size;
+    }
+    debug_assert_eq!(offset, buf.len());
 }
 
 #[cfg(test)]
@@ -158,7 +151,7 @@ mod test {
     fn test_compute_chunk_sizes() {
         // All chunks must be powers of two.
         for dim in [5, 128, 129, 300, 700, 712, 1536, 4096] {
-            let sizes = compute_chunk_sizes(dim);
+            let sizes = compute_chunk_sizes(dim).collect::<Vec<_>>();
             assert!(
                 sizes.iter().all(|s| s.is_power_of_two()),
                 "dim={dim}: not all power-of-2: {sizes:?}"
@@ -176,10 +169,16 @@ mod test {
         }
 
         // Specific cases.
-        assert_eq!(compute_chunk_sizes(128), vec![128]);
-        assert_eq!(compute_chunk_sizes(700), vec![512, 128, 32, 16, 8, 4]);
-        assert_eq!(compute_chunk_sizes(1536), vec![1024, 512]);
-        assert_eq!(compute_chunk_sizes(4096), vec![4096]);
+        assert_eq!(compute_chunk_sizes(128).collect::<Vec<_>>(), vec![128]);
+        assert_eq!(
+            compute_chunk_sizes(700).collect::<Vec<_>>(),
+            vec![512, 128, 32, 16, 8, 4],
+        );
+        assert_eq!(
+            compute_chunk_sizes(1536).collect::<Vec<_>>(),
+            vec![1024, 512]
+        );
+        assert_eq!(compute_chunk_sizes(4096).collect::<Vec<_>>(), vec![4096]);
     }
 
     /// Test that Hadamard rotation spreads energy across dimensions,
