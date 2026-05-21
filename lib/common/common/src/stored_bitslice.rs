@@ -57,6 +57,12 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         })
     }
 
+    pub fn reopen(&mut self) -> Result<()> {
+        self.storage.reopen()?;
+        self.element_len = self.storage.len()?;
+        Ok(())
+    }
+
     /// Total number of bits available.
     pub fn bit_len(&self) -> u64 {
         self.element_len * u64::from(BITS_PER_ELEMENT)

@@ -161,13 +161,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
         create_and_ensure_length(&self.path, new_length_in_bytes)?;
 
-        let options = OpenOptions {
-            writeable: true,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Normal),
-        };
-        self.slice_store = TypedStorage::open(fs, &self.path, options, Default::default())?;
+        self.slice_store.reopen()?;
 
         debug_assert_eq!(self.len()? - prev_len, data.len());
 

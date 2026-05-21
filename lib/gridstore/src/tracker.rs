@@ -321,7 +321,7 @@ impl<S: UniversalRead> Tracker<S> {
         } else {
             // reopen storage to make new data visible
             // For some storages it should be a no-op.
-            self.storage = Self::open_storage(fs, &self.path)?;
+            self.storage.reopen()?;
 
             // Update in-memory state to reflect new pointers
             self.header = new_header;
@@ -584,7 +584,7 @@ where
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage = fs.open(&self.path, tracker_open_options(), Default::default())?;
+            self.storage.reopen()?;
         }
 
         let pointer = OptionalPointer::from(pointer);
