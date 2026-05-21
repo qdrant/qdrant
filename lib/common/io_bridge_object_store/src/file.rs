@@ -194,7 +194,8 @@ mod tests {
             &self,
             _path: &Path,
             range: Range<u64>,
-        ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static {
+        ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static
+        {
             let bytes = self.data.slice(range.start as usize..range.end as usize);
             async move { Ok(futures::stream::once(async move { Ok(bytes) }).boxed()) }
         }
