@@ -257,6 +257,146 @@ def test_resharding_transfer(tmp_path: pathlib.Path, direction: Literal["up", "d
     # Assert total count of migrated points
     assert_resharding_points_count(replica_uris)
 
+def test_resharding_clean_update_queue_data_race(tmp_path: pathlib.Path):
+    """
+    Tests data race between resharding clean operation and the update queue.
+
+    During resharding up, after both hash rings are committed, the cleanup
+    operation removes points from existing shards that, under the new hash
+    ring, now belong on the new shard.
+
+    However, when the update queue is in use (wait=false), there may be
+    pending operations waiting in the queue when cleanup begins. The cleanup
+    task scrolls segment storage directly - it does not see anything that
+    is still in the queue. Its delete operation then targets only what it
+    scrolled. Anything in the queue that lands on the shard *after* cleanup
+    has scrolled is missed and survives the cleanup as an invalid point.
+
+    To deterministically trigger the race we:
+    - Queue the upserts during the MigratingPoints stage. At this stage the
+      sender (old) shards still receive normal upserts (the
+      `update_only_existing` split kicks in only at ReadHashRingCommitted
+      and later), so points routed via the resharding ring genuinely land
+      on the old shards.
+    - Use a staging delay on every peer to block each shard's worker. The
+      delay does not forward over gRPC (see remote_shard.rs), so it must be
+      sent to each peer individually.
+    - Use a long delay so that all cleanup calls are issued while every
+      worker is still blocked - ensuring the scroll runs before the queued
+      upserts apply.
+    """
+
+    assert_project_root()
+
+    # Bootstrap cluster: 3 peers, 3 shards, 1 replica each, with some initial points
+    peer_uris, peer_ids = bootstrap_cluster(
+        tmp_path,
+        shard_number=3,
+        replication_factor=1,
+        peers=3,
+        upsert_points=300,
+    )
+
+    # Need staging feature for the delay debug operation
+    skip_if_no_feature(peer_uris[0], "staging")
+
+    # Start resharding up - this adds shard 3, stage = MigratingPoints
+    resp = start_resharding(peer_uris[0])
+    assert_http_ok(resp)
+    wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 1)
+
+    info = get_collection_cluster_info(peer_uris[0], COLLECTION_NAME)
+
+    target_shard_id = 3
+    target_peer_id, _ = find_replica(target_shard_id, info, peer_uris, peer_ids)
+
+    # Migrate the existing points from each old shard to the new shard
+    for shard_id in range(target_shard_id):
+        peer_id, _ = find_replica(shard_id, info, peer_uris, peer_ids)
+        migrate_points(peer_uris[0], peer_id, shard_id, target_peer_id, target_shard_id, "up")
+
+    # Activate the new shard's replica - stage is still MigratingPoints
+    activate_replica(peer_uris[0], target_peer_id, target_shard_id)
+
+    # Inject a delay on EVERY peer. The staging delay is broadcast to all
+    # shards but skipped by gRPC for remote shards (remote_shard.rs:878),
+    # so we must hit each peer directly to actually block every shard's
+    # update worker. A long delay keeps every queue blocked across the
+    # entire window in which cleanups are issued.
+    DELAY_SEC = 15.0
+    for uri in peer_uris:
+        resp = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/debug",
+            json={"delay": {"duration_sec": DELAY_SEC}},
+        )
+        assert_http_ok(resp)
+
+    # Insert NEW points with wait=false WHILE STAGE IS STILL MigratingPoints.
+    # In this stage, sender shards (the existing ones) are NOT subject to
+    # the update_only_existing split - they receive normal upserts via the
+    # resharding ring. Points routed here that, under the new ring, belong
+    # to shard 3 will genuinely land on the old shards once the delay
+    # clears - exactly the invalid points that cleanup must remove.
+    upsert_random_points(
+        peer_uris[0],
+        200,
+        offset=10_000,
+        wait="false",
+        batch_size=10,
+    )
+
+    # Commit read hash ring (stage = ReadHashRingCommitted, queues unaffected)
+    resp = commit_read_hashring(peer_uris[0])
+    assert_http_ok(resp)
+
+    # Commit write hash ring (ring becomes Single(new), queues unaffected)
+    resp = commit_write_hashring(peer_uris[0])
+    assert_http_ok(resp)
+
+    # Trigger cleanup on each existing shard with wait=true. The cleanup
+    # task scrolls segment storage - which does not see queued operations -
+    # then queues a delete for the IDs it scrolled. Because every worker is
+    # still blocked by the delay, the cleanup's delete is queued AFTER the
+    # pending upserts. When the delay finally clears, the worker applies the
+    # upserts first (inserting the invalid points into segments), then the
+    # delete (which only targets the originally-scrolled IDs, missing the
+    # just-inserted invalid points).
+    for shard_id in range(target_shard_id):
+        _, peer_uri = find_replica(shard_id, info, peer_uris, peer_ids)
+        resp = requests.post(
+            f"{peer_uri}/collections/{COLLECTION_NAME}/shards/{shard_id}/cleanup",
+            params={"wait": "true", "timeout": "60"},
+        )
+        assert_http_ok(resp)
+        assert resp.json()["result"]["status"] == "completed"
+
+    # Synchronize: a wait=true upsert ensures the queue is fully drained
+    # everywhere before we measure.
+    upsert_random_points(peer_uris[0], 1, offset=99_999, wait="true")
+
+    # Verify: no existing shard should hold any point that, under the new
+    # hash ring, belongs on the new shard. Any non-zero count exposes the
+    # data race - an insert that landed on an old shard after cleanup ran.
+    for shard_id in range(target_shard_id):
+        _, peer_uri = find_replica(shard_id, info, peer_uris, peer_ids)
+        invalid_count = count_local_points(
+            peer_uri,
+            shard_id,
+            filter_shard_id=target_shard_id,
+            exact=True,
+        )
+        assert invalid_count == 0, (
+            f"shard {shard_id} on {peer_uri} contains {invalid_count} points "
+            f"that belong to new shard {target_shard_id} after cleanup; this "
+            f"indicates a data race between cleanup and the update queue"
+        )
+
+    # Tidy up: finish the resharding operation
+    resp = finish_resharding(peer_uris[0])
+    assert_http_ok(resp)
+    wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
+
+
 @pytest.mark.parametrize("peers", [(3)])
 def test_resharding_down_abort_cleanup(tmp_path: pathlib.Path, peers: int):
     """
