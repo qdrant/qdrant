@@ -117,6 +117,21 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
             .expect("Vector not found")
     }
 
+    fn read_vectors<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        let keys = keys
+            .into_iter()
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
+
+        for ((user_data, point_offset), vector) in self.vectors.iter_vectors::<P, _>(keys) {
+            let vector = CowVector::from(T::slice_to_float_cow(vector));
+            callback(user_data, point_offset, vector);
+        }
+    }
+
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
