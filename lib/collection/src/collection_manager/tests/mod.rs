@@ -33,7 +33,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId) -> SegmentId {
 
     let optimizing_segment = write_segments.get(sid).unwrap().clone();
 
-    let proxy = ProxySegment::new(optimizing_segment);
+    let proxy = ProxySegment::new(optimizing_segment).finalize();
 
     let (new_id, _replaced_segments) = write_segments.swap_new(proxy, &[sid]);
     new_id
@@ -412,9 +412,9 @@ fn test_proxy_shared_updates() {
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
 
-    let proxy_segment_1 = ProxySegment::new(locked_segment_1);
+    let proxy_segment_1 = ProxySegment::new(locked_segment_1).finalize();
 
-    let proxy_segment_2 = ProxySegment::new(locked_segment_2);
+    let proxy_segment_2 = ProxySegment::new(locked_segment_2).finalize();
 
     let mut holder = SegmentHolder::default();
 
@@ -549,9 +549,9 @@ fn test_proxy_shared_updates_same_version() {
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
 
-    let proxy_segment_1 = ProxySegment::new(locked_segment_1);
+    let proxy_segment_1 = ProxySegment::new(locked_segment_1).finalize();
 
-    let proxy_segment_2 = ProxySegment::new(locked_segment_2);
+    let proxy_segment_2 = ProxySegment::new(locked_segment_2).finalize();
 
     let mut holder = SegmentHolder::default();
 

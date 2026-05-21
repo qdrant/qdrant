@@ -752,7 +752,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         // Exclusive lock for the segments operations.
         let mut segment_holder_write = RwLockUpgradableReadGuard::upgrade(segment_holder_read);
         let mut proxy_ids = Vec::new();
-        for (mut proxy, idx) in proxies.into_iter().zip(input_segment_ids.iter().cloned()) {
+        for (proxy, idx) in proxies.into_iter().zip(input_segment_ids.iter().cloned()) {
             // During optimization, we expect that logical point data in the wrapped segment is
             // not changed at all. But this would be possible if we wrap another proxy segment,
             // because it can share state through it's write segment. To prevent this we assert
@@ -761,16 +761,17 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // `optimize_segment_propagate_changes` remains  sound.
             // See: <https://github.com/qdrant/qdrant/pull/7208>
             debug_assert!(
-                matches!(proxy.wrapped_segment, LockedSegment::Original(_)),
+                matches!(proxy.wrapped_segment(), LockedSegment::Original(_)),
                 "during optimization, wrapped segment must not be another proxy segment"
             );
 
-            // `ProxySegment::new` snapshotted `deleted_mask` under the upgradable read lock, so
-            // an upsert/delete could have raced onto the still-appendable wrapped segment before
-            // this write lock froze it. Re-snapshot now that the segment is frozen so the mask
-            // covers its full final point range — otherwise a point inserted in that window sits
-            // at an offset past the mask and the scored search treats it as deleted.
-            proxy.resync_deleted_mask();
+            // Now that this write lock froze the wrapped segment, finalize the proxy: this syncs
+            // `deleted_mask` from the (now immutable) segment. An upsert/delete could have raced
+            // onto the still-appendable wrapped segment between `ProxySegment::new` and this lock;
+            // syncing here makes the mask cover the segment's full final point range — otherwise a
+            // point inserted in that window sits past the mask and scored search treats it as
+            // deleted. The type-state guarantees this happens exactly once and cannot be skipped.
+            let proxy = proxy.finalize();
 
             // replicate_field_indexes for the second time,
             // because optimized segments could have been changed.

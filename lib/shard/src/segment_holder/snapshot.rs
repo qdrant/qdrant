@@ -86,6 +86,12 @@ impl SegmentHolder {
         let mut proxies = Vec::with_capacity(new_proxies.len());
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
         for (segment_id, proxy) in new_proxies {
+            // Some points might have been changed in the underlying segment before we upgraded the
+            // `write_segments` lock, so the wrapped segment is only frozen now. Finalizing here
+            // syncs `deleted_mask` from the now-immutable segment — the type-state guarantees this
+            // happens exactly once and cannot be skipped.
+            let proxy = proxy.finalize();
+
             // Replicate field indexes the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
             // under the full collection write lock
