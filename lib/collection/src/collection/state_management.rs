@@ -193,8 +193,11 @@ impl Collection {
 
         self.print_warnings().await;
 
+        // Recreate optimizers in the background: this path is reached from consensus (Raft snapshot
+        // application), and stopping the existing optimizers can take a long time, which would
+        // otherwise stall the consensus loop.
         if recreate_optimizers {
-            self.recreate_optimizers_blocking().await?;
+            self.recreate_optimizers_background();
         }
 
         Ok(())

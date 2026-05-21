@@ -16,6 +16,7 @@ use crate::operations::types::*;
 use crate::shards::replica_set::Change;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
+use crate::shards::shard_holder::SharedShardHolder;
 
 /// Old logic for aborting shard transfers on shard drop, had a bug: it dropped all transfers
 /// regardless of the shard id. In order to keep consensus consistent, we can only
@@ -302,19 +303,53 @@ impl Collection {
     /// Partially blocking. Stopping existing optimizers is blocking. Starting new optimizers is
     /// not blocking.
     ///
+    /// Stopping existing optimizers waits for in-flight optimizations to finish, which can take a
+    /// long time. On any path that goes through consensus, prefer
+    /// [`Collection::recreate_optimizers_background`] instead, which never blocks the caller.
+    ///
     /// ## Cancel safety
     ///
     /// This function is cancel safe, and will always run to completion.
     pub async fn recreate_optimizers_blocking(&self) -> CollectionResult<()> {
+        tokio::task::spawn(Self::recreate_optimizers(self.shards_holder.clone())).await??;
+        Ok(())
+    }
+
+    /// Recreate the optimizers on all shards for this collection, in the background.
+    ///
+    /// Like [`Collection::recreate_optimizers_blocking`], but returns immediately and performs all
+    /// the work - stopping the existing workers and starting new ones - in a detached task.
+    ///
+    /// Stopping the existing workers waits for in-flight optimizations to finish, which can take a
+    /// long time. This variant must be used on any path that goes through consensus, where blocking
+    /// the caller stalls the whole consensus loop and can take down a cluster.
+    ///
+    /// Any error is logged rather than returned: the configuration change that triggers the
+    /// recreation has already been applied and persisted by the time we get here, so there is no
+    /// caller left to propagate it to.
+    pub fn recreate_optimizers_background(&self) {
         let shards_holder = self.shards_holder.clone();
+        let collection_id = self.id.clone();
         tokio::task::spawn(async move {
-            let shard_holder = shards_holder.read().await;
-            let updates = shard_holder
-                .all_shards()
-                .map(|replica_set| replica_set.on_optimizer_config_update());
-            future::try_join_all(updates).await
-        })
-        .await??;
+            if let Err(err) = Self::recreate_optimizers(shards_holder).await {
+                log::error!(
+                    "Failed to recreate optimizers for collection {collection_id} in background: {err}",
+                );
+            }
+        });
+    }
+
+    /// Stop the existing optimizers on all shards and start new ones using the current config.
+    ///
+    /// Shared implementation for [`Collection::recreate_optimizers_blocking`] and
+    /// [`Collection::recreate_optimizers_background`]. Takes an owned [`SharedShardHolder`] so the
+    /// returned future is `'static` and can be spawned as a detached task.
+    async fn recreate_optimizers(shards_holder: SharedShardHolder) -> CollectionResult<()> {
+        let shard_holder = shards_holder.read().await;
+        let updates = shard_holder
+            .all_shards()
+            .map(|replica_set| replica_set.on_optimizer_config_update());
+        future::try_join_all(updates).await?;
         Ok(())
     }
 

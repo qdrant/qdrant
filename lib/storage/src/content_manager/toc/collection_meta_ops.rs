@@ -202,8 +202,12 @@ impl TableOfContent {
         collection.print_warnings().await;
 
         // Recreate optimizers
+        //
+        // This runs in the background and does not block: this path is reached from consensus, and
+        // stopping the existing optimizers can take a long time (in-flight optimizations are
+        // awaited), which would otherwise stall the consensus loop and can take down a cluster.
         if recreate_optimizers {
-            collection.recreate_optimizers_blocking().await?;
+            collection.recreate_optimizers_background();
         }
         Ok(true)
     }

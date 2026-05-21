@@ -37,14 +37,17 @@ impl LocalShard {
     ///
     /// This function is **not** cancel safe.
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        let config = self.collection_config.read().await;
         let mut update_handler = self.update_handler.lock().await;
 
         // Signal all workers to stop
         update_handler.stop_flush_worker();
         update_handler.stop_update_worker();
 
-        // Wait for workers to finish and get pending operations from the old channel
+        // Wait for workers to finish and get pending operations from the old channel.
+        //
+        // This can take a long time, because in-flight optimizations are awaited before they stop.
+        // We deliberately do not hold the `collection_config` read lock across this wait, so a
+        // concurrent collection config update is not blocked on acquiring the config write lock.
         let update_receiver = update_handler.wait_workers_stops().await?;
 
         let update_receiver = match update_receiver {
@@ -65,6 +68,11 @@ impl LocalShard {
             }
         };
 
+        // Read the latest config now that the workers have stopped, and build new optimizers from
+        // it. Reading it here (rather than before the wait) also ensures we pick up the most recent
+        // config if it changed again while we were waiting.
+        let config = self.collection_config.read().await;
+
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
@@ -81,6 +89,9 @@ impl LocalShard {
             .optimizer_config
             .prevent_unoptimized
             .unwrap_or_default();
+
+        drop(config);
+
         update_handler.run_workers(update_receiver);
 
         self.optimizers.store(new_optimizers);
