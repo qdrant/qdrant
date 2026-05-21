@@ -31,8 +31,8 @@ impl Collection {
     /// Updates collection params:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
+    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
+    /// called to create new optimizers using the updated configuration.
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
@@ -48,8 +48,8 @@ impl Collection {
     /// Updates HNSW config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
+    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
+    /// called to create new optimizers using the updated configuration.
     pub async fn update_hnsw_config_from_diff(
         &self,
         hnsw_config_diff: HnswConfigDiff,
@@ -65,8 +65,8 @@ impl Collection {
     /// Updates vectors config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
+    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
+    /// called to create new optimizers using the updated configuration.
     pub async fn update_vectors_from_diff(
         &self,
         update_vectors_diff: &VectorsConfigDiff,
@@ -83,8 +83,8 @@ impl Collection {
     /// Updates sparse vectors config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
+    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
+    /// called to create new optimizers using the updated configuration.
     pub async fn update_sparse_vectors_from_other(
         &self,
         update_vectors_diff: &SparseVectorsConfig,
@@ -101,8 +101,8 @@ impl Collection {
     /// Updates shard optimization params:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
+    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
+    /// called to create new optimizers using the updated configuration.
     pub async fn update_optimizer_params_from_diff(
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
@@ -118,8 +118,8 @@ impl Collection {
     /// Updates quantization config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
+    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
+    /// called to create new optimizers using the updated configuration.
     pub async fn update_quantization_config_from_diff(
         &self,
         quantization_config_diff: QuantizationConfigDiff,
