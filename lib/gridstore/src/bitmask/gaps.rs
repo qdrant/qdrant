@@ -106,7 +106,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             writeable: true,
             need_sequential: false,
             populate: Populate::Blocking,
-            advice: AdviceSetting::Global,
+            advice: AdviceSetting::Advice(Advice::Normal),
             extra: Default::default(),
         };
         let mut slice_store = TypedStorage::open(&path, options)?;
@@ -127,7 +127,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
-            populate: Populate::Blocking,
+            populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
             extra: Default::default(),
         };

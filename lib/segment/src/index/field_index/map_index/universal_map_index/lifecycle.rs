@@ -44,7 +44,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             &hashmap_path,
             OpenOptions {
                 writeable: false,
-                need_sequential: true,
+                need_sequential: false,
                 populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
@@ -58,8 +58,8 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
             &deleted_path,
             OpenOptions {
                 writeable: true,
-                need_sequential: true,
-                populate: Populate::Auto,
+                need_sequential: false,
+                populate: Populate::from(do_populate),
                 advice: AdviceSetting::Global,
                 extra: Default::default(),
             },
@@ -139,7 +139,7 @@ impl<N: MapIndexKey + Key + ?Sized> UniversalMapIndex<N> {
                 &deleted_path,
                 OpenOptions {
                     writeable: true,
-                    need_sequential: true,
+                    need_sequential: false,
                     populate: Populate::Auto,
                     advice: AdviceSetting::Global,
                     extra: Default::default(),
