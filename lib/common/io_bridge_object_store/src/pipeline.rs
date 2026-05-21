@@ -66,7 +66,7 @@ impl SendBytePtr {
     /// future completes.
     pub(crate) unsafe fn from_vec<T: bytemuck::Pod>(buf: &mut Vec<T>) -> Self {
         Self {
-            ptr: buf.as_mut_ptr() as *mut u8,
+            ptr: buf.as_mut_ptr().cast::<u8>(),
             len: buf.len() * size_of::<T>(),
         }
     }

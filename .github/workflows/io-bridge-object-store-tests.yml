@@ -26,8 +26,8 @@ jobs:
         ports:
           - 9000:9000
         env:
-          RUSTFS_ROOT_USER: rustfsadmin
-          RUSTFS_ROOT_PASSWORD: rustfsadmin
+          RUSTFS_ACCESS_KEY: ci-test-user
+          RUSTFS_SECRET_KEY: ci-test-secret-not-for-prod
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -36,7 +36,7 @@ jobs:
         run: |
           for _ in $(seq 1 60); do
             if docker run --rm --network host minio/mc \
-                 alias set local http://localhost:9000 rustfsadmin rustfsadmin \
+                 alias set local http://localhost:9000 ci-test-user ci-test-secret-not-for-prod \
                  >/dev/null 2>&1; then
               echo "rustfs is up"
               exit 0
@@ -49,7 +49,7 @@ jobs:
       - name: Create test bucket
         run: |
           docker run --rm --network host --entrypoint sh minio/mc -c \
-            "mc alias set local http://localhost:9000 rustfsadmin rustfsadmin \
+            "mc alias set local http://localhost:9000 ci-test-user ci-test-secret-not-for-prod \
               && mc mb --ignore-existing local/test-bucket"
 
       - name: Install Rust toolchain
@@ -64,7 +64,7 @@ jobs:
         env:
           S3_INTEGRATION_TEST: "1"
           RUSTFS_ENDPOINT: "http://localhost:9000"
-          RUSTFS_ACCESS_KEY: "rustfsadmin"
-          RUSTFS_SECRET_KEY: "rustfsadmin"
+          RUSTFS_ACCESS_KEY: "ci-test-user"
+          RUSTFS_SECRET_KEY: "ci-test-secret-not-for-prod"
           RUSTFS_BUCKET: "test-bucket"
         run: cargo test -p io_bridge_object_store -- --ignored
