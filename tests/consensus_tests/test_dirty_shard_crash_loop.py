@@ -99,7 +99,10 @@ def test_dirty_shard_survives_update_collection(tmp_path: pathlib.Path):
         bootstrap_uri,
         port=restart_port,
     )
-    wait_for_peer_online(sync_uri)
+    # Under parallel pytest-xdist load the leader can take longer than the
+    # default 30s budget to replicate the UpdateCollection entry and let the
+    # rejoining peer report ready. Allow more time to avoid CPU-contention flakes.
+    wait_for_peer_online(sync_uri, wait_for_timeout=60)
 
     # Kill again — the UpdateCollection entry is now committed in its WAL
     p = processes.pop()
@@ -127,7 +130,7 @@ def test_dirty_shard_survives_update_collection(tmp_path: pathlib.Path):
         port=restart_port,
     )
 
-    online, exit_code = wait_for_peer_online_or_crash(new_uri, processes[-1])
+    online, exit_code = wait_for_peer_online_or_crash(new_uri, processes[-1], timeout=60)
 
     if not online:
         log_content = read_log(restart_log)
