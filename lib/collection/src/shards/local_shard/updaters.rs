@@ -33,18 +33,39 @@ impl LocalShard {
     /// Handles updates to the optimizer configuration by rebuilding optimizers
     /// and restarting the update handler's workers with the new configuration.
     ///
+    /// On failure, the error is recorded as an optimizer error on this shard, so it is exposed in
+    /// the collection's optimizer status. This matters especially for background recreation, where
+    /// the error would otherwise only be logged with no caller left to propagate it to.
+    ///
     /// ## Cancel safety
     ///
     /// This function is **not** cancel safe.
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        let config = self.collection_config.read().await;
+        let result = self.on_optimizer_config_update_impl().await;
+
+        // Surface a failed recreation as an optimizer error, so it shows up in the optimizer status
+        // instead of being silently lost on the background recreation path.
+        if let Err(err) = &result {
+            self.segments
+                .write()
+                .report_optimizer_error(format!("Failed to recreate optimizers: {err}"));
+        }
+
+        result
+    }
+
+    async fn on_optimizer_config_update_impl(&self) -> CollectionResult<()> {
         let mut update_handler = self.update_handler.lock().await;
 
         // Signal all workers to stop
         update_handler.stop_flush_worker();
         update_handler.stop_update_worker();
 
-        // Wait for workers to finish and get pending operations from the old channel
+        // Wait for workers to finish and get pending operations from the old channel.
+        //
+        // This can take a long time, because in-flight optimizations are awaited before they stop.
+        // We deliberately do not hold the `collection_config` read lock across this wait, so a
+        // concurrent collection config update is not blocked on acquiring the config write lock.
         let update_receiver = update_handler.wait_workers_stops().await?;
 
         let update_receiver = match update_receiver {
@@ -65,6 +86,11 @@ impl LocalShard {
             }
         };
 
+        // Read the latest config now that the workers have stopped, and build new optimizers from
+        // it. Reading it here (rather than before the wait) also ensures we pick up the most recent
+        // config if it changed again while we were waiting.
+        let config = self.collection_config.read().await;
+
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
@@ -81,6 +107,9 @@ impl LocalShard {
             .optimizer_config
             .prevent_unoptimized
             .unwrap_or_default();
+
+        drop(config);
+
         update_handler.run_workers(update_receiver);
 
         self.optimizers.store(new_optimizers);

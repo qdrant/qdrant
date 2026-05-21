@@ -16,6 +16,7 @@ use crate::operations::types::*;
 use crate::shards::replica_set::Change;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
+use crate::shards::shard_holder::SharedShardHolder;
 
 /// Old logic for aborting shard transfers on shard drop, had a bug: it dropped all transfers
 /// regardless of the shard id. In order to keep consensus consistent, we can only
@@ -30,7 +31,7 @@ impl Collection {
     /// Updates collection params:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
     /// the updated configuration.
     pub async fn update_params_from_diff(
         &self,
@@ -47,7 +48,7 @@ impl Collection {
     /// Updates HNSW config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
     /// the updated configuration.
     pub async fn update_hnsw_config_from_diff(
         &self,
@@ -64,7 +65,7 @@ impl Collection {
     /// Updates vectors config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
     /// the updated configuration.
     pub async fn update_vectors_from_diff(
         &self,
@@ -82,7 +83,7 @@ impl Collection {
     /// Updates sparse vectors config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
     /// the updated configuration.
     pub async fn update_sparse_vectors_from_other(
         &self,
@@ -100,7 +101,7 @@ impl Collection {
     /// Updates shard optimization params:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
     /// the updated configuration.
     pub async fn update_optimizer_params_from_diff(
         &self,
@@ -117,7 +118,7 @@ impl Collection {
     /// Updates quantization config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
     /// the updated configuration.
     pub async fn update_quantization_config_from_diff(
         &self,
@@ -293,28 +294,70 @@ impl Collection {
         Ok(())
     }
 
-    /// Recreate the optimizers on all shards for this collection
+    /// Recreate the optimizers on all shards for this collection, in the background.
     ///
-    /// This will stop existing optimizers, and start new ones with new configurations.
+    /// Returns immediately and performs all the work - stopping the existing workers and starting
+    /// new ones - in a detached task. Stopping the existing workers waits for in-flight
+    /// optimizations to finish, which can take a long time. This is why it runs in the background:
+    /// it is reached from paths that go through consensus, where blocking the caller stalls the
+    /// whole consensus loop and can take down a cluster.
     ///
-    /// # Blocking
+    /// At most one recreation runs at a time. If one is already running, this records that another
+    /// run is needed and returns; the running task then runs once more when it finishes, picking up
+    /// the latest config. Any number of requests that arrive while a task is running collapse into a
+    /// single additional run (recreation always rebuilds from the current config, so coalescing is
+    /// safe - the last run reflects the latest state).
     ///
-    /// Partially blocking. Stopping existing optimizers is blocking. Starting new optimizers is
-    /// not blocking.
-    ///
-    /// ## Cancel safety
-    ///
-    /// This function is cancel safe, and will always run to completion.
-    pub async fn recreate_optimizers_blocking(&self) -> CollectionResult<()> {
+    /// Errors are logged rather than returned: the configuration change that triggers the
+    /// recreation has already been applied and persisted by the time we get here, so there is no
+    /// caller left to propagate them to. Failures are also surfaced as optimizer errors per shard
+    /// (see `LocalShard::on_optimizer_config_update`).
+    pub fn recreate_optimizers_background(&self) {
+        // Single-flight: only spawn a task if none is running. Otherwise the request is coalesced
+        // into a queued re-run handled by the task that is already running.
+        if !self.recreate_optimizers_state.request() {
+            return;
+        }
+
         let shards_holder = self.shards_holder.clone();
+        let collection_id = self.id.clone();
+        let recreate_state = self.recreate_optimizers_state.clone();
         tokio::task::spawn(async move {
-            let shard_holder = shards_holder.read().await;
-            let updates = shard_holder
-                .all_shards()
-                .map(|replica_set| replica_set.on_optimizer_config_update());
-            future::try_join_all(updates).await
-        })
-        .await??;
+            loop {
+                // Run the recreation as a child task, so a panic is contained (surfaced as a
+                // `JoinError`) and never unwinds the coordinator loop below - which would otherwise
+                // leave `running` stuck and wedge all future recreations.
+                match tokio::task::spawn(Self::recreate_optimizers(shards_holder.clone())).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => log::error!(
+                        "Failed to recreate optimizers for collection {collection_id} in background: {err}",
+                    ),
+                    Err(err) => log::error!(
+                        "Optimizer recreation task for collection {collection_id} failed: {err}",
+                    ),
+                }
+
+                // Run again if a request arrived while we were running, otherwise stop. The
+                // decision is a single atomic compare-and-swap (in `finish_run`), so a request
+                // arriving exactly now is never lost: it either still sees us running (and queues a
+                // re-run, handled by the next iteration) or sees us idle (and spawns a fresh task).
+                if !recreate_state.finish_run() {
+                    break;
+                }
+            }
+        });
+    }
+
+    /// Stop the existing optimizers on all shards and start new ones using the current config.
+    ///
+    /// Implementation behind [`Collection::recreate_optimizers_background`]. Takes an owned
+    /// [`SharedShardHolder`] so the returned future is `'static` and can be spawned as a task.
+    async fn recreate_optimizers(shards_holder: SharedShardHolder) -> CollectionResult<()> {
+        let shard_holder = shards_holder.read().await;
+        let updates = shard_holder
+            .all_shards()
+            .map(|replica_set| replica_set.on_optimizer_config_update());
+        future::try_join_all(updates).await?;
         Ok(())
     }
 
