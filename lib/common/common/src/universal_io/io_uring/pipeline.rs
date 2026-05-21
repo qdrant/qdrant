@@ -5,9 +5,10 @@ use ::io_uring::types::Fd;
 
 use super::pool::IO_URING_QUEUE_LENGTH;
 use super::{IoUringFile, IoUringRuntime};
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{
-    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError, UserData,
+    BorrowedReadPipeline, Item, OwnedReadPipeline, ReadRange, Result, UniversalIoError,
+    UniversalRead, UserData,
 };
 
 pub struct BorrowedIoUringPipeline<'file, T, U>
@@ -92,6 +93,18 @@ where
             self.inner
                 .schedule(user_data, self.file.fd(), self.file.direct_io, range)
         }
+    }
+
+    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
+        let length = self.file.len::<T>()?;
+
+        self.schedule::<Sequential>(
+            user_data,
+            ReadRange {
+                byte_offset: 0,
+                length,
+            },
+        )
     }
 
     fn wait(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
