@@ -33,10 +33,28 @@ impl LocalShard {
     /// Handles updates to the optimizer configuration by rebuilding optimizers
     /// and restarting the update handler's workers with the new configuration.
     ///
+    /// On failure, the error is recorded as an optimizer error on this shard, so it is exposed in
+    /// the collection's optimizer status. This matters especially for background recreation, where
+    /// the error would otherwise only be logged with no caller left to propagate it to.
+    ///
     /// ## Cancel safety
     ///
     /// This function is **not** cancel safe.
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+        let result = self.on_optimizer_config_update_impl().await;
+
+        // Surface a failed recreation as an optimizer error, so it shows up in the optimizer status
+        // instead of being silently lost on the background recreation path.
+        if let Err(err) = &result {
+            self.segments
+                .write()
+                .report_optimizer_error(format!("Failed to recreate optimizers: {err}"));
+        }
+
+        result
+    }
+
+    async fn on_optimizer_config_update_impl(&self) -> CollectionResult<()> {
         let mut update_handler = self.update_handler.lock().await;
 
         // Signal all workers to stop
