@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalKind};
+use futures::stream::BoxStream;
 
 /// Read-capable blob backend (S3, GCS, …). One impl per backend.
 ///
@@ -35,11 +36,18 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
 
     fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static;
 
+    /// Fetch `range` from `path` as a stream of byte chunks.
+    ///
+    /// The returned future resolves once the request has been initiated and the
+    /// server has acknowledged the range; the actual bytes are yielded by the
+    /// stream. Consumers can fold the chunks directly into a typed, aligned
+    /// destination buffer (see [`BlobFile::read`](crate::BlobFile)) without an
+    /// intermediate `Bytes` aggregation.
     fn read_range(
         &self,
         path: &Path,
         range: Range<u64>,
-    ) -> impl Future<Output = Result<Bytes>> + Send + 'static;
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static;
 
     fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static;
 

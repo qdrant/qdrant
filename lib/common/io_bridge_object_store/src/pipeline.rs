@@ -157,8 +157,8 @@ where
             .remove(&response.slot)
             .expect("response slot must be in pending");
         let bytes = response.bytes?;
-        let items = bytemuck::try_cast_slice(&bytes)?;
-        Ok(Some((user_data, items.to_vec())))
+        let items = bytemuck::pod_collect_to_vec(&bytes);
+        Ok(Some((user_data, items)))
     }
 }
 
@@ -202,7 +202,12 @@ where
         let item_size = size_of::<T>() as u64;
         let start = range.byte_offset;
         let end = start + range.length * item_size;
-        let future = file.inner.read_range(&file.path, start..end);
+        let total = end - start;
+        let stream = file.inner.read_range(&file.path, start..end);
+        let future = async move {
+            let stream = stream.await?;
+            object_store::collect_bytes(stream, Some(total)).await
+        };
         inner.schedule(&file.runtime, user_data, future)
     }
 
@@ -248,7 +253,12 @@ where
         let item_size = size_of::<T>() as u64;
         let start = range.byte_offset;
         let end = start + range.length * item_size;
-        let future = self.file.inner.read_range(&self.file.path, start..end);
+        let total = end - start;
+        let stream_fut = self.file.inner.read_range(&self.file.path, start..end);
+        let future = async move {
+            let stream = stream_fut.await?;
+            object_store::collect_bytes(stream, Some(total)).await
+        };
         self.inner.schedule(&self.file.runtime, user_data, future)
     }
 

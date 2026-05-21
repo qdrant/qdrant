@@ -105,14 +105,26 @@ impl<A: AsyncRead> UniversalRead for BlobFile<A> {
     }
 
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+        use futures::StreamExt;
+
         let item_size = size_of::<T>() as u64;
+        let item_count = range.length as usize;
         let start = range.byte_offset;
         let end = start + range.length * item_size;
-        let bytes = self
-            .runtime
-            .block_on(self.inner.read_range(&self.path, start..end))?;
-        let items = bytemuck::try_cast_slice(&bytes)?;
-        Ok(Cow::Owned(items.to_vec()))
+        self.runtime.block_on(async move {
+            let mut stream = self.inner.read_range(&self.path, start..end).await?;
+            let mut buf: Vec<T> = vec![T::zeroed(); item_count];
+            let dst: &mut [u8] = bytemuck::cast_slice_mut(&mut buf);
+            let mut off = 0;
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                let next = off + chunk.len();
+                dst[off..next].copy_from_slice(&chunk);
+                off = next;
+            }
+            debug_assert_eq!(off, dst.len(), "stream produced wrong byte count");
+            Ok::<_, UniversalIoError>(Cow::Owned(buf))
+        })
     }
 
     fn len<T>(&self) -> Result<u64> {
@@ -141,6 +153,7 @@ mod tests {
     use std::ops::Range;
 
     use bytes::Bytes;
+    use futures::stream::{BoxStream, StreamExt};
 
     use super::*;
 
@@ -181,9 +194,9 @@ mod tests {
             &self,
             _path: &Path,
             range: Range<u64>,
-        ) -> impl Future<Output = Result<Bytes>> + Send + 'static {
+        ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static {
             let bytes = self.data.slice(range.start as usize..range.end as usize);
-            async move { Ok(bytes) }
+            async move { Ok(futures::stream::once(async move { Ok(bytes) }).boxed()) }
         }
 
         fn len(&self, _path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {

@@ -15,7 +15,8 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalIoError, UniversalKind};
-use object_store::{ObjectStore, ObjectStoreExt};
+use futures::stream::{BoxStream, StreamExt, TryStreamExt};
+use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt};
 
 use crate::backend::BlobBackend;
 use crate::read::AsyncRead;
@@ -72,16 +73,21 @@ impl<S: BlobBackend> AsyncRead for Arc<S> {
         &self,
         path: &Path,
         range: Range<u64>,
-    ) -> impl Future<Output = Result<Bytes>> + Send + 'static {
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static {
         let store = self.clone();
         let key = build_key(path);
         async move {
-            store.get_range(&key, range).await.map_err(|err| match err {
+            let opts = GetOptions {
+                range: Some(GetRange::Bounded(range)),
+                ..Default::default()
+            };
+            let result = store.get_opts(&key, opts).await.map_err(|err| match err {
                 object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
                     path: PathBuf::from(key.to_string()),
                 },
                 other => UniversalIoError::s3(other),
-            })
+            })?;
+            Ok(result.into_stream().map_err(UniversalIoError::s3).boxed())
         }
     }
 
