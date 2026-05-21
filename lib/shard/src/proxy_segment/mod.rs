@@ -76,6 +76,25 @@ impl ProxySegment {
         }
     }
 
+    /// Re-read the wrapped segment's deleted bitvec into `deleted_mask`.
+    ///
+    /// `new` snapshots `deleted_mask` while the segment holder is only read/upgradable-read
+    /// locked, so an upsert or delete can still land on the (not-yet-frozen) wrapped segment
+    /// before it is swapped out under the holder write lock. An upsert landing in that window
+    /// extends the wrapped segment's point count past the snapshot; the scored search path then
+    /// treats every offset beyond `deleted_mask` as deleted (`check_deleted_condition` defaults
+    /// out-of-range to `true`), silently dropping a live point from filtered KNN even though
+    /// scroll/count/retrieve still see it.
+    ///
+    /// Call this once the holder write lock is held (wrapped segment frozen) and before the
+    /// proxy goes live, so the mask covers the wrapped segment's full, final point range. A
+    /// fresh read also captures any deletes that raced in, so it closes the ghost direction too.
+    pub fn resync_deleted_mask(&mut self) {
+        if let LockedSegment::Original(raw_segment) = &self.wrapped_segment {
+            self.deleted_mask = Some(raw_segment.read().get_deleted_points_bitvec());
+        }
+    }
+
     /// Ensure that write segment have same indexes as wrapped segment
     pub fn replicate_field_indexes(
         &self,
