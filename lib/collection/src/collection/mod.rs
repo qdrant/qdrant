@@ -1058,7 +1058,10 @@ mod recreate_optimizers_state_tests {
 
         assert!(!state.finish_run(), "no queued request, so it must stop");
         // Back to idle: a fresh request spawns a new task again.
-        assert!(state.request(), "a request after stopping must spawn a new task");
+        assert!(
+            state.request(),
+            "a request after stopping must spawn a new task"
+        );
     }
 
     #[test]
