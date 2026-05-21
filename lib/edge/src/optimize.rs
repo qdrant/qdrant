@@ -84,7 +84,12 @@ impl EdgeShard {
         let cfg = self.config();
         let segment_optimizer_config = cfg.segment_optimizer_config();
         let global_hnsw_config = cfg.hnsw_config;
-        let hnsw_global_config = HnswGlobalConfig::default();
+        let hnsw_global_config = HnswGlobalConfig {
+            healing_threshold: cfg
+                .optimizers
+                .healing_threshold
+                .unwrap_or_else(|| HnswGlobalConfig::default().healing_threshold),
+        };
         let num_indexing_threads = max_num_indexing_threads(&segment_optimizer_config);
         let threshold_config = cfg.optimizer_thresholds(num_indexing_threads);
         let default_segments_number = cfg.optimizers.get_number_segments();
