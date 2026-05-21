@@ -5,49 +5,48 @@ use std::path::{Path, PathBuf};
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalKind};
 
-use crate::file::BlobFile;
-use crate::runtime::BridgeRuntime;
-
 /// Read-capable blob backend (S3, GCS, …). One impl per backend.
 ///
-/// - Static methods (`open`, `list_files`, `exists`) are the backend's entry
-///   points. They take an optional [`BridgeRuntime`] — `None` falls back to
-///   [`BridgeRuntime::global`] — and a backend-specific [`Config`](AsyncRead::Config).
-/// - Per-instance methods (`read_range`, `len`, `is_empty`) describe a single
-///   opened object. The future returned by `read_range` is `'static` so it can
-///   be shipped through the runtime worker's MPSC channel after being boxed at
+/// - [`open`](AsyncRead::open) builds the backend handle from a
+///   backend-specific [`Config`](AsyncRead::Config). It performs no IO and does
+///   not touch any runtime.
+/// - The remaining methods are per-handle and take the object (or prefix)
+///   `path` they operate on. Each one that may hit the network returns a
+///   `Send + 'static` future, so the caller decides how to drive it: a single
+///   read is run via [`BridgeRuntime::block_on`], while batched/pipelined reads
+///   are shipped through the runtime worker's MPSC channel after being boxed at
 ///   the channel boundary.
+///
+/// Implementations must not block or own a runtime themselves — they only
+/// describe the async work. The sync [`BlobFile`](crate::BlobFile) wrapper owns
+/// the [`BridgeRuntime`](crate::BridgeRuntime) and is responsible for executing
+/// these futures.
 ///
 /// A future `AsyncWrite` trait will live next to this one in `write.rs`.
 pub trait AsyncRead: Send + Sync + Sized + 'static {
     type Config;
 
-    fn open(
-        runtime: Option<BridgeRuntime>,
-        config: &Self::Config,
-        key: &Path,
-    ) -> Result<BlobFile<Self>>;
+    fn open(config: &Self::Config) -> Result<Self>;
 
     fn list_files(
-        runtime: Option<BridgeRuntime>,
-        config: &Self::Config,
+        &self,
         prefix: &Path,
-    ) -> Result<Vec<PathBuf>>;
+    ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static;
 
-    fn exists(runtime: Option<BridgeRuntime>, config: &Self::Config, path: &Path) -> Result<bool>;
+    fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static;
 
-    fn read_range(&self, range: Range<u64>)
-    -> impl Future<Output = Result<Bytes>> + Send + 'static;
+    fn read_range(
+        &self,
+        path: &Path,
+        range: Range<u64>,
+    ) -> impl Future<Output = Result<Bytes>> + Send + 'static;
 
-    fn len(&self) -> u64;
+    fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static;
 
-    fn is_empty(&self) -> bool {
-        self.len() == 0
+    fn is_empty(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
+        let len = self.len(path);
+        async move { Ok(len.await? == 0) }
     }
 
     fn kind() -> UniversalKind;
-}
-
-pub(crate) fn resolve_runtime(runtime: Option<BridgeRuntime>) -> BridgeRuntime {
-    runtime.unwrap_or_else(BridgeRuntime::global)
 }

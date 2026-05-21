@@ -1,6 +1,6 @@
-//! Generic per-object handle over an [`ObjectStore`] backend. Wraps any
-//! [`BlobBackend`] implementation; sync access lands through
-//! [`BlobFile<BlobSource<S>>`].
+//! [`AsyncRead`] implementation over any [`ObjectStore`] backend. The store
+//! itself (held as `Arc<S>`) is the read handle; the object key is supplied per
+//! call. Sync access lands through [`BlobFile<Arc<S>>`](crate::BlobFile).
 
 // We map `object_store::Error::NotFound` specifically and intentionally bucket
 // every other variant into `UniversalIoError::s3(other)`. Enumerating every
@@ -9,121 +9,72 @@
 #![allow(clippy::wildcard_enum_match_arm)]
 
 use std::future::Future;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytes::Bytes;
 use common::universal_io::{Result, UniversalIoError, UniversalKind};
-use object_store::ObjectStoreExt;
+use object_store::{ObjectStore, ObjectStoreExt};
 
 use crate::backend::BlobBackend;
-use crate::file::BlobFile;
-use crate::read::{AsyncRead, resolve_runtime};
-use crate::runtime::BridgeRuntime;
+use crate::read::AsyncRead;
 
-/// Per-object handle held inside a [`BlobFile`]: a typed store, an object key,
-/// and a cached length populated by HEAD inside [`Self::open`]. Generic over
-/// any [`BlobBackend`] — the store is held as `Arc<S>`, not `Arc<dyn ObjectStore>`.
-pub struct BlobSource<S: BlobBackend> {
-    pub(crate) store: Arc<S>,
-    pub(crate) key: object_store::path::Path,
-    pub(crate) len_bytes: u64,
-}
-
-// Manual Clone impl: `Arc<S>` is always Clone regardless of `S: Clone`, so we
-// don't propagate a `S: Clone` bound (most `ObjectStore` impls aren't Clone).
-impl<S: BlobBackend> Clone for BlobSource<S> {
-    fn clone(&self) -> Self {
-        Self {
-            store: Arc::clone(&self.store),
-            key: self.key.clone(),
-            len_bytes: self.len_bytes,
-        }
-    }
-}
-
-impl<S: BlobBackend> BlobSource<S> {
-    pub fn store(&self) -> &Arc<S> {
-        &self.store
-    }
-
-    pub fn key(&self) -> &object_store::path::Path {
-        &self.key
-    }
-}
-
-impl<S: BlobBackend> AsyncRead for BlobSource<S> {
+impl<S: BlobBackend> AsyncRead for Arc<S> {
     type Config = S::Config;
 
-    fn open(
-        runtime: Option<BridgeRuntime>,
-        config: &Self::Config,
-        key: &Path,
-    ) -> Result<BlobFile<Self>> {
-        let runtime = resolve_runtime(runtime);
-        let store = Arc::new(S::build_store(config)?);
-        let key = build_key(key);
-        let meta = runtime
-            .block_on(async { store.head(&key).await })
-            .map_err(|err| match err {
-                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
-                    path: PathBuf::from(key.to_string()),
-                },
-                other => UniversalIoError::s3(other),
-            })?;
-        Ok(BlobFile::new(
-            Self {
-                store,
-                key,
-                len_bytes: meta.size,
-            },
-            runtime,
-        ))
+    fn open(config: &Self::Config) -> Result<Self> {
+        Ok(Arc::new(S::build_store(config)?))
     }
 
     fn list_files(
-        runtime: Option<BridgeRuntime>,
-        config: &Self::Config,
+        &self,
         prefix: &Path,
-    ) -> Result<Vec<PathBuf>> {
-        let runtime = resolve_runtime(runtime);
-        let store = S::build_store(config)?;
+    ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send + 'static {
+        let store = self.clone();
         let prefix_path = prefix.to_path_buf();
         let prefix = build_key(prefix);
-        let entries: Vec<object_store::ObjectMeta> = runtime
-            .block_on(async {
-                use futures::TryStreamExt;
-                store.list(Some(&prefix)).try_collect().await
-            })
-            .map_err(|err| match err {
-                object_store::Error::NotFound { .. } => {
-                    UniversalIoError::NotFound { path: prefix_path }
+
+        async move {
+            use futures::TryStreamExt;
+
+            match store
+                .list(Some(&prefix))
+                .try_collect::<Vec<object_store::ObjectMeta>>()
+                .await
+            {
+                Ok(entries) => Ok(entries
+                    .into_iter()
+                    .map(|e| PathBuf::from(e.location.to_string()))
+                    .collect()),
+                Err(object_store::Error::NotFound { .. }) => {
+                    Err(UniversalIoError::NotFound { path: prefix_path })
                 }
-                other => UniversalIoError::s3(other),
-            })?;
-        Ok(entries
-            .into_iter()
-            .map(|e| PathBuf::from(e.location.to_string()))
-            .collect())
+                Err(other) => Err(UniversalIoError::s3(other)),
+            }
+        }
     }
 
-    fn exists(runtime: Option<BridgeRuntime>, config: &Self::Config, path: &Path) -> Result<bool> {
-        let runtime = resolve_runtime(runtime);
-        let store = S::build_store(config)?;
+    fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
+        let store = self.clone();
         let key = build_key(path);
-        match runtime.block_on(async { store.head(&key).await }) {
-            Ok(_) => Ok(true),
-            Err(object_store::Error::NotFound { .. }) => Ok(false),
-            Err(other) => Err(UniversalIoError::s3(other)),
+
+        async move {
+            match store.head(&key).await {
+                Ok(_) => Ok(true),
+                Err(object_store::Error::NotFound { .. }) => Ok(false),
+                Err(other) => Err(UniversalIoError::s3(other)),
+            }
         }
     }
 
     fn read_range(
         &self,
-        range: std::ops::Range<u64>,
+        path: &Path,
+        range: Range<u64>,
     ) -> impl Future<Output = Result<Bytes>> + Send + 'static {
-        let store = self.store.clone();
-        let key = self.key.clone();
+        let store = self.clone();
+        let key = build_key(path);
         async move {
             store.get_range(&key, range).await.map_err(|err| match err {
                 object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
@@ -134,8 +85,21 @@ impl<S: BlobBackend> AsyncRead for BlobSource<S> {
         }
     }
 
-    fn len(&self) -> u64 {
-        self.len_bytes
+    fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
+        let store = self.clone();
+        let key = build_key(path);
+        async move {
+            store
+                .head(&key)
+                .await
+                .map(|meta| meta.size)
+                .map_err(|err| match err {
+                    object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
+                        path: PathBuf::from(key.to_string()),
+                    },
+                    other => UniversalIoError::s3(other),
+                })
+        }
     }
 
     fn kind() -> UniversalKind {
@@ -155,10 +119,12 @@ mod tests {
     use object_store::memory::InMemory;
 
     use super::*;
+    use crate::file::BlobFile;
+    use crate::runtime::BridgeRuntime;
 
     /// Test-only backend: an in-memory store with a no-op config so that
-    /// unit tests exercise the full `BlobSource<S>` → `BlobFile` → pipeline
-    /// stack without needing a network mock.
+    /// unit tests exercise the full `Arc<S>` → `BlobFile` → pipeline stack
+    /// without needing a network mock.
     #[derive(Clone, Debug, Default)]
     pub struct InMemoryConfig;
 
@@ -178,19 +144,8 @@ mod tests {
         runtime: BridgeRuntime,
         store: Arc<InMemory>,
         key: &str,
-    ) -> BlobFile<BlobSource<InMemory>> {
-        let key = object_store::path::Path::from(key);
-        let meta = runtime
-            .block_on(async { store.head(&key).await })
-            .expect("head");
-        BlobFile::new(
-            BlobSource::<InMemory> {
-                store,
-                key,
-                len_bytes: meta.size,
-            },
-            runtime,
-        )
+    ) -> BlobFile<Arc<InMemory>> {
+        BlobFile::new(store, runtime, PathBuf::from(key))
     }
 
     fn inmemory_with(runtime: &BridgeRuntime, objects: &[(&str, &'static [u8])]) -> Arc<InMemory> {
@@ -255,10 +210,7 @@ mod tests {
 
     #[test]
     fn kind_is_inmemory_tagged_as_s3() {
-        assert_eq!(
-            <BlobSource<InMemory> as AsyncRead>::kind(),
-            UniversalKind::S3
-        );
+        assert_eq!(<Arc<InMemory> as AsyncRead>::kind(), UniversalKind::S3);
     }
 
     #[test]
@@ -275,8 +227,7 @@ mod tests {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"\x01\x00\x02\x00")]);
         let file = make_file(runtime, store, "obj");
-        let len: u64 =
-            <BlobFile<BlobSource<InMemory>> as UniversalRead>::len::<u16>(&file).unwrap();
+        let len: u64 = <BlobFile<Arc<InMemory>> as UniversalRead>::len::<u16>(&file).unwrap();
         assert_eq!(len, 2);
     }
 
@@ -284,6 +235,6 @@ mod tests {
     fn read_only_wrapper_compiles_with_blob_file() {
         use common::universal_io::ReadOnly;
         fn assert_universal_read<R: UniversalRead>() {}
-        assert_universal_read::<ReadOnly<BlobFile<BlobSource<InMemory>>>>();
+        assert_universal_read::<ReadOnly<BlobFile<Arc<InMemory>>>>();
     }
 }

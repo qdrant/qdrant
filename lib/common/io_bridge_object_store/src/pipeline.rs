@@ -202,7 +202,7 @@ where
         let item_size = size_of::<T>() as u64;
         let start = range.byte_offset;
         let end = start + range.length * item_size;
-        let future = file.inner.read_range(start..end);
+        let future = file.inner.read_range(&file.path, start..end);
         inner.schedule(&file.runtime, user_data, future)
     }
 
@@ -248,7 +248,7 @@ where
         let item_size = size_of::<T>() as u64;
         let start = range.byte_offset;
         let end = start + range.length * item_size;
-        let future = self.file.inner.read_range(start..end);
+        let future = self.file.inner.read_range(&self.file.path, start..end);
         self.inner.schedule(&self.file.runtime, user_data, future)
     }
 

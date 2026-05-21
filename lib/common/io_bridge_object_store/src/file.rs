@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
@@ -13,26 +13,43 @@ use crate::runtime::BridgeRuntime;
 
 /// Sync wrapper around a [`AsyncRead`] backend that implements [`UniversalRead`].
 ///
-/// The backend's async reads are routed through a [`BridgeRuntime`]:
-///   * single reads via `block_on`,
+/// Pins a single object (`path`) on the backend handle (`inner`) and routes the
+/// backend's async operations through a [`BridgeRuntime`]:
+///   * single reads / metadata lookups via `block_on`,
 ///   * batched/pipelined reads via the runtime's worker thread (MPSC channel).
 pub struct BlobFile<A: AsyncRead> {
     pub(crate) inner: A,
     pub(crate) runtime: BridgeRuntime,
+    pub(crate) path: PathBuf,
 }
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlobFile")
             .field("runtime", &self.runtime)
-            .field("len", &self.inner.len())
+            .field("path", &self.path)
             .finish_non_exhaustive()
     }
 }
 
 impl<A: AsyncRead> BlobFile<A> {
-    pub fn new(inner: A, runtime: BridgeRuntime) -> Self {
-        Self { inner, runtime }
+    pub fn new(inner: A, runtime: BridgeRuntime, path: impl Into<PathBuf>) -> Self {
+        Self {
+            inner,
+            runtime,
+            path: path.into(),
+        }
+    }
+
+    /// Build the backend handle from its config and pin it to `path`. Performs
+    /// no IO — the object is not touched until the first read or metadata call.
+    pub fn open(
+        config: &A::Config,
+        runtime: BridgeRuntime,
+        path: impl Into<PathBuf>,
+    ) -> Result<Self> {
+        let inner = A::open(config)?;
+        Ok(Self::new(inner, runtime, path))
     }
 
     pub fn runtime(&self) -> &BridgeRuntime {
@@ -42,13 +59,17 @@ impl<A: AsyncRead> BlobFile<A> {
     pub fn source(&self) -> &A {
         &self.inner
     }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 impl<A: AsyncRead> UniversalReadFileOps for BlobFile<A> {
     fn list_files(_prefix_path: &Path) -> Result<Vec<std::path::PathBuf>> {
         Err(UniversalIoError::S3Config {
             description: "BlobFile does not expose static list_files via UniversalReadFileOps; \
-                          call A::list_files(runtime, config, prefix) on the backend type"
+                          call A::list_files(prefix) on the backend handle"
                 .into(),
         })
     }
@@ -56,7 +77,7 @@ impl<A: AsyncRead> UniversalReadFileOps for BlobFile<A> {
     fn exists(_path: &Path) -> Result<bool> {
         Err(UniversalIoError::S3Config {
             description: "BlobFile does not expose static exists via UniversalReadFileOps; \
-                          call A::exists(runtime, config, path) on the backend type"
+                          call A::exists(path) on the backend handle"
                 .into(),
         })
     }
@@ -78,7 +99,7 @@ impl<A: AsyncRead> UniversalRead for BlobFile<A> {
     fn open(_path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self> {
         Err(UniversalIoError::S3Config {
             description: "BlobFile cannot be opened through UniversalRead::open; \
-                          call A::open(runtime, config, key) on the backend type instead"
+                          call BlobFile::open(config, runtime, path) instead"
                 .into(),
         })
     }
@@ -87,15 +108,18 @@ impl<A: AsyncRead> UniversalRead for BlobFile<A> {
         let item_size = size_of::<T>() as u64;
         let start = range.byte_offset;
         let end = start + range.length * item_size;
-        let bytes = self.runtime.block_on(self.inner.read_range(start..end))?;
+        let bytes = self
+            .runtime
+            .block_on(self.inner.read_range(&self.path, start..end))?;
         let items = bytemuck::try_cast_slice(&bytes)?;
         Ok(Cow::Owned(items.to_vec()))
     }
 
     fn len<T>(&self) -> Result<u64> {
         let item_size = size_of::<T>() as u64;
-        debug_assert_eq!(self.inner.len() % item_size, 0);
-        Ok(self.inner.len() / item_size)
+        let len = self.runtime.block_on(self.inner.len(&self.path))?;
+        debug_assert_eq!(len % item_size, 0);
+        Ok(len / item_size)
     }
 
     fn populate(&self) -> Result<()> {
@@ -136,38 +160,35 @@ mod tests {
     impl AsyncRead for MockSource {
         type Config = ();
 
-        fn open(
-            _runtime: Option<BridgeRuntime>,
-            _config: &(),
-            _key: &Path,
-        ) -> Result<BlobFile<Self>> {
+        fn open(_config: &()) -> Result<Self> {
             Err(UniversalIoError::S3Config {
                 description: "MockSource has no real open path; construct directly in tests".into(),
             })
         }
 
         fn list_files(
-            _runtime: Option<BridgeRuntime>,
-            _config: &(),
+            &self,
             _prefix: &Path,
-        ) -> Result<Vec<std::path::PathBuf>> {
-            Ok(vec![])
+        ) -> impl Future<Output = Result<Vec<std::path::PathBuf>>> + Send + 'static {
+            std::future::ready(Ok(vec![]))
         }
 
-        fn exists(_runtime: Option<BridgeRuntime>, _config: &(), _path: &Path) -> Result<bool> {
-            Ok(false)
+        fn exists(&self, _path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
+            std::future::ready(Ok(true))
         }
 
         fn read_range(
             &self,
+            _path: &Path,
             range: Range<u64>,
         ) -> impl Future<Output = Result<Bytes>> + Send + 'static {
             let bytes = self.data.slice(range.start as usize..range.end as usize);
             async move { Ok(bytes) }
         }
 
-        fn len(&self) -> u64 {
-            self.data.len() as u64
+        fn len(&self, _path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
+            let len = self.data.len() as u64;
+            async move { Ok(len) }
         }
 
         fn kind() -> UniversalKind {
@@ -187,7 +208,7 @@ mod tests {
 
     #[test]
     fn read_returns_bytes_through_runtime() {
-        let file = BlobFile::new(MockSource::new(b"hello world"), BridgeRuntime::global());
+        let file = BlobFile::new(MockSource::new(b"hello world"), BridgeRuntime::global(), "obj");
         let cow = file
             .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
             .expect("read");
@@ -196,7 +217,7 @@ mod tests {
 
     #[test]
     fn read_subrange() {
-        let file = BlobFile::new(MockSource::new(b"hello world"), BridgeRuntime::global());
+        let file = BlobFile::new(MockSource::new(b"hello world"), BridgeRuntime::global(), "obj");
         let cow = file
             .read::<common::generic_consts::Random, u8>(ReadRange::new(6, 5))
             .expect("read");
@@ -208,6 +229,7 @@ mod tests {
         let file = BlobFile::new(
             MockSource::new(b"\x01\x00\x02\x00"),
             BridgeRuntime::global(),
+            "obj",
         );
         let len: u64 = <BlobFile<MockSource> as UniversalRead>::len::<u16>(&file).unwrap();
         assert_eq!(len, 2);
@@ -215,7 +237,7 @@ mod tests {
 
     #[test]
     fn read_batch_returns_all_pairs() {
-        let file = BlobFile::new(MockSource::new(b"helloWORLDxyz"), BridgeRuntime::global());
+        let file = BlobFile::new(MockSource::new(b"helloWORLDxyz"), BridgeRuntime::global(), "obj");
         let inputs = vec![
             (1u32, ReadRange::new(0, 5)),
             (2u32, ReadRange::new(5, 5)),

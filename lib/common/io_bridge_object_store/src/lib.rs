@@ -5,10 +5,10 @@
 //!
 //! | Type             | Role                                                      |
 //! |------------------|-----------------------------------------------------------|
-//! | [`AsyncRead`]    | Trait implemented per source; defines `read_range` etc.   |
+//! | [`AsyncRead`]    | Trait implemented per backend; defines `read_range` etc.  |
 //! | [`BlobBackend`]  | Trait: a typed `ObjectStore` + a builder from a `Config`. |
-//! | [`BlobSource<S>`]| Per-object handle; generic over any [`BlobBackend`].      |
-//! | [`BlobFile<A>`]  | Sync `UniversalRead` wrapper over an `AsyncRead`.         |
+//! | `Arc<S>`         | The [`AsyncRead`] handle; any [`BlobBackend`] `S`.        |
+//! | [`BlobFile<A>`]  | Sync `UniversalRead` wrapper over an `AsyncRead` + path.  |
 //! | [`BridgeRuntime`]| Owns a Tokio runtime + a worker thread + request channel. |
 //! | `PipelineInner`  | Per-pipeline reply channel and slot bookkeeping.          |
 //!
@@ -30,6 +30,7 @@
 //!   │ BlobFile<A>                    │
 //!   │   inner   : A                  │
 //!   │   runtime : BridgeRuntime      │
+//!   │   path    : PathBuf            │
 //!   └────────────────────────────────┘
 //!                  │
 //!                  ▼
@@ -81,8 +82,8 @@
 //!   responses arriving out of order can still be paired with their caller
 //!   context.
 //!
-//! - **No `dyn` in the source.** [`BlobSource<S>`] holds `Arc<S>`, not
-//!   `Arc<dyn ObjectStore>`. The only remaining type erasure is the boxed
+//! - **No `dyn` in the backend.** [`AsyncRead`] is implemented for `Arc<S>`,
+//!   not `Arc<dyn ObjectStore>`. The only remaining type erasure is the boxed
 //!   future in [`BridgeRequest::future`] — required because struct fields
 //!   cannot hold `impl Trait` and the channel must carry one concrete type.
 
@@ -102,4 +103,3 @@ pub use file::BlobFile;
 pub use pipeline::{BorrowedBlobPipeline, OwnedBlobPipeline};
 pub use read::AsyncRead;
 pub use runtime::{BridgeRequest, BridgeResponse, BridgeRuntime};
-pub use source::BlobSource;
