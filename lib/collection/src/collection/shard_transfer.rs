@@ -58,6 +58,23 @@ impl Collection {
         }
     }
 
+    pub async fn wal_delta_fallback_transfer_method(&self) -> ShardTransferMethod {
+        let fallback_method = if self.is_prevent_unoptimized().await {
+            log::info!("Using snapshot transfer fallback because prevent_unoptimized is enabled");
+            ShardTransferMethod::Snapshot
+        } else {
+            self.shared_storage_config
+                .default_shard_transfer_method
+                .unwrap_or(ShardTransferMethod::Snapshot)
+        };
+
+        if fallback_method == ShardTransferMethod::WalDelta {
+            ShardTransferMethod::StreamRecords
+        } else {
+            fallback_method
+        }
+    }
+
     /// Default shard transfer method for Qdrant 1.18.0+
     pub fn default_shard_transfer_method(&self) -> ShardTransferMethod {
         self.shared_storage_config
@@ -222,14 +239,10 @@ impl Collection {
 
         let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
 
-        // With prevent_unoptimized, fall back to snapshot which preserves deferred
-        // point state exactly (raw segment copy). stream_records sends deferred
-        // points but they won't be deferred on the target.
-        let fallback_method = if self.is_prevent_unoptimized().await {
-            ShardTransferMethod::Snapshot
-        } else {
-            ShardTransferMethod::StreamRecords
-        };
+        // WalDelta can be rejected for restored snapshots and other cases where
+        // the destination cannot derive a valid WAL diff. In that case prefer a
+        // snapshot fallback unless the operator configured a different method.
+        let fallback_method = self.wal_delta_fallback_transfer_method().await;
         let transfer_task = transfer::driver::spawn_transfer_task(
             shard_holder,
             progress.clone(),
@@ -601,5 +614,187 @@ impl Collection {
             .is_some_and(|limit| outgoing >= limit);
 
         incoming_shard_transfer_limit_reached || outgoing_shard_transfer_limit_reached
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+
+    use ahash::AHashMap;
+    use common::budget::ResourceBudget;
+    use segment::types::Distance;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::collection::RequestShardTransfer;
+    use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+    use crate::operations::shared_storage_config::SharedStorageConfig;
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+    use crate::optimizers_builder::OptimizersConfig;
+    use crate::shards::channel_service::ChannelService;
+    use crate::shards::collection_shard_distribution::CollectionShardDistribution;
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
+
+    fn dummy_on_replica_failure() -> ChangePeerFromState {
+        Arc::new(move |_peer_id, _shard_id, _from_state| {})
+    }
+
+    fn dummy_request_shard_transfer() -> RequestShardTransfer {
+        Arc::new(move |_transfer| {})
+    }
+
+    fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+        Arc::new(|_transfer, _reason| {})
+    }
+
+    async fn transfer_method_fixture(
+        configured_method: Option<ShardTransferMethod>,
+        prevent_unoptimized: Option<bool>,
+    ) -> Collection {
+        let wal_config = WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        };
+
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
+            shard_number: NonZeroU32::new(1).unwrap(),
+            replication_factor: NonZeroU32::new(1).unwrap(),
+            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            ..CollectionParams::empty()
+        };
+
+        let mut optimizer_config = OptimizersConfig::fixture();
+        optimizer_config.prevent_unoptimized = prevent_unoptimized;
+
+        let config = CollectionConfigInternal {
+            params: collection_params,
+            optimizer_config,
+            wal_config,
+            hnsw_config: Default::default(),
+            quantization_config: Default::default(),
+            strict_mode_config: Default::default(),
+            uuid: None,
+            metadata: None,
+        };
+
+        let collection_dir = Builder::new()
+            .prefix("transfer_method_collection")
+            .tempdir()
+            .unwrap();
+        let snapshots_path = Builder::new()
+            .prefix("transfer_method_snapshots")
+            .tempdir()
+            .unwrap();
+
+        let shards: AHashMap<_, _> = [(0, HashSet::from([0_u64]))].into_iter().collect();
+
+        let storage_config = Arc::new(SharedStorageConfig {
+            default_shard_transfer_method: configured_method,
+            ..Default::default()
+        });
+
+        Collection::new(
+            "test".to_string(),
+            0,
+            collection_dir.path(),
+            snapshots_path.path(),
+            &config,
+            storage_config,
+            CollectionShardDistribution { shards },
+            None,
+            ChannelService::default(),
+            dummy_on_replica_failure(),
+            dummy_request_shard_transfer(),
+            dummy_abort_shard_transfer(),
+            None,
+            None,
+            ResourceBudget::default(),
+            None,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn legacy_default_shard_transfer_method_defaults_to_stream_records() {
+        let collection = transfer_method_fixture(None, None).await;
+
+        assert_eq!(
+            collection.legacy_default_shard_transfer_method().await,
+            ShardTransferMethod::StreamRecords
+        );
+    }
+
+    #[tokio::test]
+    async fn default_shard_transfer_method_defaults_to_snapshot() {
+        let collection = transfer_method_fixture(None, None).await;
+
+        assert_eq!(
+            collection.default_shard_transfer_method(),
+            ShardTransferMethod::Snapshot
+        );
+    }
+
+    #[tokio::test]
+    async fn wal_delta_fallback_transfer_method_defaults_to_snapshot() {
+        let collection = transfer_method_fixture(None, None).await;
+
+        assert_eq!(
+            collection.wal_delta_fallback_transfer_method().await,
+            ShardTransferMethod::Snapshot
+        );
+    }
+
+    #[tokio::test]
+    async fn default_shard_transfer_method_respects_explicit_config() {
+        let stream_collection =
+            transfer_method_fixture(Some(ShardTransferMethod::StreamRecords), None).await;
+        assert_eq!(
+            stream_collection.default_shard_transfer_method(),
+            ShardTransferMethod::StreamRecords
+        );
+
+        let snapshot_collection =
+            transfer_method_fixture(Some(ShardTransferMethod::Snapshot), None).await;
+        assert_eq!(
+            snapshot_collection.default_shard_transfer_method(),
+            ShardTransferMethod::Snapshot
+        );
+    }
+
+    #[tokio::test]
+    async fn prevent_unoptimized_forces_snapshot_legacy_default() {
+        let collection =
+            transfer_method_fixture(Some(ShardTransferMethod::StreamRecords), Some(true)).await;
+
+        assert_eq!(
+            collection.legacy_default_shard_transfer_method().await,
+            ShardTransferMethod::Snapshot
+        );
+    }
+
+    #[tokio::test]
+    async fn wal_delta_fallback_transfer_method_respects_explicit_config() {
+        let stream_collection =
+            transfer_method_fixture(Some(ShardTransferMethod::StreamRecords), None).await;
+        assert_eq!(
+            stream_collection.wal_delta_fallback_transfer_method().await,
+            ShardTransferMethod::StreamRecords
+        );
+
+        let snapshot_collection =
+            transfer_method_fixture(Some(ShardTransferMethod::Snapshot), None).await;
+        assert_eq!(
+            snapshot_collection
+                .wal_delta_fallback_transfer_method()
+                .await,
+            ShardTransferMethod::Snapshot
+        );
     }
 }

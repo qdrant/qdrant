@@ -315,3 +315,24 @@ impl ReplicaState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ReplicaState;
+
+    #[test]
+    fn active_replica_is_source_of_truth_and_does_not_require_recovery() {
+        assert!(ReplicaState::Active.is_active());
+        assert!(ReplicaState::Active.is_readable());
+        assert!(ReplicaState::Active.can_be_source_of_truth());
+        assert!(!ReplicaState::Active.requires_recovery());
+    }
+
+    #[test]
+    fn dead_replica_requires_recovery_and_is_not_source_of_truth() {
+        assert!(!ReplicaState::Dead.is_active());
+        assert!(!ReplicaState::Dead.is_readable());
+        assert!(!ReplicaState::Dead.can_be_source_of_truth());
+        assert!(ReplicaState::Dead.requires_recovery());
+    }
+}
