@@ -64,6 +64,36 @@ pub struct ProxySegment {
 pub struct UnsyncedProxySegment(ProxySegment);
 
 impl UnsyncedProxySegment {
+    /// Build a proxy wrapping `segment`.
+    ///
+    /// `deleted_mask` is deliberately left empty here: it snapshots the wrapped segment's deleted
+    /// bitvec, but that snapshot is only valid once the wrapped segment is frozen under the
+    /// segment-holder write lock (see the type-level docs). The mask is read exactly once, later,
+    /// by [`Self::finalize`] — which is also the only way to turn this into a usable
+    /// [`ProxySegment`], so the sync cannot be forgotten nor done twice.
+    pub fn new(segment: LockedSegment) -> Self {
+        if matches!(segment, LockedSegment::Proxy(_)) {
+            log::debug!("Double proxy segment creation");
+        }
+
+        let (wrapped_config, version) = {
+            let read_segment = segment.get().read();
+            (read_segment.config().clone(), read_segment.version())
+        };
+
+        UnsyncedProxySegment(ProxySegment {
+            wrapped_segment: segment,
+            // Synced only in `finalize`, once the wrapped segment is frozen.
+            deleted_mask: None,
+            changed_indexes: ProxyIndexChanges::default(),
+            changed_vector_names: ProxyVectorNameChanges::default(),
+            deleted_points: AHashMap::new(),
+            deleted_deferred_count: 0,
+            wrapped_config,
+            version,
+        })
+    }
+
     /// Sync `deleted_mask` from the now-frozen wrapped segment and return the usable proxy.
     ///
     /// Must be called once the segment-holder write lock is held, so the wrapped segment can no
@@ -92,39 +122,15 @@ impl UnsyncedProxySegment {
 }
 
 impl ProxySegment {
-    /// Build a proxy wrapping `segment`.
+    /// Build a proxy wrapping `segment` and immediately sync its `deleted_mask`.
     ///
-    /// Returns an [`UnsyncedProxySegment`], not a ready-to-use `ProxySegment`: the `deleted_mask`
-    /// is deliberately left empty here and can only be populated by
-    /// [`UnsyncedProxySegment::finalize`]. The mask snapshots the wrapped segment's deleted
-    /// bitvec, but that snapshot is only valid once the wrapped segment is frozen under the
-    /// segment-holder write lock (see [`UnsyncedProxySegment`]). Splitting construction this way
-    /// makes it impossible to forget the sync, and ensures the (potentially large) bitvec is read
-    /// exactly once, under the right lock.
-    // Deliberately returns the unsynced stage rather than `Self`: a `ProxySegment` only exists
-    // once its `deleted_mask` is synced via `UnsyncedProxySegment::finalize`.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(segment: LockedSegment) -> UnsyncedProxySegment {
-        if matches!(segment, LockedSegment::Proxy(_)) {
-            log::debug!("Double proxy segment creation");
-        }
-
-        let (wrapped_config, version) = {
-            let read_segment = segment.get().read();
-            (read_segment.config().clone(), read_segment.version())
-        };
-
-        UnsyncedProxySegment(ProxySegment {
-            wrapped_segment: segment,
-            // Synced only in `UnsyncedProxySegment::finalize`, once the wrapped segment is frozen.
-            deleted_mask: None,
-            changed_indexes: ProxyIndexChanges::default(),
-            changed_vector_names: ProxyVectorNameChanges::default(),
-            deleted_points: AHashMap::new(),
-            deleted_deferred_count: 0,
-            wrapped_config,
-            version,
-        })
+    /// Test-only convenience that collapses the two-phase [`UnsyncedProxySegment::new`] +
+    /// [`UnsyncedProxySegment::finalize`] construction into one call. Production code must use the
+    /// two-phase form so the mask is synced under the segment-holder write lock; see
+    /// [`UnsyncedProxySegment`].
+    #[cfg(feature = "testing")]
+    pub fn new(segment: LockedSegment) -> Self {
+        UnsyncedProxySegment::new(segment).finalize()
     }
 
     /// Read the wrapped segment's deleted bitvec into `deleted_mask`.

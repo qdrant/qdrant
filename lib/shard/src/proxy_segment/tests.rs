@@ -95,7 +95,7 @@ fn test_proxy_deleted_mask_resync_after_race_window_write() {
 
         // Keep a handle so we can write to the wrapped segment around the proxy lifecycle.
         let wrapped_handle = original_segment.clone();
-        let proxy = ProxySegment::new(original_segment);
+        let proxy = UnsyncedProxySegment::new(original_segment);
         (proxy, wrapped_handle)
     };
 
@@ -180,7 +180,7 @@ fn test_search_batch_equivalence_single() {
         .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
         .unwrap();
 
-    let mut proxy_segment = ProxySegment::new(original_segment).finalize();
+    let mut proxy_segment = ProxySegment::new(original_segment);
 
     proxy_segment
         .delete_point(102, 1.into(), &hw_counter)
@@ -230,7 +230,7 @@ fn test_search_batch_equivalence_single_random() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(random_segment(dir.path(), 100, 200, 4));
 
-    let proxy_segment = ProxySegment::new(original_segment).finalize();
+    let proxy_segment = ProxySegment::new(original_segment);
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
     let search_result = proxy_segment
@@ -274,7 +274,7 @@ fn test_search_batch_equivalence_multi_random() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(random_segment(dir.path(), 100, 200, 4));
 
-    let proxy_segment = ProxySegment::new(original_segment).finalize();
+    let proxy_segment = ProxySegment::new(original_segment);
 
     let q1 = [1.0, 1.0, 1.0, 0.1];
     let q2 = [1.0, 1.0, 0.1, 0.1];
@@ -323,7 +323,7 @@ fn test_search_batch_equivalence_multi_random() {
 }
 
 fn wrap_proxy(original_segment: LockedSegment) -> ProxySegment {
-    ProxySegment::new(original_segment).finalize()
+    ProxySegment::new(original_segment)
 }
 
 #[test]
@@ -436,7 +436,7 @@ fn test_sync_indexes() {
         )
         .unwrap();
 
-    let proxy_segment = ProxySegment::new(original_segment.clone()).finalize();
+    let proxy_segment = ProxySegment::new(original_segment.clone());
 
     let hw_cell = HardwareCounterCell::new();
 
@@ -497,9 +497,9 @@ fn test_take_snapshot() {
 
     let hw_cell = HardwareCounterCell::new();
 
-    let mut proxy_segment = ProxySegment::new(original_segment).finalize();
+    let mut proxy_segment = ProxySegment::new(original_segment);
 
-    let proxy_segment2 = ProxySegment::new(original_segment_2).finalize();
+    let proxy_segment2 = ProxySegment::new(original_segment_2);
 
     proxy_segment.delete_point(102, 1.into(), &hw_cell).unwrap();
 
@@ -538,7 +538,7 @@ fn test_point_vector_count() {
 
     let hw_cell = HardwareCounterCell::new();
 
-    let mut proxy_segment = ProxySegment::new(original_segment).finalize();
+    let mut proxy_segment = ProxySegment::new(original_segment);
 
     // We have 5 points by default, assert counts
     let segment_info = proxy_segment.info();
@@ -600,7 +600,7 @@ fn test_point_vector_count_multivec() {
 
     let original_segment = LockedSegment::new(original_segment);
 
-    let mut proxy_segment = ProxySegment::new(original_segment).finalize();
+    let mut proxy_segment = ProxySegment::new(original_segment);
 
     // Assert counts from original segment
     let segment_info = proxy_segment.info();
@@ -629,7 +629,7 @@ fn test_proxy_segment_flush() {
 
     let locked_wrapped_segment = LockedSegment::new(build_segment_1(tmp_dir.path()));
 
-    let mut proxy_segment = ProxySegment::new(locked_wrapped_segment.clone()).finalize();
+    let mut proxy_segment = ProxySegment::new(locked_wrapped_segment.clone());
 
     let flushed_version_1 = proxy_segment.flush(false).unwrap();
 
@@ -672,7 +672,7 @@ fn test_proxy_deferred() {
         initial_deferred_point_count - 1
     );
 
-    let mut proxy_segment = ProxySegment::new(LockedSegment::new(wrapped_segment)).finalize();
+    let mut proxy_segment = ProxySegment::new(LockedSegment::new(wrapped_segment));
 
     assert_eq!(
         proxy_segment.size_info().num_deferred_points.unwrap(),
