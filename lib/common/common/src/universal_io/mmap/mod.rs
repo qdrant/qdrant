@@ -1,11 +1,13 @@
 mod pipeline;
 
 use std::borrow::Cow;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fs, slice};
+use std::{fs, io, slice};
 
 use memmap2::MmapRaw;
+use parking_lot::Mutex;
 
 use self::pipeline::{BorrowedMmapReadPipeline, OwnedMmapReadPipeline};
 use super::traits::UniversalReadFileOps;
@@ -17,9 +19,16 @@ use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as
 pub struct MmapFile {
     path: PathBuf,
 
+    #[cfg_attr(target_os = "linux", expect(dead_code))]
+    writeable: bool,
+    #[cfg_attr(target_os = "linux", expect(dead_code))]
+    populate: bool,
+    #[cfg_attr(target_os = "linux", expect(dead_code))]
+    advice: AdviceSetting,
+
     // `mmap` and `mmap_seq` own the mmaps.
-    mmap: Arc<MmapRaw>,
-    mmap_seq: Option<MmapRaw>,
+    mmap: Arc<Mutex<MmapRaw>>,
+    mmap_seq: Option<Arc<Mutex<MmapRaw>>>,
 
     // `len`, `ptr`, `ptr_seq` contain the same values as `mmap`, `mmap_seq`,
     // but duplicated here to avoid `Arc`/`Option` overhead in hot loops.
@@ -103,14 +112,88 @@ impl UniversalRead for MmapFile {
 
         let mmap = Self {
             path: path.as_ref().into(),
-            mmap: Arc::new(mmap),
-            mmap_seq,
+            writeable,
+            populate,
+            advice,
+            mmap: Arc::new(Mutex::new(mmap)),
+            mmap_seq: mmap_seq.map(|mmap_seq_| Arc::new(Mutex::new(mmap_seq_))),
             len,
             ptr,
             ptr_seq,
         };
 
         Ok(mmap)
+    }
+
+    fn reopen(&mut self) -> Result<()> {
+        let old_len = self.len as u64;
+        let new_len = fs_err::File::open(self.path())?.metadata()?.len();
+        if new_len < old_len {
+            return Err(UniversalIoError::Io(io::Error::new(
+                ErrorKind::UnexpectedEof,
+                format!(
+                    "Reopen encountered a smaller file than expected; old_len: {old_len}, new_len: {new_len}"
+                ),
+            )));
+        }
+        if new_len == old_len {
+            return Ok(());
+        }
+
+        let mut mmap = self.mmap.lock();
+        let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
+        cfg_select! {
+            // in linux, we can use `MmapRaw::remap`
+            target_os = "linux" => {
+                // SAFETY:
+                // We use may_move = true, since `remap` can fail if we don't allow it.
+                // It is safe to allow moving since we are holding `&mut self`
+                let remap_options = memmap2::RemapOptions::new().may_move(true);
+                unsafe {
+                    mmap.remap(new_len as usize, remap_options)?;
+                    mmap_seq.as_mut().map(|m| m.remap(new_len as usize, remap_options)).transpose()?;
+                };
+
+                // Whether or not `remap` moved the memory region let's update the pointers
+                let ptr = SendSyncPtr(mmap.as_mut_ptr());
+                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(self.ptr);
+                let len = new_len as usize;
+            }
+            // otherwise, let's open again
+            _ => {
+                *mmap = open_mmap(
+                    self.path.as_ref(),
+                    self.writeable,
+                    self.populate,
+                    self.advice,
+                )?;
+                let ptr = SendSyncPtr(mmap.as_mut_ptr());
+
+                let ptr_seq;
+                let len;
+                if let Some(mmap_seq) = mmap_seq.as_mut() {
+                    let mmap_seq_ = open_mmap(
+                        self.path(),
+                        false,
+                        false,
+                        AdviceSetting::Advice(Advice::Sequential),
+                    )?;
+                    **mmap_seq = mmap_seq_;
+
+                    len = std::cmp::min(mmap.len(), mmap_seq.len());
+                    ptr_seq = SendSyncPtr(mmap_seq.as_mut_ptr());
+                } else {
+                    len = mmap.len();
+                    ptr_seq = ptr;
+                }
+            }
+        }
+
+        self.ptr = ptr;
+        self.ptr_seq = ptr_seq;
+        self.len = len;
+
+        Ok(())
     }
 
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
@@ -125,14 +208,14 @@ impl UniversalRead for MmapFile {
     }
 
     fn populate(&self) -> Result<()> {
-        self.mmap.populate();
+        self.mmap.lock().populate();
         Ok(())
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
-        self.mmap.clear_cache();
+        self.mmap.lock().clear_cache();
         if let Some(mmap_seq) = &self.mmap_seq {
-            mmap_seq.clear_cache();
+            mmap_seq.lock().clear_cache();
         }
         Ok(())
     }
@@ -166,6 +249,7 @@ impl UniversalWrite for MmapFile {
         let mmap = self.mmap.clone();
         let flusher = move || {
             // flushing empty mmap returns error on some platforms
+            let mmap = mmap.lock();
             if mmap.len() > 0 {
                 mmap.flush()?;
             }

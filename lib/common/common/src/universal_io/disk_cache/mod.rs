@@ -105,6 +105,12 @@ impl UniversalRead for CachedSlice {
         Ok(CachedSlice::open(controller, path.as_ref())?)
     }
 
+    fn reopen(&mut self) -> Result<()> {
+        // TODO: revise if this is the best way to reopen
+        *self = CachedSlice::open(&self.controller, &self.path)?;
+        Ok(())
+    }
+
     fn read<P: AccessPattern, T: bytemuck::Pod>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
         let elem_start = usize::try_from(range.byte_offset).expect("range.start is within usize")
             / size_of::<T>();
