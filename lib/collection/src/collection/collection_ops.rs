@@ -31,8 +31,8 @@ impl Collection {
     /// Updates collection params:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
-    /// called to create new optimizers using the updated configuration.
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
+    /// the updated configuration.
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
@@ -48,8 +48,8 @@ impl Collection {
     /// Updates HNSW config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
-    /// called to create new optimizers using the updated configuration.
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
+    /// the updated configuration.
     pub async fn update_hnsw_config_from_diff(
         &self,
         hnsw_config_diff: HnswConfigDiff,
@@ -65,8 +65,8 @@ impl Collection {
     /// Updates vectors config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
-    /// called to create new optimizers using the updated configuration.
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
+    /// the updated configuration.
     pub async fn update_vectors_from_diff(
         &self,
         update_vectors_diff: &VectorsConfigDiff,
@@ -83,8 +83,8 @@ impl Collection {
     /// Updates sparse vectors config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
-    /// called to create new optimizers using the updated configuration.
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
+    /// the updated configuration.
     pub async fn update_sparse_vectors_from_other(
         &self,
         update_vectors_diff: &SparseVectorsConfig,
@@ -101,8 +101,8 @@ impl Collection {
     /// Updates shard optimization params:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
-    /// called to create new optimizers using the updated configuration.
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
+    /// the updated configuration.
     pub async fn update_optimizer_params_from_diff(
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
@@ -118,8 +118,8 @@ impl Collection {
     /// Updates quantization config:
     /// Saves new params on disk
     ///
-    /// After this, `recreate_optimizers_blocking` or `recreate_optimizers_background` must be
-    /// called to create new optimizers using the updated configuration.
+    /// After this, `recreate_optimizers_background` must be called to create new optimizers using
+    /// the updated configuration.
     pub async fn update_quantization_config_from_diff(
         &self,
         quantization_config_diff: QuantizationConfigDiff,
@@ -294,56 +294,64 @@ impl Collection {
         Ok(())
     }
 
-    /// Recreate the optimizers on all shards for this collection
-    ///
-    /// This will stop existing optimizers, and start new ones with new configurations.
-    ///
-    /// # Blocking
-    ///
-    /// Partially blocking. Stopping existing optimizers is blocking. Starting new optimizers is
-    /// not blocking.
-    ///
-    /// Stopping existing optimizers waits for in-flight optimizations to finish, which can take a
-    /// long time. On any path that goes through consensus, prefer
-    /// [`Collection::recreate_optimizers_background`] instead, which never blocks the caller.
-    ///
-    /// ## Cancel safety
-    ///
-    /// This function is cancel safe, and will always run to completion.
-    pub async fn recreate_optimizers_blocking(&self) -> CollectionResult<()> {
-        tokio::task::spawn(Self::recreate_optimizers(self.shards_holder.clone())).await??;
-        Ok(())
-    }
-
     /// Recreate the optimizers on all shards for this collection, in the background.
     ///
-    /// Like [`Collection::recreate_optimizers_blocking`], but returns immediately and performs all
-    /// the work - stopping the existing workers and starting new ones - in a detached task.
+    /// Returns immediately and performs all the work - stopping the existing workers and starting
+    /// new ones - in a detached task. Stopping the existing workers waits for in-flight
+    /// optimizations to finish, which can take a long time. This is why it runs in the background:
+    /// it is reached from paths that go through consensus, where blocking the caller stalls the
+    /// whole consensus loop and can take down a cluster.
     ///
-    /// Stopping the existing workers waits for in-flight optimizations to finish, which can take a
-    /// long time. This variant must be used on any path that goes through consensus, where blocking
-    /// the caller stalls the whole consensus loop and can take down a cluster.
+    /// At most one recreation runs at a time. If one is already running, this records that another
+    /// run is needed and returns; the running task then runs once more when it finishes, picking up
+    /// the latest config. Any number of requests that arrive while a task is running collapse into a
+    /// single additional run (recreation always rebuilds from the current config, so coalescing is
+    /// safe - the last run reflects the latest state).
     ///
-    /// Any error is logged rather than returned: the configuration change that triggers the
+    /// Errors are logged rather than returned: the configuration change that triggers the
     /// recreation has already been applied and persisted by the time we get here, so there is no
-    /// caller left to propagate it to.
+    /// caller left to propagate them to. Failures are also surfaced as optimizer errors per shard
+    /// (see `LocalShard::on_optimizer_config_update`).
     pub fn recreate_optimizers_background(&self) {
+        // Single-flight: only spawn a task if none is running. Otherwise the request is coalesced
+        // into a pending re-run handled by the task that is already running.
+        if !self.recreate_optimizers_state.lock().request() {
+            return;
+        }
+
         let shards_holder = self.shards_holder.clone();
         let collection_id = self.id.clone();
+        let recreate_state = self.recreate_optimizers_state.clone();
         tokio::task::spawn(async move {
-            if let Err(err) = Self::recreate_optimizers(shards_holder).await {
-                log::error!(
-                    "Failed to recreate optimizers for collection {collection_id} in background: {err}",
-                );
+            loop {
+                // Run the recreation as a child task, so a panic is contained (surfaced as a
+                // `JoinError`) and never unwinds the coordinator loop below - which would otherwise
+                // leave `running` stuck and wedge all future recreations.
+                match tokio::task::spawn(Self::recreate_optimizers(shards_holder.clone())).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => log::error!(
+                        "Failed to recreate optimizers for collection {collection_id} in background: {err}",
+                    ),
+                    Err(err) => log::error!(
+                        "Optimizer recreation task for collection {collection_id} failed: {err}",
+                    ),
+                }
+
+                // Run again if a request arrived while we were running, otherwise stop. The check
+                // and the `running` reset happen under one lock (in `finish_run`), so a request
+                // arriving exactly now is never lost: it either sees `running` still set (and sets
+                // `pending`, handled by the next iteration) or sees it cleared (and spawns afresh).
+                if !recreate_state.lock().finish_run() {
+                    break;
+                }
             }
         });
     }
 
     /// Stop the existing optimizers on all shards and start new ones using the current config.
     ///
-    /// Shared implementation for [`Collection::recreate_optimizers_blocking`] and
-    /// [`Collection::recreate_optimizers_background`]. Takes an owned [`SharedShardHolder`] so the
-    /// returned future is `'static` and can be spawned as a detached task.
+    /// Implementation behind [`Collection::recreate_optimizers_background`]. Takes an owned
+    /// [`SharedShardHolder`] so the returned future is `'static` and can be spawned as a task.
     async fn recreate_optimizers(shards_holder: SharedShardHolder) -> CollectionResult<()> {
         let shard_holder = shards_holder.read().await;
         let updates = shard_holder

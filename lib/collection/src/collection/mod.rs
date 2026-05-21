@@ -62,6 +62,108 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
 use crate::telemetry::CollectionsAggregatedTelemetry;
 
+/// Coordinates background optimizer recreation so at most one recreation runs at a time.
+///
+/// See [`Collection::recreate_optimizers_background`].
+#[derive(Default)]
+struct RecreateOptimizersState {
+    /// A background recreation task is currently running.
+    running: bool,
+    /// A recreation was requested while a task was already running. When the running task
+    /// finishes it runs once more, to converge to the latest configuration.
+    pending: bool,
+}
+
+impl RecreateOptimizersState {
+    /// Register a recreation request.
+    ///
+    /// Returns `true` if the caller must spawn a new recreation task, or `false` if a task is
+    /// already running - in which case the request is coalesced into a single pending re-run.
+    fn request(&mut self) -> bool {
+        if self.running {
+            self.pending = true;
+            false
+        } else {
+            self.running = true;
+            true
+        }
+    }
+
+    /// Record that the running task finished one recreation.
+    ///
+    /// Returns `true` if it must run again (a request arrived while it was running), or `false` if
+    /// it should stop. When it stops, `running` is cleared so the next request spawns a new task.
+    fn finish_run(&mut self) -> bool {
+        if self.pending {
+            self.pending = false;
+            true
+        } else {
+            self.running = false;
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod recreate_optimizers_state_tests {
+    use super::RecreateOptimizersState;
+
+    #[test]
+    fn first_request_spawns() {
+        let mut state = RecreateOptimizersState::default();
+        assert!(state.request(), "first request must spawn a task");
+        assert!(state.running);
+        assert!(!state.pending);
+    }
+
+    #[test]
+    fn request_while_running_is_coalesced() {
+        let mut state = RecreateOptimizersState::default();
+        assert!(state.request());
+
+        // Several requests arrive while the task runs: none spawns, all collapse into one re-run.
+        assert!(!state.request());
+        assert!(!state.request());
+        assert!(state.running);
+        assert!(state.pending);
+    }
+
+    #[test]
+    fn finish_without_pending_stops() {
+        let mut state = RecreateOptimizersState::default();
+        state.request();
+
+        assert!(!state.finish_run(), "no pending request, so it must stop");
+        assert!(!state.running);
+        assert!(!state.pending);
+    }
+
+    #[test]
+    fn finish_with_pending_runs_once_more_then_stops() {
+        let mut state = RecreateOptimizersState::default();
+        state.request();
+        state.request(); // coalesced -> pending
+
+        assert!(state.finish_run(), "pending request, so it must run again");
+        assert!(state.running, "still considered running across the re-run");
+        assert!(!state.pending, "pending consumed by the re-run");
+
+        // No further requests during the re-run: now it stops.
+        assert!(!state.finish_run());
+        assert!(!state.running);
+    }
+
+    #[test]
+    fn request_after_stop_spawns_again() {
+        let mut state = RecreateOptimizersState::default();
+        state.request();
+        state.finish_run(); // stops
+
+        assert!(state.request(), "a request after stopping must spawn a new task");
+        assert!(state.running);
+    }
+}
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     pub(crate) id: CollectionId,
@@ -91,6 +193,9 @@ pub struct Collection {
     collection_stats_cache: CollectionSizeStatsCache,
     // Background tasks to clean shards
     shard_clean_tasks: ShardCleanTasks,
+    // Coordinates background optimizer recreation: at most one runs at a time, and requests that
+    // arrive while one is running are coalesced into a single re-run.
+    recreate_optimizers_state: Arc<parking_lot::Mutex<RecreateOptimizersState>>,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -200,6 +305,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
+            recreate_optimizers_state: Default::default(),
         })
     }
 
@@ -319,6 +425,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
+            recreate_optimizers_state: Default::default(),
         }
     }
 
