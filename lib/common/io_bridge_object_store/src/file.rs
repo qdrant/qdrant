@@ -88,7 +88,7 @@ impl<A: AsyncRead> UniversalRead for BlobFile<A> {
         let start = range.byte_offset;
         let end = start + range.length * item_size;
         let bytes = self.runtime.block_on(self.inner.read_range(start..end))?;
-        let items: &[T] = bytemuck::try_cast_slice(&bytes)?;
+        let items = bytemuck::try_cast_slice(&bytes)?;
         Ok(Cow::Owned(items.to_vec()))
     }
 
