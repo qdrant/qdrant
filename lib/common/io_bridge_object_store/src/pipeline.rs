@@ -379,16 +379,15 @@ where
 mod tests {
     use super::*;
 
-    /// Build a future that writes `data` into the destination buffer reachable
-    /// through `dst`. Mirrors what the real pipeline schedule path does, just
-    /// from a static byte slice instead of a network stream.
-    async fn write_future(
-        mut dst: SendBytePtr,
-        data: &'static [u8],
-    ) -> Result<(), UniversalIoError> {
-        // SAFETY: the test holds the matching `Vec<u8>` in
-        // `inner.pending` for the duration of the future, satisfying the
-        // SendBytePtr invariant.
+    /// Synchronously write `data` into the destination buffer reachable
+    /// through `dst`. Callers wrap the call in `async move { ...; Ok(()) }` to
+    /// feed it into `PipelineInner::schedule`, mirroring what the real
+    /// schedule path does (just from a static byte slice instead of a network
+    /// stream).
+    fn write_into(mut dst: SendBytePtr, data: &'static [u8]) {
+        // SAFETY: the test holds the matching `Vec<u8>` in `inner.pending` for
+        // the duration of the wrapping future, satisfying the SendBytePtr
+        // invariant.
         let slice = unsafe { dst.as_slice_mut() };
         assert_eq!(
             slice.len(),
@@ -396,7 +395,6 @@ mod tests {
             "test bug: destination buffer size does not match payload",
         );
         slice.copy_from_slice(data);
-        Ok(())
     }
 
     #[test]
@@ -436,7 +434,10 @@ mod tests {
         // touch it again until `wait` returns it.
         let dst = unsafe { SendBytePtr::from_vec(&mut buf) };
         inner
-            .schedule(&runtime, 111, buf, write_future(dst, b"hello"))
+            .schedule(&runtime, 111, buf, async move {
+                write_into(dst, b"hello");
+                Ok(())
+            })
             .expect("schedule");
 
         let (user, bytes) = inner.wait().expect("wait ok").expect("some");
@@ -458,7 +459,10 @@ mod tests {
             // SAFETY: see `pipeline_schedule_and_wait_round_trip`.
             let dst = unsafe { SendBytePtr::from_vec(&mut buf) };
             inner
-                .schedule(&runtime, i as u32, buf, write_future(dst, bytes))
+                .schedule(&runtime, i as u32, buf, async move {
+                    write_into(dst, bytes);
+                    Ok(())
+                })
                 .unwrap();
         }
         let mut seen = std::collections::HashSet::new();
@@ -483,14 +487,20 @@ mod tests {
         // SAFETY: see `pipeline_schedule_and_wait_round_trip`.
         let dst_a = unsafe { SendBytePtr::from_vec(&mut buf_a) };
         inner
-            .schedule(&rt_a, 1, buf_a, write_future(dst_a, b"AAAA"))
+            .schedule(&rt_a, 1, buf_a, async move {
+                write_into(dst_a, b"AAAA");
+                Ok(())
+            })
             .unwrap();
 
         let mut buf_b: Vec<u8> = vec![0u8; 2];
         // SAFETY: see `pipeline_schedule_and_wait_round_trip`.
         let dst_b = unsafe { SendBytePtr::from_vec(&mut buf_b) };
         inner
-            .schedule(&rt_b, 2, buf_b, write_future(dst_b, b"BB"))
+            .schedule(&rt_b, 2, buf_b, async move {
+                write_into(dst_b, b"BB");
+                Ok(())
+            })
             .unwrap();
 
         let mut seen: AHashMap<u32, Vec<u8>> = AHashMap::new();
