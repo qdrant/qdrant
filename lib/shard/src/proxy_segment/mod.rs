@@ -101,6 +101,9 @@ impl ProxySegment {
     /// segment-holder write lock (see [`UnsyncedProxySegment`]). Splitting construction this way
     /// makes it impossible to forget the sync, and ensures the (potentially large) bitvec is read
     /// exactly once, under the right lock.
+    // Deliberately returns the unsynced stage rather than `Self`: a `ProxySegment` only exists
+    // once its `deleted_mask` is synced via `UnsyncedProxySegment::finalize`.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(segment: LockedSegment) -> UnsyncedProxySegment {
         if matches!(segment, LockedSegment::Proxy(_)) {
             log::debug!("Double proxy segment creation");
