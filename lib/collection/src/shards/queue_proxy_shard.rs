@@ -931,7 +931,7 @@ async fn transfer_operations_batch(
             batch_upd.push(operation);
         }
 
-        remote_shard
+        match remote_shard
             .forward_update_batch(
                 batch_upd,
                 wait,
@@ -939,12 +939,28 @@ async fn transfer_operations_batch(
                 WriteOrdering::Weak,
                 hw_measurement_acc.clone(),
             )
-            .await?;
-
-        return Ok(());
+            .await
+        {
+            Ok(_) => return Ok(()),
+            // A transient error is a delivery failure: let the caller retry the whole batch.
+            Err(err) if err.is_transient() => return Err(err),
+            // A non-transient error means some operation in the batch is permanently
+            // rejected by the remote (e.g. bad request, missing point). The batch is
+            // applied sequentially and aborts at the first such operation, so we cannot
+            // tell which one failed. Re-send the batch one-by-one to isolate and skip
+            // the offending operation(s); see the loop below.
+            Err(err) => {
+                log::warn!(
+                    "Non-transient error transferring batch of updates to peer {}, \
+                     retrying operations individually: {err}",
+                    remote_shard.peer_id,
+                );
+            }
+        }
     }
 
-    // Fallback to one-by-one transfer, in case the remote shard doesn't support batch updates
+    // One-by-one transfer. Used both when the remote does not support batch updates and
+    // as the isolation path after a non-transient batch failure.
     for (_idx, operation) in batch {
         let mut operation = operation.clone();
 
@@ -954,7 +970,7 @@ async fn transfer_operations_batch(
             clock_tag.force = true;
         }
 
-        remote_shard
+        match remote_shard
             .forward_update(
                 operation,
                 wait,
@@ -962,7 +978,24 @@ async fn transfer_operations_batch(
                 WriteOrdering::Weak,
                 hw_measurement_acc.clone(),
             )
-            .await?;
+            .await
+        {
+            Ok(_) => {}
+            // Transient errors are delivery failures: let the caller retry the batch.
+            Err(err) if err.is_transient() => return Err(err),
+            // A non-transient error means the operation is permanently rejected by the
+            // remote. This operation was replayed from the WAL, so it was already applied
+            // (and rejected the same way) on the sender - the sender's state therefore
+            // reflects it as a no-op. Skipping it here keeps both sides consistent and
+            // prevents a single bad operation from aborting the whole shard transfer.
+            Err(err) => {
+                log::warn!(
+                    "Skipping operation permanently rejected by peer {} during shard \
+                     transfer (non-transient): {err}",
+                    remote_shard.peer_id,
+                );
+            }
+        }
     }
     Ok(())
 }
