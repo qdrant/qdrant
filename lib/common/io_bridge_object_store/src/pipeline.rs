@@ -382,23 +382,21 @@ mod tests {
     /// Build a future that writes `data` into the destination buffer reachable
     /// through `dst`. Mirrors what the real pipeline schedule path does, just
     /// from a static byte slice instead of a network stream.
-    fn write_future(
+    async fn write_future(
         mut dst: SendBytePtr,
         data: &'static [u8],
-    ) -> impl Future<Output = Result<(), UniversalIoError>> + Send + 'static {
-        async move {
-            // SAFETY: the test holds the matching `Vec<u8>` in
-            // `inner.pending` for the duration of the future, satisfying the
-            // SendBytePtr invariant.
-            let slice = unsafe { dst.as_slice_mut() };
-            assert_eq!(
-                slice.len(),
-                data.len(),
-                "test bug: destination buffer size does not match payload",
-            );
-            slice.copy_from_slice(data);
-            Ok(())
-        }
+    ) -> Result<(), UniversalIoError> {
+        // SAFETY: the test holds the matching `Vec<u8>` in
+        // `inner.pending` for the duration of the future, satisfying the
+        // SendBytePtr invariant.
+        let slice = unsafe { dst.as_slice_mut() };
+        assert_eq!(
+            slice.len(),
+            data.len(),
+            "test bug: destination buffer size does not match payload",
+        );
+        slice.copy_from_slice(data);
+        Ok(())
     }
 
     #[test]
