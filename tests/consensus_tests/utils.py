@@ -641,11 +641,9 @@ def check_collection_shard_transfer_progress(peer_api_uri: str, collection_name:
     return False
 
 
-def check_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}, min_local_replicas=0) -> bool:
+def check_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}) -> bool:
     try:
         collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
-        if len(collection_cluster_info["local_shards"]) < min_local_replicas:
-            return False
         for shard in collection_cluster_info["local_shards"]:
             if shard['state'] != 'Active':
                 return False
@@ -722,9 +720,9 @@ def wait_for_some_replicas_not_active(peer_api_uri: str, collection_name: str):
         raise e
 
 
-def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}, min_local_replicas=0):
+def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}):
     try:
-        wait_for(check_all_replicas_active, peer_api_uri, collection_name, headers=headers, min_local_replicas=min_local_replicas)
+        wait_for(check_all_replicas_active, peer_api_uri, collection_name, headers=headers)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e
